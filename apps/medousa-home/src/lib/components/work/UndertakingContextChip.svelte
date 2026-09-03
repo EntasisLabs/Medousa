@@ -7,6 +7,7 @@
     ExternalLink,
     FolderPlus,
     GitPullRequestArrow,
+    HardDriveDownload,
     Link2Off,
     SquareTerminal,
   } from "@lucide/svelte";
@@ -27,15 +28,20 @@
   import { undertakings } from "$lib/stores/undertakings.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
+  import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import type { AgentModeId } from "$lib/types/session";
   import {
+    closeUndertaking,
     openTrackedTerminal,
     startTrackedAgent,
+    undertakingWorkspaceCopy,
   } from "$lib/utils/undertakingWorkspace";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import CodeProjectCreationFlow from "$lib/components/code/CodeProjectCreationFlow.svelte";
   import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
   import { attachComposerMenuDismiss } from "$lib/utils/composerMenuDismiss";
+  import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
   import { placeToolbarPopover } from "$lib/utils/railPopover";
 
   interface Props {
@@ -59,6 +65,8 @@
   let chooserOpen = $state(false);
   let chooserTriggerEl = $state<HTMLButtonElement | null>(null);
   let chooserPanelEl = $state<HTMLDivElement | null>(null);
+  let chooserSheetEl = $state<HTMLDivElement | null>(null);
+  let chooserSheetHeaderEl = $state<HTMLDivElement | null>(null);
   let creating = $state(false);
   let observedBindingWorkId: string | null | undefined = undefined;
 
@@ -113,7 +121,7 @@
   });
 
   $effect(() => {
-    if (!chooserOpen || !chooserTriggerEl || !chooserPanelEl) return;
+    if (layout.isMobile || !chooserOpen || !chooserTriggerEl || !chooserPanelEl) return;
     let frame = 0;
     const placeOnce = () => {
       if (!chooserTriggerEl || !chooserPanelEl) return;
@@ -138,7 +146,7 @@
     const detachDismiss = attachComposerMenuDismiss({
       isInside: (target) =>
         Boolean(chooserPanelEl?.contains(target) || chooserTriggerEl?.contains(target)),
-      onDismiss: () => (chooserOpen = false),
+      onDismiss: closeChooser,
     });
     return () => {
       window.cancelAnimationFrame(frame);
@@ -146,6 +154,34 @@
       window.visualViewport?.removeEventListener("resize", place);
       window.visualViewport?.removeEventListener("scroll", place);
       detachDismiss();
+    };
+  });
+
+  $effect(() => {
+    if (!layout.isMobile || !chooserOpen || !chooserSheetEl) return;
+    const detachGestures = attachMobileSheetGestures(
+      chooserSheetEl,
+      chooserSheetHeaderEl,
+      {
+        onDismiss: closeChooser,
+        onSwipeBack: () => {
+          if (!creating) return false;
+          creating = false;
+          return true;
+        },
+      },
+    );
+    const detachBack = registerMobileBackHandler(() => {
+      if (creating) {
+        creating = false;
+      } else {
+        closeChooser();
+      }
+      return true;
+    });
+    return () => {
+      detachGestures();
+      detachBack();
     };
   });
 
@@ -214,9 +250,41 @@
     undertakings.clearActive();
   }
 
+  async function releaseActive() {
+    if (!active || busy) return;
+    const workId = active.workId;
+    busy = true;
+    error = null;
+    try {
+      const item = await getUndertaking(workId);
+      if (!item.allowed_actions.discard.allowed) {
+        throw new Error(item.allowed_actions.discard.reason || "This project cannot be released yet.");
+      }
+      if (!window.confirm(undertakingWorkspaceCopy(item).closePrompt)) return;
+      await closeUndertaking(item);
+      chipMenuOpen = false;
+      observedBindingWorkId = null;
+      await undertakings.refreshList();
+      await undertakings.select("");
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      busy = false;
+    }
+  }
+
   async function openChooser() {
-    chooserOpen = !chooserOpen;
-    if (chooserOpen) await undertakings.refreshList();
+    if (chooserOpen) {
+      closeChooser();
+      return;
+    }
+    chooserOpen = true;
+    await undertakings.refreshList();
+  }
+
+  function closeChooser() {
+    chooserOpen = false;
+    creating = false;
   }
 
   async function bindProject(item: ItemProjection) {
@@ -235,7 +303,7 @@
           detail: { sessionId, workId: item.id },
         }),
       );
-      chooserOpen = false;
+      closeChooser();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -245,8 +313,7 @@
 
   function finishSharedCreation(item: ItemProjection) {
     observedBindingWorkId = item.id;
-    creating = false;
-    chooserOpen = false;
+    closeChooser();
   }
 </script>
 
@@ -360,6 +427,16 @@
       <Link2Off size={14} />
       Stop following this project
     </button>
+    <button
+      type="button"
+      role="menuitem"
+      class="context-action text-content-tertiary"
+      disabled={busy}
+      onclick={() => void releaseActive()}
+    >
+      <HardDriveDownload size={14} />
+      Release project…
+    </button>
 
     {#if error}
       <p class="m-1.5 rounded-md bg-amber-950/60 px-2 py-1.5 text-chrome-sm text-amber-100">
@@ -385,51 +462,138 @@
     </button>
     {#if chooserOpen}
       <BodyPortal>
-      <div
-        bind:this={chooserPanelEl}
-        class="z-50 {creating ? 'w-[23rem]' : 'w-72'} overflow-hidden rounded-xl border border-surface-500/40 bg-surface-900/95 {creating ? 'p-0' : 'p-2'} text-xs shadow-2xl backdrop-blur"
-        role="dialog"
-        aria-label="Choose or create project"
-      >
-        {#if creating}
-          <CodeProjectCreationFlow
-            presentation="popover"
-            sessionId={chat.sessionId}
-            onCancel={() => (creating = false)}
-            onCreated={finishSharedCreation}
-            onContinue={finishSharedCreation}
-          />
-        {:else}
-          <p class="px-1.5 pb-1.5 text-[10px] font-medium uppercase tracking-wide text-content-quiet">Continue a project</p>
-          {#each undertakings.items.filter((item) => ["ready", "executing"].includes(item.state) && item.environment?.worktree).slice(0, 6) as item (item.id)}
-            <button type="button" class="context-action" disabled={busy} onclick={() => void bindProject(item)}>
-              <CircleDot size={13} />
-              <span class="truncate">{item.title}</span>
-            </button>
-          {:else}
-            <p class="px-1.5 py-2 text-content-quiet">No ready projects yet.</p>
-          {/each}
-          <div class="my-1 border-t border-surface-500/25"></div>
-          <button type="button" class="context-action" onclick={() => (creating = true)}>
-            <FolderPlus size={14} />
-            Create a new project
-          </button>
-          <button
-            type="button"
-            class="context-action text-primary-200"
-            onclick={() => {
-              chooserOpen = false;
-              window.dispatchEvent(new CustomEvent("medousa-code-project-agent-setup"));
+        {#if layout.isMobile}
+          <div
+            class="mobile-sheet-backdrop mobile-turn-sheet-backdrop coder-project-sheet-backdrop"
+            role="presentation"
+            onclick={(event) => {
+              if (event.target === event.currentTarget) closeChooser();
             }}
           >
-            <Bot size={14} />
-            Let Medousa choose or create it
-          </button>
+            <div
+              bind:this={chooserSheetEl}
+              class="mobile-sheet mobile-turn-sheet coder-project-sheet {creating ? 'coder-project-sheet--creating' : ''}"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Choose or create project"
+              tabindex="-1"
+            >
+              <div bind:this={chooserSheetHeaderEl} class="coder-project-sheet-drag">
+                <div class="mobile-turn-sheet-grabber" aria-hidden="true"></div>
+                {#if !creating}
+                  <header class="mobile-turn-sheet-header">
+                    <span class="mobile-turn-sheet-header-spacer" aria-hidden="true"></span>
+                    <h2 class="mobile-turn-sheet-title">Code project</h2>
+                    <button type="button" class="mobile-sheet-done" onclick={closeChooser}>Done</button>
+                  </header>
+                {/if}
+              </div>
+              {#if creating}
+                <CodeProjectCreationFlow
+                  presentation="sheet"
+                  sessionId={chat.sessionId}
+                  onCancel={() => (creating = false)}
+                  onCreated={finishSharedCreation}
+                  onContinue={finishSharedCreation}
+                />
+              {:else}
+                <div class="mobile-turn-sheet-body coder-project-sheet-body">
+                  <p class="mobile-turn-sheet-section-label">Continue a project</p>
+                  <div class="mobile-turn-sheet-group">
+                    {#each undertakings.items.filter((item) => ["ready", "executing"].includes(item.state) && item.environment?.worktree).slice(0, 6) as item, index (item.id)}
+                      <button
+                        type="button"
+                        class="mobile-turn-sheet-row {index > 0 ? 'mobile-turn-sheet-row-divider' : ''}"
+                        disabled={busy}
+                        onclick={() => void bindProject(item)}
+                      >
+                        <CircleDot size={15} class="text-primary-300" />
+                        <span class="mobile-turn-sheet-row-copy">
+                          <span class="mobile-turn-sheet-row-title">{item.title}</span>
+                          <span class="mobile-turn-sheet-row-subtitle">{humanPhaseLabel(item.human_phase)}</span>
+                        </span>
+                      </button>
+                    {:else}
+                      <p class="mobile-turn-sheet-empty">No ready projects yet.</p>
+                    {/each}
+                  </div>
+                  <div class="mobile-turn-sheet-group mobile-turn-sheet-group-secondary">
+                    <button type="button" class="mobile-turn-sheet-row" onclick={() => (creating = true)}>
+                      <FolderPlus size={16} class="text-primary-300" />
+                      <span class="mobile-turn-sheet-row-copy">
+                        <span class="mobile-turn-sheet-row-title">Create a new project</span>
+                        <span class="mobile-turn-sheet-row-subtitle">Choose the repository and workspace</span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      class="mobile-turn-sheet-row mobile-turn-sheet-row-divider"
+                      onclick={() => {
+                        closeChooser();
+                        window.dispatchEvent(new CustomEvent("medousa-code-project-agent-setup"));
+                      }}
+                    >
+                      <Bot size={16} class="text-primary-300" />
+                      <span class="mobile-turn-sheet-row-copy">
+                        <span class="mobile-turn-sheet-row-title">Let Medousa set it up</span>
+                        <span class="mobile-turn-sheet-row-subtitle">Choose or create a project with the agent</span>
+                      </span>
+                    </button>
+                  </div>
+                  {#if error}
+                    <p class="mobile-turn-sheet-inline-error mt-3">{humanizeForgeMessage(error)}</p>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          </div>
+        {:else}
+          <div
+            bind:this={chooserPanelEl}
+            class="z-50 {creating ? 'w-[23rem]' : 'w-72'} overflow-hidden rounded-xl border border-surface-500/40 bg-surface-900/95 {creating ? 'p-0' : 'p-2'} text-xs shadow-2xl backdrop-blur"
+            role="dialog"
+            aria-label="Choose or create project"
+          >
+            {#if creating}
+              <CodeProjectCreationFlow
+                presentation="popover"
+                sessionId={chat.sessionId}
+                onCancel={() => (creating = false)}
+                onCreated={finishSharedCreation}
+                onContinue={finishSharedCreation}
+              />
+            {:else}
+              <p class="px-1.5 pb-1.5 text-[10px] font-medium uppercase tracking-wide text-content-quiet">Continue a project</p>
+              {#each undertakings.items.filter((item) => ["ready", "executing"].includes(item.state) && item.environment?.worktree).slice(0, 6) as item (item.id)}
+                <button type="button" class="context-action" disabled={busy} onclick={() => void bindProject(item)}>
+                  <CircleDot size={13} />
+                  <span class="truncate">{item.title}</span>
+                </button>
+              {:else}
+                <p class="px-1.5 py-2 text-content-quiet">No ready projects yet.</p>
+              {/each}
+              <div class="my-1 border-t border-surface-500/25"></div>
+              <button type="button" class="context-action" onclick={() => (creating = true)}>
+                <FolderPlus size={14} />
+                Create a new project
+              </button>
+              <button
+                type="button"
+                class="context-action text-primary-200"
+                onclick={() => {
+                  closeChooser();
+                  window.dispatchEvent(new CustomEvent("medousa-code-project-agent-setup"));
+                }}
+              >
+                <Bot size={14} />
+                Let Medousa choose or create it
+              </button>
+            {/if}
+            {#if error}
+              <p class="m-1.5 rounded-md bg-amber-950/60 px-2 py-1.5 text-[10px] text-amber-100">{humanizeForgeMessage(error)}</p>
+            {/if}
+          </div>
         {/if}
-        {#if error}
-          <p class="m-1.5 rounded-md bg-amber-950/60 px-2 py-1.5 text-[10px] text-amber-100">{humanizeForgeMessage(error)}</p>
-        {/if}
-      </div>
       </BodyPortal>
     {/if}
   </div>
@@ -454,5 +618,31 @@
 
   .context-action:disabled {
     opacity: 0.4;
+  }
+
+  .coder-project-sheet-backdrop {
+    bottom: auto;
+    height: calc(
+      var(--mobile-layout-height, 100dvh) - var(--mobile-keyboard-inset, 0px)
+    );
+  }
+
+  .coder-project-sheet {
+    max-height: calc(
+      var(--mobile-layout-height, 100dvh) - var(--mobile-keyboard-inset, 0px) -
+        max(1rem, env(safe-area-inset-top, 0px))
+    );
+  }
+
+  .coder-project-sheet--creating {
+    height: min(78dvh, 40rem);
+  }
+
+  .coder-project-sheet-drag {
+    flex-shrink: 0;
+  }
+
+  .coder-project-sheet-body {
+    padding-top: 0.25rem;
   }
 </style>

@@ -90,7 +90,17 @@ export function landCodeWorkingSet(workId: string): Promise<LandCodeResult> {
 async function landCodeWorkingSetImpl(workId: string): Promise<LandCodeResult> {
   const id = workId.trim();
   if (!id) return { ok: false, error: "No project selected." };
-  const detail = undertakings.detail?.id === id ? undertakings.detail : null;
+  let detail = undertakings.detail?.id === id ? undertakings.detail : null;
+  if (detail && !detail.environment && detail.allowed_actions.provision.allowed) {
+    try {
+      await undertakings.provision(id);
+      detail = undertakings.detail?.id === id ? undertakings.detail : null;
+    } catch (err) {
+      const message = humanizeForgeMessage(err instanceof Error ? err.message : String(err));
+      codeWorkspace.workspaceErrorByWorkId = { ...codeWorkspace.workspaceErrorByWorkId, [id]: message };
+      return { ok: false, error: message };
+    }
+  }
   if (detail && !detail.environment) {
     const message = detail.allowed_actions.provision.allowed
       ? "Set up this project to open its working copy and files."

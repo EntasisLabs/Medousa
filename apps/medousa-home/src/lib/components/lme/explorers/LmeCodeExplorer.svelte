@@ -32,7 +32,7 @@
   } from "$lib/forge";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";
-  import { closeUndertaking } from "$lib/utils/undertakingWorkspace";
+  import { closeUndertaking, undertakingWorkspaceCopy } from "$lib/utils/undertakingWorkspace";
   import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
   import { rootLabelFromPath } from "$lib/utils/externalDeskApi";
   import { revealFileInFinder } from "$lib/utils/vaultFilesystem";
@@ -97,6 +97,7 @@
     activeThreads: ItemProjection[];
     completedThreads: ItemProjection[];
     workspaceThreads: ItemProjection[];
+    releasableThreads: ItemProjection[];
   };
 
   const coLocated = $derived(isCoLocatedWorkshop());
@@ -182,12 +183,16 @@
           activeThreads: [],
           completedThreads: [],
           workspaceThreads: [],
+          releasableThreads: [],
         };
         byId.set(id, group);
       }
       group.threads.push(item);
       if (isActiveThread(item)) {
         group.activeThreads.push(item);
+        if (item.allowed_actions?.discard?.allowed !== false) {
+          group.releasableThreads.push(item);
+        }
         if (
           item.workspace_present ?? Boolean(item.environment?.worktree?.trim())
         ) {
@@ -204,6 +209,7 @@
         activeThreads: group.activeThreads.slice().sort(sortThreads),
         completedThreads: group.completedThreads.slice().sort(sortThreads),
         workspaceThreads: group.workspaceThreads.slice().sort(sortThreads),
+        releasableThreads: group.releasableThreads.slice().sort(sortThreads),
       }))
       .sort((a, b) => {
         if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
@@ -443,11 +449,7 @@
       undertakings.items.find((entry) => entry.id === id) ??
       (undertakings.detail?.id === id ? undertakings.detail : null);
     if (!item) return;
-    if (
-      !window.confirm(
-        `Release the workspace for “${item.title}”?\n\nIts managed working copy will be removed and this active change will be discarded. Chat history and the source repository stay available.`,
-      )
-    ) {
+    if (!window.confirm(undertakingWorkspaceCopy(item).closePrompt)) {
       return;
     }
     busy = true;
@@ -475,14 +477,12 @@
   }
 
   async function releaseProjectWorkspaces(group: ProjectGroup) {
-    const releasable = group.workspaceThreads.filter(
-      (item) => item.allowed_actions?.discard?.allowed !== false,
-    );
+    const releasable = group.releasableThreads;
     if (releasable.length === 0 || busy) return;
-    const noun = releasable.length === 1 ? "workspace" : "workspaces";
+    const noun = releasable.length === 1 ? "active change" : "active changes";
     if (
       !window.confirm(
-        `Release ${releasable.length} ${noun} for “${group.label}”?\n\nMedousa will remove the managed working ${releasable.length === 1 ? "copy" : "copies"} and discard the associated active ${releasable.length === 1 ? "change" : "changes"}. Chat history and the source repository stay available.`,
+        `Release ${releasable.length} ${noun} for “${group.label}”?\n\nMedousa will stop tracking them. Managed isolated copies will be removed; files and local changes in current checkouts will stay in place.`,
       )
     ) {
       return;
@@ -940,7 +940,7 @@
               New thread
             </button>
           {/if}
-          {#if group.workspaceThreads.length > 0}
+          {#if group.releasableThreads.length > 0}
             <button
               type="button"
               role="menuitem"
@@ -949,7 +949,7 @@
               onclick={() => void releaseProjectWorkspaces(group)}
             >
               <HardDriveDownload size={13} strokeWidth={1.75} />
-              Release {group.workspaceThreads.length === 1 ? "workspace" : `${group.workspaceThreads.length} workspaces`}…
+              Release {group.releasableThreads.length === 1 ? "active change" : `${group.releasableThreads.length} active changes`}…
             </button>
           {/if}
           {#if group.path}
@@ -986,7 +986,7 @@
                   <span class="code-thread-status">{humanPhaseLabel(item.human_phase)}</span>
                 </span>
               </button>
-              {#if isActiveThread(item) && (item.workspace_present ?? Boolean(item.environment?.worktree?.trim())) && item.allowed_actions?.discard?.allowed !== false}
+              {#if isActiveThread(item) && item.allowed_actions?.discard?.allowed !== false}
                 <OverflowMenu
                   open={threadMenuOpen === item.id}
                   onOpenChange={(open) => (threadMenuOpen = open ? item.id : null)}

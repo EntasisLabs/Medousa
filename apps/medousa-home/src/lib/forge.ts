@@ -4,7 +4,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { getDaemonUrl, operationPath, type OperationId } from "$lib/daemon";
 import { streamPathWithSince } from "$lib/stream/reconnect";
 import { isTauri } from "$lib/window";
-
+import { assertWorkspaceMode, unsupportedAttachedCheckout, type ForgeEnvironment, type ForgeWorkspaceMode } from "$lib/forgeWorkspace";
+export { usesAttachedCheckout, type ForgeEnvironment, type ForgeWorkspaceMode } from "$lib/forgeWorkspace";
 export type ActionAffordance = {
   allowed: boolean;
   reason?: string | null;
@@ -40,23 +41,14 @@ export type ForgeWorkItem = {
   owner: string;
   created_at?: string;
   updated_at?: string;
-  environment?: {
-    worktree: string;
-    branch: string;
-    baseline_oid: string;
-    generation: number;
-  } | null;
+  workspace_mode?: ForgeWorkspaceMode;
+  environment?: ForgeEnvironment | null;
   attempts?: Array<{
     id: string;
     seq: number;
     state: string;
     executor?: { kind?: string; detail?: Record<string, unknown> } | null;
-    environment?: {
-      worktree: string;
-      branch: string;
-      baseline_oid: string;
-      generation: number;
-    } | null;
+    environment?: ForgeEnvironment | null;
     evidence_id?: string | null;
     lease?: {
       lease_id: string;
@@ -95,7 +87,6 @@ export function gitTargetBaseRef(
 export type ItemProjection = ForgeWorkItem & {
   human_phase: HumanPhase | string;
   allowed_actions: AllowedActions;
-  /** Missing on older daemons; environment presence is the compatibility fallback. */
   workspace_present?: boolean;
 };
 
@@ -831,16 +822,20 @@ export async function createUndertaking(input: {
   brief: string;
   repo_path: string;
   base_ref?: string;
+  workspace_mode?: ForgeWorkspaceMode;
 }): Promise<ItemProjection> {
-  return forgeFetch(operationPath("forge.items.post"), {
+  const item = await forgeFetch<ItemProjection>(operationPath("forge.items.post"), {
     method: "POST",
     body: JSON.stringify({
       title: input.title,
       brief: input.brief,
       repo_path: input.repo_path,
       base_ref: input.base_ref ?? "main",
+      workspace_mode: input.workspace_mode ?? "isolated",
     }),
   });
+  assertWorkspaceMode(item, input.workspace_mode);
+  return item;
 }
 
 export type RepositoryInspection = {
@@ -1302,20 +1297,25 @@ export async function startUndertaking(input: {
   brief: string;
   repo_path: string;
   base_ref?: string;
+  workspace_mode?: ForgeWorkspaceMode;
 }): Promise<ItemProjection> {
   try {
-    return await forgeFetch(operationPath("forge.items.start.post"), {
+    const item = await forgeFetch<ItemProjection>(operationPath("forge.items.start.post"), {
       method: "POST",
       body: JSON.stringify({
         title: input.title,
         brief: input.brief,
         repo_path: input.repo_path,
         base_ref: input.base_ref ?? "main",
+        workspace_mode: input.workspace_mode ?? "isolated",
       }),
     });
+    assertWorkspaceMode(item, input.workspace_mode);
+    return item;
   } catch (err) {
     // Older workshops only have register + provision as separate steps.
     if (!isMissingForgeRoute(err)) throw err;
+    if (input.workspace_mode === "attached_checkout") throw unsupportedAttachedCheckout();
     const registered = await createUndertaking(input);
     return provisionUndertaking(registered.id);
   }

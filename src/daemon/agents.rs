@@ -291,8 +291,8 @@ pub async fn create_agent_session(
     let agent_session_id = format!("agent-{}", Uuid::new_v4());
     let mut forge_lease = None;
 
-    // Forge undertaking binding: acquire the isolated lease before provider
-    // creation so the provider process starts in the lease-owned worktree.
+    // Forge undertaking binding: acquire the selected workspace lease before
+    // provider creation so the provider starts inside that authority boundary.
     let forge_work_id = if let Some(work_id_raw) = command.work_id.as_ref() {
         let work_id = WorkId::from(work_id_raw.as_str().to_string());
         let item = state.forge.load(&work_id).map_err(|e| {
@@ -324,7 +324,7 @@ pub async fn create_agent_session(
         };
         let (item, lease) = state
             .forge
-            .begin_isolated_attempt(
+            .begin_workspace_attempt(
                 &work_id,
                 executor,
                 None,
@@ -341,7 +341,7 @@ pub async fn create_agent_session(
                 );
                 return Err((
                     StatusCode::CONFLICT,
-                    format!("forge attempt for '{work_id_raw}' has no isolated environment"),
+                    format!("forge attempt for '{work_id_raw}' has no governed environment"),
                 ));
             }
         };
@@ -451,6 +451,21 @@ pub async fn create_agent_session(
         guard
             .by_agent_session
             .insert(agent_session_id.clone(), live.clone());
+    }
+
+    // Registration precedes the final fence check deliberately. A concurrent
+    // attached-checkout close either sees this live provider and cancels it,
+    // or wins first and makes the fence fail here; no provider can escape the
+    // daemon registry with a released checkout.
+    if let Some(lease) = live.forge_lease.as_ref() {
+        let forge_adapter = acp_forge_adapter::AcpForgeAdapter::new(&state.forge);
+        if let Err(error) = forge_adapter.heartbeat(lease) {
+            let _ = cancel_live_agent_session(&state, &agent_session_id).await;
+            return Err((
+                StatusCode::CONFLICT,
+                format!("Forge workspace authority changed while the provider started: {error}"),
+            ));
+        }
     }
 
     let accepted_at_utc = Utc::now();
@@ -580,6 +595,15 @@ pub async fn cancel_agent_session(
     State(state): State<AppState>,
     AxumPath(agent_session_id): AxumPath<String>,
 ) -> Result<Json<CancelAgentSessionResponse>, (StatusCode, String)> {
+    cancel_live_agent_session(&state, &agent_session_id)
+        .await
+        .map(Json)
+}
+
+async fn cancel_live_agent_session(
+    state: &AppState,
+    agent_session_id: &str,
+) -> Result<CancelAgentSessionResponse, (StatusCode, String)> {
     let agent_session_id = agent_session_id.trim().to_string();
     let live = {
         let mut guard = AGENT_SESSIONS.write().await;
@@ -648,11 +672,39 @@ pub async fn cancel_agent_session(
     )
     .await;
 
-    Ok(Json(CancelAgentSessionResponse {
+    Ok(CancelAgentSessionResponse {
         cancelled: true,
         agent_session_id,
         message: "agent session cancelled".into(),
-    }))
+    })
+}
+
+/// Stop every live external provider bound to a Forge work item.
+///
+/// This is used before an attached checkout is released. The daemon registry,
+/// rather than one Home window's local tab state, is the authority for which
+/// provider processes still have access to that checkout.
+pub async fn cancel_agent_sessions_for_work(
+    state: &AppState,
+    work_id: &WorkId,
+) -> Result<(), (StatusCode, String)> {
+    let agent_session_ids = {
+        let guard = AGENT_SESSIONS.read().await;
+        guard
+            .by_agent_session
+            .values()
+            .filter(|live| live.forge_work_id.as_ref() == Some(work_id))
+            .map(|live| live.agent_session_id.clone())
+            .collect::<Vec<_>>()
+    };
+
+    for agent_session_id in agent_session_ids {
+        match cancel_live_agent_session(state, &agent_session_id).await {
+            Ok(_) | Err((StatusCode::NOT_FOUND, _)) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
 }
 
 pub async fn agent_session_stream(
@@ -752,6 +804,13 @@ fn spawn_prompt_pump(state: AppState, live: LiveAgentSession, prompt: String) {
         let fail_lease = live.forge_lease.clone();
         if let Err(err) = run_prompt_pump(state.clone(), live.clone(), prompt).await {
             tracing::warn!(error = %err, "agent prompt pump failed");
+            let fail_lease = AGENT_SESSIONS
+                .read()
+                .await
+                .by_agent_session
+                .get(&live.agent_session_id)
+                .and_then(|session| session.forge_lease.clone())
+                .or(fail_lease);
             if let (Some(work_id), Some(lease)) = (live.forge_work_id.clone(), fail_lease) {
                 let adapter = acp_forge_adapter::AcpForgeAdapter::new(&state.forge);
                 match adapter.fail_attempt(&lease, &err.to_string()) {
@@ -853,6 +912,15 @@ fn prompt_with_code_context(prompt: String, context: Option<&CodeIntentContext>)
     format!(
         "{prompt}\n\n<medousa_code_context>\n{}\n</medousa_code_context>",
         lines.join("\n")
+    )
+}
+
+fn prompt_with_forge_workspace_policy(prompt: String, attached_checkout: bool) -> String {
+    if !attached_checkout {
+        return prompt;
+    }
+    format!(
+        "{prompt}\n\n<medousa_workspace_policy>\nThis project uses the principal's current checkout. Edit files in place, but do not switch branches, stage, commit, reset, clean, stash, merge, rebase, cherry-pick, discard changes, mutate local branches or tags, or rewrite history. Read-only Git inspection and fetch are allowed. Medousa snapshots and reviews the work without touching the real index or HEAD.\n</medousa_workspace_policy>"
     )
 }
 
@@ -980,9 +1048,16 @@ async fn run_prompt_pump(
         .as_ref()
         .map(|_| acp_forge_adapter::AcpForgeAdapter::new(&state.forge));
     let mut last_heartbeat = std::time::Instant::now();
+    let provider_prompt = match live.forge_work_id.as_ref() {
+        Some(work_id) => {
+            let item = state.forge.load(work_id)?;
+            prompt_with_forge_workspace_policy(prompt.clone(), item.uses_attached_checkout())
+        }
+        None => prompt.clone(),
+    };
 
     if let (Some(adapter), Some(lease)) = (forge_adapter.as_ref(), live.forge_lease.as_ref()) {
-        let _ = adapter.record_prompt(lease, prompt.len());
+        adapter.record_prompt(lease, provider_prompt.len())?;
     }
 
     // Durable transcript (Synara/T3 reopen gap). SSE path unchanged.
@@ -990,7 +1065,7 @@ async fn run_prompt_pump(
     let mut persist = crate::daemon::acp_turn_persist::AcpPromptPersistState::new();
 
     ACP_CLIENT
-        .prompt(&live.acp_session_id, &prompt)
+        .prompt(&live.acp_session_id, &provider_prompt)
         .await
         .map_err(|e| anyhow::anyhow!(e))?;
 
@@ -1003,7 +1078,7 @@ async fn run_prompt_pump(
             && last_heartbeat.elapsed() >= std::time::Duration::from_secs(15)
         {
             if let Err(err) = adapter.heartbeat(lease) {
-                tracing::warn!(error = %err, "forge heartbeat failed");
+                return Err(anyhow::anyhow!("Forge workspace authority changed: {err}"));
             } else {
                 last_heartbeat = std::time::Instant::now();
             }
@@ -1084,7 +1159,7 @@ async fn run_prompt_pump(
                 if let (Some(adapter), Some(lease)) =
                     (forge_adapter.as_ref(), live.forge_lease.as_ref())
                 {
-                    let _ = adapter.record_tool(lease, &name, &id);
+                    adapter.record_tool(lease, &name, &id)?;
                 }
                 publish_agent_event(
                     &entry,
@@ -1202,7 +1277,7 @@ async fn run_prompt_pump(
                     (forge_adapter.as_ref(), live.forge_lease.as_ref())
                     && let Err(err) = adapter.heartbeat(lease)
                 {
-                    tracing::warn!(error = %err, "forge heartbeat on Done");
+                    return Err(anyhow::anyhow!("Forge workspace authority changed: {err}"));
                 }
                 publish_agent_event(
                     &entry,
@@ -1447,6 +1522,19 @@ mod tests {
         assert_eq!(
             prompt_with_code_context("Keep going".into(), Some(&CodeIntentContext::default())),
             "Keep going"
+        );
+    }
+
+    #[test]
+    fn attached_checkout_policy_is_explicit_and_isolated_prompts_stay_unchanged() {
+        let prompt = prompt_with_forge_workspace_policy("Fix this".into(), true);
+        assert!(prompt.starts_with("Fix this\n\n<medousa_workspace_policy>"));
+        assert!(prompt.contains("do not switch branches, stage, commit"));
+        assert!(prompt.contains("without touching the real index or HEAD"));
+        assert!(prompt.ends_with("</medousa_workspace_policy>"));
+        assert_eq!(
+            prompt_with_forge_workspace_policy("Fix this".into(), false),
+            "Fix this"
         );
     }
 

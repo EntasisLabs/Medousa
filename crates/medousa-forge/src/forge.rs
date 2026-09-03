@@ -6,6 +6,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use chrono::Utc;
 
@@ -22,7 +23,8 @@ use crate::model::{
     ExecutorDescriptor, GitWorkTarget, GovernedEnv, IntegrationStrategy, LeaseId,
     MODEL_SCHEMA_VERSION, OperationId, PolicyReport, PolicyViolation, RawEvidenceDisposition,
     RecoveryDisposition, ReviewComment, ReviewCommentId, ReviewDecision, ReviewDecisionId, WorkId,
-    WorkItem, WorkPolicy, WorkState, WorkTarget, anchor_digest_for, compose_revision_brief,
+    WorkItem, WorkPolicy, WorkState, WorkTarget, WorkspaceMode, anchor_digest_for,
+    compose_revision_brief,
 };
 use crate::observation::{SharedWatcherFence, WorkspaceObserver};
 use crate::owner::ForgeItemRegistry;
@@ -30,6 +32,7 @@ use crate::store::FsWorkStore;
 
 const MAX_COMPACT_EVIDENCE_RECEIPTS: usize = 512;
 const MAX_COMPACT_EVIDENCE_OBJECT_BYTES: u64 = 8 * 1024 * 1024;
+static ATTACHED_INDEX_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 fn compact_evidence_receipts(
     commands: &[u8],
@@ -323,6 +326,56 @@ impl Forge {
         policy: WorkPolicy,
         actor: &ActorRef,
     ) -> Result<WorkItem> {
+        self.register_with_policy_and_workspace_mode(
+            title,
+            brief,
+            repo_path,
+            base_ref,
+            owner,
+            policy,
+            WorkspaceMode::Isolated,
+            actor,
+        )
+    }
+
+    /// Register a work item with an explicit workspace placement. Attached
+    /// checkout authority is persisted before provisioning so recovery never
+    /// infers ownership from a filesystem path.
+    #[allow(clippy::too_many_arguments)]
+    pub fn register_with_workspace_mode(
+        &self,
+        title: impl Into<String>,
+        brief: impl Into<String>,
+        repo_path: impl AsRef<Path>,
+        base_ref: impl Into<String>,
+        owner: impl Into<String>,
+        workspace_mode: WorkspaceMode,
+        actor: &ActorRef,
+    ) -> Result<WorkItem> {
+        self.register_with_policy_and_workspace_mode(
+            title,
+            brief,
+            repo_path,
+            base_ref,
+            owner,
+            WorkPolicy::default(),
+            workspace_mode,
+            actor,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn register_with_policy_and_workspace_mode(
+        &self,
+        title: impl Into<String>,
+        brief: impl Into<String>,
+        repo_path: impl AsRef<Path>,
+        base_ref: impl Into<String>,
+        owner: impl Into<String>,
+        policy: WorkPolicy,
+        workspace_mode: WorkspaceMode,
+        actor: &ActorRef,
+    ) -> Result<WorkItem> {
         let repo_path = repo_path.as_ref();
         let base_ref = base_ref.into();
         if !self.git.is_repo(repo_path) {
@@ -342,6 +395,7 @@ impl Forge {
             }),
             owner,
         );
+        item.workspace_mode = workspace_mode;
         item.policy = policy;
         let taken = self.slugs.taken_slugs()?;
         item.slug = crate::slug::allocate_unique_slug(&item.slug, taken.iter().map(String::as_str));
@@ -563,6 +617,23 @@ impl Forge {
         operation_id: &OperationId,
         actor: &ActorRef,
     ) -> Result<()> {
+        match item.workspace_mode {
+            WorkspaceMode::Isolated => {
+                self.provision_isolated_inner(item, target, operation_id, actor)
+            }
+            WorkspaceMode::AttachedCheckout => {
+                self.provision_attached_inner(item, target, operation_id, actor)
+            }
+        }
+    }
+
+    fn provision_isolated_inner(
+        &self,
+        item: &mut WorkItem,
+        target: &GitWorkTarget,
+        operation_id: &OperationId,
+        actor: &ActorRef,
+    ) -> Result<()> {
         let repo = self.git.repo_identity(&target.repo_path)?;
         // Baseline binds to the *current* base OID at provision time; the
         // immutable OID is what evidence and integration compare against.
@@ -597,6 +668,7 @@ impl Forge {
             worktree,
             branch,
             baseline_oid,
+            attached_index_oid: None,
             generation,
             derived_from: None,
         };
@@ -607,6 +679,231 @@ impl Forge {
             EventPayload::EnvironmentProvisioned { env: Box::new(env) },
         )?;
         Ok(())
+    }
+
+    fn provision_attached_inner(
+        &self,
+        item: &mut WorkItem,
+        target: &GitWorkTarget,
+        operation_id: &OperationId,
+        actor: &ActorRef,
+    ) -> Result<()> {
+        let worktree = std::fs::canonicalize(self.git.worktree_root(&target.repo_path)?)?;
+        let branch = self.git.current_branch(&worktree)?.ok_or_else(|| {
+            ForgeError::EnvironmentDrift(
+                "current-checkout mode requires a checked-out local branch".into(),
+            )
+        })?;
+        if branch != target.base_ref {
+            return Err(ForgeError::EnvironmentDrift(format!(
+                "current checkout is on {branch}, but the selected branch is {}",
+                target.base_ref
+            )));
+        }
+        let head = self.git.head_oid(&worktree)?;
+        if head != target.base_oid {
+            return Err(ForgeError::EnvironmentDrift(format!(
+                "current checkout HEAD moved before Coder attached: {} != {}",
+                head, target.base_oid
+            )));
+        }
+        if self.git.merge_in_progress(&worktree)
+            || self
+                .git
+                .status_porcelain(&worktree)?
+                .iter()
+                .any(|entry| entry.kind == crate::git::PorcelainKind::Unmerged)
+        {
+            return Err(ForgeError::EnvironmentDrift(
+                "finish the active merge, rebase, or conflict before attaching Coder".into(),
+            ));
+        }
+        self.ensure_attached_checkout_available(&item.id, &worktree)?;
+
+        let snapshot_ref = Self::attached_snapshot_ref(&item.id);
+        let attached_index_oid = self.git.index_tree_oid(&worktree)?;
+        let initial_env = GovernedEnv {
+            kind: crate::model::EnvironmentKind::AttachedCheckout,
+            repo: self.git.repo_identity(&worktree)?,
+            worktree: worktree.clone(),
+            branch: branch.clone(),
+            baseline_oid: head.clone(),
+            attached_index_oid: Some(attached_index_oid.clone()),
+            generation: 1,
+            derived_from: None,
+        };
+        let initial_changes = self.worktree_changed_files(&initial_env)?;
+        let exclusions = crate::policy::capture_exclusions(&item.policy, &initial_changes)?;
+        if !exclusions.is_empty() {
+            return Err(ForgeError::CaptureBlocked(format!(
+                "current checkout has {} pre-existing change(s) excluded from Forge capture; use an isolated copy or clean those paths first",
+                exclusions.len()
+            )));
+        }
+        let candidates = initial_changes
+            .iter()
+            .map(|file| crate::policy::normalize_git_path(&file.path))
+            .collect::<Vec<_>>();
+        let risks = crate::policy::assess_capture(&item.policy, &worktree, &candidates)?;
+        if !risks.is_empty() {
+            return Err(ForgeError::CaptureBlocked(format!(
+                "current checkout baseline has {} unsafe capture risk(s); use an isolated copy or remove the risky files first (first: {:?})",
+                risks.len(),
+                risks[0]
+            )));
+        }
+        let baseline_oid = self.git.snapshot_worktree(
+            &worktree,
+            &head,
+            &self.attached_index_path(&item.id),
+            &format!("forge: attached baseline {}", item.id.as_str()),
+            &CheckpointAuthor::default(),
+            &[],
+        )?;
+        self.git.set_ref(&worktree, &snapshot_ref, &baseline_oid)?;
+        if let Err(err) = self.commit_event(
+            &item.id,
+            actor,
+            EventPayload::OperationSideEffect {
+                operation_id: operation_id.clone(),
+                effect: SideEffect::CheckoutAttached {
+                    path: worktree.clone(),
+                    branch: branch.clone(),
+                    baseline_oid: baseline_oid.clone(),
+                    attached_index_oid: attached_index_oid.clone(),
+                    snapshot_ref: snapshot_ref.clone(),
+                },
+            },
+        ) {
+            let _ = self.git.delete_ref(&worktree, &snapshot_ref);
+            return Err(err);
+        }
+        let env = GovernedEnv {
+            baseline_oid,
+            ..initial_env
+        };
+        item.environment = Some(env.clone());
+        self.commit_event(
+            &item.id,
+            actor,
+            EventPayload::EnvironmentProvisioned { env: Box::new(env) },
+        )?;
+        Ok(())
+    }
+
+    pub(crate) fn attached_snapshot_ref(work_id: &WorkId) -> String {
+        format!("refs/medousa/forge/{}/snapshot", work_id.as_str())
+    }
+
+    fn attached_index_path(&self, work_id: &WorkId) -> PathBuf {
+        let sequence = ATTACHED_INDEX_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        self.store.item_dir(work_id).join(format!(
+            "attached-snapshot-{}-{sequence}.index",
+            std::process::id()
+        ))
+    }
+
+    fn ensure_attached_checkout_available(&self, work_id: &WorkId, root: &Path) -> Result<()> {
+        for existing in self.list()? {
+            if existing.id == *work_id || existing.state.is_terminal() {
+                continue;
+            }
+            let existing_root = match existing.environment.as_ref() {
+                Some(environment)
+                    if environment.kind == crate::model::EnvironmentKind::AttachedCheckout =>
+                {
+                    std::fs::canonicalize(&environment.worktree)
+                        .unwrap_or_else(|_| environment.worktree.clone())
+                }
+                None if existing.workspace_mode == WorkspaceMode::AttachedCheckout
+                    && existing.state == WorkState::Provisioning =>
+                {
+                    let target = git_target(&existing)?;
+                    std::fs::canonicalize(self.git.worktree_root(&target.repo_path)?)?
+                }
+                _ => continue,
+            };
+            if existing_root == root {
+                return Err(ForgeError::EnvironmentDrift(format!(
+                    "current checkout is already attached to {}",
+                    existing.id
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn verify_attached_checkout(
+        &self,
+        item: &WorkItem,
+        environment: &GovernedEnv,
+    ) -> Result<()> {
+        if environment.kind != crate::model::EnvironmentKind::AttachedCheckout {
+            return Ok(());
+        }
+        let root = std::fs::canonicalize(self.git.worktree_root(&environment.worktree)?)?;
+        let expected = std::fs::canonicalize(&environment.worktree)?;
+        if root != expected {
+            return Err(ForgeError::EnvironmentDrift(format!(
+                "attached checkout root changed: expected {}, found {}",
+                expected.display(),
+                root.display()
+            )));
+        }
+        let identity = self.git.repo_identity(&root)?;
+        if identity.common_dir != environment.repo.common_dir {
+            return Err(ForgeError::EnvironmentDrift(
+                "attached checkout now belongs to a different repository".into(),
+            ));
+        }
+        let branch = self.git.current_branch(&root)?.ok_or_else(|| {
+            ForgeError::EnvironmentDrift("attached checkout is now detached".into())
+        })?;
+        if branch != environment.branch {
+            return Err(ForgeError::EnvironmentDrift(format!(
+                "attached checkout switched branches: expected {}, found {branch}",
+                environment.branch
+            )));
+        }
+        let target = git_target(item)?;
+        let head = self.git.head_oid(&root)?;
+        if head != target.base_oid {
+            return Err(ForgeError::EnvironmentDrift(format!(
+                "attached checkout HEAD changed: expected {}, found {}",
+                target.base_oid, head
+            )));
+        }
+        if let Some(expected_index) = environment.attached_index_oid.as_ref() {
+            let actual_index = self.git.index_tree_oid(&root)?;
+            if &actual_index != expected_index {
+                return Err(ForgeError::EnvironmentDrift(format!(
+                    "attached checkout index changed: expected {}, found {}",
+                    expected_index, actual_index
+                )));
+            }
+        }
+        if self.git.merge_in_progress(&root)
+            || self
+                .git
+                .status_porcelain(&root)?
+                .iter()
+                .any(|entry| entry.kind == crate::git::PorcelainKind::Unmerged)
+        {
+            return Err(ForgeError::EnvironmentDrift(
+                "attached checkout entered a merge, rebase, or conflicted state".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Revalidate the durable workspace boundary before a lease-backed tool
+    /// mutates files. This is a no-op for Forge-owned worktrees; attached
+    /// checkouts must still be the exact branch and HEAD the user granted.
+    pub fn verify_attempt_workspace(&self, item: &WorkItem, attempt_id: &AttemptId) -> Result<()> {
+        let environment = item
+            .environment_for_attempt(attempt_id)
+            .ok_or_else(|| ForgeError::EnvironmentDrift("no governed environment".into()))?;
+        self.verify_attached_checkout(item, environment)
     }
 
     fn worktree_path(
@@ -666,6 +963,43 @@ impl Forge {
         self.begin_attempt_inner(work_id, executor, pid, actor, true, Some(source_attempt_id))
     }
 
+    /// Begin an attempt using the placement selected when the item was
+    /// registered. Callers use this instead of branching on environment kind
+    /// throughout the daemon.
+    pub fn begin_workspace_attempt(
+        &self,
+        work_id: &WorkId,
+        executor: ExecutorDescriptor,
+        pid: Option<u32>,
+        actor: &ActorRef,
+    ) -> Result<(WorkItem, ExecutionLease)> {
+        let item = self.load(work_id)?;
+        if item.uses_attached_checkout() {
+            self.begin_attempt(work_id, executor, pid, actor)
+        } else {
+            self.begin_isolated_attempt(work_id, executor, pid, actor)
+        }
+    }
+
+    pub fn begin_workspace_attempt_from(
+        &self,
+        work_id: &WorkId,
+        source_attempt_id: &crate::model::AttemptId,
+        executor: ExecutorDescriptor,
+        pid: Option<u32>,
+        actor: &ActorRef,
+    ) -> Result<(WorkItem, ExecutionLease)> {
+        let item = self.load(work_id)?;
+        if item.uses_attached_checkout() {
+            if item.attempt(source_attempt_id).is_none() {
+                return Err(ForgeError::AttemptNotFound(source_attempt_id.clone()));
+            }
+            self.begin_attempt(work_id, executor, pid, actor)
+        } else {
+            self.begin_isolated_attempt_from(work_id, source_attempt_id, executor, pid, actor)
+        }
+    }
+
     fn begin_attempt_inner(
         &self,
         work_id: &WorkId,
@@ -688,6 +1022,22 @@ impl Forge {
                 state: item.state,
                 action: "begin attempt",
             });
+        }
+        if item.uses_attached_checkout() {
+            if isolated {
+                return Err(ForgeError::EnvironmentDrift(
+                    "attached checkouts cannot be forked into an isolated attempt".into(),
+                ));
+            }
+            if item.has_active_attempts() {
+                return Err(ForgeError::EnvironmentDrift(
+                    "the attached checkout already has an active executor".into(),
+                ));
+            }
+            let environment = item.environment.as_ref().ok_or_else(|| {
+                ForgeError::EnvironmentDrift("attached checkout is not provisioned".into())
+            })?;
+            self.verify_attached_checkout(&item, environment)?;
         }
         let attempt_id = crate::model::AttemptId::new();
         let attempt_seq = item.next_attempt_seq();
@@ -837,6 +1187,7 @@ impl Forge {
             worktree,
             branch,
             baseline_oid: staging.baseline_oid.clone(),
+            attached_index_oid: None,
             generation: staging.generation,
             derived_from: Some(crate::model::EnvironmentLineage {
                 branch: staging.branch.clone(),
@@ -1046,8 +1397,22 @@ impl Forge {
             ));
         }
 
-        // Pre-commit view: what the executor changed (tracked + untracked).
-        let pre_changed = self.worktree_changed_files(&env)?;
+        if env.kind == crate::model::EnvironmentKind::AttachedCheckout {
+            self.verify_attached_checkout(item, &env)?;
+        }
+
+        let message = format!(
+            "forge: checkpoint {} attempt {}",
+            item.id.as_str(),
+            attempt.seq
+        );
+        let author = options.author.clone().unwrap_or_default();
+
+        let pre_changed = if env.kind == crate::model::EnvironmentKind::AttachedCheckout {
+            self.workspace_changed_files(item, &env)?
+        } else {
+            self.worktree_changed_files(&env)?
+        };
         let violations = crate::policy::evaluate_paths(policy, &pre_changed)?;
         let exclusions = crate::policy::capture_exclusions(policy, &pre_changed)?;
         let candidates: Vec<String> = pre_changed
@@ -1064,18 +1429,29 @@ impl Forge {
             )));
         }
 
-        let message = format!(
-            "forge: checkpoint {} attempt {}",
-            item.id.as_str(),
-            attempt.seq
-        );
-        let author = options.author.clone().unwrap_or_default();
-        let sealed_head = self.git.commit_checkpoint_with_exclusions(
-            &env.worktree,
-            &message,
-            &author,
-            &exclusions,
-        )?;
+        let sealed_head = if env.kind == crate::model::EnvironmentKind::AttachedCheckout {
+            let snapshot = self.git.snapshot_worktree(
+                &env.worktree,
+                &env.baseline_oid,
+                &self.attached_index_path(&item.id),
+                &message,
+                &author,
+                &exclusions,
+            )?;
+            self.git.set_ref(
+                &env.worktree,
+                &Self::attached_snapshot_ref(&item.id),
+                &snapshot,
+            )?;
+            snapshot
+        } else {
+            self.git.commit_checkpoint_with_exclusions(
+                &env.worktree,
+                &message,
+                &author,
+                &exclusions,
+            )?
+        };
         self.commit_event(
             &item.id,
             actor,
@@ -1109,48 +1485,111 @@ impl Forge {
     /// and with `.git` internals filtered out.
     pub(crate) fn worktree_changed_files(&self, env: &GovernedEnv) -> Result<Vec<ChangedFile>> {
         let entries = self.git.status_porcelain(&env.worktree)?;
-        let mut files = Vec::new();
-        for entry in entries {
-            if entry.kind == crate::git::PorcelainKind::Ignored {
-                continue;
-            }
-            let path = crate::policy::normalize_git_path(&entry.path);
-            if crate::policy::is_git_internal(&path) {
-                continue;
-            }
-            let status = match entry.kind {
-                crate::git::PorcelainKind::Untracked => ChangeStatus::Untracked,
-                crate::git::PorcelainKind::Unmerged => ChangeStatus::Unmerged,
-                crate::git::PorcelainKind::RenameOrCopy => {
-                    if entry.xy.as_deref().unwrap_or_default().starts_with('C') {
-                        ChangeStatus::Copied
-                    } else {
-                        ChangeStatus::Renamed
-                    }
-                }
-                _ => {
-                    let xy = entry.xy.as_deref().unwrap_or_default();
-                    if xy.contains('A') {
-                        ChangeStatus::Added
-                    } else if xy.contains('D') {
-                        ChangeStatus::Deleted
-                    } else if xy.contains('T') {
-                        ChangeStatus::TypeChanged
-                    } else {
-                        ChangeStatus::Modified
-                    }
-                }
-            };
-            let (is_binary, byte_size) = file_facts(&env.worktree.join(&path));
-            files.push(ChangedFile {
-                path,
-                status,
-                old_path: entry.orig_path,
-                is_binary,
-                byte_size,
-            });
+        Ok(self.changed_files_from_porcelain(&env.worktree, entries))
+    }
+
+    /// Files changed inside this project's authority boundary. For an attached
+    /// checkout, the boundary begins at the immutable filesystem snapshot made
+    /// when the user attached Coder, so pre-existing dirty files stay out of
+    /// the project's live Changes view.
+    pub fn workspace_changed_files(
+        &self,
+        item: &WorkItem,
+        env: &GovernedEnv,
+    ) -> Result<Vec<ChangedFile>> {
+        if env.kind != crate::model::EnvironmentKind::AttachedCheckout {
+            return self.worktree_changed_files(env);
         }
-        Ok(files)
+        if !item.uses_attached_checkout() {
+            return Err(ForgeError::EnvironmentDrift(
+                "attached environment is not authorized by the work item".into(),
+            ));
+        }
+        let entries = self.git.status_against_tree(
+            &env.worktree,
+            &env.baseline_oid,
+            &self.attached_index_path(&item.id),
+        )?;
+        Ok(self.changed_files_from_porcelain(&env.worktree, entries))
+    }
+
+    fn changed_files_from_porcelain(
+        &self,
+        worktree: &Path,
+        entries: Vec<crate::git::PorcelainEntry>,
+    ) -> Vec<ChangedFile> {
+        entries
+            .into_iter()
+            .filter(|entry| entry.kind != crate::git::PorcelainKind::Ignored)
+            .filter_map(|entry| {
+                let path = crate::policy::normalize_git_path(&entry.path);
+                if crate::policy::is_git_internal(&path) {
+                    return None;
+                }
+                let status = match entry.kind {
+                    crate::git::PorcelainKind::Untracked => ChangeStatus::Untracked,
+                    crate::git::PorcelainKind::Unmerged => ChangeStatus::Unmerged,
+                    crate::git::PorcelainKind::RenameOrCopy => {
+                        if entry.xy.as_deref().unwrap_or_default().starts_with('C') {
+                            ChangeStatus::Copied
+                        } else {
+                            ChangeStatus::Renamed
+                        }
+                    }
+                    _ => {
+                        let xy = entry.xy.as_deref().unwrap_or_default();
+                        if xy.contains('A') {
+                            ChangeStatus::Added
+                        } else if xy.contains('D') {
+                            ChangeStatus::Deleted
+                        } else if xy.contains('T') {
+                            ChangeStatus::TypeChanged
+                        } else {
+                            ChangeStatus::Modified
+                        }
+                    }
+                };
+                let (is_binary, byte_size) = file_facts(&worktree.join(&path));
+                Some(ChangedFile {
+                    path,
+                    status,
+                    old_path: entry.orig_path,
+                    is_binary,
+                    byte_size,
+                })
+            })
+            .collect()
+    }
+
+    pub(crate) fn changed_files_between(
+        &self,
+        env: &GovernedEnv,
+        from: &crate::model::GitOid,
+        to: &crate::model::GitOid,
+    ) -> Result<Vec<ChangedFile>> {
+        Ok(self
+            .git
+            .diff_name_status(&env.worktree, from, to)?
+            .into_iter()
+            .map(|entry| {
+                let path = crate::policy::normalize_git_path(&entry.path);
+                let (is_binary, byte_size) = file_facts(&env.worktree.join(&path));
+                ChangedFile {
+                    path,
+                    status: match entry.status {
+                        'A' => ChangeStatus::Added,
+                        'D' => ChangeStatus::Deleted,
+                        'T' => ChangeStatus::TypeChanged,
+                        'R' => ChangeStatus::Renamed,
+                        'C' => ChangeStatus::Copied,
+                        _ => ChangeStatus::Modified,
+                    },
+                    old_path: entry.orig_path,
+                    is_binary,
+                    byte_size,
+                }
+            })
+            .collect())
     }
 
     pub(crate) fn capture_evidence(
@@ -1232,6 +1671,13 @@ impl Forge {
         let current_base_oid = match &item.target {
             WorkTarget::Git(t) => self.git.ref_oid(&t.repo_path, &t.base_ref)?,
         };
+        let evidence_base_oid = if env.kind == crate::model::EnvironmentKind::AttachedCheckout {
+            match &item.target {
+                WorkTarget::Git(target) => &target.base_oid,
+            }
+        } else {
+            &env.baseline_oid
+        };
         let mut manifest = EvidenceManifest {
             schema_version: MODEL_SCHEMA_VERSION,
             evidence_id: EvidenceId::new(),
@@ -1239,7 +1685,7 @@ impl Forge {
             baseline_oid: env.baseline_oid.clone(),
             sealed_head_oid: sealed_head.clone(),
             current_base_oid: current_base_oid.clone(),
-            base_advanced: current_base_oid != env.baseline_oid,
+            base_advanced: current_base_oid != *evidence_base_oid,
             patch_digest: Digest::sha256_hex(&patch),
             command_log_digest: Digest::sha256_hex(&commands),
             policy_report_digest: Digest::sha256_hex(&policy_json),
@@ -1278,6 +1724,17 @@ impl Forge {
         let _item_lock = self.store.lock_item(work_id)?;
         let mut item = self.load(work_id)?;
         expect_state(&item, WorkState::AwaitingReview, "record review decision")?;
+        if item.uses_attached_checkout() && decision.strategy != IntegrationStrategy::KeepCheckout {
+            return Err(ForgeError::DecisionInvalid {
+                reason: "attached checkout review must keep the already-present files".into(),
+            });
+        }
+        if !item.uses_attached_checkout() && decision.strategy == IntegrationStrategy::KeepCheckout
+        {
+            return Err(ForgeError::DecisionInvalid {
+                reason: "keep_checkout is only valid for an attached checkout".into(),
+            });
+        }
         item.review_decisions.push(decision.clone());
         self.commit_event(
             &item.id,
@@ -1369,6 +1826,10 @@ impl Forge {
                     }
                 }
             }
+            IntegrationStrategy::KeepCheckout => (
+                AcceptedDisposition::CheckoutRetained,
+                Some("reviewed changes already remain in the attached checkout".into()),
+            ),
         };
 
         item.disposition = Some(disposition);
@@ -1522,7 +1983,8 @@ impl Forge {
     }
 
     /// Guarded discard: release any running attempts, remove worktrees/branches,
-    /// then mark Discarded. Allowed from Draft, Ready, Executing, or AwaitingReview.
+    /// then mark Discarded. Failed setup may also be released so an unusable
+    /// project does not remain stuck in the user's repository catalog.
     pub fn discard(&self, work_id: &WorkId, actor: &ActorRef) -> Result<WorkItem> {
         let probe = self.load(work_id)?;
         let repo_key = match &probe.environment {
@@ -1536,7 +1998,8 @@ impl Forge {
             WorkState::Draft
             | WorkState::Ready
             | WorkState::Executing
-            | WorkState::AwaitingReview => {}
+            | WorkState::AwaitingReview
+            | WorkState::Failed => {}
             state => {
                 return Err(ForgeError::InvalidState {
                     work_id: work_id.clone(),
@@ -1544,6 +2007,16 @@ impl Forge {
                     action: "discard",
                 });
             }
+        }
+
+        // A user-owned checkout is not reclaimable containment. Its executor
+        // must acknowledge cancellation before Forge releases the boundary;
+        // otherwise a live process could keep editing after the item closes.
+        if item.uses_attached_checkout() && item.has_active_attempts() {
+            return Err(ForgeError::EnvironmentDrift(
+                "current checkout still has an active executor; stop it before closing the project"
+                    .into(),
+            ));
         }
 
         // Owner-initiated teardown: interrupt active attempts before deleting
@@ -1589,32 +2062,45 @@ impl Forge {
         environments.sort_by(|left, right| left.worktree.cmp(&right.worktree));
         environments.dedup_by(|left, right| left.worktree == right.worktree);
         for env in environments {
-            if env.worktree.exists() {
-                self.git.worktree_remove(&target.repo_path, &env.worktree)?;
+            match env.kind {
+                crate::model::EnvironmentKind::GitWorktree => {
+                    if env.worktree.exists() {
+                        self.git.worktree_remove(&target.repo_path, &env.worktree)?;
+                    }
+                    self.commit_event(
+                        work_id,
+                        actor,
+                        EventPayload::OperationSideEffect {
+                            operation_id: operation_id.clone(),
+                            effect: SideEffect::WorktreeRemoved {
+                                path: env.worktree.clone(),
+                            },
+                        },
+                    )?;
+                    if self.git.branch_exists(&target.repo_path, &env.branch) {
+                        self.git.branch_delete(&target.repo_path, &env.branch)?;
+                    }
+                    self.commit_event(
+                        work_id,
+                        actor,
+                        EventPayload::OperationSideEffect {
+                            operation_id: operation_id.clone(),
+                            effect: SideEffect::BranchRemoved {
+                                branch: env.branch.clone(),
+                            },
+                        },
+                    )?;
+                }
+                crate::model::EnvironmentKind::AttachedCheckout => {
+                    // Closing attached work releases only Forge metadata. The
+                    // checkout, branch, index, and files are principal-owned.
+                    if env.worktree.exists() {
+                        let _ = self
+                            .git
+                            .delete_ref(&env.worktree, &Self::attached_snapshot_ref(work_id));
+                    }
+                }
             }
-            self.commit_event(
-                work_id,
-                actor,
-                EventPayload::OperationSideEffect {
-                    operation_id: operation_id.clone(),
-                    effect: SideEffect::WorktreeRemoved {
-                        path: env.worktree.clone(),
-                    },
-                },
-            )?;
-            if self.git.branch_exists(&target.repo_path, &env.branch) {
-                self.git.branch_delete(&target.repo_path, &env.branch)?;
-            }
-            self.commit_event(
-                work_id,
-                actor,
-                EventPayload::OperationSideEffect {
-                    operation_id: operation_id.clone(),
-                    effect: SideEffect::BranchRemoved {
-                        branch: env.branch.clone(),
-                    },
-                },
-            )?;
         }
         self.commit_event(
             work_id,
@@ -1970,7 +2456,7 @@ impl Forge {
 
     /// Evidence-bound re-verification — the authorization boundary. Approval
     /// authorizes exactly one sealed state, never "whatever is there now".
-    fn verify_decision(&self, item: &WorkItem, decision: &ReviewDecision) -> Result<()> {
+    pub(crate) fn verify_decision(&self, item: &WorkItem, decision: &ReviewDecision) -> Result<()> {
         if item.has_active_attempts() {
             return Err(ForgeError::DecisionInvalid {
                 reason: "an attempt is still active".into(),
@@ -1986,19 +2472,6 @@ impl Forge {
                 reason: "environment generation changed since decision".into(),
             });
         }
-        let head = self.git.head_oid(&env.worktree)?;
-        if head != decision.reviewed_head_oid {
-            return Err(ForgeError::EnvironmentDrift(format!(
-                "head moved since review: {} != {}",
-                head.as_str(),
-                decision.reviewed_head_oid.as_str()
-            )));
-        }
-        if !self.git.is_clean(&env.worktree)? {
-            return Err(ForgeError::EnvironmentDrift(
-                "worktree dirty after seal".into(),
-            ));
-        }
         let manifest = self.read_evidence_manifest(item, decision)?;
         let stored = manifest
             .bundle_digest
@@ -2012,8 +2485,6 @@ impl Forge {
                 found: stored,
             });
         }
-        // Every policy violation in the sealed evidence must be explicitly
-        // acknowledged by the decision.
         let attempt = item
             .attempt(&decision.attempt_id)
             .ok_or_else(|| ForgeError::AttemptNotFound(decision.attempt_id.clone()))?;
@@ -2025,6 +2496,53 @@ impl Forge {
             .join("evidence")
             .join("policy.json");
         let report: PolicyReport = serde_json::from_str(&std::fs::read_to_string(&policy_path)?)?;
+        if env.kind == crate::model::EnvironmentKind::AttachedCheckout {
+            self.verify_attached_checkout(item, env)?;
+            let current_changes = self.workspace_changed_files(item, env)?;
+            let exclusions = crate::policy::capture_exclusions(&item.policy, &current_changes)?;
+            let candidates = current_changes
+                .iter()
+                .map(|file| crate::policy::normalize_git_path(&file.path))
+                .filter(|path| !exclusions.contains(path))
+                .collect::<Vec<_>>();
+            let risks = crate::policy::assess_capture(&item.policy, &env.worktree, &candidates)?;
+            if risks != report.capture_risks {
+                return Err(ForgeError::EnvironmentDrift(
+                    "attached checkout capture risks changed after review; review the latest files again"
+                        .into(),
+                ));
+            }
+            let current_tree = self.git.write_worktree_tree(
+                &env.worktree,
+                &env.baseline_oid,
+                &self.attached_index_path(&item.id),
+                &exclusions,
+            )?;
+            let reviewed_tree = self
+                .git
+                .tree_oid(&env.worktree, &decision.reviewed_head_oid)?;
+            if current_tree != reviewed_tree {
+                return Err(ForgeError::EnvironmentDrift(
+                    "attached checkout changed after review; review the latest files again".into(),
+                ));
+            }
+        } else {
+            let head = self.git.head_oid(&env.worktree)?;
+            if head != decision.reviewed_head_oid {
+                return Err(ForgeError::EnvironmentDrift(format!(
+                    "head moved since review: {} != {}",
+                    head.as_str(),
+                    decision.reviewed_head_oid.as_str()
+                )));
+            }
+            if !self.git.is_clean(&env.worktree)? {
+                return Err(ForgeError::EnvironmentDrift(
+                    "worktree dirty after seal".into(),
+                ));
+            }
+        }
+        // Every policy violation in the sealed evidence must be explicitly
+        // acknowledged by the decision.
         for violation in &report.violations {
             if !decision.acknowledged_violations.contains(&violation.id) {
                 return Err(ForgeError::PolicyViolation(format!(
@@ -2081,12 +2599,18 @@ impl Forge {
     // Internals
     // ------------------------------------------------------------------
 
-    /// Stable lock key for a repository path: hash of the canonicalized path,
-    /// so all work items targeting the same repo share one lock.
+    /// Stable lock key for a repository path: hash the canonical Git common
+    /// directory so a repository, its subdirectories, and all of its worktrees
+    /// share one lock.
     fn repo_lock_key(&self, repo_path: &Path) -> Result<String> {
-        let canonical =
-            std::fs::canonicalize(repo_path).unwrap_or_else(|_| repo_path.to_path_buf());
-        let digest = Digest::sha256_hex(canonical.to_string_lossy().as_bytes());
+        let lock_path = self
+            .git
+            .repo_identity(repo_path)
+            .map(|identity| identity.common_dir)
+            .unwrap_or_else(|_| {
+                std::fs::canonicalize(repo_path).unwrap_or_else(|_| repo_path.to_path_buf())
+            });
+        let digest = Digest::sha256_hex(lock_path.to_string_lossy().as_bytes());
         Ok(digest.as_str()[..16].to_string())
     }
 
@@ -2308,6 +2832,28 @@ mod tests {
         }
     }
 
+    #[test]
+    fn repository_lock_identity_is_shared_by_main_checkout_and_worktrees() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let worktree_parent = TempDir::new().unwrap();
+        let worktree = worktree_parent.path().join("peer");
+        fx.git
+            .worktree_add(&fx.repo, &worktree, "peer", &fx.baseline)
+            .unwrap();
+        let nested = fx.repo.join("nested");
+        fs::create_dir_all(&nested).unwrap();
+
+        assert_eq!(
+            forge.repo_lock_key(&fx.repo).unwrap(),
+            forge.repo_lock_key(&worktree).unwrap()
+        );
+        assert_eq!(
+            forge.repo_lock_key(&fx.repo).unwrap(),
+            forge.repo_lock_key(&nested).unwrap()
+        );
+    }
+
     /// The thin vertical slice, end to end:
     /// create → provision → attempt → complete → checkpoint → evidence →
     /// review → PreserveBranch → reopen → verify.
@@ -2435,6 +2981,278 @@ mod tests {
         let text = String::from_utf8_lossy(&patch);
         assert!(text.contains("app.txt"));
         assert!(text.contains("notes.md"));
+    }
+
+    #[test]
+    fn attached_checkout_reviews_only_changes_made_after_attachment() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+
+        fs::write(fx.repo.join("app.txt"), "owner staged\n").unwrap();
+        fx.git.run(&fx.repo, &["add", "--", "app.txt"]).unwrap();
+        fs::write(fx.repo.join("app.txt"), "owner staged\nowner unstaged\n").unwrap();
+        fs::write(fx.repo.join("owner.txt"), "owner untracked\n").unwrap();
+        let index_before = fx.git.run(&fx.repo, &["write-tree"]).unwrap();
+        let head_before = fx.git.head_oid(&fx.repo).unwrap();
+
+        let item = forge
+            .register_with_workspace_mode(
+                "Help in place",
+                "finish the active change",
+                &fx.repo,
+                "main",
+                "user-1",
+                WorkspaceMode::AttachedCheckout,
+                &actor(),
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &actor()).unwrap();
+        let env = item.environment.clone().unwrap();
+        assert_eq!(env.kind, crate::model::EnvironmentKind::AttachedCheckout);
+        assert_eq!(env.worktree, std::fs::canonicalize(&fx.repo).unwrap());
+        assert_eq!(forge.workspace_changed_files(&item, &env).unwrap(), vec![]);
+        assert_eq!(fx.git.worktree_list(&fx.repo).unwrap().len(), 1);
+
+        let (item, lease) = forge
+            .begin_workspace_attempt(&item.id, script_executor(), None, &actor())
+            .unwrap();
+        assert!(
+            item.attempt(&lease.attempt_id)
+                .unwrap()
+                .environment
+                .is_none()
+        );
+        fs::write(
+            fx.repo.join("app.txt"),
+            "owner staged\nowner unstaged\ncoder edit\n",
+        )
+        .unwrap();
+        fs::write(fx.repo.join("coder.txt"), "new from coder\n").unwrap();
+
+        let object_count_before = fx.git.run(&fx.repo, &["count-objects", "-v"]).unwrap();
+        let live = forge.workspace_changed_files(&item, &env).unwrap();
+        assert_eq!(
+            fx.git.run(&fx.repo, &["count-objects", "-v"]).unwrap(),
+            object_count_before,
+            "opening live Changes must not write working files into Git objects"
+        );
+        let live_paths = live
+            .iter()
+            .map(|file| file.path.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(live_paths, vec!["app.txt", "coder.txt"]);
+        assert!(!live_paths.contains(&"owner.txt"));
+
+        let reviewed = forge
+            .complete_attempt(&lease, &SealOptions::default(), &actor())
+            .unwrap();
+        let manifest = forge
+            .evidence_manifest_for_attempt(&reviewed.id, &lease.attempt_id)
+            .unwrap();
+        let reviewed_paths = manifest
+            .changed_files
+            .iter()
+            .map(|file| file.path.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(reviewed_paths, vec!["app.txt", "coder.txt"]);
+        assert_eq!(fx.git.head_oid(&fx.repo).unwrap(), head_before);
+        assert_eq!(
+            fx.git.current_branch(&fx.repo).unwrap().as_deref(),
+            Some("main")
+        );
+        assert_eq!(fx.git.run(&fx.repo, &["write-tree"]).unwrap(), index_before);
+
+        let decision = ReviewDecision {
+            id: ReviewDecisionId::new(),
+            actor: actor(),
+            attempt_id: lease.attempt_id.clone(),
+            environment_generation: env.generation,
+            evidence_id: manifest.evidence_id.clone(),
+            evidence_digest: manifest.bundle_digest.clone().unwrap(),
+            baseline_oid: env.baseline_oid.clone(),
+            reviewed_head_oid: manifest.sealed_head_oid.clone(),
+            expected_base_oid: fx.baseline.clone(),
+            acknowledged_violations: Vec::new(),
+            strategy: IntegrationStrategy::KeepCheckout,
+            rationale: Some("keep these files here".into()),
+            decided_at: Utc::now(),
+        };
+        let decision_id = decision.id.clone();
+        forge.decide(&reviewed.id, decision, &actor()).unwrap();
+        let accepted = forge
+            .apply_decision(&reviewed.id, &decision_id, &actor())
+            .unwrap();
+        assert_eq!(accepted.state, WorkState::Accepted);
+        assert_eq!(
+            accepted.disposition,
+            Some(AcceptedDisposition::CheckoutRetained)
+        );
+        assert_eq!(fx.git.head_oid(&fx.repo).unwrap(), head_before);
+        assert_eq!(fx.git.run(&fx.repo, &["write-tree"]).unwrap(), index_before);
+        assert_eq!(
+            fs::read_to_string(fx.repo.join("owner.txt")).unwrap(),
+            "owner untracked\n"
+        );
+        assert_eq!(
+            fs::read_to_string(fx.repo.join("coder.txt")).unwrap(),
+            "new from coder\n"
+        );
+    }
+
+    #[test]
+    fn discarding_attached_checkout_releases_metadata_but_keeps_files() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        fs::write(fx.repo.join("owner.txt"), "already here\n").unwrap();
+        let head_before = fx.git.head_oid(&fx.repo).unwrap();
+        let index_before = fx.git.run(&fx.repo, &["write-tree"]).unwrap();
+        let item = forge
+            .register_with_workspace_mode(
+                "Close in place",
+                "do not remove the checkout",
+                &fx.repo,
+                "main",
+                "user-1",
+                WorkspaceMode::AttachedCheckout,
+                &actor(),
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &actor()).unwrap();
+        let snapshot_ref = Forge::attached_snapshot_ref(&item.id);
+        assert!(fx.git.ref_oid(&fx.repo, &snapshot_ref).is_ok());
+        let (_item, lease) = forge
+            .begin_workspace_attempt(&item.id, script_executor(), None, &actor())
+            .unwrap();
+        fs::write(fx.repo.join("coder.txt"), "leave me here\n").unwrap();
+
+        assert!(matches!(
+            forge.discard(&item.id, &actor()),
+            Err(ForgeError::EnvironmentDrift(message)) if message.contains("active executor")
+        ));
+        assert_eq!(
+            fs::read_to_string(fx.repo.join("coder.txt")).unwrap(),
+            "leave me here\n"
+        );
+        forge
+            .interrupt_attempt(&lease, RecoveryDisposition::RestartAllowed, &actor())
+            .unwrap();
+        let discarded = forge.discard(&item.id, &actor()).unwrap();
+
+        assert_eq!(discarded.state, WorkState::Discarded);
+        assert!(fx.repo.is_dir());
+        assert_eq!(fx.git.head_oid(&fx.repo).unwrap(), head_before);
+        assert_eq!(
+            fx.git.current_branch(&fx.repo).unwrap().as_deref(),
+            Some("main")
+        );
+        assert_eq!(fx.git.run(&fx.repo, &["write-tree"]).unwrap(), index_before);
+        assert_eq!(
+            fs::read_to_string(fx.repo.join("owner.txt")).unwrap(),
+            "already here\n"
+        );
+        assert_eq!(
+            fs::read_to_string(fx.repo.join("coder.txt")).unwrap(),
+            "leave me here\n"
+        );
+        assert!(fx.git.ref_oid(&fx.repo, &snapshot_ref).is_err());
+    }
+
+    #[test]
+    fn attached_checkout_rejects_a_risky_dirty_baseline_before_snapshotting_it() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let secret = ["ghp_", "123456789012345678901234567890123456"].concat();
+        fs::write(fx.repo.join("local-token.txt"), &secret).unwrap();
+        let head_before = fx.git.head_oid(&fx.repo).unwrap();
+        let index_before = fx.git.index_tree_oid(&fx.repo).unwrap();
+        let item = forge
+            .register_with_workspace_mode(
+                "Risky attached",
+                "do not snapshot owner secrets",
+                &fx.repo,
+                "main",
+                "user-1",
+                WorkspaceMode::AttachedCheckout,
+                &actor(),
+            )
+            .unwrap();
+
+        assert!(matches!(
+            forge.provision(&item.id, &actor()),
+            Err(ForgeError::CaptureBlocked(message)) if message.contains("unsafe capture")
+        ));
+        assert!(
+            fx.git
+                .ref_oid(&fx.repo, &Forge::attached_snapshot_ref(&item.id))
+                .is_err()
+        );
+        assert_eq!(fx.git.head_oid(&fx.repo).unwrap(), head_before);
+        assert_eq!(fx.git.index_tree_oid(&fx.repo).unwrap(), index_before);
+        assert_eq!(
+            fs::read_to_string(fx.repo.join("local-token.txt")).unwrap(),
+            secret
+        );
+
+        let failed = forge.load(&item.id).unwrap();
+        assert_eq!(failed.state, WorkState::Failed);
+        let discarded = forge.discard(&item.id, &actor()).unwrap();
+        assert_eq!(discarded.state, WorkState::Discarded);
+        assert_eq!(fx.git.head_oid(&fx.repo).unwrap(), head_before);
+        assert_eq!(fx.git.index_tree_oid(&fx.repo).unwrap(), index_before);
+        assert_eq!(
+            fs::read_to_string(fx.repo.join("local-token.txt")).unwrap(),
+            secret
+        );
+    }
+
+    #[test]
+    fn attached_checkout_rejects_parallel_owners_and_branch_drift() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let first = forge
+            .register_with_workspace_mode(
+                "First attached",
+                "own the checkout",
+                &fx.repo,
+                "main",
+                "user-1",
+                WorkspaceMode::AttachedCheckout,
+                &actor(),
+            )
+            .unwrap();
+        forge.provision(&first.id, &actor()).unwrap();
+        let second = forge
+            .register_with_workspace_mode(
+                "Second attached",
+                "must not share authority",
+                &fx.repo,
+                "main",
+                "user-1",
+                WorkspaceMode::AttachedCheckout,
+                &actor(),
+            )
+            .unwrap();
+        assert!(matches!(
+            forge.provision(&second.id, &actor()),
+            Err(ForgeError::EnvironmentDrift(message)) if message.contains("already attached")
+        ));
+
+        fs::write(fx.repo.join("staged-after-attach.txt"), "staged\n").unwrap();
+        fx.git
+            .run(&fx.repo, &["add", "--", "staged-after-attach.txt"])
+            .unwrap();
+        assert!(matches!(
+            forge.begin_workspace_attempt(&first.id, script_executor(), None, &actor()),
+            Err(ForgeError::EnvironmentDrift(message)) if message.contains("index changed")
+        ));
+        fx.git.run(&fx.repo, &["reset", "--mixed", "HEAD"]).unwrap();
+        fs::remove_file(fx.repo.join("staged-after-attach.txt")).unwrap();
+
+        fx.git.run(&fx.repo, &["switch", "-c", "other"]).unwrap();
+        assert!(matches!(
+            forge.begin_workspace_attempt(&first.id, script_executor(), None, &actor()),
+            Err(ForgeError::EnvironmentDrift(message)) if message.contains("switched branches")
+        ));
     }
 
     #[test]
@@ -3252,7 +4070,7 @@ mod tests {
         let (item, lease, env) = to_executing_with_policy(&fx, &forge, policy);
         fs::write(
             env.worktree.join("id_rsa"),
-            "-----BEGIN RSA PRIVATE KEY-----\nMII\n-----END RSA PRIVATE KEY-----\n",
+            "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA00000000000000000000000000000000000000000000\n-----END RSA PRIVATE KEY-----\n",
         )
         .unwrap();
 
@@ -3296,7 +4114,7 @@ mod tests {
             to_executing_with_policy(&fx, &forge, crate::model::WorkPolicy::default());
         fs::write(
             env.worktree.join("key.pem"),
-            "-----BEGIN RSA PRIVATE KEY-----\nMII\n-----END RSA PRIVATE KEY-----\n",
+            "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA00000000000000000000000000000000000000000000\n-----END RSA PRIVATE KEY-----\n",
         )
         .unwrap();
         let options = SealOptions {

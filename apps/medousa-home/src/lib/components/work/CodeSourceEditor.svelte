@@ -95,7 +95,6 @@
   import { readCodeWorkbenchPreferences } from "$lib/config/codeWorkbenchPreferences";
   import { codeEditorFind } from "$lib/stores/codeEditorFind.svelte";
   import { codeEditorStatus } from "$lib/stores/codeEditorStatus.svelte";
-
   interface Props {
     fill?: boolean;
     workId?: string;
@@ -2067,6 +2066,7 @@
     {surfaceError}
     {landError}
     {needsProvision}
+    attachedCheckout={detail?.workspace_mode === "attached_checkout" || detail?.environment?.kind === "attached_checkout"}
     {onProvision}
     {externalVersions}
     bind:editor

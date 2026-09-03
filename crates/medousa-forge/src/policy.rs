@@ -138,12 +138,58 @@ pub fn assess_capture(
     Ok(risks)
 }
 
-const SECRET_NEEDLES: &[(&str, &str)] = &[
-    ("-----BEGIN RSA PRIVATE KEY-----", "rsa_private_key"),
-    ("-----BEGIN OPENSSH PRIVATE KEY-----", "openssh_private_key"),
-    ("-----BEGIN PRIVATE KEY-----", "pkcs8_private_key"),
-    ("-----BEGIN PGP PRIVATE KEY BLOCK-----", "pgp_private_key"),
+const SECRET_ENVELOPES: &[(&str, &str, &str)] = &[
+    (
+        "-----BEGIN RSA PRIVATE KEY-----",
+        "-----END RSA PRIVATE KEY-----",
+        "rsa_private_key",
+    ),
+    (
+        "-----BEGIN OPENSSH PRIVATE KEY-----",
+        "-----END OPENSSH PRIVATE KEY-----",
+        "openssh_private_key",
+    ),
+    (
+        "-----BEGIN PRIVATE KEY-----",
+        "-----END PRIVATE KEY-----",
+        "pkcs8_private_key",
+    ),
+    (
+        "-----BEGIN PGP PRIVATE KEY BLOCK-----",
+        "-----END PGP PRIVATE KEY BLOCK-----",
+        "pgp_private_key",
+    ),
 ];
+
+const MIN_ARMORED_PAYLOAD_CHARS: usize = 32;
+
+fn armored_payload_chars(body: &str) -> usize {
+    body.lines()
+        .map(str::trim)
+        .filter(|line| {
+            !line.is_empty()
+                && line.chars().all(|ch| {
+                    ch.is_ascii_alphanumeric() || matches!(ch, '+' | '/' | '=' | '-' | '_')
+                })
+        })
+        .map(|line| line.trim_end_matches('=').len())
+        .sum()
+}
+
+fn contains_armored_secret(text: &str, begin: &str, end: &str) -> bool {
+    let mut remaining = text;
+    while let Some(begin_at) = remaining.find(begin) {
+        let after_begin = &remaining[begin_at + begin.len()..];
+        let Some(end_at) = after_begin.find(end) else {
+            return false;
+        };
+        if armored_payload_chars(&after_begin[..end_at]) >= MIN_ARMORED_PAYLOAD_CHARS {
+            return true;
+        }
+        remaining = &after_begin[end_at + end.len()..];
+    }
+    false
+}
 
 /// Scan a file for likely secrets. Skips binaries (NUL sniff) and files too
 /// large to read safely. Returns the pattern name on a hit.
@@ -158,8 +204,8 @@ pub fn secret_scan_file(path: &Path) -> Result<Option<String>> {
         return Ok(None); // binary
     }
     let text = String::from_utf8_lossy(&bytes);
-    for (needle, name) in SECRET_NEEDLES {
-        if text.contains(needle) {
+    for (begin, end, name) in SECRET_ENVELOPES {
+        if contains_armored_secret(&text, begin, end) {
             return Ok(Some((*name).to_string()));
         }
     }
@@ -296,7 +342,7 @@ mod tests {
         std::fs::write(tmp.path().join("big.bin"), vec![0u8; 4096]).unwrap();
         std::fs::write(
             tmp.path().join("key.pem"),
-            "-----BEGIN RSA PRIVATE KEY-----\nMII...\n-----END RSA PRIVATE KEY-----\n",
+            "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA00000000000000000000000000000000000000000000\n-----END RSA PRIVATE KEY-----\n",
         )
         .unwrap();
 
@@ -323,6 +369,31 @@ mod tests {
             r,
             CaptureRisk::OversizeFile { path, .. } if path == "small.txt"
         )));
+    }
+
+    #[test]
+    fn secret_scan_ignores_pem_fixture_source_code() {
+        let tmp = TempDir::new().unwrap();
+        let source = tmp.path().join("fixture.rs");
+        std::fs::write(
+            &source,
+            r#"const KEY_FIXTURE: &str = "-----BEGIN RSA PRIVATE KEY-----\nMII\n-----END RSA PRIVATE KEY-----\n";"#,
+        )
+        .unwrap();
+
+        assert_eq!(secret_scan_file(&source).unwrap(), None);
+    }
+
+    #[test]
+    fn secret_scanner_does_not_flag_its_own_test_sources() {
+        let source_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        for source in ["forge.rs", "policy.rs"] {
+            assert_eq!(
+                secret_scan_file(&source_root.join(source)).unwrap(),
+                None,
+                "{source} should not look like captured credentials"
+            );
+        }
     }
 
     #[test]

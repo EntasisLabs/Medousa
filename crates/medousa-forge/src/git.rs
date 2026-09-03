@@ -189,6 +189,74 @@ impl GitEngine {
         })
     }
 
+    fn run_with_index_bytes(&self, cwd: &Path, index: &Path, args: &[&str]) -> Result<Vec<u8>> {
+        let mut command = self.command();
+        command
+            .args(args)
+            .current_dir(cwd)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env("GIT_INDEX_FILE", index)
+            .env("GIT_TERMINAL_PROMPT", "0");
+        let (stdout, stderr, truncated, status) =
+            run_command_bounded(command, MAX_CAPTURE_BYTES)
+                .map_err(|err| ForgeError::Git(format_git_spawn_error(args, &err.to_string())))?;
+        if truncated {
+            return Err(ForgeError::Git(format_git_command_error(
+                args,
+                "output exceeded capture budget",
+            )));
+        }
+        if !status.success() {
+            let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&stdout).trim().to_string();
+            let detail = if !stderr.is_empty() { stderr } else { stdout };
+            return Err(ForgeError::Git(format_git_command_error(
+                args,
+                if detail.is_empty() {
+                    status.to_string()
+                } else {
+                    detail
+                },
+            )));
+        }
+        Ok(stdout)
+    }
+
+    fn run_with_index(&self, cwd: &Path, index: &Path, args: &[&str]) -> Result<String> {
+        Ok(String::from_utf8_lossy(&self.run_with_index_bytes(cwd, index, args)?).to_string())
+    }
+
+    fn refresh_index(&self, cwd: &Path, index: &Path) -> Result<()> {
+        let args = ["update-index", "--refresh"];
+        let mut command = self.command();
+        command
+            .args(args)
+            .current_dir(cwd)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env("GIT_INDEX_FILE", index)
+            .env("GIT_TERMINAL_PROMPT", "0");
+        let (_stdout, stderr, truncated, status) = run_command_bounded(command, MAX_CAPTURE_BYTES)
+            .map_err(|err| ForgeError::Git(format_git_spawn_error(&args, &err.to_string())))?;
+        if truncated {
+            return Err(ForgeError::Git(format_git_command_error(
+                &args,
+                "output exceeded capture budget",
+            )));
+        }
+        match status.code() {
+            // Exit 1 only means at least one worktree file differs from the
+            // temporary index, which is precisely what the following diff is
+            // meant to report.
+            Some(0) | Some(1) => Ok(()),
+            _ => Err(ForgeError::Git(format_git_command_error(
+                &args,
+                String::from_utf8_lossy(&stderr).trim(),
+            ))),
+        }
+    }
+
     fn run_with_stdin(&self, cwd: &Path, args: &[&str], stdin: &[u8]) -> Result<()> {
         let mut child = self
             .command()
@@ -990,6 +1058,192 @@ impl GitEngine {
         Ok(GitOid::new(out.trim()))
     }
 
+    fn validate_forge_ref(&self, cwd: &Path, ref_name: &str) -> Result<()> {
+        if !ref_name.starts_with("refs/medousa/forge/") {
+            return Err(ForgeError::Git(format!(
+                "ref is outside Forge's namespace: {ref_name}"
+            )));
+        }
+        self.run(cwd, &["check-ref-format", ref_name])?;
+        Ok(())
+    }
+
+    /// Move one Forge-owned namespaced ref. User branches are rejected.
+    pub fn set_ref(&self, cwd: &Path, ref_name: &str, oid: &GitOid) -> Result<()> {
+        self.validate_forge_ref(cwd, ref_name)?;
+        self.run(cwd, &["update-ref", ref_name, oid.as_str()])?;
+        Ok(())
+    }
+
+    pub fn delete_ref(&self, cwd: &Path, ref_name: &str) -> Result<()> {
+        self.validate_forge_ref(cwd, ref_name)?;
+        self.run(cwd, &["update-ref", "-d", ref_name])?;
+        Ok(())
+    }
+
+    pub fn tree_oid(&self, cwd: &Path, commit: &GitOid) -> Result<GitOid> {
+        let revision = format!("{}^{{tree}}", commit.as_str());
+        let out = self.run(cwd, &["rev-parse", "--verify", &revision])?;
+        Ok(GitOid::new(out.trim()))
+    }
+
+    /// Fingerprint the checkout's real index without changing it.
+    pub fn index_tree_oid(&self, cwd: &Path) -> Result<GitOid> {
+        let out = self.run(cwd, &["write-tree"])?;
+        Ok(GitOid::new(out.trim()))
+    }
+
+    /// Compare the working tree to an arbitrary tree through a temporary
+    /// index. Unlike `git status`, this does not compare that temporary index
+    /// to the checkout's real `HEAD`, and unlike `git add`, it does not write
+    /// working files into the repository's object database.
+    pub fn status_against_tree(
+        &self,
+        cwd: &Path,
+        baseline: &GitOid,
+        temporary_index: &Path,
+    ) -> Result<Vec<PorcelainEntry>> {
+        if let Some(parent_dir) = temporary_index.parent() {
+            std::fs::create_dir_all(parent_dir)?;
+        }
+        if temporary_index.exists() {
+            std::fs::remove_file(temporary_index)?;
+        }
+        let result = (|| {
+            self.run_with_index(cwd, temporary_index, &["read-tree", baseline.as_str()])?;
+            self.refresh_index(cwd, temporary_index)?;
+            let changed = self.run_with_index_bytes(
+                cwd,
+                temporary_index,
+                &[
+                    "diff-index",
+                    "--name-status",
+                    "-z",
+                    "--find-renames",
+                    baseline.as_str(),
+                    "--",
+                ],
+            )?;
+            let untracked = self.run_with_index_bytes(
+                cwd,
+                temporary_index,
+                &["ls-files", "--others", "--exclude-standard", "-z"],
+            )?;
+            let mut entries = parse_name_status_z(&changed)
+                .into_iter()
+                .map(|entry| PorcelainEntry {
+                    path: entry.path,
+                    kind: match entry.status {
+                        'R' | 'C' => PorcelainKind::RenameOrCopy,
+                        'U' => PorcelainKind::Unmerged,
+                        _ => PorcelainKind::Ordinary,
+                    },
+                    orig_path: entry.orig_path,
+                    xy: Some(format!("{}.", entry.status)),
+                })
+                .collect::<Vec<_>>();
+            entries.extend(
+                String::from_utf8_lossy(&untracked)
+                    .split('\0')
+                    .filter(|path| !path.is_empty())
+                    .map(|path| PorcelainEntry {
+                        path: path.to_string(),
+                        kind: PorcelainKind::Untracked,
+                        orig_path: None,
+                        xy: None,
+                    }),
+            );
+            entries.sort_by(|left, right| left.path.cmp(&right.path));
+            Ok(entries)
+        })();
+        let _ = std::fs::remove_file(temporary_index);
+        result
+    }
+
+    /// Materialize the checkout's current non-ignored filesystem state into a
+    /// temporary Git index and return its tree object. The real index, HEAD,
+    /// branch, and working tree are never changed.
+    pub fn write_worktree_tree(
+        &self,
+        cwd: &Path,
+        parent: &GitOid,
+        temporary_index: &Path,
+        exclude: &[String],
+    ) -> Result<GitOid> {
+        if let Some(parent_dir) = temporary_index.parent() {
+            std::fs::create_dir_all(parent_dir)?;
+        }
+        if temporary_index.exists() {
+            std::fs::remove_file(temporary_index)?;
+        }
+        let result = (|| {
+            self.run_with_index(cwd, temporary_index, &["read-tree", parent.as_str()])?;
+            self.run_with_index(cwd, temporary_index, &["add", "-A"])?;
+            if !exclude.is_empty() {
+                let mut args: Vec<&str> = vec!["reset", "-q", parent.as_str(), "--"];
+                args.extend(exclude.iter().map(String::as_str));
+                self.run_with_index(cwd, temporary_index, &args)?;
+            }
+            let tree = self.run_with_index(cwd, temporary_index, &["write-tree"])?;
+            Ok(GitOid::new(tree.trim()))
+        })();
+        let _ = std::fs::remove_file(temporary_index);
+        result
+    }
+
+    /// Create a commit object representing the checkout without touching its
+    /// real index or branch. The returned object remains unreachable until the
+    /// caller pins it with a Forge-owned namespaced ref.
+    pub fn snapshot_worktree(
+        &self,
+        cwd: &Path,
+        parent: &GitOid,
+        temporary_index: &Path,
+        message: &str,
+        author: &CheckpointAuthor,
+        exclude: &[String],
+    ) -> Result<GitOid> {
+        let tree = self.write_worktree_tree(cwd, parent, temporary_index, exclude)?;
+        if tree == self.tree_oid(cwd, parent)? {
+            return Ok(parent.clone());
+        }
+        let mut command = self.command();
+        command
+            .args([
+                "commit-tree",
+                tree.as_str(),
+                "-p",
+                parent.as_str(),
+                "-m",
+                message,
+            ])
+            .current_dir(cwd)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GIT_AUTHOR_NAME", &author.name)
+            .env("GIT_AUTHOR_EMAIL", &author.email)
+            .env("GIT_COMMITTER_NAME", FORGE_COMMITTER_NAME)
+            .env("GIT_COMMITTER_EMAIL", FORGE_COMMITTER_EMAIL);
+        let args = ["commit-tree"];
+        let (stdout, stderr, truncated, status) =
+            run_command_bounded(command, MAX_CAPTURE_BYTES)
+                .map_err(|err| ForgeError::Git(format_git_spawn_error(&args, &err.to_string())))?;
+        if truncated {
+            return Err(ForgeError::Git(format_git_command_error(
+                &args,
+                "output exceeded capture budget",
+            )));
+        }
+        if !status.success() {
+            return Err(ForgeError::Git(format_git_command_error(
+                &args,
+                String::from_utf8_lossy(&stderr).trim(),
+            )));
+        }
+        Ok(GitOid::new(String::from_utf8_lossy(&stdout).trim()))
+    }
+
     /// Export one exact checkpoint and all reachable Git objects as a portable
     /// bundle. The caller persists and content-addresses the resulting file.
     pub fn export_checkpoint_bundle(
@@ -1734,6 +1988,64 @@ mod tests {
             .unwrap();
         let untracked_text = String::from_utf8_lossy(&untracked);
         assert!(untracked_text.contains("+fresh"));
+    }
+
+    #[test]
+    fn snapshot_worktree_captures_files_without_touching_head_or_index() {
+        let (tmp, git, head) = init_repo();
+        let scratch = TempDir::new().unwrap();
+        fs::write(tmp.path().join("hello.txt"), "staged\n").unwrap();
+        git.run(tmp.path(), &["add", "--", "hello.txt"]).unwrap();
+        fs::write(tmp.path().join("hello.txt"), "working\n").unwrap();
+        fs::write(tmp.path().join("new.txt"), "new\n").unwrap();
+        let index_before = git.run(tmp.path(), &["write-tree"]).unwrap();
+        let status_before = git
+            .run_bytes(
+                tmp.path(),
+                &["status", "--porcelain=v2", "-z", "--untracked-files=all"],
+            )
+            .unwrap();
+        let temporary_index = scratch.path().join("forge-snapshot.index");
+
+        let snapshot = git
+            .snapshot_worktree(
+                tmp.path(),
+                &head,
+                &temporary_index,
+                "snapshot",
+                &CheckpointAuthor::default(),
+                &[],
+            )
+            .unwrap();
+
+        assert_eq!(git.head_oid(tmp.path()).unwrap(), head);
+        assert_eq!(
+            git.current_branch(tmp.path()).unwrap().as_deref(),
+            Some("main")
+        );
+        assert_eq!(git.run(tmp.path(), &["write-tree"]).unwrap(), index_before);
+        assert_eq!(
+            git.run_bytes(
+                tmp.path(),
+                &["status", "--porcelain=v2", "-z", "--untracked-files=all"],
+            )
+            .unwrap(),
+            status_before
+        );
+        assert_eq!(
+            git.show_bytes(tmp.path(), &snapshot, "hello.txt").unwrap(),
+            b"working\n"
+        );
+        assert_eq!(
+            git.show_bytes(tmp.path(), &snapshot, "new.txt").unwrap(),
+            b"new\n"
+        );
+        assert!(!temporary_index.exists());
+        assert!(
+            git.set_ref(tmp.path(), "refs/heads/main", &snapshot)
+                .is_err()
+        );
+        assert_eq!(git.head_oid(tmp.path()).unwrap(), head);
     }
 
     #[test]

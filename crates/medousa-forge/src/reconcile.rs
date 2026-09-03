@@ -249,25 +249,59 @@ impl Forge {
                 path,
                 branch,
                 baseline_oid,
-            } => Some((path.clone(), branch.clone(), baseline_oid.clone())),
+            } => Some((
+                crate::model::EnvironmentKind::GitWorktree,
+                path.clone(),
+                branch.clone(),
+                baseline_oid.clone(),
+                None,
+                None,
+            )),
+            SideEffect::CheckoutAttached {
+                path,
+                branch,
+                baseline_oid,
+                attached_index_oid,
+                snapshot_ref,
+            } => Some((
+                crate::model::EnvironmentKind::AttachedCheckout,
+                path.clone(),
+                branch.clone(),
+                baseline_oid.clone(),
+                Some(attached_index_oid.clone()),
+                Some(snapshot_ref.clone()),
+            )),
             _ => None,
         });
         let mut item = self.load(work_id)?;
         match added {
-            Some((path, branch, baseline_oid)) if path.exists() => {
-                // Worktree exists: complete the provisioning record.
+            Some((kind, path, branch, baseline_oid, attached_index_oid, snapshot_ref))
+                if path.exists() =>
+            {
+                if let Some(snapshot_ref) = snapshot_ref
+                    && self.git.ref_oid(&path, &snapshot_ref)? != baseline_oid
+                {
+                    return Err(ForgeError::EnvironmentDrift(
+                        "attached checkout snapshot ref changed during recovery".into(),
+                    ));
+                }
+                // Governed root exists: complete the provisioning record.
                 let target = crate::forge::git_target(&item)?;
                 let repo = self.git.repo_identity(&target.repo_path)?;
                 let generation = 1;
                 let env = crate::model::GovernedEnv {
-                    kind: crate::model::EnvironmentKind::GitWorktree,
+                    kind,
                     repo,
                     worktree: path,
                     branch,
                     baseline_oid,
+                    attached_index_oid,
                     generation,
                     derived_from: None,
                 };
+                if env.kind == crate::model::EnvironmentKind::AttachedCheckout {
+                    self.verify_attached_checkout(&item, &env)?;
+                }
                 item.environment = Some(env.clone());
                 self.commit_event(
                     work_id,
@@ -287,17 +321,17 @@ impl Forge {
                     work_id: work_id.clone(),
                     operation_id: open.operation_id.clone(),
                     kind: OperationKind::Provision,
-                    outcome: "worktree existed; provisioning completed".into(),
+                    outcome: "governed workspace existed; provisioning completed".into(),
                 });
             }
             _ => {
-                // No worktree on disk: nothing happened for real; back to Draft.
+                // No governed root on disk: nothing happened for real; back to Draft.
                 self.commit_event(
                     work_id,
                     actor,
                     EventPayload::OperationAborted {
                         operation_id: open.operation_id.clone(),
-                        reason: "crashed before worktree creation".into(),
+                        reason: "crashed before workspace provisioning".into(),
                     },
                 )?;
                 self.transition(&mut item, WorkState::Draft, None, actor)?;
@@ -305,7 +339,7 @@ impl Forge {
                     work_id: work_id.clone(),
                     operation_id: open.operation_id.clone(),
                     kind: OperationKind::Provision,
-                    outcome: "no worktree; rolled back to draft".into(),
+                    outcome: "no governed workspace; rolled back to draft".into(),
                 });
             }
         }
@@ -361,7 +395,11 @@ impl Forge {
                     .clone();
                 // Re-derive evidence deterministically (idempotent: same
                 // inputs, same digest, files overwritten).
-                let pre_changed = self.worktree_changed_files(&env)?;
+                let pre_changed = if env.kind == crate::model::EnvironmentKind::AttachedCheckout {
+                    self.changed_files_between(&env, &env.baseline_oid, &sealed_head)?
+                } else {
+                    self.worktree_changed_files(&env)?
+                };
                 let violations = crate::policy::evaluate_paths(&item.policy, &pre_changed)?;
                 let evidence = self.capture_evidence(
                     &item,
@@ -512,6 +550,34 @@ impl Forge {
                 crate::model::AcceptedDisposition::PatchExported,
                 format!("patch verified at {}", path.display()),
             )
+        } else if item.uses_attached_checkout() {
+            let Some(decision) = item.review_decisions.last().cloned() else {
+                return Err(ForgeError::EnvironmentDrift(
+                    "attached-checkout integration has no review decision".into(),
+                ));
+            };
+            if let Err(error) = self.verify_decision(&item, &decision) {
+                self.commit_event(
+                    work_id,
+                    actor,
+                    EventPayload::OperationAborted {
+                        operation_id: open.operation_id.clone(),
+                        reason: error.to_string(),
+                    },
+                )?;
+                self.transition(&mut item, WorkState::AwaitingReview, None, actor)?;
+                report.rolled_forward.push(RolledForward {
+                    work_id: work_id.clone(),
+                    operation_id: open.operation_id.clone(),
+                    kind: OperationKind::Integrate,
+                    outcome: "attached checkout changed; back to review".into(),
+                });
+                return Ok(());
+            }
+            (
+                crate::model::AcceptedDisposition::CheckoutRetained,
+                "no Git side effects; reviewed checkout retained".to_string(),
+            )
         } else {
             // No integration side effect landed: PreserveBranch was in flight
             // (or nothing happened). PreserveBranch has no side effects, so
@@ -559,11 +625,22 @@ impl Forge {
         let mut item = self.load(work_id)?;
         if let Some(env) = item.environment.clone() {
             let target = crate::forge::git_target(&item)?;
-            if env.worktree.exists() {
-                self.git.worktree_remove(&target.repo_path, &env.worktree)?;
-            }
-            if self.git.branch_exists(&target.repo_path, &env.branch) {
-                self.git.branch_delete(&target.repo_path, &env.branch)?;
+            match env.kind {
+                crate::model::EnvironmentKind::GitWorktree => {
+                    if env.worktree.exists() {
+                        self.git.worktree_remove(&target.repo_path, &env.worktree)?;
+                    }
+                    if self.git.branch_exists(&target.repo_path, &env.branch) {
+                        self.git.branch_delete(&target.repo_path, &env.branch)?;
+                    }
+                }
+                crate::model::EnvironmentKind::AttachedCheckout => {
+                    if env.worktree.exists() {
+                        let _ = self
+                            .git
+                            .delete_ref(&env.worktree, &Self::attached_snapshot_ref(work_id));
+                    }
+                }
             }
         }
         self.commit_event(

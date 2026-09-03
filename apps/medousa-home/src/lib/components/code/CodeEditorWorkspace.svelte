@@ -34,6 +34,7 @@
     surfaceError: string | null;
     landError: string | null;
     needsProvision: boolean;
+    attachedCheckout?: boolean;
     onProvision?: () => void | Promise<void>;
     externalVersions: Record<string, ForgeSourceFile>;
     editor: CodeMirrorHost | undefined;
@@ -103,6 +104,7 @@
     surfaceError,
     landError,
     needsProvision,
+    attachedCheckout = false,
     onProvision,
     externalVersions,
     editor = $bindable(),
@@ -271,6 +273,7 @@
   {#if changes.open}
     <CodeChangesPanel
       changes={changes.changes}
+      {attachedCheckout}
       loading={changes.loading}
       error={changes.error}
       selectedPath={changes.selectedPath}
@@ -314,7 +317,9 @@
           title="Set up this project"
           description={landError
             ? humanizeForgeMessage(landError)
-            : "Create the working copy so the tree and editor can open."}
+            : attachedCheckout
+              ? "Attach the current checkout so the tree and editor can open."
+              : "Create the working copy so the tree and editor can open."}
         >
           {#if onProvision}
             <button

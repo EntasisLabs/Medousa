@@ -514,11 +514,20 @@ pub async fn affected_tests(
         .unwrap_or_default();
     if paths.is_empty() {
         paths = forge
-            .git()
-            .status_porcelain(&entry.worktree)
+            .load(&lease.work_id)
+            .and_then(|item| {
+                let environment = item
+                    .environment_for_attempt(&lease.attempt_id)
+                    .ok_or_else(|| {
+                        medousa_forge::ForgeError::EnvironmentDrift(
+                            "Coder attempt has no governed workspace".into(),
+                        )
+                    })?;
+                forge.workspace_changed_files(&item, environment)
+            })
             .map_err(|error| input_error(format!("cannot inspect changed paths: {error}")))?
             .into_iter()
-            .map(|change| change.path)
+            .map(|file| file.path)
             .take(MAX_AFFECTED_PATHS)
             .collect();
     }
@@ -1710,6 +1719,7 @@ mod tests {
             brief: "Rename symbol".into(),
             worktree: root.to_path_buf(),
             branch: "coder/test".into(),
+            attached_checkout: false,
             environment_generation: 1,
             memory_parent: None,
             baseline_oid: "base".into(),

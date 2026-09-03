@@ -76,7 +76,7 @@ pub fn allowed_actions(item: &WorkItem) -> AllowedActions {
         open_terminal: if has_env {
             ActionAffordance::yes()
         } else {
-            ActionAffordance::no("No governed worktree yet")
+            ActionAffordance::no("No governed workspace yet")
         },
         begin_attempt: match item.state {
             WorkState::Ready | WorkState::Executing => ActionAffordance::yes(),
@@ -109,7 +109,8 @@ pub fn allowed_actions(item: &WorkItem) -> AllowedActions {
             WorkState::Draft
             | WorkState::Ready
             | WorkState::Executing
-            | WorkState::AwaitingReview => ActionAffordance::yes(),
+            | WorkState::AwaitingReview
+            | WorkState::Failed => ActionAffordance::yes(),
             state if state.is_terminal() => ActionAffordance::no("Work is already terminal"),
             state => ActionAffordance::no(format!("Cannot discard in state {state}")),
         },
@@ -865,8 +866,8 @@ fn collect_attribution(
         let kind = match executor.as_str() {
             "human" => "human",
             "terminal" => "terminal",
-            "codex" | "cursor" | "hermes" | "acp-codex" | "acp-cursor" | "acp-hermes"
-            | "agent" | "script" => "agent",
+            "codex" | "cursor" | "hermes" | "acp-codex" | "acp-cursor" | "acp-hermes" | "agent"
+            | "script" => "agent",
             _ => "agent",
         };
         let label = match executor.as_str() {
@@ -1075,9 +1076,14 @@ fn build_timeline(forge: &Forge, item: &WorkItem) -> Vec<ReviewTimelineEntry> {
         .filter_map(|event| {
             let (kind, label, detail) = match event.payload {
                 EventPayload::ItemRegistered { .. } => ("intent", "Project created", None),
-                EventPayload::EnvironmentProvisioned { .. } => {
-                    ("workspace", "Isolated working copy prepared", None)
-                }
+                EventPayload::EnvironmentProvisioned { env } => match env.kind {
+                    medousa_forge::model::EnvironmentKind::GitWorktree => {
+                        ("workspace", "Isolated working copy prepared", None)
+                    }
+                    medousa_forge::model::EnvironmentKind::AttachedCheckout => {
+                        ("workspace", "Current checkout attached", None)
+                    }
+                },
                 EventPayload::AttemptStarted { attempt } => {
                     let executor = attempt.executor.kind;
                     (
@@ -1166,7 +1172,7 @@ pub struct ItemProjection {
     pub item: WorkItem,
     pub human_phase: String,
     pub allowed_actions: AllowedActions,
-    /// Whether the governed worktree currently exists on this workshop's disk.
+    /// Whether the governed workspace currently exists on this workshop's disk.
     pub workspace_present: bool,
 }
 
@@ -1385,6 +1391,25 @@ diff --git a/src/lib.rs b/src/lib.rs
         item.state = WorkState::Ready;
         assert!(!allowed_actions(&item).continue_editing.allowed);
         assert!(allowed_actions(&item).begin_attempt.allowed);
+    }
+
+    #[test]
+    fn failed_project_can_be_released() {
+        use medousa_forge::model::{GitOid, GitWorkTarget, WorkItem, WorkState, WorkTarget};
+
+        let mut item = WorkItem::new(
+            "failed setup",
+            "release the unusable project",
+            WorkTarget::Git(GitWorkTarget {
+                repo_path: std::path::PathBuf::from("/tmp/repo"),
+                base_ref: "main".into(),
+                base_oid: GitOid::new("a".repeat(40)),
+            }),
+            "user-1",
+        );
+        item.state = WorkState::Failed;
+
+        assert!(allowed_actions(&item).discard.allowed);
     }
 
     #[test]

@@ -257,8 +257,10 @@ export function placeComposerPopover(
 
   const tr = trigger.getBoundingClientRect();
   const measured = menu.getBoundingClientRect();
-  const menuW = Math.min(menu.offsetWidth || measured.width, maxW, 20 * 16);
-  const menuH = Math.min(menu.offsetHeight || measured.height, maxH);
+  // Keep all placement math in the rendered coordinate space. Native webview
+  // zoom can make offsetWidth/offsetHeight disagree with DOMRect coordinates.
+  const menuW = Math.min(measured.width || menu.offsetWidth, maxW, 20 * 16);
+  const menuH = Math.min(measured.height || menu.offsetHeight, maxH);
 
   const minLeft = view.left + pad;
   const maxLeft = view.left + view.width - pad - menuW;
@@ -268,16 +270,21 @@ export function placeComposerPopover(
   let left = tr.left;
   left = clamp(left, minLeft, maxLeft);
 
-  // Prefer above the trigger.
-  let top = tr.top - gap - menuH;
-  if (top < minTop) {
-    top = tr.bottom + gap;
-  }
-  top = clamp(top, minTop, maxTop);
-
   menu.style.position = "fixed";
-  menu.style.top = `${Math.round(top)}px`;
   menu.style.left = `${Math.round(left)}px`;
+
+  // Pin the adjacent edge instead of deriving top from menu height. Besides
+  // surviving native webview zoom, this lets async menu content grow upward
+  // without leaving the popover stranded in the middle of the viewport.
+  if (tr.top - gap - menuH >= minTop) {
+    menu.style.top = "auto";
+    menu.style.bottom = `${Math.round(window.innerHeight - (tr.top - gap))}px`;
+    return;
+  }
+
+  const top = clamp(tr.bottom + gap, minTop, maxTop);
+  menu.style.bottom = "auto";
+  menu.style.top = `${Math.round(top)}px`;
 }
 
 /**

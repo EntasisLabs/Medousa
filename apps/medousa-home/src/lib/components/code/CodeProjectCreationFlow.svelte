@@ -12,6 +12,7 @@
     FolderOpen,
     GitBranch,
     Laptop,
+    Link2Off,
     Pin,
     Plus,
     X,
@@ -25,8 +26,10 @@
     humanizeForgeMessage,
     inspectForgeRepository,
     listForgeRepositories,
+    provisionUndertaking,
     setForgeRepositoryPinned,
     type ItemProjection,
+    type ForgeWorkspaceMode,
     type ProviderRepositoryAdapter,
     type RepositoryBrowseResponse,
     type RepositoryCatalogEntry,
@@ -37,9 +40,13 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { pickExternalFolder, rootLabelFromPath } from "$lib/utils/externalDeskApi";
   import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
+  import {
+    closeUndertaking,
+    undertakingWorkspaceCopy,
+  } from "$lib/utils/undertakingWorkspace";
 
   interface Props {
-    presentation?: "rail" | "popover";
+    presentation?: "rail" | "popover" | "sheet";
     sessionId?: string | null;
     initialRepositoryPath?: string | null;
     onCancel?: () => void;
@@ -64,6 +71,7 @@
   let outcome = $state("");
   let repoPath = $state("");
   let baseRef = $state("");
+  let workspaceMode = $state<ForgeWorkspaceMode>("isolated");
   let repository = $state<RepositoryInspection | null>(null);
   let repositoryCatalog = $state<RepositoryCatalogEntry[]>([]);
   let duplicateAcknowledged = $state(false);
@@ -111,7 +119,13 @@
     return `Local / ${baseRef || "Choose branch"}`;
   });
   const ready = $derived(
-    Boolean(repository && repository.has_commits !== false && baseRef.trim() && outcome.trim()),
+    Boolean(
+      repository
+      && repository.has_commits !== false
+      && baseRef.trim()
+      && outcome.trim()
+      && (workspaceMode !== "attached_checkout" || repository.current_branch?.trim()),
+    ),
   );
 
   onMount(() => {
@@ -134,7 +148,12 @@
     try {
       repository = await inspectForgeRepository(path.trim());
       repoPath = repository.path;
-      baseRef = repository.suggested_base_ref ?? repository.current_branch ?? "";
+      if (workspaceMode === "attached_checkout" && repository.current_branch?.trim()) {
+        baseRef = repository.current_branch;
+      } else {
+        if (workspaceMode === "attached_checkout") workspaceMode = "isolated";
+        baseRef = repository.suggested_base_ref ?? repository.current_branch ?? "";
+      }
       duplicateAcknowledged = repository.existing_projects.length === 0;
       branchOpen = false;
       browserOpen = false;
@@ -203,7 +222,12 @@
       hostedRepository = "";
       repository = cloned;
       repoPath = cloned.path;
-      baseRef = cloned.suggested_base_ref ?? cloned.current_branch ?? "";
+      if (workspaceMode === "attached_checkout" && cloned.current_branch?.trim()) {
+        baseRef = cloned.current_branch;
+      } else {
+        if (workspaceMode === "attached_checkout") workspaceMode = "isolated";
+        baseRef = cloned.suggested_base_ref ?? cloned.current_branch ?? "";
+      }
       duplicateAcknowledged = true;
       await loadCatalog();
       await onCatalogChanged?.();
@@ -230,6 +254,19 @@
     branchQuery = "";
   }
 
+  function chooseWorkspaceMode(mode: ForgeWorkspaceMode) {
+    if (!repository || mode === workspaceMode) return;
+    if (mode === "attached_checkout") {
+      const currentBranch = repository.current_branch?.trim();
+      if (!currentBranch) return;
+      baseRef = currentBranch;
+      branchOpen = false;
+    } else {
+      baseRef = repository.suggested_base_ref ?? repository.current_branch ?? "";
+    }
+    workspaceMode = mode;
+  }
+
   function filtered(branches: string[]) {
     const query = branchQuery.trim().toLowerCase();
     return query ? branches.filter((branch) => branch.toLowerCase().includes(query)) : branches;
@@ -251,9 +288,41 @@
     busy = true;
     error = null;
     try {
-      const item = await getUndertaking(existing.id);
+      let item = await getUndertaking(existing.id);
+      if (!item.environment && item.allowed_actions.provision.allowed) {
+        item = await provisionUndertaking(item.id);
+        await undertakings.refreshList();
+      }
+      if (!item.environment) {
+        throw new Error(
+          item.allowed_actions.provision.reason || "This project could not prepare its workspace.",
+        );
+      }
       await bindItem(item);
       await onContinue?.(item);
+    } catch (err) {
+      error = humanizeForgeMessage(err instanceof Error ? err.message : String(err));
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function releaseItem(existing: { id: string }, event: MouseEvent) {
+    event.stopPropagation();
+    if (busy) return;
+    busy = true;
+    error = null;
+    try {
+      const item = await getUndertaking(existing.id);
+      if (!window.confirm(undertakingWorkspaceCopy(item).closePrompt)) return;
+      await closeUndertaking(item);
+      await undertakings.refreshList();
+      if (repository) {
+        repository = await inspectForgeRepository(repository.path);
+        duplicateAcknowledged = repository.existing_projects.length === 0;
+      }
+      await loadCatalog();
+      await onCatalogChanged?.();
     } catch (err) {
       error = humanizeForgeMessage(err instanceof Error ? err.message : String(err));
     } finally {
@@ -272,6 +341,7 @@
         brief: outcome.trim(),
         repo_path: repository.path,
         base_ref: baseRef.trim(),
+        workspace_mode: workspaceMode,
       });
       await bindItem(item);
       await loadCatalog();
@@ -288,6 +358,7 @@
 <form
   class="code-project-creation"
   class:code-project-creation--popover={presentation === "popover"}
+  class:code-project-creation--sheet={presentation === "sheet"}
   onsubmit={(event) => { event.preventDefault(); void create(); }}
 >
   <header class="creation-header">
@@ -325,17 +396,68 @@
         </div>
       </section>
 
+      <section class="mt-3">
+        <p class="px-1 text-xs font-medium text-surface-200">Workspace</p>
+        <div class="creation-workspace mt-1.5" role="group" aria-label="Coder workspace">
+          <button
+            type="button"
+            class:creation-workspace-option--active={workspaceMode === "isolated"}
+            class="creation-workspace-option"
+            aria-pressed={workspaceMode === "isolated"}
+            onclick={() => chooseWorkspaceMode("isolated")}
+          >
+            Isolated copy
+          </button>
+          <button
+            type="button"
+            class:creation-workspace-option--active={workspaceMode === "attached_checkout"}
+            class="creation-workspace-option"
+            aria-pressed={workspaceMode === "attached_checkout"}
+            disabled={!repository.current_branch?.trim()}
+            title={repository.current_branch?.trim()
+              ? "Work directly in the checked-out branch"
+              : "Current checkout requires a local branch"}
+            onclick={() => chooseWorkspaceMode("attached_checkout")}
+          >
+            Current checkout
+          </button>
+        </div>
+        <p class="creation-workspace-hint">
+          {#if workspaceMode === "attached_checkout"}
+            {#if repository.dirty}
+              Starts after the {repository.changed_files} existing local {repository.changed_files === 1 ? "change" : "changes"}; closing Coder leaves every file in place.
+            {:else}
+              Coder works directly on {repository.current_branch}; closing leaves every file in place.
+            {/if}
+          {:else}
+            Coder gets a private branch and working copy; your current checkout stays separate.
+          {/if}
+        </p>
+      </section>
+
       {#if repository.existing_projects.length > 0 && !duplicateAcknowledged}
         <section class="mt-3">
           <p class="px-1 text-xs font-medium text-surface-200">Active changes</p>
-          <p class="px-1 text-xs text-content-quiet">Continue one, or start a separate working copy.</p>
+          <p class="px-1 text-xs text-content-quiet">Continue one, release it, or start another change.</p>
           <div class="creation-list mt-1.5">
             {#each repository.existing_projects.slice(0, 5) as existing (existing.id)}
-              <button type="button" class="creation-row" disabled={busy} onclick={() => void continueItem(existing)}>
-                <CircleDot size={12} class="text-primary-300" />
-                <span class="min-w-0 flex-1 truncate">{existing.title}</span>
-                <span class="text-content-quiet">{humanPhaseLabel(existing.human_phase)}</span>
-              </button>
+              <div class="creation-project-row">
+                <button type="button" class="creation-row min-w-0 flex-1" disabled={busy} onclick={() => void continueItem(existing)}>
+                  <CircleDot size={12} class="text-primary-300" />
+                  <span class="min-w-0 flex-1 truncate">{existing.title}</span>
+                  <span class="text-content-quiet">{humanPhaseLabel(existing.human_phase)}</span>
+                </button>
+                <button
+                  type="button"
+                  class="creation-release"
+                  disabled={busy}
+                  aria-label={`Release ${existing.title}`}
+                  title="Release project"
+                  onclick={(event) => void releaseItem(existing, event)}
+                >
+                  <Link2Off size={13} />
+                </button>
+              </div>
             {/each}
           </div>
           <button type="button" class="creation-separate" onclick={() => (duplicateAcknowledged = true)}>
@@ -359,12 +481,18 @@
               }}
             ></textarea>
             <div class="creation-toolbar">
-              <button type="button" class="creation-branch-trigger" onclick={() => {
-                branchOpen = !branchOpen;
-                branchStep = "source";
-              }}>
-                <GitBranch size={12} /><span class="truncate">{branchLabel}</span><ChevronRight size={11} />
-              </button>
+              {#if workspaceMode === "attached_checkout"}
+                <span class="creation-branch-trigger" title="Current checked-out branch">
+                  <GitBranch size={12} /><span class="truncate">Current / {baseRef}</span>
+                </span>
+              {:else}
+                <button type="button" class="creation-branch-trigger" onclick={() => {
+                  branchOpen = !branchOpen;
+                  branchStep = "source";
+                }}>
+                  <GitBranch size={12} /><span class="truncate">{branchLabel}</span><ChevronRight size={11} />
+                </button>
+              {/if}
               <button type="submit" class="creation-submit" disabled={busy || inspecting || !ready} aria-label="Start change">
                 <ArrowUp size={15} strokeWidth={2} />
               </button>
@@ -511,10 +639,17 @@
 <style>
   .code-project-creation { display:flex; min-height:0; flex:1; flex-direction:column; color:rgb(var(--theme-text)); }
   .code-project-creation--popover { width:min(23rem, calc(100vw - 1rem)); max-height:min(34rem, calc(100vh - 2rem)); }
+  .code-project-creation--sheet { width:100%; max-height:100%; overflow:hidden; }
   .creation-header { display:flex; align-items:center; justify-content:space-between; gap:.75rem; border-bottom:1px solid rgb(var(--theme-border)/.22); padding:.65rem .75rem; }
   .creation-body { min-height:0; flex:1; overflow-y:auto; padding:.65rem; }
   .creation-card,.creation-prompt,.creation-source-card,.creation-list,.creation-subpanel,.creation-browser,.creation-branch-panel { border:1px solid rgb(var(--theme-border)/.28); border-radius:var(--theme-container-radius); background:rgb(var(--theme-card)/.62); }
   .creation-card { padding:.65rem; }
+  .creation-workspace { display:grid; grid-template-columns:1fr 1fr; gap:.2rem; border:1px solid rgb(var(--theme-border)/.25); border-radius:var(--theme-control-radius); background:rgb(var(--theme-pane)/.5); padding:.18rem; }
+  .creation-workspace-option { min-width:0; border-radius:calc(var(--theme-control-radius) - 2px); padding:.38rem .45rem; color:rgb(var(--theme-text-tertiary)); font-size:.7rem; text-align:center; }
+  .creation-workspace-option:hover:not(:disabled) { color:rgb(var(--theme-text)); }
+  .creation-workspace-option--active { background:rgb(var(--theme-card-hover)/.82); color:rgb(var(--theme-text)); box-shadow:0 0 0 1px rgb(var(--theme-border)/.18); }
+  .creation-workspace-option:disabled { cursor:not-allowed; opacity:.35; }
+  .creation-workspace-hint { margin:.35rem .25rem 0; color:rgb(var(--theme-text-quiet)); font-size:.64rem; line-height:1.35; }
   .creation-repo-icon { display:grid; width:1.8rem; height:1.8rem; place-items:center; border-radius:var(--theme-control-radius); background:rgb(var(--theme-pane-muted)/.72); }
   .creation-status { display:flex; align-items:center; gap:.3rem; margin-top:.35rem; color:rgb(var(--theme-warning)); font-size:.65rem; }
   .creation-link { color:rgb(var(--theme-text-tertiary)); font-size:.7rem; }
@@ -523,6 +658,11 @@
   .creation-row:hover,.creation-source:hover,.creation-recent:hover { background:rgb(var(--theme-card-hover)/.68); color:rgb(var(--theme-text)); }
   .creation-row:disabled,.creation-source:disabled { opacity:.4; }
   .creation-recent+.creation-recent,.creation-row+.creation-row { border-top:1px solid rgb(var(--theme-border)/.18); }
+  .creation-project-row { display:flex; min-width:0; align-items:center; }
+  .creation-project-row+.creation-project-row { border-top:1px solid rgb(var(--theme-border)/.18); }
+  .creation-release { display:grid; width:2rem; height:2rem; flex:0 0 auto; place-items:center; margin-right:.2rem; border-radius:var(--theme-control-radius); color:rgb(var(--theme-text-quiet)); }
+  .creation-release:hover:not(:disabled) { background:rgb(var(--theme-card-hover)/.68); color:rgb(var(--theme-text)); }
+  .creation-release:disabled { opacity:.4; }
   .creation-separate { display:flex; align-items:center; gap:.4rem; margin-top:.45rem; padding:.4rem .45rem; color:rgb(var(--theme-link)); font-size:.72rem; }
   .creation-prompt { padding:.6rem; }
   .creation-toolbar { display:flex; min-width:0; align-items:center; gap:.5rem; border-top:1px solid rgb(var(--theme-border)/.2); padding-top:.5rem; }
