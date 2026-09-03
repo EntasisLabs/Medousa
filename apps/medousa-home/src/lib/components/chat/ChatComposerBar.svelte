@@ -15,6 +15,7 @@
   import { chat } from "$lib/stores/chat.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import { settings } from "$lib/stores/settings.svelte";
+  import { narration } from "$lib/stores/narration.svelte";
   import { isTauri, isTauriMobilePlatform } from "$lib/platform";
   import { haptic } from "$lib/haptics";
   import type { AgentSessionConfigOption } from "$lib/daemon";
@@ -292,6 +293,7 @@
 
   async function startVoice() {
     if (blocked || voiceBusy || voiceActive) return;
+    narration.stop();
     await refreshSttStatus();
     if (!voiceSupported) return;
 

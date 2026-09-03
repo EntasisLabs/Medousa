@@ -1,9 +1,8 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import { ChevronDown, Minus, Plus } from "@lucide/svelte";
-  import SettingsChatGptAccount from "$lib/components/settings/SettingsChatGptAccount.svelte";
   import SettingsListRow from "$lib/components/settings/SettingsListRow.svelte";
   import ModelCatalogSheet from "$lib/components/settings/ModelCatalogSheet.svelte";
+  import ProvidersSettingsTab from "$lib/components/settings/ProvidersSettingsTab.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { favoriteToPick } from "$lib/utils/modelCatalog";
   import { providerMonogram } from "$lib/utils/chatModelPicker";
@@ -46,6 +45,7 @@
   let expandedFallback = $state<ProfileKind | null>(null);
   let reasoningOpen = $state(false);
   let moreOpen = $state(false);
+  let providersOpen = $state(false);
 
   const favorites = $derived(workshopDefaults.favoriteModels());
   const activeReasoning = $derived(
@@ -68,14 +68,6 @@
     if (hasFallback) bits.push("fallbacks set");
     return bits.length > 0 ? bits.join(" · ") : "Favorites & backups";
   });
-
-  onMount(() => {
-    void refreshKeyStatus();
-  });
-
-  export async function refreshKeyStatus() {
-    await onKeyStatusChange?.();
-  }
 
   async function setReasoningEffort(mode: ReasoningEffortMode) {
     if (disabled || workshopDefaults.saving) return;
@@ -114,7 +106,6 @@
       selection,
     );
     await workshopDefaults.saveInferenceProfiles();
-    await onKeyStatusChange?.();
   }
 
   function toggleFallbackSection(profile: ProfileKind) {
@@ -137,24 +128,54 @@
 </script>
 
 <div class="models-calm">
-  <SettingsChatGptAccount enabled={chatGptAccountAuth} />
-  <div class="settings-native-group models-primary">
-    {#each PRIMARY_TARGETS as target, index (`primary-${index}`)}
-      {#if target.type === "primary"}
-        {@const profile = target.profile}
-        {@const row = rowLabelForTarget(workshopDefaults.draft, target, catalog)}
-        <SettingsListRow
-          label={row.title}
-          value={row.value}
-          hint={primaryProviderHint(profile)}
-          monogram={primaryMonogram(profile)}
-          valueAccent={row.value !== "Not set"}
-          {disabled}
-          onclick={() => openPicker(target)}
-        />
+  <section class="models-section">
+    <details class="models-more models-providers" bind:open={providersOpen}>
+      <summary class="models-more-summary">
+        <span class="models-more-summary-copy">
+          <span>Providers</span>
+          <span class="models-more-summary-meta">Accounts, API keys, and endpoints</span>
+        </span>
+        <ChevronDown size={14} strokeWidth={2} class="models-more-chevron" aria-hidden="true" />
+      </summary>
+      {#if providersOpen}
+        <div class="models-more-body">
+          <ProvidersSettingsTab
+            {catalog}
+            {disabled}
+            {chatGptAccountAuth}
+            onKeysChanged={onKeyStatusChange}
+          />
+        </div>
       {/if}
-    {/each}
-  </div>
+    </details>
+  </section>
+
+  <section class="models-section">
+    <div class="models-section-head">
+      <h4 class="settings-native-heading">Model roles</h4>
+      <p class="settings-native-footnote">
+        The conversation model handles text and images when it can. Add an image backup only when
+        you want a different vision route.
+      </p>
+    </div>
+    <div class="settings-native-group models-primary">
+      {#each PRIMARY_TARGETS as target, index (`primary-${index}`)}
+        {#if target.type === "primary"}
+          {@const profile = target.profile}
+          {@const row = rowLabelForTarget(workshopDefaults.draft, target, catalog)}
+          <SettingsListRow
+            label={row.title}
+            value={row.value}
+            hint={row.hint ?? primaryProviderHint(profile)}
+            monogram={primaryMonogram(profile)}
+            valueAccent={row.value !== "Not set" && row.value !== "Automatic"}
+            {disabled}
+            onclick={() => openPicker(target)}
+          />
+        {/if}
+      {/each}
+    </div>
+  </section>
 
   <div class="models-active mt-3">
     <button
@@ -251,7 +272,7 @@
               label="{profile === 'main'
                 ? 'Chat'
                 : profile === 'vision'
-                  ? 'Vision'
+                  ? 'Image'
                   : 'Dictation'} fallbacks"
               value={summary}
               expanded={expandedFallback === profile}
@@ -311,9 +332,31 @@
     --models-bg: rgb(var(--color-surface-900) / 0.28);
   }
 
+  .models-section {
+    display: grid;
+    gap: var(--models-gap);
+    margin-bottom: 0.85rem;
+  }
+
+  .models-section-head {
+    padding: 0 0.1rem;
+  }
+
+  .models-section-head :global(.settings-native-heading) {
+    margin-bottom: 0.12rem;
+  }
+
+  .models-section-head :global(.settings-native-footnote) {
+    margin: 0;
+  }
+
   .models-primary {
     border-radius: var(--models-radius);
     overflow: hidden;
+  }
+
+  .models-providers {
+    margin-top: 0;
   }
 
   .models-active {

@@ -1,15 +1,7 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
-  import {
-    ArrowUpRight,
-    Check,
-    LogIn,
-    LogOut,
-    MessageSquare,
-    RefreshCw,
-    Sparkles,
-  } from "@lucide/svelte";
-  import { layout } from "$lib/runtime/layout.svelte";
+  import { ArrowUpRight, X } from "@lucide/svelte";
+  import SettingsListRow from "$lib/components/settings/SettingsListRow.svelte";
   import { openUrlInDefaultBrowser } from "$lib/utils/browserActions";
   import {
     beginChatGptOAuth,
@@ -17,15 +9,17 @@
     completeChatGptOAuth,
     disconnectChatGptOAuth,
     getChatGptOAuthConnection,
+    listChatGptOAuthModels,
     type BeginChatGptOAuthResponse,
     type ChatGptOAuthConnection,
   } from "$lib/utils/chatgptOAuth";
 
   interface Props {
     enabled?: boolean;
+    disabled?: boolean;
   }
 
-  let { enabled = true }: Props = $props();
+  let { enabled = true, disabled = false }: Props = $props();
 
   let actionBusy = $state<string | null>(null);
   let actionNote = $state<string | null>(null);
@@ -34,15 +28,35 @@
   let loading = $state(false);
   let loaded = $state(false);
   let login = $state<BeginChatGptOAuthResponse | null>(null);
+  let accountModels = $state<string[]>([]);
+  let modelsLoading = $state(false);
+  let sheetOpen = $state(false);
   let loginCancelled = false;
 
   const ready = $derived(chatGptOAuthReady(connection));
+  const rowValue = $derived.by(() => {
+    if (!enabled) return "On workshop host";
+    if (actionBusy === "login") return "Waiting…";
+    if (loading && !connection) return "Checking…";
+    if (ready) return "Connected";
+    if (connection?.status === "reauth_required") return "Reconnect";
+    return "Not connected";
+  });
+  const sheetStatus = $derived.by(() => {
+    if (actionBusy === "login") return "Waiting for approval";
+    if (loading && !connection) return "Checking";
+    if (ready) return "Signed in";
+    if (connection?.status === "reauth_required") return "Reconnect needed";
+    return "Not signed in";
+  });
 
   $effect(() => {
     if (!enabled) {
       loginCancelled = true;
       loaded = false;
       connection = null;
+      accountModels = [];
+      sheetOpen = false;
       return;
     }
     if (loaded) return;
@@ -60,10 +74,28 @@
     actionError = null;
     try {
       connection = await getChatGptOAuthConnection();
+      if (chatGptOAuthReady(connection)) {
+        await refreshAccountModels();
+      } else {
+        accountModels = [];
+      }
     } catch (err) {
       actionError = err instanceof Error ? err.message : String(err);
     } finally {
       loading = false;
+    }
+  }
+
+  async function refreshAccountModels() {
+    if (modelsLoading) return;
+    modelsLoading = true;
+    try {
+      const response = await listChatGptOAuthModels();
+      accountModels = response.models;
+    } catch {
+      accountModels = [];
+    } finally {
+      modelsLoading = false;
     }
   }
 
@@ -92,8 +124,9 @@
         const result = await completeChatGptOAuth(login.login_id);
         if (result.status === "connected") {
           connection = result.connection ?? (await getChatGptOAuthConnection());
+          await refreshAccountModels();
           login = null;
-          return "Connected. ChatGPT subscription models are ready to select below.";
+          return "Connected. Subscription models are now available under Model roles.";
         }
         const delaySeconds = Math.max(
           1,
@@ -113,8 +146,9 @@
       loginCancelled = true;
       await disconnectChatGptOAuth();
       connection = await getChatGptOAuthConnection();
+      accountModels = [];
       login = null;
-      return "ChatGPT disconnected from the Medousa Agent.";
+      return "Signed out from ChatGPT on this workshop.";
     });
   }
 
@@ -123,215 +157,176 @@
     await openUrlInDefaultBrowser(login.verification_url);
   }
 
-  function openChat() {
-    if (layout.isMobile) {
-      layout.setMobileTab("chat", { bump: true });
-      return;
-    }
-    layout.navigateDesktop("chat");
+  async function refreshAll() {
+    await refreshConnection();
+  }
+
+  function openSheet() {
+    if (!enabled || disabled) return;
+    sheetOpen = true;
+    void refreshConnection();
   }
 </script>
 
-<div class="chatgpt-provider">
-  <div class="chatgpt-provider-head">
-    <span class="chatgpt-provider-icon" aria-hidden="true">
-      <Sparkles size={16} strokeWidth={1.85} />
-    </span>
-    <span class="chatgpt-provider-copy">
-      <span class="chatgpt-provider-title">OpenAI · ChatGPT account</span>
-      <span class="chatgpt-provider-meta">Subscription models for the Medousa Agent</span>
-    </span>
-    <span
-      class="chatgpt-provider-status"
-      class:chatgpt-provider-status--in={ready}
-      class:chatgpt-provider-status--out={
-        connection?.status === "signed_out" || connection?.status === "reauth_required"
-      }
-      class:chatgpt-provider-status--wait={loading || actionBusy === "login"}
+<SettingsListRow
+  label="ChatGPT account"
+  value={rowValue}
+  hint="OpenAI subscription models"
+  disabled={disabled || !enabled}
+  onclick={openSheet}
+/>
+
+{#if sheetOpen}
+  <div
+    class="model-catalog-backdrop"
+    role="presentation"
+    onclick={(event) => {
+      if (event.target === event.currentTarget) sheetOpen = false;
+    }}
+  >
+    <div
+      class="model-catalog-sheet model-catalog-sheet-narrow"
+      role="dialog"
+      aria-modal="true"
+      aria-label="ChatGPT account"
     >
-      {#if !enabled}
-        On workshop host
-      {:else if loading}
-        Checking…
-      {:else if actionBusy === "login"}
-        Waiting…
-      {:else if ready}
-        <Check size={12} strokeWidth={2.5} /> Connected
-      {:else if connection?.status === "reauth_required"}
-        Reconnect
-      {:else}
-        Not connected
-      {/if}
-    </span>
+      <header class="model-catalog-sheet-header">
+        <div class="min-w-0 flex-1">
+          <h3 class="model-catalog-sheet-title">ChatGPT account</h3>
+          <p class="model-catalog-sheet-subtitle">
+            OpenAI subscription access for this workshop.
+          </p>
+        </div>
+        <button
+          type="button"
+          class="model-catalog-sheet-close"
+          aria-label="Close"
+          onclick={() => (sheetOpen = false)}
+        >
+          <X size={18} />
+        </button>
+      </header>
+
+      <div class="model-catalog-custom-form chatgpt-account-sheet">
+        <div class="chatgpt-account-status">
+          <span class="chatgpt-account-status-label">Status</span>
+          <span class:chatgpt-account-status-ready={ready}>{sheetStatus}</span>
+        </div>
+
+        {#if login}
+          <div class="chatgpt-device-auth">
+            <p>Enter this code on the ChatGPT sign-in page:</p>
+            <code class="chatgpt-device-code font-mono">{login.user_code}</code>
+            <p>Medousa will finish connecting after approval.</p>
+          </div>
+          <button
+            type="button"
+            class="model-catalog-manual-btn chatgpt-account-primary"
+            onclick={() => void reopenLogin()}
+          >
+            Open sign-in page <ArrowUpRight size={13} strokeWidth={2} />
+          </button>
+        {:else if ready}
+          <p class="chatgpt-account-copy">
+            {#if modelsLoading}
+              Reading the models available to this account…
+            {:else if accountModels.length > 0}
+              {accountModels.length} subscription model{accountModels.length === 1 ? " is" : "s are"}
+              available under Model roles. Compatible models can also accept image input.
+            {:else}
+              Subscription models are available under Model roles. Compatible models can also
+              accept image input.
+            {/if}
+          </p>
+          <div class="chatgpt-account-actions">
+            <button
+              type="button"
+              class="btn variant-ghost-surface btn-sm"
+              disabled={loading || modelsLoading || actionBusy != null}
+              onclick={() => void refreshAll()}
+            >
+              Refresh status
+            </button>
+            <button
+              type="button"
+              class="btn variant-ghost-surface btn-sm"
+              disabled={actionBusy != null}
+              onclick={() => void signOut()}
+            >
+              {actionBusy === "logout" ? "Signing out…" : "Sign out"}
+            </button>
+          </div>
+        {:else}
+          <p class="chatgpt-account-copy">
+            {connection?.status === "reauth_required"
+              ? "The saved session can no longer refresh. Sign in again to restore account models."
+              : "Sign in to make your ChatGPT subscription models available under Model roles."}
+          </p>
+          <button
+            type="button"
+            class="model-catalog-manual-btn chatgpt-account-primary"
+            disabled={actionBusy != null || loading}
+            onclick={() => void signIn()}
+          >
+            {connection?.status === "reauth_required" ? "Reconnect" : "Sign in with ChatGPT"}
+          </button>
+        {/if}
+
+        {#if actionNote}
+          <p class="chatgpt-account-feedback text-content-success" role="status">{actionNote}</p>
+        {/if}
+        {#if actionError}
+          <p class="chatgpt-account-feedback text-content-warning" role="alert">{actionError}</p>
+        {/if}
+      </div>
+    </div>
   </div>
-
-  {#if !enabled}
-    <p class="chatgpt-provider-note workshop-faint">
-      ChatGPT account access is managed by the device running this workshop.
-    </p>
-  {:else if login}
-    <div class="chatgpt-device-auth">
-      <p class="chatgpt-provider-note workshop-faint">
-        Enter this code on the ChatGPT sign-in page:
-      </p>
-      <code class="chatgpt-device-code font-mono">{login.user_code}</code>
-    </div>
-  {:else if ready}
-    <p class="chatgpt-provider-note workshop-faint">
-      Ready for Instant, General, and Coder. Pick this provider when choosing a model.
-    </p>
-  {:else if connection?.status === "reauth_required"}
-    <p class="chatgpt-provider-note workshop-faint">
-      The saved session can no longer refresh. Sign in again to restore it.
-    </p>
-  {:else}
-    <p class="chatgpt-provider-note workshop-faint">
-      Use your ChatGPT subscription while Medousa keeps its own agent loop and tools.
-    </p>
-  {/if}
-
-  {#if enabled}
-    <div class="chatgpt-provider-actions">
-      {#if login}
-        <button type="button" class="btn btn-sm variant-filled-primary" onclick={() => void reopenLogin()}>
-          <ArrowUpRight size={13} strokeWidth={2} /> Open sign-in
-        </button>
-      {:else if ready}
-        <button type="button" class="btn btn-sm variant-filled-primary" onclick={openChat}>
-          <MessageSquare size={13} strokeWidth={2} /> Open Chat
-        </button>
-        <button
-          type="button"
-          class="btn btn-sm variant-soft-surface"
-          disabled={actionBusy != null}
-          onclick={() => void signOut()}
-        >
-          <LogOut size={13} strokeWidth={2} /> Disconnect
-        </button>
-      {:else}
-        <button
-          type="button"
-          class="btn btn-sm variant-filled-primary"
-          disabled={actionBusy != null || loading}
-          onclick={() => void signIn()}
-        >
-          <LogIn size={13} strokeWidth={2} />
-          {connection?.status === "reauth_required" ? "Reconnect" : "Sign in with ChatGPT"}
-        </button>
-      {/if}
-      <button
-        type="button"
-        class="chatgpt-refresh"
-        title="Refresh ChatGPT status"
-        aria-label="Refresh ChatGPT status"
-        disabled={loading || actionBusy != null}
-        onclick={() => void refreshConnection()}
-      >
-        <RefreshCw size={14} strokeWidth={1.9} />
-      </button>
-    </div>
-  {/if}
-
-  {#if actionNote}
-    <p class="chatgpt-feedback text-content-success" role="status">{actionNote}</p>
-  {/if}
-  {#if actionError}
-    <p class="chatgpt-feedback text-content-warning" role="alert">{actionError}</p>
-  {/if}
-</div>
+{/if}
 
 <style>
-  .chatgpt-provider {
-    display: flex;
-    flex-direction: column;
-    gap: 0.55rem;
-    margin-bottom: 0.75rem;
-    padding: 0.75rem;
-    border: 1px solid rgb(var(--color-surface-500) / 0.32);
-    border-radius: 0.7rem;
-    background: rgb(var(--color-surface-900) / 0.28);
+  .chatgpt-account-sheet {
+    gap: 0.85rem;
   }
 
-  .chatgpt-provider-head {
+  .chatgpt-account-status {
     display: flex;
     align-items: center;
-    gap: 0.55rem;
+    justify-content: space-between;
+    gap: 1rem;
+    border-bottom: 1px solid rgb(var(--color-surface-500) / 0.25);
+    padding-bottom: 0.75rem;
+    color: rgb(var(--theme-text-tertiary));
+    font-size: 0.75rem;
   }
 
-  .chatgpt-provider-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.9rem;
-    height: 1.9rem;
-    flex-shrink: 0;
-    border-radius: 0.55rem;
-    background: rgb(var(--color-primary-500) / 0.12);
-    color: rgb(var(--theme-link));
-  }
-
-  .chatgpt-provider-copy {
-    display: flex;
-    min-width: 0;
-    flex: 1 1 auto;
-    flex-direction: column;
-    gap: 0.08rem;
-  }
-
-  .chatgpt-provider-title {
-    font-size: 0.82rem;
+  .chatgpt-account-status-label {
+    color: rgb(var(--theme-text-quiet));
+    font-size: 0.68rem;
     font-weight: 600;
-    color: rgb(var(--color-surface-100));
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
   }
 
-  .chatgpt-provider-meta,
-  .chatgpt-provider-note,
-  .chatgpt-feedback {
-    font-size: 0.7rem;
-    line-height: 1.35;
-  }
-
-  .chatgpt-provider-status {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    flex-shrink: 0;
-    border-radius: 999px;
-    padding: 0.15rem 0.5rem;
-    background: rgb(var(--color-surface-500) / 0.22);
-    color: rgb(var(--theme-text-secondary));
-    font-size: 0.66rem;
-    font-weight: 600;
-  }
-
-  .chatgpt-provider-status--in {
-    background: rgb(var(--color-success-500) / 0.18);
+  .chatgpt-account-status-ready {
     color: rgb(var(--theme-success));
   }
 
-  .chatgpt-provider-status--out {
-    background: rgb(var(--color-warning-500) / 0.16);
-    color: rgb(var(--theme-warning));
-  }
-
-  .chatgpt-provider-status--wait {
-    background: rgb(var(--color-primary-500) / 0.16);
-    color: rgb(var(--theme-link));
-  }
-
-  .chatgpt-provider-note,
-  .chatgpt-feedback {
+  .chatgpt-account-copy,
+  .chatgpt-account-feedback,
+  .chatgpt-device-auth p {
     margin: 0;
+    color: rgb(var(--theme-text-tertiary));
+    font-size: 0.75rem;
+    line-height: 1.5;
   }
 
   .chatgpt-device-auth {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-    padding: 0.6rem 0.7rem;
-    border: 1px solid rgb(var(--color-surface-600) / 0.35);
+    display: grid;
+    gap: 0.45rem;
+    border: 1px solid rgb(var(--color-surface-500) / 0.3);
     border-radius: 0.55rem;
-    background: rgb(var(--color-surface-800) / 0.42);
+    background: rgb(var(--color-surface-900) / 0.28);
+    padding: 0.75rem;
   }
 
   .chatgpt-device-code {
@@ -341,44 +336,17 @@
     letter-spacing: 0.12em;
   }
 
-  .chatgpt-provider-actions {
+  .chatgpt-account-actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.35rem;
   }
 
-  .chatgpt-refresh {
+  .chatgpt-account-primary {
     display: inline-flex;
+    width: fit-content;
     align-items: center;
-    justify-content: center;
-    width: 1.9rem;
-    height: 1.9rem;
-    border: 0;
-    border-radius: 0.5rem;
-    background: transparent;
-    color: rgb(var(--theme-text-quiet));
-    cursor: pointer;
-  }
-
-  .chatgpt-refresh:hover:not(:disabled) {
-    background: rgb(var(--color-surface-500) / 0.16);
-    color: rgb(var(--color-surface-100));
-  }
-
-  .chatgpt-refresh:disabled {
-    cursor: not-allowed;
-    opacity: 0.45;
-  }
-
-  @media (max-width: 420px) {
-    .chatgpt-provider-head {
-      align-items: flex-start;
-      flex-wrap: wrap;
-    }
-
-    .chatgpt-provider-status {
-      margin-left: 2.45rem;
-    }
+    gap: 0.35rem;
   }
 </style>

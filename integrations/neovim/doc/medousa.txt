@@ -36,7 +36,7 @@ COMMANDS                                              *medousa-commands*
 :MedousaNew                    Start a new daemon conversation.
 :MedousaCancel                 Stop the active response.
 :MedousaSessions               Select a daemon conversation.
-:MedousaMode                   Select Instant, General, or Coder for the conversation.
+:MedousaMode                   Select General, Teacher, Instant, or Coder.
 :MedousaProject                Choose, create, or detach a Forge project.
 :MedousaRename                 Rename the active conversation.
 :MedousaDelete                 Delete it and its Medousa memory after warning.
@@ -54,7 +54,7 @@ Visual <leader>ma              Compose with the selected lines.
 <leader>mf                     Fix current diagnostics.
 <leader>mo{motion}             Compose with the motion as context.
 <leader>ms                     Select a conversation.
-<leader>mm                     Select Instant, General, or Coder mode.
+<leader>mm                     Select General, Teacher, Instant, or Coder mode.
 <leader>mp                     Select the governed Coder project.
 
 ==============================================================================

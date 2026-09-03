@@ -251,12 +251,24 @@ impl crate::delegation::DelegationCompletionSink for EmbeddedDelegationCompletio
 }
 
 fn embedded_system_prompt(agent_mode: AgentModeId) -> String {
-    static PROMPT: OnceLock<String> = OnceLock::new();
-    let policy = PROMPT
+    static GENERAL_PROMPT: OnceLock<String> = OnceLock::new();
+    static TEACHER_PROMPT: OnceLock<String> = OnceLock::new();
+    let (prompt, policy_mode) = if agent_mode == AgentModeId::Teacher {
+        (
+            &TEACHER_PROMPT,
+            crate::prompt_policy::SttpPolicyMode::Teacher,
+        )
+    } else {
+        (
+            &GENERAL_PROMPT,
+            crate::prompt_policy::SttpPolicyMode::General,
+        )
+    };
+    let policy = prompt
         .get_or_init(|| {
             crate::prompt_policy::compile_sttp_policy(
                 crate::prompt_policy::SttpPolicySelection::new(
-                    crate::prompt_policy::SttpPolicyMode::General,
+                    policy_mode,
                     crate::prompt_policy::SttpPolicyActor::Host,
                 ),
             )
@@ -4789,6 +4801,13 @@ impl EmbeddedDaemonClient {
                     unavailable_reason: None,
                 },
                 medousa_types::daemon_api::AgentModeAvailability {
+                    mode: medousa_types::daemon_api::AgentModeId::Teacher,
+                    label: "Teacher".to_string(),
+                    available: true,
+                    contract_revision: Some("teacher-v1".to_string()),
+                    unavailable_reason: None,
+                },
+                medousa_types::daemon_api::AgentModeAvailability {
                     mode: medousa_types::daemon_api::AgentModeId::Instant,
                     label: "Instant".to_string(),
                     available: true,
@@ -5622,6 +5641,15 @@ query MobileProbe {
         assert!(prompt.contains("[MEDOUSA_HUD]"));
         assert!(prompt.contains("catalog_tool=cognition_tools_discover"));
         assert!(prompt.contains("web_tool=cognition_web_search"));
+    }
+
+    #[test]
+    fn teacher_embedded_prompt_uses_evidence_first_policy_and_full_tool_hud() {
+        let prompt = embedded_system_prompt(AgentModeId::Teacher);
+        assert!(prompt.contains("p2_mode_teacher(.99)"));
+        assert!(prompt.contains("pattern recognition proposes relationships"));
+        assert!(prompt.contains("catalog_tool=cognition_tools_discover"));
+        assert!(!prompt.contains("p2_mode_general(.99)"));
     }
 
     #[test]

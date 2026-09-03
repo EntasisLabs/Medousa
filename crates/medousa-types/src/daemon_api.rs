@@ -1431,6 +1431,7 @@ impl TurnSurfaceContext {
 pub enum AgentModeId {
     #[default]
     General,
+    Teacher,
     Instant,
     Coder,
 }
@@ -1648,6 +1649,7 @@ impl AgentModeId {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::General => "general",
+            Self::Teacher => "teacher",
             Self::Instant => "instant",
             Self::Coder => "coder",
         }

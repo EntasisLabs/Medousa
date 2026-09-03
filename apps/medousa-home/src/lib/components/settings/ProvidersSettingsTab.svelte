@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import SettingsListRow from "$lib/components/settings/SettingsListRow.svelte";
+  import SettingsChatGptAccount from "$lib/components/settings/SettingsChatGptAccount.svelte";
   import ProviderConfigSheet from "$lib/components/settings/ProviderConfigSheet.svelte";
   import type { ProviderCatalogEntry, ProvidersListResult } from "$lib/types/providers";
   import { refreshModelCatalog } from "$lib/utils/modelCapabilityCatalog";
@@ -8,16 +9,23 @@
   import {
     formatProviderSettingsSummary,
     loadProviderSettingsSummary,
+    providerIsConfigurable,
     type ProviderSettingsSummary,
   } from "$lib/utils/providerSettings";
 
   interface Props {
     catalog: ProvidersListResult | null;
     disabled?: boolean;
+    chatGptAccountAuth?: boolean;
     onKeysChanged?: () => void | Promise<void>;
   }
 
-  let { catalog: catalogProp = null, disabled = false, onKeysChanged }: Props = $props();
+  let {
+    catalog: catalogProp = null,
+    disabled = false,
+    chatGptAccountAuth = true,
+    onKeysChanged,
+  }: Props = $props();
 
   let localCatalog = $state<ProvidersListResult | null>(null);
   const catalog = $derived(catalogProp ?? localCatalog);
@@ -27,7 +35,10 @@
   let catalogRefreshing = $state(false);
   let catalogMessage = $state<string | null>(null);
 
-  const providers = $derived(catalog?.providers ?? []);
+  const providers = $derived((catalog?.providers ?? []).filter(providerIsConfigurable));
+  const hasOpenAiProvider = $derived(
+    providers.some((entry) => entry.id.trim().toLowerCase() === "openai"),
+  );
 
   onMount(() => {
     if (!catalogProp) {
@@ -46,7 +57,7 @@
     if (!catalog) return;
     const next: Record<string, ProviderSettingsSummary> = {};
     await Promise.all(
-      catalog.providers.map(async (entry) => {
+      providers.map(async (entry) => {
         next[entry.id] = await loadProviderSettingsSummary(entry);
       }),
     );
@@ -82,24 +93,30 @@
     if (!summary) return "…";
     return formatProviderSettingsSummary(entry, summary);
   }
+
+  function providerLabel(entry: ProviderCatalogEntry): string {
+    return entry.id.trim().toLowerCase() === "openai" ? "OpenAI API" : entry.label;
+  }
 </script>
 
 <div class="settings-native-stack">
   <section>
-    <h3 class="settings-native-heading">Providers</h3>
-    <p class="settings-native-footnote">
-      Keys and endpoints live here. Model picks only choose provider + model.
-    </p>
     <div class="settings-native-group">
       {#each providers as entry (entry.id)}
         <SettingsListRow
-          label={entry.label}
+          label={providerLabel(entry)}
           value={providerValue(entry)}
           hint={entry.blurb}
           disabled={disabled}
           onclick={() => openProvider(entry)}
         />
+        {#if entry.id.trim().toLowerCase() === "openai"}
+          <SettingsChatGptAccount enabled={chatGptAccountAuth} {disabled} />
+        {/if}
       {/each}
+      {#if !hasOpenAiProvider}
+        <SettingsChatGptAccount enabled={chatGptAccountAuth} {disabled} />
+      {/if}
     </div>
   </section>
 

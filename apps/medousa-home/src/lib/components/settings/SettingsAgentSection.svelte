@@ -5,7 +5,6 @@
   import SettingsStorageGovernance from "$lib/components/settings/SettingsStorageGovernance.svelte";
   import ModelsSettingsTab from "$lib/components/settings/ModelsSettingsTab.svelte";
   import ModelsStagesTab from "$lib/components/settings/ModelsStagesTab.svelte";
-  import ProvidersSettingsTab from "$lib/components/settings/ProvidersSettingsTab.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
   import { voicePresets } from "$lib/stores/voicePresets.svelte";
   import { DEPTH_CHARTER_OPTIONS } from "$lib/types/settings";
@@ -35,7 +34,6 @@
   type Props = { nativeWorkloads?: boolean; chatGptAccountAuth?: boolean };
   let { nativeWorkloads = true, chatGptAccountAuth = true }: Props = $props();
 
-  type ModelsExtra = "stages" | "providers" | null;
   type Picker = "stance" | "depth" | null;
 
   const memoryPrimary = [
@@ -90,9 +88,7 @@
 
   let catalog = $state<ProvidersListResult | null>(null);
   let sttReady = $state(false);
-  let modelsTab: ModelsSettingsTab | undefined = $state();
   let picker = $state<Picker>(null);
-  let modelsExtra = $state<ModelsExtra>(null);
   let modelsAdvancedOpen = $state(false);
   let memoryOpen = $state(false);
   let memoryBudgetsOpen = $state(false);
@@ -188,18 +184,16 @@
   }
 
   async function refreshSttAndKeys() {
-    const stt = await composerSttStatus();
-    sttReady = stt.available;
-    await modelsTab?.refreshKeyStatus();
+    try {
+      const stt = await composerSttStatus();
+      sttReady = stt.available;
+    } catch {
+      sttReady = false;
+    }
   }
 
   function togglePicker(next: Picker) {
     picker = picker === next ? null : next;
-  }
-
-  function toggleModelsExtra(next: Exclude<ModelsExtra, null>) {
-    modelsExtra = modelsExtra === next ? null : next;
-    if (modelsExtra) modelsAdvancedOpen = true;
   }
 
   function numField(
@@ -415,22 +409,21 @@
 
   <div class="prefs-band">
     <div class="prefs-band-head">
-      <h3 class="settings-subsection-heading">Models</h3>
+      <h3 class="settings-subsection-heading">Models & providers</h3>
       <p class="settings-subsection-lead">
-        Who answers, sees, and listens — changes apply immediately.
+        Connect access, then choose who answers, sees, and listens.
+        <button
+          type="button"
+          class="agent-inline-learn"
+          onclick={() => void openGuide("chat")}
+        >
+          Learn more
+        </button>
       </p>
-      <button
-        type="button"
-        class="settings-learn-more"
-        onclick={() => void openGuide("chat")}
-      >
-        Learn more
-      </button>
     </div>
 
     <div class="agent-models">
       <ModelsSettingsTab
-        bind:this={modelsTab}
         catalog={inferenceCatalog}
         {chatGptAccountAuth}
         {sttReady}
@@ -442,49 +435,13 @@
     <details class="prefs-more mt-3" bind:open={modelsAdvancedOpen}>
       <summary class="prefs-more-summary">
         <span class="prefs-more-summary-copy">
-          <span>Stages & providers</span>
-          <span class="prefs-more-summary-meta">Routing and API keys</span>
+          <span>Stage routing</span>
+          <span class="prefs-more-summary-meta">Specialized models inside a turn</span>
         </span>
         <ChevronDown size={14} strokeWidth={2} class="prefs-more-chevron" aria-hidden="true" />
       </summary>
       <div class="prefs-more-body">
-        <div class="agent-extra">
-          <button
-            type="button"
-            class="agent-extra-btn"
-            class:agent-extra-btn-active={modelsExtra === "stages"}
-            aria-expanded={modelsExtra === "stages"}
-            onclick={() => toggleModelsExtra("stages")}
-          >
-            Stages
-          </button>
-          <button
-            type="button"
-            class="agent-extra-btn"
-            class:agent-extra-btn-active={modelsExtra === "providers"}
-            aria-expanded={modelsExtra === "providers"}
-            onclick={() => toggleModelsExtra("providers")}
-          >
-            Providers
-          </button>
-        </div>
-
-        {#if modelsExtra === "stages"}
-          <div class="agent-extra-panel mt-3">
-            <p class="settings-subsection-lead mb-3">Stage routes need Save below.</p>
-            <ModelsStagesTab disabled={workshopDefaults.saving} />
-          </div>
-        {:else if modelsExtra === "providers"}
-          <div class="agent-extra-panel mt-3">
-            <ProvidersSettingsTab
-              catalog={inferenceCatalog}
-              disabled={workshopDefaults.saving}
-              onKeysChanged={() => void refreshSttAndKeys()}
-            />
-          </div>
-        {:else}
-          <p class="prefs-footnote">Pick Stages or Providers to open that panel.</p>
-        {/if}
+        <ModelsStagesTab disabled={workshopDefaults.saving} />
       </div>
     </details>
   </div>
@@ -770,11 +727,9 @@
     </details>
   {/if}
 
-  {#if modelsExtra !== "stages"}
-    <div class="agent-save mt-6 border-t border-surface-500/35 pt-5">
-      <SettingsCharterSaveBar />
-    </div>
-  {/if}
+  <div class="agent-save mt-6 border-t border-surface-500/35 pt-5">
+    <SettingsCharterSaveBar />
+  </div>
 </section>
 
 <style>
@@ -1003,41 +958,6 @@
     color: rgb(var(--theme-text-quiet));
   }
 
-  .agent-extra {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-  }
-
-  .agent-extra-btn {
-    border-radius: 999px;
-    border: 1px solid var(--prefs-tile-border);
-    background: transparent;
-    padding: 0.28rem 0.7rem;
-    font-size: 0.72rem;
-    font-weight: 600;
-    color: rgb(var(--theme-text-tertiary));
-    cursor: pointer;
-  }
-
-  .agent-extra-btn:hover {
-    border-color: rgb(var(--color-surface-500) / 0.5);
-    color: rgb(var(--color-surface-200));
-  }
-
-  .agent-extra-btn-active {
-    border-color: rgb(var(--color-primary-500) / 0.4);
-    background: rgb(var(--color-primary-500) / 0.1);
-    color: rgb(var(--color-surface-100));
-  }
-
-  .agent-extra-panel {
-    border-radius: var(--prefs-tile-radius);
-    border: 1px solid var(--prefs-tile-border);
-    background: var(--prefs-tile-bg);
-    padding: 0.75rem;
-  }
-
   .prefs-more {
     margin-top: 1rem;
     border-radius: var(--prefs-tile-radius);
@@ -1138,5 +1058,19 @@
 
   .agent-models :global(.settings-profile-card) {
     border-radius: var(--prefs-tile-radius);
+  }
+
+  .agent-inline-learn {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: rgb(var(--theme-text-quiet));
+    font: inherit;
+    font-weight: 550;
+    cursor: pointer;
+  }
+
+  .agent-inline-learn:hover {
+    color: rgb(var(--theme-text));
   }
 </style>

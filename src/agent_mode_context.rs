@@ -56,7 +56,7 @@ pub const INSTANT_CONTEXT_LIMITS: AgentModeContextLimits = AgentModeContextLimit
 pub const fn context_limits_for_mode(mode: AgentModeId) -> Option<AgentModeContextLimits> {
     match mode {
         AgentModeId::Instant => Some(INSTANT_CONTEXT_LIMITS),
-        AgentModeId::General | AgentModeId::Coder => None,
+        AgentModeId::General | AgentModeId::Teacher | AgentModeId::Coder => None,
     }
 }
 
@@ -96,6 +96,7 @@ mod tests {
     #[test]
     fn existing_modes_keep_their_existing_context_paths() {
         assert_eq!(context_limits_for_mode(AgentModeId::General), None);
+        assert_eq!(context_limits_for_mode(AgentModeId::Teacher), None);
         assert_eq!(context_limits_for_mode(AgentModeId::Coder), None);
     }
 }

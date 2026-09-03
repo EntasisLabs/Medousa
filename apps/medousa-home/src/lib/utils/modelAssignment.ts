@@ -20,8 +20,8 @@ export function pickerTitle(target: ModelPickerTarget): string {
     case "favorite-add":
       return "Add favorite";
     case "primary":
-      if (target.profile === "main") return "Chat model";
-      if (target.profile === "vision") return "Vision model";
+      if (target.profile === "main") return "Conversation model";
+      if (target.profile === "vision") return "Image backup";
       return "Dictation model";
     case "fallback":
       return `${profileLabel(target.profile)} backup ${target.index + 1}`;
@@ -35,12 +35,22 @@ export function pickerRequiresVision(target: ModelPickerTarget): boolean {
 }
 
 export function pickerAllowsClear(target: ModelPickerTarget): boolean {
-  return target.type === "fallback";
+  return (
+    target.type === "fallback" ||
+    (target.type === "primary" && target.profile === "vision")
+  );
+}
+
+export function pickerClearHint(target: ModelPickerTarget): string {
+  if (target.type === "primary" && target.profile === "vision") {
+    return "Use the conversation model first and clear the dedicated image backup";
+  }
+  return "Clear this backup slot";
 }
 
 function profileLabel(profile: ProfileKind): string {
   if (profile === "main") return "Chat";
-  if (profile === "vision") return "Vision";
+  if (profile === "vision") return "Image";
   return "Dictation";
 }
 
@@ -116,6 +126,13 @@ export function rowLabelForTarget(
       : `${profileLabel(target.profile)} backup ${target.index + 1}`;
   const selection = selectionForTarget(draft, target);
   if (!selection) {
+    if (target.type === "primary" && target.profile === "vision") {
+      return {
+        title,
+        value: "Automatic",
+        hint: "Uses the conversation model first",
+      };
+    }
     return { title, value: "Not set", hint: null };
   }
   const providerHint =
@@ -136,7 +153,13 @@ export function applyModelSelection(
   if (target.type === "favorite-add") return draft;
 
   if (target.type === "primary") {
-    if (!selection) return draft;
+    if (!selection) {
+      if (target.profile !== "vision") return draft;
+      return syncFlatFieldsFromProfiles({
+        ...draft,
+        inferenceProfiles: mergeProfiles(draft, { vision: null }),
+      });
+    }
     const nextProfile: InferenceProfile = {
       provider: selection.provider,
       model: selection.model,

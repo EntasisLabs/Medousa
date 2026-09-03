@@ -13,6 +13,7 @@ local check_mode_proposals
 
 local function agent_mode_label(mode)
   if mode == "coder" then return "Coder" end
+  if mode == "teacher" then return "Teacher" end
   if mode == "instant" then return "Instant" end
   return "General"
 end

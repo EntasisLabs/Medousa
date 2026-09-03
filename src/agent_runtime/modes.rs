@@ -120,6 +120,13 @@ pub fn resolve_agent_mode(
             completion_profile: TurnCompletionProfile::HostScheduler,
             coder_phase: None,
         }),
+        AgentModeId::Teacher => Ok(ResolvedAgentMode {
+            id: AgentModeId::Teacher,
+            contract_revision: "teacher-v1",
+            execution_lane: ModeExecutionLane::HostOrchestrated,
+            completion_profile: TurnCompletionProfile::HostScheduler,
+            coder_phase: None,
+        }),
         AgentModeId::Instant => Ok(ResolvedAgentMode {
             id: AgentModeId::Instant,
             contract_revision: crate::agent_mode_context::INSTANT_CONTRACT_REVISION,
@@ -148,6 +155,13 @@ pub fn list_agent_modes() -> AgentModeListResponse {
                 unavailable_reason: None,
             },
             AgentModeAvailability {
+                mode: AgentModeId::Teacher,
+                label: "Teacher".to_string(),
+                available: true,
+                contract_revision: Some("teacher-v1".to_string()),
+                unavailable_reason: None,
+            },
+            AgentModeAvailability {
                 mode: AgentModeId::Instant,
                 label: "Instant".to_string(),
                 available: true,
@@ -171,6 +185,7 @@ pub fn list_agent_modes() -> AgentModeListResponse {
 pub fn compiled_system_policy_for_mode(mode: &ResolvedAgentMode) -> CompiledSttpPolicy {
     let policy_mode = match (mode.id, mode.coder_phase) {
         (AgentModeId::General | AgentModeId::Instant, _) => SttpPolicyMode::General,
+        (AgentModeId::Teacher, _) => SttpPolicyMode::Teacher,
         (AgentModeId::Coder, Some(CoderRuntimePhase::Work)) => SttpPolicyMode::CoderWork,
         (AgentModeId::Coder, _) => SttpPolicyMode::CoderSetup,
     };
@@ -257,12 +272,14 @@ mod tests {
     #[test]
     fn registry_reports_all_modes_available() {
         let registry = list_agent_modes();
-        assert_eq!(registry.modes.len(), 3);
+        assert_eq!(registry.modes.len(), 4);
         assert!(registry.modes[0].available);
         assert!(registry.modes[1].available);
         assert!(registry.modes[2].available);
-        assert_eq!(registry.modes[1].mode, AgentModeId::Instant);
-        assert_eq!(registry.modes[2].mode, AgentModeId::Coder);
+        assert!(registry.modes[3].available);
+        assert_eq!(registry.modes[1].mode, AgentModeId::Teacher);
+        assert_eq!(registry.modes[2].mode, AgentModeId::Instant);
+        assert_eq!(registry.modes[3].mode, AgentModeId::Coder);
     }
 
     #[test]
@@ -273,6 +290,17 @@ mod tests {
         assert!(prompt.contains("p2_mode_general(.99)"));
         assert!(prompt.contains("p3_actor_host(.99)"));
         assert!(!prompt.contains("p2_mode_coder"));
+    }
+
+    #[test]
+    fn teacher_system_prompt_is_evidence_first_pedagogy() {
+        let mode = resolve_agent_mode(AgentModeId::Teacher).expect("teacher mode");
+        let prompt = system_prompt_for_mode(&mode);
+        assert!(prompt.contains("p2_mode_teacher(.99)"));
+        assert!(prompt.contains("pattern recognition proposes relationships"));
+        assert!(prompt.contains("never defend a claim because Medousa said it"));
+        assert!(!prompt.contains("p2_mode_general(.99)"));
+        assert_eq!(mode.execution_lane, ModeExecutionLane::HostOrchestrated);
     }
 
     #[test]

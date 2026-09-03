@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ModelCapabilityRecord } from "$lib/types/modelCapability";
-import { pickModelFromRecords } from "./resolveProviderModels";
+import { filterRecordsForCapability, pickModelFromRecords } from "./resolveProviderModels";
 
 function rec(modelId: string): ModelCapabilityRecord {
   return {
@@ -44,5 +44,14 @@ describe("pickModelFromRecords", () => {
     expect(
       pickModelFromRecords([], { fallbackDefault: "llama3.2" }),
     ).toBe("llama3.2");
+  });
+});
+
+describe("filterRecordsForCapability", () => {
+  it("only offers image-capable models for an image role", () => {
+    const text = rec("text-only");
+    const vision = { ...rec("vision"), supportsVision: true };
+    expect(filterRecordsForCapability([text, vision], "vision")).toEqual([vision]);
+    expect(filterRecordsForCapability([text, vision], "text")).toEqual([text, vision]);
   });
 });

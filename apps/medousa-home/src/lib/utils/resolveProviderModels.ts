@@ -1,6 +1,7 @@
 /**
  * Shared provider → model list resolution (settings ModelCatalogSheet + onboarding ProviderPicker).
- * Order: daemon capability catalog → live provider listing → catalog defaultModel.
+ * Order: connected-account catalog → daemon capability catalog → live provider listing →
+ * catalog defaultModel.
  */
 
 import type { ModelCapabilityRecord } from "$lib/types/modelCapability";
@@ -11,6 +12,7 @@ import {
   listModelCatalog,
   recordsFromModelIds,
 } from "$lib/utils/modelCapabilityCatalog";
+import { listChatGptOAuthModels } from "$lib/utils/chatgptOAuth";
 import { listProviderModels } from "$lib/utils/providersApi";
 import {
   resolveProviderBaseUrl,
@@ -38,6 +40,22 @@ export async function resolveModelsForProvider(
     entry.defaultBaseUrl?.trim() ||
     undefined;
 
+  if (entry.id.trim().toLowerCase() === "openai-codex") {
+    try {
+      const accountCatalog = await listChatGptOAuthModels();
+      const records = recordsFromModelIds(
+        runtimeId,
+        accountCatalog.models,
+        "chatgpt-account",
+      );
+      const compatible = filterRecordsForCapability(records, options?.capability);
+      if (compatible.length > 0) return compatible;
+    } catch {
+      // The account may be signed out or temporarily offline. Continue through
+      // the daemon snapshot before falling back to the provider default.
+    }
+  }
+
   if (entry.id !== CUSTOM_PROVIDER_CATALOG_ID) {
     try {
       const capabilityRaw = options?.capability?.trim();
@@ -54,7 +72,9 @@ export async function resolveModelsForProvider(
           record.provider.trim().toLowerCase() === entry.id.toLowerCase() ||
           record.provider.trim().toLowerCase() === runtimeId.toLowerCase(),
       );
-      if (fromCatalog.length > 0) return fromCatalog;
+      if (fromCatalog.length > 0) {
+        return filterRecordsForCapability(fromCatalog, options?.capability);
+      }
     } catch {
       // Fall through to live listing.
     }
@@ -67,17 +87,33 @@ export async function resolveModelsForProvider(
       baseUrl: baseUrl || undefined,
     });
     if (live.models.length > 0) {
-      return recordsFromModelIds(runtimeId, live.models, live.source);
+      return filterRecordsForCapability(
+        recordsFromModelIds(runtimeId, live.models, live.source),
+        options?.capability,
+      );
     }
   } catch {
     // Fall through to default.
   }
 
-  return defaultProviderRecords({
-    ...entry,
-    id: runtimeId,
-    defaultModel: entry.defaultModel,
-  });
+  return filterRecordsForCapability(
+    defaultProviderRecords({
+      ...entry,
+      id: runtimeId,
+      defaultModel: entry.defaultModel,
+    }),
+    options?.capability,
+  );
+}
+
+export function filterRecordsForCapability(
+  records: ModelCapabilityRecord[],
+  capability?: ResolveProviderModelsOptions["capability"],
+): ModelCapabilityRecord[] {
+  if (capability === "vision") {
+    return records.filter((record) => record.supportsVision);
+  }
+  return records;
 }
 
 /** Pick a model id from resolved records (prefer suggested, then current if still valid, then first). */

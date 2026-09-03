@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { Check, ChevronDown, Code2, Sparkles, Zap } from "@lucide/svelte";
+  import { Check, ChevronDown, Code2, GraduationCap, Sparkles, Zap } from "@lucide/svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import {
     getSessionAgentMode,
@@ -25,6 +25,12 @@
       label: "General",
       available: true,
       contract_revision: "general-v1",
+    },
+    {
+      mode: "teacher",
+      label: "Teacher",
+      available: true,
+      contract_revision: "teacher-v1",
     },
     {
       mode: "instant",
@@ -57,6 +63,7 @@
   }
 
   function modeDescription(mode: AgentModeId): string {
+    if (mode === "teacher") return "Build understanding through connected concepts";
     if (mode === "instant") return "Faster chat with focused recent context";
     if (mode === "coder") return "Repository-aware engineering";
     return "Life, planning, research, and everyday work";
@@ -150,6 +157,8 @@
 {#snippet modeIcon(mode: AgentModeId, size = 13)}
   {#if mode === "coder"}
     <Code2 {size} strokeWidth={1.9} class="shrink-0 opacity-75" />
+  {:else if mode === "teacher"}
+    <GraduationCap {size} strokeWidth={1.9} class="shrink-0 opacity-75" />
   {:else if mode === "instant"}
     <Zap {size} strokeWidth={1.9} class="shrink-0 opacity-75" />
   {:else}

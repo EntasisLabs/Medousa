@@ -1,5 +1,4 @@
 <script lang="ts">
-  import SettingsCharterSaveBar from "$lib/components/settings/SettingsCharterSaveBar.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
 
   interface Props {
@@ -23,7 +22,7 @@
   <p class="settings-subsection-lead">
     A stage is one step in how a turn is built (lead, read, verify, final voice). Pick a stage to
     set its model. Stance and answer depth live in Voice; live routes show in Runtime → Routing.
-    Changes here need Save.
+    Changes save with the rest of the Medousa Agent settings below.
   </p>
 
   <div class="settings-toggle-list">
@@ -92,10 +91,6 @@
       </label>
     </div>
   {/if}
-
-  <div class="mt-5">
-    <SettingsCharterSaveBar />
-  </div>
 </div>
 
 <style>
