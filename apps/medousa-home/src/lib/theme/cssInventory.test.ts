@@ -114,6 +114,21 @@ describe("css inventory and cascade", () => {
     );
     expect(appHtml).toMatch(/html,\s*body\s*\{[^}]*overflow:\s*hidden/s);
   });
+
+  it("ships one deterministic stylesheet to packaged WebViews", () => {
+    const svelte = source("svelte.config.js");
+    expect(svelte).toMatch(/bundleStrategy:\s*["']single["']/);
+
+    const liquid = source("src/lib/liquid/archetypes/registerUi.ts");
+    expect(liquid).toContain('import "$lib/liquid/styles/liquidOverflow.css"');
+    expect(liquid).not.toMatch(/import\([^)]*liquidOverflow\.css/);
+  });
+
+  it("keeps benchmark route geometry scoped when CSS is bundled globally", () => {
+    const harness = source("src/routes/p02-browser-harness/+page.svelte");
+    expect(harness).not.toMatch(/:global\(body\)\s*\{/);
+    expect(harness).toContain(".p02-browser-harness-page");
+  });
 });
 
 describe("selected-theme Tailwind compile", () => {

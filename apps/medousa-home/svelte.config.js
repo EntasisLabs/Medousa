@@ -9,6 +9,12 @@ import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 const config = {
   preprocess: vitePreprocess(),
   kit: {
+    // Home owns every frontend byte inside the native bundle. A single bundle
+    // avoids late feature CSS fetches through Tauri's custom protocol, which
+    // can leave dynamically mounted editors unstyled in packaged WebViews.
+    output: {
+      bundleStrategy: "single",
+    },
     adapter: adapter({
       fallback: "index.html",
     }),

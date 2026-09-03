@@ -10,13 +10,18 @@
   <title>P02 browser streaming render harness</title>
 </svelte:head>
 
-<div id="status">Running P02…</div>
-<pre id="result"></pre>
-<main id="host"></main>
+<div class="p02-browser-harness-page">
+  <div id="status">Running P02…</div>
+  <pre id="result"></pre>
+  <main id="host"></main>
+</div>
 
 <style>
-  :global(body) {
-    margin: 24px;
+  .p02-browser-harness-page {
+    box-sizing: border-box;
+    min-height: 100%;
+    overflow: auto;
+    padding: 24px;
     font: 14px system-ui, sans-serif;
   }
 

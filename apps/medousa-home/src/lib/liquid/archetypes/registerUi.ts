@@ -1,5 +1,6 @@
 /** Explicit, idempotent installation of lazy Liquid renderer factories. */
 import type { ArchetypeId } from "$lib/liquid/core";
+import "$lib/liquid/styles/liquidOverflow.css";
 import {
   registerComponentLoader,
   type ArchetypeComponentModule,
@@ -50,7 +51,6 @@ const factories: ReadonlyArray<[
 ];
 
 let installed = false;
-let styles: Promise<unknown> | undefined;
 
 export function registerLiquidUiFactories(): void {
   if (!installed) {
@@ -59,8 +59,6 @@ export function registerLiquidUiFactories(): void {
   }
 }
 
-export function installLiquidUi(): Promise<unknown> {
+export function installLiquidUi(): void {
   registerLiquidUiFactories();
-  styles ??= import("$lib/liquid/styles/liquidOverflow.css");
-  return styles;
 }
