@@ -55,12 +55,13 @@ impl<'a> AcpForgeAdapter<'a> {
             detail: serde_json::Value::Object(detail),
         };
         self.forge
-            .begin_isolated_attempt(work_id, executor, ctx.pid, &self.daemon_actor())
+            .begin_workspace_attempt(work_id, executor, ctx.pid, &self.daemon_actor())
     }
 
     /// Liveness heartbeat during a prompt pump.
     pub fn heartbeat(&self, lease: &ExecutionLease) -> Result<(), ForgeError> {
-        self.forge.heartbeat(lease)
+        self.forge.heartbeat(lease)?;
+        self.verify_workspace(lease)
     }
 
     /// Report a pump failure; Forge returns the work to Ready.
@@ -97,6 +98,7 @@ impl<'a> AcpForgeAdapter<'a> {
         lease: &ExecutionLease,
         prompt_chars: usize,
     ) -> Result<(), ForgeError> {
+        self.verify_workspace(lease)?;
         let line = serde_json::json!({
             "kind": "prompt",
             "chars": prompt_chars,
@@ -112,6 +114,7 @@ impl<'a> AcpForgeAdapter<'a> {
         name: &str,
         tool_id: &str,
     ) -> Result<(), ForgeError> {
+        self.verify_workspace(lease)?;
         let line = serde_json::json!({
             "kind": "tool",
             "name": name,
@@ -119,6 +122,12 @@ impl<'a> AcpForgeAdapter<'a> {
             "at": chrono::Utc::now().to_rfc3339(),
         });
         self.forge.append_command_log(lease, &line)
+    }
+
+    fn verify_workspace(&self, lease: &ExecutionLease) -> Result<(), ForgeError> {
+        let item = self.forge.load(&lease.work_id)?;
+        self.forge
+            .verify_attempt_workspace(&item, &lease.attempt_id)
     }
 
     fn daemon_actor(&self) -> ActorRef {

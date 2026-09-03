@@ -76,7 +76,7 @@ pub fn allowed_actions(item: &WorkItem) -> AllowedActions {
         open_terminal: if has_env {
             ActionAffordance::yes()
         } else {
-            ActionAffordance::no("No governed worktree yet")
+            ActionAffordance::no("No governed workspace yet")
         },
         begin_attempt: match item.state {
             WorkState::Ready | WorkState::Executing => ActionAffordance::yes(),
@@ -865,8 +865,8 @@ fn collect_attribution(
         let kind = match executor.as_str() {
             "human" => "human",
             "terminal" => "terminal",
-            "codex" | "cursor" | "hermes" | "acp-codex" | "acp-cursor" | "acp-hermes"
-            | "agent" | "script" => "agent",
+            "codex" | "cursor" | "hermes" | "acp-codex" | "acp-cursor" | "acp-hermes" | "agent"
+            | "script" => "agent",
             _ => "agent",
         };
         let label = match executor.as_str() {
@@ -1075,9 +1075,14 @@ fn build_timeline(forge: &Forge, item: &WorkItem) -> Vec<ReviewTimelineEntry> {
         .filter_map(|event| {
             let (kind, label, detail) = match event.payload {
                 EventPayload::ItemRegistered { .. } => ("intent", "Project created", None),
-                EventPayload::EnvironmentProvisioned { .. } => {
-                    ("workspace", "Isolated working copy prepared", None)
-                }
+                EventPayload::EnvironmentProvisioned { env } => match env.kind {
+                    medousa_forge::model::EnvironmentKind::GitWorktree => {
+                        ("workspace", "Isolated working copy prepared", None)
+                    }
+                    medousa_forge::model::EnvironmentKind::AttachedCheckout => {
+                        ("workspace", "Current checkout attached", None)
+                    }
+                },
                 EventPayload::AttemptStarted { attempt } => {
                     let executor = attempt.executor.kind;
                     (
@@ -1166,7 +1171,7 @@ pub struct ItemProjection {
     pub item: WorkItem,
     pub human_phase: String,
     pub allowed_actions: AllowedActions,
-    /// Whether the governed worktree currently exists on this workshop's disk.
+    /// Whether the governed workspace currently exists on this workshop's disk.
     pub workspace_present: bool,
 }
 

@@ -37,6 +37,7 @@ function fakeMenu(size: { width: number; height: number }) {
     offsetHeight: size.height,
     style: {
       top: "",
+      bottom: "",
       left: "",
       maxWidth: "",
       maxHeight: "",
@@ -289,8 +290,25 @@ describe("placeComposerPopover", () => {
     placeComposerPopover(trigger, menu);
 
     expect(menu.style.position).toBe("fixed");
-    expect(Number.parseInt(menu.style.top, 10)).toBe(600 - 8 - 200);
+    expect(menu.style.top).toBe("auto");
+    expect(800 - Number.parseInt(menu.style.bottom, 10)).toBe(600 - 8);
     expect(Number.parseInt(menu.style.left, 10)).toBe(40);
+  });
+
+  it("anchors to the trigger when native zoom makes layout and rendered sizes differ", () => {
+    const trigger = {
+      getBoundingClientRect: () =>
+        fakeRect({ top: 600, left: 40, right: 80, bottom: 636, width: 40, height: 36 }),
+    } as HTMLElement;
+    const menu = fakeMenu({ width: 560, height: 420 });
+    menu.getBoundingClientRect = () =>
+      fakeRect({ top: 0, left: 0, right: 280, bottom: 210, width: 280, height: 210 });
+
+    placeComposerPopover(trigger, menu);
+
+    expect(menu.style.top).toBe("auto");
+    expect(800 - Number.parseInt(menu.style.bottom, 10)).toBe(600 - 8);
+    expect(menu.style.left).toBe("40px");
   });
 
   it("flips below when there is not enough room above", () => {
@@ -302,6 +320,7 @@ describe("placeComposerPopover", () => {
 
     placeComposerPopover(trigger, menu);
 
+    expect(menu.style.bottom).toBe("auto");
     expect(Number.parseInt(menu.style.top, 10)).toBe(76 + 8);
   });
 });

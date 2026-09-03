@@ -49,10 +49,35 @@ pub fn new_registry() -> TurnTicketRegistry {
 
 pub fn prompt_preview(prompt: &str) -> String {
     let line = prompt.trim().lines().next().unwrap_or("").trim();
-    if line.len() <= 96 {
+    if line.chars().count() <= 96 {
         line.to_string()
     } else {
-        format!("{}…", &line[..95])
+        let mut preview = line.chars().take(95).collect::<String>();
+        preview.push('…');
+        preview
+    }
+}
+
+#[cfg(test)]
+mod prompt_preview_tests {
+    use super::prompt_preview;
+
+    #[test]
+    fn truncates_by_characters() {
+        let prompt = format!("{}tail", "a".repeat(96));
+        let preview = prompt_preview(&prompt);
+
+        assert_eq!(preview.chars().count(), 96);
+        assert_eq!(preview, format!("{}…", "a".repeat(95)));
+    }
+
+    #[test]
+    fn does_not_split_unicode() {
+        let prompt = format!("{}👀 after the boundary", "a".repeat(93));
+        let preview = prompt_preview(&prompt);
+
+        assert_eq!(preview.chars().count(), 96);
+        assert_eq!(preview, format!("{}👀 …", "a".repeat(93)));
     }
 }
 

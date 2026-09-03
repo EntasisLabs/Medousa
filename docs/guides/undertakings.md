@@ -20,10 +20,13 @@ Intent → Set up → Edit → Verify → Review → Finish
 1. Open **Code**, choose **New project**, select a recent or pinned repository,
    or browse the connected workshop, then describe the outcome you want. The
    project title is that outcome.
-2. **Set up project** creates a safe working copy. Medousa then opens the file
-   tree (primary in the rail) and a landing file (README or first source) so
-   you can edit immediately. If setup or the tree API fails, the center shows
-   that failure honestly — never an empty “Open a file” as success.
+2. Choose **Isolated copy** (the default) or **Current checkout**, then set up
+   the project. An isolated project gets a private branch and working copy. A
+   current-checkout project works directly beside the files already on the
+   checked-out local branch. Medousa then opens the file tree and a landing
+   file (README or first source) so you can edit immediately. If setup or the
+   tree API fails, the center shows that failure honestly — never an empty
+   “Open a file” as success.
 3. Edit in the buffer. ``Ctrl/Cmd+` `` toggles a Terminal strip under the
    editor (same Code tab). **Pop out** opens a full Terminal shell tab. Use the
    operator strip for who edits, dirty count, issues, and last verify. Ask
@@ -31,9 +34,11 @@ Intent → Set up → Edit → Verify → Review → Finish
    editing** interrupt or reclaim the agent. **Understand** explains
    relationships without changing anything.
 4. **Review changes** gathers what changed and how it was made.
-5. **Approve changes**, then **Finish project**. Discard, Terminal in the
-   working copy, and Reveal remain under **More**. Technical details stay
-   collapsed there too.
+5. **Approve changes**, then **Finish project**. Close, Terminal in the
+   workspace, and Reveal remain under **More**. Closing an isolated project
+   removes its private copy; closing a current-checkout project never removes,
+   resets, or stashes files. The workshop stops any bound coding agent before
+   it releases that checkout. Technical details stay collapsed there too.
 
 Chat and Terminal show the same compact project context. Open the context chip
 to move between the project, Review, Terminal, and a coding agent without
@@ -42,7 +47,7 @@ rebuilding context. It shows the current stage and collaborator.
 Coder mode does not require choosing a project first. In chat, switch to
 **Coder**, then use **Choose or create project** to continue ready work or open
 the same repository-and-branch setup used by Code. Creating from chat keeps the
-picker open and binds the resulting governed working copy back to that chat;
+picker open and binds the resulting governed workspace back to that chat;
 there is no separate miniature creation path. **Let Medousa choose or create
 it** sends the current message through a restricted setup phase: it can list,
 bind, or create a project, but receives no repository mutation or command
@@ -50,7 +55,7 @@ authority until the following bound turn.
 
 Cursor and Codex start only after the conversation has a project. Medousa
 resolves that durable binding on the workshop daemon and launches the external
-agent inside the project's governed working copy. Switching projects stops the
+agent inside the project's governed workspace. Switching projects stops the
 old agent session and starts or resumes it in the newly selected project;
 detaching a project stops the project-bound agent instead of leaving it active
 in the previous folder. Plain General-mode external chats may remain unbound.
@@ -58,7 +63,7 @@ in the previous folder. Plain General-mode external chats may remain unbound.
 If repository or tree APIs return 404, Medousa reports that the workshop daemon
 is older than the project tools — rebuild and restart `medousa_daemon` from this
 checkout rather than showing a fake-ready empty editor. If the project has no
-working copy yet, **Set up project** is the primary action in the center and rail.
+workspace yet, **Set up project** is the primary action in the center and rail.
 
 ## Choose a repository
 
@@ -71,9 +76,20 @@ filesystem as if it belonged to the workshop.
   client connected to it.
 - The remote browser starts from scoped workshop places and lists folders and
   Git repositories without requiring a server path.
-- Inspection explains whether the repository is clean. Existing uncommitted
-  changes stay in the original checkout; the project starts from a committed
-  revision in an isolated working copy.
+- Inspection explains whether the repository is clean. **Isolated copy** keeps
+  existing uncommitted changes outside the project. **Current checkout** takes
+  an immutable starting snapshot of those files, then shows and reviews only
+  changes made after Coder attached. It requires the currently checked-out
+  local branch; branch switches, commits, merges, rebases, and concurrent
+  attached projects make Forge refuse the next guarded mutation or review
+  instead of silently changing scope.
+- If existing checkout changes include excluded, oversized, or secret-like
+  content, Medousa refuses to attach before making the snapshot. Clean those
+  paths or use **Isolated copy**.
+- The checked-out branch, `HEAD`, and real Git index stay principal-owned and
+  pinned for the attachment. Fetch remains available, but Pull, Push, and Sync
+  are disabled until the project is closed; use Terminal afterward when you
+  intentionally want to commit or change repository history.
 - If active Medousa work already targets the repository, choose **Continue**
   that project or explicitly **Start another change**.
 - Manual path entry remains under the advanced disclosure for unusual mounts.
@@ -91,7 +107,7 @@ automation surface. Open files and Review are **Workshop shell tabs** (LME
 Code resources); pane splits and tab cycling belong to the Workshop shell, not
 a private Code IDE chrome.
 
-- File paths are always relative to the project’s safe working copy.
+- File paths are always relative to the project’s governed workspace.
 - Files stay editable when the project can start (or continue) a human editing
   session — the first keystroke or save begins one. While a revision is sealed
   for review, Code shows that edits start a new attempt; sealed evidence stays
@@ -132,12 +148,15 @@ a private Code IDE chrome.
   tracked and untracked source (regex, case, whole word, include/exclude globs,
   changed-files scope, and load-more pagination). **Replace…** previews
   digest-fenced edits; uncheck files to skip them, then Apply writes the rest
-  atomically. **Changes** shows the governed working copy’s branch, upstream
+  atomically. **Changes** shows the governed workspace’s branch, upstream
   ahead/behind when known, conflict state, and changed-file list. Select a file
   for a baseline comparison with real context expansion, **Revert hunk**, and
   **Restore baseline**. Conflicted paths offer Keep ours / Take theirs / Use
   baseline (clears unmerged state). **Fetch / Pull / Push / Sync** are
-  lease-guarded (fast-forward pull only; Forge branch push; never force).
+  lease-guarded (fast-forward pull only; Forge branch push; never force). A
+  current-checkout project permits Fetch but disables Pull, Push, and Sync so
+  Coder cannot move its pinned `HEAD`, branch, or index while the attachment is
+  active.
   **Seal for Review** checkpoints into Review; Share still happens from Review
   after finish. History and Blame are available on the Changes panel.
   Review remains the finish/decision surface.

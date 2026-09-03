@@ -30,6 +30,7 @@ export {
   humanPhaseLabel,
   humanizeForgeMessage,
   gitTargetBaseRef,
+  usesAttachedCheckout,
   getProviderHandoff,
   shareProviderHandoff,
   saveProviderContext,

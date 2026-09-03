@@ -1255,12 +1255,17 @@ pub async fn run_agent_turn(
             tracking_sink
                 .agent_error(0, "turn cancelled".to_string())
                 .await;
+            // Let Coder unwind its bound shell before its Forge lease drops.
+            // Dropping the future here can strand a PTY that still has access
+            // to a principal-owned attached checkout.
+            scoped_turn.await;
         }
         () = tokio::time::sleep_until(deadline) => {
             cancellation.cancel();
             tracking_sink
                 .agent_error(0, "turn execution deadline exceeded".to_string())
                 .await;
+            scoped_turn.await;
         }
         () = &mut scoped_turn => {}
     }
@@ -1278,6 +1283,44 @@ pub async fn run_agent_turn(
             .mark_turn_finished(&correlation_id, final_outcome)
             .await;
     }
+}
+
+fn prepare_attached_native_coder_handoff(
+    forge: &medousa_forge::forge::Forge,
+    work_id: &medousa_forge::model::WorkId,
+    session_id: &str,
+    turn_id: &str,
+) -> Result<(), medousa_forge::error::ForgeError> {
+    let item = forge.load(work_id)?;
+    if !item.uses_attached_checkout() {
+        return Ok(());
+    }
+    let active_human = item
+        .active_attempt_ids()
+        .into_iter()
+        .filter_map(|attempt_id| item.attempt(attempt_id))
+        .find(|attempt| attempt.executor.kind == "human")
+        .and_then(|attempt| attempt.lease.clone());
+    let Some(lease) = active_human else {
+        return Ok(());
+    };
+    forge.append_command_log(
+        &lease,
+        &serde_json::json!({
+            "kind": "executor_handoff",
+            "from": "human",
+            "to": "medousa-coder",
+            "session_id": session_id,
+            "turn_id": turn_id,
+            "at": chrono::Utc::now(),
+        }),
+    )?;
+    forge.interrupt_attempt(
+        &lease,
+        medousa_forge::model::RecoveryDisposition::RestartAllowed,
+        &medousa_forge::forge::Forge::system_actor(),
+    )?;
+    Ok(())
 }
 
 async fn run_agent_turn_inner(
@@ -1373,6 +1416,16 @@ async fn run_agent_turn_inner(
                     .trim()
                     .to_string(),
             );
+            if let Err(err) = prepare_attached_native_coder_handoff(
+                forge.as_ref(),
+                &work_id,
+                &session_id,
+                turn_id,
+            ) {
+                sink.agent_error(1, format!("cannot hand the current checkout to Coder: {err}"))
+                    .await;
+                return;
+            }
             let executor = medousa_forge::model::ExecutorDescriptor {
                 kind: "medousa-coder".into(),
                 detail: serde_json::json!({
@@ -1412,10 +1465,9 @@ async fn run_agent_turn_inner(
             let can_rebind_source = source_attempt.as_ref().is_some_and(|source| {
                 forge.load(&work_id).is_ok_and(|item| {
                     !item.has_active_attempts()
-                        && item
-                            .attempt(source)
-                            .and_then(|attempt| attempt.environment.as_ref())
-                            .is_some()
+                        && item.attempt(source).is_some_and(|attempt| {
+                            attempt.environment.is_some() || item.uses_attached_checkout()
+                        })
                 })
             });
             if source_attempt.is_some()
@@ -1428,7 +1480,7 @@ async fn run_agent_turn_inner(
                 };
             }
             let begin_result = if can_rebind_source {
-                match forge.begin_isolated_attempt_from(
+                match forge.begin_workspace_attempt_from(
                     &work_id,
                     source_attempt.as_ref().expect("checked source attempt"),
                     executor.clone(),
@@ -1446,7 +1498,7 @@ async fn run_agent_turn_inner(
                                     ),
                                 };
                         }
-                        forge.begin_isolated_attempt(
+                        forge.begin_workspace_attempt(
                             &work_id,
                             executor,
                             Some(std::process::id()),
@@ -1455,7 +1507,7 @@ async fn run_agent_turn_inner(
                     }
                 }
             } else {
-                forge.begin_isolated_attempt(
+                forge.begin_workspace_attempt(
                     &work_id,
                     executor,
                     Some(std::process::id()),

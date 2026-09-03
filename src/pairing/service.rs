@@ -1803,6 +1803,9 @@ mod tests {
         assert_eq!(challenge.status, "challenge");
         let session_id = challenge.session_id.expect("session id");
         let server_nonce = challenge.server_nonce.expect("server nonce");
+        let mut phone_nonce = [0_u8; 32];
+        OsRng.fill_bytes(&mut phone_nonce);
+        let phone_nonce = base64url_encode(&phone_nonce);
         let signed_nonce = sign_message(
             &phone_key,
             &session_refresh_challenge_message(
@@ -1813,9 +1816,6 @@ mod tests {
                 &phone_nonce,
             ),
         );
-        let mut phone_nonce = [0_u8; 32];
-        OsRng.fill_bytes(&mut phone_nonce);
-        let phone_nonce = base64url_encode(&phone_nonce);
         let refreshed = service
             .pair_session_refresh(
                 PairSessionRefreshRequest {

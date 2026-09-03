@@ -55,6 +55,7 @@
     openTrackedTerminal,
     reclaimTrackedHuman,
     startTrackedAgent,
+    undertakingWorkspaceCopy,
   } from "$lib/utils/undertakingWorkspace";
   import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
   import { vault } from "$lib/stores/vault.svelte";
@@ -137,6 +138,7 @@
     resource.kind === "file" ? resource.path : null,
   );
   const actions = $derived(detail?.allowed_actions);
+  const workspaceCopy = $derived(undertakingWorkspaceCopy(detail));
   const activeItems = $derived(
     undertakings.items.filter(
       (i) => i.human_phase !== "complete" && i.state !== "discarded" && i.state !== "accepted",
@@ -530,7 +532,7 @@
       await recordReviewIntent(detail.id, {
         evidence_id: review.evidence_id!,
         evidence_digest: review.evidence_digest!,
-        strategy: "preserve_branch",
+        strategy: workspaceCopy.attached ? "keep_checkout" : "preserve_branch",
         rationale: reviewRationale.trim() || "Reviewed in Medousa",
         acknowledged_violations: acknowledgePolicy
           ? (review.policy?.violations.map((violation) => violation.id) ?? [])
@@ -674,7 +676,7 @@
     if (!detail) return;
     const decisionId = review?.decision?.id ?? detail.review_decisions?.at(-1)?.id;
     if (!decisionId) return;
-    if (!window.confirm("Finish this project and keep its branch?")) return;
+    if (!window.confirm(workspaceCopy.finishPrompt)) return;
     await run(async () => {
       await applyDecision(detail!.id, decisionId);
       await undertakings.refreshDetail();
@@ -726,13 +728,7 @@
 
   async function discardWithConfirmation() {
     if (!detail) return;
-    if (
-      !window.confirm(
-        `Close “${detail.title}”? Its working copy will be removed.`,
-      )
-    ) {
-      return;
-    }
+    if (!window.confirm(workspaceCopy.closePrompt)) return;
     await run(async () => {
       await closeUndertaking(detail!);
       undertakings.clearActive();
@@ -930,7 +926,7 @@
               </p>
             {:else if detail.environment}
               <p class="mt-0.5 text-[10px] text-content-quiet">
-                {humanPhaseLabel(detail.human_phase)}
+                {humanPhaseLabel(detail.human_phase)}{workspaceCopy.attached ? " · Current checkout" : ""}
               </p>
             {:else}
               {#if detail.brief && detail.brief.trim() !== detail.title.trim()}
@@ -1226,7 +1222,7 @@
                 class="secondary-action"
                 disabled={busy || !actions?.open_terminal.allowed}
                 onclick={() => void openTerminalTracked()}
-              >Terminal in working copy</button>
+              >Terminal in {workspaceCopy.label}</button>
               {#if detail.environment?.worktree}
                 <button
                   type="button"
@@ -1234,7 +1230,7 @@
                   class="secondary-action"
                   disabled={busy}
                   onclick={() => void revealWorktree()}
-                >Reveal working copy</button>
+                >Reveal {workspaceCopy.label}</button>
               {/if}
               {#if undertakings.active?.workId === detail.id && undertakings.active.selectedPath}
                 <button
@@ -1268,7 +1264,7 @@
                 <details class="px-2 py-1 text-chrome-xs text-content-quiet">
                   <summary class="cursor-pointer select-none hover:text-content-secondary">Technical details</summary>
                   <p class="mt-1 break-all font-mono leading-relaxed">
-                    Working copy: {detail.environment.worktree}<br />Starting revision:
+                    {workspaceCopy.attached ? "Current checkout" : "Working copy"}: {detail.environment.worktree}<br />Starting revision:
                     {detail.environment.baseline_oid.slice(0, 12)} · internal state: {detail.state}
                   </p>
                 </details>
@@ -1348,7 +1344,7 @@
                 class="code-chrome-menu-item"
                 disabled={busy || !actions?.open_terminal.allowed}
                 onclick={() => void openTerminalTracked()}
-              >Terminal in working copy</button>
+              >Terminal in {workspaceCopy.label}</button>
               {#if detail.environment?.worktree}
                 <button
                   type="button"
@@ -1356,7 +1352,7 @@
                   class="code-chrome-menu-item"
                   disabled={busy}
                   onclick={() => void revealWorktree()}
-                >Reveal working copy</button>
+                >Reveal {workspaceCopy.label}</button>
               {/if}
               {#if undertakings.active?.workId === detail.id && undertakings.active.selectedPath}
                 <button
@@ -1371,7 +1367,7 @@
                 <details class="px-2 py-1 text-[11px] text-content-quiet">
                   <summary class="cursor-pointer select-none hover:text-content-secondary">Technical details</summary>
                   <p class="mt-1 break-all font-mono leading-relaxed text-[10px]">
-                    Working copy: {detail.environment.worktree}<br />Starting revision:
+                    {workspaceCopy.attached ? "Current checkout" : "Working copy"}: {detail.environment.worktree}<br />Starting revision:
                     {detail.environment.baseline_oid.slice(0, 12)} · internal state: {detail.state}
                   </p>
                 </details>
@@ -1392,7 +1388,7 @@
             <div class="max-w-sm">
               <p class="text-xs font-medium text-content-secondary">Set up this project</p>
               <p class="mt-1 text-[10px] leading-relaxed text-content-quiet">
-                Create the working copy so the tree and editor can open.
+                {workspaceCopy.setupGuidance}
               </p>
               <button
                 type="button"

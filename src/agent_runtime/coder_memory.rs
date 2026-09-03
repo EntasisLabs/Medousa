@@ -1747,6 +1747,7 @@ mod tests {
             brief: "Build memory".to_string(),
             worktree: PathBuf::from("/tmp/demo"),
             branch: branch.to_string(),
+            attached_checkout: false,
             environment_generation: generation,
             memory_parent: None,
             baseline_oid: "a".repeat(40),

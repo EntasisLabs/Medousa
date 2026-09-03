@@ -37,7 +37,7 @@ impl<'a> ScriptAdapter<'a> {
         Self { forge }
     }
 
-    /// Run `argv` inside the item's governed worktree, then complete (exit 0)
+    /// Run `argv` inside the item's governed workspace, then complete (exit 0)
     /// or fail (non-zero) the attempt. The command log is staged into the
     /// attempt's evidence directory before sealing, so it becomes part of the
     /// sealed bundle and its digest.
@@ -52,7 +52,7 @@ impl<'a> ScriptAdapter<'a> {
         };
         let (item, lease) = self
             .forge
-            .begin_isolated_attempt(work_id, executor, None, &actor)?;
+            .begin_workspace_attempt(work_id, executor, None, &actor)?;
         let env = item
             .environment_for_attempt(&lease.attempt_id)
             .cloned()

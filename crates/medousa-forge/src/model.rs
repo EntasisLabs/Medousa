@@ -189,6 +189,18 @@ pub struct GitWorkTarget {
     pub base_oid: GitOid,
 }
 
+/// Where Forge gives executors write authority for this item.
+///
+/// Isolated worktrees remain the default. Attaching the current checkout is
+/// always an explicit user choice because its files are changed in place.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceMode {
+    #[default]
+    Isolated,
+    AttachedCheckout,
+}
+
 /// Repository identity derived from the canonical `git rev-parse
 /// --git-common-dir`, stable across worktrees of the same repository.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -205,6 +217,7 @@ pub struct RepoIdentity {
 #[serde(rename_all = "snake_case")]
 pub enum EnvironmentKind {
     GitWorktree,
+    AttachedCheckout,
 }
 
 /// Stable source identity for an environment that was forked from another
@@ -222,11 +235,18 @@ pub struct GovernedEnv {
     pub kind: EnvironmentKind,
     pub repo: RepoIdentity,
     pub worktree: PathBuf,
-    /// Forge-owned branch (`worktree/{slug}` or `worktree/{slug}-a{seq}`).
+    /// Governed branch. Forge owns isolated branches; the principal owns an
+    /// attached checkout's branch.
     pub branch: String,
-    /// Immutable commit the environment was provisioned from. Evidence and
-    /// integration compare against this OID, never a symbolic ref.
+    /// Immutable environment baseline. For an attached checkout this is the
+    /// attachment snapshot, including files that were already dirty. Evidence
+    /// and integration compare against this OID, never a symbolic ref.
     pub baseline_oid: GitOid,
+    /// Real-index fingerprint captured when a checkout was attached. Forge
+    /// uses a separate temporary index for snapshots and refuses to continue
+    /// if an attached checkout's principal-owned index changes underneath it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attached_index_oid: Option<GitOid>,
     /// Bumped on explicit environment restart/fork.
     pub generation: u32,
     /// Exact governed environment this scope was cloned from. Reusing one
@@ -285,6 +305,7 @@ pub enum AcceptedDisposition {
     BranchPreserved,
     BaseFastForwarded,
     PatchExported,
+    CheckoutRetained,
 }
 
 /// v1 integration strategies. Merge commits and squash are deferred until
@@ -298,6 +319,10 @@ pub enum IntegrationStrategy {
     FastForwardOnly,
     /// Produce a portable patch artifact instead of mutating refs.
     ExportPatch,
+    /// Record acceptance for an attached checkout. The reviewed files already
+    /// live in the user's checkout, so applying this strategy mutates no Git
+    /// refs, index entries, or working-tree files.
+    KeepCheckout,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -700,6 +725,10 @@ pub struct WorkItem {
     #[serde(default)]
     pub slug: String,
     pub target: WorkTarget,
+    /// Persisted before provisioning so crash recovery never has to infer
+    /// whether an environment is Forge-owned or user-owned.
+    #[serde(default)]
+    pub workspace_mode: WorkspaceMode,
     pub policy: WorkPolicy,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub environment: Option<GovernedEnv>,
@@ -746,6 +775,7 @@ impl WorkItem {
             brief: brief.into(),
             slug,
             target,
+            workspace_mode: WorkspaceMode::default(),
             policy: WorkPolicy::default(),
             environment: None,
             attempts: Vec::new(),
@@ -764,6 +794,13 @@ impl WorkItem {
 
     pub fn attempt(&self, id: &AttemptId) -> Option<&Attempt> {
         self.attempts.iter().find(|a| &a.id == id)
+    }
+
+    pub fn uses_attached_checkout(&self) -> bool {
+        self.workspace_mode == WorkspaceMode::AttachedCheckout
+            || self
+                .workspace_environment()
+                .is_some_and(|environment| environment.kind == EnvironmentKind::AttachedCheckout)
     }
 
     pub fn attempt_mut(&mut self, id: &AttemptId) -> Option<&mut Attempt> {
@@ -914,6 +951,7 @@ mod tests {
             worktree: PathBuf::from("/tmp/forge/worktrees/repo-x/t"),
             branch: format!("worktree/{}", item.slug),
             baseline_oid: GitOid::new("b".repeat(40)),
+            attached_index_oid: None,
             generation: 1,
             derived_from: None,
         };

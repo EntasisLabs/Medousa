@@ -2,7 +2,12 @@
  * ActiveUndertakingContext — per Shell tab-group undertaking binding.
  */
 
-import type { ItemProjection, HumanPhase, ReviewProjection } from "$lib/forge";
+import type {
+  ForgeWorkspaceMode,
+  ItemProjection,
+  HumanPhase,
+  ReviewProjection,
+} from "$lib/forge";
 import {
   listUndertakings,
   getUndertaking,
@@ -313,6 +318,7 @@ function createUndertakingsStore() {
     brief: string;
     repo_path: string;
     base_ref?: string;
+    workspace_mode?: ForgeWorkspaceMode;
   }) {
     const item = await createUndertaking(input);
     await refreshList();
@@ -325,6 +331,7 @@ function createUndertakingsStore() {
     brief: string;
     repo_path: string;
     base_ref?: string;
+    workspace_mode?: ForgeWorkspaceMode;
   }) {
     try {
       const item = await startUndertaking(input);

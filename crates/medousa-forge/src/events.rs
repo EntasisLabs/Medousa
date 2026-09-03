@@ -146,6 +146,16 @@ pub enum SideEffect {
         branch: String,
         baseline_oid: GitOid,
     },
+    /// The user explicitly granted Forge authority over an existing checkout.
+    /// Unlike `WorktreeAdded`, this path is user-owned and must never be
+    /// removed or reset by Forge cleanup.
+    CheckoutAttached {
+        path: std::path::PathBuf,
+        branch: String,
+        baseline_oid: GitOid,
+        attached_index_oid: GitOid,
+        snapshot_ref: String,
+    },
     CheckpointCommitCreated {
         branch: String,
         oid: GitOid,

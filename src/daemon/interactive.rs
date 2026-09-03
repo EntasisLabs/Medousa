@@ -538,17 +538,26 @@ pub async fn cancel_active_session_turn(
     State(state): State<AppState>,
     AxumPath(session_id): AxumPath<String>,
 ) -> Result<Json<crate::turn_ticket::CancelActiveSessionTurnResponse>, (StatusCode, String)> {
-    let typed_session_id = crate::session_storage::SessionId::parse(&session_id)
+    cancel_active_session_turn_for_session(&state, &session_id)
+        .await
+        .map(Json)
+}
+
+pub async fn cancel_active_session_turn_for_session(
+    state: &AppState,
+    session_id: &str,
+) -> Result<crate::turn_ticket::CancelActiveSessionTurnResponse, (StatusCode, String)> {
+    let typed_session_id = crate::session_storage::SessionId::parse(session_id)
         .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     let active =
-        crate::turn_ticket::cancel_interactive_for_session(&state.turn_tickets, &session_id).await;
+        crate::turn_ticket::cancel_interactive_for_session(&state.turn_tickets, session_id).await;
 
     let Some(active) = active else {
-        return Ok(Json(crate::turn_ticket::CancelActiveSessionTurnResponse {
+        return Ok(crate::turn_ticket::CancelActiveSessionTurnResponse {
             cancelled: false,
             turn_id: None,
             message: "no active turn for session".to_string(),
-        }));
+        });
     };
 
     state
@@ -590,11 +599,11 @@ pub async fn cancel_active_session_turn(
         .await
         .remove(&active.turn_id);
 
-    Ok(Json(crate::turn_ticket::CancelActiveSessionTurnResponse {
+    Ok(crate::turn_ticket::CancelActiveSessionTurnResponse {
         cancelled: true,
         turn_id: Some(active.turn_id),
         message: "interactive turn cancelled".to_string(),
-    }))
+    })
 }
 
 pub async fn interactive_turn_stream(

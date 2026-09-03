@@ -10,6 +10,7 @@
 
   type Props = {
     changes: ForgeChanges | null;
+    attachedCheckout?: boolean;
     loading?: boolean;
     error?: string | null;
     selectedPath?: string | null;
@@ -44,6 +45,7 @@
 
   let {
     changes,
+    attachedCheckout = false,
     loading = false,
     error = null,
     selectedPath = null,
@@ -141,10 +143,11 @@
   }
 
   const stackFiles = $derived(fileDiff ? [toStackFile(fileDiff)] : []);
+  const historyMutationBlocked = $derived(attachedCheckout);
   const pullBlocked = $derived(
-    !!changes?.conflict || !!changes?.merge_in_progress || (changes?.dirty && (changes?.behind ?? 0) > 0),
+    historyMutationBlocked || !!changes?.conflict || !!changes?.merge_in_progress || (changes?.dirty && (changes?.behind ?? 0) > 0),
   );
-  const syncBlocked = $derived(!!changes?.conflict || !!changes?.merge_in_progress);
+  const syncBlocked = $derived(historyMutationBlocked || !!changes?.conflict || !!changes?.merge_in_progress);
 </script>
 
 <div class="flex max-h-[32rem] shrink-0 flex-col border-t border-surface-500/25 bg-surface-950/90">
@@ -152,9 +155,9 @@
     <span>Changes</span>
     <div class="flex flex-wrap items-center gap-1 normal-case tracking-normal">
       <button type="button" class="rounded px-1.5 py-0.5 text-chrome-xs text-content-quiet hover:bg-surface-800 hover:text-content-secondary disabled:opacity-40" disabled={syncBusy} onclick={onFetch}>Fetch</button>
-      <button type="button" class="rounded px-1.5 py-0.5 text-chrome-xs text-content-quiet hover:bg-surface-800 hover:text-content-secondary disabled:opacity-40" disabled={syncBusy || pullBlocked} onclick={onPull} title={pullBlocked ? "Resolve conflicts or seal local edits first" : "Fast-forward pull"}>Pull</button>
-      <button type="button" class="rounded px-1.5 py-0.5 text-chrome-xs text-content-quiet hover:bg-surface-800 hover:text-content-secondary disabled:opacity-40" disabled={syncBusy || syncBlocked} onclick={onPush}>Push</button>
-      <button type="button" class="rounded px-1.5 py-0.5 text-chrome-xs text-content-link hover:bg-surface-800 disabled:opacity-40" disabled={syncBusy || syncBlocked} onclick={onSync}>Sync</button>
+      <button type="button" class="rounded px-1.5 py-0.5 text-chrome-xs text-content-quiet hover:bg-surface-800 hover:text-content-secondary disabled:opacity-40" disabled={syncBusy || pullBlocked} onclick={onPull} title={historyMutationBlocked ? "Close this project before changing current-checkout Git history" : pullBlocked ? "Resolve conflicts or seal local edits first" : "Fast-forward pull"}>Pull</button>
+      <button type="button" class="rounded px-1.5 py-0.5 text-chrome-xs text-content-quiet hover:bg-surface-800 hover:text-content-secondary disabled:opacity-40" disabled={syncBusy || syncBlocked} onclick={onPush} title={historyMutationBlocked ? "Close this project before pushing the current checkout" : "Push branch"}>Push</button>
+      <button type="button" class="rounded px-1.5 py-0.5 text-chrome-xs text-content-link hover:bg-surface-800 disabled:opacity-40" disabled={syncBusy || syncBlocked} onclick={onSync} title={historyMutationBlocked ? "Close this project before syncing the current checkout" : "Sync branch"}>Sync</button>
       <button type="button" class="rounded px-1.5 py-0.5 text-chrome-xs text-amber-200/90 hover:bg-surface-800 disabled:opacity-40" disabled={syncBusy} onclick={onCheckpoint}>Seal for Review</button>
       <button type="button" class="rounded px-1.5 py-0.5 text-chrome-xs text-content-quiet hover:bg-surface-800 hover:text-content-secondary {historyOpen ? 'bg-surface-800 text-content-secondary' : ''}" onclick={onToggleHistory}>History</button>
       <button type="button" class="rounded px-1.5 py-0.5 text-chrome-xs text-content-quiet hover:bg-surface-800 hover:text-content-secondary" onclick={onRefresh}>Refresh</button>
@@ -182,7 +185,7 @@
     {#if historyOpen}
       <div class="max-h-28 shrink-0 overflow-y-auto border-b border-surface-500/15">
         {#if history.length === 0}
-          <p class="px-2.5 py-2 text-chrome-sm text-content-quiet">No commits since the project baseline.</p>
+          <p class="px-2.5 py-2 text-chrome-sm text-content-quiet">{attachedCheckout ? "No repository history." : "No commits since the project baseline."}</p>
         {:else}
           {#each history as commit (commit.oid)}
             <div class="border-b border-surface-500/10 px-2.5 py-1 text-chrome-sm text-content-secondary">
@@ -197,7 +200,7 @@
     <div class="flex min-h-0 flex-1 overflow-hidden">
       <div class="max-h-full w-44 shrink-0 overflow-y-auto border-r border-surface-500/15">
         {#if changes.files.length === 0}
-          <p class="px-2.5 py-2 text-chrome-sm text-content-quiet">Working tree is clean.</p>
+          <p class="px-2.5 py-2 text-chrome-sm text-content-quiet">{attachedCheckout ? "No changes since Coder attached." : "Working tree is clean."}</p>
         {:else}
           {#each changes.files as file (file.path)}
             <button

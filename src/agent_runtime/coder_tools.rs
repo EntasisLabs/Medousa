@@ -734,7 +734,15 @@ impl CoderTurnLease {
     fn heartbeat(&self) -> Result<()> {
         self.forge
             .heartbeat(&self.lease)
-            .map_err(|err| StasisError::PortFailure(format!("Coder Forge lease rejected: {err}")))
+            .map_err(|err| StasisError::PortFailure(format!("Coder Forge lease rejected: {err}")))?;
+        let item = self.forge.load(&self.lease.work_id).map_err(|err| {
+            StasisError::PortFailure(format!("Coder workspace authority is unavailable: {err}"))
+        })?;
+        self.forge
+            .verify_attempt_workspace(&item, &self.lease.attempt_id)
+            .map_err(|err| {
+                StasisError::PortFailure(format!("Coder workspace authority changed: {err}"))
+            })
     }
 
     fn append_receipt(&self, receipt: Value) {
@@ -854,17 +862,31 @@ impl super::turn_context::ToolRoundContextProvider for CoderBoundToolRegistry {
             return Ok(None);
         };
         let pointers = self.ranked_pointers(super::coder_pointers::MAX_AMBIENT_POINTERS)?;
+        let item = authority
+            .forge
+            .load(&authority.lease.work_id)
+            .map_err(|err| {
+                StasisError::PortFailure(format!(
+                    "cannot refresh Coder workspace authority: {err}"
+                ))
+            })?;
+        let environment = item
+            .environment_for_attempt(&authority.lease.attempt_id)
+            .ok_or_else(|| {
+                StasisError::PortFailure(
+                    "cannot refresh Coder repository observation: no governed workspace".into(),
+                )
+            })?;
         let changed_paths = authority
             .forge
-            .git()
-            .status_porcelain(&self.entry.worktree)
+            .workspace_changed_files(&item, environment)
             .map_err(|err| {
                 StasisError::PortFailure(format!(
                     "cannot refresh Coder repository observation: {err}"
                 ))
             })?
             .into_iter()
-            .map(|entry| entry.path)
+            .map(|file| file.path)
             .take(80)
             .collect::<Vec<_>>();
         let head_oid = authority
@@ -2054,6 +2076,15 @@ impl CoderBoundToolRegistry {
         ) {
             return Ok(());
         }
+        if self.entry.attached_checkout
+            && let Some(command) = input.get("command").and_then(Value::as_str)
+            && attached_shell_command_mutates_git_authority(command)
+        {
+            return Err(StasisError::PortFailure(
+                "Current-checkout Coder may inspect Git, but its shell cannot mutate HEAD, branches, refs, or the real index. Close the project before running that command manually."
+                    .into(),
+            ));
+        }
         let Some(session_id) = input.get("session_id").and_then(Value::as_str) else {
             return Ok(());
         };
@@ -2121,6 +2152,107 @@ impl CoderBoundToolRegistry {
             }
         }
     }
+}
+
+fn attached_shell_command_mutates_git_authority(command: &str) -> bool {
+    let lowercase = command.to_ascii_lowercase();
+    let tokens = lowercase
+        .split(|character: char| {
+            character.is_whitespace() || matches!(character, '\'' | '"' | ';' | '&' | '|' | '(' | ')')
+        })
+        .filter(|token| !token.is_empty())
+        .map(|token| token.trim_matches(|character| matches!(character, ',' | ':' | '=')))
+        .collect::<Vec<_>>();
+    if tokens.iter().any(|token| {
+        *token == ".git"
+            || token.starts_with(".git/")
+            || token.starts_with(".git\\")
+            || token.contains("/.git/")
+            || token.contains("\\.git\\")
+            || token.ends_with("/.git")
+            || token.ends_with("\\.git")
+            || matches!(*token, "git_dir" | "git_index_file" | "--git-dir" | "--git-dir=" | "--work-tree")
+            || token.starts_with("git_dir=")
+            || token.starts_with("git_index_file=")
+            || token.starts_with("--git-dir=")
+    }) {
+        return true;
+    }
+
+    let mut cursor = 0;
+    while cursor < tokens.len() {
+        let token = tokens[cursor];
+        if !matches!(token, "git" | "git.exe" | "git.cmd")
+            && !token.ends_with("/git")
+            && !token.ends_with("/git.exe")
+            && !token.ends_with("\\git.exe")
+        {
+            cursor += 1;
+            continue;
+        }
+        cursor += 1;
+        while cursor < tokens.len() {
+            match tokens[cursor] {
+                "-c" => cursor = cursor.saturating_add(2),
+                option if option.starts_with('-') => cursor += 1,
+                _ => break,
+            }
+        }
+        let Some(subcommand) = tokens.get(cursor).copied() else {
+            continue;
+        };
+        if matches!(
+            subcommand,
+            "add"
+                | "am"
+                | "bisect"
+                | "branch"
+                | "checkout"
+                | "cherry-pick"
+                | "clean"
+                | "clone"
+                | "commit"
+                | "config"
+                | "gc"
+                | "init"
+                | "maintenance"
+                | "merge"
+                | "mv"
+                | "notes"
+                | "pack-refs"
+                | "prune"
+                | "pull"
+                | "push"
+                | "rebase"
+                | "reflog"
+                | "remote"
+                | "repack"
+                | "replace"
+                | "reset"
+                | "restore"
+                | "revert"
+                | "rm"
+                | "sparse-checkout"
+                | "stash"
+                | "submodule"
+                | "switch"
+                | "symbolic-ref"
+                | "tag"
+                | "update-index"
+                | "update-ref"
+                | "worktree"
+        ) {
+            return true;
+        }
+        if subcommand == "apply"
+            && tokens[cursor + 1..]
+                .iter()
+                .any(|option| matches!(*option, "--index" | "--cached" | "--3way"))
+        {
+            return true;
+        }
+    }
+    false
 }
 
 fn coder_domain_tool_ids(domain: ToolDomainId) -> Option<Vec<ToolId>> {
@@ -4499,6 +4631,36 @@ mod tests {
             ToolId::new(crate::public_api::COGNITION_WORKSHOP_QUERY),
             &policy
         ));
+    }
+
+    #[test]
+    fn attached_shell_blocks_git_authority_mutations_but_keeps_inspection_and_tests() {
+        for command in [
+            "git commit -am done",
+            "git -C . reset --hard HEAD",
+            "git checkout other",
+            "git apply --index fix.patch",
+            "rm -rf .git",
+            "GIT_INDEX_FILE=/tmp/index git add .",
+        ] {
+            assert!(
+                attached_shell_command_mutates_git_authority(command),
+                "expected attached shell to reject {command}"
+            );
+        }
+        for command in [
+            "git status --short",
+            "git diff -- src/lib.rs",
+            "git fetch origin",
+            "git apply fix.patch",
+            "cargo test -p medousa-forge",
+            "printf 'target' >> .gitignore",
+        ] {
+            assert!(
+                !attached_shell_command_mutates_git_authority(command),
+                "expected attached shell to allow {command}"
+            );
+        }
     }
 
     #[test]

@@ -5,7 +5,7 @@ use std::path::{Component, Path, PathBuf};
 
 use chrono::{SecondsFormat, Utc};
 use medousa_forge::forge::Forge;
-use medousa_forge::model::{AttemptId, WorkId, WorkState};
+use medousa_forge::model::{AttemptId, EnvironmentKind, WorkId, WorkState};
 use serde_json::json;
 
 use crate::daemon_api::CodeIntentContext;
@@ -31,6 +31,7 @@ pub struct CoderEntryContext {
     pub brief: String,
     pub worktree: PathBuf,
     pub branch: String,
+    pub attached_checkout: bool,
     pub environment_generation: u32,
     pub memory_parent: Option<CoderMemoryParentContext>,
     pub baseline_oid: String,
@@ -173,11 +174,10 @@ fn compile_coder_entry_inner(
         .head_oid(&worktree)
         .map_err(|err| CoderEntryError(format!("cannot resolve Coder HEAD: {err}")))?;
     let changed_paths = forge
-        .git()
-        .status_porcelain(&worktree)
-        .map_err(|err| CoderEntryError(format!("cannot inspect Coder worktree: {err}")))?
+        .workspace_changed_files(&item, environment)
+        .map_err(|err| CoderEntryError(format!("cannot inspect Coder workspace: {err}")))?
         .into_iter()
-        .map(|entry| truncate(&entry.path, MAX_PATH_CHARS))
+        .map(|file| truncate(&file.path, MAX_PATH_CHARS))
         .take(MAX_CHANGED_PATHS)
         .collect();
     let editor = compile_editor_context(advisory);
@@ -225,6 +225,7 @@ fn compile_coder_entry_inner(
         brief: truncate(&item.brief, MAX_FIELD_CHARS),
         worktree: worktree.clone(),
         branch,
+        attached_checkout: environment.kind == EnvironmentKind::AttachedCheckout,
         environment_generation: environment.generation,
         memory_parent,
         baseline_oid: environment.baseline_oid.to_string(),
@@ -245,6 +246,11 @@ impl CoderEntryContext {
     /// Canonical STTP observation node compiled from authoritative Forge state
     /// and separately labeled advisory editor/repository observations.
     pub fn prompt_appendix(&self) -> String {
+        let workspace_safety = if self.attached_checkout {
+            "Principal-owned current checkout: edit files in place, but do not switch branches, stage, commit, reset, clean, stash, merge, rebase, discard changes, mutate local branches or tags, or rewrite history. Read-only Git inspection and fetch are allowed. Forge snapshots and reviews without touching the real index or HEAD."
+        } else {
+            "Forge-owned isolated worktree: keep all reads, edits, and commands inside this workspace."
+        };
         let repository_instructions: Vec<_> = self
             .repository_instructions
             .iter()
@@ -261,6 +267,8 @@ impl CoderEntryContext {
             "work_id": self.work_id,
             "worktree": self.worktree.display().to_string(),
             "branch": self.branch,
+            "workspace_mode": if self.attached_checkout { "attached_checkout" } else { "isolated" },
+            "workspace_safety": workspace_safety,
             "environment_generation": self.environment_generation,
             "memory_lineage": self.memory_parent.as_ref().map(|parent| json!({
                 "derived_from_branch": parent.branch,
@@ -599,6 +607,48 @@ mod tests {
             std::fs::canonicalize(&staging.worktree).expect("canonical staging worktree")
         );
         assert_eq!(entry.editor.active_path.as_deref(), Some("src/lib.rs"));
+    }
+
+    #[test]
+    fn attached_entry_exposes_only_post_attachment_changes_and_safety_policy() {
+        let (repo, _forge_root, forge, _) = ready_work();
+        std::fs::write(repo.path().join("owner-notes.txt"), "already dirty\n")
+            .expect("owner baseline");
+        let item = forge
+            .register_with_workspace_mode(
+                "Help where I am",
+                "Finish the current checkout",
+                repo.path(),
+                "main",
+                "user-1",
+                medousa_forge::model::WorkspaceMode::AttachedCheckout,
+                &Forge::system_actor(),
+            )
+            .expect("register attached work");
+        let item = forge
+            .provision(&item.id, &Forge::system_actor())
+            .expect("attach checkout");
+        std::fs::write(repo.path().join("coder-change.txt"), "made after attach\n")
+            .expect("Coder change");
+
+        let entry = compile_coder_entry(
+            &forge,
+            &CodeIntentContext {
+                work_id: Some(item.id.to_string()),
+                ..CodeIntentContext::default()
+            },
+        )
+        .expect("compile attached Coder entry");
+
+        assert!(entry.attached_checkout);
+        assert_eq!(entry.worktree, std::fs::canonicalize(repo.path()).unwrap());
+        assert_eq!(entry.branch, "main");
+        assert_eq!(entry.changed_paths, vec!["coder-change.txt"]);
+        let appendix = entry.prompt_appendix();
+        assert!(appendix.contains("attached_checkout"));
+        assert!(appendix.contains("do not switch branches"));
+        assert!(appendix.contains("without touching the real index or HEAD"));
+        assert!(!appendix.contains("owner-notes.txt"));
     }
 
     #[test]

@@ -19,9 +19,10 @@ use medousa_forge::error::ForgeError;
 use medousa_forge::forge::{Forge, SealOptions};
 use medousa_forge::git::{CheckpointAuthor, GitEngine};
 use medousa_forge::model::{
-    ActorKind, ActorRef, CompactEvidenceReceipt, EvidenceId, ExecutionLease, ExecutorDescriptor,
-    GitOid, IntegrationStrategy, LeaseId, RecoveryDisposition, ReviewCommentId, ReviewDecision,
-    ReviewDecisionId, WorkId, WorkItem, WorkPolicy, WorkState, WorkTarget,
+    ActorKind, ActorRef, ChangeStatus, CompactEvidenceReceipt, EvidenceId, ExecutionLease,
+    ExecutorDescriptor, GitOid, IntegrationStrategy, LeaseId, RecoveryDisposition, ReviewCommentId,
+    ReviewDecision, ReviewDecisionId, WorkId, WorkItem, WorkPolicy, WorkState, WorkTarget,
+    WorkspaceMode,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -853,6 +854,8 @@ struct RegisterRequest {
     owner: Option<String>,
     #[serde(default)]
     policy: Option<WorkPolicy>,
+    #[serde(default)]
+    workspace_mode: WorkspaceMode,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1166,7 +1169,7 @@ fn inspect_repository_path_from_items(
         remote_branches,
         existing_projects,
         state_explanation,
-        trust_explanation: "Medousa may read this repository and create an isolated working copy. Project commands run only when you explicitly choose a check or Terminal action.".into(),
+        trust_explanation: "Medousa may read this repository. You choose an isolated working copy or the current checkout before Coder can change files; project commands run only when you explicitly choose a check or Terminal action.".into(),
     })
 }
 
@@ -1195,27 +1198,18 @@ async fn register_item(
                     .owner
                     .unwrap_or_else(|| state.workshop_identity_user_id());
                 let forge = forge(&state);
-                let item = if let Some(policy) = body.policy {
-                    forge.register_with_policy(
+                let item = forge
+                    .register_with_policy_and_workspace_mode(
                         body.title,
                         body.brief,
                         &body.repo_path,
                         body.base_ref,
                         owner,
-                        policy,
+                        body.policy.unwrap_or_default(),
+                        body.workspace_mode,
                         &actor,
                     )
-                } else {
-                    forge.register(
-                        body.title,
-                        body.brief,
-                        &body.repo_path,
-                        body.base_ref,
-                        owner,
-                        &actor,
-                    )
-                }
-                .map_err(map_err)?;
+                    .map_err(map_err)?;
                 touch_repository(&repository_path, None)?;
                 Ok(ok_item(&state, item, "registered"))
             }
@@ -1659,27 +1653,18 @@ fn start_item_from_request(state: &AppState, body: RegisterRequest) -> ApiResult
         .owner
         .unwrap_or_else(|| state.workshop_identity_user_id());
     let forge = forge(state);
-    let registered = if let Some(policy) = body.policy {
-        forge.register_with_policy(
+    let registered = forge
+        .register_with_policy_and_workspace_mode(
             body.title,
             body.brief,
             &body.repo_path,
             body.base_ref,
             owner,
-            policy,
+            body.policy.unwrap_or_default(),
+            body.workspace_mode,
             &actor,
         )
-    } else {
-        forge.register(
-            body.title,
-            body.brief,
-            &body.repo_path,
-            body.base_ref,
-            owner,
-            &actor,
-        )
-    }
-    .map_err(map_err)?;
+        .map_err(map_err)?;
     touch_repository(&repository_path, None)?;
     publish_item(state, &registered, "registered");
     let item = forge.provision(&registered.id, &actor).map_err(map_err)?;
@@ -1800,6 +1785,7 @@ fn start_code_project_for_session_inner(
             base_ref: base_ref.clone(),
             owner: None,
             policy: None,
+            workspace_mode: WorkspaceMode::Isolated,
         },
     ) {
         Ok(item) => item,
@@ -2977,6 +2963,9 @@ fn require_work_lease(
         ));
     }
     let item = forge(state).load(work_id).map_err(map_err)?;
+    forge(state)
+        .verify_attempt_workspace(&item, &lease.attempt_id)
+        .map_err(map_err)?;
     Ok((item, lease))
 }
 
@@ -4184,6 +4173,19 @@ fn porcelain_change_status(entry: &medousa_forge::git::PorcelainEntry) -> Option
     }
 }
 
+fn forge_change_status(status: ChangeStatus) -> &'static str {
+    match status {
+        ChangeStatus::Added => "added",
+        ChangeStatus::Modified => "modified",
+        ChangeStatus::Deleted => "deleted",
+        ChangeStatus::Renamed => "renamed",
+        ChangeStatus::Copied => "copied",
+        ChangeStatus::TypeChanged => "type_changed",
+        ChangeStatus::Untracked => "untracked",
+        ChangeStatus::Unmerged => "unmerged",
+    }
+}
+
 fn build_changes_response(state: &AppState, work_id: &WorkId) -> ApiResult<ForgeChangesResponse> {
     let forge = forge(state);
     let item = forge.load(work_id).map_err(map_err)?;
@@ -4197,27 +4199,20 @@ fn build_changes_response(state: &AppState, work_id: &WorkId) -> ApiResult<Forge
         .git()
         .status_porcelain_with_branch(&environment.worktree)
         .map_err(map_err)?;
-    let mut files = Vec::new();
-    let mut conflict = false;
-    for entry in entries {
-        let Some(status) = porcelain_change_status(&entry) else {
-            continue;
-        };
-        let path = medousa_forge::policy::normalize_git_path(&entry.path);
-        if medousa_forge::policy::is_git_internal(&path) {
-            continue;
-        }
-        if status == "unmerged" {
-            conflict = true;
-        }
-        files.push(ForgeChangesFile {
-            path,
-            status: status.to_owned(),
-            old_path: entry
-                .orig_path
-                .map(|p| medousa_forge::policy::normalize_git_path(&p)),
-        });
-    }
+    let conflict = entries
+        .iter()
+        .any(|entry| porcelain_change_status(entry).is_some_and(|status| status == "unmerged"));
+    let changed = forge
+        .workspace_changed_files(&item, &environment)
+        .map_err(map_err)?;
+    let mut files = changed
+        .into_iter()
+        .map(|file| ForgeChangesFile {
+            path: file.path,
+            status: forge_change_status(file.status).to_owned(),
+            old_path: file.old_path,
+        })
+        .collect::<Vec<_>>();
     files.sort_unstable_by(|left, right| left.path.cmp(&right.path));
     let WorkTarget::Git(target) = &item.target;
     Ok(ForgeChangesResponse {
@@ -4291,28 +4286,34 @@ fn changes_file_diff(state: &AppState, id: &WorkId, raw_path: &str) -> ApiResult
         )
     })?;
     let baseline_oid = environment.baseline_oid.clone();
-    let entries = forge
+    let changed = forge
+        .workspace_changed_files(&item, &environment)
+        .map_err(map_err)?;
+    let entry = changed
+        .iter()
+        .find(|entry| entry.path == path || entry.old_path.as_deref() == Some(path.as_str()));
+    let conflict = forge
         .git()
         .status_porcelain(&environment.worktree)
-        .map_err(map_err)?;
-    let entry = entries.iter().find(|entry| {
-        medousa_forge::policy::normalize_git_path(&entry.path) == path
-            || entry
-                .orig_path
-                .as_ref()
-                .map(|old| medousa_forge::policy::normalize_git_path(old) == path)
-                .unwrap_or(false)
-    });
-    let status = entry
-        .and_then(porcelain_change_status)
-        .unwrap_or("modified")
-        .to_owned();
-    let old_path = entry.and_then(|e| {
-        e.orig_path
-            .as_ref()
-            .map(|p| medousa_forge::policy::normalize_git_path(p))
-    });
-    let conflict = matches!(status.as_str(), "unmerged");
+        .map_err(map_err)?
+        .iter()
+        .any(|candidate| {
+            candidate.kind == medousa_forge::git::PorcelainKind::Unmerged
+                && (medousa_forge::policy::normalize_git_path(&candidate.path) == path
+                    || candidate
+                        .orig_path
+                        .as_ref()
+                        .is_some_and(|old| medousa_forge::policy::normalize_git_path(old) == path))
+        });
+    let status = if conflict {
+        "unmerged"
+    } else {
+        entry
+            .map(|entry| forge_change_status(entry.status))
+            .unwrap_or("modified")
+    }
+    .to_owned();
+    let old_path = entry.and_then(|entry| entry.old_path.clone());
     let baseline_path = old_path.as_deref().unwrap_or(path.as_str());
     let baseline_bytes = forge
         .git()
@@ -4615,6 +4616,18 @@ fn changes_sync_preflight(
     Ok(())
 }
 
+fn require_isolated_history_mutation(item: &WorkItem, action: &str) -> ApiResult<()> {
+    if item.uses_attached_checkout() {
+        return Err(request_error(
+            StatusCode::CONFLICT,
+            format!(
+                "{action} is unavailable while Coder is attached to the current checkout; use Terminal after closing the project"
+            ),
+        ));
+    }
+    Ok(())
+}
+
 fn has_tracked_worktree_edits(
     forge: &Forge,
     environment: &medousa_forge::model::GovernedEnv,
@@ -4751,6 +4764,7 @@ async fn changes_pull(
             let remote = body.remote.clone();
             move || {
                 let (item, _lease) = require_work_lease(&state, &id, &lease_id, generation)?;
+                require_isolated_history_mutation(&item, "Pull")?;
                 let environment = item.workspace_environment().cloned().ok_or_else(|| {
                     request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
                 })?;
@@ -4824,6 +4838,7 @@ async fn changes_push(
             let remote = body.remote.clone();
             move || {
                 let (item, _lease) = require_work_lease(&state, &id, &lease_id, generation)?;
+                require_isolated_history_mutation(&item, "Push")?;
                 let environment = item.workspace_environment().cloned().ok_or_else(|| {
                     request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
                 })?;
@@ -4905,6 +4920,7 @@ async fn changes_sync(
             let remote = body.remote.clone();
             move || {
                 let (item, _lease) = require_work_lease(&state, &id, &lease_id, generation)?;
+                require_isolated_history_mutation(&item, "Sync")?;
                 let environment = item.workspace_environment().cloned().ok_or_else(|| {
                     request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
                 })?;
@@ -5068,10 +5084,16 @@ async fn changes_checkpoint(
                     .map_err(map_err)?;
                 if let Some(env) = item.environment_for_attempt(&lease.attempt_id) {
                     let sealed_oid = forge(&state)
-                        .git()
-                        .head_oid(&env.worktree)
+                        .evidence_manifest_for_attempt(&item.id, &lease.attempt_id)
                         .ok()
-                        .map(|oid| oid.as_str().to_owned())
+                        .map(|manifest| manifest.sealed_head_oid.as_str().to_owned())
+                        .or_else(|| {
+                            forge(&state)
+                                .git()
+                                .head_oid(&env.worktree)
+                                .ok()
+                                .map(|oid| oid.as_str().to_owned())
+                        })
                         .unwrap_or_else(|| env.baseline_oid.as_str().to_owned());
                     crate::daemon::detamu_host::spawn_index_forge_item(
                         state.detamu.clone(),
@@ -5127,7 +5149,11 @@ async fn changes_history(
                     request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
                 })?;
                 let limit = query.limit.unwrap_or(50).clamp(1, 200);
-                let range = format!("{}..HEAD", environment.baseline_oid.as_str());
+                let range = if item.uses_attached_checkout() {
+                    "HEAD".to_string()
+                } else {
+                    format!("{}..HEAD", environment.baseline_oid.as_str())
+                };
                 let commits = forge(&state)
                     .git()
                     .log_commits(&environment.worktree, &range, limit)
@@ -5865,7 +5891,7 @@ async fn continue_editing(
                     .reopen_for_changes(&id, "Continue editing after review", &actor)
                     .map_err(map_err)?;
                 let (item, lease) = forge
-                    .begin_isolated_attempt_from(
+                    .begin_workspace_attempt_from(
                         &id,
                         &source_attempt_id,
                         ExecutorDescriptor {
@@ -5881,7 +5907,7 @@ async fn continue_editing(
                         .ok_or_else(|| {
                             request_error(
                                 StatusCode::INTERNAL_SERVER_ERROR,
-                                "isolated attempt has no governed environment",
+                                "attempt has no governed environment",
                             )
                         })?;
                 let attempt_id = lease.attempt_id.as_str().to_owned();
@@ -6260,7 +6286,7 @@ async fn restore_review_file(
                     )
                     .map_err(map_err)?;
                 let (mut item, lease) = forge
-                    .begin_isolated_attempt_from(
+                    .begin_workspace_attempt_from(
                         &id,
                         &source_attempt_id,
                         ExecutorDescriptor {
@@ -9993,14 +10019,14 @@ async fn begin_attempt(
                     detail: serde_json::json!({}),
                 });
                 let (item, lease) = forge(&state)
-                    .begin_isolated_attempt(&id, executor, body.pid, &actor)
+                    .begin_workspace_attempt(&id, executor, body.pid, &actor)
                     .map_err(map_err)?;
                 let environment =
                     item.environment_for_attempt(&lease.attempt_id)
                         .ok_or_else(|| {
                             request_error(
                                 StatusCode::INTERNAL_SERVER_ERROR,
-                                "isolated attempt has no governed environment",
+                                "attempt has no governed environment",
                             )
                         })?;
                 let attempt_id = lease.attempt_id.as_str().to_owned();
@@ -10148,10 +10174,16 @@ async fn complete_lease(
                     .map_err(map_err)?;
                 if let Some(env) = item.environment_for_attempt(&lease.attempt_id) {
                     let sealed_oid = forge(&state)
-                        .git()
-                        .head_oid(&env.worktree)
+                        .evidence_manifest_for_attempt(&item.id, &lease.attempt_id)
                         .ok()
-                        .map(|oid| oid.as_str().to_owned())
+                        .map(|manifest| manifest.sealed_head_oid.as_str().to_owned())
+                        .or_else(|| {
+                            forge(&state)
+                                .git()
+                                .head_oid(&env.worktree)
+                                .ok()
+                                .map(|oid| oid.as_str().to_owned())
+                        })
                         .unwrap_or_else(|| env.baseline_oid.as_str().to_owned());
                     crate::daemon::detamu_host::spawn_index_forge_item(
                         state.detamu.clone(),
@@ -10253,6 +10285,7 @@ fn parse_strategy(raw: &str) -> ApiResult<IntegrationStrategy> {
         "preserve_branch" | "preserve" => Ok(IntegrationStrategy::PreserveBranch),
         "fast_forward_only" | "fast_forward" | "ff" => Ok(IntegrationStrategy::FastForwardOnly),
         "export_patch" | "export" => Ok(IntegrationStrategy::ExportPatch),
+        "keep_checkout" | "keep" => Ok(IntegrationStrategy::KeepCheckout),
         other => Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorBody {
@@ -10432,6 +10465,69 @@ async fn discard_item(
     Path(work_id): Path<String>,
 ) -> ApiResult<Json<ItemProjection>> {
     let id = parse_work_id(&work_id)?;
+    let probe = admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::StoreIo,
+        32 * 1024,
+        {
+            let state = state.clone();
+            let id = id.clone();
+            move || forge(&state).load(&id).map_err(map_err)
+        },
+    )
+    .await?;
+
+    if probe.uses_attached_checkout() {
+        crate::daemon::agents::cancel_agent_sessions_for_work(&state, &id)
+            .await
+            .map_err(|(status, message)| request_error(status, message))?;
+
+        let native_session_ids = probe
+            .active_attempt_ids()
+            .into_iter()
+            .filter_map(|attempt_id| probe.attempt(attempt_id))
+            .filter(|attempt| attempt.executor.kind == "medousa-coder")
+            .filter_map(|attempt| attempt.executor.detail.get("session_id"))
+            .filter_map(serde_json::Value::as_str)
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        for session_id in native_session_ids {
+            crate::daemon::interactive::cancel_active_session_turn_for_session(
+                &state,
+                &session_id,
+            )
+            .await
+            .map_err(|(status, message)| request_error(status, message))?;
+        }
+
+        // Native Coder releases its Forge lease only after its bound shell is
+        // interrupted. Give that cleanup a short bounded window; Forge still
+        // refuses the discard if any executor remains, so closure fails safe.
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let active = admit_forge(
+                &state,
+                medousa_forge::execution::ExecutionClass::StoreIo,
+                16 * 1024,
+                {
+                    let state = state.clone();
+                    let id = id.clone();
+                    move || {
+                        forge(&state)
+                            .load(&id)
+                            .map(|item| item.has_active_attempts())
+                            .map_err(map_err)
+                    }
+                },
+            )
+            .await?;
+            if !active || tokio::time::Instant::now() >= deadline {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    }
+
     let item = admit_forge(
         &state,
         medousa_forge::execution::ExecutionClass::StoreIo,
