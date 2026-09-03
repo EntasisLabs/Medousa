@@ -109,7 +109,8 @@ pub fn allowed_actions(item: &WorkItem) -> AllowedActions {
             WorkState::Draft
             | WorkState::Ready
             | WorkState::Executing
-            | WorkState::AwaitingReview => ActionAffordance::yes(),
+            | WorkState::AwaitingReview
+            | WorkState::Failed => ActionAffordance::yes(),
             state if state.is_terminal() => ActionAffordance::no("Work is already terminal"),
             state => ActionAffordance::no(format!("Cannot discard in state {state}")),
         },
@@ -1390,6 +1391,25 @@ diff --git a/src/lib.rs b/src/lib.rs
         item.state = WorkState::Ready;
         assert!(!allowed_actions(&item).continue_editing.allowed);
         assert!(allowed_actions(&item).begin_attempt.allowed);
+    }
+
+    #[test]
+    fn failed_project_can_be_released() {
+        use medousa_forge::model::{GitOid, GitWorkTarget, WorkItem, WorkState, WorkTarget};
+
+        let mut item = WorkItem::new(
+            "failed setup",
+            "release the unusable project",
+            WorkTarget::Git(GitWorkTarget {
+                repo_path: std::path::PathBuf::from("/tmp/repo"),
+                base_ref: "main".into(),
+                base_oid: GitOid::new("a".repeat(40)),
+            }),
+            "user-1",
+        );
+        item.state = WorkState::Failed;
+
+        assert!(allowed_actions(&item).discard.allowed);
     }
 
     #[test]

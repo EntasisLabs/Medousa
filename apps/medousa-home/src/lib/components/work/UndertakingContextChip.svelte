@@ -7,6 +7,7 @@
     ExternalLink,
     FolderPlus,
     GitPullRequestArrow,
+    HardDriveDownload,
     Link2Off,
     SquareTerminal,
   } from "@lucide/svelte";
@@ -31,8 +32,10 @@
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import type { AgentModeId } from "$lib/types/session";
   import {
+    closeUndertaking,
     openTrackedTerminal,
     startTrackedAgent,
+    undertakingWorkspaceCopy,
   } from "$lib/utils/undertakingWorkspace";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import CodeProjectCreationFlow from "$lib/components/code/CodeProjectCreationFlow.svelte";
@@ -247,6 +250,29 @@
     undertakings.clearActive();
   }
 
+  async function releaseActive() {
+    if (!active || busy) return;
+    const workId = active.workId;
+    busy = true;
+    error = null;
+    try {
+      const item = await getUndertaking(workId);
+      if (!item.allowed_actions.discard.allowed) {
+        throw new Error(item.allowed_actions.discard.reason || "This project cannot be released yet.");
+      }
+      if (!window.confirm(undertakingWorkspaceCopy(item).closePrompt)) return;
+      await closeUndertaking(item);
+      chipMenuOpen = false;
+      observedBindingWorkId = null;
+      await undertakings.refreshList();
+      await undertakings.select("");
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      busy = false;
+    }
+  }
+
   async function openChooser() {
     if (chooserOpen) {
       closeChooser();
@@ -400,6 +426,16 @@
     <button type="button" role="menuitem" class="context-action text-content-tertiary" onclick={() => { chipMenuOpen = false; void detach(); }}>
       <Link2Off size={14} />
       Stop following this project
+    </button>
+    <button
+      type="button"
+      role="menuitem"
+      class="context-action text-content-tertiary"
+      disabled={busy}
+      onclick={() => void releaseActive()}
+    >
+      <HardDriveDownload size={14} />
+      Release project…
     </button>
 
     {#if error}

@@ -12,6 +12,7 @@
     FolderOpen,
     GitBranch,
     Laptop,
+    Link2Off,
     Pin,
     Plus,
     X,
@@ -25,6 +26,7 @@
     humanizeForgeMessage,
     inspectForgeRepository,
     listForgeRepositories,
+    provisionUndertaking,
     setForgeRepositoryPinned,
     type ItemProjection,
     type ForgeWorkspaceMode,
@@ -38,6 +40,10 @@
   import { vault } from "$lib/stores/vault.svelte";
   import { pickExternalFolder, rootLabelFromPath } from "$lib/utils/externalDeskApi";
   import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
+  import {
+    closeUndertaking,
+    undertakingWorkspaceCopy,
+  } from "$lib/utils/undertakingWorkspace";
 
   interface Props {
     presentation?: "rail" | "popover" | "sheet";
@@ -282,9 +288,41 @@
     busy = true;
     error = null;
     try {
-      const item = await getUndertaking(existing.id);
+      let item = await getUndertaking(existing.id);
+      if (!item.environment && item.allowed_actions.provision.allowed) {
+        item = await provisionUndertaking(item.id);
+        await undertakings.refreshList();
+      }
+      if (!item.environment) {
+        throw new Error(
+          item.allowed_actions.provision.reason || "This project could not prepare its workspace.",
+        );
+      }
       await bindItem(item);
       await onContinue?.(item);
+    } catch (err) {
+      error = humanizeForgeMessage(err instanceof Error ? err.message : String(err));
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function releaseItem(existing: { id: string }, event: MouseEvent) {
+    event.stopPropagation();
+    if (busy) return;
+    busy = true;
+    error = null;
+    try {
+      const item = await getUndertaking(existing.id);
+      if (!window.confirm(undertakingWorkspaceCopy(item).closePrompt)) return;
+      await closeUndertaking(item);
+      await undertakings.refreshList();
+      if (repository) {
+        repository = await inspectForgeRepository(repository.path);
+        duplicateAcknowledged = repository.existing_projects.length === 0;
+      }
+      await loadCatalog();
+      await onCatalogChanged?.();
     } catch (err) {
       error = humanizeForgeMessage(err instanceof Error ? err.message : String(err));
     } finally {
@@ -400,14 +438,26 @@
       {#if repository.existing_projects.length > 0 && !duplicateAcknowledged}
         <section class="mt-3">
           <p class="px-1 text-xs font-medium text-surface-200">Active changes</p>
-          <p class="px-1 text-xs text-content-quiet">Continue one, or start another change.</p>
+          <p class="px-1 text-xs text-content-quiet">Continue one, release it, or start another change.</p>
           <div class="creation-list mt-1.5">
             {#each repository.existing_projects.slice(0, 5) as existing (existing.id)}
-              <button type="button" class="creation-row" disabled={busy} onclick={() => void continueItem(existing)}>
-                <CircleDot size={12} class="text-primary-300" />
-                <span class="min-w-0 flex-1 truncate">{existing.title}</span>
-                <span class="text-content-quiet">{humanPhaseLabel(existing.human_phase)}</span>
-              </button>
+              <div class="creation-project-row">
+                <button type="button" class="creation-row min-w-0 flex-1" disabled={busy} onclick={() => void continueItem(existing)}>
+                  <CircleDot size={12} class="text-primary-300" />
+                  <span class="min-w-0 flex-1 truncate">{existing.title}</span>
+                  <span class="text-content-quiet">{humanPhaseLabel(existing.human_phase)}</span>
+                </button>
+                <button
+                  type="button"
+                  class="creation-release"
+                  disabled={busy}
+                  aria-label={`Release ${existing.title}`}
+                  title="Release project"
+                  onclick={(event) => void releaseItem(existing, event)}
+                >
+                  <Link2Off size={13} />
+                </button>
+              </div>
             {/each}
           </div>
           <button type="button" class="creation-separate" onclick={() => (duplicateAcknowledged = true)}>
@@ -608,6 +658,11 @@
   .creation-row:hover,.creation-source:hover,.creation-recent:hover { background:rgb(var(--theme-card-hover)/.68); color:rgb(var(--theme-text)); }
   .creation-row:disabled,.creation-source:disabled { opacity:.4; }
   .creation-recent+.creation-recent,.creation-row+.creation-row { border-top:1px solid rgb(var(--theme-border)/.18); }
+  .creation-project-row { display:flex; min-width:0; align-items:center; }
+  .creation-project-row+.creation-project-row { border-top:1px solid rgb(var(--theme-border)/.18); }
+  .creation-release { display:grid; width:2rem; height:2rem; flex:0 0 auto; place-items:center; margin-right:.2rem; border-radius:var(--theme-control-radius); color:rgb(var(--theme-text-quiet)); }
+  .creation-release:hover:not(:disabled) { background:rgb(var(--theme-card-hover)/.68); color:rgb(var(--theme-text)); }
+  .creation-release:disabled { opacity:.4; }
   .creation-separate { display:flex; align-items:center; gap:.4rem; margin-top:.45rem; padding:.4rem .45rem; color:rgb(var(--theme-link)); font-size:.72rem; }
   .creation-prompt { padding:.6rem; }
   .creation-toolbar { display:flex; min-width:0; align-items:center; gap:.5rem; border-top:1px solid rgb(var(--theme-border)/.2); padding-top:.5rem; }

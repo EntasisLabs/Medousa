@@ -1983,7 +1983,8 @@ impl Forge {
     }
 
     /// Guarded discard: release any running attempts, remove worktrees/branches,
-    /// then mark Discarded. Allowed from Draft, Ready, Executing, or AwaitingReview.
+    /// then mark Discarded. Failed setup may also be released so an unusable
+    /// project does not remain stuck in the user's repository catalog.
     pub fn discard(&self, work_id: &WorkId, actor: &ActorRef) -> Result<WorkItem> {
         let probe = self.load(work_id)?;
         let repo_key = match &probe.environment {
@@ -1997,7 +1998,8 @@ impl Forge {
             WorkState::Draft
             | WorkState::Ready
             | WorkState::Executing
-            | WorkState::AwaitingReview => {}
+            | WorkState::AwaitingReview
+            | WorkState::Failed => {}
             state => {
                 return Err(ForgeError::InvalidState {
                     work_id: work_id.clone(),
@@ -3184,6 +3186,17 @@ mod tests {
                 .ref_oid(&fx.repo, &Forge::attached_snapshot_ref(&item.id))
                 .is_err()
         );
+        assert_eq!(fx.git.head_oid(&fx.repo).unwrap(), head_before);
+        assert_eq!(fx.git.index_tree_oid(&fx.repo).unwrap(), index_before);
+        assert_eq!(
+            fs::read_to_string(fx.repo.join("local-token.txt")).unwrap(),
+            secret
+        );
+
+        let failed = forge.load(&item.id).unwrap();
+        assert_eq!(failed.state, WorkState::Failed);
+        let discarded = forge.discard(&item.id, &actor()).unwrap();
+        assert_eq!(discarded.state, WorkState::Discarded);
         assert_eq!(fx.git.head_oid(&fx.repo).unwrap(), head_before);
         assert_eq!(fx.git.index_tree_oid(&fx.repo).unwrap(), index_before);
         assert_eq!(

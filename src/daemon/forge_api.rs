@@ -1667,7 +1667,23 @@ fn start_item_from_request(state: &AppState, body: RegisterRequest) -> ApiResult
         .map_err(map_err)?;
     touch_repository(&repository_path, None)?;
     publish_item(state, &registered, "registered");
-    let item = forge.provision(&registered.id, &actor).map_err(map_err)?;
+    let item = match forge.provision(&registered.id, &actor) {
+        Ok(item) => item,
+        Err(err) => {
+            // `start` is one user action even though Forge records registration
+            // and provisioning separately. If setup fails, release that failed
+            // item so retries do not accumulate unusable projects in Home.
+            match forge.discard(&registered.id, &actor) {
+                Ok(discarded) => publish_item(state, &discarded, "start_failed_released"),
+                Err(discard_err) => tracing::warn!(
+                    work_id = %registered.id,
+                    error = %discard_err,
+                    "failed to release project after setup failure"
+                ),
+            }
+            return Err(map_err(err));
+        }
+    };
     if let Some(env) = item.workspace_environment() {
         crate::daemon::detamu_host::spawn_index_forge_item(
             state.detamu.clone(),
@@ -10536,7 +10552,23 @@ async fn discard_item(
             let state = state.clone();
             move || {
                 let actor = actor_from_state(&state);
-                forge(&state).discard(&id, &actor).map_err(map_err)
+                let item = forge(&state).discard(&id, &actor).map_err(map_err)?;
+                for session_id in crate::agent_mode_state::session_ids_with_code_binding() {
+                    let bound_to_item = crate::agent_mode_state::get_session_code_binding(&session_id)
+                        .is_ok_and(|binding| binding.work_id.as_deref() == Some(id.as_str()));
+                    if bound_to_item
+                        && let Err(err) =
+                            crate::agent_mode_state::clear_session_code_binding(&session_id)
+                    {
+                        tracing::warn!(
+                            work_id = %id,
+                            session_id,
+                            error = %err,
+                            "failed to clear session binding after project release"
+                        );
+                    }
+                }
+                Ok(item)
             }
         },
     )

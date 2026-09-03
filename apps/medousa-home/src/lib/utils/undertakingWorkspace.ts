@@ -16,6 +16,7 @@ import { chat } from "$lib/stores/chat.svelte";
 import {
   cancelActiveSessionTurn,
   cancelAgentSession,
+  clearSessionCodeBinding,
   setSessionCodeBinding,
   createAgentSession,
   type CodeIntentContext,
@@ -54,8 +55,8 @@ export function undertakingWorkspaceCopy(item: ItemProjection | null) {
       ? "Finish this project and keep the changes in this checkout?"
       : "Finish this project and keep its branch?",
     closePrompt: attached
-      ? `Close “${item?.title ?? "this project"}”? Files in the current checkout will stay exactly where they are.`
-      : `Close “${item?.title ?? "this project"}”? Its working copy will be removed.`,
+      ? `Release “${item?.title ?? "this project"}” from Coder? Medousa will stop tracking it, but every file and local change in the current checkout will stay exactly where it is.`
+      : `Discard “${item?.title ?? "this project"}”? Its managed working copy will be removed; the source checkout and chat history stay available.`,
     setupGuidance: attached
       ? "Attach the current checkout so the tree and editor can open."
       : "Create the working copy so the tree and editor can open.",
@@ -265,6 +266,8 @@ export async function interruptTrackedAgent(item: ItemProjection): Promise<void>
  * workspace. Isolated copies are reclaimed; attached checkout files stay put.
  */
 export async function closeUndertaking(item: ItemProjection): Promise<void> {
+  const active = undertakings.active?.workId === item.id ? undertakings.active : null;
+  const boundChatSessionIds = [...(active?.boundChatSessionIds ?? [])];
   if (usesAttachedCheckout(item)) {
     await interruptTrackedAgent(item);
   } else {
@@ -275,6 +278,20 @@ export async function closeUndertaking(item: ItemProjection): Promise<void> {
     }
   }
   await discardUndertaking(item.id);
+  for (const sessionId of boundChatSessionIds) {
+    try {
+      await clearSessionCodeBinding(sessionId);
+    } catch {
+      // The daemon clears durable bindings as part of project release; this
+      // request only keeps the current Home process synchronized immediately.
+    }
+    setSessionAgentWorkId(sessionId, null);
+    undertakings.detachChat(sessionId);
+    window.dispatchEvent(new CustomEvent("medousa-code-project-binding-changed", {
+      detail: { sessionId, workId: null },
+    }));
+  }
+  if (active) undertakings.clearActive();
 }
 
 export async function reclaimTrackedHuman(item: ItemProjection): Promise<ItemProjection> {
