@@ -35,8 +35,6 @@
     workerThread?: boolean;
     /** Stamp main-thread turn wrappers for the conversation navigator. */
     navigation?: boolean;
-    /** Scroll container for user-whisper IntersectionObserver. */
-    scrollRoot?: HTMLElement | null;
     onPromoteToFlow?: (
       ref: import("$lib/types/toolHistory").ToolHistorySliceRef,
     ) => void | Promise<void>;
@@ -59,7 +57,6 @@
     compact = false,
     workerThread = false,
     navigation = false,
-    scrollRoot = null,
     onPromoteToFlow,
     onSubmitIntent,
     onSaveToVault,
@@ -231,6 +228,7 @@
   {#if beat.kind === "pair"}
     <section
       class="chat-turn-beat {turnBreak ? 'chat-turn-break' : ''}"
+      data-chat-history-anchor
       data-chat-turn-user-id={navigation ? beat.user.id : undefined}
     >
       <ChatUserWhisper
@@ -238,7 +236,6 @@
         {sessionId}
         {mobile}
         {compact}
-        {scrollRoot}
         forceExpand={shouldForceExpandUserWhisper(painted, beat.user.id)}
         {onSubmitIntent}
         onFork={beat.user.transcript?.entryId
@@ -267,6 +264,7 @@
   {:else if beat.message.role === "user"}
     <div
       class="{turnBreak ? 'chat-turn-break' : ''} chat-turn-beat"
+      data-chat-history-anchor
       data-chat-turn-user-id={navigation ? beat.message.id : undefined}
     >
       <ChatUserWhisper
@@ -274,7 +272,6 @@
         {sessionId}
         {mobile}
         {compact}
-        {scrollRoot}
         forceExpand={shouldForceExpandUserWhisper(painted, beat.message.id)}
         {onSubmitIntent}
         onFork={beat.message.transcript?.entryId
@@ -288,7 +285,10 @@
     {#if subagentFor(beat.message)}
       {@render subagentBeat(subagentFor(beat.message)!)}
     {/if}
-    <article class="group relative {turnBreak ? 'chat-turn-break' : ''} {assistantClass(beat.message)}">
+    <article
+      class="group relative {turnBreak ? 'chat-turn-break' : ''} {assistantClass(beat.message)}"
+      data-chat-history-anchor
+    >
       <LiquidChatMessage
         message={beat.message}
         {sessionId}

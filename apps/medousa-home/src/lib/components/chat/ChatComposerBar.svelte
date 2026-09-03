@@ -411,6 +411,7 @@
         maxHeight={360}
         minHeight={34}
         class="mobile-composer-dock-input"
+        enterkeyhint="enter"
         {onkeydown}
         {onfocus}
         {onblur}
@@ -548,6 +549,7 @@
       maxHeight={400}
       minHeight={36}
       class="composer-bar-stacked-input"
+      enterkeyhint="send"
       {onkeydown}
       {onfocus}
       {onblur}

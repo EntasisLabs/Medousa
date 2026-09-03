@@ -163,13 +163,6 @@
     }
   }
 
-  function handleKeydown(event: KeyboardEvent) {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      void submit(event);
-    }
-  }
-
   function handleComposerFocus() {
     if (composerBlurTimer) {
       clearTimeout(composerBlurTimer);
@@ -226,7 +219,6 @@
     mobile
     disabled={connection.offline}
     composerBlocked={chat.composerBlocked || runtime.savingControls}
-    onkeydown={handleKeydown}
     onfocus={handleComposerFocus}
     onblur={handleComposerBlur}
   />

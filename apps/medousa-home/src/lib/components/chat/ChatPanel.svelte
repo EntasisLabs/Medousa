@@ -79,6 +79,7 @@
     placeComposerSlashMenuAnchor,
     type SlashMenuAnchor,
   } from "$lib/utils/slashMenuPlacement";
+  import { shouldSubmitComposerKey } from "$lib/utils/composerKeyboard";
   import OfflineChatGate from "$lib/components/chat/OfflineChatGate.svelte";
   import LiquidCardDetailSheet from "$lib/components/chat/LiquidCardDetailSheet.svelte";
   import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
@@ -714,7 +715,7 @@
       }
     }
 
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (shouldSubmitComposerKey(event, mobile)) {
       event.preventDefault();
       void submit(event);
     }
@@ -994,7 +995,6 @@
           sessionId={panelSessionId}
           {mobile}
           navigation
-          scrollRoot={scrollEl}
           onPromoteToFlow={handlePromoteToFlow}
           onSubmitIntent={submitChatIntent}
           onSaveToVault={handleSaveToVault}
