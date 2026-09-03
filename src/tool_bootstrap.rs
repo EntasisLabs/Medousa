@@ -180,6 +180,11 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                 ],
             },
             ToolDomainCatalogEntry {
+                domain: "execute",
+                summary: "Short local diagnostics and commands through the operator-configured OS sandbox",
+                tools: crate::tool_names::SHELL_COGNITION_TOOLS,
+            },
+            ToolDomainCatalogEntry {
                 domain: "vault",
                 summary: "Vault notes — list, read, write (tag runtime-learning for recall)",
                 tools: &[
@@ -680,6 +685,32 @@ fn rank_hint_domains(prompt: &str, turns: &[ConversationTurn]) -> Vec<String> {
     ) {
         bump(&mut scores, "runtime", 3);
     }
+    if contains_any(
+        &prompt_lower,
+        &[
+            "shell",
+            "terminal",
+            "command line",
+            "run a command",
+            "disk space",
+            "free space",
+            "storage usage",
+            "memory usage",
+            "ram usage",
+            "running process",
+            "running processes",
+            "process list",
+            "system logs",
+            "log file",
+            "git status",
+            "run tests",
+            "test suite",
+            "build failed",
+            "compile failed",
+        ],
+    ) {
+        bump(&mut scores, "execute", 4);
+    }
     if contains_any(&prompt_lower, &["vault", "note", "journal", "learning"]) {
         bump(&mut scores, "vault", 3);
     }
@@ -935,5 +966,21 @@ mod tests {
         assert_eq!(before, after);
 
         let _ = delete_session_tool_surface(&session_id);
+    }
+
+    #[test]
+    fn host_catalog_exposes_sandboxed_execution() {
+        let execute = host_tool_domain_catalog()
+            .iter()
+            .find(|entry| entry.domain == "execute")
+            .expect("host execute domain");
+        assert!(execute.tools.contains(&"cognition_shell_status"));
+        assert!(execute.tools.contains(&"cognition_shell_run"));
+    }
+
+    #[test]
+    fn disk_diagnostics_rank_host_execution() {
+        let ranked = rank_hint_domains("check what is taking so much disk space", &[]);
+        assert_eq!(ranked.first().map(String::as_str), Some("execute"));
     }
 }

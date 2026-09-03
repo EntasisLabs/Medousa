@@ -39,7 +39,7 @@ enum DiscoverLaneInput {
 
 #[derive(Debug, JsonSchema)]
 pub struct ToolsDiscoverInput {
-    /// Domain id — host: memory|catalog|runtime|vault|history|identity|skill|overlay|environment|browser; worker: execute|discover|memory|vault|openshell|scripts
+    /// Domain id — host: memory|catalog|runtime|execute|vault|history|identity|skill|overlay|environment|browser; worker: execute|discover|memory|vault|openshell|scripts
     #[schemars(required, with = "String")]
     domain: Option<String>,
     /// Surface lane (default auto from active turn scope)

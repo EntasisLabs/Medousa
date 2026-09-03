@@ -3,7 +3,7 @@
 use super::policy::TurnWorkerIntent;
 use crate::agent_runtime::turn_services::TurnActivationDecision;
 
-/// Default max tool rounds for the host orchestrator (coordinator only).
+/// Default max tool rounds for the host orchestrator and its bounded direct tools.
 pub const HOST_BUS_MAX_TOOL_ROUNDS_DEFAULT: usize = 8;
 
 /// Back-compat alias.
