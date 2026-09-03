@@ -19,6 +19,7 @@
     listPromptStashes,
   } from "$lib/daemon/session";
   import { chat } from "$lib/stores/chat.svelte";
+  import { isTauriIos } from "$lib/platform";
   import type { PromptStash, SessionRef } from "$lib/types/generated/daemon_api";
   import { attachComposerMenuDismiss } from "$lib/utils/composerMenuDismiss";
   import { placeComposerPopover } from "$lib/utils/railPopover";
@@ -62,6 +63,7 @@
   const canStash = $derived(
     !disabled && (chat.draft.trim().length > 0 || chat.pendingMediaRefs.length > 0),
   );
+  const usesNativeAttachmentSourceMenu = $derived(mobile && isTauriIos());
 
   $effect(() => {
     stashes.length;
@@ -234,7 +236,7 @@
       role="menu"
       aria-label="Composer actions"
     >
-      {#if mobile}
+      {#if mobile && !usesNativeAttachmentSourceMenu}
         <button
           type="button"
           class="composer-plus-menu-item"
@@ -267,7 +269,9 @@
         <span class="composer-plus-menu-icon" aria-hidden="true">
           <Paperclip size={15} strokeWidth={1.75} />
         </span>
-        <span>{mobile ? "Attach file" : "Attach"}</span>
+        <span>
+          {usesNativeAttachmentSourceMenu ? "Add attachment" : mobile ? "Attach file" : "Attach"}
+        </span>
       </button>
       {#if showStashes}
         <button
