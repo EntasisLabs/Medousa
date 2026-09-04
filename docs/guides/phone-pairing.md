@@ -86,8 +86,11 @@ the host's LAN or public IP address.
 
 Delegation is separate from pairing and portal selection:
 
-1. On the receiving workshop, explicitly allow **Run delegated work** for the
-   paired phone in **Settings → Sharing**.
+1. Connect to the receiving workshop, open **Settings → Sharing → Phone**, open
+   the paired device, and choose its **Allowed on this workshop** permission.
+   **Connected only** grants no execution; **Assistant work** grants the bounded
+   assistant lane. Sandboxed, approved-project, and custom scopes remain
+   independently selectable and never imply host shell or secrets.
 2. On the phone, keep Personal selected. Open the paired workshop's edit
    actions under **Settings → Connection**, then choose **Use for delegated
    work**.
@@ -96,7 +99,9 @@ Delegation is separate from pairing and portal selection:
 Creating the binding sends no work and does not switch workshops. When the
 Personal agent delegates, it sends only bounded context to that exact paired
 identity; the signed result returns with provenance while both stores and
-session catalogs stay independent.
+session catalogs stay independent. Pairing by itself grants no execution, and
+removing the pair prevents an old per-device policy from applying if that
+device is paired again later.
 
 You do **not** install offline brain packages on the phone — do that on the host
 via [Packages](packages.md).

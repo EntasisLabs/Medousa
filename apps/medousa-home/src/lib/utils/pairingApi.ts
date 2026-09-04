@@ -32,6 +32,78 @@ export interface PairingStatusResponse {
   qrProtocolVersion: string;
 }
 
+export type PeerExecutionPolicyPreset =
+  | "connected_only"
+  | "assistant_work"
+  | "sandboxed_work"
+  | "approved_projects"
+  | "custom";
+
+export type PeerNetworkPolicy = "deny" | "web_only" | "unrestricted";
+
+export interface PeerExecutionPolicy {
+  schemaVersion: number;
+  peerDeviceId: string;
+  peerPairingId: string;
+  preset: PeerExecutionPolicyPreset;
+  enabled: boolean;
+  assistantWork: boolean;
+  sandboxExecution: boolean;
+  hostShell: boolean;
+  coderWork: boolean;
+  workEnvironmentMaterialization: boolean;
+  allowedProjectIds?: string[];
+  allowedRootRefs?: string[];
+  allowedToolDomains?: string[];
+  allowedMcpServerIds?: string[];
+  allowedSecretRefs?: string[];
+  networkPolicy: PeerNetworkPolicy;
+  allowAgentTargeting: boolean;
+  expiresAt?: string | null;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PeerExecutionPolicyEntry {
+  peerDeviceId: string;
+  pairingId: string;
+  displayName: string;
+  role: string;
+  pairedAt: string;
+  lastSeen: string;
+  meshEnabled: boolean;
+  meshGrants: string[];
+  legacyTaskRequestGranted: boolean;
+  execution: {
+    policy: PeerExecutionPolicy;
+    source: "stored" | "legacy_task_request" | "default_deny";
+  };
+}
+
+export interface PeerExecutionPolicyUpdate {
+  preset: PeerExecutionPolicyPreset;
+  enabled?: boolean;
+  assistantWork?: boolean;
+  sandboxExecution?: boolean;
+  hostShell?: boolean;
+  coderWork?: boolean;
+  workEnvironmentMaterialization?: boolean;
+  allowedProjectIds?: string[];
+  allowedRootRefs?: string[];
+  allowedToolDomains?: string[];
+  allowedMcpServerIds?: string[];
+  allowedSecretRefs?: string[];
+  networkPolicy?: PeerNetworkPolicy;
+  allowAgentTargeting?: boolean;
+  expiresAt?: string | null;
+}
+
+export interface PeerExecutionPolicyUpdateResponse {
+  peer: PeerExecutionPolicyEntry;
+  cancelledWorkCount: number;
+}
+
 export interface IrohTicketResponse {
   ticket: string;
   endpointId: string;
@@ -119,6 +191,27 @@ export async function updatePairingPolicy(
     pairingId,
     trustExpiresAt: policy.trustExpiresAt,
     idleTimeoutSeconds: policy.idleTimeoutSeconds,
+  });
+}
+
+export async function fetchPeerExecutionPolicies(): Promise<PeerExecutionPolicyEntry[]> {
+  if (!isTauri()) return [];
+  const response = await invoke<{ peers: PeerExecutionPolicyEntry[] }>(
+    "pairing_fetch_execution_policies",
+  );
+  return response.peers ?? [];
+}
+
+export async function updatePeerExecutionPolicy(
+  deviceId: string,
+  policy: PeerExecutionPolicyUpdate,
+): Promise<PeerExecutionPolicyUpdateResponse> {
+  if (!isTauri()) {
+    throw new Error("Peer permissions require the Medousa app");
+  }
+  return invoke<PeerExecutionPolicyUpdateResponse>("pairing_update_execution_policy", {
+    deviceId,
+    policy,
   });
 }
 

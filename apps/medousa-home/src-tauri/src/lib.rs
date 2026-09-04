@@ -471,6 +471,8 @@ fn run_home() {
             pairing::pairing_fetch_status,
             pairing::pairing_revoke,
             pairing::pairing_update_policy,
+            pairing::pairing_fetch_execution_policies,
+            pairing::pairing_update_execution_policy,
             pairing::pairing_wait_ready,
             pairing::pairing_complete_from_qr,
             pairing::pairing_load_credentials,

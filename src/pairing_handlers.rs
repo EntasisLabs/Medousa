@@ -540,6 +540,12 @@ async fn revoke_pairing(
     Extension(principal): Extension<RequestPrincipal>,
     Path(pairing_id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {
+    let removed_record = state
+        .service
+        .find_by_pairing_id(pairing_id.trim())
+        .ok()
+        .flatten();
+    let actor = policy_actor(&principal);
     let authority = match principal.kind() {
         PrincipalKind::LocalApp | PrincipalKind::Root => RevokePairingAuthority::Administrator,
         _ => principal
@@ -548,7 +554,19 @@ async fn revoke_pairing(
             .unwrap_or(RevokePairingAuthority::Unauthenticated),
     };
     match state.service.revoke_pairing(&pairing_id, authority).await {
-        Ok(RevokePairingResult::Removed) => Ok(StatusCode::NO_CONTENT),
+        Ok(RevokePairingResult::Removed) => {
+            if let Some(record) = removed_record {
+                if let Err(error) = state.execution_policies.remove_policy(
+                    &record.phone_id,
+                    &record.pairing_id,
+                    &actor,
+                ) {
+                    eprintln!("medousa-daemon: remove peer execution policy failed: {error:#}");
+                }
+                cancel_workers_for_pairing(&record.phone_id, &record.pairing_id);
+            }
+            Ok(StatusCode::NO_CONTENT)
+        }
         Ok(RevokePairingResult::NotFound) => Err(StatusCode::NOT_FOUND),
         Ok(RevokePairingResult::Unauthorized) => Err(StatusCode::UNAUTHORIZED),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
@@ -687,7 +705,12 @@ fn sync_task_request_grant(
     let mut grants = crate::mesh::effective_mesh_grants(record)
         .into_iter()
         .collect::<BTreeSet<_>>();
-    if policy.enabled && policy.assistant_work && !policy.is_expired_at(chrono::Utc::now()) {
+    let execution_scope_enabled = policy.assistant_work
+        || policy.sandbox_execution
+        || policy.host_shell
+        || policy.coder_work
+        || policy.work_environment_materialization;
+    if policy.enabled && execution_scope_enabled && !policy.is_expired_at(chrono::Utc::now()) {
         grants.insert(crate::mesh::CAP_TASK_REQUEST.to_string());
     } else {
         grants.remove(crate::mesh::CAP_TASK_REQUEST);
@@ -741,6 +764,7 @@ fn policy_allows_grant(policy: &PeerExecutionPolicy, grant: &TaskExecutionGrant)
         || policy
             .expires_at
             .is_some_and(|policy_expiry| policy_expiry < grant.expires_at)
+        || policy.peer_pairing_id != grant.peer_pairing_id
     {
         return false;
     }
@@ -750,6 +774,37 @@ fn policy_allows_grant(policy: &PeerExecutionPolicy, grant: &TaskExecutionGrant)
                 || policy.network_policy
                     != crate::peer_execution_policy::PeerNetworkPolicy::Deny)
     })
+}
+
+fn cancel_workers_for_pairing(peer_device_id: &str, peer_pairing_id: &str) -> usize {
+    let store = crate::agent_runtime::turn_worker::turn_worker_store();
+    let expected_identity = format!("peer:{peer_device_id}");
+    let mut cancelled = 0;
+    for worker in store.list_all_unbounded() {
+        if worker.identity_user_id.as_deref() != Some(expected_identity.as_str())
+            || worker.disposition
+                != crate::agent_runtime::turn_worker::TurnWorkDisposition::Delegated
+            || !matches!(
+                worker.status,
+                crate::agent_runtime::turn_worker::TurnWorkStatus::Pending
+                    | crate::agent_runtime::turn_worker::TurnWorkStatus::Running
+            )
+            || worker
+                .task_execution_grant
+                .as_ref()
+                .is_some_and(|grant| grant.peer_pairing_id != peer_pairing_id)
+        {
+            continue;
+        }
+        if store.cancel_exact(&worker.session_id, &worker.work_id).is_ok() {
+            store.update(&worker.work_id, |record| {
+                record.error = Some("peer pairing was removed".to_string());
+                record.termination_reason = Some("peer_pairing_revoked".to_string());
+            });
+            cancelled += 1;
+        }
+    }
+    cancelled
 }
 
 fn policy_actor(principal: &RequestPrincipal) -> String {

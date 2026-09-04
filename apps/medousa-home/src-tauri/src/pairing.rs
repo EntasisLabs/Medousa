@@ -250,6 +250,38 @@ pub async fn pairing_update_policy(
 }
 
 #[tauri::command]
+pub async fn pairing_fetch_execution_policies(
+    _state: State<'_, DaemonState>,
+) -> Result<serde_json::Value, String> {
+    crate::workshop_transport::workshop_get_json(
+        &crate::active_workshop::transport_config()?,
+        "/v1/peers/execution-policies",
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn pairing_update_execution_policy(
+    _state: State<'_, DaemonState>,
+    device_id: String,
+    policy: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let device_id = device_id.trim();
+    if device_id.is_empty() {
+        return Err("device_id is required".to_string());
+    }
+    crate::workshop_transport::workshop_put_json(
+        &crate::active_workshop::transport_config()?,
+        &format!(
+            "/v1/peers/{}/execution-policy",
+            urlencoding::encode(device_id)
+        ),
+        &policy,
+    )
+    .await
+}
+
+#[tauri::command]
 pub async fn pairing_complete_from_qr(
     request: crate::pairing_client::PairCompleteFromQrRequest,
 ) -> Result<crate::pairing_client::PairCompleteFromQrResult, String> {
