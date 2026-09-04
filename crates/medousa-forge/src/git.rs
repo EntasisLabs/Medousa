@@ -6,6 +6,7 @@
 use std::io::{Read as _, Write as _};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use sha2::{Digest as _, Sha256};
 
@@ -43,6 +44,7 @@ fn format_git_command_error(args: &[&str], detail: impl AsRef<str>) -> String {
 /// recognizably Forge.
 pub const FORGE_COMMITTER_NAME: &str = "Medousa Forge";
 pub const FORGE_COMMITTER_EMAIL: &str = "forge@medousa.local";
+static PORTABLE_BUNDLE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 /// Identity attributed as the *author* of a checkpoint commit.
 #[derive(Debug, Clone)]
@@ -1272,6 +1274,45 @@ impl GitEngine {
         Ok(())
     }
 
+    /// Export an arbitrary reachable checkpoint without moving HEAD or a user
+    /// branch. Snapshot commits are normally unreachable until this method
+    /// temporarily pins one beneath Forge's private namespace.
+    pub fn export_reachable_checkpoint_bundle(
+        &self,
+        cwd: &Path,
+        checkpoint: &GitOid,
+        destination: &Path,
+    ) -> Result<()> {
+        let sequence = PORTABLE_BUNDLE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let checkpoint_prefix = checkpoint.as_str().chars().take(16).collect::<String>();
+        let temporary_ref = format!(
+            "refs/medousa/forge/portable/{}-{sequence}-{checkpoint_prefix}",
+            std::process::id()
+        );
+        self.set_ref(cwd, &temporary_ref, checkpoint)?;
+        let result = (|| {
+            if let Some(parent) = destination.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let destination = destination.to_str().ok_or_else(|| {
+                ForgeError::Store("checkpoint bundle path is not valid UTF-8".to_string())
+            })?;
+            let _ = std::fs::remove_file(destination);
+            if let Err(error) = self.run(cwd, &["bundle", "create", destination, &temporary_ref]) {
+                let _ = std::fs::remove_file(destination);
+                return Err(error);
+            }
+            self.run(cwd, &["bundle", "verify", destination])?;
+            Ok(())
+        })();
+        let cleanup = self.delete_ref(cwd, &temporary_ref);
+        match (result, cleanup) {
+            (Err(error), _) => Err(error),
+            (Ok(()), Err(error)) => Err(error),
+            (Ok(()), Ok(())) => Ok(()),
+        }
+    }
+
     /// Import a previously verified checkpoint bundle and detach the worktree
     /// at the exact manifest commit.
     pub fn import_checkpoint_bundle(
@@ -1284,7 +1325,10 @@ impl GitEngine {
             ForgeError::Store("checkpoint bundle path is not valid UTF-8".to_string())
         })?;
         self.run(cwd, &["bundle", "verify", bundle])?;
-        self.run(cwd, &["fetch", "--no-tags", bundle, "HEAD"])?;
+        // `unbundle` imports the complete object graph without depending on a
+        // particular advertised ref name. Portable Forge snapshots use an
+        // ephemeral private ref while older bundles advertise HEAD.
+        self.run(cwd, &["bundle", "unbundle", bundle])?;
         self.run(cwd, &["checkout", "--detach", checkpoint.as_str()])?;
         if self.head_oid(cwd)? != *checkpoint {
             return Err(ForgeError::EnvironmentDrift(
@@ -2044,6 +2088,45 @@ mod tests {
         assert!(
             git.set_ref(tmp.path(), "refs/heads/main", &snapshot)
                 .is_err()
+        );
+        assert_eq!(git.head_oid(tmp.path()).unwrap(), head);
+    }
+
+    #[test]
+    fn reachable_snapshot_bundle_reconstructs_without_a_shared_origin() {
+        let (tmp, git, head) = init_repo();
+        let scratch = TempDir::new().unwrap();
+        fs::write(tmp.path().join("hello.txt"), "portable\n").unwrap();
+        fs::write(tmp.path().join("new.txt"), "captured\n").unwrap();
+        let snapshot = git
+            .snapshot_worktree(
+                tmp.path(),
+                &head,
+                &scratch.path().join("snapshot.index"),
+                "portable snapshot",
+                &CheckpointAuthor::default(),
+                &[],
+            )
+            .unwrap();
+        let bundle = scratch.path().join("checkpoint.bundle");
+        git.export_reachable_checkpoint_bundle(tmp.path(), &snapshot, &bundle)
+            .unwrap();
+
+        let restored = TempDir::new().unwrap();
+        git.run(restored.path(), &["init", "--quiet", "--template="])
+            .or_else(|_| git.run(restored.path(), &["init", "--quiet"]))
+            .unwrap();
+        git.import_checkpoint_bundle(restored.path(), &bundle, &snapshot)
+            .unwrap();
+
+        assert_eq!(git.head_oid(restored.path()).unwrap(), snapshot);
+        assert_eq!(
+            fs::read_to_string(restored.path().join("hello.txt")).unwrap(),
+            "portable\n"
+        );
+        assert_eq!(
+            fs::read_to_string(restored.path().join("new.txt")).unwrap(),
+            "captured\n"
         );
         assert_eq!(git.head_oid(tmp.path()).unwrap(), head);
     }

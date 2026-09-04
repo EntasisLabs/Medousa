@@ -4,11 +4,13 @@
 //! environments, evidence, review, dispositions, and recovery — it never runs
 //! an executor and never resumes a provider.
 
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use chrono::Utc;
+use sha2::{Digest as _, Sha256};
 
 use crate::catalog::{CatalogPage, ForgeCatalog, SlugReservationJournal};
 use crate::compaction;
@@ -21,10 +23,10 @@ use crate::model::{
     ChangeStatus, ChangedFile, ChangesRequested, ChangesRequestedId, CompactEvidenceReceipt,
     CompactEvidenceRetention, Digest, EvidenceId, EvidenceManifest, ExecutionLease,
     ExecutorDescriptor, GitWorkTarget, GovernedEnv, IntegrationStrategy, LeaseId,
-    MODEL_SCHEMA_VERSION, OperationId, PolicyReport, PolicyViolation, RawEvidenceDisposition,
-    RecoveryDisposition, ReviewComment, ReviewCommentId, ReviewDecision, ReviewDecisionId, WorkId,
-    WorkItem, WorkPolicy, WorkState, WorkTarget, WorkspaceMode, anchor_digest_for,
-    compose_revision_brief,
+    MODEL_SCHEMA_VERSION, OperationId, PolicyReport, PolicyViolation, PortableForgeCheckpoint,
+    RawEvidenceDisposition, RecoveryDisposition, ReviewComment, ReviewCommentId, ReviewDecision,
+    ReviewDecisionId, WorkId, WorkItem, WorkPolicy, WorkState, WorkTarget, WorkspaceMode,
+    anchor_digest_for, compose_revision_brief,
 };
 use crate::observation::{SharedWatcherFence, WorkspaceObserver};
 use crate::owner::ForgeItemRegistry;
@@ -149,6 +151,22 @@ fn file_facts(path: &Path) -> (bool, Option<u64>) {
         .map(|b| b.iter().take(8192).any(|c| *c == 0))
         .unwrap_or(false);
     (is_binary, Some(meta.len()))
+}
+
+fn digest_file(path: &Path) -> Result<(Digest, u64)> {
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    let mut bytes = 0_u64;
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+        bytes = bytes.saturating_add(read as u64);
+    }
+    Ok((Digest::from_hex(format!("{:x}", hasher.finalize())), bytes))
 }
 
 pub struct Forge {
@@ -458,6 +476,108 @@ impl Forge {
         let item = fold(&events)?;
         self.persist(&item, last_seq)?;
         Ok(item)
+    }
+
+    /// Capture the current governed workspace as an immutable Git bundle for
+    /// reconstruction by another workshop. Portable capture is deliberately
+    /// stricter than local review: excluded paths, path-policy violations,
+    /// merge state, and every detected capture risk block transport.
+    pub fn export_portable_checkpoint(
+        &self,
+        work_id: &WorkId,
+        destination: &Path,
+    ) -> Result<PortableForgeCheckpoint> {
+        let item = self.load(work_id)?;
+        let environment = item.workspace_environment().ok_or_else(|| {
+            ForgeError::EnvironmentDrift("work item has no reconstructable environment".into())
+        })?;
+        if !item.policy.checkpoint_capture_all {
+            return Err(ForgeError::CaptureBlocked(
+                "portable checkpoints require checkpoint_capture_all".into(),
+            ));
+        }
+        if environment.kind == crate::model::EnvironmentKind::AttachedCheckout {
+            self.verify_attached_checkout(&item, environment)?;
+        }
+        if self.git.merge_in_progress(&environment.worktree) {
+            return Err(ForgeError::CaptureBlocked(
+                "finish the active merge or rebase before moving this work".into(),
+            ));
+        }
+
+        let changed_files = self.workspace_changed_files(&item, environment)?;
+        if changed_files
+            .iter()
+            .any(|file| file.status == ChangeStatus::Unmerged)
+        {
+            return Err(ForgeError::CaptureBlocked(
+                "resolve unmerged files before moving this work".into(),
+            ));
+        }
+        let violations = crate::policy::evaluate_paths(&item.policy, &changed_files)?;
+        if let Some(first) = violations.first() {
+            return Err(ForgeError::CaptureBlocked(format!(
+                "{} changed path(s) are outside the portable work policy (first: {} — {})",
+                violations.len(),
+                first.path,
+                first.rule
+            )));
+        }
+        let exclusions = crate::policy::capture_exclusions(&item.policy, &changed_files)?;
+        if let Some(first) = exclusions.first() {
+            return Err(ForgeError::CaptureBlocked(format!(
+                "{} changed path(s) are excluded from portable capture (first: {first})",
+                exclusions.len()
+            )));
+        }
+        let candidates = changed_files
+            .iter()
+            .map(|file| crate::policy::normalize_git_path(&file.path))
+            .collect::<Vec<_>>();
+        let risks =
+            crate::policy::assess_capture(&item.policy, &environment.worktree, &candidates)?;
+        if let Some(first) = risks.first() {
+            return Err(ForgeError::CaptureBlocked(format!(
+                "{} unsafe portable capture risk(s) found (first: {first:?})",
+                risks.len()
+            )));
+        }
+
+        let parent_oid = if environment.kind == crate::model::EnvironmentKind::AttachedCheckout {
+            environment.baseline_oid.clone()
+        } else {
+            self.git.head_oid(&environment.worktree)?
+        };
+        let checkpoint_oid = self.git.snapshot_worktree(
+            &environment.worktree,
+            &parent_oid,
+            &self.attached_index_path(&item.id),
+            &format!("forge: portable checkpoint {}", item.id.as_str()),
+            &CheckpointAuthor::default(),
+            &[],
+        )?;
+        self.git.export_reachable_checkpoint_bundle(
+            &environment.worktree,
+            &checkpoint_oid,
+            destination,
+        )?;
+
+        let (bundle_digest, bundle_bytes) = digest_file(destination)?;
+        let target = git_target(&item)?;
+        Ok(PortableForgeCheckpoint {
+            schema_version: 1,
+            work_id: item.id.clone(),
+            repository_id: environment.repo.repo_id.clone(),
+            base_ref: target.base_ref,
+            expected_base_oid: target.base_oid,
+            parent_oid,
+            checkpoint_oid,
+            environment_generation: environment.generation,
+            changed_files,
+            bundle_digest,
+            bundle_bytes,
+            created_at: Utc::now(),
+        })
     }
 
     /// Load the immutable evidence manifest for one exact sealed attempt.
@@ -3203,6 +3323,93 @@ mod tests {
             fs::read_to_string(fx.repo.join("local-token.txt")).unwrap(),
             secret
         );
+    }
+
+    #[test]
+    fn portable_checkpoint_captures_dirty_governed_state_without_moving_head() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let item = forge
+            .register(
+                "Portable work",
+                "move this work safely",
+                &fx.repo,
+                "main",
+                "user-1",
+                &actor(),
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &actor()).unwrap();
+        let environment = item.workspace_environment().unwrap();
+        let head_before = fx.git.head_oid(&environment.worktree).unwrap();
+        fs::write(environment.worktree.join("app.txt"), "portable edit\n").unwrap();
+        fs::write(environment.worktree.join("new.txt"), "portable file\n").unwrap();
+        let output = TempDir::new().unwrap();
+        let bundle = output.path().join("portable.bundle");
+
+        let checkpoint = forge.export_portable_checkpoint(&item.id, &bundle).unwrap();
+
+        assert_eq!(checkpoint.work_id, item.id);
+        assert_eq!(checkpoint.parent_oid, head_before);
+        assert_ne!(checkpoint.checkpoint_oid, head_before);
+        assert_eq!(
+            checkpoint.bundle_bytes,
+            fs::metadata(&bundle).unwrap().len()
+        );
+        assert_eq!(
+            checkpoint
+                .changed_files
+                .iter()
+                .map(|file| file.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["app.txt", "new.txt"]
+        );
+        assert_eq!(fx.git.head_oid(&environment.worktree).unwrap(), head_before);
+
+        let restored = TempDir::new().unwrap();
+        fx.git
+            .run(restored.path(), &["init", "--quiet", "--template="])
+            .or_else(|_| fx.git.run(restored.path(), &["init", "--quiet"]))
+            .unwrap();
+        fx.git
+            .import_checkpoint_bundle(restored.path(), &bundle, &checkpoint.checkpoint_oid)
+            .unwrap();
+        assert_eq!(
+            fs::read_to_string(restored.path().join("app.txt")).unwrap(),
+            "portable edit\n"
+        );
+        assert_eq!(
+            fs::read_to_string(restored.path().join("new.txt")).unwrap(),
+            "portable file\n"
+        );
+    }
+
+    #[test]
+    fn portable_checkpoint_blocks_secret_bearing_state_before_bundle_creation() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let item = forge
+            .register(
+                "Portable secret",
+                "do not move credentials",
+                &fx.repo,
+                "main",
+                "user-1",
+                &actor(),
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &actor()).unwrap();
+        let environment = item.workspace_environment().unwrap();
+        let secret = ["ghp_", "123456789012345678901234567890123456"].concat();
+        fs::write(environment.worktree.join("token.txt"), secret).unwrap();
+        let output = TempDir::new().unwrap();
+        let bundle = output.path().join("blocked.bundle");
+
+        assert!(matches!(
+            forge.export_portable_checkpoint(&item.id, &bundle),
+            Err(ForgeError::CaptureBlocked(message)) if message.contains("unsafe portable capture")
+        ));
+        assert!(!bundle.exists());
     }
 
     #[test]
