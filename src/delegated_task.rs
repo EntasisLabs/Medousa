@@ -142,6 +142,8 @@ pub struct DelegatedTaskResult {
     pub parent_runtime_id: String,
     #[serde(default)]
     pub execution_placement: ExecutionPlacementResolution,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_execution_grant: Option<crate::peer_execution_policy::TaskExecutionGrant>,
     pub derivation: SessionDerivation,
 }
 
@@ -186,6 +188,8 @@ pub struct DelegatedTaskObservation {
     pub parent_runtime_id: String,
     #[serde(default)]
     pub execution_placement: ExecutionPlacementResolution,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_execution_grant: Option<crate::peer_execution_policy::TaskExecutionGrant>,
     pub derivation: SessionDerivation,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result: Option<DelegatedTaskResult>,
@@ -614,6 +618,9 @@ pub fn validate_task_result(
             "delegated result execution placement does not match the request",
         ));
     }
+    if let Some(grant) = result.task_execution_grant.as_ref() {
+        validate_task_execution_grant(request, result.execution.execution_id.as_str(), grant)?;
+    }
     let payload_execution = result
         .terminal
         .payload
@@ -690,12 +697,16 @@ pub fn validate_task_observation(
             "delegated observation execution placement does not match the request",
         ));
     }
+    if let Some(grant) = observation.task_execution_grant.as_ref() {
+        validate_task_execution_grant(request, &observation.work_id, grant)?;
+    }
     match (&observation.status, &observation.result) {
         (status, None) if !status.is_terminal() => Ok(()),
         (status, Some(result)) if status.is_terminal() => {
             validate_task_result(request, result)?;
             if result.execution != observation.execution
                 || result.derivation != observation.derivation
+                || result.task_execution_grant != observation.task_execution_grant
             {
                 return Err(DelegatedTaskError::conflict(
                     "delegated terminal result does not match its observation provenance",
@@ -718,6 +729,42 @@ pub fn validate_task_observation(
             "delegated observation terminal payload does not match its status",
         )),
     }
+}
+
+fn validate_task_execution_grant(
+    request: &DelegatedTaskRequest,
+    work_id: &str,
+    grant: &crate::peer_execution_policy::TaskExecutionGrant,
+) -> Result<(), DelegatedTaskError> {
+    if grant.schema_version != crate::peer_execution_policy::TASK_EXECUTION_GRANT_SCHEMA_VERSION
+        || grant.grant_id.trim().is_empty()
+        || grant.peer_device_id.trim().is_empty()
+        || grant.work_id != work_id
+        || grant.parent_session_id != request.grant.session_id
+        || grant.origin_runtime_id != request.parent_runtime_id
+        || grant.correlation_id != request.grant.correlation_id
+        || grant.expires_at <= grant.issued_at
+        || !grant
+            .effective_tool_domains
+            .iter()
+            .any(|domain| domain == "turn")
+        || grant
+            .effective_tool_domains
+            .iter()
+            .any(|domain| !grant.requested_tool_domains.contains(domain))
+    {
+        return Err(DelegatedTaskError::conflict(
+            "delegated task execution grant does not match the request",
+        ));
+    }
+    if request.execution_placement.resolution_reason != ExecutionResolutionReason::LegacyUnknown
+        && grant.destination_runtime_id != request.execution_placement.resolved_runtime_id
+    {
+        return Err(DelegatedTaskError::conflict(
+            "delegated task execution grant does not match the resolved runtime",
+        ));
+    }
+    Ok(())
 }
 
 pub fn delegated_context_prompt(context: &DelegatedContextGrant) -> String {
@@ -931,6 +978,7 @@ mod tests {
             execution: execution.clone(),
             parent_runtime_id: request.parent_runtime_id.clone(),
             execution_placement: request.execution_placement.clone(),
+            task_execution_grant: None,
             derivation,
         };
         validate_task_result(&request, &result).unwrap();
@@ -942,6 +990,7 @@ mod tests {
             execution: execution.clone(),
             parent_runtime_id: request.parent_runtime_id.clone(),
             execution_placement: request.execution_placement.clone(),
+            task_execution_grant: None,
             derivation: result.derivation.clone(),
             result: None,
         };

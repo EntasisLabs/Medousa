@@ -2,6 +2,8 @@
 
 use std::collections::HashSet;
 
+use crate::peer_execution_policy::TaskExecutionGrant;
+
 /// Compile/deployment ceiling for the first mobile daemon foreground turn.
 ///
 /// This list filters the daemon's existing tool registry. It neither registers
@@ -33,6 +35,35 @@ pub fn remote_delegated_tool_ceiling() -> HashSet<String> {
         .iter()
         .map(|name| (*name).to_string())
         .collect()
+}
+
+/// Compile the concrete tool names authorized by the destination-issued task
+/// grant. Records created before task grants existed retain the historical
+/// safe assistant ceiling for compatibility.
+pub fn remote_delegated_tool_ceiling_for_grant(
+    grant: Option<&TaskExecutionGrant>,
+) -> HashSet<String> {
+    let Some(grant) = grant else {
+        return remote_delegated_tool_ceiling();
+    };
+    let mut names = HashSet::new();
+    for domain in &grant.effective_tool_domains {
+        match domain.as_str() {
+            "turn" => {
+                names.insert("cognition_turn".to_string());
+            }
+            "utility" => {
+                names.insert("cognition_utility_day_of_week".to_string());
+                names.insert("cognition_utility_time_now".to_string());
+                names.insert("cognition_utility_uuid".to_string());
+            }
+            "web" => {
+                names.insert("cognition_web_search".to_string());
+            }
+            _ => {}
+        }
+    }
+    names
 }
 
 pub fn mobile_foreground_tool_ceiling() -> HashSet<String> {
@@ -407,5 +438,38 @@ mod tests {
                 "host-only tool leaked into mobile ceiling: {host_only}"
             );
         }
+    }
+
+    #[test]
+    fn destination_grant_compiles_only_named_safe_domains() {
+        let now = chrono::Utc::now();
+        let grant = TaskExecutionGrant {
+            schema_version: crate::peer_execution_policy::TASK_EXECUTION_GRANT_SCHEMA_VERSION,
+            grant_id: "grant-1".to_string(),
+            peer_device_id: "peer-1".to_string(),
+            origin_runtime_id: "runtime-origin".to_string(),
+            destination_runtime_id: "runtime-destination".to_string(),
+            parent_session_id: "session-1".to_string(),
+            bot_id: None,
+            work_id: "work-1".to_string(),
+            correlation_id: "correlation-1".to_string(),
+            worker_intent: "research".to_string(),
+            policy_revision: 2,
+            policy_source: crate::peer_execution_policy::PeerExecutionPolicySource::Stored,
+            requested_tool_domains: vec![
+                "turn".to_string(),
+                "utility".to_string(),
+                "web".to_string(),
+            ],
+            effective_tool_domains: vec!["turn".to_string(), "utility".to_string()],
+            issued_at: now,
+            expires_at: now + chrono::Duration::minutes(5),
+        };
+
+        let names = remote_delegated_tool_ceiling_for_grant(Some(&grant));
+        assert!(names.contains("cognition_turn"));
+        assert!(names.contains("cognition_utility_time_now"));
+        assert!(!names.contains("cognition_web_search"));
+        assert!(!names.contains("cognition_shell_run"));
     }
 }

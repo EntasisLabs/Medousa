@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
 use crate::agent_runtime::turn_context::WorkerHandoffCapsule;
+use crate::peer_execution_policy::TaskExecutionGrant;
 use crate::session;
 use crate::turn_continuation::StoredDeliveryTarget;
 use crate::workshop_contract::{
@@ -106,6 +107,10 @@ pub struct TurnWorkRecord {
     /// Requested and resolved execution target captured before enqueue.
     #[serde(default)]
     pub execution_placement: ExecutionPlacementResolution,
+    /// Immutable destination-owned authority compiled when a remote peer's
+    /// request was admitted. Local and pre-policy records leave this empty.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_execution_grant: Option<TaskExecutionGrant>,
     pub intent: String,
     pub task_prompt: String,
     pub status: TurnWorkStatus,
@@ -193,6 +198,7 @@ impl TurnWorkRecord {
         handoff_capsule: WorkerHandoffCapsule,
         parent_runtime_id: String,
         execution_placement: ExecutionPlacementResolution,
+        task_execution_grant: TaskExecutionGrant,
     ) -> Self {
         let now = Utc::now();
         Self {
@@ -203,6 +209,7 @@ impl TurnWorkRecord {
             parent_stream_turn_id: 0,
             parent_runtime_id,
             execution_placement,
+            task_execution_grant: Some(task_execution_grant),
             intent: "research".to_string(),
             task_prompt,
             status: TurnWorkStatus::Pending,
@@ -531,6 +538,8 @@ impl TurnWorkerStore {
                 && existing.session_id == record.session_id
                 && existing.identity_user_id == record.identity_user_id
                 && existing.parent_turn_correlation_id == record.parent_turn_correlation_id
+                && existing.parent_runtime_id == record.parent_runtime_id
+                && existing.execution_placement == record.execution_placement
                 && existing.task_prompt == record.task_prompt;
             return if matches {
                 Ok(false)
@@ -1047,6 +1056,7 @@ mod tests {
             parent_stream_turn_id,
             parent_runtime_id: "runtime-test".to_string(),
             execution_placement: Default::default(),
+            task_execution_grant: None,
             intent: "research".to_string(),
             task_prompt: "task".to_string(),
             status,

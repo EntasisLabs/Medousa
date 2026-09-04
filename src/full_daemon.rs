@@ -226,6 +226,7 @@ pub mod payload_receipt;
 pub mod peer_message_handlers;
 pub mod peer_messages;
 pub mod peer_scope;
+pub mod peer_execution_policy;
 pub mod persistence;
 pub mod product_config;
 pub mod reasoning_effort;

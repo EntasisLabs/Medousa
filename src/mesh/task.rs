@@ -22,6 +22,7 @@ use crate::delegated_task::{
     validate_task_request,
 };
 use crate::pairing::PairedDeviceRecord;
+use crate::peer_execution_policy::TaskExecutionGrant;
 use crate::runtime_composition_ext::RuntimeCompositionExt;
 
 #[async_trait]
@@ -30,6 +31,7 @@ pub trait DelegatedTaskExecutor: Send + Sync {
         &self,
         sender: &PairedDeviceRecord,
         request: &DelegatedTaskRequest,
+        task_execution_grant: &TaskExecutionGrant,
     ) -> Result<DelegatedTaskObservation, DelegatedTaskError>;
 }
 
@@ -175,6 +177,7 @@ impl DaemonDelegatedTaskExecutor {
             execution: execution.clone(),
             parent_runtime_id: terminal_record.parent_runtime_id.clone(),
             execution_placement: terminal_record.execution_placement.clone(),
+            task_execution_grant: terminal_record.task_execution_grant.clone(),
             derivation: derivation.clone(),
         }
     }
@@ -186,6 +189,7 @@ impl DelegatedTaskExecutor for DaemonDelegatedTaskExecutor {
         &self,
         sender: &PairedDeviceRecord,
         request: &DelegatedTaskRequest,
+        task_execution_grant: &TaskExecutionGrant,
     ) -> Result<DelegatedTaskObservation, DelegatedTaskError> {
         validate_task_request(request)?;
         if request.execution_placement.resolution_reason
@@ -247,6 +251,7 @@ impl DelegatedTaskExecutor for DaemonDelegatedTaskExecutor {
             handoff,
             request.parent_runtime_id.clone(),
             request.execution_placement.clone(),
+            task_execution_grant.clone(),
         );
         let created =
             turn_worker_store()
@@ -303,6 +308,7 @@ impl DelegatedTaskExecutor for DaemonDelegatedTaskExecutor {
             execution,
             parent_runtime_id: current.parent_runtime_id.clone(),
             execution_placement: current.execution_placement.clone(),
+            task_execution_grant: current.task_execution_grant.clone(),
             derivation: materialized.derivation,
             result,
         })

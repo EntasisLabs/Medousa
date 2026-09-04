@@ -676,6 +676,8 @@ async fn start_daemon() -> Result<()> {
         local_device_id: "local".to_string(),
         local_peer_name: "Medousa".to_string(),
     };
+    let peer_execution_policies =
+        Arc::new(medousa::peer_execution_policy::PeerExecutionPolicyStore::default());
     let pairing_routers = if pairing_enabled {
         let identity = medousa::pairing::DeviceIdentity::load_or_create()
             .context("failed to load pairing device identity")?;
@@ -961,6 +963,7 @@ async fn start_daemon() -> Result<()> {
     let mesh_api_state = medousa::mesh::MeshApiState {
         pairing: peer_message_state.pairing.clone(),
         local_device_id: peer_message_state.local_device_id.clone(),
+        execution_policies: peer_execution_policies.clone(),
         delegated_task_executor: Some(std::sync::Arc::new(
             medousa::mesh::DaemonDelegatedTaskExecutor::new(
                 std::sync::Arc::new(state.composition().clone()),
