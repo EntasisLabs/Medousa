@@ -345,6 +345,7 @@
     "type": "string",
     "enum": [
       "default",
+      "bot",
       "session",
       "task",
       "turn"
@@ -16415,6 +16416,7 @@
         "type": "string",
         "enum": [
           "default",
+          "bot",
           "session",
           "task",
           "turn"

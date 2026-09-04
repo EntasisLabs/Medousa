@@ -1346,7 +1346,25 @@ async fn run_agent_turn_inner(
         return;
     }
 
-    let mode_selection = crate::agent_mode_state::resolve_for_turn(&session_id, request.agent_mode);
+    let active_execution = super::execution_context::active_turn_execution_context();
+    let bot_default_mode = active_execution
+        .as_deref()
+        .and_then(super::execution_context::TurnExecutionContext::bot_identity)
+        .and_then(super::execution_context::BotTurnIdentity::default_mode);
+    let memory_session_id = active_execution
+        .as_deref()
+        .map(super::execution_context::TurnExecutionContext::memory_session_id)
+        .unwrap_or(&session_id)
+        .to_string();
+    let bot_profile_appendix = active_execution
+        .as_deref()
+        .and_then(super::execution_context::TurnExecutionContext::bot_identity)
+        .map(super::execution_context::BotTurnIdentity::prompt_appendix);
+    let mode_selection = crate::agent_mode_state::resolve_for_turn_with_fallback(
+        &session_id,
+        request.agent_mode,
+        bot_default_mode,
+    );
     let mut agent_mode = match super::modes::resolve_agent_mode(mode_selection.mode) {
         Ok(mode) => mode,
         Err(err) => {
@@ -1656,6 +1674,17 @@ async fn run_agent_turn_inner(
         agent_mode.execution_lane,
     ))
     .await;
+    if let Some(bot) = active_execution
+        .as_deref()
+        .and_then(super::execution_context::TurnExecutionContext::bot_identity)
+    {
+        sink.notice(format!(
+            "◈ bot_identity id={} revision={} memory_scope=bot",
+            bot.bot_id(),
+            bot.profile_revision(),
+        ))
+        .await;
+    }
 
     if has_media && let Err(err) = validate_media_refs(&session_id, &request.media_refs) {
         sink.agent_error(1, err).await;
@@ -1916,6 +1945,7 @@ async fn run_agent_turn_inner(
         agent_mode,
         mode_context_appendix: mode_context_appendix.as_deref(),
         session_id: &session_id,
+        memory_session_id: &memory_session_id,
         prompt: &effective_prompt,
         selected_context_pack_query: None,
         settings: &settings,
@@ -1926,6 +1956,7 @@ async fn run_agent_turn_inner(
         tui_rt: agent_rt,
         manuscript_id,
         additional_manuscript_ids,
+        bot_profile_appendix: bot_profile_appendix.as_deref(),
         suggested_capability_ids,
         voice_preset_id: request
             .voice_preset_id

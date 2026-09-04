@@ -60,6 +60,7 @@
       "AgentModeSource": {
         "enum": [
           "default",
+          "bot",
           "session",
           "task",
           "turn"

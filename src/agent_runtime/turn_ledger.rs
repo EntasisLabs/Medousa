@@ -49,6 +49,17 @@ fn append_turn_ledger_record_to(
     if record.active_profile_id.is_none() {
         record.active_profile_id = Some(crate::user_profiles::resolve_workshop_active_profile_id());
     }
+    if let Some(bot) = super::execution_context::active_turn_execution_context()
+        .as_deref()
+        .and_then(super::execution_context::TurnExecutionContext::bot_identity)
+    {
+        if record.bot_id.is_none() {
+            record.bot_id = Some(bot.bot_id().to_string());
+        }
+        if record.bot_profile_revision.is_none() {
+            record.bot_profile_revision = Some(bot.profile_revision());
+        }
+    }
     let Ok(mut line) = serde_json::to_vec(&record) else {
         return;
     };
@@ -107,6 +118,88 @@ mod tests {
         let parsed: TurnLedgerRecord =
             serde_json::from_slice(raw.split(|byte| *byte == b'\n').next().unwrap()).expect("json");
         assert!(parsed.active_profile_id.is_some());
+        let _ = delete_turn_ledger(&session);
+    }
+
+    #[tokio::test]
+    async fn turn_ledger_adapter_stamps_admitted_bot_provenance() {
+        let dir = tempfile::tempdir().unwrap();
+        let _data_dir = crate::paths::scoped_test_data_dir(dir.path());
+        let session = crate::session_storage::SessionId::parse("test-ledger-bot").unwrap();
+        let scope = crate::turn_continuation::TurnContinuationScope {
+            turn_correlation_id: "turn-bot".to_string(),
+            session_id: session.to_string(),
+            identity_user_id: Some("user:test".to_string()),
+            original_prompt: "hello".to_string(),
+            delivery_target: None,
+            provider: "test".to_string(),
+            model: "test".to_string(),
+            response_depth_mode: "standard".to_string(),
+            supports_ui_artifacts: false,
+            supports_liquid_markdown: false,
+            supports_browser_host: false,
+            channel_surface: None,
+        };
+        let profile = medousa_types::BotProfile {
+            schema_version: medousa_types::BOT_PROFILE_SCHEMA_VERSION,
+            bot_id: medousa_types::BotId::parse(
+                "bot_0123456789abcdef0123456789abcdef",
+            )
+            .unwrap(),
+            owner_profile_id: "user:test".to_string(),
+            display_name: "Ada".to_string(),
+            role_description: None,
+            avatar_ref: None,
+            primary_manuscript_id: "specialist-mentor".to_string(),
+            additional_manuscript_ids: vec![],
+            memory_scope_id: "bot_0123456789abcdef0123456789abcdef".to_string(),
+            default_mode: None,
+            primary_session_id: Some(session.to_string()),
+            archived: false,
+            revision: 4,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+        let context = crate::agent_runtime::execution_context::TurnExecutionContext::new(
+            "turn-bot",
+            "turn-bot",
+            session.clone(),
+            crate::request_principal::RequestPrincipal::anonymous(
+                crate::request_principal::TransportClass::Loopback,
+            ),
+            crate::agent_runtime::execution_context::ProviderRoute::new("test", "test"),
+            crate::agent_runtime::execution_context::SurfaceCapabilities::default(),
+            tokio_util::sync::CancellationToken::new(),
+            std::time::Instant::now() + std::time::Duration::from_secs(60),
+            scope,
+        )
+        .with_bot_identity(
+            crate::agent_runtime::execution_context::BotTurnIdentity::from_profile(&profile),
+        );
+        let record = record_tool_round(
+            1,
+            1,
+            &["cognition_memory_query".to_string()],
+            &TurnScratchpad::default(),
+        );
+        let files = turn_ledger_files();
+
+        crate::agent_runtime::execution_context::with_turn_execution_context(
+            std::sync::Arc::new(context),
+            async {
+                append_turn_ledger_record_to(&files, &session, &record);
+            },
+        )
+        .await;
+
+        let raw = files.read(&session).expect("ledger file");
+        let parsed: TurnLedgerRecord =
+            serde_json::from_slice(raw.split(|byte| *byte == b'\n').next().unwrap()).expect("json");
+        assert_eq!(
+            parsed.bot_id.as_deref(),
+            Some("bot_0123456789abcdef0123456789abcdef")
+        );
+        assert_eq!(parsed.bot_profile_revision, Some(4));
         let _ = delete_turn_ledger(&session);
     }
 }

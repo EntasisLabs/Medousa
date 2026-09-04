@@ -163,6 +163,14 @@ fn selection_from_state(
     state: Option<&SessionModeState>,
     now: DateTime<Utc>,
 ) -> AgentModeSelection {
+    selection_from_state_with_fallback(state, now, None)
+}
+
+fn selection_from_state_with_fallback(
+    state: Option<&SessionModeState>,
+    now: DateTime<Utc>,
+    bot_default: Option<AgentModeId>,
+) -> AgentModeSelection {
     if let Some(lease) = state.and_then(|state| live_lease(state, now)) {
         return AgentModeSelection {
             mode: lease.mode,
@@ -173,6 +181,12 @@ fn selection_from_state(
         return AgentModeSelection {
             mode,
             source: AgentModeSource::Session,
+        };
+    }
+    if let Some(mode) = bot_default {
+        return AgentModeSelection {
+            mode,
+            source: AgentModeSource::Bot,
         };
     }
     AgentModeSelection {
@@ -187,8 +201,18 @@ fn select_mode(
     state: Option<&SessionModeState>,
     now: DateTime<Utc>,
 ) -> AgentModeSelection {
+    select_mode_with_fallback(turn_override, state, now, None)
+}
+
+#[cfg(test)]
+fn select_mode_with_fallback(
+    turn_override: Option<AgentModeId>,
+    state: Option<&SessionModeState>,
+    now: DateTime<Utc>,
+    bot_default: Option<AgentModeId>,
+) -> AgentModeSelection {
     turn_override.map_or_else(
-        || selection_from_state(state, now),
+        || selection_from_state_with_fallback(state, now, bot_default),
         |mode| AgentModeSelection {
             mode,
             source: AgentModeSource::Turn,
@@ -200,6 +224,14 @@ pub fn resolve_for_turn(
     session_id: &str,
     turn_override: Option<AgentModeId>,
 ) -> AgentModeSelection {
+    resolve_for_turn_with_fallback(session_id, turn_override, None)
+}
+
+pub fn resolve_for_turn_with_fallback(
+    session_id: &str,
+    turn_override: Option<AgentModeId>,
+    bot_default: Option<AgentModeId>,
+) -> AgentModeSelection {
     if let Some(mode) = turn_override {
         return AgentModeSelection {
             mode,
@@ -208,7 +240,11 @@ pub fn resolve_for_turn(
     }
     let _guard = MODE_STATE_LOCK.lock().unwrap();
     let index = read_index();
-    selection_from_state(index.sessions.get(session_id.trim()), Utc::now())
+    selection_from_state_with_fallback(
+        index.sessions.get(session_id.trim()),
+        Utc::now(),
+        bot_default,
+    )
 }
 
 pub fn get_session_mode(session_id: &str) -> Result<SessionAgentModeResponse, String> {
@@ -703,7 +739,7 @@ mod tests {
     }
 
     #[test]
-    fn deterministic_precedence_is_turn_then_task_then_session_then_default() {
+    fn deterministic_precedence_is_turn_then_task_then_session_then_bot_then_default() {
         let now = Utc::now();
         assert_eq!(
             selection_from_state(None, now).source,
@@ -729,6 +765,24 @@ mod tests {
             )
             .source,
             AgentModeSource::Turn
+        );
+        let bot_default = select_mode_with_fallback(
+            None,
+            None,
+            now,
+            Some(AgentModeId::Teacher),
+        );
+        assert_eq!(bot_default.mode, AgentModeId::Teacher);
+        assert_eq!(bot_default.source, AgentModeSource::Bot);
+        assert_eq!(
+            select_mode_with_fallback(
+                None,
+                Some(&state(Some(AgentModeId::Instant), None)),
+                now,
+                Some(AgentModeId::Teacher),
+            )
+            .source,
+            AgentModeSource::Session
         );
     }
 

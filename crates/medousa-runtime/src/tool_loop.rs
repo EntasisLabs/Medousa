@@ -1180,6 +1180,8 @@ impl MedousaToolLoopPipeline {
                                 rounds_executed,
                                 scratch: Some(turn_ctx.scratchpad.clone()),
                                 active_profile_id: None,
+                                bot_id: None,
+                                bot_profile_revision: None,
                             },
                         );
                     }
@@ -1233,6 +1235,8 @@ impl MedousaToolLoopPipeline {
                                 rounds_executed,
                                 scratch: Some(turn_ctx.scratchpad.clone()),
                                 active_profile_id: None,
+                                bot_id: None,
+                                bot_profile_revision: None,
                             },
                         );
                     }
