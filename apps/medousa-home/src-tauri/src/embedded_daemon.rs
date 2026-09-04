@@ -7,8 +7,9 @@ use std::sync::{Arc, OnceLock};
 use medousa::chatgpt_oauth::{ChatGptCredentialStore, ChatGptOAuthBroker};
 #[cfg(any(target_os = "ios", target_os = "android"))]
 use medousa::delegated_task::{
-    DelegatedTaskError, DelegatedTaskObservation, DelegatedTaskRequest, DelegatedTaskTransport,
-    delegated_work_id,
+    DelegatedTaskControlObservation, DelegatedTaskControlRequest, DelegatedTaskError,
+    DelegatedTaskObservation, DelegatedTaskRequest, DelegatedTaskTransport, delegated_work_id,
+    validate_task_control_observation,
 };
 #[cfg(any(target_os = "ios", target_os = "android"))]
 use medousa::embedded_daemon::{
@@ -513,6 +514,42 @@ impl DelegatedTaskTransport for HomeDelegatedTaskTransport {
                     "delegated terminal participant does not match the authenticated workshop",
                 ));
             }
+        }
+        Ok(response.payload)
+    }
+
+    async fn control(
+        &self,
+        target: &medousa::delegation::DelegationTarget,
+        request: DelegatedTaskControlRequest,
+    ) -> Result<DelegatedTaskControlObservation, DelegatedTaskError> {
+        let target = target.clone();
+        let config = tokio::task::spawn_blocking(move || delegation_transport_for(&target))
+            .await
+            .map_err(|_| DelegatedTaskError::transport("paired transport lookup failed"))?
+            .map_err(DelegatedTaskError::transport)?;
+        let wrapped = crate::mesh_envelope::wrap_payload_for_workshop(
+            &config,
+            crate::mesh_envelope::CAP_TASK_REQUEST,
+            request.clone(),
+        )
+        .map_err(DelegatedTaskError::transport)?;
+        let path = format!("/v1/mesh/tasks/{}/control", request.work_id);
+        let response: crate::mesh_envelope::MeshEnvelopedRequest<DelegatedTaskControlObservation> =
+            crate::workshop_transport::workshop_post_json(&config, &path, &wrapped)
+                .await
+                .map_err(DelegatedTaskError::transport)?;
+        crate::mesh_envelope::verify_payload_from_workshop(
+            &config,
+            &response,
+            crate::mesh_envelope::CAP_TASK_RESULT,
+        )
+        .map_err(DelegatedTaskError::transport)?;
+        validate_task_control_observation(&request, &response.payload)?;
+        if response.payload.destination_runtime_id.trim() != config.workshop_device_id.trim() {
+            return Err(DelegatedTaskError::transport(
+                "worker control response does not match the authenticated workshop",
+            ));
         }
         Ok(response.payload)
     }

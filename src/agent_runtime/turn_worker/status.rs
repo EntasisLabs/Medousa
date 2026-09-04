@@ -105,6 +105,7 @@ mod tests {
             archived: false,
             disposition: crate::agent_runtime::turn_worker::TurnWorkDisposition::Parallel,
             steer_messages: Vec::new(),
+            processed_steer_control_ids: Vec::new(),
             supports_ui_artifacts: false,
             supports_liquid_markdown: false,
             supports_browser_host: false,

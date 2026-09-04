@@ -1,6 +1,6 @@
 # Bots and authorized remote execution
 
-> **Status:** Phases 1–3 complete — phases 4–7 planned
+> **Status:** Phases 1–4 complete — phases 5–7 planned
 >
 > **Date:** 2026-09-03
 >
@@ -566,7 +566,7 @@ Landed boundary:
 - Settings → Connection presents calm per-peer presets with optional advanced
   scopes, while pairing removal revokes policy and active delegated work.
 
-### Phase 4 — Remote worker contract parity
+### Phase 4 — Remote worker contract parity ✅
 
 **Outcome:** A remotely placed worker carries the same semantic worker
 specification and lifecycle as a local worker; policy alone determines its
@@ -607,6 +607,19 @@ Suggested commit boundary:
 
 - feat(delegation): transport the canonical worker specification
 - feat(workshop): unify local and remote worker lifecycle
+
+Landed boundary:
+
+- Local and remote workers now share one versioned semantic spawn snapshot,
+  including Specialist, Bot, parent-mode, route, placement, and exact requested
+  tool provenance.
+- Destination admission intersects exact tools with its directional peer grant
+  and the normal runtime and Specialist ceilings before registry construction.
+- Signed cancel and steer mutations target the persisted destination directly,
+  verify their original execution authority, and deduplicate steering across
+  retries and restarts.
+- Clearing or changing the ingress default no longer cancels work that already
+  captured an explicit destination.
 
 ### Phase 5 — User and agent target selection
 

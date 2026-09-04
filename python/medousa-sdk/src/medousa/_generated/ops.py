@@ -286,6 +286,7 @@ OPERATIONS: dict[str, Operation] = {
     "mesh.peers.get": Operation("mesh.peers.get", "GET", "/v1/mesh/peers", False),
     "mesh.receipts.get": Operation("mesh.receipts.get", "GET", "/v1/mesh/receipts", False),
     "mesh.receipts.post": Operation("mesh.receipts.post", "POST", "/v1/mesh/receipts", False),
+    "mesh.tasks.by_work_id.control.post": Operation("mesh.tasks.by_work_id.control.post", "POST", "/v1/mesh/tasks/{work_id}/control", False),
     "mesh.tasks.post": Operation("mesh.tasks.post", "POST", "/v1/mesh/tasks", False),
     "models.capabilities.get": Operation("models.capabilities.get", "GET", "/v1/models/capabilities", False),
     "models.catalog.get": Operation("models.catalog.get", "GET", "/v1/models/catalog", False),
