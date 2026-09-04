@@ -3,7 +3,9 @@
   import { Bot, ChevronDown, X } from "@lucide/svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { activeAgent } from "$lib/stores/activeAgent.svelte";
+  import { bots } from "$lib/stores/bots.svelte";
   import { catalog } from "$lib/stores/catalog.svelte";
+  import { chat } from "$lib/stores/chat.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
@@ -28,13 +30,15 @@
   let triggerEl = $state<HTMLButtonElement | null>(null);
   let menuEl = $state<HTMLDivElement | null>(null);
 
+  const activeBot = $derived(bots.forSession(chat.focusedSessionId));
   const isSpecialist = $derived(Boolean(activeAgent.selectedManuscriptId));
   const label = $derived.by(() => {
+    if (activeBot) return activeBot.display_name;
     const id = activeAgent.selectedManuscriptId;
     if (!id) return "Medousa";
     return catalog.manuscripts.find((entry) => entry.id === id)?.name ?? id;
   });
-  const chipVisible = $derived(showChip && isSpecialist);
+  const chipVisible = $derived(showChip && (Boolean(activeBot) || isSpecialist));
 
   $effect(() => {
     if (open && catalog.manuscripts.length === 0 && !catalog.loading) {
@@ -92,6 +96,7 @@
   }
 
   function clearAgent(event: MouseEvent) {
+    if (activeBot) return;
     event.stopPropagation();
     event.preventDefault();
     activeAgent.clear();
@@ -109,6 +114,15 @@
     layout.setShellSidebarMode("view");
     shellTabs.enterLmeFamily("library");
   }
+
+  function openBots() {
+    open = false;
+    if (layout.isMobile) {
+      layout.setSessionDrawerOpen(true);
+      return;
+    }
+    layout.openShellSidebarView("chat");
+  }
 </script>
 
 {#if chipVisible}
@@ -117,7 +131,7 @@
       bind:this={triggerEl}
       type="button"
       class="composer-footer-chip"
-      aria-label="Active agent — {label}"
+      aria-label={activeBot ? `Active Bot — ${label}` : `Active agent — ${label}`}
       aria-haspopup="dialog"
       aria-expanded={open}
       onclick={() => (open = !open)}
@@ -126,14 +140,16 @@
       <span class="truncate font-medium">{label}</span>
       <ChevronDown size={12} class="shrink-0 opacity-50" strokeWidth={2} />
     </button>
-    <button
-      type="button"
-      class="composer-footer-chip-dismiss"
-      aria-label="Clear agent"
-      onclick={clearAgent}
-    >
-      <X size={12} strokeWidth={2} />
-    </button>
+    {#if !activeBot}
+      <button
+        type="button"
+        class="composer-footer-chip-dismiss"
+        aria-label="Clear agent"
+        onclick={clearAgent}
+      >
+        <X size={12} strokeWidth={2} />
+      </button>
+    {/if}
   </div>
 {/if}
 
@@ -148,10 +164,44 @@
     <header class="composer-anchored-menu-header">
       <div class="min-w-0">
         <h2 class="text-sm font-semibold text-surface-50">Who runs this</h2>
-        <p class="workshop-faint mt-0.5 text-xs">Default Medousa or a specialist</p>
+        <p class="workshop-faint mt-0.5 text-xs">
+          {activeBot ? "This conversation belongs to a Bot" : "Default Medousa or a specialist"}
+        </p>
       </div>
     </header>
     <div class="composer-anchored-menu-body space-y-1">
+      {#if activeBot}
+        <div class="workshop-inset p-3">
+          <div class="flex items-start gap-2.5">
+            <span class="bot-row-avatar" aria-hidden="true">
+              {activeBot.avatar_ref?.trim() || "✨"}
+            </span>
+            <span class="min-w-0 flex-1">
+              <span class="block text-sm font-medium text-surface-100">
+                {activeBot.display_name}
+              </span>
+              <span class="workshop-faint mt-0.5 block text-xs">
+                {catalog.manuscripts.find((entry) => entry.id === activeBot.primary_manuscript_id)?.name ?? activeBot.primary_manuscript_id}
+              </span>
+              {#if activeBot.role_description}
+                <span class="mt-2 block text-xs leading-relaxed text-content-secondary">
+                  {activeBot.role_description}
+                </span>
+              {/if}
+            </span>
+          </div>
+        </div>
+        <p class="workshop-faint px-1 py-1 text-[11px]">
+          The Bot keeps its identity and memory. Mode remains a separate turn control.
+        </p>
+        <button
+          type="button"
+          class="workshop-text-action mt-1 text-xs"
+          onclick={openBots}
+        >
+          Manage Bots in Sessions…
+        </button>
+      {:else}
       <button
         type="button"
         class="settings-toggle-row w-full text-left {activeAgent.selectedManuscriptId === null
@@ -188,6 +238,7 @@
       >
         Manage agents in Workspace…
       </button>
+      {/if}
     </div>
     </div>
   </BodyPortal>

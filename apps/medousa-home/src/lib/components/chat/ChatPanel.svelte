@@ -28,6 +28,7 @@
   import { haptic } from "$lib/haptics";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { bots } from "$lib/stores/bots.svelte";
   import { connection } from "$lib/stores/connection.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
@@ -173,6 +174,7 @@
 
   /** Stable principal — ignores temporary session swaps during background SSE. */
   const panelSessionId = $derived(chat.focusedSessionId);
+  const panelBot = $derived(bots.forSession(panelSessionId));
   const chatCodeProject = $derived.by(() => {
     const active = undertakings.active;
     if (!active?.boundChatSessionIds.includes(panelSessionId)) return null;
@@ -423,7 +425,7 @@
         ? "Working in background"
         : `${chat.backgroundActivity} turns active`;
     }
-    return "Medousa";
+    return panelBot?.display_name ?? "Medousa";
   });
 
   const mobileChatSubtitle = $derived.by(() => {
@@ -431,7 +433,7 @@
     if (chat.liveStreamActive && phaseLine) return phaseLine;
     if (chat.liveStreamActive) return "Thinking…";
     if (chat.backgroundActivity > 0) return "Background work · see Work";
-    if (showChatEmptyState) return presenceAsk;
+    if (showChatEmptyState) return panelBot?.role_description?.trim() || presenceAsk;
     if (chat.historyLoadingFor(panelSessionId) && panelMessages.length === 0) {
       return "Opening thread…";
     }
@@ -612,9 +614,8 @@
     event.preventDefault();
     if (connection.offline || runtime.savingControls) return;
     const scopeForSend = chat.vaultNoteContext;
-    const prompt = applyActiveAgentPrompt(
-      ensureVaultSelectionInPrompt(chat.draft.trim(), scopeForSend),
-    );
+    const basePrompt = ensureVaultSelectionInPrompt(chat.draft.trim(), scopeForSend);
+    const prompt = panelBot ? basePrompt : applyActiveAgentPrompt(basePrompt);
     const hasAttachments = chat.pendingMediaRefs.length > 0;
     if (!prompt && !hasAttachments) return;
     if (!allowUnboundCoderSend && !activeCodeContext(chat.sessionId)) {

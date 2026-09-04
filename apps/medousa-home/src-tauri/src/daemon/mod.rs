@@ -1,5 +1,6 @@
 pub mod agents;
 pub mod artifact;
+pub mod bot;
 pub mod calendar;
 pub mod catalog;
 pub mod chatgpt;
