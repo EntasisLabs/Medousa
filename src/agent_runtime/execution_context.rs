@@ -14,6 +14,78 @@ use crate::request_principal::RequestPrincipal;
 use crate::session_storage::SessionId;
 use crate::turn_scope::TurnContinuationScope;
 
+/// Daemon-resolved Bot snapshot captured once at turn admission.
+///
+/// This is context, never authority: tool and execution access continues to
+/// come from the request principal, mode, Specialist, and runtime policy.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BotTurnIdentity {
+    bot_id: medousa_types::BotId,
+    profile_revision: u64,
+    memory_scope_id: Arc<str>,
+    display_name: Arc<str>,
+    role_description: Option<Arc<str>>,
+    default_mode: Option<medousa_types::AgentModeId>,
+}
+
+impl BotTurnIdentity {
+    pub fn from_profile(profile: &medousa_types::BotProfile) -> Self {
+        Self {
+            bot_id: profile.bot_id.clone(),
+            profile_revision: profile.revision,
+            memory_scope_id: Arc::from(profile.memory_scope_id.as_str()),
+            display_name: Arc::from(profile.display_name.as_str()),
+            role_description: profile.role_description.as_deref().map(Arc::<str>::from),
+            default_mode: profile.default_mode,
+        }
+    }
+
+    pub fn bot_id(&self) -> &medousa_types::BotId {
+        &self.bot_id
+    }
+
+    pub fn profile_revision(&self) -> u64 {
+        self.profile_revision
+    }
+
+    pub fn memory_scope_id(&self) -> &str {
+        &self.memory_scope_id
+    }
+
+    pub fn default_mode(&self) -> Option<medousa_types::AgentModeId> {
+        self.default_mode
+    }
+
+    pub fn prompt_appendix(&self) -> String {
+        let display_name = prompt_line(&self.display_name, 80);
+        let role_description = self
+            .role_description
+            .as_deref()
+            .map(|value| prompt_line(value, 500))
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "none".to_string());
+        format!(
+            "[MEDOUSA_BOT_PROFILE]\n\
+             bot_id={}\n\
+             profile_revision={}\n\
+             display_name={}\n\
+             role_description={}\n\
+             authority=none (identity and relationship context only)",
+            self.bot_id, self.profile_revision, display_name, role_description,
+        )
+    }
+}
+
+fn prompt_line(value: &str, max_chars: usize) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(max_chars)
+        .collect()
+}
+
 /// Daemon-issued identity for one live turn generation.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TurnHandle(Uuid);
@@ -88,6 +160,7 @@ pub struct TurnExecutionContext {
     cancellation: CancellationToken,
     deadline: Instant,
     legacy_scope: Arc<TurnContinuationScope>,
+    bot: Option<BotTurnIdentity>,
     work_environment: Option<medousa_runtime::WorkEnvironmentBinding>,
     work_environment_operation_sequence: AtomicU64,
     last_grapheme_source: Mutex<Option<Arc<str>>>,
@@ -119,6 +192,7 @@ impl TurnExecutionContext {
             cancellation,
             deadline,
             legacy_scope: Arc::new(legacy_scope),
+            bot: None,
             work_environment: None,
             work_environment_operation_sequence: AtomicU64::new(0),
             last_grapheme_source: Mutex::new(None),
@@ -195,6 +269,24 @@ impl TurnExecutionContext {
 
     pub fn legacy_scope(&self) -> &TurnContinuationScope {
         &self.legacy_scope
+    }
+
+    pub fn with_bot_identity(mut self, bot: BotTurnIdentity) -> Self {
+        self.bot = Some(bot);
+        self
+    }
+
+    pub fn bot_identity(&self) -> Option<&BotTurnIdentity> {
+        self.bot.as_ref()
+    }
+
+    /// Memory tools use Bot continuity when present while transcript, artifact,
+    /// and conversation operations retain the actual session identity.
+    pub fn memory_session_id(&self) -> &str {
+        self.bot
+            .as_ref()
+            .map(BotTurnIdentity::memory_scope_id)
+            .unwrap_or_else(|| self.session_id.as_str())
     }
 
     pub fn with_work_environment(
@@ -549,6 +641,7 @@ mod tests {
 
     use super::*;
     use crate::request_principal::TransportClass;
+    use chrono::Utc;
 
     fn context(session: &str, provider: &str) -> TurnExecutionContext {
         let turn_id = format!("turn-{session}-{provider}");
@@ -577,6 +670,26 @@ mod tests {
             Instant::now() + Duration::from_secs(60),
             scope,
         )
+    }
+
+    fn bot_profile() -> medousa_types::BotProfile {
+        medousa_types::BotProfile {
+            schema_version: medousa_types::BOT_PROFILE_SCHEMA_VERSION,
+            bot_id: medousa_types::BotId::parse("bot_0123456789abcdef0123456789abcdef").unwrap(),
+            owner_profile_id: "user:test".to_string(),
+            display_name: "Ada".to_string(),
+            role_description: Some("Teach systems through connected concepts".to_string()),
+            avatar_ref: None,
+            primary_manuscript_id: "specialist-mentor".to_string(),
+            additional_manuscript_ids: vec![],
+            memory_scope_id: "bot_0123456789abcdef0123456789abcdef".to_string(),
+            default_mode: Some(medousa_types::AgentModeId::Teacher),
+            primary_session_id: Some("session-a".to_string()),
+            archived: false,
+            revision: 7,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
     }
 
     #[test]
@@ -644,6 +757,27 @@ mod tests {
             admitted.work_environment().unwrap().handle.environment_id(),
             &environment_id
         );
+    }
+
+    #[test]
+    fn bot_identity_is_an_immutable_memory_and_prompt_snapshot() {
+        let mut profile = bot_profile();
+        let identity = BotTurnIdentity::from_profile(&profile);
+        profile.display_name = "Changed after admission".to_string();
+        profile.revision = 8;
+
+        let admitted = context("session-a", "provider-a").with_bot_identity(identity);
+        let bot = admitted.bot_identity().expect("Bot identity");
+        assert_eq!(admitted.memory_session_id(), bot_profile().memory_scope_id);
+        assert_eq!(
+            bot.default_mode(),
+            Some(medousa_types::AgentModeId::Teacher)
+        );
+        assert_eq!(bot.profile_revision(), 7);
+        let appendix = bot.prompt_appendix();
+        assert!(appendix.contains("display_name=Ada"));
+        assert!(!appendix.contains("Changed after admission"));
+        assert!(appendix.contains("authority=none"));
     }
 
     #[test]

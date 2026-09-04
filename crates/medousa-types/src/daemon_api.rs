@@ -1451,6 +1451,7 @@ pub enum AgentModeScope {
 pub enum AgentModeSource {
     #[default]
     Default,
+    Bot,
     Session,
     Task,
     Turn,

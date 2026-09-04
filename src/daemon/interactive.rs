@@ -80,11 +80,63 @@ pub async fn spawn_turn_ticket(
     principal: crate::request_principal::RequestPrincipal,
     turn_id: String,
     mode: crate::turn_ticket::TurnTicketMode,
-    interactive_request: InteractiveTurnRequest,
+    mut interactive_request: InteractiveTurnRequest,
     workspace_card_id: Option<String>,
 ) -> Result<TurnTicketResponse, (StatusCode, String)> {
     let session_id = crate::session_storage::SessionId::parse(&interactive_request.session_id)
         .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let principal_profile_id = principal
+        .profile_id()
+        .map(str::to_string)
+        .unwrap_or_else(|| state.workshop_identity_user_id());
+    let session_id_for_bot = session_id.to_string();
+    let bot_resolution = tokio::task::spawn_blocking(move || {
+        crate::bot_profiles::BotProfileStore::daemon_default()
+            .resolve_session(&principal_profile_id, &session_id_for_bot)
+    })
+    .await
+    .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
+    .map_err(|error| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("resolve Bot binding: {error}"),
+        )
+    })?;
+    let bot_identity = if let Some(bot) = bot_resolution.bot.as_ref() {
+        crate::identity_manuscript::build_manuscript_context(&bot.primary_manuscript_id).map_err(
+            |error| {
+                (
+                    StatusCode::CONFLICT,
+                    format!(
+                        "Bot '{}' references an unavailable primary Specialist: {error}",
+                        bot.display_name
+                    ),
+                )
+            },
+        )?;
+        for manuscript_id in &bot.additional_manuscript_ids {
+            crate::identity_manuscript::build_manuscript_context(manuscript_id).map_err(
+                |error| {
+                    (
+                        StatusCode::CONFLICT,
+                        format!(
+                            "Bot '{}' references unavailable Specialist '{manuscript_id}': {error}",
+                            bot.display_name
+                        ),
+                    )
+                },
+            )?;
+        }
+        interactive_request.manuscript_id = Some(bot.primary_manuscript_id.clone());
+        interactive_request.additional_manuscript_ids =
+            (!bot.additional_manuscript_ids.is_empty())
+                .then(|| bot.additional_manuscript_ids.clone());
+        Some(
+            crate::agent_runtime::execution_context::BotTurnIdentity::from_profile(bot),
+        )
+    } else {
+        None
+    };
     let admission = crate::session_deletion::acquire_mutation(&session_id)
         .map_err(|error| (StatusCode::CONFLICT, error))?;
     let session_id_text = session_id.to_string();
@@ -119,7 +171,7 @@ pub async fn spawn_turn_ticket(
             .as_ref()
             .and_then(|surface| surface.channel_surface.clone()),
     };
-    let execution_context = crate::agent_runtime::execution_context::TurnExecutionContext::new(
+    let mut execution_context = crate::agent_runtime::execution_context::TurnExecutionContext::new(
         turn_id.clone(),
         turn_id.clone(),
         session_id,
@@ -137,6 +189,9 @@ pub async fn spawn_turn_ticket(
         std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60),
         continuation_scope.clone(),
     );
+    if let Some(bot_identity) = bot_identity {
+        execution_context = execution_context.with_bot_identity(bot_identity);
+    }
     let execution_lease = state
         .platform
         .agent_handle()

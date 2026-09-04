@@ -789,6 +789,8 @@ fn ledger_bus_event(
         rounds_executed: 0,
         scratch: None,
         active_profile_id: None,
+        bot_id: None,
+        bot_profile_revision: None,
     };
     persist_ledger_record(Some(session_id), &record);
 }

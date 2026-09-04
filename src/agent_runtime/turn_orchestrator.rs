@@ -116,6 +116,9 @@ pub struct PrepareTurnPromptParams<'a> {
     /// Immutable, daemon-compiled context for the selected mode.
     pub mode_context_appendix: Option<&'a str>,
     pub session_id: &'a str,
+    /// Stable memory continuity scope. This differs from `session_id` only for
+    /// a daemon-resolved Bot turn.
+    pub memory_session_id: &'a str,
     pub prompt: &'a str,
     pub selected_context_pack_query: Option<&'a str>,
     pub settings: &'a RuntimeSettings,
@@ -126,6 +129,8 @@ pub struct PrepareTurnPromptParams<'a> {
     pub tui_rt: &'a TuiRuntime,
     pub manuscript_id: Option<&'a str>,
     pub additional_manuscript_ids: Option<&'a [String]>,
+    /// Immutable Bot identity/job snapshot captured at turn admission.
+    pub bot_profile_appendix: Option<&'a str>,
     pub suggested_capability_ids: Option<&'a [String]>,
     pub voice_preset_id: Option<&'a str>,
     pub voice_appendix: Option<&'a str>,
@@ -144,7 +149,7 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
     );
 
     let recall_probe =
-        cheap_memory_recall_probe(params.tui_rt, params.session_id, params.prompt).await;
+        cheap_memory_recall_probe(params.tui_rt, params.memory_session_id, params.prompt).await;
     let manuscript_ctx = params
         .manuscript_id
         .map(str::trim)
@@ -184,6 +189,13 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
                 resolved_prompt = append_manuscript_hint(&resolved_prompt, Some(&ctx));
             }
         }
+    }
+    if let Some(bot_profile_appendix) = params
+        .bot_profile_appendix
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        resolved_prompt = format!("{resolved_prompt}\n\n{bot_profile_appendix}");
     }
     if let Some(ids) = params.suggested_capability_ids {
         resolved_prompt = append_suggested_capabilities_hint(&resolved_prompt, ids);

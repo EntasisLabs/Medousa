@@ -1203,6 +1203,7 @@ class AgentModeLeaseResponse(MedousaModel):
 
 class AgentModeSource(Enum):
     default = 'default'
+    bot = 'bot'
     session = 'session'
     task = 'task'
     turn = 'turn'

@@ -105,13 +105,13 @@ context is advisory and never grants filesystem or vault authority.
 
 `InteractiveTurnRequest.agent_mode` is a per-turn behavioral override,
 independent of interactive/background ticket delivery. When omitted, the
-daemon checks the active task lease, then the session selection, then defaults
-to `general`. `instant` uses the General execution path with a smaller recent
-history and tool context; it does not change provider or generation behavior.
-`coder` additionally requires an active Forge undertaking and its turn-scoped
-authority for file, shell, and engineering tools; without a binding it enters
-the restricted project-setup phase. Resolution is deterministic and does not
-require an additional model call.
+daemon checks the active task lease, then the session selection, then a bound
+Bot's default, and finally defaults to `general`. `instant` uses the General
+execution path with a smaller recent history and tool context; it does not
+change provider or generation behavior. `coder` additionally requires an active
+Forge undertaking and its turn-scoped authority for file, shell, and engineering
+tools; without a binding it enters the restricted project-setup phase.
+Resolution is deterministic and does not require an additional model call.
 
 `InteractiveTurnRequest.code_project_setup_authorized` (also accepted by
 `POST /v1/turns`) records that the principal explicitly selected a surface
@@ -193,6 +193,13 @@ duplicate allocate a fresh primary conversation on the daemon. Duplicate copies
 configuration and Specialist references, but never transcript or learned
 memory. Archive preserves both memory and conversation bindings. Updates use
 `expected_revision` for optimistic concurrency.
+
+At turn admission the daemon resolves the session binding once and snapshots
+the Bot id and profile revision. The snapshot supplies the Bot's primary and
+additional Specialists, default mode fallback, role context, and Bot-scoped
+Locus continuity. It never contributes authority. Transcript and artifact
+operations remain scoped to the real conversation, and the turn ledger records
+the admitted Bot id and revision for provenance.
 
 `POST /v1/sessions/derive` requires an `Idempotency-Key` header. Its ordered
 `sources` select committed ranges with an exclusive `after_entry_seq` and

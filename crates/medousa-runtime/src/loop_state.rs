@@ -72,6 +72,10 @@ pub struct TurnLedgerRecord {
     pub scratch: Option<TurnScratchpad>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_profile_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot_profile_revision: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -211,6 +215,8 @@ pub fn record_fsm_continue(
         rounds_executed,
         scratch: Some(scratch.clone()),
         active_profile_id: None,
+        bot_id: None,
+        bot_profile_revision: None,
     }
 }
 
@@ -230,6 +236,8 @@ pub fn record_tool_round(
         rounds_executed,
         scratch: Some(scratch.clone()),
         active_profile_id: None,
+        bot_id: None,
+        bot_profile_revision: None,
     }
 }
 
@@ -249,6 +257,8 @@ pub fn record_finalized(
         rounds_executed,
         scratch: None,
         active_profile_id: None,
+        bot_id: None,
+        bot_profile_revision: None,
     }
 }
 
@@ -268,6 +278,8 @@ pub fn record_stuck(
         rounds_executed,
         scratch: None,
         active_profile_id: None,
+        bot_id: None,
+        bot_profile_revision: None,
     }
 }
 

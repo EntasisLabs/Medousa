@@ -88,11 +88,14 @@ pub async fn resolve_memory_tool_session_id_typed(
         return Ok(explicit.to_string());
     }
 
-    let scoped_chat_session_id = crate::runtime_session::resolve_active_chat_session_id_async(
-        turn_scope,
-        bootstrap_fallback,
-    )
-    .await?;
+    let scoped_chat_session_id = if let Some(context) =
+        crate::agent_runtime::execution_context::active_turn_execution_context()
+    {
+        context.memory_session_id().to_string()
+    } else {
+        crate::runtime_session::resolve_active_chat_session_id_async(turn_scope, bootstrap_fallback)
+            .await?
+    };
 
     if workshop_dynamic {
         Ok(resolve_workshop_locus_session(&scoped_chat_session_id))

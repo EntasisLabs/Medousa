@@ -370,7 +370,7 @@ export interface AgentModeLeaseResponse {
   task_id: string;
 }
 
-export type AgentModeSource = "default" | "session" | "task" | "turn";
+export type AgentModeSource = "default" | "bot" | "session" | "task" | "turn";
 
 export interface SessionAgentModeResponse {
   effective_mode: AgentModeId;
