@@ -26,7 +26,11 @@ use crate::schema_api::{
 #[cfg(feature = "full-daemon")]
 use crate::typed_tools::{CompatOption, TypedTool, serialize_output};
 use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
-use crate::workshop_contract::{WorkshopSpawn, workshop_spawn_type_schema};
+use crate::workshop_contract::{
+    ExecutionPlacementResolution, ExecutionResolutionReason, ExecutionTargetCandidate,
+    ExecutionTargetResolutionError, ExecutionTargetSelection, WorkshopSpawn,
+    resolve_execution_target, workshop_spawn_type_schema,
+};
 
 const WORKSHOP_QUERY_ID: ToolId = ToolId::new(COGNITION_WORKSHOP_QUERY);
 const WORKSHOP_MUTATE_ID: ToolId = ToolId::new(COGNITION_WORKSHOP_MUTATE);
@@ -123,6 +127,180 @@ pub trait WorkshopExecution: Send + Sync {
     async fn steer(&self, input: WorkshopSteer) -> stasis::prelude::Result<Value>;
 }
 
+/// One concrete execution authority beneath the location-neutral workshop
+/// tool. The router resolves placement before handing work to an adapter.
+#[async_trait]
+pub trait WorkshopExecutionTarget: Send + Sync {
+    async fn candidate(&self) -> stasis::prelude::Result<Option<ExecutionTargetCandidate>>;
+    async fn spawn_resolved(
+        &self,
+        input: WorkshopSpawn,
+        parent_runtime_id: &str,
+        resolution: ExecutionPlacementResolution,
+    ) -> stasis::prelude::Result<Value>;
+    async fn status(&self, input: WorkshopStatus) -> stasis::prelude::Result<Value>;
+    async fn cancel(&self, input: WorkshopCancel) -> stasis::prelude::Result<Value>;
+    async fn steer(&self, input: WorkshopSteer) -> stasis::prelude::Result<Value>;
+}
+
+/// Supplies the runtime identity of the host turn at spawn time. Full daemons
+/// bind this to the scheduler so it always matches the Stasis worker host.
+pub trait WorkshopParentRuntime: Send + Sync {
+    fn runtime_id(&self) -> String;
+}
+
+struct FixedWorkshopParentRuntime(String);
+
+impl WorkshopParentRuntime for FixedWorkshopParentRuntime {
+    fn runtime_id(&self) -> String {
+        self.0.clone()
+    }
+}
+
+#[cfg(feature = "full-daemon")]
+impl WorkshopParentRuntime for TurnWorkerScheduler {
+    fn runtime_id(&self) -> String {
+        self.execution_runtime_id()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkshopIngressDefault {
+    SameAsParent,
+    /// Compatibility bridge for Personal/mobile deployments that historically
+    /// exposed one explicitly bound remote daemon as their only worker.
+    BoundRemote,
+}
+
+pub struct WorkshopExecutionRouter {
+    parent_runtime: Arc<dyn WorkshopParentRuntime>,
+    ingress_default: WorkshopIngressDefault,
+    targets: Vec<Arc<dyn WorkshopExecutionTarget>>,
+}
+
+impl WorkshopExecutionRouter {
+    pub fn new(
+        parent_runtime_id: impl Into<String>,
+        ingress_default: WorkshopIngressDefault,
+        targets: Vec<Arc<dyn WorkshopExecutionTarget>>,
+    ) -> Self {
+        Self::with_parent_runtime(
+            Arc::new(FixedWorkshopParentRuntime(parent_runtime_id.into())),
+            ingress_default,
+            targets,
+        )
+    }
+
+    pub fn with_parent_runtime(
+        parent_runtime: Arc<dyn WorkshopParentRuntime>,
+        ingress_default: WorkshopIngressDefault,
+        targets: Vec<Arc<dyn WorkshopExecutionTarget>>,
+    ) -> Self {
+        Self {
+            parent_runtime,
+            ingress_default,
+            targets,
+        }
+    }
+
+    async fn candidates(
+        &self,
+    ) -> stasis::prelude::Result<Vec<(Arc<dyn WorkshopExecutionTarget>, ExecutionTargetCandidate)>>
+    {
+        let mut candidates = Vec::new();
+        for target in &self.targets {
+            if let Some(candidate) = target.candidate().await? {
+                candidates.push((target.clone(), candidate));
+            }
+        }
+        Ok(candidates)
+    }
+
+    async fn resolve_spawn(
+        &self,
+        input: &WorkshopSpawn,
+    ) -> stasis::prelude::Result<(
+        Arc<dyn WorkshopExecutionTarget>,
+        String,
+        ExecutionPlacementResolution,
+    )> {
+        let candidates = self.candidates().await?;
+        let parent_runtime_id = self.parent_runtime.runtime_id();
+        let requested = match (&input.execution_target, self.ingress_default) {
+            (Some(requested), _) => requested.clone(),
+            (None, WorkshopIngressDefault::SameAsParent) => ExecutionTargetSelection::SameAsParent,
+            (None, WorkshopIngressDefault::BoundRemote) => {
+                let candidate = candidates.first().ok_or_else(|| {
+                    target_resolution_error(ExecutionTargetResolutionError::UnsupportedTarget {
+                        detail: "the legacy bound remote workshop is not configured".to_string(),
+                    })
+                })?;
+                ExecutionTargetSelection::Exact {
+                    runtime_id: candidate.1.runtime_id.clone(),
+                }
+            }
+        };
+        let candidate_values = candidates
+            .iter()
+            .map(|(_, candidate)| candidate.clone())
+            .collect::<Vec<_>>();
+        let mut resolution =
+            resolve_execution_target(requested, &parent_runtime_id, &candidate_values)
+                .map_err(target_resolution_error)?;
+        if input.execution_target.is_none()
+            && self.ingress_default == WorkshopIngressDefault::BoundRemote
+        {
+            resolution.resolution_reason = ExecutionResolutionReason::IngressDefault;
+        }
+        let target = candidates
+            .into_iter()
+            .find(|(_, candidate)| candidate.runtime_id == resolution.resolved_runtime_id)
+            .map(|(target, _)| target)
+            .ok_or_else(|| {
+                target_resolution_error(ExecutionTargetResolutionError::ExactUnavailable {
+                    runtime_id: resolution.resolved_runtime_id.clone(),
+                })
+            })?;
+        Ok((target, parent_runtime_id, resolution))
+    }
+
+    fn control_target(&self) -> stasis::prelude::Result<Arc<dyn WorkshopExecutionTarget>> {
+        self.targets.first().cloned().ok_or_else(|| {
+            target_resolution_error(ExecutionTargetResolutionError::UnsupportedTarget {
+                detail: "this deployment has no workshop execution target".to_string(),
+            })
+        })
+    }
+}
+
+fn target_resolution_error(
+    error: ExecutionTargetResolutionError,
+) -> stasis::domain::errors::StasisError {
+    stasis::domain::errors::StasisError::PortFailure(error.to_string())
+}
+
+#[async_trait]
+impl WorkshopExecution for WorkshopExecutionRouter {
+    async fn status(&self, input: WorkshopStatus) -> stasis::prelude::Result<Value> {
+        self.control_target()?.status(input).await
+    }
+
+    async fn spawn(&self, input: WorkshopSpawn) -> stasis::prelude::Result<Value> {
+        let (target, parent_runtime_id, resolution) = self.resolve_spawn(&input).await?;
+        target
+            .spawn_resolved(input, &parent_runtime_id, resolution)
+            .await
+    }
+
+    async fn cancel(&self, input: WorkshopCancel) -> stasis::prelude::Result<Value> {
+        self.control_target()?.cancel(input).await
+    }
+
+    async fn steer(&self, input: WorkshopSteer) -> stasis::prelude::Result<Value> {
+        self.control_target()?.steer(input).await
+    }
+}
+
 pub struct CognitionWorkshopQueryTool {
     execution: Arc<dyn WorkshopExecution>,
 }
@@ -149,7 +327,19 @@ struct LocalWorkshopExecution {
 
 #[cfg(feature = "full-daemon")]
 #[async_trait]
-impl WorkshopExecution for LocalWorkshopExecution {
+impl WorkshopExecutionTarget for LocalWorkshopExecution {
+    async fn candidate(&self) -> stasis::prelude::Result<Option<ExecutionTargetCandidate>> {
+        let runtime_id = self.scheduler.execution_runtime_id();
+        Ok(Some(ExecutionTargetCandidate {
+            runtime_id: runtime_id.clone(),
+            capabilities: stasis::domain::runtime::placement::WorkerCapabilities::any()
+                .node_id(&runtime_id)
+                .platform(std::env::consts::OS)
+                .architecture(std::env::consts::ARCH)
+                .with_capability("assistant.work"),
+        }))
+    }
+
     async fn status(&self, input: WorkshopStatus) -> stasis::prelude::Result<Value> {
         let output = CognitionTurnWorkerStatusTool::new(self.scheduler.clone())
             .invoke_typed(TurnWorkerStatusInput {
@@ -160,7 +350,21 @@ impl WorkshopExecution for LocalWorkshopExecution {
         serialize_output(CognitionTurnWorkerStatusTool::tool_id(), output)
     }
 
-    async fn spawn(&self, input: WorkshopSpawn) -> stasis::prelude::Result<Value> {
+    async fn spawn_resolved(
+        &self,
+        mut input: WorkshopSpawn,
+        parent_runtime_id: &str,
+        resolution: ExecutionPlacementResolution,
+    ) -> stasis::prelude::Result<Value> {
+        let runtime_id = self.scheduler.execution_runtime_id();
+        if resolution.resolved_runtime_id != runtime_id || parent_runtime_id != runtime_id {
+            return Err(target_resolution_error(
+                ExecutionTargetResolutionError::ExactUnavailable {
+                    runtime_id: resolution.resolved_runtime_id,
+                },
+            ));
+        }
+        input.execution_target = Some(resolution.requested);
         let output = CognitionSpawnTurnWorkerTool::new(self.scheduler.clone())
             .invoke_typed(SpawnTurnWorkerInput {
                 intent: CompatOption::from(input.intent),
@@ -200,7 +404,17 @@ pub fn register_workshop_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
     scheduler: Arc<TurnWorkerScheduler>,
 ) -> stasis::prelude::Result<()> {
-    register_workshop_execution_tools(registry, Arc::new(LocalWorkshopExecution { scheduler }))
+    let target: Arc<dyn WorkshopExecutionTarget> = Arc::new(LocalWorkshopExecution {
+        scheduler: scheduler.clone(),
+    });
+    register_workshop_execution_tools(
+        registry,
+        Arc::new(WorkshopExecutionRouter::with_parent_runtime(
+            scheduler,
+            WorkshopIngressDefault::SameAsParent,
+            vec![target],
+        )),
+    )
 }
 
 #[medousa_tool(id = WORKSHOP_QUERY_ID)]
@@ -273,6 +487,61 @@ impl WorkshopSteer {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct FakeExecutionTarget {
+        runtime_id: String,
+        spawn_count: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl WorkshopExecutionTarget for FakeExecutionTarget {
+        async fn candidate(&self) -> stasis::prelude::Result<Option<ExecutionTargetCandidate>> {
+            Ok(Some(ExecutionTargetCandidate {
+                runtime_id: self.runtime_id.clone(),
+                capabilities: stasis::domain::runtime::placement::WorkerCapabilities::any()
+                    .node_id(&self.runtime_id)
+                    .with_capability("assistant.work"),
+            }))
+        }
+
+        async fn spawn_resolved(
+            &self,
+            _input: WorkshopSpawn,
+            parent_runtime_id: &str,
+            resolution: ExecutionPlacementResolution,
+        ) -> stasis::prelude::Result<Value> {
+            self.spawn_count.fetch_add(1, Ordering::SeqCst);
+            Ok(json!({
+                "parent_runtime_id": parent_runtime_id,
+                "execution_placement": resolution,
+            }))
+        }
+
+        async fn status(&self, _input: WorkshopStatus) -> stasis::prelude::Result<Value> {
+            Ok(json!({ "ok": true }))
+        }
+
+        async fn cancel(&self, _input: WorkshopCancel) -> stasis::prelude::Result<Value> {
+            Ok(json!({ "ok": true }))
+        }
+
+        async fn steer(&self, _input: WorkshopSteer) -> stasis::prelude::Result<Value> {
+            Ok(json!({ "ok": true }))
+        }
+    }
+
+    fn spawn_for(target: Option<ExecutionTargetSelection>) -> WorkshopSpawn {
+        WorkshopSpawn {
+            intent: Some("research".to_string()),
+            task: "look this up".to_string(),
+            user_ack: "On it".to_string(),
+            manuscript_id: None,
+            stage_role: None,
+            model_hint: None,
+            execution_target: target,
+        }
+    }
 
     #[test]
     fn workshop_actions_carry_their_params() {
@@ -318,5 +587,51 @@ mod tests {
             );
             assert_eq!(schema["additionalProperties"], true);
         }
+    }
+
+    #[tokio::test]
+    async fn exact_unavailable_target_fails_before_execution() {
+        let spawn_count = Arc::new(AtomicUsize::new(0));
+        let router = WorkshopExecutionRouter::new(
+            "runtime-local",
+            WorkshopIngressDefault::SameAsParent,
+            vec![Arc::new(FakeExecutionTarget {
+                runtime_id: "runtime-local".to_string(),
+                spawn_count: spawn_count.clone(),
+            })],
+        );
+        let error = router
+            .spawn(spawn_for(Some(ExecutionTargetSelection::Exact {
+                runtime_id: "runtime-offline".to_string(),
+            })))
+            .await
+            .expect_err("unavailable target");
+        assert!(error.to_string().contains("execution_target_unavailable"));
+        assert_eq!(spawn_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn exact_target_routes_once_with_matching_provenance() {
+        let spawn_count = Arc::new(AtomicUsize::new(0));
+        let router = WorkshopExecutionRouter::new(
+            "runtime-parent",
+            WorkshopIngressDefault::SameAsParent,
+            vec![Arc::new(FakeExecutionTarget {
+                runtime_id: "runtime-remote".to_string(),
+                spawn_count: spawn_count.clone(),
+            })],
+        );
+        let output = router
+            .spawn(spawn_for(Some(ExecutionTargetSelection::Exact {
+                runtime_id: "runtime-remote".to_string(),
+            })))
+            .await
+            .expect("route exact target");
+        assert_eq!(spawn_count.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            output["execution_placement"]["resolved_runtime_id"],
+            "runtime-remote"
+        );
+        assert_eq!(output["parent_runtime_id"], "runtime-parent");
     }
 }

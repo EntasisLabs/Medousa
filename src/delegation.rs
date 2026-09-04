@@ -40,9 +40,7 @@ use crate::delegated_task::{
 use crate::execution_context::active_turn_execution_context;
 use crate::runtime_composition_ext::{RuntimeCompositionExt, process_once};
 use crate::session_store::{SessionStore, TranscriptAppend};
-use crate::workshop_contract::{
-    ExecutionPlacementResolution, ExecutionResolutionReason, ExecutionTargetSelection,
-};
+use crate::workshop_contract::{ExecutionPlacementResolution, ExecutionTargetResolutionError};
 
 pub const DELEGATION_ENDPOINT_ID: &str = "stasisd:endpoint:medousa-delegation";
 const DELEGATION_TIMEOUT_SECONDS: u64 = 120;
@@ -823,11 +821,14 @@ impl DelegationService {
         self.delivery.set_live_sink(sink);
     }
 
-    pub async fn submit(
+    pub async fn submit_to(
         self: &Arc<Self>,
+        target: DelegationTarget,
         task: &str,
         user_ack: &str,
         intent: &str,
+        parent_runtime_id: &str,
+        execution_placement: ExecutionPlacementResolution,
     ) -> StasisResult<DelegationTicket> {
         let task = task.trim();
         if task.is_empty() {
@@ -841,25 +842,29 @@ impl DelegationService {
                 "delegated user acknowledgement is required".to_string(),
             ));
         }
-        let binding = self
-            .binding()
-            .await
-            .map_err(|error| StasisError::PortFailure(error.to_string()))?
-            .ok_or_else(|| {
-                StasisError::PortFailure("no delegation workshop is explicitly bound".to_string())
-            })?;
+        target
+            .validate()
+            .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+        let parent_runtime_id = parent_runtime_id.trim();
+        if parent_runtime_id.is_empty() {
+            return Err(StasisError::PortFailure(
+                "delegation parent runtime identity is required".to_string(),
+            ));
+        }
+        let target_runtime_id = target.peer_device_id.trim();
+        if execution_placement.resolved_runtime_id != target_runtime_id {
+            return Err(StasisError::PortFailure(
+                ExecutionTargetResolutionError::ExactUnavailable {
+                    runtime_id: execution_placement.resolved_runtime_id.clone(),
+                }
+                .to_string(),
+            ));
+        }
         let execution = active_turn_execution_context().ok_or_else(|| {
             StasisError::PortFailure("delegation requires an admitted daemon turn".to_string())
         })?;
-        let parent_runtime_id = self.authority_id.as_str().to_string();
-        let target_runtime_id = binding.target.peer_device_id.trim().to_string();
-        let execution_placement = ExecutionPlacementResolution::resolved(
-            ExecutionTargetSelection::Exact {
-                runtime_id: target_runtime_id.clone(),
-            },
-            target_runtime_id.clone(),
-            ExecutionResolutionReason::IngressDefault,
-        );
+        let requested_placement = serde_json::to_vec(&execution_placement.requested)
+            .map_err(|error| StasisError::PortFailure(error.to_string()))?;
         let identity = deterministic_identity(
             "",
             &[
@@ -867,6 +872,8 @@ impl DelegationService {
                 execution.turn_id().as_bytes(),
                 task.as_bytes(),
                 target_runtime_id.as_bytes(),
+                parent_runtime_id.as_bytes(),
+                &requested_placement,
             ],
         );
         let job_id = format!("delegation-job-{identity}");
@@ -906,12 +913,12 @@ impl DelegationService {
                 .map_err(|error| StasisError::PortFailure(error.to_string()))?;
             let payload = DelegationJobPayload {
                 work_id: work_id.clone(),
-                target: binding.target,
+                target,
                 request: DelegatedTaskRequest {
                     schema_version: crate::delegated_task::DELEGATED_TASK_SCHEMA_VERSION,
                     grant,
                     source_execution,
-                    parent_runtime_id: parent_runtime_id.clone(),
+                    parent_runtime_id: parent_runtime_id.to_string(),
                     execution_placement: execution_placement.clone(),
                     context,
                 },
@@ -947,7 +954,7 @@ impl DelegationService {
             job_id,
             turn_id,
             status: "pending",
-            parent_runtime_id,
+            parent_runtime_id: parent_runtime_id.to_string(),
             execution_placement,
         })
     }
@@ -1216,6 +1223,7 @@ pub fn install_delegation_runtime(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::workshop_contract::{ExecutionResolutionReason, ExecutionTargetSelection};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use medousa_types::session::{

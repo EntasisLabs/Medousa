@@ -8,6 +8,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use stasis::application::runtime::in_memory_runtime::{JobExecutionOutcome, JobHandler};
 use stasis::domain::runtime::job::{Job, JobState};
+use stasis::domain::runtime::placement::PlacementConstraints;
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
 
 use crate::agent_runtime::stream_sink::SharedAgentStreamSink;
@@ -58,7 +59,7 @@ pub async fn enqueue_turn_worker_job(
     };
     let payload_ref = payload.to_payload_ref()?;
     let now = Utc::now();
-    let job = ToolJobSpec::new(
+    let mut job = ToolJobSpec::new(
         work_id,
         crate::daemon::worker_host::AGENT_QUEUE,
         TURN_WORKER_JOB_TYPE,
@@ -66,8 +67,12 @@ pub async fn enqueue_turn_worker_job(
         crate::public_api::COGNITION_WORKSHOP_MUTATE,
         now,
     )
-    .max_attempts(3)
-    .build();
+    .max_attempts(3);
+    let record = turn_worker_store().get(work_id);
+    job = job.placement(turn_worker_job_placement(
+        record.as_ref().map(|record| &record.execution_placement),
+    ));
+    let job = job.build();
 
     turn_worker_store().update(work_id, |record| {
         record.stasis_job_id = Some(work_id.to_string());
@@ -75,6 +80,22 @@ pub async fn enqueue_turn_worker_job(
 
     composition.enqueue_job(job).await?;
     Ok(())
+}
+
+fn turn_worker_job_placement(
+    resolution: Option<&crate::workshop_contract::ExecutionPlacementResolution>,
+) -> PlacementConstraints {
+    let Some(resolution) = resolution else {
+        return PlacementConstraints::unrestricted();
+    };
+    if resolution.resolution_reason
+        == crate::workshop_contract::ExecutionResolutionReason::LegacyUnknown
+        || resolution.resolved_runtime_id
+            == crate::workshop_contract::UNKNOWN_EXECUTION_RUNTIME_ID
+    {
+        return PlacementConstraints::unrestricted();
+    }
+    PlacementConstraints::unrestricted().target_node(&resolution.resolved_runtime_id)
 }
 
 pub async fn reconcile_durable_turn_workers(
@@ -638,6 +659,9 @@ fn fatal_outcome(message: String) -> JobExecutionOutcome {
 mod tests {
     use super::*;
     use crate::agent_runtime::turn_worker::WorkerToolActivity;
+    use crate::workshop_contract::{
+        ExecutionPlacementResolution, ExecutionResolutionReason, ExecutionTargetSelection,
+    };
 
     fn activity(run_id: &str) -> WorkerToolActivity {
         WorkerToolActivity {
@@ -686,5 +710,28 @@ mod tests {
         append_capped(&mut text, &"é".repeat(LIVE_TEXT_CAP + 10));
         assert_eq!(text.chars().count(), LIVE_TEXT_CAP);
         assert!(text.chars().all(|ch| ch == 'é'));
+    }
+
+    #[test]
+    fn exact_runtime_provenance_becomes_stasis_target_node() {
+        let resolution = ExecutionPlacementResolution::resolved(
+            ExecutionTargetSelection::Exact {
+                runtime_id: "runtime-remote".to_string(),
+            },
+            "runtime-remote",
+            ExecutionResolutionReason::ExactTarget,
+        );
+        assert_eq!(
+            turn_worker_job_placement(Some(&resolution)).target_node,
+            Some("runtime-remote".to_string())
+        );
+    }
+
+    #[test]
+    fn legacy_worker_records_remain_unconstrained() {
+        assert_eq!(
+            turn_worker_job_placement(Some(&ExecutionPlacementResolution::default())).target_node,
+            None
+        );
     }
 }

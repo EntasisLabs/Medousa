@@ -1,6 +1,6 @@
 # Bots and authorized remote execution
 
-> **Status:** Phase 1 complete — phases 2–7 planned
+> **Status:** Phases 1–2 complete — phases 3–7 planned
 >
 > **Date:** 2026-09-03
 >
@@ -479,7 +479,7 @@ Suggested commit boundary:
 - feat(runtime): resolve bot identity at turn admission
 - feat(home): add calm bot creation and selection
 
-### Phase 2 — Shared execution placement contract
+### Phase 2 — Shared execution placement contract ✅
 
 **Outcome:** Every worker can express where it should run, and every durable
 record says where it actually ran.

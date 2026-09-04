@@ -846,6 +846,12 @@ async fn start_daemon() -> Result<()> {
         .as_ref()
         .map(|pairing| pairing.device_id().to_string())
         .unwrap_or_else(|| worker_id.clone());
+    state
+        .platform
+        .agent()
+        .worker_scheduler
+        .set_execution_runtime_id(local_runtime_node_id.clone())
+        .map_err(anyhow::Error::msg)?;
 
     medousa::work_environment_parallel::register_parallel_work_environment_job_handlers(
         platform.composition(),

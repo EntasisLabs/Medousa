@@ -59,6 +59,27 @@ Source: `src/tool_bootstrap.rs`
 | Grapheme secrets | `cognition_grapheme_request_secret` — trusted UI prompt; authorizes an ephemeral credential capability for one native run |
 | Finish | `cognition_turn action=turn.finish` — ends tool loop |
 
+### Workshop execution placement
+
+`workshop.spawn` accepts an optional `execution_target`:
+
+- `{ "kind": "same_as_parent" }` keeps the worker on the daemon that admitted
+  the parent turn. This is also the default when the field is omitted.
+- `{ "kind": "exact", "runtime_id": "…" }` selects one stable daemon runtime
+  identity and never falls back to another target.
+- `{ "kind": "auto", "requirements": { … } }` matches authorized candidates
+  through Stasis placement constraints (`required_capabilities`, `platform`,
+  `architecture`, and `region`).
+
+Every durable worker record and spawn result includes `parent_runtime_id` plus
+`execution_placement` with the requested selection, resolved runtime, reason,
+and resolution time. Legacy records deserialize with `unknown` provenance; the
+daemon does not relabel them as local. Runtime ids are opaque identities, not
+URLs. An unavailable exact target fails before work is enqueued with an
+`execution_target_unavailable` error. Resolved workers are also enqueued with
+the same runtime id as their Stasis exact target-node constraint; legacy work
+with unknown provenance remains unconstrained so upgrade recovery still works.
+
 ---
 
 ## MCP vs built-ins
