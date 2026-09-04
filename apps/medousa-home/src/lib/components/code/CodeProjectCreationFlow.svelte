@@ -35,7 +35,9 @@
     type RepositoryCatalogEntry,
     type RepositoryInspection,
   } from "$lib/forge";
+  import { setCoderExecutionTransport } from "$lib/executionAuthority";
   import { setSessionCodeBinding } from "$lib/daemon";
+  import { executionTargets } from "$lib/stores/executionTargets.svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { pickExternalFolder, rootLabelFromPath } from "$lib/utils/externalDeskApi";
@@ -90,8 +92,24 @@
   let hostedProvider = $state("");
   let hostedParent = $state("");
   let hostedAdapters = $state<ProviderRepositoryAdapter[]>([]);
+  let selectedRuntimeId = $state<string | null>(null);
+  let targetsLoading = $state(false);
 
-  const coLocated = $derived(isCoLocatedWorkshop());
+  const coderTargets = $derived(
+    executionTargets
+      .userTargets()
+      .filter((target) => target.capabilities.includes("coder.work")),
+  );
+  const selectedTarget = $derived(
+    coderTargets.find((target) => target.runtime_id === selectedRuntimeId) ?? null,
+  );
+  const coLocated = $derived(
+    Boolean(
+      selectedRuntimeId
+      && selectedRuntimeId === executionTargets.inventory?.parent_runtime_id
+      && isCoLocatedWorkshop(),
+    ),
+  );
   const currentFolder = $derived(
     coLocated && vault.activeVaultRoot?.path
       ? { path: vault.activeVaultRoot.path, label: vault.activeVaultRoot.label }
@@ -121,6 +139,7 @@
   const ready = $derived(
     Boolean(
       repository
+      && selectedRuntimeId
       && repository.has_commits !== false
       && baseRef.trim()
       && outcome.trim()
@@ -129,9 +148,55 @@
   );
 
   onMount(() => {
-    void loadCatalog();
-    if (initialRepositoryPath?.trim()) void chooseRepository(initialRepositoryPath);
+    void initializeWorkshop();
   });
+
+  async function initializeWorkshop() {
+    targetsLoading = true;
+    error = null;
+    try {
+      await executionTargets.refresh({ force: true });
+      const sessionSelection = sessionId ? executionTargets.selectionFor(sessionId) : null;
+      const preferred = sessionSelection?.kind === "exact"
+        ? sessionSelection.runtime_id
+        : executionTargets.defaultRuntimeId();
+      const initial = coderTargets.find((target) => target.runtime_id === preferred)
+        ?? (coderTargets.length === 1 ? coderTargets[0] : null);
+      if (initial) await chooseWorkshop(initial.runtime_id);
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      targetsLoading = false;
+    }
+  }
+
+  async function chooseWorkshop(runtimeId: string) {
+    const target = coderTargets.find((candidate) => candidate.runtime_id === runtimeId);
+    if (!target) return;
+    selectedRuntimeId = target.runtime_id;
+    setCoderExecutionTransport(executionTargets.transportRuntimeId(target.runtime_id));
+    repository = null;
+    repositoryCatalog = [];
+    repoPath = "";
+    baseRef = "";
+    duplicateAcknowledged = false;
+    browser = null;
+    browserOpen = false;
+    hostedOpen = false;
+    await loadCatalog();
+    if (initialRepositoryPath?.trim()) await chooseRepository(initialRepositoryPath);
+  }
+
+  function changeWorkshop() {
+    selectedRuntimeId = null;
+    setCoderExecutionTransport(null);
+    repository = null;
+    repositoryCatalog = [];
+    repoPath = "";
+    baseRef = "";
+    browser = null;
+    browserOpen = false;
+  }
 
   async function loadCatalog() {
     try {
@@ -274,12 +339,26 @@
 
   async function bindItem(item: ItemProjection) {
     const id = sessionId?.trim();
-    if (!id) return;
-    await setSessionCodeBinding(id, item.id);
-    undertakings.setActiveFromItem(item);
+    if (!id || !selectedRuntimeId || !repository?.repo_id) return;
+    await setSessionCodeBinding(id, item.id, {
+      executionRuntimeId: selectedRuntimeId,
+      repoId: repository.repo_id,
+    });
+    executionTargets.setSelection(id, { kind: "exact", runtime_id: selectedRuntimeId });
+    undertakings.setActiveFromItem(item, {
+      executionRuntimeId: selectedRuntimeId,
+      executionTransportRuntimeId:
+        executionTargets.transportRuntimeId(selectedRuntimeId),
+      repoId: repository.repo_id,
+    });
     undertakings.bindChat(id);
     window.dispatchEvent(new CustomEvent("medousa-code-project-binding-changed", {
-      detail: { sessionId: id, workId: item.id },
+      detail: {
+        sessionId: id,
+        workId: item.id,
+        executionRuntimeId: selectedRuntimeId,
+        repoId: repository.repo_id,
+      },
     }));
   }
 
@@ -336,13 +415,21 @@
     error = null;
     try {
       const title = outcome.trim().replace(/[.!?]+$/, "");
-      const item = await undertakings.start({
-        title: title.length > 96 ? `${title.slice(0, 93)}…` : title || rootLabelFromPath(repoPath),
-        brief: outcome.trim(),
-        repo_path: repository.path,
-        base_ref: baseRef.trim(),
-        workspace_mode: workspaceMode,
-      });
+      const item = await undertakings.start(
+        {
+          title: title.length > 96 ? `${title.slice(0, 93)}…` : title || rootLabelFromPath(repoPath),
+          brief: outcome.trim(),
+          repo_path: repository.path,
+          base_ref: baseRef.trim(),
+          workspace_mode: workspaceMode,
+        },
+        {
+          executionRuntimeId: selectedRuntimeId,
+          executionTransportRuntimeId:
+            executionTargets.transportRuntimeId(selectedRuntimeId),
+          repoId: repository.repo_id,
+        },
+      );
       await bindItem(item);
       await loadCatalog();
       await onCatalogChanged?.();
@@ -365,7 +452,11 @@
     <div class="min-w-0">
       <p class="text-sm font-medium text-surface-100">New change</p>
       <p class="truncate text-xs text-content-quiet">
-        {repository ? `In ${repository.display_name}` : "Choose a repository to begin"}
+        {repository
+          ? `In ${repository.display_name}`
+          : selectedTarget
+            ? `On ${selectedTarget.label}`
+            : "Choose where Coder will work"}
       </p>
     </div>
     {#if onCancel}
@@ -376,6 +467,61 @@
   </header>
 
   <div class="creation-body">
+    {#if !selectedRuntimeId}
+      <p class="px-1 pb-1 text-xs font-medium text-content-tertiary">Workshop</p>
+      <p class="px-1 pb-2 text-[11px] leading-relaxed text-content-quiet">
+        Files, shell, tools, and builds stay on this computer for the whole project.
+      </p>
+      {#if targetsLoading}
+        <p class="px-1 py-3 text-xs text-content-quiet">Finding available workshops…</p>
+      {:else}
+        <div class="creation-list">
+          {#each coderTargets as target (target.runtime_id)}
+            <button
+              type="button"
+              class="creation-row"
+              onclick={() => void chooseWorkshop(target.runtime_id)}
+            >
+              {#if target.runtime_id === executionTargets.inventory?.parent_runtime_id}
+                <Laptop size={14} class="text-primary-300" />
+              {:else}
+                <Cloud size={14} class="text-primary-300" />
+              {/if}
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-sm text-surface-100">{target.label}</span>
+                <span class="block truncate text-[10px] text-content-quiet">
+                  {target.platform ?? "Connected workshop"}{target.architecture ? ` · ${target.architecture}` : ""}
+                </span>
+              </span>
+              <ChevronRight size={12} class="text-content-quiet" />
+            </button>
+          {:else}
+            <p class="px-2 py-3 text-xs text-content-quiet">
+              No connected workshop currently allows Coder projects.
+            </p>
+          {/each}
+        </div>
+      {/if}
+    {:else}
+      <section class="creation-card mb-3">
+        <div class="flex min-w-0 items-center gap-2.5">
+          <span class="creation-repo-icon">
+            {#if selectedRuntimeId === executionTargets.inventory?.parent_runtime_id}
+              <Laptop size={15} strokeWidth={1.75} />
+            {:else}
+              <Cloud size={15} strokeWidth={1.75} />
+            {/if}
+          </span>
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-xs text-content-quiet">Workshop</p>
+            <p class="truncate text-sm font-medium text-surface-100">
+              {selectedTarget?.label ?? "Unavailable workshop"}
+            </p>
+          </div>
+          <button type="button" class="creation-link" onclick={changeWorkshop}>Change</button>
+        </div>
+      </section>
+
     {#if repository}
       <section class="creation-card">
         <div class="flex min-w-0 items-start gap-2.5">
@@ -628,6 +774,7 @@
           {/if}
         </div>
       {/if}
+    {/if}
     {/if}
 
     {#if error}

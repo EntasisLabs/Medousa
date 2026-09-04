@@ -30,6 +30,8 @@
   import { layout } from "$lib/runtime/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { getUndertaking, heartbeatLease } from "$lib/forge";
+  import { setCoderExecutionTransport } from "$lib/executionAuthority";
+  import { executionTargets } from "$lib/stores/executionTargets.svelte";
   import {
     ChevronDown,
     Layers,
@@ -47,6 +49,8 @@
     /** Workshop shell session id. Empty string = create a fresh session on mount. */
     sessionId: string;
     workId?: string | null;
+    /** Stable workshop authority that owns this terminal session. */
+    executionRuntimeId?: string | null;
     title?: string;
     /** Hide project chip / sessions chrome when docked under Code. */
     compact?: boolean;
@@ -65,6 +69,7 @@
   let {
     sessionId,
     workId = null,
+    executionRuntimeId = null,
     title = "Terminal",
     compact = false,
     worktreeRoot = null,
@@ -423,7 +428,7 @@
 
   async function refreshSessionList() {
     try {
-      sessions = await terminalSessions();
+      sessions = await terminalSessions(executionRuntimeId);
     } catch {
       sessions = [];
     }
@@ -431,7 +436,7 @@
 
   async function checkHost() {
     try {
-      const info = await terminalInfo();
+      const info = await terminalInfo(executionRuntimeId);
       sessionHostAvailable = info.available;
       hostMessage = info.message ?? "";
     } catch (reason) {
@@ -486,7 +491,7 @@
           lease_id: leaseId,
           cols: terminalCols || 80,
           rows: terminalRows || 24,
-        })) as { session_id?: string };
+        }, executionRuntimeId)) as { session_id?: string };
         sid = created.session_id?.trim() ?? "";
         if (!sid) throw new Error("workshop did not return a session id");
         boundSessionId = sid;
@@ -497,6 +502,7 @@
         sid,
         terminalCols || 80,
         terminalRows || 24,
+        executionRuntimeId,
       );
       if (generation !== connectGeneration) {
         await terminalDetach(attach.attach_id);
@@ -535,7 +541,7 @@
     const sid = (boundSessionId || sessionId).trim();
     if (!sid) return;
     try {
-      await terminalInterrupt(sid);
+      await terminalInterrupt(sid, executionRuntimeId);
       focusTerminal();
     } catch (reason) {
       error = reason instanceof Error ? reason.message : String(reason);
@@ -554,8 +560,14 @@
   async function restoreUndertakingContext() {
     if (!workId) return;
     try {
+      setCoderExecutionTransport(executionTargets.transportRuntimeId(executionRuntimeId));
       const item = await getUndertaking(workId);
-      undertakings.setActiveFromItem(item);
+      undertakings.setActiveFromItem(item, {
+        executionRuntimeId,
+        executionTransportRuntimeId:
+          executionTargets.transportRuntimeId(executionRuntimeId),
+        repoId: undertakings.active?.workId === workId ? undertakings.active.repoId : null,
+      });
       const sid = (boundSessionId || sessionId).trim();
       if (sid) undertakings.bindTerminal(sid);
     } catch {
@@ -582,7 +594,7 @@
         lease_id: null,
         cols: terminalCols || 80,
         rows: terminalRows || 24,
-      });
+      }, executionRuntimeId);
       const sid = created.session_id?.trim() ?? "";
       if (sid) shellTabs.openTerminal(sid, { activate: true, title: "Shell" });
     } catch (reason) {

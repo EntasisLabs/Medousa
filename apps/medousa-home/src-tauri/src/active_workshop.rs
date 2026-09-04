@@ -43,10 +43,7 @@ fn resolve_for_registry(
         return Err("Peer connections cannot be selected as Home's active workshop".to_string());
     }
 
-    if embedded_personal
-        && workshop.id == PERSONAL_WORKSHOP_ID
-        && workshop.kind == "local"
-    {
+    if embedded_personal && workshop.id == PERSONAL_WORKSHOP_ID && workshop.kind == "local" {
         return Ok(ActiveWorkshopTarget::EmbeddedPersonal);
     }
 
@@ -127,6 +124,57 @@ pub fn transport_config() -> Result<WorkshopTransportConfig, String> {
             Ok(config)
         }
     }
+}
+
+/// Resolve an exact paired workshop by its daemon-authored runtime identity.
+/// This never treats a URL or client-side workshop id as execution authority.
+pub fn transport_config_for_runtime_id(
+    runtime_id: &str,
+) -> Result<WorkshopTransportConfig, String> {
+    let runtime_id = runtime_id.trim();
+    if runtime_id.is_empty() {
+        return Err("Execution runtime id is required".to_string());
+    }
+    let registry = ensure_migrated()?;
+    let workshop = registry
+        .workshops
+        .iter()
+        .find(|workshop| {
+            workshop
+                .pairing
+                .as_ref()
+                .is_some_and(|pairing| pairing.workshop_device_id.trim() == runtime_id)
+        })
+        .ok_or_else(|| {
+            format!("The selected Coder workshop '{runtime_id}' is not paired on this device")
+        })?;
+    if !matches!(workshop.kind.as_str(), "portal" | "paired") {
+        return Err("Selected Coder runtime is not a paired workshop".to_string());
+    }
+    let config = crate::pairing_client::load_workshop_transport_config_for_id(
+        &workshop.id,
+        &resolve_workshop_url(workshop),
+    )
+    .ok_or_else(|| {
+        format!(
+            "Selected workshop '{}' has no pairing credentials; pair it again",
+            workshop.label
+        )
+    })?;
+    if config.workshop_device_id.trim() != runtime_id {
+        return Err("Selected workshop transport identity changed; pair it again".to_string());
+    }
+    if config
+        .session_token
+        .as_deref()
+        .is_none_or(|token| token.trim().is_empty())
+    {
+        return Err(format!(
+            "Selected workshop '{}' has no authenticated session; pair it again",
+            workshop.label
+        ));
+    }
+    Ok(config)
 }
 
 pub fn transport_base_url() -> Result<String, String> {

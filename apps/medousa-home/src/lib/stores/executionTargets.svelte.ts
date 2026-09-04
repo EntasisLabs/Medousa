@@ -160,6 +160,13 @@ export class ExecutionTargetStore {
     return this.userTargets().find((target) => target.runtime_id === parentId) ?? null;
   }
 
+  /** Tauri needs an override only when execution leaves the parent daemon. */
+  transportRuntimeId(runtimeId?: string | null): string | null {
+    const id = runtimeId?.trim();
+    if (!id || id === this.inventory?.parent_runtime_id?.trim()) return null;
+    return id;
+  }
+
   runtimeLabel(runtimeId?: string | null): string | null {
     const id = runtimeId?.trim();
     if (!id || id === "unknown") return null;

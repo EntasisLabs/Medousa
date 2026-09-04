@@ -41,17 +41,39 @@ pub async fn code_read(
     state: State<'_, DaemonState>,
     operation: CodeReadOperation,
     query: HashMap<String, String>,
+    execution_runtime_id: Option<String>,
 ) -> Result<Value, String> {
     let query = query
         .iter()
         .map(|(key, value)| (key.as_str(), value.clone()))
         .collect::<Vec<_>>();
-    workshop_http::get_json_query(&state, operation.path(), &query).await
+    let path = workshop_http::path_with_query(operation.path(), &query);
+    let config = match execution_runtime_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|runtime_id| !runtime_id.is_empty())
+    {
+        Some(runtime_id) => crate::active_workshop::transport_config_for_runtime_id(runtime_id)?,
+        None => workshop_http::transport_config(&state)?,
+    };
+    crate::workshop_transport::workshop_get_json(&config, &path).await
 }
 
 #[tauri::command]
-pub async fn code_request(state: State<'_, DaemonState>, body: Value) -> Result<Value, String> {
-    workshop_http::post_json(&state, "/v1/code/request", &body).await
+pub async fn code_request(
+    state: State<'_, DaemonState>,
+    body: Value,
+    execution_runtime_id: Option<String>,
+) -> Result<Value, String> {
+    let config = match execution_runtime_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|runtime_id| !runtime_id.is_empty())
+    {
+        Some(runtime_id) => crate::active_workshop::transport_config_for_runtime_id(runtime_id)?,
+        None => workshop_http::transport_config(&state)?,
+    };
+    crate::workshop_transport::workshop_post_json(&config, "/v1/code/request", &body).await
 }
 
 #[cfg(test)]

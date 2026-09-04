@@ -26,7 +26,6 @@ use tokio_tungstenite::{
 use tokio_util::sync::CancellationToken;
 
 use crate::daemon::DaemonState;
-use crate::daemon::sdk::client;
 
 static NEXT_ATTACH_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -107,10 +106,17 @@ fn ws_url_for(daemon_url: &str, path: &str) -> String {
     format!("{base}{path}")
 }
 
-pub(crate) async fn connect_authenticated_ws(
+pub(crate) async fn connect_authenticated_ws_for_runtime(
     path: &str,
+    execution_runtime_id: Option<&str>,
 ) -> Result<WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>, String> {
-    let base_config = crate::active_workshop::transport_config()?;
+    let base_config = match execution_runtime_id
+        .map(str::trim)
+        .filter(|runtime_id| !runtime_id.is_empty())
+    {
+        Some(runtime_id) => crate::active_workshop::transport_config_for_runtime_id(runtime_id)?,
+        None => crate::active_workshop::transport_config()?,
+    };
     let config = crate::pairing_client::ensure_fresh_session(&base_config)
         .await
         .unwrap_or(base_config);
@@ -164,36 +170,59 @@ fn ws_request_with_bearer(
 async fn daemon_get<T: serde::de::DeserializeOwned>(
     state: &State<'_, DaemonState>,
     path: &str,
+    execution_runtime_id: Option<&str>,
 ) -> Result<T, String> {
-    client(state)?
-        .http()
-        .get(path)
-        .await
-        .map_err(|e| e.to_string())
+    let config = terminal_transport_config(state, execution_runtime_id)?;
+    crate::workshop_transport::workshop_get_json(&config, path).await
 }
 
 async fn daemon_post<T: serde::de::DeserializeOwned, B: serde::Serialize>(
     state: &State<'_, DaemonState>,
     path: &str,
     body: &B,
+    execution_runtime_id: Option<&str>,
 ) -> Result<T, String> {
-    client(state)?
-        .http()
-        .post(path, body)
-        .await
-        .map_err(|e| e.to_string())
+    let config = terminal_transport_config(state, execution_runtime_id)?;
+    crate::workshop_transport::workshop_post_json(&config, path, body).await
+}
+
+fn terminal_transport_config(
+    state: &State<'_, DaemonState>,
+    execution_runtime_id: Option<&str>,
+) -> Result<crate::pairing_client::WorkshopTransportConfig, String> {
+    match execution_runtime_id
+        .map(str::trim)
+        .filter(|runtime_id| !runtime_id.is_empty())
+    {
+        Some(runtime_id) => crate::active_workshop::transport_config_for_runtime_id(runtime_id),
+        None => crate::daemon::sdk::transport_config(state),
+    }
 }
 
 #[tauri::command]
-pub async fn terminal_info(state: State<'_, DaemonState>) -> Result<TerminalInfo, String> {
-    daemon_get(&state, "/v1/shell-sessions").await
+pub async fn terminal_info(
+    state: State<'_, DaemonState>,
+    execution_runtime_id: Option<String>,
+) -> Result<TerminalInfo, String> {
+    daemon_get(
+        &state,
+        "/v1/shell-sessions",
+        execution_runtime_id.as_deref(),
+    )
+    .await
 }
 
 #[tauri::command]
 pub async fn terminal_sessions(
     state: State<'_, DaemonState>,
+    execution_runtime_id: Option<String>,
 ) -> Result<Vec<TerminalSessionSummary>, String> {
-    let value: serde_json::Value = daemon_get(&state, "/v1/sessions/shell").await?;
+    let value: serde_json::Value = daemon_get(
+        &state,
+        "/v1/sessions/shell",
+        execution_runtime_id.as_deref(),
+    )
+    .await?;
     Ok(value
         .get("sessions")
         .and_then(|value| serde_json::from_value(value.clone()).ok())
@@ -204,11 +233,13 @@ pub async fn terminal_sessions(
 pub async fn terminal_interrupt(
     state: State<'_, DaemonState>,
     session_id: String,
+    execution_runtime_id: Option<String>,
 ) -> Result<serde_json::Value, String> {
     daemon_post(
         &state,
         &format!("/v1/sessions/shell/{session_id}/signal"),
         &serde_json::json!({ "signal": "interrupt" }),
+        execution_runtime_id.as_deref(),
     )
     .await
 }
@@ -217,6 +248,7 @@ pub async fn terminal_interrupt(
 pub async fn terminal_create(
     state: State<'_, DaemonState>,
     input: TerminalCreateInput,
+    execution_runtime_id: Option<String>,
 ) -> Result<serde_json::Value, String> {
     daemon_post(
         &state,
@@ -228,6 +260,7 @@ pub async fn terminal_create(
             "cols": input.cols.unwrap_or(80),
             "rows": input.rows.unwrap_or(24),
         }),
+        execution_runtime_id.as_deref(),
     )
     .await
 }
@@ -240,9 +273,11 @@ pub async fn terminal_attach(
     session_id: String,
     cols: u16,
     rows: u16,
+    execution_runtime_id: Option<String>,
 ) -> Result<TerminalAttachResponse, String> {
     let path = format!("/v1/sessions/shell/{}", urlencoding::encode(&session_id));
-    let websocket = connect_authenticated_ws(&path).await?;
+    let websocket =
+        connect_authenticated_ws_for_runtime(&path, execution_runtime_id.as_deref()).await?;
 
     let attach_id = NEXT_ATTACH_ID.fetch_add(1, Ordering::SeqCst);
     let (outbound, outbound_rx) = mpsc::unbounded_channel();

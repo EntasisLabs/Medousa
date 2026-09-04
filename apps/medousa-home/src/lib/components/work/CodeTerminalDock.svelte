@@ -1,6 +1,7 @@
 <script lang="ts">
   import { SquareTerminal } from "@lucide/svelte";
   import TerminalPane from "$lib/components/terminal/TerminalPane.svelte";
+  import { undertakings } from "$lib/stores/undertakings.svelte";
 
   interface Props {
     open: boolean;
@@ -31,6 +32,7 @@
           <TerminalPane
             {sessionId}
             {workId}
+            executionRuntimeId={undertakings.active?.executionRuntimeId ?? null}
             {title}
             {worktreeRoot}
             compact

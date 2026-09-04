@@ -225,8 +225,17 @@ export async function getSessionCodeBinding(
 export async function setSessionCodeBinding(
   sessionId: string,
   workId: string,
+  authority: {
+    executionRuntimeId?: string | null;
+    repoId?: string | null;
+  } = {},
 ): Promise<SessionCodeBindingResponse> {
-  return invoke<SessionCodeBindingResponse>("session_set_code_binding", { sessionId, workId });
+  return invoke<SessionCodeBindingResponse>("session_set_code_binding", {
+    sessionId,
+    workId,
+    executionRuntimeId: authority.executionRuntimeId?.trim() || null,
+    repoId: authority.repoId?.trim() || null,
+  });
 }
 
 export async function clearSessionCodeBinding(

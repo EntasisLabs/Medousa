@@ -17,8 +17,9 @@ the same projects with the project list and editor shown one level at a time.
 Intent → Set up → Edit → Verify → Review → Finish
 ```
 
-1. Open **Code**, choose **New project**, select a recent or pinned repository,
-   or browse the connected workshop, then describe the outcome you want. The
+1. Open **Code**, choose **New project**, and first choose the workshop that
+   owns the repository. Then select a recent or pinned repository from that
+   workshop, or browse its filesystem, and describe the outcome you want. The
    project title is that outcome.
 2. Choose **Isolated copy** (the default) or **Current checkout**, then set up
    the project. An isolated project gets a private branch and working copy. A
@@ -67,10 +68,17 @@ workspace yet, **Set up project** is the primary action in the center and rail.
 
 ## Choose a repository
 
-Repository discovery always follows the connected workshop. A local workshop
-uses the native folder picker; a remote workshop shows folders from the remote
-computer. Medousa never uploads a local folder or presents the Home device's
-filesystem as if it belonged to the workshop.
+Repository discovery always follows the workshop selected for the project. A
+co-located workshop uses the native folder picker; a remote workshop shows
+folders from that remote computer. Medousa never uploads a local folder or
+presents the Home device's filesystem as if it belonged to the workshop.
+
+That choice is sticky for the lifetime of the project. Forge preparation,
+source files, language support, Terminal and PTY sessions, builds, evidence,
+review, and final disposition all use the same workshop authority. Changing
+the default workshop later cannot move active work. If that workshop goes
+offline, removes Coder permission, or no longer recognizes the project,
+Medousa stops with that state instead of silently running on the Home device.
 
 - Recent and pinned repositories belong to the workshop and appear on every
   client connected to it.

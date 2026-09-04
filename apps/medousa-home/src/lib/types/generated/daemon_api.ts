@@ -425,6 +425,8 @@ export interface AgentModeProposalListResponse {
 }
 
 export interface SessionCodeBindingResponse {
+  execution_runtime_id?: string | null;
+  repo_id?: string | null;
   session_id: string;
   updated_at_utc?: string | null;
   work_id?: string | null;

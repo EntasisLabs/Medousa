@@ -96,6 +96,7 @@ describe("homeProjectRows", () => {
       Pick<RepositoryCatalogEntry, "path" | "display_name" | "last_used_at">,
   ): RepositoryCatalogEntry {
     return {
+      repo_id: overrides.path,
       pinned: false,
       archived: false,
       available: true,

@@ -280,13 +280,31 @@ pub async fn grapheme_get_lifecycle(
 #[tauri::command]
 pub async fn grapheme_get_lsp_workspace(
     state: State<'_, DaemonState>,
+    execution_runtime_id: Option<String>,
 ) -> Result<GraphemeLspWorkspaceResponse, String> {
-    workshop_http::get_json(&state, "/v1/grapheme/lsp/workspace").await
+    let config = match execution_runtime_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|runtime_id| !runtime_id.is_empty())
+    {
+        Some(runtime_id) => crate::active_workshop::transport_config_for_runtime_id(runtime_id)?,
+        None => workshop_http::transport_config(&state)?,
+    };
+    crate::workshop_transport::workshop_get_json(&config, "/v1/grapheme/lsp/workspace").await
 }
 
 #[tauri::command]
 pub async fn coding_engine_info(
     state: State<'_, DaemonState>,
+    execution_runtime_id: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    workshop_http::get_json(&state, "/v1/coding-engine").await
+    let config = match execution_runtime_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|runtime_id| !runtime_id.is_empty())
+    {
+        Some(runtime_id) => crate::active_workshop::transport_config_for_runtime_id(runtime_id)?,
+        None => workshop_http::transport_config(&state)?,
+    };
+    crate::workshop_transport::workshop_get_json(&config, "/v1/coding-engine").await
 }

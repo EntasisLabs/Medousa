@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCoderExecutionTransport } from "$lib/executionAuthority";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { WorkCardDetail } from "$lib/types/card";
 import type { WorkspaceCardActionResponse } from "$lib/types/work";
@@ -506,7 +507,9 @@ export async function getGraphemeLifecycle(): Promise<GraphemeLifecycleResponse>
 }
 
 export async function getGraphemeLspWorkspace(): Promise<GraphemeLspWorkspaceResponse> {
-  return invoke<GraphemeLspWorkspaceResponse>("grapheme_get_lsp_workspace");
+  return invoke<GraphemeLspWorkspaceResponse>("grapheme_get_lsp_workspace", {
+    executionRuntimeId: getCoderExecutionTransport(),
+  });
 }
 
 export type CodingEngineInfoResponse = {
@@ -522,7 +525,9 @@ export type CodingEngineInfoResponse = {
 };
 
 export async function getCodingEngineInfo(): Promise<CodingEngineInfoResponse> {
-  return invoke<CodingEngineInfoResponse>("coding_engine_info");
+  return invoke<CodingEngineInfoResponse>("coding_engine_info", {
+    executionRuntimeId: getCoderExecutionTransport(),
+  });
 }
 
 export async function listWorkflows(

@@ -1,6 +1,6 @@
 # Bots and authorized remote execution
 
-> **Status:** Phases 1–5 complete — phases 6–7 planned
+> **Status:** Phases 1–6 complete — phase 7 planned
 >
 > **Date:** 2026-09-03
 >
@@ -711,6 +711,19 @@ Suggested commit boundary:
 
 - feat(coder): bind project discovery and work to a selected workshop
 - feat(home): add remote coder workshop and project flow
+
+Landed boundary:
+
+- Coder project references bind a workshop runtime id, Forge work id, and
+  stable repository identity at admission.
+- Destination-side Forge preparation and the complete Coder tool registry run
+  under one live-revalidated project grant; revocation stops the next tool
+  boundary.
+- Home asks for the workshop before repository discovery and pins Forge,
+  source, LSP, project events, shell, and PTY transport to that authority.
+- Active projects keep their admitted workshop when defaults change, and
+  unavailable, stale, or older destinations fail closed without local
+  fallback.
 
 ### Phase 7 — Portable Coder and durable handoff
 

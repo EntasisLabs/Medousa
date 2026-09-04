@@ -17,6 +17,10 @@ import {
   getReview,
   forgeStreamUrl,
 } from "$lib/forge";
+import {
+  getCoderExecutionTransport,
+  setCoderExecutionTransport,
+} from "$lib/executionAuthority";
 import { currentUndertakingGroupId } from "$lib/runtime/undertakingGroupPort";
 import {
   openDaemonEventStream,
@@ -25,6 +29,12 @@ import {
 
 export type ActiveUndertakingContext = {
   workId: string;
+  /** Daemon identity that owns the undertaking and all of its execution. */
+  executionRuntimeId: string | null;
+  /** Tauri transport override; null means the current parent daemon. */
+  executionTransportRuntimeId: string | null;
+  /** Stable destination-authored repository identity. */
+  repoId: string | null;
   title: string;
   humanPhase: HumanPhase | string;
   forgeState: string;
@@ -78,6 +88,9 @@ function createUndertakingsStore() {
     if (!left) return false;
     return (
       left.workId === right.workId &&
+      left.executionRuntimeId === right.executionRuntimeId &&
+      left.executionTransportRuntimeId === right.executionTransportRuntimeId &&
+      left.repoId === right.repoId &&
       left.title === right.title &&
       left.humanPhase === right.humanPhase &&
       left.forgeState === right.forgeState &&
@@ -106,6 +119,9 @@ function createUndertakingsStore() {
     const lease = attempt?.lease;
     const next: ActiveUndertakingContext = {
       workId: item.id,
+      executionRuntimeId: null,
+      executionTransportRuntimeId: null,
+      repoId: null,
       title: item.title,
       humanPhase: item.human_phase,
       forgeState: item.state,
@@ -128,6 +144,11 @@ function createUndertakingsStore() {
     };
     const prev = contexts[groupKey()];
     if (prev?.workId === next.workId) {
+      if (!next.executionRuntimeId) next.executionRuntimeId = prev.executionRuntimeId;
+      if (!next.executionTransportRuntimeId) {
+        next.executionTransportRuntimeId = prev.executionTransportRuntimeId;
+      }
+      if (!next.repoId) next.repoId = prev.repoId;
       next.boundChatSessionIds = prev.boundChatSessionIds;
       next.boundTerminalSessionIds = prev.boundTerminalSessionIds;
       next.selectedEntityId = prev.selectedEntityId;
@@ -151,11 +172,13 @@ function createUndertakingsStore() {
     if (!sameContext(prev, next)) {
       contexts = { ...contexts, [groupKey()]: next };
     }
+    setCoderExecutionTransport(next.executionTransportRuntimeId);
     void ensureEventStream();
   }
 
   function clearActive() {
     contexts = { ...contexts, [groupKey()]: null };
+    setCoderExecutionTransport(null);
   }
 
   function bindChat(sessionId: string) {
@@ -260,7 +283,13 @@ function createUndertakingsStore() {
     }
   }
 
-  async function select(workId: string) {
+  async function select(
+    workId: string,
+    authority?: Pick<
+      ActiveUndertakingContext,
+      "executionRuntimeId" | "executionTransportRuntimeId" | "repoId"
+    >,
+  ) {
     const trimmed = workId.trim();
     if (!trimmed) {
       selectionRequest += 1;
@@ -277,7 +306,7 @@ function createUndertakingsStore() {
       const nextDetail = await getUndertaking(trimmed);
       if (request !== selectionRequest) return;
       if (JSON.stringify(nextDetail) !== JSON.stringify(detail)) detail = nextDetail;
-      setActiveFromItem(nextDetail);
+      setActiveFromItem(nextDetail, authority);
       if (
         nextDetail.human_phase === "review" ||
         nextDetail.state === "awaiting_review" ||
@@ -319,10 +348,13 @@ function createUndertakingsStore() {
     repo_path: string;
     base_ref?: string;
     workspace_mode?: ForgeWorkspaceMode;
-  }) {
+  }, authority?: Pick<
+    ActiveUndertakingContext,
+    "executionRuntimeId" | "executionTransportRuntimeId" | "repoId"
+  >) {
     const item = await createUndertaking(input);
     await refreshList();
-    await select(item.id);
+    await select(item.id, authority);
     return item;
   }
 
@@ -332,13 +364,16 @@ function createUndertakingsStore() {
     repo_path: string;
     base_ref?: string;
     workspace_mode?: ForgeWorkspaceMode;
-  }) {
+  }, authority?: Pick<
+    ActiveUndertakingContext,
+    "executionRuntimeId" | "executionTransportRuntimeId" | "repoId"
+  >) {
     try {
       const item = await startUndertaking(input);
       await refreshList();
       selectedId = item.id;
       detail = item;
-      setActiveFromItem(item);
+      setActiveFromItem(item, authority);
       return item;
     } catch (err) {
       await refreshList();
@@ -398,6 +433,7 @@ function createUndertakingsStore() {
     try {
       source = await openDaemonEventStream<{ work_id?: string }>({
         operation: "forge.stream.get",
+        executionRuntimeId: getCoderExecutionTransport(),
         browserUrl: forgeStreamUrl,
         browserEvent: "forge",
         onOpen: stopPolling,
@@ -457,6 +493,7 @@ function createUndertakingsStore() {
     review = null;
     selectedReviewAttemptId = null;
     contexts = {};
+    setCoderExecutionTransport(null);
   }
 
   return {

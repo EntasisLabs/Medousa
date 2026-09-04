@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCoderExecutionTransport } from "$lib/executionAuthority";
+import { executionTargets } from "$lib/stores/executionTargets.svelte";
 
 export type TerminalInfo = {
   available: boolean;
@@ -43,12 +45,22 @@ export type TerminalProtocolError = {
   message: string;
 };
 
-export async function terminalInfo(): Promise<TerminalInfo> {
-  return invoke<TerminalInfo>("terminal_info");
+function executionRuntimeId(override?: string | null): string | null {
+  return override === undefined
+    ? getCoderExecutionTransport()
+    : executionTargets.transportRuntimeId(override);
 }
 
-export async function terminalSessions(): Promise<TerminalSessionSummary[]> {
-  return invoke<TerminalSessionSummary[]>("terminal_sessions");
+export async function terminalInfo(runtimeId?: string | null): Promise<TerminalInfo> {
+  return invoke<TerminalInfo>("terminal_info", {
+    executionRuntimeId: executionRuntimeId(runtimeId),
+  });
+}
+
+export async function terminalSessions(runtimeId?: string | null): Promise<TerminalSessionSummary[]> {
+  return invoke<TerminalSessionSummary[]>("terminal_sessions", {
+    executionRuntimeId: executionRuntimeId(runtimeId),
+  });
 }
 
 export async function terminalCreate(input: {
@@ -57,16 +69,25 @@ export async function terminalCreate(input: {
   lease_id?: string | null;
   cols?: number;
   rows?: number;
-}): Promise<{ session_id?: string } & Record<string, unknown>> {
-  return invoke("terminal_create", { input });
+}, runtimeId?: string | null): Promise<{ session_id?: string } & Record<string, unknown>> {
+  return invoke("terminal_create", {
+    input,
+    executionRuntimeId: executionRuntimeId(runtimeId),
+  });
 }
 
 export async function terminalAttach(
   sessionId: string,
   cols: number,
   rows: number,
+  runtimeId?: string | null,
 ): Promise<TerminalAttachResponse> {
-  return invoke<TerminalAttachResponse>("terminal_attach", { sessionId, cols, rows });
+  return invoke<TerminalAttachResponse>("terminal_attach", {
+    sessionId,
+    cols,
+    rows,
+    executionRuntimeId: executionRuntimeId(runtimeId),
+  });
 }
 
 export async function terminalReady(attachId: number): Promise<void> {
@@ -85,8 +106,14 @@ export async function terminalResize(
   return invoke("terminal_resize", { attachId, cols, rows });
 }
 
-export async function terminalInterrupt(sessionId: string): Promise<unknown> {
-  return invoke("terminal_interrupt", { sessionId });
+export async function terminalInterrupt(
+  sessionId: string,
+  runtimeId?: string | null,
+): Promise<unknown> {
+  return invoke("terminal_interrupt", {
+    sessionId,
+    executionRuntimeId: executionRuntimeId(runtimeId),
+  });
 }
 
 export async function terminalDetach(attachId: number): Promise<void> {

@@ -19,13 +19,16 @@
   } from "$lib/daemon";
   import {
     getUndertaking,
+    inspectForgeRepository,
     humanExecutorLabel,
     humanPhaseGuidance,
     humanPhaseLabel,
     humanizeForgeMessage,
     type ItemProjection,
   } from "$lib/forge";
+  import { setCoderExecutionTransport } from "$lib/executionAuthority";
   import { undertakings } from "$lib/stores/undertakings.svelte";
+  import { executionTargets } from "$lib/stores/executionTargets.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
@@ -95,13 +98,36 @@
         undertakings.detachChat(sessionId);
         return;
       }
+      await executionTargets.refresh().catch(() => undefined);
+      setCoderExecutionTransport(
+        executionTargets.transportRuntimeId(binding.execution_runtime_id),
+      );
       if (undertakings.active?.workId === binding.work_id) {
+        if (
+          undertakings.active.executionRuntimeId !== (binding.execution_runtime_id ?? null) ||
+          undertakings.active.repoId !== (binding.repo_id ?? null)
+        ) {
+          const item = await getUndertaking(binding.work_id);
+          undertakings.setActiveFromItem(item, {
+            executionRuntimeId: binding.execution_runtime_id ?? null,
+            executionTransportRuntimeId: executionTargets.transportRuntimeId(
+              binding.execution_runtime_id,
+            ),
+            repoId: binding.repo_id ?? null,
+          });
+        }
         undertakings.bindChat(sessionId);
         return;
       }
       const item = await getUndertaking(binding.work_id);
       if (chat.sessionId !== sessionId) return;
-      undertakings.setActiveFromItem(item);
+      undertakings.setActiveFromItem(item, {
+        executionRuntimeId: binding.execution_runtime_id ?? null,
+        executionTransportRuntimeId: executionTargets.transportRuntimeId(
+          binding.execution_runtime_id,
+        ),
+        repoId: binding.repo_id ?? null,
+      });
       undertakings.bindChat(sessionId);
     } catch {
       // The chat connection UI owns transport errors; hydrate opportunistically.
@@ -166,14 +192,14 @@
         onDismiss: closeChooser,
         onSwipeBack: () => {
           if (!creating) return false;
-          creating = false;
+          closeChooser();
           return true;
         },
       },
     );
     const detachBack = registerMobileBackHandler(() => {
       if (creating) {
-        creating = false;
+        closeChooser();
       } else {
         closeChooser();
       }
@@ -189,7 +215,7 @@
     if (!chatOnly) return;
     const open = () => {
       chooserOpen = true;
-      void undertakings.refreshList();
+      creating = true;
     };
     window.addEventListener("medousa-open-code-project-chooser", open);
     const refreshMode = () => void hydrateSharedBinding(chat.sessionId);
@@ -279,12 +305,13 @@
       return;
     }
     chooserOpen = true;
-    await undertakings.refreshList();
+    creating = true;
   }
 
   function closeChooser() {
     chooserOpen = false;
     creating = false;
+    if (!undertakings.active) setCoderExecutionTransport(null);
   }
 
   async function bindProject(item: ItemProjection) {
@@ -293,9 +320,23 @@
     busy = true;
     error = null;
     try {
-      await setSessionCodeBinding(sessionId, item.id);
+      const runtimeId = executionTargets.inventory?.parent_runtime_id ?? null;
+      const repository = item.target?.repo_path
+        ? await inspectForgeRepository(item.target.repo_path)
+        : null;
+      await setSessionCodeBinding(sessionId, item.id, {
+        executionRuntimeId: runtimeId,
+        repoId: repository?.repo_id ?? null,
+      });
       if (chat.sessionId !== sessionId) return;
-      undertakings.setActiveFromItem(item);
+      if (runtimeId) {
+        executionTargets.setSelection(sessionId, { kind: "exact", runtime_id: runtimeId });
+      }
+      undertakings.setActiveFromItem(item, {
+        executionRuntimeId: runtimeId,
+        executionTransportRuntimeId: executionTargets.transportRuntimeId(runtimeId),
+        repoId: repository?.repo_id ?? null,
+      });
       undertakings.bindChat(sessionId);
       observedBindingWorkId = item.id;
       window.dispatchEvent(
@@ -492,7 +533,7 @@
                 <CodeProjectCreationFlow
                   presentation="sheet"
                   sessionId={chat.sessionId}
-                  onCancel={() => (creating = false)}
+                  onCancel={closeChooser}
                   onCreated={finishSharedCreation}
                   onContinue={finishSharedCreation}
                 />
@@ -558,7 +599,7 @@
               <CodeProjectCreationFlow
                 presentation="popover"
                 sessionId={chat.sessionId}
-                onCancel={() => (creating = false)}
+                onCancel={closeChooser}
                 onCreated={finishSharedCreation}
                 onContinue={finishSharedCreation}
               />
