@@ -46,6 +46,9 @@ pub fn remote_delegated_tool_ceiling_for_grant(
     let Some(grant) = grant else {
         return remote_delegated_tool_ceiling();
     };
+    if !grant.effective_tool_names.is_empty() {
+        return grant.effective_tool_names.iter().cloned().collect();
+    }
     let mut names = HashSet::new();
     for domain in &grant.effective_tool_domains {
         match domain.as_str() {
@@ -463,6 +466,12 @@ mod tests {
                 "web".to_string(),
             ],
             effective_tool_domains: vec!["turn".to_string(), "utility".to_string()],
+            requested_tool_names: vec![
+                "cognition_shell_run".to_string(),
+                "cognition_turn".to_string(),
+                "cognition_web_search".to_string(),
+            ],
+            effective_tool_names: vec!["cognition_turn".to_string()],
             network_policy: crate::peer_execution_policy::PeerNetworkPolicy::WebOnly,
             issued_at: now,
             expires_at: now + chrono::Duration::minutes(5),

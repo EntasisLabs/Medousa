@@ -21,6 +21,53 @@ const MAX_AUDIT_EVENTS: usize = 512;
 const MAX_POLICY_FILE_BYTES: u64 = 4 * 1024 * 1024;
 const SAFE_ASSISTANT_TOOL_DOMAINS: [&str; 3] = ["turn", "utility", "web"];
 
+/// Stable authorization domain for a concrete cognition tool. Unknown tools
+/// remain in `other`, which no preset grants implicitly.
+pub fn execution_tool_domain(tool_name: &str) -> &'static str {
+    match tool_name {
+        "cognition_turn" => "turn",
+        name if name.starts_with("cognition_utility_") => "utility",
+        name if name.starts_with("cognition_web_") || name.starts_with("cognition_browser_") => {
+            "web"
+        }
+        name if name.starts_with("cognition_shell_") => "shell",
+        name if name.starts_with("cognition_openshell_")
+            || name.starts_with("cognition_skill_")
+            || name == "cognition_grapheme_run" =>
+        {
+            "sandbox"
+        }
+        name if name.starts_with("cognition_code_") => "code",
+        name if name.starts_with("cognition_memory_") => "memory",
+        name if name.starts_with("cognition_identity_") => "identity",
+        name if name.starts_with("cognition_mcp_") || name.starts_with("cognition_bridge_") => {
+            "mcp"
+        }
+        name if name.starts_with("cognition_environment_")
+            || name.starts_with("cognition_work_environment_") =>
+        {
+            "environment"
+        }
+        name if name.starts_with("cognition_ui_") => "ui",
+        name if name.starts_with("cognition_store_")
+            || name.starts_with("cognition_vault_")
+            || name.starts_with("cognition_chat_history_")
+            || name.starts_with("cognition_tool_history_") =>
+        {
+            "data"
+        }
+        name if name.starts_with("cognition_calendar_") => "calendar",
+        name if name.starts_with("cognition_runtime_")
+            || name == "cognition_schema"
+            || name == "cognition_tools_discover"
+            || name == "cognition_capability" =>
+        {
+            "runtime"
+        }
+        _ => "other",
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PeerExecutionPolicyPreset {
@@ -221,6 +268,10 @@ pub struct TaskExecutionGrant {
     pub policy_source: PeerExecutionPolicySource,
     pub requested_tool_domains: Vec<String>,
     pub effective_tool_domains: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requested_tool_names: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effective_tool_names: Vec<String>,
     pub network_policy: PeerNetworkPolicy,
     pub issued_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
@@ -266,6 +317,7 @@ pub struct AssistantWorkAdmission<'a> {
     pub correlation_id: &'a str,
     pub worker_intent: &'a str,
     pub requested_tool_domains: &'a [&'a str],
+    pub requested_tool_names: &'a [&'a str],
     pub request_expires_at: DateTime<Utc>,
     pub legacy_task_request_granted: bool,
 }
@@ -422,6 +474,18 @@ impl PeerExecutionPolicyStore {
         }
         for domain in admission.requested_tool_domains {
             validate_identity("requested tool domain", domain)?;
+        }
+        if admission.requested_tool_names.len() > 256 {
+            bail!("too many requested tool names");
+        }
+        for tool_name in admission.requested_tool_names {
+            validate_identity("requested tool name", tool_name)?;
+            if !admission
+                .requested_tool_domains
+                .contains(&execution_tool_domain(tool_name))
+            {
+                bail!("requested tool name is missing its authorization domain");
+            }
         }
         let _guard = self.io.lock().expect("peer execution policy lock");
         let mut file = self.load()?;
@@ -593,6 +657,7 @@ fn compile_policy(
                 PeerExecutionPolicy::legacy_assistant(peer_device_id, peer_pairing_id, now);
             policy.preset = PeerExecutionPolicyPreset::SandboxedWork;
             policy.sandbox_execution = true;
+            policy.allowed_tool_domains.insert("sandbox".to_string());
             policy
         }
         PeerExecutionPolicyPreset::ApprovedProjects => {
@@ -646,6 +711,19 @@ fn compile_policy(
     if policy.assistant_work {
         policy.allowed_tool_domains.insert("turn".to_string());
     }
+    if !policy.sandbox_execution {
+        policy.allowed_tool_domains.remove("sandbox");
+    }
+    if !policy.host_shell {
+        policy.allowed_tool_domains.remove("shell");
+    }
+    if !policy.coder_work {
+        policy.allowed_tool_domains.remove("code");
+        policy.allowed_tool_domains.remove("project");
+    }
+    if policy.network_policy == PeerNetworkPolicy::Deny {
+        policy.allowed_tool_domains.remove("web");
+    }
     if policy.coder_work && policy.allowed_project_ids.is_empty() {
         bail!("approved-project or custom Coder policy requires at least one project id");
     }
@@ -685,6 +763,16 @@ fn evaluate_assistant_work(
     if !effective.contains("turn") {
         return Err(PeerExecutionDenialReason::ToolDomainDenied);
     }
+    let requested_tool_names = admission
+        .requested_tool_names
+        .iter()
+        .map(|name| (*name).to_string())
+        .collect::<BTreeSet<_>>();
+    let effective_tool_names = requested_tool_names
+        .iter()
+        .filter(|name| effective.contains(execution_tool_domain(name.as_str())))
+        .cloned()
+        .collect::<Vec<_>>();
     let expires_at = policy
         .expires_at
         .map(|policy_expiry| policy_expiry.min(admission.request_expires_at))
@@ -706,6 +794,8 @@ fn evaluate_assistant_work(
         policy_source: PeerExecutionPolicySource::Stored,
         requested_tool_domains: requested.into_iter().collect(),
         effective_tool_domains: effective.into_iter().collect(),
+        requested_tool_names: requested_tool_names.into_iter().collect(),
+        effective_tool_names,
         network_policy: policy.network_policy,
         issued_at: now,
         expires_at,
@@ -775,6 +865,12 @@ fn append_audit(file: &mut PeerExecutionPolicyFile, event: PeerExecutionAuditEve
 mod tests {
     use super::*;
 
+    const TEST_ASSISTANT_TOOL_NAMES: [&str; 3] = [
+        "cognition_turn",
+        "cognition_utility_time_now",
+        "cognition_web_search",
+    ];
+
     fn test_store() -> (PeerExecutionPolicyStore, PathBuf) {
         let root = std::env::temp_dir().join(format!(
             "medousa-peer-execution-policy-{}",
@@ -795,6 +891,7 @@ mod tests {
             correlation_id: "correlation-1",
             worker_intent: "research",
             requested_tool_domains: &SAFE_ASSISTANT_TOOL_DOMAINS,
+            requested_tool_names: &TEST_ASSISTANT_TOOL_NAMES,
             request_expires_at: Utc::now() + chrono::Duration::minutes(5),
             legacy_task_request_granted: false,
         }
@@ -900,6 +997,13 @@ mod tests {
                 "web".to_string()
             ]
         );
+        assert_eq!(
+            grant.effective_tool_names,
+            TEST_ASSISTANT_TOOL_NAMES
+                .iter()
+                .map(|name| (*name).to_string())
+                .collect::<Vec<_>>()
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -927,6 +1031,7 @@ mod tests {
         assert_eq!(grant.policy_revision, 1);
         assert_eq!(grant.policy_source, PeerExecutionPolicySource::Stored);
         assert_eq!(grant.effective_tool_domains, vec!["turn".to_string()]);
+        assert_eq!(grant.effective_tool_names, vec!["cognition_turn".to_string()]);
         let _ = std::fs::remove_dir_all(root);
     }
 }

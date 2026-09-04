@@ -562,6 +562,7 @@ mod tests {
             parent_runtime_id: "runtime-test".to_string(),
             execution_placement: Default::default(),
             task_execution_grant: None,
+            worker_spawn_spec: None,
             intent: "research".to_string(),
             task_prompt: format!("task for {work_id}"),
             status,

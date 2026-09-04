@@ -31,7 +31,7 @@ use crate::mesh::{
 };
 use crate::pairing::{PairedDeviceRecord, PairingService};
 use crate::peer_execution_policy::{
-    AssistantWorkAdmission, PeerExecutionPolicyStore, TaskExecutionGrant,
+    AssistantWorkAdmission, PeerExecutionPolicyStore, TaskExecutionGrant, execution_tool_domain,
 };
 use crate::request_principal::{Capability, PrincipalKind, RequestPrincipal, TransportClass};
 
@@ -728,7 +728,39 @@ fn resolve_task_execution_grant(
         .and_then(|value| serde_json::from_value::<chrono::DateTime<chrono::Utc>>(value.clone()).ok())
         .map(|deadline| deadline.min(envelope_expires_at))
         .unwrap_or(envelope_expires_at);
-    let requested_tool_domains = ["turn", "utility", "web"];
+    let (worker_intent, bot_id, requested_tool_names) = request.worker.as_ref().map_or_else(
+        || {
+            (
+                "research",
+                None,
+                crate::agent_runtime::turn_worker::REMOTE_DELEGATED_TOOL_CEILING
+                    .iter()
+                    .map(|name| (*name).to_string())
+                    .collect::<Vec<_>>(),
+            )
+        },
+        |worker| {
+            (
+                worker.intent.as_str(),
+                worker.parent.bot.as_ref().map(|bot| bot.bot_id.as_str()),
+                worker.tools.names.clone(),
+            )
+        },
+    );
+    let requested_tool_domain_values = requested_tool_names
+        .iter()
+        .map(|name| execution_tool_domain(name).to_string())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let requested_tool_domains = requested_tool_domain_values
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    let requested_tool_name_refs = requested_tool_names
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
     state
         .execution_policies
         .admit_assistant_work(AssistantWorkAdmission {
@@ -737,11 +769,12 @@ fn resolve_task_execution_grant(
             origin_runtime_id: &request.parent_runtime_id,
             destination_runtime_id: &state.local_device_id,
             parent_session_id: &request.grant.session_id,
-            bot_id: None,
+            bot_id,
             work_id,
             correlation_id: &request.grant.correlation_id,
-            worker_intent: "research",
+            worker_intent,
             requested_tool_domains: &requested_tool_domains,
+            requested_tool_names: &requested_tool_name_refs,
             request_expires_at,
             legacy_task_request_granted,
         })

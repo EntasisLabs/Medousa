@@ -824,19 +824,24 @@ impl DelegationService {
     pub async fn submit_to(
         self: &Arc<Self>,
         target: DelegationTarget,
-        task: &str,
-        user_ack: &str,
-        intent: &str,
+        worker: crate::delegated_task::WorkerSpawnSpec,
         parent_runtime_id: &str,
         execution_placement: ExecutionPlacementResolution,
     ) -> StasisResult<DelegationTicket> {
-        let task = task.trim();
+        crate::delegated_task::validate_worker_spawn_spec(&worker)
+            .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+        if worker.execution_placement != execution_placement {
+            return Err(StasisError::PortFailure(
+                "worker specification placement does not match the resolved target".to_string(),
+            ));
+        }
+        let task = worker.task.trim();
         if task.is_empty() {
             return Err(StasisError::PortFailure(
                 "delegated task is required".to_string(),
             ));
         }
-        let user_ack = user_ack.trim();
+        let user_ack = worker.user_ack.trim();
         if user_ack.is_empty() {
             return Err(StasisError::PortFailure(
                 "delegated user acknowledgement is required".to_string(),
@@ -865,6 +870,8 @@ impl DelegationService {
         })?;
         let requested_placement = serde_json::to_vec(&execution_placement.requested)
             .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+        let worker_digest = crate::delegated_task::worker_spec_digest(&worker)
+            .map_err(|error| StasisError::PortFailure(error.to_string()))?;
         let identity = deterministic_identity(
             "",
             &[
@@ -874,6 +881,7 @@ impl DelegationService {
                 target_runtime_id.as_bytes(),
                 parent_runtime_id.as_bytes(),
                 &requested_placement,
+                worker_digest.as_bytes(),
             ],
         );
         let job_id = format!("delegation-job-{identity}");
@@ -920,9 +928,10 @@ impl DelegationService {
                     source_execution,
                     parent_runtime_id: parent_runtime_id.to_string(),
                     execution_placement: execution_placement.clone(),
+                    worker: Some(worker.clone()),
                     context,
                 },
-                intent: intent.trim().to_string(),
+                intent: worker.intent.clone(),
                 user_ack: user_ack.to_string(),
                 deadline_at,
                 poll_interval_seconds: 1,
@@ -1019,6 +1028,11 @@ impl DelegationService {
                 "status": status,
                 "intent": payload.intent,
                 "task": payload.request.grant.payload.get("user_prompt"),
+                "worker_spec_digest": payload.request.worker.as_ref().and_then(|worker| crate::delegated_task::worker_spec_digest(worker).ok()),
+                "manuscript_ids": payload.request.worker.as_ref().map(|worker| worker.manuscript_ids.clone()).unwrap_or_default(),
+                "stage_role": payload.request.worker.as_ref().and_then(|worker| worker.stage_role.clone()),
+                "model_hint": payload.request.worker.as_ref().and_then(|worker| worker.model_hint.clone()),
+                "bot_id": payload.request.worker.as_ref().and_then(|worker| worker.parent.bot.as_ref()).map(|bot| bot.bot_id.clone()),
                 "result": wait.as_ref().and_then(|record| record.result_payload.clone()),
                 "error": wait.as_ref().and_then(|record| record.error_message.clone()),
                 "parent_runtime_id": payload.request.parent_runtime_id,
@@ -1439,6 +1453,7 @@ mod tests {
                 "remote-daemon",
                 ExecutionResolutionReason::ExactTarget,
             ),
+            worker: None,
             context,
         }
     }
@@ -1489,6 +1504,8 @@ mod tests {
             parent_runtime_id: request.parent_runtime_id.clone(),
             execution_placement: request.execution_placement.clone(),
             task_execution_grant: None,
+            worker_spec_digest: None,
+            worker_route: None,
             derivation: derivation.clone(),
         };
         DelegatedTaskObservation {
@@ -1500,6 +1517,8 @@ mod tests {
             parent_runtime_id: request.parent_runtime_id.clone(),
             execution_placement: request.execution_placement.clone(),
             task_execution_grant: None,
+            worker_spec_digest: None,
+            worker_route: None,
             derivation,
             result: Some(result),
         }

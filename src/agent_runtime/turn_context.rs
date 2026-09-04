@@ -46,6 +46,10 @@ pub struct WorkerHandoffCapsule {
     pub host_continuity: Option<super::worker_continuity::HostContinuityBundle>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub manuscript: Option<crate::identity_manuscript::WorkerManuscriptHandoff>,
+    /// Bot relationship context inherited from the admitted parent turn. It
+    /// carries no tool or destination authority.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot_profile_appendix: Option<String>,
     /// Session slice ids with tool history (Phase 8C) — `turn:N` keys for detail drill-down.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub relevant_slice_ids: Vec<String>,
@@ -91,6 +95,7 @@ impl WorkerHandoffCapsule {
             model_avec,
             host_continuity,
             manuscript: None,
+            bot_profile_appendix: None,
             relevant_slice_ids: Vec::new(),
             tool_history_excerpt: None,
         }
@@ -140,6 +145,12 @@ impl WorkerHandoffCapsule {
                 )
             })
             .unwrap_or_default();
+        let bot_prefix = self
+            .bot_profile_appendix
+            .as_deref()
+            .filter(|appendix| !appendix.trim().is_empty())
+            .map(|appendix| format!("{}\n\n", appendix.trim()))
+            .unwrap_or_default();
         let digests = if self.host_tool_digests.is_empty() {
             "(none yet)".to_string()
         } else {
@@ -177,7 +188,7 @@ impl WorkerHandoffCapsule {
             })
             .unwrap_or_else(|| "(none)".to_string());
         format!(
-            "{continuity_prefix}{manuscript_prefix}{WORKER_HANDOFF_PREFIX}\n\
+            "{continuity_prefix}{bot_prefix}{manuscript_prefix}{WORKER_HANDOFF_PREFIX}\n\
              session_id={}\n\
              parent_stream_turn_id={}\n\
              parent_turn_correlation_id={parent_corr}\n\
