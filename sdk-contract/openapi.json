@@ -13483,6 +13483,57 @@
         }
       }
     },
+    "/v1/execution-targets": {
+      "get": {
+        "operationId": "execution_targets.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "EXECUTION_TARGETS_GETResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "execution_targets.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "execution_targets.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "execution_targets.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
     "/v1/feeds": {
       "get": {
         "operationId": "feeds.get",
@@ -23492,6 +23543,57 @@
           "feature_profile": "core",
           "rate_limit_class": "read",
           "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/mesh/execution-target": {
+      "post": {
+        "operationId": "mesh.execution_target.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "MESH_EXECUTION_TARGET_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "mesh.execution_target.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mesh.execution_target.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mesh.execution_target.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "peer.exchange"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "peer_exchange",
+          "trust_group": "peer_exchange"
         }
       }
     },

@@ -474,7 +474,10 @@ impl TurnWorkerScheduler {
             &parent_runtime_id,
             &[ExecutionTargetCandidate {
                 runtime_id: parent_runtime_id.clone(),
+                label: "This workshop".to_string(),
                 capabilities: local_capabilities,
+                user_selectable: true,
+                agent_selectable: true,
             }],
         )
         .map_err(|error| {

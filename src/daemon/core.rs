@@ -93,6 +93,30 @@ pub async fn stats(
     )))
 }
 
+pub async fn execution_targets(
+    State(state): State<AppState>,
+) -> Json<crate::workshop_contract::ExecutionTargetInventory> {
+    let runtime_id = state
+        .platform
+        .agent()
+        .worker_scheduler
+        .execution_runtime_id();
+    let candidate = crate::workshop_contract::ExecutionTargetCandidate::local(
+        runtime_id.clone(),
+        stasis::domain::runtime::placement::WorkerCapabilities::any()
+            .node_id(&runtime_id)
+            .platform(std::env::consts::OS)
+            .architecture(std::env::consts::ARCH)
+            .with_capability("assistant.work"),
+    );
+    Json(crate::workshop_contract::ExecutionTargetInventory {
+        schema_version:
+            crate::workshop_contract::EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION,
+        parent_runtime_id: runtime_id,
+        targets: vec![candidate.inventory_entry()],
+    })
+}
+
 pub async fn runtime_defaults(state: State<AppState>) -> Json<RuntimeDefaultsResponse> {
     let saved = crate::session::load_tui_defaults();
     let product = crate::load_product_config();

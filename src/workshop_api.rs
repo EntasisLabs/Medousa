@@ -27,7 +27,8 @@ use crate::schema_api::{
 use crate::typed_tools::{CompatOption, TypedTool, serialize_output};
 use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
 use crate::workshop_contract::{
-    ExecutionPlacementResolution, ExecutionResolutionReason, ExecutionTargetCandidate,
+    EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION, ExecutionPlacementResolution,
+    ExecutionResolutionReason, ExecutionTargetCandidate, ExecutionTargetInventory,
     ExecutionTargetResolutionError, ExecutionTargetSelection, WorkshopSpawn,
     resolve_execution_target, workshop_spawn_type_schema,
 };
@@ -40,6 +41,8 @@ const WORKSHOP_MUTATE_ID: ToolId = ToolId::new(COGNITION_WORKSHOP_MUTATE);
 pub enum WorkshopQueryAction {
     #[serde(rename = "workshop.status")]
     Status(WorkshopStatus),
+    #[serde(rename = "workshop.targets")]
+    Targets(WorkshopTargets),
 }
 
 #[derive(Debug, Deserialize)]
@@ -61,6 +64,9 @@ pub struct WorkshopStatus {
     pub(crate) session_id: Option<String>,
 }
 
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct WorkshopTargets {}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct WorkshopCancel {
     pub(crate) work_id: String,
@@ -80,7 +86,11 @@ impl JsonSchema for WorkshopQueryAction {
     }
 
     fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> Schema {
-        advertised_object_schema(&[("action", string_enum_schema(&["workshop.status"]), true)])
+        advertised_object_schema(&[(
+            "action",
+            string_enum_schema(&["workshop.status", "workshop.targets"]),
+            true,
+        )])
     }
 }
 
@@ -105,6 +115,11 @@ pub fn workshop_type_schemas() -> Vec<TypedActionSchema> {
             "workshop.status",
             "List or fetch status of background turn workers / bound workshop",
         ),
+        typed_action_schema::<WorkshopTargets>(
+            WORKSHOP_QUERY_ID,
+            "workshop.targets",
+            "List execution targets authorized for agent-selected worker placement",
+        ),
         workshop_spawn_type_schema(),
         typed_action_schema::<WorkshopCancel>(
             WORKSHOP_MUTATE_ID,
@@ -121,6 +136,10 @@ pub fn workshop_type_schemas() -> Vec<TypedActionSchema> {
 
 #[async_trait]
 pub trait WorkshopExecution: Send + Sync {
+    async fn inventory(
+        &self,
+        agent_only: bool,
+    ) -> stasis::prelude::Result<ExecutionTargetInventory>;
     async fn status(&self, input: WorkshopStatus) -> stasis::prelude::Result<Value>;
     async fn spawn(&self, input: WorkshopSpawn) -> stasis::prelude::Result<Value>;
     async fn cancel(&self, input: WorkshopCancel) -> stasis::prelude::Result<Value>;
@@ -131,7 +150,10 @@ pub trait WorkshopExecution: Send + Sync {
 /// tool. The router resolves placement before handing work to an adapter.
 #[async_trait]
 pub trait WorkshopExecutionTarget: Send + Sync {
-    async fn candidate(&self) -> stasis::prelude::Result<Option<ExecutionTargetCandidate>>;
+    async fn candidates(&self) -> stasis::prelude::Result<Vec<ExecutionTargetCandidate>>;
+    async fn ingress_default_runtime_id(&self) -> stasis::prelude::Result<Option<String>> {
+        Ok(None)
+    }
     async fn spawn_resolved(
         &self,
         input: WorkshopSpawn,
@@ -209,10 +231,11 @@ impl WorkshopExecutionRouter {
     {
         let mut candidates = Vec::new();
         for target in &self.targets {
-            if let Some(candidate) = target.candidate().await? {
+            for candidate in target.candidates().await? {
                 candidates.push((target.clone(), candidate));
             }
         }
+        candidates.sort_by(|left, right| left.1.runtime_id.cmp(&right.1.runtime_id));
         Ok(candidates)
     }
 
@@ -230,14 +253,19 @@ impl WorkshopExecutionRouter {
             (Some(requested), _) => requested.clone(),
             (None, WorkshopIngressDefault::SameAsParent) => ExecutionTargetSelection::SameAsParent,
             (None, WorkshopIngressDefault::BoundRemote) => {
-                let candidate = candidates.first().ok_or_else(|| {
+                let mut bound_runtime_id = None;
+                for target in &self.targets {
+                    if let Some(runtime_id) = target.ingress_default_runtime_id().await? {
+                        bound_runtime_id = Some(runtime_id);
+                        break;
+                    }
+                }
+                let runtime_id = bound_runtime_id.ok_or_else(|| {
                     target_resolution_error(ExecutionTargetResolutionError::UnsupportedTarget {
                         detail: "the legacy bound remote workshop is not configured".to_string(),
                     })
                 })?;
-                ExecutionTargetSelection::Exact {
-                    runtime_id: candidate.1.runtime_id.clone(),
-                }
+                ExecutionTargetSelection::Exact { runtime_id }
             }
         };
         let candidate_values = candidates
@@ -281,6 +309,33 @@ fn target_resolution_error(
 
 #[async_trait]
 impl WorkshopExecution for WorkshopExecutionRouter {
+    async fn inventory(
+        &self,
+        agent_only: bool,
+    ) -> stasis::prelude::Result<ExecutionTargetInventory> {
+        let parent_runtime_id = self.parent_runtime.runtime_id();
+        let mut targets = self
+            .candidates()
+            .await?
+            .into_iter()
+            .map(|(_, candidate)| candidate)
+            .filter(|candidate| {
+                if agent_only {
+                    candidate.agent_selectable
+                } else {
+                    candidate.user_selectable
+                }
+            })
+            .map(|candidate| candidate.inventory_entry())
+            .collect::<Vec<_>>();
+        targets.dedup_by(|left, right| left.runtime_id == right.runtime_id);
+        Ok(ExecutionTargetInventory {
+            schema_version: EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION,
+            parent_runtime_id,
+            targets,
+        })
+    }
+
     async fn status(&self, input: WorkshopStatus) -> stasis::prelude::Result<Value> {
         self.control_target()?.status(input).await
     }
@@ -328,16 +383,16 @@ struct LocalWorkshopExecution {
 #[cfg(feature = "full-daemon")]
 #[async_trait]
 impl WorkshopExecutionTarget for LocalWorkshopExecution {
-    async fn candidate(&self) -> stasis::prelude::Result<Option<ExecutionTargetCandidate>> {
+    async fn candidates(&self) -> stasis::prelude::Result<Vec<ExecutionTargetCandidate>> {
         let runtime_id = self.scheduler.execution_runtime_id();
-        Ok(Some(ExecutionTargetCandidate {
-            runtime_id: runtime_id.clone(),
-            capabilities: stasis::domain::runtime::placement::WorkerCapabilities::any()
+        Ok(vec![ExecutionTargetCandidate::local(
+            runtime_id.clone(),
+            stasis::domain::runtime::placement::WorkerCapabilities::any()
                 .node_id(&runtime_id)
                 .platform(std::env::consts::OS)
                 .architecture(std::env::consts::ARCH)
                 .with_capability("assistant.work"),
-        }))
+        )])
     }
 
     async fn status(&self, input: WorkshopStatus) -> stasis::prelude::Result<Value> {
@@ -419,7 +474,7 @@ pub fn register_workshop_tools(
 
 #[medousa_tool(id = WORKSHOP_QUERY_ID)]
 impl CognitionWorkshopQueryTool {
-    /// Read workshop/worker status. action is a typed name (workshop.status). Fetch fields with cognition_schema types=[...].
+    /// Read workshop/worker status and authorized targets. action is a typed name (workshop.status, workshop.targets). Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(
         &self,
         action: WorkshopQueryAction,
@@ -445,6 +500,7 @@ async fn dispatch_query(
 ) -> stasis::prelude::Result<Value> {
     match action {
         WorkshopQueryAction::Status(params) => params.execute(tool).await,
+        WorkshopQueryAction::Targets(params) => params.execute(tool).await,
     }
 }
 
@@ -462,6 +518,13 @@ async fn dispatch_mutate(
 impl WorkshopStatus {
     async fn execute(self, tool: &CognitionWorkshopQueryTool) -> stasis::prelude::Result<Value> {
         tool.execution.status(self).await
+    }
+}
+
+impl WorkshopTargets {
+    async fn execute(self, tool: &CognitionWorkshopQueryTool) -> stasis::prelude::Result<Value> {
+        serde_json::to_value(tool.execution.inventory(true).await?)
+            .map_err(|error| stasis::domain::errors::StasisError::PortFailure(error.to_string()))
     }
 }
 
@@ -496,13 +559,16 @@ mod tests {
 
     #[async_trait]
     impl WorkshopExecutionTarget for FakeExecutionTarget {
-        async fn candidate(&self) -> stasis::prelude::Result<Option<ExecutionTargetCandidate>> {
-            Ok(Some(ExecutionTargetCandidate {
+        async fn candidates(&self) -> stasis::prelude::Result<Vec<ExecutionTargetCandidate>> {
+            Ok(vec![ExecutionTargetCandidate {
                 runtime_id: self.runtime_id.clone(),
+                label: self.runtime_id.clone(),
                 capabilities: stasis::domain::runtime::placement::WorkerCapabilities::any()
                     .node_id(&self.runtime_id)
                     .with_capability("assistant.work"),
-            }))
+                user_selectable: true,
+                agent_selectable: true,
+            }])
         }
 
         async fn spawn_resolved(
@@ -554,6 +620,7 @@ mod tests {
             WorkshopQueryAction::Status(WorkshopStatus { work_id, .. }) => {
                 assert_eq!(work_id.as_deref(), Some("work-1"));
             }
+            WorkshopQueryAction::Targets(_) => panic!("expected workshop.status"),
         }
         let mutate: WorkshopMutateAction = serde_json::from_value(json!({
             "action": "workshop.spawn",

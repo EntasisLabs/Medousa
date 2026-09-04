@@ -567,7 +567,7 @@ fn find_arg_value<'a>(args: &'a [String], key: &str) -> Option<&'a str> {
 pub fn build_workshop_surface() -> DeclaredRouter<AppState> {
     use axum::routing::{delete, get, post, put};
 
-    use crate::daemon::core::{health, heartbeat_status, stats};
+    use crate::daemon::core::{execution_targets, health, heartbeat_status, stats};
     use crate::daemon::interactive::{
         cancel_active_session_turn, create_turn_ticket, delete_session_handler,
         get_active_session_turn, get_turn_ticket, interactive_turn_stream, list_session_turns,
@@ -582,6 +582,10 @@ pub fn build_workshop_surface() -> DeclaredRouter<AppState> {
     DeclaredRouter::default()
         .route(workshop_read_policy("/v1/health"), get(health))
         .route(workshop_read_policy("/v1/stats"), get(stats))
+        .route(
+            workshop_read_policy("/v1/execution-targets"),
+            get(execution_targets),
+        )
         .route(
             workshop_read_policy("/v1/agent-modes"),
             get(crate::daemon_handlers::list_agent_modes),
@@ -1422,20 +1426,20 @@ mod tests {
             .inventory()
             .entries()
             .collect::<Vec<_>>();
-        assert_eq!(entries.len(), 41);
+        assert_eq!(entries.len(), 52);
         assert_eq!(
             entries
                 .iter()
                 .filter(|entry| entry.required_capability == Some("workshop.read"))
                 .count(),
-            19
+            23
         );
         assert_eq!(
             entries
                 .iter()
                 .filter(|entry| entry.required_capability == Some("workshop.interact"))
                 .count(),
-            19
+            26
         );
         assert_eq!(
             entries

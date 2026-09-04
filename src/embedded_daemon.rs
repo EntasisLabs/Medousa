@@ -2753,6 +2753,39 @@ impl EmbeddedDaemonClient {
         service.binding().await
     }
 
+    pub async fn execution_target_inventory(
+        &self,
+    ) -> Result<crate::workshop_contract::ExecutionTargetInventory> {
+        self.require(Capability::WorkshopRead)?;
+        let service = self
+            .daemon
+            .delegation_service
+            .as_ref()
+            .ok_or_else(|| anyhow!("delegation transport is not configured"))?;
+        let parent_runtime_id = crate::workshop_authority::current()
+            .map(|authority| authority.as_str().to_string())
+            .unwrap_or_else(|_| crate::workshop_contract::default_unknown_runtime_id());
+        let mut targets = service
+            .authorized_targets()
+            .await
+            .map_err(|error| anyhow!(error.to_string()))?
+            .into_iter()
+            .map(|target| target.candidate.inventory_entry())
+            .filter(|target| target.user_selectable)
+            .collect::<Vec<_>>();
+        targets.sort_by(|left, right| {
+            left.label
+                .to_ascii_lowercase()
+                .cmp(&right.label.to_ascii_lowercase())
+                .then(left.runtime_id.cmp(&right.runtime_id))
+        });
+        Ok(crate::workshop_contract::ExecutionTargetInventory {
+            schema_version: crate::workshop_contract::EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION,
+            parent_runtime_id,
+            targets,
+        })
+    }
+
     pub async fn set_delegation_binding(
         &self,
         target: crate::delegation::DelegationTarget,

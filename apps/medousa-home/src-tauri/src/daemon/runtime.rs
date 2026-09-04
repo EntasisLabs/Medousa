@@ -17,6 +17,25 @@ pub struct RuntimeWorkerConfigDto {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct ExecutionTargetInventoryEntryDto {
+    pub runtime_id: String,
+    pub label: String,
+    pub capabilities: std::collections::BTreeSet<String>,
+    pub platform: Option<String>,
+    pub architecture: Option<String>,
+    pub region: Option<String>,
+    pub user_selectable: bool,
+    pub agent_selectable: bool,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct ExecutionTargetInventoryDto {
+    pub schema_version: u32,
+    pub parent_runtime_id: String,
+    pub targets: Vec<ExecutionTargetInventoryEntryDto>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct RuntimeWorkerConfigWire {
     max_in_flight: usize,
     agents: usize,
@@ -66,6 +85,25 @@ pub async fn runtime_get_stats(
             .map_err(|error| format!("embedded runtime stats: {error:#}"));
     }
     workshop_http::get_json(&state, "/v1/stats").await
+}
+
+#[tauri::command]
+pub async fn runtime_get_execution_targets(
+    state: State<'_, DaemonState>,
+    _embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
+) -> Result<ExecutionTargetInventoryDto, String> {
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        let inventory = client
+            .execution_target_inventory()
+            .await
+            .map_err(|error| format!("embedded execution targets: {error:#}"))?;
+        return serde_json::from_value(
+            serde_json::to_value(inventory).map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string());
+    }
+    workshop_http::get_json(&state, "/v1/execution-targets").await
 }
 
 #[tauri::command]

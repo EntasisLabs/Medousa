@@ -174,20 +174,20 @@ fn compile_remote_worker_spec(
 
 #[async_trait]
 impl WorkshopExecutionTarget for RemoteWorkshopExecution {
-    async fn candidate(&self) -> stasis::prelude::Result<Option<ExecutionTargetCandidate>> {
-        let binding =
-            self.service.binding().await.map_err(|error| {
-                stasis::domain::errors::StasisError::PortFailure(error.to_string())
-            })?;
-        Ok(binding.map(|binding| {
-            let runtime_id = binding.target.peer_device_id;
-            ExecutionTargetCandidate {
-                runtime_id: runtime_id.clone(),
-                capabilities: stasis::domain::runtime::placement::WorkerCapabilities::any()
-                    .node_id(runtime_id)
-                    .with_capability("assistant.work"),
-            }
-        }))
+    async fn candidates(&self) -> stasis::prelude::Result<Vec<ExecutionTargetCandidate>> {
+        self.service
+            .authorized_targets()
+            .await
+            .map(|targets| targets.into_iter().map(|target| target.candidate).collect())
+            .map_err(|error| stasis::domain::errors::StasisError::PortFailure(error.to_string()))
+    }
+
+    async fn ingress_default_runtime_id(&self) -> stasis::prelude::Result<Option<String>> {
+        self.service
+            .binding()
+            .await
+            .map(|binding| binding.map(|binding| binding.target.peer_device_id))
+            .map_err(|error| stasis::domain::errors::StasisError::PortFailure(error.to_string()))
     }
 
     async fn status(&self, input: WorkshopStatus) -> stasis::prelude::Result<Value> {
@@ -204,11 +204,14 @@ impl WorkshopExecutionTarget for RemoteWorkshopExecution {
     ) -> stasis::prelude::Result<Value> {
         let worker = compile_remote_worker_spec(&spawn, &resolution)?;
         let intent = worker.intent.clone();
-        let binding = self
+        let target = self
             .service
-            .binding()
+            .authorized_targets()
             .await
             .map_err(|error| stasis::domain::errors::StasisError::PortFailure(error.to_string()))?
+            .into_iter()
+            .find(|target| target.target.peer_device_id == resolution.resolved_runtime_id)
+            .map(|target| target.target)
             .ok_or_else(|| {
                 stasis::domain::errors::StasisError::PortFailure(
                     ExecutionTargetResolutionError::ExactUnavailable {
@@ -217,17 +220,9 @@ impl WorkshopExecutionTarget for RemoteWorkshopExecution {
                     .to_string(),
                 )
             })?;
-        if binding.target.peer_device_id != resolution.resolved_runtime_id {
-            return Err(stasis::domain::errors::StasisError::PortFailure(
-                ExecutionTargetResolutionError::ExactUnavailable {
-                    runtime_id: resolution.resolved_runtime_id,
-                }
-                .to_string(),
-            ));
-        }
         let ticket = self
             .service
-            .submit_to(binding.target, worker, parent_runtime_id, resolution)
+            .submit_to(target, worker, parent_runtime_id, resolution)
             .await?;
         Ok(json!({
             "ok": true,

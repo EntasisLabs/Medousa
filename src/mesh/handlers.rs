@@ -35,6 +35,10 @@ use crate::peer_execution_policy::{
     AssistantWorkAdmission, PeerExecutionPolicyStore, TaskExecutionGrant, execution_tool_domain,
 };
 use crate::request_principal::{Capability, PrincipalKind, RequestPrincipal, TransportClass};
+use crate::workshop_contract::{
+    EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION, ExecutionTargetInventoryEntry,
+    ExecutionTargetProbeRequest, ExecutionTargetProbeResponse,
+};
 
 #[derive(Clone)]
 pub struct MeshApiState {
@@ -178,6 +182,14 @@ pub fn mesh_surface() -> DeclaredRouter<MeshApiState> {
         .route(
             peer_policy(axum::http::Method::POST, "/v1/mesh/tasks", 1024 * 1024),
             post(exchange_mesh_task),
+        )
+        .route(
+            peer_policy(
+                axum::http::Method::POST,
+                "/v1/mesh/execution-target",
+                16 * 1024,
+            ),
+            post(describe_execution_target),
         )
         .route(
             peer_policy(
@@ -673,6 +685,118 @@ async fn exchange_mesh_task(
         Json(MeshEnvelopedRequest {
             envelope: result_envelope,
             payload: observation,
+        }),
+    )
+        .into_response())
+}
+
+async fn describe_execution_target(
+    State(state): State<MeshApiState>,
+    Extension(principal): Extension<RequestPrincipal>,
+    Json(body): Json<MeshInboundBody<ExecutionTargetProbeRequest>>,
+) -> Result<Response, (StatusCode, String)> {
+    require_pairing_principal(&principal)?;
+    let sender = authorize_remote_peer(&state, &principal)?;
+    let (envelope, request) = body.into_parts();
+    let envelope = envelope.ok_or_else(|| {
+        (
+            StatusCode::UNAUTHORIZED,
+            "signed mesh envelope required for execution-target discovery".to_string(),
+        )
+    })?;
+    if envelope.sender_device_id.trim() != sender.phone_id.trim()
+        || envelope.recipient_device_id.trim() != state.local_device_id.trim()
+    {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "execution-target envelope identities must match the authenticated pairing"
+                .to_string(),
+        ));
+    }
+    if request.schema_version != EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "unsupported execution-target inventory schema".to_string(),
+        ));
+    }
+    let request_hash = payload_hash_hex(&request)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    verify_enveloped_payload(
+        &MeshEnvelopedRequest {
+            envelope: envelope.clone(),
+            payload: request,
+        },
+        &sender.phone_public_key,
+        &sender.phone_id,
+        &state.local_device_id,
+        MeshCapability::TaskRequest,
+        true,
+    )
+    .map_err(|error| (StatusCode::UNAUTHORIZED, error.to_string()))?;
+
+    let legacy_task_request_granted = record_has_capability(&sender, CAP_TASK_REQUEST);
+    let policy = state
+        .execution_policies
+        .policy_for_peer(
+            &sender.phone_id,
+            &sender.pairing_id,
+            legacy_task_request_granted,
+        )
+        .map_err(internal)?
+        .policy;
+    let now = chrono::Utc::now();
+    let capabilities = policy.advertised_execution_capabilities(now);
+    let user_selectable = capabilities.contains("assistant.work");
+    let response = ExecutionTargetProbeResponse {
+        schema_version: EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION,
+        target: ExecutionTargetInventoryEntry {
+            runtime_id: state.local_device_id.clone(),
+            label: state
+                .pairing
+                .as_ref()
+                .map(|pairing| pairing.peer_name().to_string())
+                .unwrap_or_else(|| "Medousa workshop".to_string()),
+            capabilities,
+            platform: Some(std::env::consts::OS.to_string()),
+            architecture: Some(std::env::consts::ARCH.to_string()),
+            region: None,
+            user_selectable,
+            agent_selectable: user_selectable && policy.allow_agent_targeting,
+        },
+        policy_revision: policy.revision,
+    };
+
+    let pairing = state.pairing.as_ref().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "LAN pairing is not enabled on this workshop".to_string(),
+        )
+    })?;
+    let payload_hash = payload_hash_hex(&response)
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    let accepted = delivery::accept_inbound_delivery(
+        pairing.identity().signing_key(),
+        &state.local_device_id,
+        &envelope,
+        &request_hash,
+    )
+    .map_err(internal)?;
+    let seq = registry::allocate_outbound_seq(&sender.phone_id).map_err(internal)?;
+    let response_envelope = sign_envelope(
+        pairing.identity().signing_key(),
+        &state.local_device_id,
+        &sender.phone_id,
+        seq,
+        MeshCapability::TaskResult,
+        &payload_hash,
+        chrono::Duration::seconds(DEFAULT_ENVELOPE_TTL_SECS),
+    );
+    let receipt = delivery::receipt_header_value(&accepted.receipt).map_err(internal)?;
+    Ok((
+        [("x-medousa-mesh-receipt", receipt)],
+        Json(MeshEnvelopedRequest {
+            envelope: response_envelope,
+            payload: response,
         }),
     )
         .into_response())

@@ -876,6 +876,7 @@ fn run_home() {
             daemon::grapheme::coding_engine_info,
             daemon::forge::forge_request,
             daemon::runtime::runtime_get_stats,
+            daemon::runtime::runtime_get_execution_targets,
             daemon::runtime::runtime_get_defaults,
             daemon::runtime::runtime_get_worker_config,
             daemon::runtime::runtime_put_worker_config,
