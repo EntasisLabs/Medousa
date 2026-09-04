@@ -34,8 +34,10 @@ use stasis::prelude::{RuntimeComposition, RuntimeFactory};
 
 use crate::daemon_runtime_handlers::DaemonRuntimeRegistrar;
 use crate::delegated_task::{
-    DelegatedTaskObservation, DelegatedTaskRequest, DelegatedTaskTransport,
-    build_bounded_context_grant, source_execution_from_grant, validate_task_observation,
+    DELEGATED_TASK_SCHEMA_VERSION, DelegatedTaskControlAction, DelegatedTaskControlRequest,
+    DelegatedTaskObservation, DelegatedTaskRequest, DelegatedTaskStatus, DelegatedTaskTransport,
+    build_bounded_context_grant, source_execution_from_grant, validate_task_control_observation,
+    validate_task_control_request, validate_task_observation,
 };
 use crate::execution_context::active_turn_execution_context;
 use crate::runtime_composition_ext::{RuntimeCompositionExt, process_once};
@@ -493,7 +495,6 @@ struct DelegationJobHandler {
     host: Arc<dyn DelegatedTaskTransport>,
     ingress: Arc<dyn AgentEventIngress>,
     waits: Arc<dyn TurnWaitStore>,
-    endpoints: Arc<dyn DeliveryEndpointStore>,
     delivery: Arc<dyn DelegationTerminalDelivery>,
 }
 
@@ -681,29 +682,6 @@ impl JobHandler for DelegationJobHandler {
                 .await;
         }
 
-        let binding = self
-            .endpoints
-            .get(DELEGATION_ENDPOINT_ID)
-            .await?
-            .map(binding_from_endpoint)
-            .transpose()
-            .map_err(|error| StasisError::PortFailure(error.to_string()))?
-            .flatten();
-        let still_bound = binding.as_ref().is_some_and(|value| {
-            value.target.route_ref == payload.target.route_ref
-                && value.target.peer_device_id == payload.target.peer_device_id
-        });
-        if !still_bound {
-            return self
-                .complete_failure(
-                    &payload,
-                    turn_id,
-                    TurnWaitStatus::Cancelled,
-                    "delegation binding was revoked or changed while work was pending",
-                )
-                .await;
-        }
-
         let observation = match self
             .host
             .submit_or_observe(&payload.target, payload.request.clone())
@@ -770,6 +748,7 @@ pub struct DelegationService {
     endpoints: Arc<dyn DeliveryEndpointStore>,
     waits: Arc<dyn TurnWaitStore>,
     delivery: Arc<DelegationResultDelivery>,
+    host: Arc<dyn DelegatedTaskTransport>,
     active_drivers: Mutex<HashSet<String>>,
 }
 
@@ -1070,6 +1049,15 @@ impl DelegationService {
             {
                 continue;
             }
+            let control = self
+                .control_remote_worker(&payload, DelegatedTaskControlAction::Cancel, None)
+                .await?;
+            if control.status != DelegatedTaskStatus::Cancelled {
+                return Err(StasisError::PortFailure(format!(
+                    "delegated worker is already {} and cannot be cancelled",
+                    delegated_status_name(control.status)
+                )));
+            }
             if !self.delivery.deliver_cancelled(&payload).await? {
                 return Err(StasisError::PortFailure(
                     "delegation handoff receipt is not committed yet".to_string(),
@@ -1103,6 +1091,80 @@ impl DelegationService {
         Err(StasisError::PortFailure(format!(
             "work_id not found in active session: {work_id}"
         )))
+    }
+
+    pub async fn steer(&self, work_id: &str, message: &str) -> StasisResult<Value> {
+        let work_id = work_id.trim();
+        let message = message.trim();
+        if work_id.is_empty() {
+            return Err(StasisError::PortFailure("work_id is required".to_string()));
+        }
+        if message.is_empty() {
+            return Err(StasisError::PortFailure(
+                "steer message is required".to_string(),
+            ));
+        }
+        let execution = active_turn_execution_context().ok_or_else(|| {
+            StasisError::PortFailure(
+                "workshop steering requires an admitted daemon turn".to_string(),
+            )
+        })?;
+        for job in self.all_delegation_jobs().await? {
+            let payload = DelegationJobHandler::parse(&job)?;
+            if payload.work_id != work_id
+                || payload.request.source_execution.session_id != *execution.session_id()
+            {
+                continue;
+            }
+            let control = self
+                .control_remote_worker(
+                    &payload,
+                    DelegatedTaskControlAction::Steer,
+                    Some(message.to_string()),
+                )
+                .await?;
+            return Ok(json!({
+                "ok": true,
+                "work_id": work_id,
+                "status": delegated_status_name(control.status),
+                "queued_steers": control.queued_steers,
+                "execution_target": "bound_remote",
+                "destination_runtime_id": control.destination_runtime_id,
+                "parent_runtime_id": payload.request.parent_runtime_id,
+                "execution_placement": payload.request.execution_placement,
+            }));
+        }
+        Err(StasisError::PortFailure(format!(
+            "work_id not found in active session: {work_id}"
+        )))
+    }
+
+    async fn control_remote_worker(
+        &self,
+        payload: &DelegationJobPayload,
+        action: DelegatedTaskControlAction,
+        message: Option<String>,
+    ) -> StasisResult<crate::delegated_task::DelegatedTaskControlObservation> {
+        let request = DelegatedTaskControlRequest {
+            schema_version: DELEGATED_TASK_SCHEMA_VERSION,
+            control_id: format!("control-{}", uuid::Uuid::new_v4().simple()),
+            action,
+            work_id: payload.work_id.clone(),
+            source_execution: payload.request.source_execution.clone(),
+            parent_runtime_id: payload.request.parent_runtime_id.clone(),
+            correlation_id: payload.request.grant.correlation_id.clone(),
+            message,
+        };
+        validate_task_control_request(&request)
+            .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+        let observation = self
+            .host
+            .control(&payload.target, request.clone())
+            .await
+            .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+        validate_task_control_observation(&request, &observation)
+            .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+        Ok(observation)
     }
 
     async fn all_delegation_jobs(&self) -> StasisResult<Vec<Job>> {
@@ -1198,6 +1260,16 @@ fn job_status_name(status: &JobState) -> &'static str {
     }
 }
 
+fn delegated_status_name(status: DelegatedTaskStatus) -> &'static str {
+    match status {
+        DelegatedTaskStatus::Pending => "pending",
+        DelegatedTaskStatus::Running => "running",
+        DelegatedTaskStatus::Completed => "completed",
+        DelegatedTaskStatus::Failed => "failed",
+        DelegatedTaskStatus::Cancelled => "cancelled",
+    }
+}
+
 pub fn install_delegation_runtime(
     runtime: Arc<RuntimeComposition>,
     authority_id: AuthorityId,
@@ -1213,10 +1285,9 @@ pub fn install_delegation_runtime(
     ));
     let endpoints = RuntimeFactory::resolve_delivery_endpoint_store(runtime.as_ref(), None);
     let handler = DelegationJobHandler {
-        host,
+        host: host.clone(),
         ingress,
         waits: waits.clone(),
-        endpoints: endpoints.clone(),
         delivery: delivery.clone(),
     };
     match runtime.as_ref() {
@@ -1230,6 +1301,7 @@ pub fn install_delegation_runtime(
         endpoints,
         waits,
         delivery,
+        host,
         active_drivers: Mutex::new(HashSet::new()),
     }))
 }
@@ -1599,7 +1671,6 @@ mod tests {
     fn delegation_handler(
         runtime: &RuntimeComposition,
         host: Arc<dyn DelegatedTaskTransport>,
-        endpoints: Arc<dyn DeliveryEndpointStore>,
     ) -> (DelegationJobHandler, Arc<dyn TurnWaitStore>) {
         let waits: Arc<dyn TurnWaitStore> = Arc::new(RuntimeDelegationWaitStore::new(runtime));
         let ingress: Arc<dyn AgentEventIngress> = Arc::new(WaitCorrelatingAgentEventIngress::new(
@@ -1611,7 +1682,6 @@ mod tests {
                 host,
                 ingress,
                 waits: waits.clone(),
-                endpoints,
                 delivery: Arc::new(AcceptingDelivery),
             },
             waits,
@@ -1619,7 +1689,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn delegation_job_resumes_the_same_wait_after_transport_interruption() {
+    async fn explicit_delegation_survives_cleared_default_and_transport_interruption() {
         let runtime = RuntimeComposition::InMemory(InMemoryRuntime::new());
         let endpoints = RuntimeFactory::resolve_delivery_endpoint_store(&runtime, None);
         let target = DelegationTarget {
@@ -1638,6 +1708,10 @@ mod tests {
             })
             .await
             .expect("bind delegation target");
+        endpoints
+            .set_enabled(DELEGATION_ENDPOINT_ID, false)
+            .await
+            .expect("clear ingress default without stranding explicit work");
         let request = request_for("delegation-job-recovery", "delegation-turn-recovery");
         let payload = DelegationJobPayload {
             work_id: "work-delegation-recovery".to_string(),
@@ -1669,8 +1743,7 @@ mod tests {
             calls: AtomicUsize::new(0),
         });
 
-        let (first_handler, first_waits) =
-            delegation_handler(&runtime, transport.clone(), endpoints.clone());
+        let (first_handler, first_waits) = delegation_handler(&runtime, transport.clone());
         assert!(matches!(
             first_handler.execute(&job).await.expect("first pass"),
             JobExecutionOutcome::Deferred { .. }
@@ -1685,8 +1758,7 @@ mod tests {
             TurnWaitStatus::Pending
         );
 
-        let (rebuilt_handler, rebuilt_waits) =
-            delegation_handler(&runtime, transport.clone(), endpoints);
+        let (rebuilt_handler, rebuilt_waits) = delegation_handler(&runtime, transport.clone());
         assert!(matches!(
             rebuilt_handler.execute(&job).await.expect("resumed pass"),
             JobExecutionOutcome::Success { .. }

@@ -591,6 +591,7 @@ mod tests {
             archived: false,
             disposition: TurnWorkDisposition::Parallel,
             steer_messages: Vec::new(),
+            processed_steer_control_ids: Vec::new(),
             supports_ui_artifacts: false,
             supports_liquid_markdown: false,
             supports_browser_host: false,

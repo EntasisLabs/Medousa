@@ -72,6 +72,8 @@ pub mod mobile_tool_registry;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod openai_codex_chat_client;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod peer_execution_policy;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 #[path = "runtime/persistent_locus.rs"]
 pub mod persistent_locus;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]

@@ -293,6 +293,8 @@ pub enum DelegatedTaskControlAction {
 #[serde(rename_all = "camelCase")]
 pub struct DelegatedTaskControlRequest {
     pub schema_version: u32,
+    /// Stable idempotency key for this exact control mutation.
+    pub control_id: String,
     pub action: DelegatedTaskControlAction,
     pub work_id: String,
     pub source_execution: ExecutionRef,
@@ -378,6 +380,7 @@ pub fn validate_task_control_request(
         ));
     }
     validate_worker_text("control work id", &request.work_id, 256)?;
+    validate_worker_text("control id", &request.control_id, 256)?;
     validate_worker_text("control parent runtime", &request.parent_runtime_id, 512)?;
     validate_worker_text("control correlation id", &request.correlation_id, 512)?;
     match request.action {
@@ -1391,6 +1394,31 @@ mod tests {
             delegated_work_id("phone-a", "turn-1"),
             delegated_work_id("phone-b", "turn-1")
         );
+    }
+
+    #[test]
+    fn delegated_control_requires_a_stable_id_and_action_payload() {
+        let source = sample_request();
+        let mut control = DelegatedTaskControlRequest {
+            schema_version: DELEGATED_TASK_SCHEMA_VERSION,
+            control_id: "control-1".to_string(),
+            action: DelegatedTaskControlAction::Steer,
+            work_id: "work-remote".to_string(),
+            source_execution: source.source_execution,
+            parent_runtime_id: source.parent_runtime_id,
+            correlation_id: source.grant.correlation_id,
+            message: Some("Focus on the failing integration test.".to_string()),
+        };
+        validate_task_control_request(&control).expect("valid steer");
+        control.message = None;
+        assert_eq!(
+            validate_task_control_request(&control)
+                .expect_err("steer text required")
+                .kind,
+            DelegatedTaskErrorKind::Invalid
+        );
+        control.action = DelegatedTaskControlAction::Cancel;
+        validate_task_control_request(&control).expect("valid cancellation");
     }
 
     #[test]

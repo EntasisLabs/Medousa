@@ -24239,6 +24239,66 @@
         }
       }
     },
+    "/v1/mesh/tasks/{work_id}/control": {
+      "post": {
+        "operationId": "mesh.tasks.by_work_id.control.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "MESH_TASKS_BY_WORK_ID_CONTROL_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "mesh.tasks.by_work_id.control.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mesh.tasks.by_work_id.control.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mesh.tasks.by_work_id.control.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "peer.exchange"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "peer_exchange",
+          "trust_group": "peer_exchange"
+        }
+      }
+    },
     "/v1/models/capabilities": {
       "get": {
         "operationId": "models.capabilities.get",

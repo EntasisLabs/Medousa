@@ -249,11 +249,7 @@ impl WorkshopExecutionTarget for RemoteWorkshopExecution {
     }
 
     async fn steer(&self, input: WorkshopSteer) -> stasis::prelude::Result<Value> {
-        let _requested_generation = input.work_id;
-        let _guidance = input.message;
-        Err(stasis::domain::errors::StasisError::PortFailure(
-            "the bound remote workshop does not support steering yet".to_string(),
-        ))
+        self.service.steer(&input.work_id, &input.message).await
     }
 }
 

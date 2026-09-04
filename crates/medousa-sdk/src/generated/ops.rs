@@ -1927,6 +1927,13 @@ pub const MESH_RECEIPTS_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const MESH_TASKS_BY_WORK_ID_CONTROL_POST: Operation = Operation {
+    id: "mesh.tasks.by_work_id.control.post",
+    method: "POST",
+    path: "/v1/mesh/tasks/{work_id}/control",
+    streaming: false,
+};
+
 pub const MESH_TASKS_POST: Operation = Operation {
     id: "mesh.tasks.post",
     method: "POST",
@@ -3231,6 +3238,7 @@ pub static ALL: &[Operation] = &[
     MESH_PEERS_GET,
     MESH_RECEIPTS_GET,
     MESH_RECEIPTS_POST,
+    MESH_TASKS_BY_WORK_ID_CONTROL_POST,
     MESH_TASKS_POST,
     MODELS_CAPABILITIES_GET,
     MODELS_CATALOG_GET,

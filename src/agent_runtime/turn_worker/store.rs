@@ -52,6 +52,8 @@ pub enum TurnWorkDisposition {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkshopSteerMessage {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control_id: Option<String>,
     pub text: String,
     pub at: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -162,6 +164,11 @@ pub struct TurnWorkRecord {
     pub disposition: TurnWorkDisposition,
     #[serde(default)]
     pub steer_messages: Vec<WorkshopSteerMessage>,
+    /// Durable idempotency fence for remote steering. Messages may be drained
+    /// while their control ids remain so a transport retry cannot enqueue the
+    /// same instruction twice.
+    #[serde(default)]
+    pub processed_steer_control_ids: Vec<String>,
     /// Snapshotted from host client when work was delegated (Home canvas lane).
     #[serde(default)]
     pub supports_ui_artifacts: bool,
@@ -243,6 +250,7 @@ impl TurnWorkRecord {
             archived: false,
             disposition: TurnWorkDisposition::Delegated,
             steer_messages: Vec::new(),
+            processed_steer_control_ids: Vec::new(),
             supports_ui_artifacts: false,
             supports_liquid_markdown: false,
             supports_browser_host: false,
@@ -314,6 +322,15 @@ pub enum TurnWorkerMutationError {
     SessionDeleting,
     MissingWork,
     ForeignSession,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DelegatedWorkControlError {
+    SessionDeleting,
+    MissingWork,
+    ForeignIdentity,
+    WrongDisposition,
+    NotActive,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -847,6 +864,7 @@ impl TurnWorkerStore {
             .get_mut(work_id)
             .ok_or(BoundWorkshopMutationError::MissingGeneration)?;
         record.steer_messages.push(WorkshopSteerMessage {
+            control_id: None,
             text,
             at: Utc::now(),
             speaker_profile_id,
@@ -856,6 +874,89 @@ impl TurnWorkerStore {
         drop(records);
         self.persist(&updated.work_id, updated.stasis_job_id.as_deref());
         Ok(updated)
+    }
+
+    pub fn push_delegated_steer_exact(
+        &self,
+        work_id: &str,
+        identity_user_id: &str,
+        control_id: &str,
+        text: String,
+        speaker_profile_id: Option<String>,
+    ) -> Result<TurnWorkRecord, DelegatedWorkControlError> {
+        let session_id = self
+            .get(work_id)
+            .ok_or(DelegatedWorkControlError::MissingWork)?
+            .session_id;
+        let Ok((_session, _mutation)) =
+            crate::session_deletion::acquire_mutation_for_str(&session_id)
+        else {
+            return Err(DelegatedWorkControlError::SessionDeleting);
+        };
+        let mut records = self.records.lock().expect("turn worker records");
+        let record = records
+            .get_mut(work_id)
+            .ok_or(DelegatedWorkControlError::MissingWork)?;
+        if record.disposition != TurnWorkDisposition::Delegated {
+            return Err(DelegatedWorkControlError::WrongDisposition);
+        }
+        if record.identity_user_id.as_deref() != Some(identity_user_id) {
+            return Err(DelegatedWorkControlError::ForeignIdentity);
+        }
+        if !matches!(record.status, TurnWorkStatus::Pending | TurnWorkStatus::Running) {
+            return Err(DelegatedWorkControlError::NotActive);
+        }
+        if record
+            .processed_steer_control_ids
+            .iter()
+            .any(|existing| existing == control_id)
+        {
+            return Ok(record.clone());
+        }
+        record.steer_messages.push(WorkshopSteerMessage {
+            control_id: Some(control_id.to_string()),
+            text,
+            at: Utc::now(),
+            speaker_profile_id,
+        });
+        record
+            .processed_steer_control_ids
+            .push(control_id.to_string());
+        if record.processed_steer_control_ids.len() > 128 {
+            let overflow = record.processed_steer_control_ids.len() - 128;
+            record.processed_steer_control_ids.drain(..overflow);
+        }
+        record.updated_at = Utc::now();
+        let updated = record.clone();
+        drop(records);
+        self.persist(&updated.work_id, updated.stasis_job_id.as_deref());
+        Ok(updated)
+    }
+
+    pub fn cancel_delegated_exact(
+        &self,
+        work_id: &str,
+        identity_user_id: &str,
+    ) -> Result<TurnWorkRecord, DelegatedWorkControlError> {
+        let current = self
+            .get(work_id)
+            .ok_or(DelegatedWorkControlError::MissingWork)?;
+        if current.disposition != TurnWorkDisposition::Delegated {
+            return Err(DelegatedWorkControlError::WrongDisposition);
+        }
+        if current.identity_user_id.as_deref() != Some(identity_user_id) {
+            return Err(DelegatedWorkControlError::ForeignIdentity);
+        }
+        self.cancel_exact(&current.session_id, work_id)
+            .map_err(|error| match error {
+                TurnWorkerMutationError::SessionDeleting => {
+                    DelegatedWorkControlError::SessionDeleting
+                }
+                TurnWorkerMutationError::MissingWork => DelegatedWorkControlError::MissingWork,
+                TurnWorkerMutationError::ForeignSession => {
+                    DelegatedWorkControlError::ForeignIdentity
+                }
+            })
     }
 
     pub fn cancel_exact(
@@ -1092,6 +1193,7 @@ mod tests {
             archived: false,
             disposition: TurnWorkDisposition::Parallel,
             steer_messages: Vec::new(),
+            processed_steer_control_ids: Vec::new(),
             supports_ui_artifacts: false,
             supports_liquid_markdown: false,
             supports_browser_host: false,
@@ -1217,5 +1319,68 @@ mod tests {
         assert!(ids.contains(&"work-f".to_string()));
         assert!(!ids.contains(&"work-bf".to_string()));
         assert!(!ids.contains(&"work-d".to_string()));
+    }
+
+    #[test]
+    fn delegated_steering_is_owned_and_idempotent_after_delivery() {
+        let store = TurnWorkerStore::empty_for_tests();
+        let mut record = test_record("work-remote", "sess-derived", 4, TurnWorkStatus::Running);
+        record.disposition = TurnWorkDisposition::Delegated;
+        record.identity_user_id = Some("peer:phone-a".to_string());
+        seed(&store, record);
+
+        assert!(matches!(
+            store.push_delegated_steer_exact(
+                "work-remote",
+                "peer:phone-b",
+                "control-1",
+                "wrong peer".to_string(),
+                None,
+            ),
+            Err(DelegatedWorkControlError::ForeignIdentity)
+        ));
+        let updated = store
+            .push_delegated_steer_exact(
+                "work-remote",
+                "peer:phone-a",
+                "control-1",
+                "inspect the parser".to_string(),
+                Some("peer:phone-a".to_string()),
+            )
+            .expect("queue steer");
+        assert_eq!(updated.steer_messages.len(), 1);
+        assert_eq!(store.drain_steer_messages("work-remote").len(), 1);
+
+        let retried = store
+            .push_delegated_steer_exact(
+                "work-remote",
+                "peer:phone-a",
+                "control-1",
+                "inspect the parser".to_string(),
+                Some("peer:phone-a".to_string()),
+            )
+            .expect("idempotent retry");
+        assert!(retried.steer_messages.is_empty());
+    }
+
+    #[test]
+    fn delegated_cancellation_cannot_cross_peer_identity() {
+        let store = TurnWorkerStore::empty_for_tests();
+        let mut record = test_record("work-remote", "sess-derived", 4, TurnWorkStatus::Running);
+        record.disposition = TurnWorkDisposition::Delegated;
+        record.identity_user_id = Some("peer:phone-a".to_string());
+        seed(&store, record);
+
+        assert!(matches!(
+            store.cancel_delegated_exact("work-remote", "peer:phone-b"),
+            Err(DelegatedWorkControlError::ForeignIdentity)
+        ));
+        assert_eq!(
+            store
+                .cancel_delegated_exact("work-remote", "peer:phone-a")
+                .expect("owner cancellation")
+                .status,
+            TurnWorkStatus::Cancelled
+        );
     }
 }

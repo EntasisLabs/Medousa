@@ -13,8 +13,9 @@ use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
 use crate::delegated_task::{
+    DelegatedTaskControlAction, DelegatedTaskControlObservation, DelegatedTaskControlRequest,
     DelegatedTaskError, DelegatedTaskErrorKind, DelegatedTaskObservation, DelegatedTaskRequest,
-    delegated_work_id, validate_task_request,
+    DelegatedTaskStatus, delegated_work_id, validate_task_control_request, validate_task_request,
 };
 use crate::mesh::delivery;
 use crate::mesh::envelope::{
@@ -177,6 +178,14 @@ pub fn mesh_surface() -> DeclaredRouter<MeshApiState> {
         .route(
             peer_policy(axum::http::Method::POST, "/v1/mesh/tasks", 1024 * 1024),
             post(exchange_mesh_task),
+        )
+        .route(
+            peer_policy(
+                axum::http::Method::POST,
+                "/v1/mesh/tasks/{work_id}/control",
+                64 * 1024,
+            ),
+            post(control_mesh_task),
         )
         .methods([
             (
@@ -667,6 +676,187 @@ async fn exchange_mesh_task(
         }),
     )
         .into_response())
+}
+
+async fn control_mesh_task(
+    State(state): State<MeshApiState>,
+    Extension(principal): Extension<RequestPrincipal>,
+    Path(work_id): Path<String>,
+    Json(body): Json<MeshInboundBody<DelegatedTaskControlRequest>>,
+) -> Result<Response, (StatusCode, String)> {
+    require_pairing_principal(&principal)?;
+    let sender = authorize_remote_peer(&state, &principal)?;
+    let (envelope, request) = body.into_parts();
+    let envelope = envelope.ok_or_else(|| {
+        (
+            StatusCode::UNAUTHORIZED,
+            "signed mesh envelope required for remote worker control".to_string(),
+        )
+    })?;
+    if envelope.sender_device_id.trim() != sender.phone_id.trim()
+        || envelope.recipient_device_id.trim() != state.local_device_id.trim()
+    {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "worker control envelope identities must exactly match the authenticated pairing"
+                .to_string(),
+        ));
+    }
+    validate_task_control_request(&request).map_err(map_delegated_task_error)?;
+    if work_id.trim() != request.work_id {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "worker control path does not match its signed payload".to_string(),
+        ));
+    }
+    verify_enveloped_payload(
+        &MeshEnvelopedRequest {
+            envelope,
+            payload: request.clone(),
+        },
+        &sender.phone_public_key,
+        &sender.phone_id,
+        &state.local_device_id,
+        MeshCapability::TaskRequest,
+        true,
+    )
+    .map_err(|error| (StatusCode::UNAUTHORIZED, error.to_string()))?;
+
+    let store = crate::agent_runtime::turn_worker::turn_worker_store();
+    let current = store.get(&request.work_id).ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            "delegated worker was not found".to_string(),
+        )
+    })?;
+    let expected_identity = format!("peer:{}", sender.phone_id.trim());
+    if current.disposition
+        != crate::agent_runtime::turn_worker::TurnWorkDisposition::Delegated
+        || current.identity_user_id.as_deref() != Some(expected_identity.as_str())
+    {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "delegated worker belongs to another execution authority".to_string(),
+        ));
+    }
+    let grant = current.task_execution_grant.as_ref().ok_or_else(|| {
+        (
+            StatusCode::CONFLICT,
+            "delegated worker has no task execution grant".to_string(),
+        )
+    })?;
+    if grant.peer_device_id != sender.phone_id
+        || grant.peer_pairing_id != sender.pairing_id
+        || grant.work_id != request.work_id
+        || grant.origin_runtime_id != request.parent_runtime_id
+        || grant.parent_session_id != request.source_execution.session_id.as_str()
+        || grant.correlation_id != request.correlation_id
+        || current.parent_runtime_id != request.parent_runtime_id
+        || current.parent_turn_correlation_id.as_deref() != Some(request.correlation_id.as_str())
+    {
+        return Err((
+            StatusCode::CONFLICT,
+            "delegated worker control provenance does not match admission".to_string(),
+        ));
+    }
+
+    let updated = match request.action {
+        DelegatedTaskControlAction::Cancel => store
+            .cancel_delegated_exact(&request.work_id, &expected_identity)
+            .map_err(map_delegated_control_error)?,
+        DelegatedTaskControlAction::Steer => {
+            if grant.expires_at <= chrono::Utc::now() {
+                let _ = store.cancel_delegated_exact(&request.work_id, &expected_identity);
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    "delegated task execution grant expired".to_string(),
+                ));
+            }
+            store
+                .push_delegated_steer_exact(
+                    &request.work_id,
+                    &expected_identity,
+                    &request.control_id,
+                    request.message.clone().expect("validated steer message"),
+                    Some(expected_identity.clone()),
+                )
+                .map_err(map_delegated_control_error)?
+        }
+    };
+    let observation = DelegatedTaskControlObservation {
+        schema_version: crate::delegated_task::DELEGATED_TASK_SCHEMA_VERSION,
+        action: request.action,
+        work_id: request.work_id,
+        status: delegated_status(updated.status),
+        queued_steers: updated.steer_messages.len(),
+        destination_runtime_id: state.local_device_id.clone(),
+    };
+    let result_hash = payload_hash_hex(&observation)
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    let pairing = state.pairing.as_ref().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "LAN pairing is not enabled on this workshop".to_string(),
+        )
+    })?;
+    let seq = registry::allocate_outbound_seq(&sender.phone_id).map_err(internal)?;
+    let response_envelope = sign_envelope(
+        pairing.identity().signing_key(),
+        &state.local_device_id,
+        &sender.phone_id,
+        seq,
+        MeshCapability::TaskResult,
+        &result_hash,
+        chrono::Duration::seconds(DEFAULT_ENVELOPE_TTL_SECS),
+    );
+    Ok(Json(MeshEnvelopedRequest {
+        envelope: response_envelope,
+        payload: observation,
+    })
+    .into_response())
+}
+
+fn delegated_status(
+    status: crate::agent_runtime::turn_worker::TurnWorkStatus,
+) -> DelegatedTaskStatus {
+    match status {
+        crate::agent_runtime::turn_worker::TurnWorkStatus::Pending => DelegatedTaskStatus::Pending,
+        crate::agent_runtime::turn_worker::TurnWorkStatus::Running => DelegatedTaskStatus::Running,
+        crate::agent_runtime::turn_worker::TurnWorkStatus::Completed => {
+            DelegatedTaskStatus::Completed
+        }
+        crate::agent_runtime::turn_worker::TurnWorkStatus::Failed => DelegatedTaskStatus::Failed,
+        crate::agent_runtime::turn_worker::TurnWorkStatus::Cancelled => {
+            DelegatedTaskStatus::Cancelled
+        }
+    }
+}
+
+fn map_delegated_control_error(
+    error: crate::agent_runtime::turn_worker::DelegatedWorkControlError,
+) -> (StatusCode, String) {
+    use crate::agent_runtime::turn_worker::DelegatedWorkControlError;
+    match error {
+        DelegatedWorkControlError::MissingWork => {
+            (StatusCode::NOT_FOUND, "delegated worker was not found".to_string())
+        }
+        DelegatedWorkControlError::ForeignIdentity => (
+            StatusCode::FORBIDDEN,
+            "delegated worker belongs to another execution authority".to_string(),
+        ),
+        DelegatedWorkControlError::WrongDisposition => (
+            StatusCode::CONFLICT,
+            "work id does not identify a delegated worker".to_string(),
+        ),
+        DelegatedWorkControlError::NotActive => (
+            StatusCode::CONFLICT,
+            "delegated worker is no longer active".to_string(),
+        ),
+        DelegatedWorkControlError::SessionDeleting => (
+            StatusCode::CONFLICT,
+            "delegated worker session is being deleted".to_string(),
+        ),
+    }
 }
 
 fn resolve_task_execution_grant(

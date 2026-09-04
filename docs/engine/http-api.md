@@ -787,13 +787,17 @@ compatibility mapping grants only the historical safe assistant domains
 (`turn`, utility, and web); it never implies shell, Coder, MCP, secrets,
 work-environment, or agent-targeting authority.
 
-The body carries a bounded Stasis `TurnGranted` request. The operation is
-idempotent under that Stasis turn identity: the first exchange admits the
-canonical remote worker and later exchanges observe the same work. Admission
-compiles an immutable, expiring `taskExecutionGrant` that binds the peer,
-origin/destination runtimes, parent session, work/correlation identity, intent,
-effective tool domains, and destination policy revision. That grant is stored
-with the worker and returned in the signed observation and terminal result.
+The body carries a bounded Stasis `TurnGranted` request and versioned
+`worker` specification. That specification preserves the local worker's intent,
+task and acknowledgement, resolved Specialist snapshot, stage/model hints,
+parent mode, Bot identity, route, placement, tool-round budget, and exact
+requested tool names. The operation is idempotent under that Stasis turn
+identity: the first exchange admits the canonical remote worker and later
+exchanges observe the same work. Admission compiles an immutable, expiring
+`taskExecutionGrant` that binds the peer, origin/destination runtimes, parent
+session, work/correlation identity, intent, exact effective tools, tool domains,
+and destination policy revision. That grant is stored with the worker and
+returned in the signed observation and terminal result.
 Every response is an immediate signed `task.result` observation with `pending`,
 `running`, or terminal state plus the remote execution, requested/resolved
 runtime placement, parent runtime, task grant, and session-derivation
@@ -801,10 +805,20 @@ provenance. The destination rejects a request whose resolved runtime identity
 does not name itself. The HTTP request is never held open for the lifetime of
 the worker.
 
-The source daemon keeps the bounded request and observation schedule in its
-Stasis job. A suspended client can therefore replay the identical exchange
-after restart and complete the original durable turn wait; it does not create a
-new remote worker or a second task registry.
+The source daemon keeps the bounded request, exact destination, and observation
+schedule in its Stasis job. A suspended client can therefore replay the
+identical exchange after restart and complete the original durable turn wait;
+it does not create a new remote worker or a second task registry. Clearing the
+default delegation binding affects later omitted-target spawns, not work that
+already captured an exact destination.
+
+`POST /v1/mesh/tasks/{work_id}/control` carries a signed, correlated `cancel`
+or `steer` mutation. The destination verifies the original peer, pairing,
+runtime, parent session, correlation, and task grant before touching the worker.
+Steering is accepted only while the grant and worker are active. Its stable
+`controlId` is durably deduplicated even after the worker drains the message;
+cancellation is itself terminal and idempotent. Responses are signed
+`task.result` observations from the exact destination runtime.
 
 The model uses the same `cognition_workshop_query` and
 `cognition_workshop_mutate` contract for local and bound-remote execution. A
