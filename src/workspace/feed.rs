@@ -295,6 +295,7 @@ fn worker_progress_for(
     Some(crate::daemon_api::WorkerProgressDto {
         work_id,
         session_id: item.detail.session_id.clone(),
+        execution_runtime_id: item.detail.execution_runtime_id.clone(),
         live_tool_activity: item.detail.live_tool_activity.clone(),
         live_thinking: item.detail.live_thinking.clone(),
         live_output: item.detail.live_output.clone(),

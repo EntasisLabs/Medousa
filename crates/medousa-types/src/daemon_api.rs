@@ -2600,6 +2600,9 @@ pub struct WorkCardDetail {
     /// Worker model/provider whisper.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Stable runtime identity that actually executed this worker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_runtime_id: Option<String>,
 }
 
 /// One worker tool run, shaped to match the host's `ToolRun` turn part so both
@@ -2774,6 +2777,9 @@ pub struct WorkerProgressDto {
     pub work_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
+    /// Stable runtime identity that actually executes this worker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_runtime_id: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub live_tool_activity: Vec<WorkerToolActivityDto>,
     #[serde(default, skip_serializing_if = "String::is_empty")]

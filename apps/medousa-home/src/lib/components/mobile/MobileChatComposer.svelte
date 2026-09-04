@@ -6,6 +6,7 @@
   import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import ChatAgentModePicker from "$lib/components/chat/ChatAgentModePicker.svelte";
+  import ChatExecutionTargetPicker from "$lib/components/chat/ChatExecutionTargetPicker.svelte";
   import ChatNarrationToggle from "$lib/components/chat/ChatNarrationToggle.svelte";
   import UndertakingContextChip from "$lib/components/work/UndertakingContextChip.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
@@ -16,6 +17,7 @@
   import { bots } from "$lib/stores/bots.svelte";
   import { connection } from "$lib/stores/connection.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
+  import { executionTargets } from "$lib/stores/executionTargets.svelte";
   import { voicePresets } from "$lib/stores/voicePresets.svelte";
   import { switchMobileTab } from "$lib/mobileNavigation";
   import { workspace } from "$lib/stores/workspace.svelte";
@@ -66,6 +68,7 @@
       mode,
       codeContext,
       codeProjectSetupAuthorized,
+      workerExecutionTarget: executionTargets.turnSelection(chat.sessionId),
       provider: opts.provider,
       model: opts.model,
       responseDepthMode: opts.responseDepthMode,
@@ -219,6 +222,12 @@
       sessionId={chat.focusedSessionId}
       disabled={connection.offline || chat.composerBlocked || runtime.savingControls}
     />
+    <div class="ml-1 min-w-0">
+      <ChatExecutionTargetPicker
+        sessionId={chat.focusedSessionId}
+        disabled={connection.offline || chat.composerBlocked || runtime.savingControls}
+      />
+    </div>
     <div class="ml-1 shrink-0">
       <ChatNarrationToggle />
     </div>

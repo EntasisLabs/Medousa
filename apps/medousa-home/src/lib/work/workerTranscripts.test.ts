@@ -44,6 +44,7 @@ function detail(overrides: Partial<WorkCardDetail> = {}): WorkCardDetail {
     thinking_finished_at: "2026-08-07T00:00:04Z",
     live_status_line: "Running cognition_grapheme_run…",
     model: "gpt-4o",
+    execution_runtime_id: "runtime-mac-mini",
     ...overrides,
   };
 }
@@ -62,6 +63,7 @@ describe("WorkerTranscriptStore", () => {
     expect(transcript?.title).toBe("Research the thing");
     expect(transcript?.disposition).toBe("parallel");
     expect(transcript?.model).toBe("gpt-4o");
+    expect(transcript?.executionRuntimeId).toBe("runtime-mac-mini");
     expect(transcript?.toolRuns).toHaveLength(1);
     expect(transcript?.toolRuns[0]?.name).toBe("cognition_grapheme_run");
     expect(transcript?.toolRuns[0]?.status).toBe("running");
@@ -77,6 +79,7 @@ describe("WorkerTranscriptStore", () => {
       {
         work_id: "work-2",
         session_id: "sess-1",
+        execution_runtime_id: "runtime-studio",
         live_tool_activity: [
           {
             run_id: "run-9",
@@ -98,6 +101,7 @@ describe("WorkerTranscriptStore", () => {
     );
     expect(transcript?.workId).toBe("work-2");
     expect(transcript?.title).toBe("Look up runes");
+    expect(transcript?.executionRuntimeId).toBe("runtime-studio");
     expect(transcript?.toolRuns[0]?.input_params?.[0]?.value).toBe("svelte 5 runes");
     expect(transcript?.streaming).toBe(true);
   });

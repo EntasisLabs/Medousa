@@ -1,6 +1,7 @@
 <script lang="ts">
   import AgentSessionControls from "$lib/components/chat/AgentSessionControls.svelte";
   import ChatAgentModePicker from "$lib/components/chat/ChatAgentModePicker.svelte";
+  import ChatExecutionTargetPicker from "$lib/components/chat/ChatExecutionTargetPicker.svelte";
   import ChatNarrationToggle from "$lib/components/chat/ChatNarrationToggle.svelte";
   import ChatRuntimePicker from "$lib/components/chat/ChatRuntimePicker.svelte";
   import ComposerDraftsControl from "$lib/components/chat/ComposerDraftsControl.svelte";
@@ -37,6 +38,7 @@
   <ChatRuntimePicker {value} disabled={switchingDisabled} {onChange} />
   {#if value === "medousa"}
     <ChatAgentModePicker {sessionId} disabled={switchingDisabled} />
+    <ChatExecutionTargetPicker {sessionId} disabled={switchingDisabled} />
   {/if}
   <ChatNarrationToggle />
   <ComposerTurnControls {disabled} showNativeControls={value === "medousa"} />

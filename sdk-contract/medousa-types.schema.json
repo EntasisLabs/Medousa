@@ -25311,6 +25311,13 @@
           "column": {
             "$ref": "#/definitions/WorkBoardColumn"
           },
+          "execution_runtime_id": {
+            "description": "Stable runtime identity that actually executes this worker.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "live_output": {
             "type": "string"
           },

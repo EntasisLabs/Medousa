@@ -11,6 +11,7 @@ export interface WorkerTranscript {
   title: string;
   disposition: "bound" | "parallel";
   model?: string | null;
+  executionRuntimeId?: string | null;
   statusLine?: string | null;
   toolRuns: WorkerToolActivity[];
   thinking: string;
@@ -52,6 +53,8 @@ export class WorkerTranscriptStore {
         workId,
       disposition,
       model: detail.model?.trim() || existing?.model || null,
+      executionRuntimeId:
+        detail.execution_runtime_id?.trim() || existing?.executionRuntimeId || null,
       statusLine:
         detail.live_status_line?.trim() ||
         existing?.statusLine ||
@@ -93,6 +96,8 @@ export class WorkerTranscriptStore {
       title: existing?.title || title?.trim() || workId,
       disposition: existing?.disposition ?? "parallel",
       model: progress.model?.trim() || existing?.model || null,
+      executionRuntimeId:
+        progress.execution_runtime_id?.trim() || existing?.executionRuntimeId || null,
       statusLine: progress.live_status_line?.trim() || existing?.statusLine || null,
       toolRuns: progress.live_tool_activity ?? existing?.toolRuns ?? [],
       thinking: progress.live_thinking ?? existing?.thinking ?? "",

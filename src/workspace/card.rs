@@ -12,6 +12,7 @@ use crate::runtime_composition_ext::RuntimeCompositionExt;
 use crate::turn_budget_request::{
     TurnBudgetRequest, TurnBudgetRequestStatus, turn_budget_request_store,
 };
+use crate::workshop_contract::UNKNOWN_EXECUTION_RUNTIME_ID;
 use crate::workspace::ask_job_store::{AskJobRecord, AskJobStatus, ask_job_store};
 use crate::workspace::retention::{self, WorkspaceRetentionConfig};
 use crate::workspace::store::workspace_store;
@@ -160,6 +161,7 @@ pub fn project_ask_job(
         thinking_finished_at: None,
         live_status_line: None,
         model: None,
+        execution_runtime_id: None,
     };
 
     Some(ProjectedWorkItem { card, detail })
@@ -235,6 +237,7 @@ pub fn project_turn_budget_request(
         thinking_finished_at: None,
         live_status_line: None,
         model: None,
+        execution_runtime_id: None,
     };
 
     Some(ProjectedWorkItem { card, detail })
@@ -360,6 +363,11 @@ pub fn project_turn_worker(
         } else {
             Some(record.model.clone())
         },
+        execution_runtime_id: {
+            let runtime_id = record.execution_placement.resolved_runtime_id.trim();
+            (!runtime_id.is_empty() && runtime_id != UNKNOWN_EXECUTION_RUNTIME_ID)
+                .then(|| runtime_id.to_string())
+        },
     };
 
     Some(ProjectedWorkItem { card, detail })
@@ -436,6 +444,7 @@ pub fn project_job(
         thinking_finished_at: None,
         live_status_line: None,
         model: None,
+        execution_runtime_id: None,
     };
 
     Some(ProjectedWorkItem { card, detail })
@@ -869,6 +878,26 @@ mod tests {
         let hide_ttl = Duration::hours(24);
         let (column, _, _, _) = column_for_job(&job, true, hide_ttl).expect("column");
         assert_eq!(column, WorkBoardColumn::Backlog);
+    }
+
+    #[test]
+    fn turn_worker_detail_carries_resolved_execution_runtime() {
+        let mut record = live_record(TurnWorkStatus::Running);
+        record.execution_placement =
+            crate::workshop_contract::ExecutionPlacementResolution::resolved(
+                crate::workshop_contract::ExecutionTargetSelection::Exact {
+                    runtime_id: "runtime-mac-mini".to_string(),
+                },
+                "runtime-mac-mini",
+                crate::workshop_contract::ExecutionResolutionReason::ExactTarget,
+            );
+
+        let projected = project_turn_worker(&record, None, true, Duration::hours(24))
+            .expect("projected worker");
+        assert_eq!(
+            projected.detail.execution_runtime_id.as_deref(),
+            Some("runtime-mac-mini")
+        );
     }
 
     fn live_record(status: TurnWorkStatus) -> TurnWorkRecord {
