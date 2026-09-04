@@ -338,6 +338,7 @@ mod tests {
             parent_stream_turn_id: 0,
             parent_runtime_id: "runtime-test".to_string(),
             execution_placement: Default::default(),
+            task_execution_grant: None,
             intent: "general".to_string(),
             task_prompt: "task".to_string(),
             status: crate::agent_runtime::turn_worker::TurnWorkStatus::Pending,

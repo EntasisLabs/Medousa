@@ -759,15 +759,26 @@ Cookbook: [mobile-and-lan.md](../cookbook/mobile-and-lan.md)
 `POST /v1/mesh/tasks` is a native-only daemon-to-daemon route. It requires all
 of the following: an authenticated pairing bearer, an explicit `task.request`
 grant on that pairing, and a signed mesh envelope whose sender and recipient
-exactly match the paired identities. The body carries a bounded Stasis
-`TurnGranted` request. The operation is idempotent under that Stasis turn
-identity: the first exchange admits the canonical remote worker and later
-exchanges observe the same work. Every response is an immediate signed
-`task.result` observation with `pending`, `running`, or terminal state plus the
-remote execution, requested/resolved runtime placement, parent runtime, and
-session-derivation provenance. The destination rejects a request whose resolved
-runtime identity does not name itself. The HTTP request is never held open for
-the lifetime of the worker.
+exactly match the paired identities. The destination also intersects that
+transport grant with its own directional peer-execution policy. For existing
+installations that have `task.request` but no stored execution policy, the
+compatibility mapping grants only the historical safe assistant domains
+(`turn`, utility, and web); it never implies shell, Coder, MCP, secrets,
+work-environment, or agent-targeting authority.
+
+The body carries a bounded Stasis `TurnGranted` request. The operation is
+idempotent under that Stasis turn identity: the first exchange admits the
+canonical remote worker and later exchanges observe the same work. Admission
+compiles an immutable, expiring `taskExecutionGrant` that binds the peer,
+origin/destination runtimes, parent session, work/correlation identity, intent,
+effective tool domains, and destination policy revision. That grant is stored
+with the worker and returned in the signed observation and terminal result.
+Every response is an immediate signed `task.result` observation with `pending`,
+`running`, or terminal state plus the remote execution, requested/resolved
+runtime placement, parent runtime, task grant, and session-derivation
+provenance. The destination rejects a request whose resolved runtime identity
+does not name itself. The HTTP request is never held open for the lifetime of
+the worker.
 
 The source daemon keeps the bounded request and observation schedule in its
 Stasis job. A suspended client can therefore replay the identical exchange

@@ -30,12 +30,16 @@ use crate::mesh::{
     record_has_capability,
 };
 use crate::pairing::{PairedDeviceRecord, PairingService};
+use crate::peer_execution_policy::{
+    AssistantWorkAdmission, PeerExecutionPolicyStore, TaskExecutionGrant,
+};
 use crate::request_principal::{Capability, PrincipalKind, RequestPrincipal, TransportClass};
 
 #[derive(Clone)]
 pub struct MeshApiState {
     pub pairing: Option<Arc<PairingService>>,
     pub local_device_id: String,
+    pub execution_policies: Arc<PeerExecutionPolicyStore>,
     pub delegated_task_executor: Option<Arc<dyn super::task::DelegatedTaskExecutor>>,
 }
 
@@ -570,12 +574,6 @@ async fn exchange_mesh_task(
 ) -> Result<Response, (StatusCode, String)> {
     require_pairing_principal(&principal)?;
     let record = authorize_remote_peer(&state, &principal)?;
-    if !record_has_capability(&record, CAP_TASK_REQUEST) {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "task.request grant required".to_string(),
-        ));
-    }
     let (envelope, payload) = body.into_parts();
     let envelope = envelope.ok_or_else(|| {
         (
@@ -606,6 +604,20 @@ async fn exchange_mesh_task(
     )
     .map_err(|error| (StatusCode::UNAUTHORIZED, error.to_string()))?;
 
+    let turn_id = payload
+        .grant
+        .turn_id
+        .as_deref()
+        .expect("validated delegated turn id");
+    let work_id = delegated_work_id(&record.phone_id, turn_id);
+    let task_execution_grant = resolve_task_execution_grant(
+        &state,
+        &record,
+        &payload,
+        &work_id,
+        envelope.expires_at,
+    )?;
+
     let payload_hash =
         payload_hash_hex(&payload).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     let pairing = state.pairing.as_ref().ok_or_else(|| {
@@ -621,12 +633,6 @@ async fn exchange_mesh_task(
         &payload_hash,
     )
     .map_err(internal)?;
-    let turn_id = payload
-        .grant
-        .turn_id
-        .as_deref()
-        .expect("validated delegated turn id");
-    let work_id = delegated_work_id(&record.phone_id, turn_id);
     delivery::bind_delivery_local_ref(&accepted.inbox_id, &work_id, &accepted.receipt.id)
         .map_err(internal)?;
 
@@ -637,7 +643,7 @@ async fn exchange_mesh_task(
         )
     })?;
     let observation: DelegatedTaskObservation = executor
-        .submit_or_observe(&record, &payload)
+        .submit_or_observe(&record, &payload, &task_execution_grant)
         .await
         .map_err(map_delegated_task_error)?;
     let result_hash = payload_hash_hex(&observation)
@@ -661,6 +667,82 @@ async fn exchange_mesh_task(
         }),
     )
         .into_response())
+}
+
+fn resolve_task_execution_grant(
+    state: &MeshApiState,
+    sender: &PairedDeviceRecord,
+    request: &DelegatedTaskRequest,
+    work_id: &str,
+    envelope_expires_at: chrono::DateTime<chrono::Utc>,
+) -> Result<TaskExecutionGrant, (StatusCode, String)> {
+    let store = crate::agent_runtime::turn_worker::turn_worker_store();
+    if let Some(existing) = store.get(work_id) {
+        let expected_identity = format!("peer:{}", sender.phone_id.trim());
+        if existing.disposition
+            != crate::agent_runtime::turn_worker::TurnWorkDisposition::Delegated
+            || existing.identity_user_id.as_deref() != Some(expected_identity.as_str())
+        {
+            return Err((
+                StatusCode::CONFLICT,
+                "delegated work identity is already bound to another caller".to_string(),
+            ));
+        }
+        if let Some(grant) = existing.task_execution_grant.clone() {
+            if grant.peer_device_id != sender.phone_id || grant.work_id != work_id {
+                return Err((
+                    StatusCode::CONFLICT,
+                    "delegated work carries a conflicting execution grant".to_string(),
+                ));
+            }
+            if grant.expires_at <= chrono::Utc::now()
+                && matches!(
+                    existing.status,
+                    crate::agent_runtime::turn_worker::TurnWorkStatus::Pending
+                        | crate::agent_runtime::turn_worker::TurnWorkStatus::Running
+                )
+            {
+                let _ = store.cancel_exact(&existing.session_id, work_id);
+            }
+            // Idempotent observation stays bound to the original grant. A
+            // later policy edit can cancel active work, but it cannot rewrite
+            // the authority under which that work ran.
+            return Ok(grant);
+        }
+    }
+
+    let legacy_task_request_granted = record_has_capability(sender, CAP_TASK_REQUEST);
+    if !legacy_task_request_granted {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "task.request grant required".to_string(),
+        ));
+    }
+    let request_expires_at = request
+        .grant
+        .payload
+        .get("deadline_at")
+        .and_then(|value| serde_json::from_value::<chrono::DateTime<chrono::Utc>>(value.clone()).ok())
+        .map(|deadline| deadline.min(envelope_expires_at))
+        .unwrap_or(envelope_expires_at);
+    let requested_tool_domains = ["turn", "utility", "web"];
+    state
+        .execution_policies
+        .admit_assistant_work(AssistantWorkAdmission {
+            peer_device_id: &sender.phone_id,
+            origin_runtime_id: &request.parent_runtime_id,
+            destination_runtime_id: &state.local_device_id,
+            parent_session_id: &request.grant.session_id,
+            bot_id: None,
+            work_id,
+            correlation_id: &request.grant.correlation_id,
+            worker_intent: "research",
+            requested_tool_domains: &requested_tool_domains,
+            request_expires_at,
+            legacy_task_request_granted,
+        })
+        .map_err(internal)?
+        .map_err(|denial| (StatusCode::FORBIDDEN, denial.code().to_string()))
 }
 
 async fn list_mesh_receipts(

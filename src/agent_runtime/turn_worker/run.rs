@@ -79,6 +79,47 @@ fn worker_session_execution_authorized(record: &TurnWorkRecord, identity_user_id
     crate::session_catalog::session_visible_to_profile(&record.session_id, identity_user_id)
 }
 
+fn delegated_task_grant_error(
+    record: &TurnWorkRecord,
+    identity_user_id: &str,
+) -> Option<&'static str> {
+    if record.disposition != TurnWorkDisposition::Delegated {
+        return None;
+    }
+    let Some(grant) = record.task_execution_grant.as_ref() else {
+        // Durable records created before destination-issued grants existed keep
+        // the historical safe assistant ceiling and cannot gain new scopes.
+        return None;
+    };
+    if grant.schema_version
+        != crate::peer_execution_policy::TASK_EXECUTION_GRANT_SCHEMA_VERSION
+    {
+        return Some("unsupported task execution grant");
+    }
+    if grant.expires_at <= Utc::now() {
+        return Some("task execution grant expired before execution");
+    }
+    if grant.work_id != record.work_id
+        || identity_user_id != format!("peer:{}", grant.peer_device_id)
+        || grant.origin_runtime_id != record.parent_runtime_id
+        || record.parent_turn_correlation_id.as_deref() != Some(grant.correlation_id.as_str())
+        || grant.worker_intent != record.intent
+        || !grant
+            .effective_tool_domains
+            .iter()
+            .any(|domain| domain == "turn")
+    {
+        return Some("task execution grant does not match the durable worker");
+    }
+    if record.execution_placement.resolution_reason
+        != ExecutionResolutionReason::LegacyUnknown
+        && grant.destination_runtime_id != record.execution_placement.resolved_runtime_id
+    {
+        return Some("task execution grant does not match the resolved runtime");
+    }
+    None
+}
+
 fn worker_turn_scope(record: &TurnWorkRecord) -> TurnContinuationScope {
     let canvas_lane =
         worker_canvas_lane_enabled(record.disposition == TurnWorkDisposition::Bound, record);
@@ -522,6 +563,7 @@ impl TurnWorkerScheduler {
             parent_stream_turn_id: bus.stream_turn_id,
             parent_runtime_id: parent_runtime_id.clone(),
             execution_placement: execution_placement.clone(),
+            task_execution_grant: None,
             intent: intent.as_str().to_string(),
             task_prompt: task.trim().to_string(),
             status: TurnWorkStatus::Pending,
@@ -731,6 +773,7 @@ impl TurnWorkerScheduler {
             parent_stream_turn_id: bus.stream_turn_id,
             parent_runtime_id: parent_runtime_id.clone(),
             execution_placement: execution_placement.clone(),
+            task_execution_grant: None,
             intent: intent.as_str().to_string(),
             task_prompt: task.to_string(),
             status: TurnWorkStatus::Pending,
@@ -900,6 +943,18 @@ pub async fn run_worker_turn(
         .await;
         return;
     };
+    if let Some(error) = delegated_task_grant_error(&record, &identity_user_id) {
+        store.update(&work_id, |record| {
+            record.status = TurnWorkStatus::Cancelled;
+            record.error = Some(error.to_string());
+            record.termination_reason = Some("task_execution_grant_denied".to_string());
+        });
+        sink.notice(format!(
+            "◈ work_cancelled work_id={work_id} error=task_execution_grant_denied"
+        ))
+        .await;
+        return;
+    }
     if !worker_session_execution_authorized(&record, &identity_user_id) {
         store.update(&work_id, |record| {
             record.status = TurnWorkStatus::Failed;
@@ -1012,7 +1067,9 @@ async fn run_worker_turn_inner(
         .map(|manuscript| manuscript.tools_allow.as_slice())
         .unwrap_or(&[] as &[String]);
     let allowlist = if is_delegated {
-        super::policy::remote_delegated_tool_ceiling()
+        super::policy::remote_delegated_tool_ceiling_for_grant(
+            record.task_execution_grant.as_ref(),
+        )
     } else {
         super::policy::worker_allowlist_for_intent_and_tools(intent, manuscript_tools)
     };
@@ -1800,6 +1857,7 @@ mod tests {
             parent_stream_turn_id: 0,
             parent_runtime_id: "runtime-test".to_string(),
             execution_placement: Default::default(),
+            task_execution_grant: None,
             intent: "general".to_string(),
             task_prompt: "task".to_string(),
             status: TurnWorkStatus::Completed,

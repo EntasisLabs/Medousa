@@ -685,8 +685,11 @@ over production mesh HTTP routes. The existing daemon pairing identity signs
 both the inner Stasis object and the outer mesh delivery. A signed mesh request
 receives only `PeerExchange` authority; it cannot recover portal, member, or
 operator authority without that request's separate bearer credential. A
-`task.request` grant admits `task.result` returns but no unrelated mesh
-capability.
+`task.request` grant admits the protocol exchange but no unrelated mesh
+capability. The receiving daemon now additionally intersects it with its
+directional peer-execution policy and persists the compiled task grant on the
+worker. A legacy pairing with no stored policy maps only to the historical safe
+assistant tool ceiling.
 
 The origin transfers the payload, checkpoint manifest, source bundle, and
 declared artifacts by digest before job admission. The destination verifies

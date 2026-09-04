@@ -1488,6 +1488,7 @@ mod tests {
             execution: execution.clone(),
             parent_runtime_id: request.parent_runtime_id.clone(),
             execution_placement: request.execution_placement.clone(),
+            task_execution_grant: None,
             derivation: derivation.clone(),
         };
         DelegatedTaskObservation {
@@ -1498,6 +1499,7 @@ mod tests {
             execution,
             parent_runtime_id: request.parent_runtime_id.clone(),
             execution_placement: request.execution_placement.clone(),
+            task_execution_grant: None,
             derivation,
             result: Some(result),
         }
