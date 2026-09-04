@@ -40,6 +40,9 @@ use crate::delegated_task::{
 use crate::execution_context::active_turn_execution_context;
 use crate::runtime_composition_ext::{RuntimeCompositionExt, process_once};
 use crate::session_store::{SessionStore, TranscriptAppend};
+use crate::workshop_contract::{
+    ExecutionPlacementResolution, ExecutionResolutionReason, ExecutionTargetSelection,
+};
 
 pub const DELEGATION_ENDPOINT_ID: &str = "stasisd:endpoint:medousa-delegation";
 const DELEGATION_TIMEOUT_SECONDS: u64 = 120;
@@ -279,6 +282,8 @@ pub struct DelegationTicket {
     pub job_id: String,
     pub turn_id: String,
     pub status: &'static str,
+    pub parent_runtime_id: String,
+    pub execution_placement: ExecutionPlacementResolution,
 }
 
 #[derive(Debug, Clone)]
@@ -846,12 +851,22 @@ impl DelegationService {
         let execution = active_turn_execution_context().ok_or_else(|| {
             StasisError::PortFailure("delegation requires an admitted daemon turn".to_string())
         })?;
+        let parent_runtime_id = self.authority_id.as_str().to_string();
+        let target_runtime_id = binding.target.peer_device_id.trim().to_string();
+        let execution_placement = ExecutionPlacementResolution::resolved(
+            ExecutionTargetSelection::Exact {
+                runtime_id: target_runtime_id.clone(),
+            },
+            target_runtime_id.clone(),
+            ExecutionResolutionReason::IngressDefault,
+        );
         let identity = deterministic_identity(
             "",
             &[
                 execution.session_id().as_str().as_bytes(),
                 execution.turn_id().as_bytes(),
                 task.as_bytes(),
+                target_runtime_id.as_bytes(),
             ],
         );
         let job_id = format!("delegation-job-{identity}");
@@ -896,6 +911,8 @@ impl DelegationService {
                     schema_version: crate::delegated_task::DELEGATED_TASK_SCHEMA_VERSION,
                     grant,
                     source_execution,
+                    parent_runtime_id: parent_runtime_id.clone(),
+                    execution_placement: execution_placement.clone(),
                     context,
                 },
                 intent: intent.trim().to_string(),
@@ -930,6 +947,8 @@ impl DelegationService {
             job_id,
             turn_id,
             status: "pending",
+            parent_runtime_id,
+            execution_placement,
         })
     }
 
@@ -995,6 +1014,8 @@ impl DelegationService {
                 "task": payload.request.grant.payload.get("user_prompt"),
                 "result": wait.as_ref().and_then(|record| record.result_payload.clone()),
                 "error": wait.as_ref().and_then(|record| record.error_message.clone()),
+                "parent_runtime_id": payload.request.parent_runtime_id,
+                "execution_placement": payload.request.execution_placement,
             }));
         }
         if requested_work.is_some() && workers.is_empty() {
@@ -1006,6 +1027,7 @@ impl DelegationService {
         Ok(json!({
             "ok": true,
             "execution_target": "bound_remote",
+            "parent_runtime_id": workers.first().map(|worker| &worker["parent_runtime_id"]),
             "workers": workers,
         }))
     }
@@ -1053,6 +1075,8 @@ impl DelegationService {
                 "work_id": work_id,
                 "status": "cancelled",
                 "execution_target": "bound_remote",
+                "parent_runtime_id": payload.request.parent_runtime_id,
+                "execution_placement": payload.request.execution_placement,
             }));
         }
         Err(StasisError::PortFailure(format!(
@@ -1399,6 +1423,14 @@ mod tests {
                 session_id: source_session,
                 execution_id: ExecutionId::parse("source-exec-1").expect("source execution"),
             },
+            parent_runtime_id: "runtime-source".to_string(),
+            execution_placement: ExecutionPlacementResolution::resolved(
+                ExecutionTargetSelection::Exact {
+                    runtime_id: "remote-daemon".to_string(),
+                },
+                "remote-daemon",
+                ExecutionResolutionReason::ExactTarget,
+            ),
             context,
         }
     }
@@ -1446,6 +1478,8 @@ mod tests {
                 }),
             },
             execution: execution.clone(),
+            parent_runtime_id: request.parent_runtime_id.clone(),
+            execution_placement: request.execution_placement.clone(),
             derivation: derivation.clone(),
         };
         DelegatedTaskObservation {
@@ -1454,6 +1488,8 @@ mod tests {
             admission: DelegatedTaskAdmission::Existing,
             status: DelegatedTaskStatus::Completed,
             execution,
+            parent_runtime_id: request.parent_runtime_id.clone(),
+            execution_placement: request.execution_placement.clone(),
             derivation,
             result: Some(result),
         }

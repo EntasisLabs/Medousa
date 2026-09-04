@@ -9,6 +9,7 @@ use crate::agent_runtime::turn_worker::{
 };
 use crate::semantic_values::TrimmedText;
 use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
+use crate::workshop_contract::ExecutionTargetSelection;
 use std::sync::Arc;
 
 pub const COGNITION_SPAWN_TURN_WORKER: &str = "cognition_spawn_turn_worker";
@@ -69,6 +70,13 @@ pub struct SpawnTurnWorkerInput {
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
     pub(crate) model_hint: CompatOption<String>,
+    /// Optional execution placement. Omitted keeps work on the parent runtime.
+    #[serde(default)]
+    #[schemars(
+        with = "ExecutionTargetSelection",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    pub(crate) execution_target: CompatOption<ExecutionTargetSelection>,
 }
 
 impl<'de> Deserialize<'de> for SpawnTurnWorkerInput {
@@ -90,6 +98,8 @@ impl<'de> Deserialize<'de> for SpawnTurnWorkerInput {
             stage_role: CompatOption<String>,
             #[serde(default)]
             model_hint: CompatOption<String>,
+            #[serde(default)]
+            execution_target: CompatOption<ExecutionTargetSelection>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
@@ -100,6 +110,7 @@ impl<'de> Deserialize<'de> for SpawnTurnWorkerInput {
             manuscript_id: input.manuscript_id,
             stage_role: input.stage_role,
             model_hint: input.model_hint,
+            execution_target: input.execution_target,
         })
     }
 }
@@ -112,6 +123,7 @@ struct SpawnTurnWorkerCommand {
     manuscript_id: Option<String>,
     stage_role: Option<String>,
     model_hint: Option<String>,
+    execution_target: Option<ExecutionTargetSelection>,
 }
 
 impl TryFrom<SpawnTurnWorkerInput> for SpawnTurnWorkerCommand {
@@ -140,6 +152,7 @@ impl TryFrom<SpawnTurnWorkerInput> for SpawnTurnWorkerCommand {
             manuscript_id: optional_worker_text(input.manuscript_id.into_option()),
             stage_role: optional_worker_text(input.stage_role.into_option()),
             model_hint: optional_worker_text(input.model_hint.into_option()),
+            execution_target: input.execution_target.into_option(),
         })
     }
 }
@@ -199,6 +212,7 @@ impl CognitionSpawnTurnWorkerTool {
                 manuscript,
                 command.stage_role.as_deref(),
                 command.model_hint.as_deref(),
+                command.execution_target,
             )
             .await
     }
@@ -511,6 +525,7 @@ mod tests {
             manuscript_id: Some("  research-specialist  ".to_string()).into(),
             stage_role: Some("  verifier  ".to_string()).into(),
             model_hint: Some("  auto  ".to_string()).into(),
+            execution_target: Some(ExecutionTargetSelection::SameAsParent).into(),
         })
         .expect("spawn command");
 
@@ -534,6 +549,7 @@ mod tests {
             manuscript_id: None.into(),
             stage_role: None.into(),
             model_hint: None.into(),
+            execution_target: None.into(),
         })
         .unwrap_err();
         assert!(blank.to_string().contains("task is required"));
@@ -545,6 +561,7 @@ mod tests {
             manuscript_id: None.into(),
             stage_role: None.into(),
             model_hint: None.into(),
+            execution_target: None.into(),
         })
         .unwrap_err();
         assert!(unknown.to_string().contains("unknown intent 'unknown'"));

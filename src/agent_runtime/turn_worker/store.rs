@@ -13,6 +13,9 @@ use tokio_util::sync::CancellationToken;
 use crate::agent_runtime::turn_context::WorkerHandoffCapsule;
 use crate::session;
 use crate::turn_continuation::StoredDeliveryTarget;
+use crate::workshop_contract::{
+    ExecutionPlacementResolution, default_unknown_runtime_id,
+};
 
 const TURN_WORKERS_FILE: &str = "workspace/turn_workers.json";
 const LEGACY_TURN_WORKERS_FILE: &str = "turn_workers.json";
@@ -96,6 +99,13 @@ pub struct TurnWorkRecord {
     pub parent_turn_correlation_id: Option<String>,
     #[serde(default = "default_parent_stream_turn_id")]
     pub parent_stream_turn_id: u64,
+    /// Runtime that admitted the parent turn. Legacy records retain an
+    /// explicit unknown value rather than pretending they ran locally.
+    #[serde(default = "default_unknown_runtime_id")]
+    pub parent_runtime_id: String,
+    /// Requested and resolved execution target captured before enqueue.
+    #[serde(default)]
+    pub execution_placement: ExecutionPlacementResolution,
     pub intent: String,
     pub task_prompt: String,
     pub status: TurnWorkStatus,
@@ -181,6 +191,8 @@ impl TurnWorkRecord {
         response_depth_mode: String,
         max_tool_rounds: usize,
         handoff_capsule: WorkerHandoffCapsule,
+        parent_runtime_id: String,
+        execution_placement: ExecutionPlacementResolution,
     ) -> Self {
         let now = Utc::now();
         Self {
@@ -189,6 +201,8 @@ impl TurnWorkRecord {
             identity_user_id: Some(identity_user_id),
             parent_turn_correlation_id: Some(parent_turn_correlation_id),
             parent_stream_turn_id: 0,
+            parent_runtime_id,
+            execution_placement,
             intent: "research".to_string(),
             task_prompt,
             status: TurnWorkStatus::Pending,
@@ -1031,6 +1045,8 @@ mod tests {
             identity_user_id: None,
             parent_turn_correlation_id: None,
             parent_stream_turn_id,
+            parent_runtime_id: "runtime-test".to_string(),
+            execution_placement: Default::default(),
             intent: "research".to_string(),
             task_prompt: "task".to_string(),
             status,
@@ -1070,6 +1086,30 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
+    }
+
+    #[test]
+    fn legacy_record_defaults_to_unknown_execution_provenance() {
+        let mut value = serde_json::to_value(test_record(
+            "work-legacy",
+            "sess-legacy",
+            0,
+            TurnWorkStatus::Completed,
+        ))
+        .expect("serialize record");
+        let object = value.as_object_mut().expect("record object");
+        object.remove("parent_runtime_id");
+        object.remove("execution_placement");
+
+        let record: TurnWorkRecord = serde_json::from_value(value).expect("legacy record");
+        assert_eq!(
+            record.parent_runtime_id,
+            crate::workshop_contract::UNKNOWN_EXECUTION_RUNTIME_ID
+        );
+        assert_eq!(
+            record.execution_placement.resolution_reason,
+            crate::workshop_contract::ExecutionResolutionReason::LegacyUnknown
+        );
     }
 
     fn seed(store: &TurnWorkerStore, record: TurnWorkRecord) {

@@ -336,6 +336,8 @@ mod tests {
             identity_user_id: None,
             parent_turn_correlation_id: Some("ingest-job-99".to_string()),
             parent_stream_turn_id: 0,
+            parent_runtime_id: "runtime-test".to_string(),
+            execution_placement: Default::default(),
             intent: "general".to_string(),
             task_prompt: "task".to_string(),
             status: crate::agent_runtime::turn_worker::TurnWorkStatus::Pending,

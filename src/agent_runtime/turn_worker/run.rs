@@ -35,6 +35,7 @@ use stasis::application::orchestration::prompt_pipeline::{
     PromptExecutionPipeline, PromptExecutionRequest,
 };
 use stasis::application::orchestration::tool_registry::ToolRegistry;
+use stasis::domain::runtime::placement::WorkerCapabilities;
 use stasis::ports::outbound::ai_chat_client::AiChatClient;
 
 use stasis::prelude::RuntimeComposition;
@@ -44,6 +45,10 @@ use super::policy::{TurnWorkerIntent, max_worker_tool_rounds};
 use crate::agent_runtime::turn_context::WorkerHandoffCapsule;
 use crate::agent_runtime::worker_continuity::{
     InProcessDelegationRecord, record_in_process_delegation,
+};
+use crate::workshop_contract::{
+    ExecutionPlacementResolution, ExecutionResolutionReason, ExecutionTargetCandidate,
+    ExecutionTargetSelection, resolve_execution_target,
 };
 
 use super::prompts::{
@@ -116,6 +121,8 @@ pub struct ActiveWorkerBusSession {
     pub model: String,
     pub response_depth_mode: String,
     pub parent_turn_correlation_id: Option<String>,
+    /// Stable runtime identity of the daemon admitting this parent turn.
+    pub parent_runtime_id: String,
     pub delivery_target: Option<crate::turn_continuation::StoredDeliveryTarget>,
     pub host_handoff_slot: Arc<tokio::sync::RwLock<Option<WorkerHandoffCapsule>>>,
     pub host_continuity_bundle:
@@ -233,6 +240,8 @@ pub struct SpawnTurnWorkerOutput {
     pub intent: String,
     pub manuscript_id: Option<String>,
     pub stage_role: Option<String>,
+    pub parent_runtime_id: String,
+    pub execution_placement: ExecutionPlacementResolution,
     pub status: String,
     pub user_ack: String,
     pub handoff_summary: String,
@@ -254,6 +263,8 @@ pub enum EnterBoundWorkshopOutput {
         work_id: String,
         stasis_job_id: String,
         intent: String,
+        parent_runtime_id: String,
+        execution_placement: Box<ExecutionPlacementResolution>,
         status: String,
         user_ack: String,
         message: String,
@@ -351,6 +362,7 @@ impl TurnWorkerScheduler {
         manuscript: Option<crate::identity_manuscript::ManuscriptContext>,
         stage_role: Option<&str>,
         model_hint: Option<&str>,
+        execution_target: Option<ExecutionTargetSelection>,
     ) -> stasis::prelude::Result<SpawnTurnWorkerOutput> {
         let parent = self.active_parent().map_err(|error| {
             stasis::domain::errors::StasisError::PortFailure(format!(
@@ -365,6 +377,23 @@ impl TurnWorkerScheduler {
 
         let work_id = format!("work-{}", uuid::Uuid::new_v4());
         let now = Utc::now();
+        let parent_runtime_id = bus.parent_runtime_id.clone();
+        let local_capabilities = WorkerCapabilities::any()
+            .node_id(&parent_runtime_id)
+            .platform(std::env::consts::OS)
+            .architecture(std::env::consts::ARCH)
+            .with_capability("assistant.work");
+        let execution_placement = resolve_execution_target(
+            execution_target.unwrap_or_default(),
+            &parent_runtime_id,
+            &[ExecutionTargetCandidate {
+                runtime_id: parent_runtime_id.clone(),
+                capabilities: local_capabilities,
+            }],
+        )
+        .map_err(|error| {
+            stasis::domain::errors::StasisError::PortFailure(error.to_string())
+        })?;
         let mut handoff = bus
             .host_handoff_slot
             .write()
@@ -457,6 +486,8 @@ impl TurnWorkerScheduler {
             identity_user_id: bus.identity_user_id.clone(),
             parent_turn_correlation_id,
             parent_stream_turn_id: bus.stream_turn_id,
+            parent_runtime_id: parent_runtime_id.clone(),
+            execution_placement: execution_placement.clone(),
             intent: intent.as_str().to_string(),
             task_prompt: task.trim().to_string(),
             status: TurnWorkStatus::Pending,
@@ -565,6 +596,8 @@ impl TurnWorkerScheduler {
             intent: intent.as_str().to_string(),
             manuscript_id,
             stage_role: record_stage_role_for_response(resolved_stage_role.as_deref()),
+            parent_runtime_id: parent_runtime_id.clone(),
+            execution_placement: execution_placement.clone(),
             status: "pending".to_string(),
             user_ack: user_ack.to_string(),
             handoff_summary,
@@ -608,6 +641,12 @@ impl TurnWorkerScheduler {
         let delivery_target = bus.delivery_target.clone();
         let work_id = format!("work-bound-{}", uuid::Uuid::new_v4());
         let now = Utc::now();
+        let parent_runtime_id = bus.parent_runtime_id.clone();
+        let execution_placement = ExecutionPlacementResolution::resolved(
+            ExecutionTargetSelection::SameAsParent,
+            parent_runtime_id.clone(),
+            ExecutionResolutionReason::SameAsParent,
+        );
         let mut handoff = bus
             .host_handoff_slot
             .write()
@@ -656,6 +695,8 @@ impl TurnWorkerScheduler {
             identity_user_id: bus.identity_user_id.clone(),
             parent_turn_correlation_id,
             parent_stream_turn_id: bus.stream_turn_id,
+            parent_runtime_id: parent_runtime_id.clone(),
+            execution_placement: execution_placement.clone(),
             intent: intent.as_str().to_string(),
             task_prompt: task.to_string(),
             status: TurnWorkStatus::Pending,
@@ -760,6 +801,8 @@ impl TurnWorkerScheduler {
             work_id: work_id.clone(),
             stasis_job_id: work_id,
             intent: intent.as_str().to_string(),
+            parent_runtime_id,
+            execution_placement: Box::new(execution_placement),
             status: "pending".to_string(),
             user_ack: user_ack.to_string(),
             message: user_ack.to_string(),
@@ -1697,6 +1740,7 @@ mod tests {
             model: "model".to_string(),
             response_depth_mode: "standard".to_string(),
             parent_turn_correlation_id: Some(format!("turn-{session_id}")),
+            parent_runtime_id: "runtime-local".to_string(),
             delivery_target: None,
             host_handoff_slot: Arc::new(RwLock::new(None)),
             host_continuity_bundle: None,
@@ -1720,6 +1764,8 @@ mod tests {
             identity_user_id: None,
             parent_turn_correlation_id: None,
             parent_stream_turn_id: 0,
+            parent_runtime_id: "runtime-test".to_string(),
+            execution_placement: Default::default(),
             intent: "general".to_string(),
             task_prompt: "task".to_string(),
             status: TurnWorkStatus::Completed,
