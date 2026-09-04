@@ -6,6 +6,7 @@ from medousa.sync.transport import SyncTransport
 
 if TYPE_CHECKING:
     from medousa.sync.agents import AgentsApiSync
+    from medousa.sync.bots import BotsApiSync
     from medousa.sync.budget import BudgetApiSync
     from medousa.sync.calendar import CalendarApiSync
     from medousa.sync.capabilities import CapabilitiesApiSync
@@ -71,6 +72,11 @@ class MedousaClientSync:
         from medousa.sync.sessions import SessionsApiSync
 
         return SessionsApiSync(self)
+
+    def bots(self) -> BotsApiSync:
+        from medousa.sync.bots import BotsApiSync
+
+        return BotsApiSync(self)
 
     def prompt_stashes(self) -> PromptStashesApiSync:
         from medousa.sync.prompt_stashes import PromptStashesApiSync

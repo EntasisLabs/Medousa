@@ -981,6 +981,40 @@ pub fn ensure_named_session(session_id: &str, display_name: Option<String>) {
     catalog_store().upsert_row(&session_id, &row);
 }
 
+/// Ensure a daemon-created session belongs to the authenticated profile rather
+/// than whichever workshop profile happens to be active locally.
+pub fn ensure_named_session_for_profile(
+    session_id: &str,
+    display_name: Option<String>,
+    profile_id: &str,
+) -> Result<(), String> {
+    let session_id = SessionId::parse(session_id).map_err(|error| error.to_string())?;
+    let profile_id = profile_id.trim();
+    if profile_id.is_empty() {
+        return Err("profile_id is required".to_string());
+    }
+
+    if let Some(mut row) = catalog_store().get_row(&session_id) {
+        if !row_matches_profile(&row, profile_id) {
+            return Err("session belongs to another profile".to_string());
+        }
+        if let Some(name) = display_name {
+            row.display_name = Some(name.clone());
+            crate::session_meta_store::set_session_display_name(session_id.as_str(), &name)?;
+            catalog_store().upsert_row(&session_id, &row);
+        }
+        return Ok(());
+    }
+
+    let mut row = SessionCatalogRow::named_session(session_id.as_str(), display_name.clone());
+    row.profile_id = Some(profile_id.to_string());
+    if let Some(name) = display_name.as_deref() {
+        crate::session_meta_store::set_session_display_name(session_id.as_str(), name)?;
+    }
+    catalog_store().upsert_row(&session_id, &row);
+    Ok(())
+}
+
 /// Replace the read projection for an already-committed derived session.
 /// This is intentionally idempotent so a retried derivation can repair
 /// catalog visibility without double-counting copied entries.

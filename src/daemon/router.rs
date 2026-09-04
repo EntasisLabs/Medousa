@@ -611,6 +611,87 @@ pub fn build_workshop_surface() -> DeclaredRouter<AppState> {
                 post(crate::daemon_handlers::create_session),
             ),
         ])
+        .methods([
+            (
+                workshop_read_policy("/v1/bots"),
+                get(crate::bot_handlers::list_bots),
+            ),
+            (
+                workshop_mutation_policy(
+                    axum::http::Method::POST,
+                    "/v1/bots",
+                    Capability::WorkshopInteract,
+                    128 * 1024,
+                ),
+                post(crate::bot_handlers::create_bot),
+            ),
+        ])
+        .methods([
+            (
+                workshop_read_policy("/v1/bots/{bot_id}"),
+                get(crate::bot_handlers::get_bot),
+            ),
+            (
+                workshop_mutation_policy(
+                    axum::http::Method::PUT,
+                    "/v1/bots/{bot_id}",
+                    Capability::WorkshopInteract,
+                    128 * 1024,
+                ),
+                put(crate::bot_handlers::update_bot),
+            ),
+        ])
+        .route(
+            workshop_mutation_policy(
+                axum::http::Method::PUT,
+                "/v1/bots/{bot_id}/archive",
+                Capability::WorkshopInteract,
+                16 * 1024,
+            ),
+            put(crate::bot_handlers::set_bot_archived),
+        )
+        .route(
+            workshop_mutation_policy(
+                axum::http::Method::POST,
+                "/v1/bots/{bot_id}/duplicate",
+                Capability::WorkshopInteract,
+                16 * 1024,
+            ),
+            post(crate::bot_handlers::duplicate_bot),
+        )
+        .route(
+            workshop_mutation_policy(
+                axum::http::Method::POST,
+                "/v1/bots/{bot_id}/open",
+                Capability::WorkshopInteract,
+                1024,
+            ),
+            post(crate::bot_handlers::open_bot),
+        )
+        .methods([
+            (
+                workshop_read_policy("/v1/sessions/{session_id}/bot"),
+                get(crate::bot_handlers::get_session_bot),
+            ),
+            (
+                workshop_mutation_policy(
+                    axum::http::Method::PUT,
+                    "/v1/sessions/{session_id}/bot",
+                    Capability::WorkshopInteract,
+                    16 * 1024,
+                ),
+                put(crate::bot_handlers::bind_session_bot),
+            ),
+            (
+                workshop_mutation_policy(
+                    axum::http::Method::DELETE,
+                    "/v1/sessions/{session_id}/bot",
+                    Capability::WorkshopInteract,
+                    1024,
+                ),
+                delete(crate::bot_handlers::unbind_session_bot),
+            ),
+        ])
         .route(
             workshop_read_policy("/v1/sessions/search"),
             get(crate::daemon_handlers::search_session_transcripts),

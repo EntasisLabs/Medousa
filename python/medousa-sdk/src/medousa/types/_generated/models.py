@@ -259,6 +259,35 @@ class ArtifactSummary(MedousaModel):
     supersedes_artifact_id: str | None = None
 
 
+class BotId(RootModel[str]):
+    root: str = Field(
+        ..., description='Stable daemon-issued identity for one durable Bot profile.', title='BotId'
+    )
+
+
+class BotProfile(MedousaModel):
+    additional_manuscript_ids: list[str] | None = None
+    archived: bool | None = False
+    avatar_ref: str | None = None
+    bot_id: BotId
+    created_at: AwareDatetime
+    default_mode: AgentModeId | None = None
+    display_name: str
+    memory_scope_id: str
+    owner_profile_id: str
+    primary_manuscript_id: str
+    primary_session_id: str | None = None
+    revision: int = Field(..., ge=0)
+    role_description: str | None = None
+    schema_version: int = Field(..., ge=0)
+    updated_at: AwareDatetime
+
+
+class BotSessionKind(Enum):
+    primary = 'primary'
+    secondary = 'secondary'
+
+
 class CalendarAlarm(MedousaModel):
     action: str | None = Field(
         'display', description='RFC 5545 ACTION — currently always `display`.'
@@ -2394,6 +2423,10 @@ class BeginMcpOAuthResponse(MedousaModel):
     server_id: str
 
 
+class BotListResponse(MedousaModel):
+    bots: list[BotProfile]
+
+
 class CalendarDeleteResponse(MedousaModel):
     calendar_path: str
     deleted: bool
@@ -2575,6 +2608,15 @@ class CreateAgentSessionResponse(MedousaModel):
     work_id: str | None = None
 
 
+class CreateBotRequest(MedousaModel):
+    additional_manuscript_ids: list[str] | None = None
+    avatar_ref: str | None = None
+    default_mode: AgentModeId | None = None
+    display_name: str
+    primary_manuscript_id: str
+    role_description: str | None = None
+
+
 class CreateIntegrationConnectionRequest(MedousaModel):
     base_url: str | None = None
     kind: str = Field(..., description='Catalog slug (`openai`, `discord`, …).')
@@ -2634,6 +2676,10 @@ class DeleteRecurringResponse(MedousaModel):
 class DisconnectMcpOAuthResponse(MedousaModel):
     disconnected: bool
     server_id: str
+
+
+class DuplicateBotRequest(MedousaModel):
+    display_name: str | None = None
 
 
 class EnqueueAskRequest(MedousaModel):
@@ -3140,11 +3186,21 @@ class SetAgentSessionConfigOptionResponse(MedousaModel):
     config_options: list[AgentSessionConfigOption]
 
 
+class SetBotArchivedRequest(MedousaModel):
+    archived: bool
+    expected_revision: int = Field(..., ge=0)
+
+
 class SetSessionAgentModeRequest(MedousaModel):
     expires_at_utc: AwareDatetime | None = None
     mode: AgentModeId
     scope: AgentModeScope | None = 'session'
     task_id: str | None = None
+
+
+class SetSessionBotRequest(MedousaModel):
+    bot_id: BotId
+    kind: BotSessionKind | None = 'secondary'
 
 
 class SetSessionCodeBindingRequest(MedousaModel):
@@ -3211,6 +3267,16 @@ class TurnTicketRecord(MedousaModel):
     turn_id: str
     updated_at: AwareDatetime
     workspace_card_id: str | None = None
+
+
+class UpdateBotRequest(MedousaModel):
+    additional_manuscript_ids: list[str] | None = None
+    avatar_ref: str | None = None
+    default_mode: AgentModeId | None = None
+    display_name: str
+    expected_revision: int = Field(..., ge=0)
+    primary_manuscript_id: str
+    role_description: str | None = None
 
 
 class UpdateRecurringRequest(MedousaModel):
@@ -3392,6 +3458,14 @@ class AgentSecretRequestRecord(MedousaModel):
     status: AgentSecretRequestStatus
     turn_id: str
     updated_at_utc: AwareDatetime
+
+
+class BotSessionBinding(MedousaModel):
+    bot_id: BotId
+    bot_revision_at_bind: int = Field(..., ge=0)
+    created_at: AwareDatetime
+    kind: BotSessionKind
+    session_id: str
 
 
 class ConversationRangeSelection(MedousaModel):
@@ -3712,6 +3786,11 @@ class AgentSecretResolveResponse(MedousaModel):
     request: AgentSecretRequestRecord
 
 
+class BotOpenResponse(MedousaModel):
+    binding: BotSessionBinding
+    bot: BotProfile
+
+
 class DeriveSessionRequest(MedousaModel):
     intent: str = Field(
         ...,
@@ -3810,6 +3889,12 @@ class RuntimeConfigCommandRequest(MedousaModel):
     current_response_depth_mode: str
     draft_model: str
     draft_provider: str
+
+
+class SessionBotResponse(MedousaModel):
+    binding: BotSessionBinding | None = None
+    bot: BotProfile | None = None
+    session_id: str
 
 
 class SessionHistoryResponse(MedousaModel):

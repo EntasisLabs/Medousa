@@ -206,6 +206,7 @@ enum LocalSessionSurface {
     Verifications,
     ContextPacks,
     ToolSurface,
+    BotBinding,
     #[cfg(feature = "full-daemon")]
     TurnLedger,
     #[cfg(feature = "full-daemon")]
@@ -214,7 +215,7 @@ enum LocalSessionSurface {
 
 impl LocalSessionSurface {
     #[cfg(feature = "full-daemon")]
-    const ALL: [Self; 13] = [
+    const ALL: [Self; 14] = [
         Self::Transcript,
         Self::Catalog,
         Self::SharedCatalog,
@@ -226,12 +227,13 @@ impl LocalSessionSurface {
         Self::Verifications,
         Self::ContextPacks,
         Self::ToolSurface,
+        Self::BotBinding,
         Self::TurnLedger,
         Self::CoderTurnCheckpoints,
     ];
 
     #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
-    const ALL: [Self; 11] = [
+    const ALL: [Self; 12] = [
         Self::Transcript,
         Self::Catalog,
         Self::SharedCatalog,
@@ -243,6 +245,7 @@ impl LocalSessionSurface {
         Self::Verifications,
         Self::ContextPacks,
         Self::ToolSurface,
+        Self::BotBinding,
     ];
 
     fn name(self) -> &'static str {
@@ -258,6 +261,7 @@ impl LocalSessionSurface {
             Self::Verifications => "verifications",
             Self::ContextPacks => "context_packs",
             Self::ToolSurface => "tool_surface",
+            Self::BotBinding => "bot_binding",
             #[cfg(feature = "full-daemon")]
             Self::TurnLedger => "turn_ledger",
             #[cfg(feature = "full-daemon")]
@@ -281,6 +285,9 @@ impl LocalSessionSurface {
             }
             Self::ContextPacks => crate::context_pack::delete_context_packs_for_session(text),
             Self::ToolSurface => crate::tool_bootstrap::delete_session_tool_surface(text),
+            Self::BotBinding => {
+                crate::bot_profiles::BotProfileStore::daemon_default().remove_session_binding(text)
+            }
             #[cfg(feature = "full-daemon")]
             Self::TurnLedger => crate::agent_runtime::turn_ledger::delete_turn_ledger(session_id),
             #[cfg(feature = "full-daemon")]

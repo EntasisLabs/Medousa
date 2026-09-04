@@ -3,6 +3,8 @@ use std::sync::Arc;
 #[cfg(feature = "async")]
 use crate::agents::AgentsApi;
 #[cfg(feature = "async")]
+use crate::bots::BotsApi;
+#[cfg(feature = "async")]
 use crate::budget::BudgetApi;
 #[cfg(feature = "async")]
 use crate::calendar::CalendarApi;
@@ -108,6 +110,11 @@ impl MedousaClient {
     #[cfg(feature = "async")]
     pub fn sessions(&self) -> SessionsApi<'_> {
         SessionsApi { client: self }
+    }
+
+    #[cfg(feature = "async")]
+    pub fn bots(&self) -> BotsApi<'_> {
+        BotsApi { client: self }
     }
 
     #[cfg(feature = "async")]

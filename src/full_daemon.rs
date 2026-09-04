@@ -203,6 +203,8 @@ pub mod browser_search;
 pub mod browser_sessions;
 pub mod browser_snapshot_tools;
 pub mod browser_tools;
+pub mod bot_profiles;
+pub mod bot_handlers;
 pub mod client_tools;
 pub mod home_live_activity;
 pub mod home_push;

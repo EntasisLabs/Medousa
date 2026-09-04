@@ -10,6 +10,8 @@ pub mod transport;
 #[cfg(feature = "async")]
 mod agents;
 #[cfg(feature = "async")]
+mod bots;
+#[cfg(feature = "async")]
 mod budget;
 #[cfg(feature = "async")]
 mod calendar;
