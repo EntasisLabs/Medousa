@@ -159,11 +159,7 @@ impl PeerExecutionPolicy {
         }
     }
 
-    fn legacy_assistant(
-        peer_device_id: &str,
-        peer_pairing_id: &str,
-        now: DateTime<Utc>,
-    ) -> Self {
+    fn legacy_assistant(peer_device_id: &str, peer_pairing_id: &str, now: DateTime<Utc>) -> Self {
         let mut policy = Self::connected_only(peer_device_id, peer_pairing_id, now);
         policy.preset = PeerExecutionPolicyPreset::AssistantWork;
         policy.assistant_work = true;
@@ -174,6 +170,31 @@ impl PeerExecutionPolicy {
 
     pub fn is_expired_at(&self, now: DateTime<Utc>) -> bool {
         self.expires_at.is_some_and(|expires_at| expires_at <= now)
+    }
+
+    /// Capabilities safe to advertise back to this exact peer. This is a
+    /// permission-filtered view, not the daemon's ambient capability set.
+    pub fn advertised_execution_capabilities(&self, now: DateTime<Utc>) -> BTreeSet<String> {
+        if !self.enabled || self.is_expired_at(now) {
+            return BTreeSet::new();
+        }
+        let mut capabilities = BTreeSet::new();
+        if self.assistant_work {
+            capabilities.insert("assistant.work".to_string());
+        }
+        if self.sandbox_execution {
+            capabilities.insert("sandbox.execution".to_string());
+        }
+        if self.host_shell {
+            capabilities.insert("shell.host".to_string());
+        }
+        if self.coder_work {
+            capabilities.insert("coder.work".to_string());
+        }
+        if self.work_environment_materialization {
+            capabilities.insert("work-environment.materialization".to_string());
+        }
+        capabilities
     }
 }
 
@@ -566,7 +587,10 @@ impl PeerExecutionPolicyStore {
     pub fn audit_events(&self, limit: usize) -> Result<Vec<PeerExecutionAuditEvent>> {
         let _guard = self.io.lock().expect("peer execution policy lock");
         let file = self.load()?;
-        let start = file.audit_events.len().saturating_sub(limit.min(MAX_AUDIT_EVENTS));
+        let start = file
+            .audit_events
+            .len()
+            .saturating_sub(limit.min(MAX_AUDIT_EVENTS));
         Ok(file.audit_events[start..].to_vec())
     }
 
@@ -579,8 +603,8 @@ impl PeerExecutionPolicyStore {
         if metadata.len() > MAX_POLICY_FILE_BYTES {
             bail!("peer execution policy store exceeds {MAX_POLICY_FILE_BYTES} bytes");
         }
-        let raw = std::fs::read(&self.path)
-            .with_context(|| format!("read {}", self.path.display()))?;
+        let raw =
+            std::fs::read(&self.path).with_context(|| format!("read {}", self.path.display()))?;
         if raw.is_empty() {
             return Ok(PeerExecutionPolicyFile::default());
         }
@@ -642,7 +666,10 @@ fn compile_policy(
     created_at: DateTime<Utc>,
     now: DateTime<Utc>,
 ) -> Result<PeerExecutionPolicy> {
-    if update.expires_at.is_some_and(|expires_at| expires_at <= now) {
+    if update
+        .expires_at
+        .is_some_and(|expires_at| expires_at <= now)
+    {
         bail!("execution policy expiry must be in the future");
     }
     let mut policy = match update.preset {
@@ -677,9 +704,7 @@ fn compile_policy(
     };
     policy.enabled = update.enabled.unwrap_or(policy.enabled);
     policy.assistant_work = update.assistant_work.unwrap_or(policy.assistant_work);
-    policy.sandbox_execution = update
-        .sandbox_execution
-        .unwrap_or(policy.sandbox_execution);
+    policy.sandbox_execution = update.sandbox_execution.unwrap_or(policy.sandbox_execution);
     policy.host_shell = update.host_shell.unwrap_or(policy.host_shell);
     policy.coder_work = update.coder_work.unwrap_or(policy.coder_work);
     policy.work_environment_materialization = update
@@ -876,7 +901,10 @@ mod tests {
             "medousa-peer-execution-policy-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        (PeerExecutionPolicyStore::new(root.join("policies.json")), root)
+        (
+            PeerExecutionPolicyStore::new(root.join("policies.json")),
+            root,
+        )
     }
 
     fn admission<'a>(peer: &'a str, work: &'a str) -> AssistantWorkAdmission<'a> {
@@ -971,9 +999,7 @@ mod tests {
     #[test]
     fn legacy_task_request_maps_only_to_safe_assistant_work() {
         let (store, root) = test_store();
-        let view = store
-            .policy_for_peer("peer-a", "pairing-1", true)
-            .unwrap();
+        let view = store.policy_for_peer("peer-a", "pairing-1", true).unwrap();
         assert_eq!(view.source, PeerExecutionPolicySource::LegacyTaskRequest);
         assert!(view.policy.assistant_work);
         assert!(!view.policy.sandbox_execution);
@@ -991,11 +1017,7 @@ mod tests {
         );
         assert_eq!(
             grant.effective_tool_domains,
-            vec![
-                "turn".to_string(),
-                "utility".to_string(),
-                "web".to_string()
-            ]
+            vec!["turn".to_string(), "utility".to_string(), "web".to_string()]
         );
         assert_eq!(
             grant.effective_tool_names,
@@ -1031,7 +1053,28 @@ mod tests {
         assert_eq!(grant.policy_revision, 1);
         assert_eq!(grant.policy_source, PeerExecutionPolicySource::Stored);
         assert_eq!(grant.effective_tool_domains, vec!["turn".to_string()]);
-        assert_eq!(grant.effective_tool_names, vec!["cognition_turn".to_string()]);
+        assert_eq!(
+            grant.effective_tool_names,
+            vec!["cognition_turn".to_string()]
+        );
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn advertised_capabilities_never_include_denied_authority() {
+        let now = Utc::now();
+        let mut policy = PeerExecutionPolicy::connected_only("peer-a", "pairing-1", now);
+        assert!(policy.advertised_execution_capabilities(now).is_empty());
+
+        policy.assistant_work = true;
+        policy.host_shell = true;
+        let capabilities = policy.advertised_execution_capabilities(now);
+        assert!(capabilities.contains("assistant.work"));
+        assert!(capabilities.contains("shell.host"));
+        assert!(!capabilities.contains("coder.work"));
+        assert!(!capabilities.contains("sandbox.execution"));
+
+        policy.enabled = false;
+        assert!(policy.advertised_execution_capabilities(now).is_empty());
     }
 }

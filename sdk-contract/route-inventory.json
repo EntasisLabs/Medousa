@@ -1627,6 +1627,22 @@
       "bootstrap_public": false,
       "browser_policy": "native_only",
       "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "execution_targets.get",
+      "path": "/v1/execution-targets",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
         "content.read"
       ],
       "feature_profile": "core",
@@ -4377,6 +4393,22 @@
       "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
+    },
+    {
+      "body_limit": 16384,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "peer.exchange"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "mesh.execution_target.post",
+      "path": "/v1/mesh/execution-target",
+      "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "peer_exchange"
     },
     {
       "body_limit": 1024,

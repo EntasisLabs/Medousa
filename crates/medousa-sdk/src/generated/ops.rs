@@ -611,6 +611,13 @@ pub const ENVIRONMENT_STATUS_GET: Operation = Operation {
     streaming: false,
 };
 
+pub const EXECUTION_TARGETS_GET: Operation = Operation {
+    id: "execution_targets.get",
+    method: "GET",
+    path: "/v1/execution-targets",
+    streaming: false,
+};
+
 pub const FEEDS_BY_FEED_ID_LATEST_GOOD_GET: Operation = Operation {
     id: "feeds.by_feed_id.latest_good.get",
     method: "GET",
@@ -1836,6 +1843,13 @@ pub const MEDIA_UPLOAD_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const MESH_EXECUTION_TARGET_POST: Operation = Operation {
+    id: "mesh.execution_target.post",
+    method: "POST",
+    path: "/v1/mesh/execution-target",
+    streaming: false,
+};
+
 pub const MESH_INBOX_GET: Operation = Operation {
     id: "mesh.inbox.get",
     method: "GET",
@@ -3050,6 +3064,7 @@ pub static ALL: &[Operation] = &[
     ENVIRONMENT_SPEC_STREAM_GET,
     ENVIRONMENT_SPEC_VALIDATE_POST,
     ENVIRONMENT_STATUS_GET,
+    EXECUTION_TARGETS_GET,
     FEEDS_BY_FEED_ID_LATEST_GOOD_GET,
     FEEDS_BY_FEED_ID_READ_POST,
     FEEDS_BY_FEED_ID_TAIL_GET,
@@ -3225,6 +3240,7 @@ pub static ALL: &[Operation] = &[
     MCP_POLICY_EVALUATE_POST,
     MEDIA_BY_MEDIA_ID_GET,
     MEDIA_UPLOAD_POST,
+    MESH_EXECUTION_TARGET_POST,
     MESH_INBOX_GET,
     MESH_INTROS_BY_INTRO_ID_ACCEPT_POST,
     MESH_INTROS_BY_INTRO_ID_DECLINE_POST,

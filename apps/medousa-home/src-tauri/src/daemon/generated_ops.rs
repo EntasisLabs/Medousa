@@ -176,6 +176,8 @@ pub enum DaemonOperation {
     EnvironmentSpecValidatePost,
     #[serde(rename = "environment.status.get")]
     EnvironmentStatusGet,
+    #[serde(rename = "execution_targets.get")]
+    ExecutionTargetsGet,
     #[serde(rename = "feeds.by_feed_id.latest_good.get")]
     FeedsByFeedIdLatestGoodGet,
     #[serde(rename = "feeds.by_feed_id.read.post")]
@@ -526,6 +528,8 @@ pub enum DaemonOperation {
     MediaByMediaIdGet,
     #[serde(rename = "media.upload.post")]
     MediaUploadPost,
+    #[serde(rename = "mesh.execution_target.post")]
+    MeshExecutionTargetPost,
     #[serde(rename = "mesh.inbox.get")]
     MeshInboxGet,
     #[serde(rename = "mesh.intros.by_intro_id.accept.post")]
@@ -939,6 +943,7 @@ impl DaemonOperation {
             Self::EnvironmentSpecStreamGet => "environment.spec.stream.get",
             Self::EnvironmentSpecValidatePost => "environment.spec.validate.post",
             Self::EnvironmentStatusGet => "environment.status.get",
+            Self::ExecutionTargetsGet => "execution_targets.get",
             Self::FeedsByFeedIdLatestGoodGet => "feeds.by_feed_id.latest_good.get",
             Self::FeedsByFeedIdReadPost => "feeds.by_feed_id.read.post",
             Self::FeedsByFeedIdTailGet => "feeds.by_feed_id.tail.get",
@@ -1114,6 +1119,7 @@ impl DaemonOperation {
             Self::McpPolicyEvaluatePost => "mcp.policy.evaluate.post",
             Self::MediaByMediaIdGet => "media.by_media_id.get",
             Self::MediaUploadPost => "media.upload.post",
+            Self::MeshExecutionTargetPost => "mesh.execution_target.post",
             Self::MeshInboxGet => "mesh.inbox.get",
             Self::MeshIntrosByIntroIdAcceptPost => "mesh.intros.by_intro_id.accept.post",
             Self::MeshIntrosByIntroIdDeclinePost => "mesh.intros.by_intro_id.decline.post",

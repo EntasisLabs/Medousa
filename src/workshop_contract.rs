@@ -15,6 +15,7 @@ use crate::typed_tools::ToolId;
 const WORKSHOP_MUTATE_ID: ToolId = ToolId::new(COGNITION_WORKSHOP_MUTATE);
 
 pub const UNKNOWN_EXECUTION_RUNTIME_ID: &str = "unknown";
+pub const EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION: u32 = 1;
 
 /// Public, location-neutral requirements used by automatic target selection.
 /// Internally these compile directly into Stasis placement constraints.
@@ -129,7 +130,107 @@ pub fn default_unknown_runtime_id() -> String {
 #[derive(Debug, Clone)]
 pub struct ExecutionTargetCandidate {
     pub runtime_id: String,
+    pub label: String,
     pub capabilities: WorkerCapabilities,
+    /// Explicit user placement is admitted independently from model routing.
+    pub user_selectable: bool,
+    /// Automatic and model-selected placement require the destination owner to
+    /// opt in through its directional peer policy.
+    pub agent_selectable: bool,
+}
+
+impl ExecutionTargetCandidate {
+    pub fn local(runtime_id: impl Into<String>, capabilities: WorkerCapabilities) -> Self {
+        let runtime_id = runtime_id.into();
+        Self {
+            label: "This workshop".to_string(),
+            runtime_id,
+            capabilities,
+            user_selectable: true,
+            agent_selectable: true,
+        }
+    }
+
+    pub fn inventory_entry(&self) -> ExecutionTargetInventoryEntry {
+        ExecutionTargetInventoryEntry {
+            runtime_id: self.runtime_id.clone(),
+            label: self.label.clone(),
+            capabilities: self
+                .capabilities
+                .capabilities
+                .iter()
+                .cloned()
+                .collect(),
+            platform: self.capabilities.platform.clone(),
+            architecture: self.capabilities.architecture.clone(),
+            region: self.capabilities.region.clone(),
+            user_selectable: self.user_selectable,
+            agent_selectable: self.agent_selectable,
+        }
+    }
+
+    pub fn from_inventory_entry(entry: ExecutionTargetInventoryEntry) -> Self {
+        let capabilities = WorkerCapabilities {
+            capabilities: entry.capabilities,
+            platform: entry.platform,
+            architecture: entry.architecture,
+            region: entry.region,
+            node_id: Some(entry.runtime_id.clone()),
+        };
+        Self {
+            runtime_id: entry.runtime_id,
+            label: entry.label,
+            capabilities,
+            user_selectable: entry.user_selectable,
+            agent_selectable: entry.agent_selectable,
+        }
+    }
+}
+
+/// Sanitized execution authority advertised to Home or an admitted agent.
+/// Runtime ids are opaque identities; connection URLs and credentials never
+/// cross this contract.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExecutionTargetInventoryEntry {
+    pub runtime_id: String,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub capabilities: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub architecture: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+    pub user_selectable: bool,
+    pub agent_selectable: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExecutionTargetInventory {
+    pub schema_version: u32,
+    pub parent_runtime_id: String,
+    pub targets: Vec<ExecutionTargetInventoryEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExecutionTargetProbeRequest {
+    pub schema_version: u32,
+}
+
+impl Default for ExecutionTargetProbeRequest {
+    fn default() -> Self {
+        Self {
+            schema_version: EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExecutionTargetProbeResponse {
+    pub schema_version: u32,
+    pub target: ExecutionTargetInventoryEntry,
+    pub policy_revision: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -282,11 +383,14 @@ mod tests {
     fn candidate(runtime_id: &str) -> ExecutionTargetCandidate {
         ExecutionTargetCandidate {
             runtime_id: runtime_id.to_string(),
+            label: runtime_id.to_string(),
             capabilities: WorkerCapabilities::any()
                 .node_id(runtime_id)
                 .platform("macos")
                 .architecture("aarch64")
                 .with_capability("assistant.work"),
+            user_selectable: true,
+            agent_selectable: true,
         }
     }
 

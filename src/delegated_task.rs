@@ -354,6 +354,15 @@ pub struct DelegatedTaskObservation {
 /// routing; they never own task identity, retry state, or context selection.
 #[async_trait]
 pub trait DelegatedTaskTransport: Send + Sync {
+    /// Reachable destinations that independently confirmed the caller's
+    /// current directional execution policy. Failed/offline probes are
+    /// omitted rather than treated as authorization.
+    async fn authorized_targets(
+        &self,
+    ) -> Result<Vec<crate::delegation::AuthorizedDelegationTarget>, DelegatedTaskError> {
+        Ok(Vec::new())
+    }
+
     async fn submit_or_observe(
         &self,
         target: &crate::delegation::DelegationTarget,

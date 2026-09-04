@@ -20,6 +20,27 @@ export async function getRuntimeStats(): Promise<DaemonStatsResponse> {
   return invoke<DaemonStatsResponse>("runtime_get_stats");
 }
 
+export type ExecutionTargetInventoryEntry = {
+  runtime_id: string;
+  label: string;
+  capabilities: string[];
+  platform?: string | null;
+  architecture?: string | null;
+  region?: string | null;
+  user_selectable: boolean;
+  agent_selectable: boolean;
+};
+
+export type ExecutionTargetInventory = {
+  schema_version: number;
+  parent_runtime_id: string;
+  targets: ExecutionTargetInventoryEntry[];
+};
+
+export async function getExecutionTargets(): Promise<ExecutionTargetInventory> {
+  return invoke<ExecutionTargetInventory>("runtime_get_execution_targets");
+}
+
 export async function getRuntimeDefaults(): Promise<RuntimeDefaultsResponse> {
   return invoke<RuntimeDefaultsResponse>("runtime_get_defaults");
 }

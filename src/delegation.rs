@@ -206,6 +206,13 @@ pub struct DelegationTarget {
     pub label: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct AuthorizedDelegationTarget {
+    pub target: DelegationTarget,
+    pub candidate: crate::workshop_contract::ExecutionTargetCandidate,
+    pub policy_revision: u64,
+}
+
 impl DelegationTarget {
     pub fn validate(&self) -> Result<()> {
         for (name, value) in [
@@ -753,6 +760,12 @@ pub struct DelegationService {
 }
 
 impl DelegationService {
+    pub async fn authorized_targets(
+        &self,
+    ) -> Result<Vec<AuthorizedDelegationTarget>, crate::delegated_task::DelegatedTaskError> {
+        self.host.authorized_targets().await
+    }
+
     pub async fn binding(&self) -> Result<Option<DelegationBinding>> {
         self.endpoints
             .get(DELEGATION_ENDPOINT_ID)

@@ -467,6 +467,50 @@ struct HomeDelegatedTaskTransport;
 #[cfg(any(target_os = "ios", target_os = "android"))]
 #[async_trait::async_trait]
 impl DelegatedTaskTransport for HomeDelegatedTaskTransport {
+    async fn authorized_targets(
+        &self,
+    ) -> Result<Vec<medousa::delegation::AuthorizedDelegationTarget>, DelegatedTaskError> {
+        let targets = tokio::task::spawn_blocking(|| {
+            let registry = crate::workshop_registry::ensure_migrated()?;
+            Ok::<_, String>(
+                registry
+                    .workshops
+                    .iter()
+                    .filter(|workshop| {
+                        workshop.id != crate::workshop_registry::PERSONAL_WORKSHOP_ID
+                            && crate::workshop_registry::is_portal_kind(&workshop.kind)
+                            && workshop.pairing.is_some()
+                    })
+                    .filter_map(|workshop| delegation_target_for(&workshop.id).ok())
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .await
+        .map_err(|_| DelegatedTaskError::transport("workshop inventory lookup failed"))?
+        .map_err(DelegatedTaskError::transport)?;
+
+        let mut authorized = Vec::new();
+        for target in targets {
+            if let Ok(candidate) = probe_delegation_target(target).await {
+                if candidate.candidate.user_selectable {
+                    authorized.push(candidate);
+                }
+            }
+        }
+        authorized.sort_by(|left, right| {
+            left.candidate
+                .label
+                .to_ascii_lowercase()
+                .cmp(&right.candidate.label.to_ascii_lowercase())
+                .then(
+                    left.candidate
+                        .runtime_id
+                        .cmp(&right.candidate.runtime_id),
+                )
+        });
+        Ok(authorized)
+    }
+
     async fn submit_or_observe(
         &self,
         target: &medousa::delegation::DelegationTarget,
@@ -553,6 +597,55 @@ impl DelegatedTaskTransport for HomeDelegatedTaskTransport {
         }
         Ok(response.payload)
     }
+}
+
+#[cfg(any(target_os = "ios", target_os = "android"))]
+async fn probe_delegation_target(
+    target: medousa::delegation::DelegationTarget,
+) -> Result<medousa::delegation::AuthorizedDelegationTarget, DelegatedTaskError> {
+    let transport_target = target.clone();
+    let config = tokio::task::spawn_blocking(move || delegation_transport_for(&transport_target))
+        .await
+        .map_err(|_| DelegatedTaskError::transport("paired transport lookup failed"))?
+        .map_err(DelegatedTaskError::transport)?;
+    let request = medousa::workshop_contract::ExecutionTargetProbeRequest::default();
+    let wrapped = crate::mesh_envelope::wrap_payload_for_workshop(
+        &config,
+        crate::mesh_envelope::CAP_TASK_REQUEST,
+        request,
+    )
+    .map_err(DelegatedTaskError::transport)?;
+    let response: crate::mesh_envelope::MeshEnvelopedRequest<
+        medousa::workshop_contract::ExecutionTargetProbeResponse,
+    > = crate::workshop_transport::workshop_post_json(
+        &config,
+        "/v1/mesh/execution-target",
+        &wrapped,
+    )
+    .await
+    .map_err(DelegatedTaskError::transport)?;
+    crate::mesh_envelope::verify_payload_from_workshop(
+        &config,
+        &response,
+        crate::mesh_envelope::CAP_TASK_RESULT,
+    )
+    .map_err(DelegatedTaskError::transport)?;
+    if response.payload.schema_version
+        != medousa::workshop_contract::EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION
+        || response.payload.target.runtime_id.trim() != target.peer_device_id.trim()
+    {
+        return Err(DelegatedTaskError::transport(
+            "execution-target inventory does not match the paired workshop",
+        ));
+    }
+    let candidate = medousa::workshop_contract::ExecutionTargetCandidate::from_inventory_entry(
+        response.payload.target,
+    );
+    Ok(medousa::delegation::AuthorizedDelegationTarget {
+        target,
+        candidate,
+        policy_revision: response.payload.policy_revision,
+    })
 }
 
 #[cfg(any(target_os = "ios", target_os = "android"))]
