@@ -15,6 +15,7 @@ export {
 } from "./contractClient";
 export { expandPath, operationPath } from "./opPath";
 export * from "./session";
+export * from "./bot";
 export * from "./vault";
 export * from "./workspace";
 export * from "./environment";

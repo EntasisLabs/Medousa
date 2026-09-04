@@ -84,14 +84,16 @@ use medousa_types::turn_stream::{
 };
 use medousa_types::turn_ticket::{TurnTicket, TurnTicketMode, TurnTicketPhase};
 use medousa_types::{
-    CalendarDeleteResponse, CalendarExportResponse, CalendarImportRequest, CalendarImportResponse,
-    CalendarListQuery, CalendarListResponse, CalendarWriteRequest, CalendarWriteResponse,
+    BotId, BotListResponse, BotOpenResponse, BotProfile, CalendarDeleteResponse,
+    CalendarExportResponse, CalendarImportRequest, CalendarImportResponse, CalendarListQuery,
+    CalendarListResponse, CalendarWriteRequest, CalendarWriteResponse, CreateBotRequest,
     CreatePromptStashRequest, DeletePromptStashResponse, DeriveSessionRequest,
-    DeriveSessionResponse, GraphemeAllowlistResponse, GraphemeAllowlistUpdateRequest,
-    GraphemeCompileRequest, GraphemeCompileResponse, GraphemeLifecycleResponse,
-    GraphemeModuleLoadRequest, GraphemeModuleLoadResponse, GraphemeScriptDeleteResponse,
-    GraphemeScriptSaveRequest, GraphemeScriptSaveResponse, PromptStash, PromptStashId,
-    PromptStashListResponse,
+    DeriveSessionResponse, DuplicateBotRequest, GraphemeAllowlistResponse,
+    GraphemeAllowlistUpdateRequest, GraphemeCompileRequest, GraphemeCompileResponse,
+    GraphemeLifecycleResponse, GraphemeModuleLoadRequest, GraphemeModuleLoadResponse,
+    GraphemeScriptDeleteResponse, GraphemeScriptSaveRequest, GraphemeScriptSaveResponse,
+    PromptStash, PromptStashId, PromptStashListResponse, SessionBotResponse, SetBotArchivedRequest,
+    SetSessionBotRequest, UpdateBotRequest,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -3479,6 +3481,172 @@ impl EmbeddedDaemonClient {
 
     fn prompt_stash_store(&self) -> crate::prompt_stash::PromptStashStore {
         crate::prompt_stash::PromptStashStore::at(self.daemon.root.join("prompt_stashes.json"))
+    }
+
+    fn bot_profile_store(&self) -> crate::bot_profiles::BotProfileStore {
+        crate::bot_profiles::BotProfileStore::at(self.daemon.root.join("bot_profiles.json"))
+    }
+
+    fn validate_bot_manuscripts(&self, primary: &str, additional: &[String]) -> Result<()> {
+        crate::identity_manuscript::build_manuscript_context(primary)
+            .map_err(|error| anyhow!("primary Specialist is not available: {error}"))?;
+        for manuscript_id in additional {
+            crate::identity_manuscript::build_manuscript_context(manuscript_id).map_err(
+                |error| {
+                    anyhow!("additional Specialist '{manuscript_id}' is not available: {error}")
+                },
+            )?;
+        }
+        Ok(())
+    }
+
+    fn ensure_embedded_bot_session(
+        &self,
+        response: &BotOpenResponse,
+        profile_id: &str,
+    ) -> Result<()> {
+        crate::session_catalog::ensure_named_session_for_profile(
+            &response.binding.session_id,
+            Some(response.bot.display_name.clone()),
+            profile_id,
+        )
+        .map_err(anyhow::Error::msg)
+    }
+
+    pub fn list_bots(&self) -> Result<BotListResponse> {
+        self.require(Capability::ContentRead)?;
+        let profile_id = self.active_profile_id()?;
+        let bots = self
+            .bot_profile_store()
+            .list(&profile_id)
+            .map_err(anyhow::Error::msg)?;
+        Ok(BotListResponse { bots })
+    }
+
+    pub fn create_bot(&self, request: CreateBotRequest) -> Result<BotOpenResponse> {
+        self.require(Capability::ContentWrite)?;
+        self.validate_bot_manuscripts(
+            &request.primary_manuscript_id,
+            &request.additional_manuscript_ids,
+        )?;
+        let profile_id = self.active_profile_id()?;
+        let session_id = new_session_id().to_string();
+        let response = self
+            .bot_profile_store()
+            .create(&profile_id, &session_id, request)
+            .map_err(anyhow::Error::msg)?;
+        self.ensure_embedded_bot_session(&response, &profile_id)?;
+        Ok(response)
+    }
+
+    pub fn get_bot(&self, bot_id: &str) -> Result<BotProfile> {
+        self.require(Capability::ContentRead)?;
+        let bot_id = BotId::parse(bot_id).map_err(anyhow::Error::new)?;
+        let profile_id = self.active_profile_id()?;
+        self.bot_profile_store()
+            .get(&profile_id, &bot_id)
+            .map_err(anyhow::Error::msg)
+    }
+
+    pub fn update_bot(&self, bot_id: &str, request: UpdateBotRequest) -> Result<BotProfile> {
+        self.require(Capability::ContentWrite)?;
+        self.validate_bot_manuscripts(
+            &request.primary_manuscript_id,
+            &request.additional_manuscript_ids,
+        )?;
+        let bot_id = BotId::parse(bot_id).map_err(anyhow::Error::new)?;
+        let profile_id = self.active_profile_id()?;
+        let bot = self
+            .bot_profile_store()
+            .update(&profile_id, &bot_id, request)
+            .map_err(anyhow::Error::msg)?;
+        if let Some(session_id) = bot.primary_session_id.as_deref()
+            && let Err(error) =
+                crate::session::set_session_display_name(session_id, &bot.display_name)
+        {
+            eprintln!("[medousa] embedded Bot conversation title sync failed: {error}");
+        }
+        Ok(bot)
+    }
+
+    pub fn set_bot_archived(
+        &self,
+        bot_id: &str,
+        request: SetBotArchivedRequest,
+    ) -> Result<BotProfile> {
+        self.require(Capability::ContentWrite)?;
+        let bot_id = BotId::parse(bot_id).map_err(anyhow::Error::new)?;
+        let profile_id = self.active_profile_id()?;
+        self.bot_profile_store()
+            .set_archived(&profile_id, &bot_id, request)
+            .map_err(anyhow::Error::msg)
+    }
+
+    pub fn duplicate_bot(
+        &self,
+        bot_id: &str,
+        request: DuplicateBotRequest,
+    ) -> Result<BotOpenResponse> {
+        self.require(Capability::ContentWrite)?;
+        let bot_id = BotId::parse(bot_id).map_err(anyhow::Error::new)?;
+        let profile_id = self.active_profile_id()?;
+        let session_id = new_session_id().to_string();
+        let response = self
+            .bot_profile_store()
+            .duplicate(&profile_id, &bot_id, &session_id, request)
+            .map_err(anyhow::Error::msg)?;
+        self.ensure_embedded_bot_session(&response, &profile_id)?;
+        Ok(response)
+    }
+
+    pub fn open_bot(&self, bot_id: &str) -> Result<BotOpenResponse> {
+        self.require(Capability::ContentWrite)?;
+        let bot_id = BotId::parse(bot_id).map_err(anyhow::Error::new)?;
+        let profile_id = self.active_profile_id()?;
+        let replacement_session_id = new_session_id().to_string();
+        let response = self
+            .bot_profile_store()
+            .open(&profile_id, &bot_id, &replacement_session_id)
+            .map_err(anyhow::Error::msg)?;
+        self.ensure_embedded_bot_session(&response, &profile_id)?;
+        Ok(response)
+    }
+
+    pub fn session_bot(&self, session_id: &str) -> Result<SessionBotResponse> {
+        self.require(Capability::ContentRead)?;
+        let profile_id = self.active_profile_id()?;
+        if !crate::session_catalog::session_visible_to_profile(session_id, &profile_id) {
+            bail!("conversation not found");
+        }
+        self.bot_profile_store()
+            .resolve_session(&profile_id, session_id)
+            .map_err(anyhow::Error::msg)
+    }
+
+    pub fn bind_session_bot(
+        &self,
+        session_id: &str,
+        request: SetSessionBotRequest,
+    ) -> Result<SessionBotResponse> {
+        self.require(Capability::ContentWrite)?;
+        let profile_id = self.active_profile_id()?;
+        if !crate::session_catalog::session_visible_to_profile(session_id, &profile_id) {
+            bail!("conversation not found");
+        }
+        self.bot_profile_store()
+            .bind_session(&profile_id, session_id, request)
+            .map_err(anyhow::Error::msg)
+    }
+
+    pub fn unbind_session_bot(&self, session_id: &str) -> Result<SessionBotResponse> {
+        self.require(Capability::ContentWrite)?;
+        let profile_id = self.active_profile_id()?;
+        if !crate::session_catalog::session_visible_to_profile(session_id, &profile_id) {
+            bail!("conversation not found");
+        }
+        self.bot_profile_store()
+            .unbind_session(&profile_id, session_id)
+            .map_err(anyhow::Error::msg)
     }
 
     pub fn list_prompt_stashes(&self) -> Result<PromptStashListResponse> {

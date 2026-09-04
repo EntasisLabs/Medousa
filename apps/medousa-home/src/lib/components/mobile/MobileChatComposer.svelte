@@ -13,6 +13,7 @@
   import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { chat } from "$lib/stores/chat.svelte";
+  import { bots } from "$lib/stores/bots.svelte";
   import { connection } from "$lib/stores/connection.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import { voicePresets } from "$lib/stores/voicePresets.svelte";
@@ -96,9 +97,13 @@
   async function submit(event: Event) {
     event.preventDefault();
     if (connection.offline || runtime.savingControls) return;
-    const prompt = applyActiveAgentPrompt(
-      ensureVaultSelectionInPrompt(chat.draft.trim(), chat.vaultNoteContext),
+    const basePrompt = ensureVaultSelectionInPrompt(
+      chat.draft.trim(),
+      chat.vaultNoteContext,
     );
+    const prompt = bots.forSession(chat.sessionId)
+      ? basePrompt
+      : applyActiveAgentPrompt(basePrompt);
     const hasAttachments = chat.pendingMediaRefs.length > 0;
     if (!prompt && !hasAttachments) return;
     if (

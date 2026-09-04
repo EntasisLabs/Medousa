@@ -151,6 +151,11 @@ pub async fn update_bot(
     .await
     .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
     .map_err(store_error)?;
+    if let Some(session_id) = bot.primary_session_id.as_deref()
+        && let Err(error) = crate::session::set_session_display_name(session_id, &bot.display_name)
+    {
+        eprintln!("[medousa] Bot conversation title sync failed: {error}");
+    }
     Ok(Json(bot))
 }
 

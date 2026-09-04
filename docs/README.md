@@ -24,6 +24,7 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 |-------|----------------|
 | [Getting started](guides/getting-started.md) | Download → welcome → first chat |
 | [Models and agent sources](guides/models-and-agent-sources.md) | Choose runtimes, models, modes, and reply narration in chat |
+| [Bots](guides/bots.md) | Create durable named teammates with their own memory and conversation |
 | [Packages](guides/packages.md) | Offline brain, adapters, CLI, MCP from Settings |
 | [Workshop & Automations](guides/workshop-and-automations.md) | Flows, schedules, specialists |
 | [Phone pairing](guides/phone-pairing.md) | Add another computer as an optional mobile portal |

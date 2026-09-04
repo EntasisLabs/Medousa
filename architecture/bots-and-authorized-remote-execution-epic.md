@@ -1,6 +1,6 @@
 # Bots and authorized remote execution
 
-> **Status:** Locked implementation epic — phases 1–7 not started
+> **Status:** Phase 1 complete — phases 2–7 planned
 >
 > **Date:** 2026-09-03
 >
@@ -442,7 +442,7 @@ Each phase is a reviewable merge unit with an observable exit test. A phase may
 contain a small stack of atomic commits, but no commit spans phases and no phase
 lands a client control before daemon enforcement exists.
 
-### Phase 1 — Durable Bots
+### Phase 1 — Durable Bots ✅
 
 **Outcome:** A named Bot reliably resolves the same Specialist and memory
 continuity from any client connected to its workshop.

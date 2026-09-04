@@ -1,16 +1,21 @@
 <script lang="ts">
   import "$lib/styles/chat.postcss";
   import { onMount, untrack } from "svelte";
-  import { ChevronDown, ChevronRight, Plus, Search, Users, X } from "@lucide/svelte";
+  import { ChevronDown, ChevronRight, Plus, Search, Sparkles, Users, X } from "@lucide/svelte";
+  import BotRow from "$lib/components/chat/BotRow.svelte";
   import SessionRow from "$lib/components/chat/SessionRow.svelte";
   import { haptic } from "$lib/haptics";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { chat } from "$lib/stores/chat.svelte";
+  import { activeAgent } from "$lib/stores/activeAgent.svelte";
+  import { bots } from "$lib/stores/bots.svelte";
+  import { catalog } from "$lib/stores/catalog.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { sharedMode } from "$lib/stores/sharedMode.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import type { SessionSummary } from "$lib/types/session";
+  import type { BotProfile } from "$lib/types/generated/daemon_api";
   import { formatSessionLabel } from "$lib/utils/formatSession";
   import { groupSessionsByRecency } from "$lib/utils/sessionHistoryGroups";
   import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
@@ -42,6 +47,18 @@
   let sheetEl = $state<HTMLDivElement | null>(null);
   let headerEl = $state<HTMLElement | null>(null);
   let olderCollapsed = $state(true);
+  let archivedBotsCollapsed = $state(true);
+  let botEditorOpen = $state(false);
+  let editingBot = $state<BotProfile | null>(null);
+  let botName = $state("");
+  let botRole = $state("");
+  let botAvatar = $state("✨");
+  let botSpecialistId = $state("");
+  let botSaving = $state(false);
+  let botError = $state<string | null>(null);
+  let botActionId = $state<string | null>(null);
+
+  const BOT_AVATARS = ["✨", "🧭", "🧠", "🛠️", "📚", "🔭", "🎨", "🌱"];
 
   const touchActions = $derived(variant === "sheet");
 
@@ -51,6 +68,10 @@
       query = "";
       chat.sessionListQuery = "";
       void chat.refreshSessions({ force: true, q: "" });
+      void bots.refresh().catch(() => undefined);
+      if (catalog.manuscripts.length === 0 && !catalog.loading) {
+        void catalog.refresh();
+      }
       // Desktop drawers can take focus immediately; mobile sheets should open
       // without summoning the keyboard over the session list.
       if (showBuiltInToolbar && variant !== "sheet") {
@@ -107,20 +128,51 @@
       .some((value) => value.toLowerCase().includes(needle));
   }
 
+  const botSessionIds = $derived(
+    new Set(
+      bots.bots
+        .map((bot) => bot.primary_session_id?.trim())
+        .filter((sessionId): sessionId is string => Boolean(sessionId)),
+    ),
+  );
+
   const pinned = $derived(
     chat.sessions.filter(
-      (session) => chat.isPinned(session.session_id) && matchesQuery(session),
+      (session) =>
+        !botSessionIds.has(session.session_id) &&
+        chat.isPinned(session.session_id) &&
+        matchesQuery(session),
     ),
   );
 
   const recent = $derived(
     chat.sessions.filter(
-      (session) => !chat.isPinned(session.session_id) && matchesQuery(session),
+      (session) =>
+        !botSessionIds.has(session.session_id) &&
+        !chat.isPinned(session.session_id) &&
+        matchesQuery(session),
     ),
   );
   const recentGroups = $derived(groupSessionsByRecency(recent));
 
   const listEmpty = $derived(pinned.length === 0 && recent.length === 0);
+
+  function matchesBotQuery(bot: BotProfile): boolean {
+    if (!query.trim()) return true;
+    const needle = query.trim().toLowerCase();
+    const specialist = catalog.manuscripts.find(
+      (entry) => entry.id === bot.primary_manuscript_id,
+    );
+    return [bot.display_name, bot.role_description ?? "", specialist?.name ?? ""]
+      .some((value) => value.toLowerCase().includes(needle));
+  }
+
+  const activeBots = $derived(
+    bots.bots.filter((bot) => !bot.archived && matchesBotQuery(bot)),
+  );
+  const archivedBots = $derived(
+    bots.bots.filter((bot) => bot.archived && matchesBotQuery(bot)),
+  );
 
   async function selectSession(sessionId: string) {
     // Shell tabs own visible chat selection. Activating through the shell also
@@ -144,6 +196,123 @@
     if (variant === "drawer" || variant === "sheet") {
       layout.setSessionDrawerOpen(false);
       onClose?.();
+    }
+  }
+
+  function specialistLabel(bot: BotProfile): string {
+    return catalog.manuscripts.find((entry) => entry.id === bot.primary_manuscript_id)?.name ??
+      bot.primary_manuscript_id;
+  }
+
+  async function selectBot(bot: BotProfile) {
+    if (botActionId) return;
+    botActionId = bot.bot_id;
+    botError = null;
+    try {
+      const response = await bots.open(bot);
+      await chat.refreshSessions({ force: true });
+      await selectSession(response.binding.session_id);
+    } catch (err) {
+      botError = err instanceof Error ? err.message : String(err);
+    } finally {
+      botActionId = null;
+    }
+  }
+
+  async function openCreateBot() {
+    if (catalog.manuscripts.length === 0 && !catalog.loading) {
+      await catalog.refresh();
+    }
+    editingBot = null;
+    botName = "";
+    botRole = "";
+    botAvatar = "✨";
+    botSpecialistId =
+      activeAgent.selectedManuscriptId ?? catalog.manuscripts[0]?.id ?? "";
+    botError = null;
+    botEditorOpen = true;
+  }
+
+  function openEditBot(bot: BotProfile) {
+    editingBot = bot;
+    botName = bot.display_name;
+    botRole = bot.role_description ?? "";
+    botAvatar = bot.avatar_ref?.trim() || "✨";
+    botSpecialistId = bot.primary_manuscript_id;
+    botError = null;
+    botEditorOpen = true;
+  }
+
+  function closeBotEditor() {
+    if (botSaving) return;
+    botEditorOpen = false;
+    editingBot = null;
+    botError = null;
+  }
+
+  async function submitBot(event: SubmitEvent) {
+    event.preventDefault();
+    if (botSaving || !botName.trim() || !botRole.trim() || !botSpecialistId) return;
+    botSaving = true;
+    botError = null;
+    try {
+      if (editingBot) {
+        await bots.update(editingBot, {
+          display_name: botName.trim(),
+          role_description: botRole.trim() || null,
+          avatar_ref: botAvatar,
+          primary_manuscript_id: botSpecialistId,
+          additional_manuscript_ids: editingBot.additional_manuscript_ids ?? [],
+          default_mode: editingBot.default_mode ?? null,
+        });
+        await chat.refreshSessions({ force: true });
+        botEditorOpen = false;
+        editingBot = null;
+      } else {
+        const response = await bots.create({
+          display_name: botName.trim(),
+          role_description: botRole.trim() || null,
+          avatar_ref: botAvatar,
+          primary_manuscript_id: botSpecialistId,
+          additional_manuscript_ids: [],
+          default_mode: null,
+        });
+        await chat.refreshSessions({ force: true });
+        botEditorOpen = false;
+        await selectSession(response.binding.session_id);
+      }
+    } catch (err) {
+      botError = err instanceof Error ? err.message : String(err);
+    } finally {
+      botSaving = false;
+    }
+  }
+
+  async function duplicateBot(bot: BotProfile) {
+    if (botActionId) return;
+    botActionId = bot.bot_id;
+    botError = null;
+    try {
+      const response = await bots.duplicate(bot);
+      await chat.refreshSessions({ force: true });
+      await selectSession(response.binding.session_id);
+    } catch (err) {
+      botError = err instanceof Error ? err.message : String(err);
+    } finally {
+      botActionId = null;
+    }
+  }
+
+  async function toggleBotArchived(bot: BotProfile) {
+    if (botActionId) return;
+    botActionId = bot.bot_id;
+    botError = null;
+    try {
+      await bots.setArchived(bot, !bot.archived);
+    } catch (err) {
+      botError = err instanceof Error ? err.message : String(err);
+    } finally {
+      botActionId = null;
     }
   }
 
@@ -372,8 +541,103 @@
     {:else if chat.sessionsRefreshing}
       <p class="workshop-faint px-3 py-1 text-[11px]">Updating sessions…</p>
     {/if}
+    {#if botError}
+      <div class="flex items-start gap-2 px-3 py-2 text-xs text-content-error" role="alert">
+        <span class="min-w-0 flex-1">{botError}</span>
+        <button type="button" class="shrink-0 text-content-tertiary" onclick={() => (botError = null)}>
+          Dismiss
+        </button>
+      </div>
+    {/if}
 
     <ol class="session-sidebar-list {variant === 'sheet' ? 'mobile-chat-history-list' : ''}">
+      <li class="session-sidebar-section">
+        <div class="session-sidebar-section-heading">
+          <p class="session-sidebar-section-title">Bots</p>
+          <span class="session-sidebar-section-heading__trailing">
+            {#if activeBots.length > 0}
+              <span class="session-sidebar-section-count">{activeBots.length}</span>
+            {/if}
+            <button
+              type="button"
+              class="session-sidebar-heading-action"
+              title="New Bot"
+              aria-label="New Bot"
+              onclick={() => void openCreateBot()}
+            >
+              <Plus size={13} strokeWidth={2} />
+            </button>
+          </span>
+        </div>
+        {#if activeBots.length > 0}
+          <ul class="session-sidebar-section-list">
+            {#each activeBots as bot (bot.bot_id)}
+              <li class:opacity-60={botActionId === bot.bot_id}>
+                <BotRow
+                  {bot}
+                  specialistLabel={specialistLabel(bot)}
+                  selected={bot.primary_session_id === chat.sessionId}
+                  alwaysShowActions={touchActions}
+                  onSelect={() => void selectBot(bot)}
+                  onEdit={() => openEditBot(bot)}
+                  onDuplicate={() => void duplicateBot(bot)}
+                  onArchive={() => void toggleBotArchived(bot)}
+                />
+              </li>
+            {/each}
+          </ul>
+        {:else if bots.loading}
+          <p class="workshop-faint px-4 py-2 text-[11px]">Loading Bots…</p>
+        {:else if !query.trim()}
+          <button
+            type="button"
+            class="bot-sidebar-empty-action"
+            onclick={() => void openCreateBot()}
+          >
+            <Sparkles size={13} strokeWidth={1.75} />
+            <span>Create a durable teammate</span>
+          </button>
+        {/if}
+      </li>
+
+      {#if archivedBots.length > 0}
+        <li class="session-sidebar-section">
+          <button
+            type="button"
+            class="session-sidebar-section-heading session-sidebar-section-heading--button"
+            aria-expanded={!archivedBotsCollapsed}
+            onclick={() => (archivedBotsCollapsed = !archivedBotsCollapsed)}
+          >
+            <span class="session-sidebar-section-title">Archived Bots</span>
+            <span class="session-sidebar-section-heading__trailing">
+              <span class="session-sidebar-section-count">{archivedBots.length}</span>
+              {#if archivedBotsCollapsed}
+                <ChevronRight size={12} strokeWidth={1.75} aria-hidden="true" />
+              {:else}
+                <ChevronDown size={12} strokeWidth={1.75} aria-hidden="true" />
+              {/if}
+            </span>
+          </button>
+          {#if !archivedBotsCollapsed}
+            <ul class="session-sidebar-section-list">
+              {#each archivedBots as bot (bot.bot_id)}
+                <li class:opacity-60={botActionId === bot.bot_id}>
+                  <BotRow
+                    {bot}
+                    specialistLabel={specialistLabel(bot)}
+                    alwaysShowActions={touchActions}
+                    onSelect={() => openEditBot(bot)}
+                    onEdit={() => openEditBot(bot)}
+                    onDuplicate={() => void duplicateBot(bot)}
+                    onArchive={() => void toggleBotArchived(bot)}
+                  />
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </li>
+      {/if}
+
       {#if pinned.length > 0}
         <li class="session-sidebar-section">
           <div class="session-sidebar-section-heading">
@@ -446,7 +710,7 @@
             {/if}
           </li>
         {/each}
-      {:else if listEmpty}
+      {:else if listEmpty && bots.bots.length === 0}
         <li class="session-sidebar-empty">
           {#if query.trim()}
             No sessions match “{query.trim()}”.
@@ -568,6 +832,125 @@
           </button>
         </div>
       </div>
+    </div>
+  {/if}
+
+  {#if botEditorOpen}
+    <div
+      class="absolute inset-0 z-40 flex items-end bg-surface-950/70 p-3 sm:items-center sm:justify-center"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="bot-editor-title"
+    >
+      <form
+        class="card max-h-full w-full overflow-y-auto p-4 shadow-xl sm:max-w-md"
+        onsubmit={submitBot}
+      >
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <p id="bot-editor-title" class="text-sm font-semibold text-surface-100">
+              {editingBot ? "Edit Bot" : "New Bot"}
+            </p>
+            <p class="workshop-faint mt-0.5 text-xs">
+              A named teammate with its own memory and conversation.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="btn btn-sm shrink-0 variant-ghost-surface"
+            aria-label="Close Bot editor"
+            disabled={botSaving}
+            onclick={closeBotEditor}
+          >
+            <X size={16} strokeWidth={1.75} />
+          </button>
+        </div>
+
+        <div class="mt-4 space-y-4">
+          <fieldset>
+            <legend class="workshop-label mb-2">Avatar</legend>
+            <div class="flex flex-wrap gap-1.5">
+              {#each BOT_AVATARS as avatar (avatar)}
+                <button
+                  type="button"
+                  class="bot-avatar-option"
+                  class:bot-avatar-option--selected={botAvatar === avatar}
+                  aria-label="Use {avatar} avatar"
+                  aria-pressed={botAvatar === avatar}
+                  onclick={() => (botAvatar = avatar)}
+                >
+                  {avatar}
+                </button>
+              {/each}
+            </div>
+          </fieldset>
+
+          <label class="block">
+            <span class="workshop-label">Name</span>
+            <input
+              class="input mt-1.5 w-full text-sm"
+              type="text"
+              maxlength="80"
+              placeholder="Ada"
+              required
+              bind:value={botName}
+            />
+          </label>
+
+          <label class="block">
+            <span class="workshop-label">Job</span>
+            <textarea
+              class="textarea mt-1.5 min-h-20 w-full resize-y text-sm"
+              maxlength="500"
+              placeholder="Helps me understand systems and connect the concepts."
+              required
+              bind:value={botRole}
+            ></textarea>
+          </label>
+
+          <label class="block">
+            <span class="workshop-label">Specialist</span>
+            <select
+              class="select mt-1.5 w-full text-sm"
+              required
+              bind:value={botSpecialistId}
+            >
+              <option value="" disabled>Choose a Specialist</option>
+              {#each catalog.manuscripts as manuscript (manuscript.id)}
+                <option value={manuscript.id}>{manuscript.name}</option>
+              {/each}
+            </select>
+            <span class="workshop-faint mt-1.5 block text-[11px]">
+              Expertise stays reusable; this Bot keeps the relationship and memory.
+            </span>
+          </label>
+
+          {#if catalog.error}
+            <p class="text-xs text-content-error">{catalog.error}</p>
+          {/if}
+          {#if botError}
+            <p class="text-xs text-content-error" role="alert">{botError}</p>
+          {/if}
+        </div>
+
+        <div class="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            class="btn btn-sm variant-ghost-surface"
+            disabled={botSaving}
+            onclick={closeBotEditor}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            class="btn btn-sm variant-filled-primary"
+            disabled={botSaving || !botName.trim() || !botRole.trim() || !botSpecialistId}
+          >
+            {botSaving ? "Saving…" : editingBot ? "Save" : "Create Bot"}
+          </button>
+        </div>
+      </form>
     </div>
   {/if}
 {/snippet}
