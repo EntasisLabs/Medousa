@@ -631,13 +631,8 @@ async fn exchange_mesh_task(
         .as_deref()
         .expect("validated delegated turn id");
     let work_id = delegated_work_id(&record.phone_id, turn_id);
-    let task_execution_grant = resolve_task_execution_grant(
-        &state,
-        &record,
-        &payload,
-        &work_id,
-        envelope.expires_at,
-    )?;
+    let task_execution_grant =
+        resolve_task_execution_grant(&state, &record, &payload, &work_id, envelope.expires_at)?;
 
     let payload_hash =
         payload_hash_hex(&payload).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
@@ -709,8 +704,7 @@ async fn describe_execution_target(
     {
         return Err((
             StatusCode::UNAUTHORIZED,
-            "execution-target envelope identities must match the authenticated pairing"
-                .to_string(),
+            "execution-target envelope identities must match the authenticated pairing".to_string(),
         ));
     }
     if request.schema_version != EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION {
@@ -719,8 +713,8 @@ async fn describe_execution_target(
             "unsupported execution-target inventory schema".to_string(),
         ));
     }
-    let request_hash = payload_hash_hex(&request)
-        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let request_hash =
+        payload_hash_hex(&request).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     verify_enveloped_payload(
         &MeshEnvelopedRequest {
             envelope: envelope.clone(),
@@ -854,8 +848,7 @@ async fn control_mesh_task(
         )
     })?;
     let expected_identity = format!("peer:{}", sender.phone_id.trim());
-    if current.disposition
-        != crate::agent_runtime::turn_worker::TurnWorkDisposition::Delegated
+    if current.disposition != crate::agent_runtime::turn_worker::TurnWorkDisposition::Delegated
         || current.identity_user_id.as_deref() != Some(expected_identity.as_str())
     {
         return Err((
@@ -961,9 +954,10 @@ fn map_delegated_control_error(
 ) -> (StatusCode, String) {
     use crate::agent_runtime::turn_worker::DelegatedWorkControlError;
     match error {
-        DelegatedWorkControlError::MissingWork => {
-            (StatusCode::NOT_FOUND, "delegated worker was not found".to_string())
-        }
+        DelegatedWorkControlError::MissingWork => (
+            StatusCode::NOT_FOUND,
+            "delegated worker was not found".to_string(),
+        ),
         DelegatedWorkControlError::ForeignIdentity => (
             StatusCode::FORBIDDEN,
             "delegated worker belongs to another execution authority".to_string(),
@@ -993,8 +987,7 @@ fn resolve_task_execution_grant(
     let store = crate::agent_runtime::turn_worker::turn_worker_store();
     if let Some(existing) = store.get(work_id) {
         let expected_identity = format!("peer:{}", sender.phone_id.trim());
-        if existing.disposition
-            != crate::agent_runtime::turn_worker::TurnWorkDisposition::Delegated
+        if existing.disposition != crate::agent_runtime::turn_worker::TurnWorkDisposition::Delegated
             || existing.identity_user_id.as_deref() != Some(expected_identity.as_str())
         {
             return Err((
@@ -1039,28 +1032,36 @@ fn resolve_task_execution_grant(
         .grant
         .payload
         .get("deadline_at")
-        .and_then(|value| serde_json::from_value::<chrono::DateTime<chrono::Utc>>(value.clone()).ok())
+        .and_then(|value| {
+            serde_json::from_value::<chrono::DateTime<chrono::Utc>>(value.clone()).ok()
+        })
         .map(|deadline| deadline.min(envelope_expires_at))
         .unwrap_or(envelope_expires_at);
-    let (worker_intent, bot_id, requested_tool_names) = request.worker.as_ref().map_or_else(
-        || {
-            (
-                "research",
-                None,
-                crate::agent_runtime::turn_worker::REMOTE_DELEGATED_TOOL_CEILING
-                    .iter()
-                    .map(|name| (*name).to_string())
-                    .collect::<Vec<_>>(),
-            )
-        },
-        |worker| {
-            (
-                worker.intent.as_str(),
-                worker.parent.bot.as_ref().map(|bot| bot.bot_id.as_str()),
-                worker.tools.names.clone(),
-            )
-        },
-    );
+    let (worker_intent, bot_id, project_id, requested_tool_names) =
+        request.worker.as_ref().map_or_else(
+            || {
+                (
+                    "research",
+                    None,
+                    None,
+                    crate::agent_runtime::turn_worker::REMOTE_DELEGATED_TOOL_CEILING
+                        .iter()
+                        .map(|name| (*name).to_string())
+                        .collect::<Vec<_>>(),
+                )
+            },
+            |worker| {
+                (
+                    worker.intent.as_str(),
+                    worker.parent.bot.as_ref().map(|bot| bot.bot_id.as_str()),
+                    worker
+                        .code_project
+                        .as_ref()
+                        .map(|project| project.repo_id.as_str()),
+                    worker.tools.names.clone(),
+                )
+            },
+        );
     let requested_tool_domain_values = requested_tool_names
         .iter()
         .map(|name| execution_tool_domain(name).to_string())
@@ -1087,6 +1088,7 @@ fn resolve_task_execution_grant(
             work_id,
             correlation_id: &request.grant.correlation_id,
             worker_intent,
+            project_id,
             requested_tool_domains: &requested_tool_domains,
             requested_tool_names: &requested_tool_name_refs,
             request_expires_at,

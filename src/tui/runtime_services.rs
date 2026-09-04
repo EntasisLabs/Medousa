@@ -225,5 +225,6 @@ pub(crate) async fn assemble_tui_runtime(
         execution_registry: crate::agent_runtime::execution_context::TurnExecutionRegistry::default(
         ),
         worker_scheduler,
+        forge_authority: Arc::new(std::sync::RwLock::new(None)),
     })
 }

@@ -191,6 +191,16 @@ pub struct WorkerToolRequest {
     pub names: Vec<String>,
 }
 
+/// Stable destination-owned Coder project identity. Host paths never cross
+/// this boundary; the receiving workshop resolves the Forge work locally.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkerCodeProjectRef {
+    pub runtime_id: String,
+    pub work_id: String,
+    pub repo_id: String,
+}
+
 /// Canonical semantic input for both local and remote turn workers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -208,6 +218,8 @@ pub struct WorkerSpawnSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_hint: Option<String>,
     pub parent: WorkerParentSpec,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_project: Option<WorkerCodeProjectRef>,
     pub execution_placement: ExecutionPlacementResolution,
     pub max_tool_rounds: usize,
     pub tools: WorkerToolRequest,
@@ -507,6 +519,25 @@ pub fn validate_worker_spawn_spec(spec: &WorkerSpawnSpec) -> Result<(), Delegate
     if spec.parent.original_user_prompt.chars().count() > MAX_DELEGATED_PROMPT_CHARS {
         return Err(DelegatedTaskError::invalid(
             "delegated worker parent prompt is too large",
+        ));
+    }
+    if let Some(project) = spec.code_project.as_ref() {
+        validate_worker_text("Coder runtime id", &project.runtime_id, 512)?;
+        validate_worker_text("Coder work id", &project.work_id, 512)?;
+        validate_worker_text("Coder repository id", &project.repo_id, 1_024)?;
+        if intent != crate::agent_runtime::turn_worker::TurnWorkerIntent::Coder {
+            return Err(DelegatedTaskError::invalid(
+                "only a Coder worker may carry a code project",
+            ));
+        }
+        if project.runtime_id != spec.execution_placement.resolved_runtime_id {
+            return Err(DelegatedTaskError::invalid(
+                "Coder project authority does not match worker placement",
+            ));
+        }
+    } else if intent == crate::agent_runtime::turn_worker::TurnWorkerIntent::Coder {
+        return Err(DelegatedTaskError::invalid(
+            "Coder worker requires a destination-owned code project",
         ));
     }
     if !(1..=128).contains(&spec.max_tool_rounds) {
@@ -1363,6 +1394,7 @@ mod tests {
                 supports_liquid_markdown: true,
                 supports_browser_host: false,
             },
+            code_project: None,
             execution_placement: request.execution_placement.clone(),
             max_tool_rounds: 10,
             tools: WorkerToolRequest {
@@ -1383,6 +1415,36 @@ mod tests {
             request.source_execution.execution_id.as_str(),
             request.grant.causation_id
         );
+    }
+
+    #[test]
+    fn coder_worker_requires_matching_destination_project_authority() {
+        let request = sample_request();
+        let mut worker = canonical_worker(&request);
+        worker.intent = "coder".to_string();
+        worker.code_project = Some(WorkerCodeProjectRef {
+            runtime_id: "remote-daemon".to_string(),
+            work_id: "forge-work-1".to_string(),
+            repo_id: "repo-1".to_string(),
+        });
+        validate_worker_spawn_spec(&worker).expect("matching Coder authority");
+
+        worker.code_project.as_mut().unwrap().runtime_id = "another-daemon".to_string();
+        let error = validate_worker_spawn_spec(&worker).expect_err("mismatched authority");
+        assert!(error.message.contains("does not match worker placement"));
+    }
+
+    #[test]
+    fn non_coder_worker_cannot_smuggle_a_code_project() {
+        let request = sample_request();
+        let mut worker = canonical_worker(&request);
+        worker.code_project = Some(WorkerCodeProjectRef {
+            runtime_id: "remote-daemon".to_string(),
+            work_id: "forge-work-1".to_string(),
+            repo_id: "repo-1".to_string(),
+        });
+        let error = validate_worker_spawn_spec(&worker).expect_err("project must be Coder-only");
+        assert!(error.message.contains("only a Coder worker"));
     }
 
     #[test]

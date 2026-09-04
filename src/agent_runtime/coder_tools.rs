@@ -698,6 +698,14 @@ pub struct CoderTurnLease {
     actor: ActorRef,
     activity: Arc<CoderActivityStore>,
     identity: CoderAgentIdentity,
+    execution_guard: Option<Arc<dyn CoderExecutionGuard>>,
+}
+
+/// Additional authority checked at every Coder tool boundary. Local Coder has
+/// no extra guard; remotely admitted Coder work uses this to re-read the
+/// destination's peer policy so revocation takes effect without moving work.
+pub trait CoderExecutionGuard: Send + Sync {
+    fn verify(&self) -> Result<()>;
 }
 
 impl CoderTurnLease {
@@ -706,6 +714,16 @@ impl CoderTurnLease {
         lease: ExecutionLease,
         activity: Arc<CoderActivityStore>,
         identity: CoderAgentIdentity,
+    ) -> Result<Self> {
+        Self::new_with_guard(forge, lease, activity, identity, None)
+    }
+
+    pub fn new_with_guard(
+        forge: Arc<Forge>,
+        lease: ExecutionLease,
+        activity: Arc<CoderActivityStore>,
+        identity: CoderAgentIdentity,
+        execution_guard: Option<Arc<dyn CoderExecutionGuard>>,
     ) -> Result<Self> {
         if let Err(err) = activity.register_agent(&lease.work_id.to_string(), &identity) {
             let actor = Forge::system_actor();
@@ -724,6 +742,7 @@ impl CoderTurnLease {
             actor: Forge::system_actor(),
             activity,
             identity,
+            execution_guard,
         })
     }
 
@@ -732,9 +751,12 @@ impl CoderTurnLease {
     }
 
     fn heartbeat(&self) -> Result<()> {
-        self.forge
-            .heartbeat(&self.lease)
-            .map_err(|err| StasisError::PortFailure(format!("Coder Forge lease rejected: {err}")))?;
+        if let Some(guard) = &self.execution_guard {
+            guard.verify()?;
+        }
+        self.forge.heartbeat(&self.lease).map_err(|err| {
+            StasisError::PortFailure(format!("Coder Forge lease rejected: {err}"))
+        })?;
         let item = self.forge.load(&self.lease.work_id).map_err(|err| {
             StasisError::PortFailure(format!("Coder workspace authority is unavailable: {err}"))
         })?;
@@ -866,9 +888,7 @@ impl super::turn_context::ToolRoundContextProvider for CoderBoundToolRegistry {
             .forge
             .load(&authority.lease.work_id)
             .map_err(|err| {
-                StasisError::PortFailure(format!(
-                    "cannot refresh Coder workspace authority: {err}"
-                ))
+                StasisError::PortFailure(format!("cannot refresh Coder workspace authority: {err}"))
             })?;
         let environment = item
             .environment_for_attempt(&authority.lease.attempt_id)
@@ -2158,7 +2178,8 @@ fn attached_shell_command_mutates_git_authority(command: &str) -> bool {
     let lowercase = command.to_ascii_lowercase();
     let tokens = lowercase
         .split(|character: char| {
-            character.is_whitespace() || matches!(character, '\'' | '"' | ';' | '&' | '|' | '(' | ')')
+            character.is_whitespace()
+                || matches!(character, '\'' | '"' | ';' | '&' | '|' | '(' | ')')
         })
         .filter(|token| !token.is_empty())
         .map(|token| token.trim_matches(|character| matches!(character, ',' | ':' | '=')))
@@ -2171,7 +2192,10 @@ fn attached_shell_command_mutates_git_authority(command: &str) -> bool {
             || token.contains("\\.git\\")
             || token.ends_with("/.git")
             || token.ends_with("\\.git")
-            || matches!(*token, "git_dir" | "git_index_file" | "--git-dir" | "--git-dir=" | "--work-tree")
+            || matches!(
+                *token,
+                "git_dir" | "git_index_file" | "--git-dir" | "--git-dir=" | "--work-tree"
+            )
             || token.starts_with("git_dir=")
             || token.starts_with("git_index_file=")
             || token.starts_with("--git-dir=")
@@ -2752,6 +2776,15 @@ fn coder_visible_tool_ids() -> HashSet<ToolId> {
         ids.extend(coder_domain_tool_ids(*domain).into_iter().flatten());
     }
     ids
+}
+
+/// Exact semantic ceiling for a Coder worker before destination policy and
+/// Forge work policy intersect it further.
+pub fn coder_worker_tool_names() -> HashSet<String> {
+    coder_visible_tool_ids()
+        .into_iter()
+        .map(|id| id.as_str().to_string())
+        .collect()
 }
 
 fn resolve_known_coder_tool_id(wire_name: &str) -> Option<ToolId> {

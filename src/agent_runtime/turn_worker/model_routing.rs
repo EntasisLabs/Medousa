@@ -10,6 +10,7 @@ pub fn default_stage_role_for_intent(intent: TurnWorkerIntent) -> &'static str {
         TurnWorkerIntent::Research => "extractor",
         TurnWorkerIntent::MemoryContext | TurnWorkerIntent::MemoryAvecCalibrate => "summarizer",
         TurnWorkerIntent::General => "final_response",
+        TurnWorkerIntent::Coder => "final_response",
     }
 }
 

@@ -257,6 +257,21 @@ impl WorkshopExecutionRouter {
 
         let user_default = crate::agent_runtime::execution_context::active_turn_execution_context()
             .and_then(|context| context.worker_execution_target().cloned());
+        let bound_coder_runtime_id = input
+            .intent
+            .as_deref()
+            .is_some_and(|intent| intent.eq_ignore_ascii_case("coder"))
+            .then(|| {
+                crate::agent_runtime::execution_context::active_turn_execution_context()
+                    .and_then(|context| {
+                        crate::agent_mode_state::get_session_code_binding(
+                            context.session_id().as_str(),
+                        )
+                        .ok()
+                    })
+                    .and_then(|binding| binding.execution_runtime_id)
+            })
+            .flatten();
         let (requested, authority) = match user_default {
             Some(
                 requested @ (ExecutionTargetSelection::SameAsParent
@@ -267,13 +282,25 @@ impl WorkshopExecutionRouter {
                 .clone()
                 .map(|agent_request| (agent_request, SelectionAuthority::Agent))
                 .unwrap_or((requested, SelectionAuthority::Agent)),
-            None if input.execution_target.is_some() => (
-                input
+            None if input.execution_target.is_some() => {
+                let requested = input
                     .execution_target
                     .clone()
-                    .expect("checked execution target"),
-                SelectionAuthority::Agent,
-            ),
+                    .expect("checked execution target");
+                let is_bound_coder_target = matches!(
+                    &requested,
+                    ExecutionTargetSelection::Exact { runtime_id }
+                        if bound_coder_runtime_id.as_deref() == Some(runtime_id.as_str())
+                );
+                (
+                    requested,
+                    if is_bound_coder_target {
+                        SelectionAuthority::User
+                    } else {
+                        SelectionAuthority::Agent
+                    },
+                )
+            }
             None if self.ingress_default == WorkshopIngressDefault::SameAsParent => (
                 ExecutionTargetSelection::SameAsParent,
                 SelectionAuthority::User,
@@ -443,7 +470,8 @@ impl WorkshopExecutionTarget for LocalWorkshopExecution {
                 .node_id(&runtime_id)
                 .platform(std::env::consts::OS)
                 .architecture(std::env::consts::ARCH)
-                .with_capability("assistant.work"),
+                .with_capability("assistant.work")
+                .with_capability("coder.work"),
         )])
     }
 

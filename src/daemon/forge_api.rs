@@ -865,6 +865,7 @@ struct InspectRepositoryRequest {
 
 #[derive(Debug, Clone, Serialize)]
 struct RepositoryInspection {
+    repo_id: String,
     path: PathBuf,
     display_name: String,
     current_branch: Option<String>,
@@ -1157,6 +1158,7 @@ fn inspect_repository_path_from_items(
         "The repository is clean. Medousa will create an isolated working copy from the selected branch.".into()
     };
     Ok(RepositoryInspection {
+        repo_id: identity.repo_id.to_string(),
         path,
         display_name,
         current_branch,
@@ -1280,6 +1282,7 @@ async fn list_repositories(
                         let available = record.path.is_dir();
                         let repository = inspect_repository_path_from_items(&record.path, &items).unwrap_or_else(|_| {
                             RepositoryInspection {
+                                repo_id: record.path.to_string_lossy().into_owned(),
                                 display_name: record
                                     .path
                                     .file_name()
@@ -10508,12 +10511,9 @@ async fn discard_item(
             .map(str::to_owned)
             .collect::<Vec<_>>();
         for session_id in native_session_ids {
-            crate::daemon::interactive::cancel_active_session_turn_for_session(
-                &state,
-                &session_id,
-            )
-            .await
-            .map_err(|(status, message)| request_error(status, message))?;
+            crate::daemon::interactive::cancel_active_session_turn_for_session(&state, &session_id)
+                .await
+                .map_err(|(status, message)| request_error(status, message))?;
         }
 
         // Native Coder releases its Forge lease only after its bound shell is
@@ -10554,8 +10554,9 @@ async fn discard_item(
                 let actor = actor_from_state(&state);
                 let item = forge(&state).discard(&id, &actor).map_err(map_err)?;
                 for session_id in crate::agent_mode_state::session_ids_with_code_binding() {
-                    let bound_to_item = crate::agent_mode_state::get_session_code_binding(&session_id)
-                        .is_ok_and(|binding| binding.work_id.as_deref() == Some(id.as_str()));
+                    let bound_to_item =
+                        crate::agent_mode_state::get_session_code_binding(&session_id)
+                            .is_ok_and(|binding| binding.work_id.as_deref() == Some(id.as_str()));
                     if bound_to_item
                         && let Err(err) =
                             crate::agent_mode_state::clear_session_code_binding(&session_id)

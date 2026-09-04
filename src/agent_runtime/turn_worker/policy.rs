@@ -82,6 +82,7 @@ pub enum TurnWorkerIntent {
     MemoryContext,
     Research,
     General,
+    Coder,
 }
 
 impl TurnWorkerIntent {
@@ -93,6 +94,7 @@ impl TurnWorkerIntent {
             "memory.context" | "memory_context" => Some(Self::MemoryContext),
             "research" | "delegate.research" | "web" | "websearch" => Some(Self::Research),
             "general" | "default" => Some(Self::General),
+            "coder" | "code" | "delegate.coder" => Some(Self::Coder),
             _ => None,
         }
     }
@@ -103,6 +105,7 @@ impl TurnWorkerIntent {
             Self::MemoryContext => "memory.context",
             Self::Research => "research",
             Self::General => "general",
+            Self::Coder => "coder",
         }
     }
 }
@@ -114,6 +117,7 @@ pub fn max_worker_tool_rounds(intent: TurnWorkerIntent) -> usize {
         TurnWorkerIntent::MemoryContext => 10,
         TurnWorkerIntent::Research => 10,
         TurnWorkerIntent::General => 10,
+        TurnWorkerIntent::Coder => 16,
     }
 }
 
@@ -186,6 +190,9 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                 ],
             );
             push(&mut names, crate::tool_bootstrap::ENVIRONMENT_DOMAIN_TOOLS);
+        }
+        TurnWorkerIntent::Coder => {
+            names.extend(super::super::coder_tools::coder_worker_tool_names());
         }
     }
 
@@ -458,6 +465,7 @@ mod tests {
             work_id: "work-1".to_string(),
             correlation_id: "correlation-1".to_string(),
             worker_intent: "research".to_string(),
+            project_id: None,
             policy_revision: 2,
             policy_source: crate::peer_execution_policy::PeerExecutionPolicySource::Stored,
             requested_tool_domains: vec![

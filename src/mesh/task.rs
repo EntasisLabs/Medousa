@@ -265,8 +265,10 @@ impl DelegatedTaskExecutor for DaemonDelegatedTaskExecutor {
             .as_ref()
             .map(|worker| worker.intent.as_str())
             .unwrap_or("research");
-        let parsed_intent = crate::agent_runtime::turn_worker::TurnWorkerIntent::parse(worker_intent)
-            .ok_or_else(|| DelegatedTaskError::invalid("delegated worker intent is unsupported"))?;
+        let parsed_intent = crate::agent_runtime::turn_worker::TurnWorkerIntent::parse(
+            worker_intent,
+        )
+        .ok_or_else(|| DelegatedTaskError::invalid("delegated worker intent is unsupported"))?;
         let stage_role = request
             .worker
             .as_ref()
@@ -358,10 +360,13 @@ impl DelegatedTaskExecutor for DaemonDelegatedTaskExecutor {
             .worker
             .as_ref()
             .and_then(|worker| worker.parent.agent_mode.clone());
-        record.parent_code_work_id = request
-            .worker
-            .as_ref()
-            .and_then(|worker| worker.parent.code_work_id.clone());
+        record.parent_code_work_id = request.worker.as_ref().and_then(|worker| {
+            worker
+                .code_project
+                .as_ref()
+                .map(|project| project.work_id.clone())
+                .or_else(|| worker.parent.code_work_id.clone())
+        });
         record.stage_role = stage_role;
         record.model_hint = model_hint;
         record.manuscript_id = request

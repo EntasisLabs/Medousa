@@ -6,8 +6,8 @@ use async_trait::async_trait;
 use serde_json::{Value, json};
 
 use crate::delegated_task::{
-    WORKER_SPAWN_SPEC_SCHEMA_VERSION, WorkerBotSpec, WorkerManuscriptSpec, WorkerParentSpec,
-    WorkerSpawnSpec, WorkerToolRequest,
+    WORKER_SPAWN_SPEC_SCHEMA_VERSION, WorkerBotSpec, WorkerCodeProjectRef, WorkerManuscriptSpec,
+    WorkerParentSpec, WorkerSpawnSpec, WorkerToolRequest,
 };
 use crate::delegation::DelegationService;
 use crate::workshop_api::{
@@ -139,10 +139,41 @@ fn compile_remote_worker_spec(
         .and_then(|value| value.max_tool_rounds)
         .unwrap_or_else(|| crate::agent_runtime::turn_worker::max_worker_tool_rounds(intent))
         .max(1);
-    let code_work_id =
-        crate::agent_mode_state::get_session_code_binding(execution.session_id().as_str())
-            .ok()
-            .and_then(|binding| binding.work_id);
+    let code_binding =
+        crate::agent_mode_state::get_session_code_binding(execution.session_id().as_str()).ok();
+    let code_work_id = code_binding
+        .as_ref()
+        .and_then(|binding| binding.work_id.clone());
+    let code_project = if intent == crate::agent_runtime::turn_worker::TurnWorkerIntent::Coder {
+        let binding = code_binding
+            .as_ref()
+            .ok_or_else(|| worker_error("remote Coder requires a session project binding"))?;
+        let runtime_id = binding
+            .execution_runtime_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| worker_error("remote Coder project has no execution authority"))?;
+        let work_id = binding
+            .work_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| worker_error("remote Coder project has no Forge undertaking"))?;
+        let repo_id = binding
+            .repo_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| worker_error("remote Coder project has no repository identity"))?;
+        Some(WorkerCodeProjectRef {
+            runtime_id: runtime_id.to_string(),
+            work_id: work_id.to_string(),
+            repo_id: repo_id.to_string(),
+        })
+    } else {
+        None
+    };
     Ok(WorkerSpawnSpec {
         schema_version: WORKER_SPAWN_SPEC_SCHEMA_VERSION,
         intent: intent.as_str().to_string(),
@@ -166,6 +197,7 @@ fn compile_remote_worker_spec(
             supports_liquid_markdown: parent_surface.liquid_markdown,
             supports_browser_host: parent_surface.browser_host,
         },
+        code_project,
         execution_placement: resolution.clone(),
         max_tool_rounds,
         tools: WorkerToolRequest { names: tool_names },
@@ -273,6 +305,7 @@ mod tests {
         for intent in [
             "research",
             "general",
+            "coder",
             "memory.context",
             "memory.avec_calibrate",
         ] {
