@@ -101,7 +101,9 @@
 
   async function interrupt() {
     haptic("warning");
-    if (sessionId) await terminalInterrupt(sessionId);
+    if (sessionId) {
+      await terminalInterrupt(sessionId, undertakings.active?.executionRuntimeId ?? null);
+    }
   }
 </script>
 
@@ -120,6 +122,7 @@
         bind:this={pane}
         {sessionId}
         {workId}
+        executionRuntimeId={undertakings.active?.executionRuntimeId ?? null}
         title="Terminal"
         compact={false}
         mobile={true}

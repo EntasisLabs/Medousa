@@ -60,9 +60,14 @@ pub async fn code_lsp_attach(
     _state: State<'_, DaemonState>,
     registry: State<'_, CodeLspTransportRegistry>,
     path: String,
+    execution_runtime_id: Option<String>,
 ) -> Result<CodeLspAttachResponse, String> {
     validate_lsp_path(&path)?;
-    let websocket = crate::terminal::connect_authenticated_ws(&path).await?;
+    let websocket = crate::terminal::connect_authenticated_ws_for_runtime(
+        &path,
+        execution_runtime_id.as_deref(),
+    )
+    .await?;
 
     let attach_id = NEXT_ATTACH_ID.fetch_add(1, Ordering::SeqCst);
     let (outbound, outbound_rx) = mpsc::unbounded_channel();

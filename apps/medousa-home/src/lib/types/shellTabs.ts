@@ -33,6 +33,8 @@ export type ShellTab =
       sessionId: string;
       /** Governed undertaking that owns this session, when tracked by Forge. */
       workId?: string | null;
+      /** Stable workshop authority that owns the PTY. */
+      executionRuntimeId?: string | null;
       title: string;
     };
 

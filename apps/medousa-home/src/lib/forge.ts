@@ -5,6 +5,8 @@ import { getDaemonUrl, operationPath, type OperationId } from "$lib/daemon";
 import { streamPathWithSince } from "$lib/stream/reconnect";
 import { isTauri } from "$lib/window";
 import { assertWorkspaceMode, unsupportedAttachedCheckout, type ForgeEnvironment, type ForgeWorkspaceMode } from "$lib/forgeWorkspace";
+import { getCoderExecutionTransport } from "$lib/executionAuthority";
+import { synthesizeRepositoryInspection } from "$lib/forgeCompatibility";
 export { usesAttachedCheckout, type ForgeEnvironment, type ForgeWorkspaceMode } from "$lib/forgeWorkspace";
 export type ActionAffordance = {
   allowed: boolean;
@@ -492,6 +494,7 @@ async function forgeFetch<T>(
         method: init?.method ?? "GET",
         path,
         body,
+        executionRuntimeId: getCoderExecutionTransport(),
       });
     } catch (cause) {
       const raw = cause instanceof Error ? cause.message : String(cause);
@@ -535,31 +538,6 @@ export function isMissingForgeRoute(err: unknown): boolean {
   if (status === 404 || status === 405) return true;
   const message = err instanceof Error ? err.message : String(err ?? "");
   return /HTTP\s+404\b/i.test(message) || /HTTP\s+405\b/i.test(message);
-}
-
-function folderNameFromPath(path: string): string {
-  const parts = path.split(/[/\\]/).filter(Boolean);
-  return parts[parts.length - 1] || path;
-}
-
-/** Local fallback when repository inspect is missing on older daemons. */
-export function synthesizeRepositoryInspection(path: string): RepositoryInspection {
-  const trimmed = path.trim();
-  return {
-    path: trimmed,
-    display_name: folderNameFromPath(trimmed),
-    current_branch: null,
-    suggested_base_ref: "main",
-    has_commits: true,
-    dirty: false,
-    changed_files: 0,
-    remotes: [],
-    existing_projects: [],
-    state_explanation:
-      "This workshop cannot inspect Git yet. Medousa will still start the project from this folder.",
-    trust_explanation:
-      "Update medousa_daemon to get branch, dirty-state, and duplicate-project checks.",
-  };
 }
 
 export async function listUndertakings(): Promise<ItemProjection[]> {
@@ -839,6 +817,8 @@ export async function createUndertaking(input: {
 }
 
 export type RepositoryInspection = {
+  /** Stable identity authored by the workshop that owns this repository. */
+  repo_id: string;
   path: string;
   display_name: string;
   current_branch?: string | null;
@@ -1234,12 +1214,29 @@ export async function importProviderComment(
 
 export async function inspectForgeRepository(path: string): Promise<RepositoryInspection> {
   try {
-    return await forgeFetch(operationPath("forge.repositories.inspect.post"), {
+    const inspection = await forgeFetch<RepositoryInspection>(
+      operationPath("forge.repositories.inspect.post"), {
       method: "POST",
       body: JSON.stringify({ path }),
-    });
+      },
+    );
+    const repoId = inspection.repo_id?.trim();
+    if (!repoId) {
+      if (getCoderExecutionTransport()) {
+        throw new Error(
+          "The selected workshop is too old to identify repositories safely. Update medousa_daemon there before using remote Coder.",
+        );
+      }
+      return { ...inspection, repo_id: path.trim() };
+    }
+    return { ...inspection, repo_id: repoId };
   } catch (err) {
     if (isMissingForgeRoute(err)) {
+      if (getCoderExecutionTransport()) {
+        throw new Error(
+          "The selected workshop does not support remote Coder projects yet. Update medousa_daemon there and try again.",
+        );
+      }
       return synthesizeRepositoryInspection(path);
     }
     throw err;

@@ -60,6 +60,20 @@ describe("authenticated daemon event streams", () => {
     expect(connection.closed).toBe(true);
   });
 
+  it("pins a native stream to the undertaking workshop", async () => {
+    const connection = await openDaemonEventStream<{ work_id: string }>({
+      operation: "forge.stream.get",
+      executionRuntimeId: "runtime-mac-mini",
+      browserUrl: async () => "http://127.0.0.1/unused",
+      browserEvent: "forge",
+      onEvent: () => {},
+      onError: () => {},
+    });
+
+    expect(mocks.start.mock.calls[0]?.[4]).toBe("runtime-mac-mini");
+    connection.close();
+  });
+
   it("cancels and releases a failed native stream", async () => {
     const errors: string[] = [];
     const connection = await openDaemonEventStream<{ seq: number }>({

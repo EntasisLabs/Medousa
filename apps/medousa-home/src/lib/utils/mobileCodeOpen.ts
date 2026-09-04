@@ -102,7 +102,10 @@ export async function openMobileCodeThread(): Promise<void> {
     if (item) undertakings.setActiveFromItem(item);
     undertakings.bindChat(sessionId);
     try {
-      await setSessionCodeBinding(sessionId, workId);
+      await setSessionCodeBinding(sessionId, workId, {
+        executionRuntimeId: undertakings.active?.executionRuntimeId ?? null,
+        repoId: undertakings.active?.repoId ?? null,
+      });
     } catch {
       // Binding is best-effort; the Chat surface still opens.
     }

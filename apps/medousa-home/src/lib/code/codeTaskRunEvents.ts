@@ -8,6 +8,7 @@ import {
   type ProjectTaskOutputEvent,
   type ProjectTaskResult,
 } from "$lib/forge";
+import { getCoderExecutionTransport } from "$lib/executionAuthority";
 import {
   DEFAULT_WORKSPACE_BACKOFF,
   ReconnectScheduler,
@@ -116,6 +117,7 @@ export class CodeTaskRunEventStream {
     let source: DaemonEventConnection | null = null;
     try {
       source = await openDaemonEventStream<ProjectTaskOutputEvent>({
+        executionRuntimeId: getCoderExecutionTransport(),
         operation: "forge.items.by_work_id.task_runs.by_run_id.events.get",
         pathParams: { work_id: workId, run_id: runId },
         query: { since: String(this.lastSeq + 1) },

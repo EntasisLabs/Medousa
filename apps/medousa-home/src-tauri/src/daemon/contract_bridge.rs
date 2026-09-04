@@ -53,6 +53,7 @@ pub async fn daemon_stream_start(
     path_params: HashMap<String, String>,
     query: Option<HashMap<String, String>>,
     client_handle: Option<String>,
+    execution_runtime_id: Option<String>,
 ) -> Result<String, String> {
     let op = medousa_sdk::generated::ops::by_id(operation.id())
         .ok_or_else(|| format!("unknown operation {}", operation.id()))?;
@@ -76,7 +77,14 @@ pub async fn daemon_stream_start(
     streams.insert(handle.clone(), tx);
     drop(streams);
 
-    let config = crate::daemon::sdk::transport_config(&state)?;
+    let config = match execution_runtime_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|runtime_id| !runtime_id.is_empty())
+    {
+        Some(runtime_id) => crate::active_workshop::transport_config_for_runtime_id(runtime_id)?,
+        None => crate::daemon::sdk::transport_config(&state)?,
+    };
     let event_name = format!("daemon-stream://{handle}/event");
     let error_event = format!("daemon-stream://{handle}/error");
     tokio::spawn(async move {

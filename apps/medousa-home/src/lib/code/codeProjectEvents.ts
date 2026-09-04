@@ -8,6 +8,7 @@ import {
   type ForgeProjectEvent,
   type ForgeProjectEventKind,
 } from "$lib/forge";
+import { getCoderExecutionTransport } from "$lib/executionAuthority";
 import {
   DEFAULT_WORKSPACE_BACKOFF,
   ReconnectScheduler,
@@ -164,6 +165,7 @@ export class CodeProjectEventStream {
     let source: DaemonEventConnection | null = null;
     try {
       source = await openDaemonEventStream<ForgeProjectEvent>({
+        executionRuntimeId: getCoderExecutionTransport(),
         operation: "forge.items.by_work_id.project_events.get",
         pathParams: { work_id: id },
         query: this.lastSeq > 0 ? { since: String(this.lastSeq) } : undefined,

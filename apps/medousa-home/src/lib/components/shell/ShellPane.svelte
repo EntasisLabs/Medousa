@@ -208,6 +208,7 @@
           loader={loadTerminalPane}
           sessionId={activeTab.sessionId}
           workId={activeTab.workId}
+          executionRuntimeId={activeTab.executionRuntimeId}
           title={activeTab.title}
         />
       {/key}

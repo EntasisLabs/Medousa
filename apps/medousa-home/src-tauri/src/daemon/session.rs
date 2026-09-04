@@ -15,9 +15,9 @@ use tauri::State;
 
 use crate::embedded_daemon::EmbeddedDaemonState;
 
+use super::DaemonState;
 use super::sdk::{client, sdk_error};
 use super::workshop_http;
-use super::DaemonState;
 
 #[tauri::command]
 pub async fn session_create(
@@ -324,12 +324,31 @@ pub async fn session_get_code_binding(
 #[tauri::command]
 pub async fn session_set_code_binding(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     session_id: String,
     work_id: String,
+    execution_runtime_id: Option<String>,
+    repo_id: Option<String>,
 ) -> Result<SessionCodeBindingResponse, String> {
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .set_session_code_binding(
+                session_id.trim(),
+                work_id.trim(),
+                execution_runtime_id.as_deref(),
+                repo_id.as_deref(),
+            )
+            .map_err(|error| error.to_string());
+    }
     client(&state)?
         .sessions()
-        .set_code_binding(session_id.trim(), work_id.trim())
+        .set_code_binding_authority(
+            session_id.trim(),
+            work_id.trim(),
+            execution_runtime_id.as_deref(),
+            repo_id.as_deref(),
+        )
         .await
         .map_err(sdk_error)
 }

@@ -75,4 +75,14 @@ describe("ExecutionTargetStore", () => {
       runtime_id: "runtime-offline",
     });
   });
+
+  it("uses no native override for the parent but preserves an exact remote authority", async () => {
+    const store = new ExecutionTargetStore(async () => inventory());
+    store.activateWorkshopScope("personal-test");
+    await store.refresh();
+
+    expect(store.transportRuntimeId("runtime-phone")).toBeNull();
+    expect(store.transportRuntimeId("runtime-mac-mini")).toBe("runtime-mac-mini");
+    expect(store.transportRuntimeId("runtime-offline")).toBe("runtime-offline");
+  });
 });

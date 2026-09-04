@@ -30,7 +30,7 @@ import {
 } from "$lib/daemon";
 import type { GraphemeLspWorkspaceResponse } from "$lib/types/grapheme";
 import { isTauri } from "$lib/window";
-
+import { getCoderExecutionTransport } from "$lib/executionAuthority";
 type CloseableTransport = {
   transport: Transport;
   close: () => void;
@@ -176,7 +176,7 @@ async function createNativeCloseableWebSocketTransport(
   );
 
   try {
-    const attached = await invoke<{ attach_id: number }>("code_lsp_attach", { path });
+    const attached = await invoke<{ attach_id: number }>("code_lsp_attach", { path, executionRuntimeId: getCoderExecutionTransport() });
     attachId = attached.attach_id;
     await invoke("code_lsp_ready", { attachId });
   } catch (error) {
@@ -798,7 +798,7 @@ async function codeAgentGet<T>(
     };
     const operation = operations[path];
     if (!operation) throw new Error(`Unsupported Code Intelligence read: ${path}`);
-    return invoke<T>("code_read", { operation, query });
+    return invoke<T>("code_read", { operation, query, executionRuntimeId: getCoderExecutionTransport() });
   }
   const base = (await getDaemonUrl()).replace(/\/$/, "");
   const params = new URLSearchParams(query);
@@ -819,7 +819,7 @@ async function codeAgentPost<T>(
     if (path !== OPERATIONS["code.request.post"].path) {
       throw new Error(`Unsupported Code Intelligence mutation: ${path}`);
     }
-    return invoke<T>("code_request", { body });
+    return invoke<T>("code_request", { body, executionRuntimeId: getCoderExecutionTransport() });
   }
   const base = (await getDaemonUrl()).replace(/\/$/, "");
   const response = await fetch(`${base}${path}`, {

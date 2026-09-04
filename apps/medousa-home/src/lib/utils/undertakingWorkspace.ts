@@ -117,6 +117,7 @@ export async function openTrackedTerminal(
         activate: true,
         title: `Terminal · ${item.title}`,
         workId: item.id,
+        executionRuntimeId: undertakings.active?.executionRuntimeId ?? null,
       });
     }
     return existing;
@@ -133,7 +134,10 @@ export async function openTrackedTerminal(
     });
   }
 
-  const created = await terminalCreate({ work_id: item.id, lease_id: leaseId });
+  const created = await terminalCreate(
+    { work_id: item.id, lease_id: leaseId },
+    undertakings.active?.executionRuntimeId ?? null,
+  );
   const sessionId = terminalSessionId(created);
   if (!sessionId) return null;
 
@@ -143,6 +147,7 @@ export async function openTrackedTerminal(
       activate: true,
       title: `Terminal · ${item.title}`,
       workId: item.id,
+      executionRuntimeId: undertakings.active?.executionRuntimeId ?? null,
     });
   }
   return sessionId;
@@ -194,7 +199,10 @@ export async function startTrackedAgent(
   setSessionAgentWorkId(sessionId, readyItem.id);
   undertakings.setActiveFromItem(readyItem, { executorKind: runtime });
   undertakings.bindChat(sessionId);
-  await setSessionCodeBinding(sessionId, readyItem.id);
+  await setSessionCodeBinding(sessionId, readyItem.id, {
+    executionRuntimeId: undertakings.active?.executionRuntimeId ?? null,
+    repoId: undertakings.active?.repoId ?? null,
+  });
   shellTabs.openChat(sessionId, { activate: true });
   if (options?.draft?.trim()) {
     chat.prefillDraft(options.draft.trim());

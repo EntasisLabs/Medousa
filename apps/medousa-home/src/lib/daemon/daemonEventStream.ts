@@ -22,6 +22,8 @@ export type OpenDaemonEventStreamOptions<T> = {
   operation: OperationId;
   pathParams?: Record<string, string>;
   query?: Record<string, string>;
+  /** Exact paired workshop that owns this stream, when it is not the parent. */
+  executionRuntimeId?: string | null;
   /** Browser-only compatibility path. Native Home never puts credentials here. */
   browserUrl: () => Promise<string>;
   browserEvent: string;
@@ -76,6 +78,7 @@ async function openNativeDaemonEventStream<T>(
       options.pathParams,
       options.query,
       handle,
+      options.executionRuntimeId,
     );
     if (!closed) options.onOpen?.();
     return {

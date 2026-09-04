@@ -25,6 +25,7 @@ pub async fn forge_request(
     method: String,
     path: String,
     body: Option<Value>,
+    execution_runtime_id: Option<String>,
 ) -> Result<Value, String> {
     if !allowed_path(&path) {
         return Err("unsupported Forge API path".into());
@@ -34,13 +35,15 @@ pub async fn forge_request(
     if !matches!(method.as_str(), "GET" | "POST" | "PUT" | "PATCH" | "DELETE") {
         return Err("unsupported Forge API method".into());
     }
-    crate::workshop_transport::workshop_json_request(
-        &workshop_http::transport_config(&state)?,
-        &method,
-        &path,
-        body.as_ref(),
-    )
-    .await
+    let config = match execution_runtime_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|runtime_id| !runtime_id.is_empty())
+    {
+        Some(runtime_id) => crate::active_workshop::transport_config_for_runtime_id(runtime_id)?,
+        None => workshop_http::transport_config(&state)?,
+    };
+    crate::workshop_transport::workshop_json_request(&config, &method, &path, body.as_ref()).await
 }
 
 #[cfg(test)]
