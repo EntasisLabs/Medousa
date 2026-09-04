@@ -655,6 +655,16 @@ impl BlockingSessionsApi<'_> {
         session_id: &str,
         work_id: &str,
     ) -> Result<SessionCodeBindingResponse, SdkError> {
+        self.set_code_binding_authority(session_id, work_id, None, None)
+    }
+
+    pub fn set_code_binding_authority(
+        &self,
+        session_id: &str,
+        work_id: &str,
+        execution_runtime_id: Option<&str>,
+        repo_id: Option<&str>,
+    ) -> Result<SessionCodeBindingResponse, SdkError> {
         self.http.put(
             &op_path(
                 &ops::SESSIONS_BY_SESSION_ID_CODE_BINDING_PUT,
@@ -662,6 +672,8 @@ impl BlockingSessionsApi<'_> {
             )?,
             &SetSessionCodeBindingRequest {
                 work_id: work_id.to_string(),
+                execution_runtime_id: execution_runtime_id.map(str::to_string),
+                repo_id: repo_id.map(str::to_string),
             },
         )
     }

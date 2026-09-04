@@ -5088,16 +5088,29 @@ impl EmbeddedDaemonClient {
             .map_err(anyhow::Error::msg)
     }
 
-    /// Code work is outside the first mobile capability ceiling, so a fresh
-    /// embedded session has no daemon-side Forge binding.
     pub fn session_code_binding(&self, session_id: &str) -> Result<SessionCodeBindingResponse> {
         self.require(Capability::WorkshopRead)?;
         let session_id = SessionId::parse(session_id).map_err(|error| anyhow!(error))?;
-        Ok(SessionCodeBindingResponse {
-            session_id: session_id.to_string(),
-            work_id: None,
-            updated_at_utc: None,
-        })
+        crate::agent_mode_state::get_session_code_binding(session_id.as_str())
+            .map_err(anyhow::Error::msg)
+    }
+
+    pub fn set_session_code_binding(
+        &self,
+        session_id: &str,
+        work_id: &str,
+        execution_runtime_id: Option<&str>,
+        repo_id: Option<&str>,
+    ) -> Result<SessionCodeBindingResponse> {
+        self.require(Capability::ContentWrite)?;
+        let session_id = SessionId::parse(session_id).map_err(|error| anyhow!(error))?;
+        crate::agent_mode_state::set_session_code_binding_authority(
+            session_id.as_str(),
+            work_id,
+            execution_runtime_id,
+            repo_id,
+        )
+        .map_err(anyhow::Error::msg)
     }
 
     pub async fn start_turn(

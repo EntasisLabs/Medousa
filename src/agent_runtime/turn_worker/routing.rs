@@ -44,6 +44,7 @@ impl HostTurnRoute {
                 TurnWorkerIntent::MemoryContext => "delegate:memory.context",
                 TurnWorkerIntent::Research => "delegate:research",
                 TurnWorkerIntent::General => "delegate:general",
+                TurnWorkerIntent::Coder => "delegate:coder",
             },
         }
     }

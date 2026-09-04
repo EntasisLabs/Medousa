@@ -451,18 +451,50 @@ pub async fn set_session_code_binding(
     if work_id.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "work_id is required".to_string()));
     }
-    state
-        .forge
-        .load(&medousa_forge::model::WorkId::from(work_id.to_string()))
-        .map_err(|err| {
-            (
-                StatusCode::BAD_REQUEST,
-                format!("cannot bind undertaking: {err}"),
-            )
-        })?;
-    crate::agent_mode_state::set_session_code_binding(&session_id, work_id)
-        .map(Json)
-        .map_err(|err| (StatusCode::BAD_REQUEST, err))
+    let local_runtime_id = crate::workshop_authority::current()
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err))?
+        .as_str()
+        .to_string();
+    let requested_runtime_id = request
+        .execution_runtime_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let is_local = requested_runtime_id.is_none_or(|runtime_id| runtime_id == local_runtime_id);
+    let resolved_repo_id = if is_local {
+        let item = state
+            .forge
+            .load(&medousa_forge::model::WorkId::from(work_id.to_string()))
+            .map_err(|err| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!("cannot bind undertaking: {err}"),
+                )
+            })?;
+        item.workspace_environment()
+            .map(|environment| environment.repo.repo_id.to_string())
+            .or_else(|| request.repo_id.clone())
+    } else {
+        request.repo_id.clone()
+    };
+    if !is_local
+        && resolved_repo_id
+            .as_deref()
+            .is_none_or(|value| value.trim().is_empty())
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "remote Coder binding requires a destination-authored repo_id".to_string(),
+        ));
+    }
+    crate::agent_mode_state::set_session_code_binding_authority(
+        &session_id,
+        work_id,
+        requested_runtime_id,
+        resolved_repo_id.as_deref(),
+    )
+    .map(Json)
+    .map_err(|err| (StatusCode::BAD_REQUEST, err))
 }
 
 pub async fn clear_session_code_binding(

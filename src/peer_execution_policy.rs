@@ -30,6 +30,11 @@ pub fn execution_tool_domain(tool_name: &str) -> &'static str {
         name if name.starts_with("cognition_web_") || name.starts_with("cognition_browser_") => {
             "web"
         }
+        name if name.starts_with("cognition_coder_shell_")
+            || name.starts_with("cognition_shell_session_") =>
+        {
+            "code"
+        }
         name if name.starts_with("cognition_shell_") => "shell",
         name if name.starts_with("cognition_openshell_")
             || name.starts_with("cognition_skill_")
@@ -37,7 +42,12 @@ pub fn execution_tool_domain(tool_name: &str) -> &'static str {
         {
             "sandbox"
         }
-        name if name.starts_with("cognition_code_") => "code",
+        name if name.starts_with("cognition_code_")
+            || name.starts_with("cognition_coder_")
+            || name.starts_with("cognition_engineering_") =>
+        {
+            "code"
+        }
         name if name.starts_with("cognition_memory_") => "memory",
         name if name.starts_with("cognition_identity_") => "identity",
         name if name.starts_with("cognition_mcp_") || name.starts_with("cognition_bridge_") => {
@@ -285,6 +295,8 @@ pub struct TaskExecutionGrant {
     pub work_id: String,
     pub correlation_id: String,
     pub worker_intent: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
     pub policy_revision: u64,
     pub policy_source: PeerExecutionPolicySource,
     pub requested_tool_domains: Vec<String>,
@@ -304,6 +316,8 @@ pub enum PeerExecutionDenialReason {
     PolicyDisabled,
     PolicyExpired,
     AssistantWorkDenied,
+    CoderWorkDenied,
+    ProjectDenied,
     ToolDomainDenied,
     RequestExpired,
 }
@@ -314,6 +328,8 @@ impl PeerExecutionDenialReason {
             Self::PolicyDisabled => "peer_execution_policy_disabled",
             Self::PolicyExpired => "peer_execution_policy_expired",
             Self::AssistantWorkDenied => "peer_execution_assistant_denied",
+            Self::CoderWorkDenied => "peer_execution_coder_denied",
+            Self::ProjectDenied => "peer_execution_project_denied",
             Self::ToolDomainDenied => "peer_execution_tool_domain_denied",
             Self::RequestExpired => "peer_execution_request_expired",
         }
@@ -337,6 +353,7 @@ pub struct AssistantWorkAdmission<'a> {
     pub work_id: &'a str,
     pub correlation_id: &'a str,
     pub worker_intent: &'a str,
+    pub project_id: Option<&'a str>,
     pub requested_tool_domains: &'a [&'a str],
     pub requested_tool_names: &'a [&'a str],
     pub request_expires_at: DateTime<Utc>,
@@ -487,6 +504,9 @@ impl PeerExecutionPolicyStore {
         validate_identity("parent session id", admission.parent_session_id)?;
         validate_identity("correlation id", admission.correlation_id)?;
         validate_identity("worker intent", admission.worker_intent)?;
+        if let Some(project_id) = admission.project_id {
+            validate_identity("project id", project_id)?;
+        }
         if let Some(bot_id) = admission.bot_id {
             validate_identity("bot id", bot_id)?;
         }
@@ -543,6 +563,35 @@ impl PeerExecutionPolicyStore {
             grant.policy_source = view.source;
             grant
         }))
+    }
+
+    /// Revalidate a previously admitted remote Coder grant at a mutation
+    /// boundary. The immutable grant remains provenance, while the current
+    /// destination-owned policy may narrow or revoke future operations.
+    pub fn coder_grant_is_active(&self, grant: &TaskExecutionGrant) -> Result<bool> {
+        if grant.worker_intent != "coder"
+            || grant.expires_at <= Utc::now()
+            || grant.policy_source != PeerExecutionPolicySource::Stored
+        {
+            return Ok(false);
+        }
+        let Some(project_id) = grant
+            .project_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            return Ok(false);
+        };
+        let view = self.policy_for_peer(&grant.peer_device_id, &grant.peer_pairing_id, false)?;
+        let policy = view.policy;
+        Ok(view.source == PeerExecutionPolicySource::Stored
+            && policy.enabled
+            && !policy.is_expired_at(Utc::now())
+            && policy.coder_work
+            && policy.allowed_project_ids.contains(project_id)
+            && policy.allowed_tool_domains.contains("turn")
+            && policy.allowed_tool_domains.contains("code"))
     }
 
     pub fn remove_policy(
@@ -752,6 +801,10 @@ fn compile_policy(
     if policy.coder_work && policy.allowed_project_ids.is_empty() {
         bail!("approved-project or custom Coder policy requires at least one project id");
     }
+    if policy.coder_work {
+        policy.allowed_tool_domains.insert("turn".to_string());
+        policy.allowed_tool_domains.insert("code".to_string());
+    }
     Ok(policy)
 }
 
@@ -769,7 +822,18 @@ fn evaluate_assistant_work(
     if admission.request_expires_at <= now {
         return Err(PeerExecutionDenialReason::RequestExpired);
     }
-    if !policy.assistant_work {
+    let is_coder = admission.worker_intent.eq_ignore_ascii_case("coder");
+    if is_coder {
+        if !policy.coder_work {
+            return Err(PeerExecutionDenialReason::CoderWorkDenied);
+        }
+        let Some(project_id) = admission.project_id else {
+            return Err(PeerExecutionDenialReason::ProjectDenied);
+        };
+        if !policy.allowed_project_ids.contains(project_id) {
+            return Err(PeerExecutionDenialReason::ProjectDenied);
+        }
+    } else if !policy.assistant_work {
         return Err(PeerExecutionDenialReason::AssistantWorkDenied);
     }
     let requested = admission
@@ -785,7 +849,7 @@ fn evaluate_assistant_work(
     if policy.network_policy == PeerNetworkPolicy::Deny {
         effective.remove("web");
     }
-    if !effective.contains("turn") {
+    if !effective.contains("turn") || (is_coder && !effective.contains("code")) {
         return Err(PeerExecutionDenialReason::ToolDomainDenied);
     }
     let requested_tool_names = admission
@@ -815,6 +879,7 @@ fn evaluate_assistant_work(
         work_id: admission.work_id.to_string(),
         correlation_id: admission.correlation_id.to_string(),
         worker_intent: admission.worker_intent.to_string(),
+        project_id: admission.project_id.map(str::to_string),
         policy_revision: policy.revision,
         policy_source: PeerExecutionPolicySource::Stored,
         requested_tool_domains: requested.into_iter().collect(),
@@ -895,6 +960,8 @@ mod tests {
         "cognition_utility_time_now",
         "cognition_web_search",
     ];
+    const TEST_CODER_TOOL_DOMAINS: [&str; 2] = ["turn", "code"];
+    const TEST_CODER_TOOL_NAMES: [&str; 2] = ["cognition_turn", "cognition_coder_file_read"];
 
     fn test_store() -> (PeerExecutionPolicyStore, PathBuf) {
         let root = std::env::temp_dir().join(format!(
@@ -918,8 +985,32 @@ mod tests {
             work_id: work,
             correlation_id: "correlation-1",
             worker_intent: "research",
+            project_id: None,
             requested_tool_domains: &SAFE_ASSISTANT_TOOL_DOMAINS,
             requested_tool_names: &TEST_ASSISTANT_TOOL_NAMES,
+            request_expires_at: Utc::now() + chrono::Duration::minutes(5),
+            legacy_task_request_granted: false,
+        }
+    }
+
+    fn coder_admission<'a>(
+        peer: &'a str,
+        work: &'a str,
+        project: &'a str,
+    ) -> AssistantWorkAdmission<'a> {
+        AssistantWorkAdmission {
+            peer_device_id: peer,
+            peer_pairing_id: "pairing-1",
+            origin_runtime_id: peer,
+            destination_runtime_id: "runtime-local",
+            parent_session_id: "session-1",
+            bot_id: None,
+            work_id: work,
+            correlation_id: "correlation-1",
+            worker_intent: "coder",
+            project_id: Some(project),
+            requested_tool_domains: &TEST_CODER_TOOL_DOMAINS,
+            requested_tool_names: &TEST_CODER_TOOL_NAMES,
             request_expires_at: Utc::now() + chrono::Duration::minutes(5),
             legacy_task_request_granted: false,
         }
@@ -1057,6 +1148,51 @@ mod tests {
             grant.effective_tool_names,
             vec!["cognition_turn".to_string()]
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn coder_admission_is_project_scoped_and_live_revocation_stops_mutations() {
+        let (store, root) = test_store();
+        store
+            .update_policy(
+                "peer-a",
+                "pairing-1",
+                PeerExecutionPolicyUpdate {
+                    preset: PeerExecutionPolicyPreset::ApprovedProjects,
+                    allowed_project_ids: Some(BTreeSet::from(["repo-a".to_string()])),
+                    ..Default::default()
+                },
+                "local:operator",
+            )
+            .unwrap();
+
+        let grant = store
+            .admit_assistant_work(coder_admission("peer-a", "work-a", "repo-a"))
+            .unwrap()
+            .expect("approved Coder project");
+        assert_eq!(grant.project_id.as_deref(), Some("repo-a"));
+        assert!(store.coder_grant_is_active(&grant).unwrap());
+
+        let denied = store
+            .admit_assistant_work(coder_admission("peer-a", "work-b", "repo-b"))
+            .unwrap()
+            .expect_err("unapproved project");
+        assert_eq!(denied, PeerExecutionDenialReason::ProjectDenied);
+
+        store
+            .update_policy(
+                "peer-a",
+                "pairing-1",
+                PeerExecutionPolicyUpdate {
+                    preset: PeerExecutionPolicyPreset::Custom,
+                    coder_work: Some(false),
+                    ..Default::default()
+                },
+                "local:operator",
+            )
+            .unwrap();
+        assert!(!store.coder_grant_is_active(&grant).unwrap());
         let _ = std::fs::remove_dir_all(root);
     }
 

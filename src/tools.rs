@@ -2879,10 +2879,28 @@ pub struct TuiRuntime {
     pub client_registry: crate::client_tools::ClientRegistry,
     pub execution_registry: crate::agent_runtime::execution_context::TurnExecutionRegistry,
     pub worker_scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
+    /// Daemon-owned Forge authority is attached after the platform runtime is
+    /// assembled. Background workers read this slot at execution time so a
+    /// remotely admitted Coder job cannot accidentally use client-local state.
+    pub forge_authority: Arc<std::sync::RwLock<Option<Arc<medousa_forge::forge::Forge>>>>,
 }
 
 #[cfg(feature = "full-daemon")]
 impl TuiRuntime {
+    pub fn attach_forge_authority(&self, forge: Arc<medousa_forge::forge::Forge>) {
+        *self
+            .forge_authority
+            .write()
+            .expect("Forge authority lock poisoned") = Some(forge);
+    }
+
+    pub fn forge_authority(&self) -> Option<Arc<medousa_forge::forge::Forge>> {
+        self.forge_authority
+            .read()
+            .expect("Forge authority lock poisoned")
+            .clone()
+    }
+
     pub fn tool_loop_pipeline_for_target(
         &self,
         provider: &str,

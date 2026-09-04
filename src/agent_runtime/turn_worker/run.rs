@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, Weak};
 use chrono::Utc;
 use schemars::JsonSchema;
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 use stasis::application::orchestration::prompt_pipeline::PromptExecutionContext;
 use stasis::application::orchestration::tool_loop_pipeline::ToolLoopExecutionRequest;
 use tokio::sync::RwLock;
@@ -97,14 +97,15 @@ fn delegated_task_grant_error(
             || spec.task != record.task_prompt
             || spec.execution_placement != record.execution_placement
             || spec.parent.turn_correlation_id
-                != record.parent_turn_correlation_id.as_deref().unwrap_or_default()
+                != record
+                    .parent_turn_correlation_id
+                    .as_deref()
+                    .unwrap_or_default()
             || grant.requested_tool_names != spec.tools.names)
     {
         return Some("canonical worker specification does not match the durable worker");
     }
-    if grant.schema_version
-        != crate::peer_execution_policy::TASK_EXECUTION_GRANT_SCHEMA_VERSION
-    {
+    if grant.schema_version != crate::peer_execution_policy::TASK_EXECUTION_GRANT_SCHEMA_VERSION {
         return Some("unsupported task execution grant");
     }
     if grant.expires_at <= Utc::now() {
@@ -122,13 +123,220 @@ fn delegated_task_grant_error(
     {
         return Some("task execution grant does not match the durable worker");
     }
-    if record.execution_placement.resolution_reason
-        != ExecutionResolutionReason::LegacyUnknown
+    if record.execution_placement.resolution_reason != ExecutionResolutionReason::LegacyUnknown
         && grant.destination_runtime_id != record.execution_placement.resolved_runtime_id
     {
         return Some("task execution grant does not match the resolved runtime");
     }
+    if record.intent == TurnWorkerIntent::Coder.as_str() {
+        let Some(project) = record
+            .worker_spawn_spec
+            .as_ref()
+            .and_then(|spec| spec.code_project.as_ref())
+        else {
+            return Some("remote Coder work is missing its project authority");
+        };
+        if grant.project_id.as_deref() != Some(project.repo_id.as_str())
+            || grant.destination_runtime_id != project.runtime_id
+            || !grant
+                .effective_tool_domains
+                .iter()
+                .any(|domain| domain == "code")
+        {
+            return Some("remote Coder grant does not match its project authority");
+        }
+    }
     None
+}
+
+struct RemoteCoderExecutionGuard {
+    policies: crate::peer_execution_policy::PeerExecutionPolicyStore,
+    grant: crate::peer_execution_policy::TaskExecutionGrant,
+}
+
+impl crate::agent_runtime::coder_tools::CoderExecutionGuard for RemoteCoderExecutionGuard {
+    fn verify(&self) -> stasis::prelude::Result<()> {
+        match self.policies.coder_grant_is_active(&self.grant) {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(stasis::prelude::StasisError::PortFailure(
+                "remote Coder authority was revoked by the destination workshop".to_string(),
+            )),
+            Err(error) => Err(stasis::prelude::StasisError::PortFailure(format!(
+                "cannot revalidate remote Coder authority: {error}"
+            ))),
+        }
+    }
+}
+
+struct PreparedWorkerCoder {
+    _authority: Arc<crate::agent_runtime::coder_tools::CoderTurnLease>,
+    registry: Arc<crate::agent_runtime::coder_tools::CoderBoundToolRegistry>,
+    prompt_appendix: String,
+}
+
+async fn prepare_worker_coder(
+    record: &TurnWorkRecord,
+    stream_turn_id: u64,
+    agent: &TuiRuntime,
+    inner: Arc<dyn ToolRegistry>,
+) -> stasis::prelude::Result<PreparedWorkerCoder> {
+    let spec = record.worker_spawn_spec.as_ref().ok_or_else(|| {
+        stasis::prelude::StasisError::PortFailure(
+            "Coder worker is missing its canonical spawn specification".to_string(),
+        )
+    })?;
+    let project = spec.code_project.as_ref().ok_or_else(|| {
+        stasis::prelude::StasisError::PortFailure(
+            "Coder worker is missing its destination-owned project".to_string(),
+        )
+    })?;
+    let local_runtime_id = agent.worker_scheduler.execution_runtime_id();
+    if project.runtime_id != local_runtime_id
+        || record.execution_placement.resolved_runtime_id != local_runtime_id
+    {
+        return Err(stasis::prelude::StasisError::PortFailure(format!(
+            "Coder project belongs to runtime '{}' but this worker is '{}'",
+            project.runtime_id, local_runtime_id
+        )));
+    }
+    let forge = agent.forge_authority().ok_or_else(|| {
+        stasis::prelude::StasisError::PortFailure(
+            "destination workshop has no Forge authority for Coder".to_string(),
+        )
+    })?;
+    let work_id = medousa_forge::model::WorkId::from(project.work_id.clone());
+    let current = forge.load(&work_id).map_err(|error| {
+        stasis::prelude::StasisError::PortFailure(format!(
+            "destination Coder project is unavailable: {error}"
+        ))
+    })?;
+    let actual_repo_id = current
+        .workspace_environment()
+        .map(|environment| environment.repo.repo_id.to_string())
+        .ok_or_else(|| {
+            stasis::prelude::StasisError::PortFailure(
+                "destination Coder project has no governed repository".to_string(),
+            )
+        })?;
+    if actual_repo_id != project.repo_id {
+        return Err(stasis::prelude::StasisError::PortFailure(format!(
+            "destination Coder project identity changed (expected '{}', found '{actual_repo_id}')",
+            project.repo_id
+        )));
+    }
+    super::super::daemon_interactive_turn::prepare_attached_native_coder_handoff(
+        forge.as_ref(),
+        &work_id,
+        &record.session_id,
+        &record.work_id,
+    )
+    .map_err(|error| {
+        stasis::prelude::StasisError::PortFailure(format!(
+            "cannot hand the destination checkout to Coder: {error}"
+        ))
+    })?;
+    let executor = medousa_forge::model::ExecutorDescriptor {
+        kind: "medousa-coder".to_string(),
+        detail: json!({
+            "session_id": record.session_id,
+            "worker_work_id": record.work_id,
+            "parent_runtime_id": record.parent_runtime_id,
+            "execution_runtime_id": local_runtime_id,
+            "stream_turn_id": stream_turn_id,
+            "remote": record.disposition == TurnWorkDisposition::Delegated,
+        }),
+    };
+    let (item, lease) = forge
+        .begin_workspace_attempt(
+            &work_id,
+            executor,
+            Some(std::process::id()),
+            &medousa_forge::forge::Forge::system_actor(),
+        )
+        .map_err(|error| {
+            stasis::prelude::StasisError::PortFailure(format!(
+                "cannot acquire destination Coder authority: {error}"
+            ))
+        })?;
+    let code_context = crate::daemon_api::CodeIntentContext {
+        work_id: Some(project.work_id.clone()),
+        ..Default::default()
+    };
+    let entry = match crate::agent_runtime::coder_mode::compile_coder_entry_for_attempt(
+        forge.as_ref(),
+        &code_context,
+        &lease.attempt_id,
+    ) {
+        Ok(entry) => Arc::new(entry),
+        Err(error) => {
+            let _ = forge.interrupt_attempt(
+                &lease,
+                medousa_forge::model::RecoveryDisposition::RestartAllowed,
+                &medousa_forge::forge::Forge::system_actor(),
+            );
+            return Err(stasis::prelude::StasisError::PortFailure(error.to_string()));
+        }
+    };
+    if let Err(error) = crate::agent_mode_state::set_session_code_binding_authority(
+        &record.session_id,
+        &entry.work_id,
+        Some(&local_runtime_id),
+        Some(&entry.repo_id),
+    ) {
+        let _ = forge.interrupt_attempt(
+            &lease,
+            medousa_forge::model::RecoveryDisposition::RestartAllowed,
+            &medousa_forge::forge::Forge::system_actor(),
+        );
+        return Err(stasis::prelude::StasisError::PortFailure(format!(
+            "cannot preserve destination Coder binding: {error}"
+        )));
+    }
+    let identity = crate::agent_runtime::coder_activity::CoderAgentIdentity::for_turn(
+        &record.session_id,
+        stream_turn_id,
+        &lease.attempt_id.to_string(),
+    );
+    let guard = if record.disposition == TurnWorkDisposition::Delegated {
+        let grant = record.task_execution_grant.clone().ok_or_else(|| {
+            stasis::prelude::StasisError::PortFailure(
+                "remote Coder worker is missing its execution grant".to_string(),
+            )
+        })?;
+        Some(Arc::new(RemoteCoderExecutionGuard {
+            policies: crate::peer_execution_policy::PeerExecutionPolicyStore::default(),
+            grant,
+        })
+            as Arc<
+                dyn crate::agent_runtime::coder_tools::CoderExecutionGuard,
+            >)
+    } else {
+        None
+    };
+    let authority = Arc::new(
+        crate::agent_runtime::coder_tools::CoderTurnLease::new_with_guard(
+            forge,
+            lease,
+            crate::agent_runtime::coder_activity::coder_activity_store(),
+            identity,
+            guard,
+        )?,
+    );
+    let registry = Arc::new(
+        crate::agent_runtime::coder_tools::CoderBoundToolRegistry::new_with_catalog(
+            inner,
+            agent.tool_catalog.clone(),
+            &authority,
+            entry.clone(),
+            item.policy,
+        ),
+    );
+    let shared_space = registry.initial_prompt_appendix().await?;
+    Ok(PreparedWorkerCoder {
+        _authority: authority,
+        registry,
+        prompt_appendix: format!("{}\n\n{shared_space}", entry.prompt_appendix()),
+    })
 }
 
 fn worker_turn_scope(record: &TurnWorkRecord) -> TurnContinuationScope {
@@ -334,9 +542,7 @@ impl TurnWorkerScheduler {
             execution_runtime_id: std::sync::RwLock::new(
                 crate::workshop_authority::current()
                     .map(|authority| authority.as_str().to_string())
-                    .unwrap_or_else(|_| {
-                        crate::workshop_contract::default_unknown_runtime_id()
-                    }),
+                    .unwrap_or_else(|_| crate::workshop_contract::default_unknown_runtime_id()),
             ),
             parents: Mutex::new(WorkerParentState {
                 live: HashMap::with_capacity(MAX_ACTIVE_WORKER_PARENTS),
@@ -480,9 +686,7 @@ impl TurnWorkerScheduler {
                 agent_selectable: true,
             }],
         )
-        .map_err(|error| {
-            stasis::domain::errors::StasisError::PortFailure(error.to_string())
-        })?;
+        .map_err(|error| stasis::domain::errors::StasisError::PortFailure(error.to_string()))?;
         let mut handoff = bus
             .host_handoff_slot
             .write()
@@ -568,42 +772,77 @@ impl TurnWorkerScheduler {
             resolved_model_hint.as_deref(),
         );
         let manuscript_id = manuscript.as_ref().map(|ctx| ctx.id.clone());
-        let manuscript_spec = manuscript.as_ref().map(|value| {
-            crate::delegated_task::WorkerManuscriptSpec {
-                id: value.id.clone(),
-                name: value.name.clone(),
-                worker_intent: value.worker_intent.clone(),
-                stage_role: value.worker_stage_role.clone(),
-                model_hint: value.worker_model_hint.clone(),
-                voice_appendix: value.voice_appendix.clone(),
-                system_appendix: value.system_appendix.clone(),
-                max_tool_rounds: value.max_tool_rounds,
-                tools_allow: value.tools_allow.clone(),
-                openshell_enabled: value.openshell_enabled,
-                openshell_policy_template: value.openshell_policy_template.clone(),
-                openshell_sandbox_from: value.openshell_sandbox_from.clone(),
-            }
-        });
-        let mut requested_tool_names =
-            super::policy::worker_allowlist_for_intent_and_tools(
-                intent,
-                manuscript_spec
-                    .as_ref()
-                    .map(|value| value.tools_allow.as_slice())
-                    .unwrap_or(&[]),
-            )
-            .into_iter()
-            .collect::<Vec<_>>();
+        let manuscript_spec =
+            manuscript
+                .as_ref()
+                .map(|value| crate::delegated_task::WorkerManuscriptSpec {
+                    id: value.id.clone(),
+                    name: value.name.clone(),
+                    worker_intent: value.worker_intent.clone(),
+                    stage_role: value.worker_stage_role.clone(),
+                    model_hint: value.worker_model_hint.clone(),
+                    voice_appendix: value.voice_appendix.clone(),
+                    system_appendix: value.system_appendix.clone(),
+                    max_tool_rounds: value.max_tool_rounds,
+                    tools_allow: value.tools_allow.clone(),
+                    openshell_enabled: value.openshell_enabled,
+                    openshell_policy_template: value.openshell_policy_template.clone(),
+                    openshell_sandbox_from: value.openshell_sandbox_from.clone(),
+                });
+        let mut requested_tool_names = super::policy::worker_allowlist_for_intent_and_tools(
+            intent,
+            manuscript_spec
+                .as_ref()
+                .map(|value| value.tools_allow.as_slice())
+                .unwrap_or(&[]),
+        )
+        .into_iter()
+        .collect::<Vec<_>>();
         requested_tool_names.sort();
         let bot = crate::agent_runtime::execution_context::active_turn_execution_context()
             .and_then(|execution| {
-                execution.bot_identity().map(|bot| crate::delegated_task::WorkerBotSpec {
-                    bot_id: bot.bot_id().to_string(),
-                    profile_revision: bot.profile_revision(),
-                    memory_scope_id: bot.memory_scope_id().to_string(),
-                    prompt_appendix: bot.prompt_appendix(),
-                })
+                execution
+                    .bot_identity()
+                    .map(|bot| crate::delegated_task::WorkerBotSpec {
+                        bot_id: bot.bot_id().to_string(),
+                        profile_revision: bot.profile_revision(),
+                        memory_scope_id: bot.memory_scope_id().to_string(),
+                        prompt_appendix: bot.prompt_appendix(),
+                    })
             });
+        let code_project = if intent == TurnWorkerIntent::Coder {
+            let binding = crate::agent_mode_state::get_session_code_binding(&bus.session_id)
+                .map_err(|error| {
+                    stasis::domain::errors::StasisError::PortFailure(format!(
+                        "cognition_workshop_mutate: cannot load Coder project binding: {error}"
+                    ))
+                })?;
+            let work_id = binding
+                .work_id
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| {
+                    stasis::domain::errors::StasisError::PortFailure(
+                        "cognition_workshop_mutate: Coder worker requires a bound undertaking"
+                            .to_string(),
+                    )
+                })?;
+            let repo_id = binding
+                .repo_id
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| {
+                    stasis::domain::errors::StasisError::PortFailure(
+                        "cognition_workshop_mutate: Coder worker requires a bound repository identity"
+                            .to_string(),
+                    )
+                })?;
+            Some(crate::delegated_task::WorkerCodeProjectRef {
+                runtime_id: execution_placement.resolved_runtime_id.clone(),
+                work_id,
+                repo_id,
+            })
+        } else {
+            None
+        };
         let worker_spawn_spec = crate::delegated_task::WorkerSpawnSpec {
             schema_version: crate::delegated_task::WORKER_SPAWN_SPEC_SCHEMA_VERSION,
             intent: intent.as_str().to_string(),
@@ -633,6 +872,7 @@ impl TurnWorkerScheduler {
                 supports_liquid_markdown: bus.supports_liquid_markdown,
                 supports_browser_host: bus.supports_browser_host,
             },
+            code_project,
             execution_placement: execution_placement.clone(),
             max_tool_rounds,
             tools: crate::delegated_task::WorkerToolRequest {
@@ -1190,7 +1430,50 @@ async fn run_worker_turn_inner(
         record.session_id.clone(),
     ));
     let canvas_lane = worker_canvas_lane_enabled(is_bound_workshop, &record);
-    let filtered_registry: Arc<dyn ToolRegistry> = if is_delegated {
+    let prepared_coder = if intent == TurnWorkerIntent::Coder {
+        match prepare_worker_coder(
+            &record,
+            stream_turn_id,
+            agent.as_ref(),
+            session_registry.clone(),
+        )
+        .await
+        {
+            Ok(prepared) => Some(prepared),
+            Err(error) => {
+                let message = error.to_string();
+                store.update(&work_id, |record| {
+                    record.status = TurnWorkStatus::Failed;
+                    record.error = Some(message.clone());
+                    record.termination_reason = Some("coder_authority_unavailable".to_string());
+                });
+                sink.notice(format!("◈ work_failed work_id={work_id} error={message}"))
+                    .await;
+                if let Some(failed) = store.get(&work_id) {
+                    deliver_worker_parent_outcome(
+                        &ctx,
+                        &agent,
+                        failed,
+                        sink,
+                        stream_turn_id,
+                        is_bound_workshop,
+                    )
+                    .await;
+                }
+                return;
+            }
+        }
+    } else {
+        None
+    };
+    let filtered_registry: Arc<dyn ToolRegistry> = if let Some(coder) = &prepared_coder {
+        let coder_registry: Arc<dyn ToolRegistry> = coder.registry.clone();
+        if is_delegated {
+            Arc::new(AllowlistToolRegistry::delegated(coder_registry, allowlist))
+        } else {
+            coder_registry
+        }
+    } else if is_delegated {
         Arc::new(AllowlistToolRegistry::delegated(
             session_registry,
             allowlist,
@@ -1255,19 +1538,24 @@ async fn run_worker_turn_inner(
         .map(|c| c.worker_tier_user_prompt(&tool_loop_policy))
         .unwrap_or(tool_loop_policy.clone());
 
+    let mut worker_system_prompt = super::prompts::worker_system_prompt_for_parent_mode(
+        &record.session_id,
+        TurnWorkerIntent::parse(&record.intent).unwrap_or(TurnWorkerIntent::General),
+        record
+            .handoff_capsule
+            .as_ref()
+            .and_then(|capsule| capsule.manuscript.as_ref()),
+        record.supports_ui_artifacts,
+        record.supports_liquid_markdown,
+        record.parent_agent_mode.as_deref(),
+    );
+    if let Some(coder) = &prepared_coder {
+        worker_system_prompt.push_str("\n\n");
+        worker_system_prompt.push_str(&coder.prompt_appendix);
+    }
     let request = ToolLoopExecutionRequest {
         user_prompt,
-        system_prompt: Some(super::prompts::worker_system_prompt_for_parent_mode(
-            &record.session_id,
-            TurnWorkerIntent::parse(&record.intent).unwrap_or(TurnWorkerIntent::General),
-            record
-                .handoff_capsule
-                .as_ref()
-                .and_then(|capsule| capsule.manuscript.as_ref()),
-            record.supports_ui_artifacts,
-            record.supports_liquid_markdown,
-            record.parent_agent_mode.as_deref(),
-        )),
+        system_prompt: Some(worker_system_prompt),
         context: PromptExecutionContext::default(),
         tool_name: String::new(),
         tool_input: Value::Null,
@@ -1321,7 +1609,10 @@ async fn run_worker_turn_inner(
             crate::agent_runtime::turn_completion_fsm::TurnCompletionProfile::WorkerSynthesis,
         cancel_poll_work_id: Some(work_id.clone()),
         steer_poll_work_id: is_bound_workshop.then_some(work_id.clone()),
-        round_context_provider: None,
+        round_context_provider: prepared_coder.as_ref().map(|coder| {
+            coder.registry.clone()
+                as Arc<dyn crate::agent_runtime::turn_context::ToolRoundContextProvider>
+        }),
         active_turn_checkpoint_sink: None,
         active_turn_resume: None,
     };
@@ -1363,6 +1654,11 @@ async fn run_worker_turn_inner(
 
     let result = fail_on_stream_overflow(result, chunk_stream.finish().await);
     chunk_bridge.drain().await;
+
+    if let Some(coder) = &prepared_coder {
+        let _ = coder.registry.flush_memory_queue().await;
+        coder.registry.interrupt_shell_sessions().await;
+    }
 
     match result {
         Ok(response) => {

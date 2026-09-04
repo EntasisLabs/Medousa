@@ -480,6 +480,7 @@ async fn start_daemon() -> Result<()> {
     let forge_events = medousa::daemon::forge_events::ForgeEventBus::new();
     forge.attach_watcher_fence(forge_events.watcher_fence());
     let forge = Arc::new(forge);
+    platform.agent().attach_forge_authority(forge.clone());
     // Startup catalog rebuild + boot reconcile are unbounded scans — admit them
     // off the Tokio worker before serving HTTP.
     {

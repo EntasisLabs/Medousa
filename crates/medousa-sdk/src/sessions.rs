@@ -282,8 +282,21 @@ impl SessionsApi<'_> {
         session_id: &str,
         work_id: &str,
     ) -> Result<SessionCodeBindingResponse, crate::SdkError> {
+        self.set_code_binding_authority(session_id, work_id, None, None)
+            .await
+    }
+
+    pub async fn set_code_binding_authority(
+        &self,
+        session_id: &str,
+        work_id: &str,
+        execution_runtime_id: Option<&str>,
+        repo_id: Option<&str>,
+    ) -> Result<SessionCodeBindingResponse, crate::SdkError> {
         let body = serde_json::to_value(SetSessionCodeBindingRequest {
             work_id: work_id.to_string(),
+            execution_runtime_id: execution_runtime_id.map(str::to_string),
+            repo_id: repo_id.map(str::to_string),
         })
         .map_err(|e| crate::SdkError::Serde(e.to_string()))?;
         let path = op_path(

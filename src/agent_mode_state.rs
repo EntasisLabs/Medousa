@@ -69,6 +69,10 @@ struct SessionModeState {
     #[serde(default)]
     bound_work_id: Option<String>,
     #[serde(default)]
+    bound_execution_runtime_id: Option<String>,
+    #[serde(default)]
+    bound_repo_id: Option<String>,
+    #[serde(default)]
     code_binding_updated_at_utc: Option<DateTime<Utc>>,
 }
 
@@ -330,6 +334,8 @@ pub fn get_session_code_binding(session_id: &str) -> Result<SessionCodeBindingRe
     Ok(SessionCodeBindingResponse {
         session_id: session_id.to_string(),
         work_id: state.and_then(|value| value.bound_work_id.clone()),
+        execution_runtime_id: state.and_then(|value| value.bound_execution_runtime_id.clone()),
+        repo_id: state.and_then(|value| value.bound_repo_id.clone()),
         updated_at_utc: state.and_then(|value| value.code_binding_updated_at_utc),
     })
 }
@@ -337,6 +343,15 @@ pub fn get_session_code_binding(session_id: &str) -> Result<SessionCodeBindingRe
 pub fn set_session_code_binding(
     session_id: &str,
     work_id: &str,
+) -> Result<SessionCodeBindingResponse, String> {
+    set_session_code_binding_authority(session_id, work_id, None, None)
+}
+
+pub fn set_session_code_binding_authority(
+    session_id: &str,
+    work_id: &str,
+    execution_runtime_id: Option<&str>,
+    repo_id: Option<&str>,
 ) -> Result<SessionCodeBindingResponse, String> {
     let session_id = session_id.trim();
     let work_id = work_id.trim();
@@ -347,10 +362,19 @@ pub fn set_session_code_binding(
     let _guard = MODE_STATE_LOCK.lock().unwrap();
     let mut index = read_index();
     let state = index.sessions.entry(session_id.to_string()).or_default();
-    if state.bound_work_id.as_deref() == Some(work_id) {
+    let execution_runtime_id = execution_runtime_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let repo_id = repo_id.map(str::trim).filter(|value| !value.is_empty());
+    if state.bound_work_id.as_deref() == Some(work_id)
+        && state.bound_execution_runtime_id.as_deref() == execution_runtime_id
+        && state.bound_repo_id.as_deref() == repo_id
+    {
         let response = SessionCodeBindingResponse {
             session_id: session_id.to_string(),
             work_id: state.bound_work_id.clone(),
+            execution_runtime_id: state.bound_execution_runtime_id.clone(),
+            repo_id: state.bound_repo_id.clone(),
             updated_at_utc: state.code_binding_updated_at_utc,
         };
         drop(_guard);
@@ -359,6 +383,8 @@ pub fn set_session_code_binding(
     }
     let now = Utc::now();
     state.bound_work_id = Some(work_id.to_string());
+    state.bound_execution_runtime_id = execution_runtime_id.map(str::to_string);
+    state.bound_repo_id = repo_id.map(str::to_string);
     state.code_binding_updated_at_utc = Some(now);
     state.revision = state.revision.saturating_add(1);
     state.updated_at_utc = Some(now);
@@ -368,6 +394,8 @@ pub fn set_session_code_binding(
     Ok(SessionCodeBindingResponse {
         session_id: session_id.to_string(),
         work_id: Some(work_id.to_string()),
+        execution_runtime_id: execution_runtime_id.map(str::to_string),
+        repo_id: repo_id.map(str::to_string),
         updated_at_utc: Some(now),
     })
 }
@@ -385,11 +413,15 @@ pub fn clear_session_code_binding(session_id: &str) -> Result<SessionCodeBinding
         return Ok(SessionCodeBindingResponse {
             session_id: session_id.to_string(),
             work_id: None,
+            execution_runtime_id: None,
+            repo_id: None,
             updated_at_utc: state.code_binding_updated_at_utc,
         });
     }
     let now = Utc::now();
     state.bound_work_id = None;
+    state.bound_execution_runtime_id = None;
+    state.bound_repo_id = None;
     state.code_binding_updated_at_utc = Some(now);
     state.revision = state.revision.saturating_add(1);
     state.updated_at_utc = Some(now);
@@ -397,6 +429,8 @@ pub fn clear_session_code_binding(session_id: &str) -> Result<SessionCodeBinding
     Ok(SessionCodeBindingResponse {
         session_id: session_id.to_string(),
         work_id: None,
+        execution_runtime_id: None,
+        repo_id: None,
         updated_at_utc: Some(now),
     })
 }
@@ -766,12 +800,7 @@ mod tests {
             .source,
             AgentModeSource::Turn
         );
-        let bot_default = select_mode_with_fallback(
-            None,
-            None,
-            now,
-            Some(AgentModeId::Teacher),
-        );
+        let bot_default = select_mode_with_fallback(None, None, now, Some(AgentModeId::Teacher));
         assert_eq!(bot_default.mode, AgentModeId::Teacher);
         assert_eq!(bot_default.source, AgentModeSource::Bot);
         assert_eq!(

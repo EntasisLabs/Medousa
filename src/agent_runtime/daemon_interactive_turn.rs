@@ -1285,7 +1285,7 @@ pub async fn run_agent_turn(
     }
 }
 
-fn prepare_attached_native_coder_handoff(
+pub(crate) fn prepare_attached_native_coder_handoff(
     forge: &medousa_forge::forge::Forge,
     work_id: &medousa_forge::model::WorkId,
     session_id: &str,
@@ -1372,15 +1372,33 @@ async fn run_agent_turn_inner(
             return;
         }
     };
+    let session_code_binding = crate::agent_mode_state::get_session_code_binding(&session_id).ok();
     let mut resolved_code_context = request.code_context.clone().unwrap_or_default();
     if resolved_code_context
         .work_id
         .as_deref()
         .is_none_or(|value| value.trim().is_empty())
-        && let Ok(binding) = crate::agent_mode_state::get_session_code_binding(&session_id)
+        && let Some(binding) = session_code_binding.as_ref()
     {
-        resolved_code_context.work_id = binding.work_id;
+        resolved_code_context.work_id = binding.work_id.clone();
     }
+    let local_runtime_id = crate::workshop_authority::current()
+        .map(|authority| authority.as_str().to_string())
+        .unwrap_or_else(|_| crate::workshop_contract::default_unknown_runtime_id());
+    let remote_coder_binding = (agent_mode.id == crate::daemon_api::AgentModeId::Coder)
+        .then(|| session_code_binding.clone())
+        .flatten()
+        .filter(|binding| {
+            binding
+                .execution_runtime_id
+                .as_deref()
+                .map(str::trim)
+                .is_some_and(|runtime_id| {
+                    !runtime_id.is_empty()
+                        && runtime_id != local_runtime_id
+                        && runtime_id != crate::workshop_contract::UNKNOWN_EXECUTION_RUNTIME_ID
+                })
+        });
     let forge = project_state.as_ref().map(|state| state.forge.clone());
     let checkpoint_store = super::coder_turn_checkpoint::coder_turn_checkpoint_store();
     let (
@@ -1390,7 +1408,10 @@ async fn run_agent_turn_inner(
         coder_resume_checkpoint,
         mode_context_appendix,
         tool_registry_override,
-    ) = if agent_mode.id == crate::daemon_api::AgentModeId::Coder {
+    ) = if remote_coder_binding.is_some() {
+        agent_mode.coder_phase = Some(super::modes::CoderRuntimePhase::Work);
+        (None, None, None, None, None, None)
+    } else if agent_mode.id == crate::daemon_api::AgentModeId::Coder {
         let Some(forge) = forge else {
             sink.agent_error(
                 1,
@@ -1440,8 +1461,11 @@ async fn run_agent_turn_inner(
                 &session_id,
                 turn_id,
             ) {
-                sink.agent_error(1, format!("cannot hand the current checkout to Coder: {err}"))
-                    .await;
+                sink.agent_error(
+                    1,
+                    format!("cannot hand the current checkout to Coder: {err}"),
+                )
+                .await;
                 return;
             }
             let executor = medousa_forge::model::ExecutorDescriptor {
@@ -1557,9 +1581,15 @@ async fn run_agent_turn_inner(
                     return;
                 }
             };
-            if let Err(err) =
-                crate::agent_mode_state::set_session_code_binding(&session_id, &entry.work_id)
-            {
+            let local_runtime_id = crate::workshop_authority::current()
+                .map(|authority| authority.as_str().to_string())
+                .unwrap_or_else(|_| crate::workshop_contract::default_unknown_runtime_id());
+            if let Err(err) = crate::agent_mode_state::set_session_code_binding_authority(
+                &session_id,
+                &entry.work_id,
+                Some(&local_runtime_id),
+                Some(&entry.repo_id),
+            ) {
                 let _ = forge.interrupt_attempt(
                     &lease,
                     medousa_forge::model::RecoveryDisposition::RestartAllowed,
@@ -1890,6 +1920,69 @@ async fn run_agent_turn_inner(
         }
     }
 
+    if let Some(binding) = remote_coder_binding.as_ref() {
+        let runtime_id = binding
+            .execution_runtime_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .expect("remote Coder binding has a runtime id");
+        if let Some(selection) = request.worker_execution_target.as_ref() {
+            let matches_binding = matches!(
+                selection,
+                crate::workshop_contract::ExecutionTargetSelection::Exact {
+                    runtime_id: selected
+                } if selected.trim() == runtime_id
+            );
+            if !matches_binding {
+                sink.agent_error(
+                    1,
+                    "Coder's active project is bound to a different workshop; reopen the project before changing execution targets"
+                        .to_string(),
+                )
+                .await;
+                return;
+            }
+        }
+        let user_ack = "Coder is working on this in the selected workshop.".to_string();
+        let result = agent_rt
+            .tool_registry
+            .invoke_tool(
+                crate::public_api::COGNITION_WORKSHOP_MUTATE,
+                serde_json::json!({
+                    "action": "workshop.spawn",
+                    "intent": "coder",
+                    "task": effective_prompt,
+                    "user_ack": user_ack,
+                    "execution_target": {
+                        "kind": "exact",
+                        "runtime_id": runtime_id,
+                    },
+                }),
+            )
+            .await;
+        match result {
+            Ok(output) => {
+                let work_id = output
+                    .get("work_id")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string);
+                sink.agent_worker_ack(
+                    1,
+                    user_ack,
+                    vec![crate::public_api::COGNITION_WORKSHOP_MUTATE.to_string()],
+                    work_id,
+                )
+                .await;
+            }
+            Err(error) => {
+                sink.agent_error(1, format!("remote Coder admission failed: {error}"))
+                    .await;
+            }
+        }
+        return;
+    }
+
     let manuscript_id = request
         .manuscript_id
         .as_deref()
@@ -2192,6 +2285,7 @@ impl AgentStreamSink for TurnOutcomeTrackingSink {
         tool_names: Vec<String>,
         work_id: Option<String>,
     ) {
+        *self.outcome.write().await = Some(TurnOutcome::Success);
         self.inner
             .agent_worker_ack(turn_id, text, tool_names, work_id)
             .await;
