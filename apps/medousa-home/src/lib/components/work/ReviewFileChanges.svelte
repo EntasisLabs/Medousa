@@ -48,6 +48,9 @@
   let mode = $state<"inline" | "side">("inline");
   /** Non-reactive latch so seal changes reset local UI without an effect loop. */
   let resetForEvidenceId: string | null | undefined = undefined;
+  let loadEpoch = 0;
+  const fileLoadGenerations = new Map<string, number>();
+  const MAX_BULK_EXPAND_FILES = 12;
 
   const riskPaths = $derived.by(() => {
     const paths = new Set<string>();
@@ -75,11 +78,13 @@
   );
 
   const anyExpanded = $derived(files.some((file) => expandedPaths.has(file.path)));
+  const bulkExpandAvailable = $derived(files.length <= MAX_BULK_EXPAND_FILES);
 
   $effect(() => {
     const evidenceId = review.evidence_id ?? null;
     if (evidenceId === resetForEvidenceId) return;
     resetForEvidenceId = evidenceId;
+    loadEpoch += 1;
     untrack(() => {
       expandedPaths = new Set();
       expandedScopeKeys = new Set();
@@ -149,29 +154,38 @@
 
   async function ensureFileDiff(path: string): Promise<ReviewFileDiff | null> {
     if (fileDiffs[path]) return fileDiffs[path]!;
+    const epoch = loadEpoch;
+    const generation = (fileLoadGenerations.get(path) ?? 0) + 1;
+    fileLoadGenerations.set(path, generation);
     loadingPaths = new Set(loadingPaths).add(path);
     try {
       const diff = await getReviewFile(review.work_id, path, review.attempt_id ?? undefined);
+      if (epoch !== loadEpoch || fileLoadGenerations.get(path) !== generation) return null;
       fileDiffs = { ...fileDiffs, [path]: diff };
       const nextErrors = { ...fileErrors };
       delete nextErrors[path];
       fileErrors = nextErrors;
       return diff;
     } catch (err) {
+      if (epoch !== loadEpoch || fileLoadGenerations.get(path) !== generation) return null;
       fileErrors = {
         ...fileErrors,
         [path]: err instanceof Error ? err.message : String(err),
       };
       return null;
     } finally {
-      const next = new Set(loadingPaths);
-      next.delete(path);
-      loadingPaths = next;
+      if (epoch === loadEpoch && fileLoadGenerations.get(path) === generation) {
+        const next = new Set(loadingPaths);
+        next.delete(path);
+        loadingPaths = next;
+      }
     }
   }
 
   async function enrichScopes(path: string, diff: ReviewFileDiff) {
-    if (diff.binary) return;
+    if (diff.binary || diff.truncated) return;
+    const epoch = loadEpoch;
+    const generation = fileLoadGenerations.get(path) ?? 0;
     const already = untrack(() => scopesByPath[path]?.length ?? 0);
     if (already > 0) return;
     const existing = review.changed_files.find((file) => file.path === path)?.scopes;
@@ -198,8 +212,11 @@
       }
       const samples = [...probeLines].sort((a, b) => a - b).slice(0, 24);
       const byKey = new Map<string, ReviewSymbolScope>();
-      await Promise.all(
-        samples.map(async (line) => {
+      let cursor = 0;
+      const inspectNext = async () => {
+        while (cursor < samples.length) {
+          const line = samples[cursor++];
+          if (line == null) return;
           try {
             const result = await getWorldAtLocation(review.work_id, path, line, snapshot);
             const entity = result.entity;
@@ -232,13 +249,20 @@
           } catch {
             /* World may be indexing or unavailable */
           }
-        }),
+        }
+      };
+      await Promise.all(
+        Array.from({ length: Math.min(3, samples.length) }, () => inspectNext()),
       );
-      scopesByPath = { ...untrack(() => scopesByPath), [path]: [...byKey.values()] };
+      if (epoch === loadEpoch && fileLoadGenerations.get(path) === generation) {
+        scopesByPath = { ...untrack(() => scopesByPath), [path]: [...byKey.values()] };
+      }
     } finally {
-      const next = { ...untrack(() => scopesLoading) };
-      delete next[path];
-      scopesLoading = next;
+      if (epoch === loadEpoch && fileLoadGenerations.get(path) === generation) {
+        const next = { ...untrack(() => scopesLoading) };
+        delete next[path];
+        scopesLoading = next;
+      }
     }
   }
 
@@ -252,6 +276,7 @@
 
   async function toggleFile(path: string) {
     if (expandedPaths.has(path)) {
+      fileLoadGenerations.set(path, (fileLoadGenerations.get(path) ?? 0) + 1);
       const next = new Set(expandedPaths);
       next.delete(path);
       expandedPaths = next;
@@ -262,25 +287,54 @@
       const nextFull = new Set(fullDiffPaths);
       nextFull.delete(path);
       fullDiffPaths = nextFull;
+      const nextDiffs = { ...fileDiffs };
+      delete nextDiffs[path];
+      fileDiffs = nextDiffs;
+      const nextErrors = { ...fileErrors };
+      delete nextErrors[path];
+      fileErrors = nextErrors;
+      const nextLoading = new Set(loadingPaths);
+      nextLoading.delete(path);
+      loadingPaths = nextLoading;
+      const nextScopeMap = { ...scopesByPath };
+      delete nextScopeMap[path];
+      scopesByPath = nextScopeMap;
+      const nextScopeLoading = { ...scopesLoading };
+      delete nextScopeLoading[path];
+      scopesLoading = nextScopeLoading;
       return;
     }
     await openFile(path);
   }
 
   async function expandAll() {
+    if (!bulkExpandAvailable) return;
     expandedPaths = new Set(files.map((file) => file.path));
-    await Promise.all(
-      files.map(async (file) => {
+    let cursor = 0;
+    const loadNext = async () => {
+      while (cursor < files.length) {
+        const file = files[cursor++];
+        if (!file) return;
+        if (!expandedPaths.has(file.path)) continue;
         const diff = await ensureFileDiff(file.path);
-        if (diff) void enrichScopes(file.path, diff);
-      }),
+        if (diff && expandedPaths.has(file.path)) await enrichScopes(file.path, diff);
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(2, files.length) }, () => loadNext()),
     );
   }
 
   function collapseAll() {
+    loadEpoch += 1;
     expandedPaths = new Set();
     expandedScopeKeys = new Set();
     fullDiffPaths = new Set();
+    fileDiffs = {};
+    fileErrors = {};
+    loadingPaths = new Set();
+    scopesByPath = {};
+    scopesLoading = {};
   }
 
   function toStackFile(diff: ReviewFileDiff, scope?: ReviewSymbolScope | null): DiffFileSection {
@@ -337,15 +391,19 @@
 {:else}
   <div class="file-skim-chrome">
     <div class="file-skim-toolbar">
-      {#if allExpanded}
+      {#if allExpanded && bulkExpandAvailable}
         <button type="button" class="file-skim-action" onclick={collapseAll}>Collapse all</button>
-      {:else}
+      {:else if bulkExpandAvailable}
         <button type="button" class="file-skim-action" onclick={() => void expandAll()}>
           Expand all
         </button>
         {#if anyExpanded}
           <button type="button" class="file-skim-action" onclick={collapseAll}>Collapse all</button>
         {/if}
+      {:else if anyExpanded}
+        <button type="button" class="file-skim-action" onclick={collapseAll}>Collapse open files</button>
+      {:else}
+        <span class="file-skim-hint">Open a file to load its diff</span>
       {/if}
     </div>
 
@@ -437,6 +495,11 @@
               {:else if fileDiffs[file.path]}
                 {@const diff = fileDiffs[file.path]!}
                 {@const scopes = scopesByPath[file.path] ?? []}
+                {#if diff.truncated}
+                  <p class="file-truncated">
+                    This preview is capped for safety. Open the file in Code to inspect the rest.
+                  </p>
+                {/if}
                 {#if scopes.length > 0}
                   <ul class="scope-list" aria-label="Changed symbols">
                     {#each scopes as scope (scope.id)}
@@ -593,6 +656,21 @@
 
   .file-skim-action:hover {
     color: rgb(var(--theme-link));
+  }
+
+  .file-skim-hint {
+    color: rgb(var(--theme-text-quiet));
+    font-size: 0.625rem;
+  }
+
+  .file-truncated {
+    margin: 0 0 0.45rem;
+    border: 1px solid rgb(var(--theme-warning) / 0.24);
+    border-radius: var(--theme-control-radius, 0.45rem);
+    padding: 0.42rem 0.5rem;
+    background: rgb(var(--theme-warning) / 0.06);
+    color: rgb(var(--theme-warning));
+    font-size: 0.625rem;
   }
 
   .file-skim {

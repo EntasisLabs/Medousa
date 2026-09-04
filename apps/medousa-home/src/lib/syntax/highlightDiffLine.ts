@@ -28,6 +28,7 @@ export type DiffHighlightSpan = {
 const languageCache = new Map<CodeEditorLanguageId, LanguageSupport | null>();
 const lineCache = new Map<string, DiffHighlightSpan[]>();
 const LINE_CACHE_LIMIT = 2_000;
+const MAX_HIGHLIGHT_LINE_LENGTH = 12_000;
 
 function languageSupportFor(id: CodeEditorLanguageId): LanguageSupport | null {
   if (languageCache.has(id)) return languageCache.get(id) ?? null;
@@ -103,6 +104,9 @@ export function highlightDiffLine(
   languageHint: string | null | undefined,
 ): DiffHighlightSpan[] {
   if (!line) return [];
+  // Parsing and caching an enormous generated/minified line costs far more
+  // memory than the highlighting is worth, especially inside a mobile diff.
+  if (line.length > MAX_HIGHLIGHT_LINE_LENGTH) return escapePlain(line);
   const languageId = resolveCodeEditorLanguage(languageHint);
   const themeId = readCodeEditorSyntaxTheme();
   const cacheKey = `${themeId}\0${languageId}\0${line}`;

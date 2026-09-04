@@ -1410,11 +1410,13 @@ export async function getForgeChanges(workId: string): Promise<ForgeChanges> {
   return forgeFetch(operationPath("forge.items.by_work_id.changes.get", { work_id: workId }));
 }
 
-export async function getChangesFile(
-  workId: string,
-  path: string,
-): Promise<ChangesFileDiff> {
+export async function getChangesFile(workId: string, path: string, options: {
+  includeContent?: boolean;
+} = {}): Promise<ChangesFileDiff> {
   const query = new URLSearchParams({ path });
+  if (options.includeContent !== undefined) {
+    query.set("include_content", String(options.includeContent));
+  }
   return forgeFetch(
     operationPath("forge.items.by_work_id.changes.file.get", { work_id: workId }) + '?' + query.toString(),
   );

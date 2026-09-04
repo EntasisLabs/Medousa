@@ -147,8 +147,10 @@ fn file_facts(path: &Path) -> (bool, Option<u64>) {
     if !meta.is_file() {
         return (false, None);
     }
-    let is_binary = std::fs::read(path)
-        .map(|b| b.iter().take(8192).any(|c| *c == 0))
+    let mut prefix = [0_u8; 8192];
+    let is_binary = std::fs::File::open(path)
+        .and_then(|mut file| file.read(&mut prefix))
+        .map(|read| prefix[..read].contains(&0))
         .unwrap_or(false);
     (is_binary, Some(meta.len()))
 }
