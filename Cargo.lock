@@ -7595,6 +7595,7 @@ dependencies = [
  "medousa-store",
  "medousa-tool-macros",
  "medousa-types",
+ "medousa-world",
  "notify",
  "once_cell",
  "opentelemetry 0.27.1",
@@ -8083,6 +8084,14 @@ dependencies = [
  "medousa-types",
  "schemars 0.8.22",
  "serde_json",
+]
+
+[[package]]
+name = "medousa-world"
+version = "0.10.0"
+dependencies = [
+ "serde",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

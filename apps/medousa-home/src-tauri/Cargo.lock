@@ -5566,6 +5566,7 @@ dependencies = [
  "medousa-store",
  "medousa-tool-macros",
  "medousa-types",
+ "medousa-world",
  "once_cell",
  "pdf-extract",
  "reqwest 0.12.28",
@@ -5910,6 +5911,14 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+]
+
+[[package]]
+name = "medousa-world"
+version = "0.10.0"
+dependencies = [
+ "serde",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

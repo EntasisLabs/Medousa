@@ -26,6 +26,7 @@ members = [
     "crates/medousa-store",
     "crates/medousa-browser-lite",
     "crates/medousa-browser-bridge",
+    "crates/medousa-world",
     "crates/medousa-install-support",
     "crates/medousa-local-credential",
     "crates/medousa-secrets",
@@ -93,6 +94,7 @@ detamu-source-git = { version = "0.1.1", optional = true }
 detamu-language-rust = { version = "0.1.1", optional = true }
 detamu-language = { version = "0.1.1", optional = true }
 medousa-browser-lite = { path = "crates/medousa-browser-lite", optional = true }
+medousa-world = { path = "crates/medousa-world" }
 medousa-local-inference = { path = "crates/medousa-local-inference", optional = true }
 anyhow = "1"
 clap = { version = "4", features = ["derive"], optional = true }
