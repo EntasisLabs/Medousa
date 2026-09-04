@@ -689,7 +689,10 @@ fn resolve_task_execution_grant(
             ));
         }
         if let Some(grant) = existing.task_execution_grant.clone() {
-            if grant.peer_device_id != sender.phone_id || grant.work_id != work_id {
+            if grant.peer_device_id != sender.phone_id
+                || grant.peer_pairing_id != sender.pairing_id
+                || grant.work_id != work_id
+            {
                 return Err((
                     StatusCode::CONFLICT,
                     "delegated work carries a conflicting execution grant".to_string(),
@@ -730,6 +733,7 @@ fn resolve_task_execution_grant(
         .execution_policies
         .admit_assistant_work(AssistantWorkAdmission {
             peer_device_id: &sender.phone_id,
+            peer_pairing_id: &sender.pairing_id,
             origin_runtime_id: &request.parent_runtime_id,
             destination_runtime_id: &state.local_device_id,
             parent_session_id: &request.grant.session_id,

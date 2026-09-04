@@ -2060,6 +2060,34 @@ pub const PEER_MESSAGES_UNREAD_COUNT_GET: Operation = Operation {
     streaming: false,
 };
 
+pub const PEERS_BY_DEVICE_ID_EXECUTION_POLICY_GET: Operation = Operation {
+    id: "peers.by_device_id.execution_policy.get",
+    method: "GET",
+    path: "/v1/peers/{device_id}/execution-policy",
+    streaming: false,
+};
+
+pub const PEERS_BY_DEVICE_ID_EXECUTION_POLICY_PUT: Operation = Operation {
+    id: "peers.by_device_id.execution_policy.put",
+    method: "PUT",
+    path: "/v1/peers/{device_id}/execution-policy",
+    streaming: false,
+};
+
+pub const PEERS_EXECUTION_POLICIES_GET: Operation = Operation {
+    id: "peers.execution_policies.get",
+    method: "GET",
+    path: "/v1/peers/execution-policies",
+    streaming: false,
+};
+
+pub const PEERS_EXECUTION_POLICY_AUDIT_GET: Operation = Operation {
+    id: "peers.execution_policy_audit.get",
+    method: "GET",
+    path: "/v1/peers/execution-policy-audit",
+    streaming: false,
+};
+
 pub const PROMPT_STASHES_BY_STASH_ID_DELETE: Operation = Operation {
     id: "prompt_stashes.by_stash_id.delete",
     method: "DELETE",
@@ -3222,6 +3250,10 @@ pub static ALL: &[Operation] = &[
     PEER_MESSAGES_GET,
     PEER_MESSAGES_POST,
     PEER_MESSAGES_UNREAD_COUNT_GET,
+    PEERS_BY_DEVICE_ID_EXECUTION_POLICY_GET,
+    PEERS_BY_DEVICE_ID_EXECUTION_POLICY_PUT,
+    PEERS_EXECUTION_POLICIES_GET,
+    PEERS_EXECUTION_POLICY_AUDIT_GET,
     PROMPT_STASHES_BY_STASH_ID_DELETE,
     PROMPT_STASHES_GET,
     PROMPT_STASHES_POST,

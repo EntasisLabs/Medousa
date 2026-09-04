@@ -4719,6 +4719,70 @@
       "bootstrap_public": false,
       "browser_policy": "native_only",
       "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "pairing",
+      "method": "GET",
+      "operation_id": "peers.execution_policies.get",
+      "path": "/v1/peers/execution-policies",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "pairing",
+      "method": "GET",
+      "operation_id": "peers.execution_policy_audit.get",
+      "path": "/v1/peers/execution-policy-audit",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "pairing",
+      "method": "GET",
+      "operation_id": "peers.by_device_id.execution_policy.get",
+      "path": "/v1/peers/{device_id}/execution-policy",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 65536,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "pairing",
+      "method": "PUT",
+      "operation_id": "peers.by_device_id.execution_policy.put",
+      "path": "/v1/peers/{device_id}/execution-policy",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
         "workshop.read"
       ],
       "feature_profile": "core",

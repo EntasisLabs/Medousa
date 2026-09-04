@@ -780,6 +780,7 @@ async fn start_daemon() -> Result<()> {
         };
         let pairing_state = medousa::pairing_handlers::PairingApiState {
             service: pairing_service,
+            execution_policies: peer_execution_policies.clone(),
         };
         Some((
             medousa::pairing_handlers::bootstrap_routes().with_state(pairing_state.clone()),

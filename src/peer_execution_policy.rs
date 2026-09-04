@@ -58,6 +58,7 @@ pub enum PeerNetworkPolicy {
 pub struct PeerExecutionPolicy {
     pub schema_version: u32,
     pub peer_device_id: String,
+    pub peer_pairing_id: String,
     pub preset: PeerExecutionPolicyPreset,
     pub enabled: bool,
     pub assistant_work: bool,
@@ -85,10 +86,11 @@ pub struct PeerExecutionPolicy {
 }
 
 impl PeerExecutionPolicy {
-    fn connected_only(peer_device_id: &str, now: DateTime<Utc>) -> Self {
+    fn connected_only(peer_device_id: &str, peer_pairing_id: &str, now: DateTime<Utc>) -> Self {
         Self {
             schema_version: PEER_EXECUTION_POLICY_SCHEMA_VERSION,
             peer_device_id: peer_device_id.to_string(),
+            peer_pairing_id: peer_pairing_id.to_string(),
             preset: PeerExecutionPolicyPreset::ConnectedOnly,
             enabled: true,
             assistant_work: false,
@@ -110,8 +112,12 @@ impl PeerExecutionPolicy {
         }
     }
 
-    fn legacy_assistant(peer_device_id: &str, now: DateTime<Utc>) -> Self {
-        let mut policy = Self::connected_only(peer_device_id, now);
+    fn legacy_assistant(
+        peer_device_id: &str,
+        peer_pairing_id: &str,
+        now: DateTime<Utc>,
+    ) -> Self {
+        let mut policy = Self::connected_only(peer_device_id, peer_pairing_id, now);
         policy.preset = PeerExecutionPolicyPreset::AssistantWork;
         policy.assistant_work = true;
         policy.allowed_tool_domains = safe_assistant_tool_domains();
@@ -202,6 +208,7 @@ pub struct TaskExecutionGrant {
     pub schema_version: u32,
     pub grant_id: String,
     pub peer_device_id: String,
+    pub peer_pairing_id: String,
     pub origin_runtime_id: String,
     pub destination_runtime_id: String,
     pub parent_session_id: String,
@@ -214,6 +221,7 @@ pub struct TaskExecutionGrant {
     pub policy_source: PeerExecutionPolicySource,
     pub requested_tool_domains: Vec<String>,
     pub effective_tool_domains: Vec<String>,
+    pub network_policy: PeerNetworkPolicy,
     pub issued_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
 }
@@ -249,6 +257,7 @@ impl fmt::Display for PeerExecutionDenialReason {
 #[derive(Debug, Clone)]
 pub struct AssistantWorkAdmission<'a> {
     pub peer_device_id: &'a str,
+    pub peer_pairing_id: &'a str,
     pub origin_runtime_id: &'a str,
     pub destination_runtime_id: &'a str,
     pub parent_session_id: &'a str,
@@ -325,14 +334,17 @@ impl PeerExecutionPolicyStore {
     pub fn policy_for_peer(
         &self,
         peer_device_id: &str,
+        peer_pairing_id: &str,
         legacy_task_request_granted: bool,
     ) -> Result<PeerExecutionPolicyView> {
         let peer_device_id = validate_identity("peer device id", peer_device_id)?;
+        let peer_pairing_id = validate_identity("peer pairing id", peer_pairing_id)?;
         let _guard = self.io.lock().expect("peer execution policy lock");
         let file = self.load()?;
         Ok(resolve_policy(
             &file,
             peer_device_id,
+            peer_pairing_id,
             legacy_task_request_granted,
             Utc::now(),
         ))
@@ -341,22 +353,34 @@ impl PeerExecutionPolicyStore {
     pub fn update_policy(
         &self,
         peer_device_id: &str,
+        peer_pairing_id: &str,
         update: PeerExecutionPolicyUpdate,
         actor: &str,
     ) -> Result<PeerExecutionPolicy> {
         let peer_device_id = validate_identity("peer device id", peer_device_id)?;
+        let peer_pairing_id = validate_identity("peer pairing id", peer_pairing_id)?;
         let actor = validate_identity("policy actor", actor)?;
         let _guard = self.io.lock().expect("peer execution policy lock");
         let mut file = self.load()?;
         let now = Utc::now();
-        let previous = file.policies.get(peer_device_id);
+        let previous = file
+            .policies
+            .get(peer_device_id)
+            .filter(|policy| policy.peer_pairing_id == peer_pairing_id);
         let revision = previous
             .map(|policy| policy.revision)
             .unwrap_or(0)
             .checked_add(1)
             .context("peer execution policy revision exhausted")?;
         let created_at = previous.map(|policy| policy.created_at).unwrap_or(now);
-        let policy = compile_policy(peer_device_id, update, revision, created_at, now)?;
+        let policy = compile_policy(
+            peer_device_id,
+            peer_pairing_id,
+            update,
+            revision,
+            created_at,
+            now,
+        )?;
         file.policies
             .insert(peer_device_id.to_string(), policy.clone());
         append_audit(
@@ -383,6 +407,7 @@ impl PeerExecutionPolicyStore {
         admission: AssistantWorkAdmission<'_>,
     ) -> Result<Result<TaskExecutionGrant, PeerExecutionDenialReason>> {
         let peer_device_id = validate_identity("peer device id", admission.peer_device_id)?;
+        let peer_pairing_id = validate_identity("peer pairing id", admission.peer_pairing_id)?;
         let work_id = validate_identity("work id", admission.work_id)?;
         validate_identity("origin runtime id", admission.origin_runtime_id)?;
         validate_identity("destination runtime id", admission.destination_runtime_id)?;
@@ -404,6 +429,7 @@ impl PeerExecutionPolicyStore {
         let view = resolve_policy(
             &file,
             peer_device_id,
+            peer_pairing_id,
             admission.legacy_task_request_granted,
             now,
         );
@@ -479,10 +505,15 @@ impl PeerExecutionPolicyStore {
 fn resolve_policy(
     file: &PeerExecutionPolicyFile,
     peer_device_id: &str,
+    peer_pairing_id: &str,
     legacy_task_request_granted: bool,
     now: DateTime<Utc>,
 ) -> PeerExecutionPolicyView {
-    if let Some(policy) = file.policies.get(peer_device_id) {
+    if let Some(policy) = file
+        .policies
+        .get(peer_device_id)
+        .filter(|policy| policy.peer_pairing_id == peer_pairing_id)
+    {
         return PeerExecutionPolicyView {
             policy: policy.clone(),
             source: PeerExecutionPolicySource::Stored,
@@ -490,18 +521,19 @@ fn resolve_policy(
     }
     if legacy_task_request_granted {
         return PeerExecutionPolicyView {
-            policy: PeerExecutionPolicy::legacy_assistant(peer_device_id, now),
+            policy: PeerExecutionPolicy::legacy_assistant(peer_device_id, peer_pairing_id, now),
             source: PeerExecutionPolicySource::LegacyTaskRequest,
         };
     }
     PeerExecutionPolicyView {
-        policy: PeerExecutionPolicy::connected_only(peer_device_id, now),
+        policy: PeerExecutionPolicy::connected_only(peer_device_id, peer_pairing_id, now),
         source: PeerExecutionPolicySource::DefaultDeny,
     }
 }
 
 fn compile_policy(
     peer_device_id: &str,
+    peer_pairing_id: &str,
     update: PeerExecutionPolicyUpdate,
     revision: u64,
     created_at: DateTime<Utc>,
@@ -512,26 +544,29 @@ fn compile_policy(
     }
     let mut policy = match update.preset {
         PeerExecutionPolicyPreset::ConnectedOnly => {
-            PeerExecutionPolicy::connected_only(peer_device_id, now)
+            PeerExecutionPolicy::connected_only(peer_device_id, peer_pairing_id, now)
         }
         PeerExecutionPolicyPreset::AssistantWork => {
-            PeerExecutionPolicy::legacy_assistant(peer_device_id, now)
+            PeerExecutionPolicy::legacy_assistant(peer_device_id, peer_pairing_id, now)
         }
         PeerExecutionPolicyPreset::SandboxedWork => {
-            let mut policy = PeerExecutionPolicy::legacy_assistant(peer_device_id, now);
+            let mut policy =
+                PeerExecutionPolicy::legacy_assistant(peer_device_id, peer_pairing_id, now);
             policy.preset = PeerExecutionPolicyPreset::SandboxedWork;
             policy.sandbox_execution = true;
             policy
         }
         PeerExecutionPolicyPreset::ApprovedProjects => {
-            let mut policy = PeerExecutionPolicy::connected_only(peer_device_id, now);
+            let mut policy =
+                PeerExecutionPolicy::connected_only(peer_device_id, peer_pairing_id, now);
             policy.preset = PeerExecutionPolicyPreset::ApprovedProjects;
             policy.coder_work = true;
             policy.work_environment_materialization = true;
             policy
         }
         PeerExecutionPolicyPreset::Custom => {
-            let mut policy = PeerExecutionPolicy::connected_only(peer_device_id, now);
+            let mut policy =
+                PeerExecutionPolicy::connected_only(peer_device_id, peer_pairing_id, now);
             policy.preset = PeerExecutionPolicyPreset::Custom;
             policy
         }
@@ -601,10 +636,13 @@ fn evaluate_assistant_work(
         .map(|value| value.trim().to_ascii_lowercase())
         .filter(|value| !value.is_empty())
         .collect::<BTreeSet<_>>();
-    let effective = requested
+    let mut effective = requested
         .intersection(&policy.allowed_tool_domains)
         .cloned()
         .collect::<BTreeSet<_>>();
+    if policy.network_policy == PeerNetworkPolicy::Deny {
+        effective.remove("web");
+    }
     if !effective.contains("turn") {
         return Err(PeerExecutionDenialReason::ToolDomainDenied);
     }
@@ -617,6 +655,7 @@ fn evaluate_assistant_work(
         schema_version: TASK_EXECUTION_GRANT_SCHEMA_VERSION,
         grant_id,
         peer_device_id: admission.peer_device_id.to_string(),
+        peer_pairing_id: admission.peer_pairing_id.to_string(),
         origin_runtime_id: admission.origin_runtime_id.to_string(),
         destination_runtime_id: admission.destination_runtime_id.to_string(),
         parent_session_id: admission.parent_session_id.to_string(),
@@ -628,6 +667,7 @@ fn evaluate_assistant_work(
         policy_source: PeerExecutionPolicySource::Stored,
         requested_tool_domains: requested.into_iter().collect(),
         effective_tool_domains: effective.into_iter().collect(),
+        network_policy: policy.network_policy,
         issued_at: now,
         expires_at,
     })
@@ -707,6 +747,7 @@ mod tests {
     fn admission<'a>(peer: &'a str, work: &'a str) -> AssistantWorkAdmission<'a> {
         AssistantWorkAdmission {
             peer_device_id: peer,
+            peer_pairing_id: "pairing-1",
             origin_runtime_id: peer,
             destination_runtime_id: "runtime-local",
             parent_session_id: "session-1",
@@ -726,6 +767,7 @@ mod tests {
         let policy = store
             .update_policy(
                 "peer-a",
+                "pairing-1",
                 PeerExecutionPolicyUpdate {
                     preset: PeerExecutionPolicyPreset::AssistantWork,
                     ..Default::default()
@@ -737,7 +779,7 @@ mod tests {
         assert_eq!(policy.revision, 1);
         assert!(
             !store
-                .policy_for_peer("peer-b", false)
+                .policy_for_peer("peer-b", "pairing-2", false)
                 .unwrap()
                 .policy
                 .assistant_work
@@ -746,11 +788,35 @@ mod tests {
         let reopened = PeerExecutionPolicyStore::new(store.path.clone());
         assert!(
             reopened
-                .policy_for_peer("peer-a", false)
+                .policy_for_peer("peer-a", "pairing-1", false)
                 .unwrap()
                 .policy
                 .assistant_work
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn removing_and_repairing_a_device_does_not_restore_old_authority() {
+        let (store, root) = test_store();
+        store
+            .update_policy(
+                "peer-a",
+                "pairing-old",
+                PeerExecutionPolicyUpdate {
+                    preset: PeerExecutionPolicyPreset::AssistantWork,
+                    ..Default::default()
+                },
+                "local:operator",
+            )
+            .unwrap();
+
+        let repaired = store
+            .policy_for_peer("peer-a", "pairing-new", false)
+            .unwrap();
+        assert_eq!(repaired.source, PeerExecutionPolicySource::DefaultDeny);
+        assert!(!repaired.policy.assistant_work);
+        assert_eq!(repaired.policy.peer_pairing_id, "pairing-new");
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -769,7 +835,9 @@ mod tests {
     #[test]
     fn legacy_task_request_maps_only_to_safe_assistant_work() {
         let (store, root) = test_store();
-        let view = store.policy_for_peer("peer-a", true).unwrap();
+        let view = store
+            .policy_for_peer("peer-a", "pairing-1", true)
+            .unwrap();
         assert_eq!(view.source, PeerExecutionPolicySource::LegacyTaskRequest);
         assert!(view.policy.assistant_work);
         assert!(!view.policy.sandbox_execution);
@@ -802,6 +870,7 @@ mod tests {
         store
             .update_policy(
                 "peer-a",
+                "pairing-1",
                 PeerExecutionPolicyUpdate {
                     preset: PeerExecutionPolicyPreset::Custom,
                     assistant_work: Some(true),
