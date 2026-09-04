@@ -24,6 +24,10 @@ use crate::session_store::{
     DerivationCommitOutcome, DerivationCommitRequest, SessionStore, StoreError, TranscriptAppend,
     transcript_content_digest,
 };
+use crate::workshop_contract::{
+    ExecutionPlacementResolution, ExecutionResolutionReason, UNKNOWN_EXECUTION_RUNTIME_ID,
+    default_unknown_runtime_id,
+};
 
 pub const DELEGATED_TASK_SCHEMA_VERSION: u32 = 1;
 pub const MAX_DELEGATED_CONTEXT_ENTRIES: usize = 128;
@@ -120,6 +124,10 @@ pub struct DelegatedTaskRequest {
     pub schema_version: u32,
     pub grant: AgentEnvelope,
     pub source_execution: ExecutionRef,
+    #[serde(default = "default_unknown_runtime_id")]
+    pub parent_runtime_id: String,
+    #[serde(default)]
+    pub execution_placement: ExecutionPlacementResolution,
     pub context: DelegatedContextGrant,
 }
 
@@ -130,6 +138,10 @@ pub struct DelegatedTaskResult {
     pub schema_version: u32,
     pub terminal: AgentEnvelope,
     pub execution: ExecutionRef,
+    #[serde(default = "default_unknown_runtime_id")]
+    pub parent_runtime_id: String,
+    #[serde(default)]
+    pub execution_placement: ExecutionPlacementResolution,
     pub derivation: SessionDerivation,
 }
 
@@ -170,6 +182,10 @@ pub struct DelegatedTaskObservation {
     pub admission: DelegatedTaskAdmission,
     pub status: DelegatedTaskStatus,
     pub execution: ExecutionRef,
+    #[serde(default = "default_unknown_runtime_id")]
+    pub parent_runtime_id: String,
+    #[serde(default)]
+    pub execution_placement: ExecutionPlacementResolution,
     pub derivation: SessionDerivation,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result: Option<DelegatedTaskResult>,
@@ -357,6 +373,20 @@ pub fn validate_task_request(request: &DelegatedTaskRequest) -> Result<(), Deleg
             "unsupported delegated task schema version {}",
             request.schema_version
         )));
+    }
+    if request.execution_placement.resolution_reason != ExecutionResolutionReason::LegacyUnknown
+        && (request.parent_runtime_id.trim().is_empty()
+            || request.parent_runtime_id == UNKNOWN_EXECUTION_RUNTIME_ID
+            || request
+                .execution_placement
+                .resolved_runtime_id
+                .trim()
+                .is_empty()
+            || request.execution_placement.resolved_runtime_id == UNKNOWN_EXECUTION_RUNTIME_ID)
+    {
+        return Err(DelegatedTaskError::invalid(
+            "delegated execution placement is missing parent or resolved runtime identity",
+        ));
     }
     request
         .grant
@@ -577,6 +607,13 @@ pub fn validate_task_result(
             "delegated result provenance does not match the granted context",
         ));
     }
+    if result.parent_runtime_id != request.parent_runtime_id
+        || result.execution_placement != request.execution_placement
+    {
+        return Err(DelegatedTaskError::conflict(
+            "delegated result execution placement does not match the request",
+        ));
+    }
     let payload_execution = result
         .terminal
         .payload
@@ -644,6 +681,13 @@ pub fn validate_task_observation(
     {
         return Err(DelegatedTaskError::conflict(
             "delegated observation provenance does not match the granted context",
+        ));
+    }
+    if observation.parent_runtime_id != request.parent_runtime_id
+        || observation.execution_placement != request.execution_placement
+    {
+        return Err(DelegatedTaskError::conflict(
+            "delegated observation execution placement does not match the request",
         ));
     }
     match (&observation.status, &observation.result) {
@@ -720,6 +764,7 @@ pub fn canonical_agent_schema_version() -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::workshop_contract::ExecutionTargetSelection;
     use chrono::Utc;
     use medousa_types::session::TranscriptEntryId;
     use serde_json::json;
@@ -799,6 +844,14 @@ mod tests {
                 session_id: source.session_id.clone(),
                 execution_id: ExecutionId::parse("source-exec-1").unwrap(),
             },
+            parent_runtime_id: "runtime-source".to_string(),
+            execution_placement: ExecutionPlacementResolution::resolved(
+                ExecutionTargetSelection::Exact {
+                    runtime_id: "remote-daemon".to_string(),
+                },
+                "remote-daemon",
+                ExecutionResolutionReason::ExactTarget,
+            ),
             context,
         }
     }
@@ -876,6 +929,8 @@ mod tests {
                 }),
             },
             execution: execution.clone(),
+            parent_runtime_id: request.parent_runtime_id.clone(),
+            execution_placement: request.execution_placement.clone(),
             derivation,
         };
         validate_task_result(&request, &result).unwrap();
@@ -885,6 +940,8 @@ mod tests {
             admission: DelegatedTaskAdmission::Accepted,
             status: DelegatedTaskStatus::Running,
             execution: execution.clone(),
+            parent_runtime_id: request.parent_runtime_id.clone(),
+            execution_placement: request.execution_placement.clone(),
             derivation: result.derivation.clone(),
             result: None,
         };

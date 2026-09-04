@@ -39,9 +39,10 @@ fn reject_unsupported_remote_hints(spawn: &WorkshopSpawn) -> stasis::prelude::Re
             .model_hint
             .as_deref()
             .is_some_and(|value| !value.trim().is_empty())
+        || spawn.execution_target.is_some()
     {
         return Err(stasis::domain::errors::StasisError::PortFailure(
-            "bound remote workshop does not yet accept manuscript, stage, or model overrides"
+            "bound remote workshop does not yet accept manuscript, stage, model, or explicit execution-target overrides"
                 .to_string(),
         ));
     }
@@ -67,6 +68,8 @@ impl WorkshopExecution for RemoteWorkshopExecution {
             "ok": true,
             "worker_spawned": true,
             "execution_target": "bound_remote",
+            "parent_runtime_id": ticket.parent_runtime_id,
+            "execution_placement": ticket.execution_placement,
             "work_id": ticket.work_id,
             "stasis_job_id": ticket.job_id,
             "intent": intent,
@@ -109,6 +112,7 @@ mod tests {
             manuscript_id: None,
             stage_role: None,
             model_hint: None,
+            execution_target: None,
         };
         assert!(remote_spawn_intent(&spawn).is_err());
     }

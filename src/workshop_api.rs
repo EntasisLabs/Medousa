@@ -169,6 +169,7 @@ impl WorkshopExecution for LocalWorkshopExecution {
                 manuscript_id: CompatOption::from(input.manuscript_id),
                 stage_role: CompatOption::from(input.stage_role),
                 model_hint: CompatOption::from(input.model_hint),
+                execution_target: CompatOption::from(input.execution_target),
             })
             .await?;
         serialize_output(CognitionSpawnTurnWorkerTool::tool_id(), output)

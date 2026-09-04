@@ -73,6 +73,8 @@ mod tests {
             identity_user_id: None,
             parent_turn_correlation_id: None,
             parent_stream_turn_id: 0,
+            parent_runtime_id: "runtime-test".to_string(),
+            execution_placement: Default::default(),
             intent: "research".to_string(),
             task_prompt: "Scan the repo".to_string(),
             status: TurnWorkStatus::Running,

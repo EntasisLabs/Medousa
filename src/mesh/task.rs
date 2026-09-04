@@ -130,6 +130,8 @@ impl DaemonDelegatedTaskExecutor {
                     "termination_reason": terminal_record.termination_reason.clone(),
                     "execution": execution,
                     "derivation": derivation,
+                    "parent_runtime_id": terminal_record.parent_runtime_id,
+                    "execution_placement": terminal_record.execution_placement,
                 }),
             ),
             TurnWorkStatus::Cancelled => (
@@ -138,6 +140,8 @@ impl DaemonDelegatedTaskExecutor {
                     "error": terminal_record.error.clone().unwrap_or_else(|| "delegated worker cancelled".to_string()),
                     "execution": execution,
                     "derivation": derivation,
+                    "parent_runtime_id": terminal_record.parent_runtime_id,
+                    "execution_placement": terminal_record.execution_placement,
                 }),
             ),
             TurnWorkStatus::Failed => (
@@ -146,6 +150,8 @@ impl DaemonDelegatedTaskExecutor {
                     "error": terminal_record.error.clone().unwrap_or_else(|| "delegated worker failed".to_string()),
                     "execution": execution,
                     "derivation": derivation,
+                    "parent_runtime_id": terminal_record.parent_runtime_id,
+                    "execution_placement": terminal_record.execution_placement,
                 }),
             ),
             TurnWorkStatus::Pending | TurnWorkStatus::Running => unreachable!("terminal wait"),
@@ -167,6 +173,8 @@ impl DaemonDelegatedTaskExecutor {
                 payload,
             },
             execution: execution.clone(),
+            parent_runtime_id: terminal_record.parent_runtime_id.clone(),
+            execution_placement: terminal_record.execution_placement.clone(),
             derivation: derivation.clone(),
         }
     }
@@ -180,6 +188,15 @@ impl DelegatedTaskExecutor for DaemonDelegatedTaskExecutor {
         request: &DelegatedTaskRequest,
     ) -> Result<DelegatedTaskObservation, DelegatedTaskError> {
         validate_task_request(request)?;
+        if request.execution_placement.resolution_reason
+            != crate::workshop_contract::ExecutionResolutionReason::LegacyUnknown
+            && request.execution_placement.resolved_runtime_id != self.local_device_id
+        {
+            return Err(DelegatedTaskError::conflict(format!(
+                "delegated work resolved for runtime '{}' but reached '{}'",
+                request.execution_placement.resolved_runtime_id, self.local_device_id
+            )));
+        }
         let target_authority = crate::workshop_authority::current()
             .map_err(DelegatedTaskError::internal)?
             .clone();
@@ -228,6 +245,8 @@ impl DelegatedTaskExecutor for DaemonDelegatedTaskExecutor {
             self.response_depth_mode.clone(),
             self.max_tool_rounds,
             handoff,
+            request.parent_runtime_id.clone(),
+            request.execution_placement.clone(),
         );
         let created =
             turn_worker_store()
@@ -282,6 +301,8 @@ impl DelegatedTaskExecutor for DaemonDelegatedTaskExecutor {
             },
             status,
             execution,
+            parent_runtime_id: current.parent_runtime_id.clone(),
+            execution_placement: current.execution_placement.clone(),
             derivation: materialized.derivation,
             result,
         })
