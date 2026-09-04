@@ -49,7 +49,9 @@ Daemon delegation uses the generated native-only operation
 daemon owns Stasis turn identity, bounded context, retries, and provenance,
 while the native host supplies the paired signed transport. The operation is a
 replay-safe submit-or-observe exchange: it returns immediately with remote
-worker state, and the daemon's durable Stasis job repeats it until terminal.
+worker state plus parent/requested/resolved runtime provenance, and the daemon's
+durable Stasis job repeats it until terminal. The destination validates that the
+resolved runtime identity names itself before admission.
 The model-facing workshop tools return a source-owned `work_id` immediately;
 status and cancellation address that same durable ticket. Completion rejoins
 the initiating session through the daemon's chronological worker handoff and

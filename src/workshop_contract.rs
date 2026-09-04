@@ -207,9 +207,10 @@ pub fn resolve_execution_target(
             {
                 return Err(ExecutionTargetResolutionError::InvalidRuntimeId);
             }
+            let placement = PlacementConstraints::unrestricted().target_node(runtime_id);
             let candidate = candidates
                 .iter()
-                .find(|candidate| candidate.runtime_id == runtime_id)
+                .find(|candidate| placement.matches(&candidate.capabilities))
                 .ok_or_else(|| ExecutionTargetResolutionError::ExactUnavailable {
                     runtime_id: runtime_id.to_string(),
                 })?;

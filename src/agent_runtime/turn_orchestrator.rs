@@ -964,9 +964,7 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
         parent_turn_correlation_id: scope_snapshot
             .as_ref()
             .map(|scope| scope.turn_correlation_id.clone()),
-        parent_runtime_id: crate::workshop_authority::current()
-            .map(|authority| authority.as_str().to_string())
-            .unwrap_or_else(|_| crate::workshop_contract::default_unknown_runtime_id()),
+        parent_runtime_id: worker_scheduler.execution_runtime_id(),
         delivery_target: scope_snapshot
             .as_ref()
             .and_then(|scope| scope.delivery_target.as_ref())

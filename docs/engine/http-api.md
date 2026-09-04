@@ -764,8 +764,10 @@ exactly match the paired identities. The body carries a bounded Stasis
 identity: the first exchange admits the canonical remote worker and later
 exchanges observe the same work. Every response is an immediate signed
 `task.result` observation with `pending`, `running`, or terminal state plus the
-remote execution and session-derivation provenance. The HTTP request is never
-held open for the lifetime of the worker.
+remote execution, requested/resolved runtime placement, parent runtime, and
+session-derivation provenance. The destination rejects a request whose resolved
+runtime identity does not name itself. The HTTP request is never held open for
+the lifetime of the worker.
 
 The source daemon keeps the bounded request and observation schedule in its
 Stasis job. A suspended client can therefore replay the identical exchange
@@ -783,7 +785,9 @@ chronological turn stream; Home does not own a polling or result-merging loop.
 Pairing does not enable this route. The source daemon also needs a separate,
 revocable delegation binding created by an explicit user action. Binding sends
 no traffic, does not select a portal, and does not merge either workshop's
-session catalog.
+session catalog. During the single-binding migration, an omitted execution
+target is translated at workshop ingress into an exact bound-runtime selection;
+the transport adapter no longer chooses a hidden default.
 
 ## Local credential operations
 

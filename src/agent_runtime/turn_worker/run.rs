@@ -172,6 +172,7 @@ impl WorkerRuntimeContext {
 pub struct TurnWorkerScheduler {
     store: Arc<TurnWorkerStore>,
     runtime: RwLock<Option<Arc<RuntimeComposition>>>,
+    execution_runtime_id: std::sync::RwLock<String>,
     parents: Mutex<WorkerParentState>,
 }
 
@@ -278,6 +279,13 @@ impl TurnWorkerScheduler {
         Self {
             store,
             runtime: RwLock::new(None),
+            execution_runtime_id: std::sync::RwLock::new(
+                crate::workshop_authority::current()
+                    .map(|authority| authority.as_str().to_string())
+                    .unwrap_or_else(|_| {
+                        crate::workshop_contract::default_unknown_runtime_id()
+                    }),
+            ),
             parents: Mutex::new(WorkerParentState {
                 live: HashMap::with_capacity(MAX_ACTIVE_WORKER_PARENTS),
                 high_water: 0,
@@ -287,6 +295,32 @@ impl TurnWorkerScheduler {
 
     pub async fn attach_runtime(&self, runtime: Arc<crate::tools::TuiRuntime>) {
         *self.runtime.write().await = Some(runtime.runtime.clone());
+    }
+
+    /// Set the stable Stasis node identity advertised by this process's
+    /// worker host. Placement provenance and durable job constraints must use
+    /// the same identifier or exact-target jobs can never be leased.
+    pub fn set_execution_runtime_id(
+        &self,
+        runtime_id: impl Into<String>,
+    ) -> Result<(), &'static str> {
+        let runtime_id = runtime_id.into();
+        let runtime_id = runtime_id.trim();
+        if runtime_id.is_empty() {
+            return Err("execution runtime id must not be empty");
+        }
+        *self
+            .execution_runtime_id
+            .write()
+            .expect("execution runtime id poisoned") = runtime_id.to_string();
+        Ok(())
+    }
+
+    pub fn execution_runtime_id(&self) -> String {
+        self.execution_runtime_id
+            .read()
+            .expect("execution runtime id poisoned")
+            .clone()
     }
 
     pub fn register_parent(
