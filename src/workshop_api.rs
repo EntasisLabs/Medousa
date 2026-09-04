@@ -49,7 +49,7 @@ pub enum WorkshopQueryAction {
 #[serde(tag = "action")]
 pub enum WorkshopMutateAction {
     #[serde(rename = "workshop.spawn")]
-    Spawn(WorkshopSpawn),
+    Spawn(Box<WorkshopSpawn>),
     #[serde(rename = "workshop.cancel")]
     Cancel(WorkshopCancel),
     #[serde(rename = "workshop.steer")]
@@ -713,7 +713,8 @@ mod tests {
         }))
         .expect("spawn");
         match mutate {
-            WorkshopMutateAction::Spawn(WorkshopSpawn { intent, task, .. }) => {
+            WorkshopMutateAction::Spawn(params) => {
+                let WorkshopSpawn { intent, task, .. } = *params;
                 assert_eq!(intent.as_deref(), Some("research"));
                 assert_eq!(task, "look this up");
             }

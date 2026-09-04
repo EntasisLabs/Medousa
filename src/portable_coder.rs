@@ -219,6 +219,13 @@ impl PortableCoderResult {
         validate_git_oid("input_checkpoint_oid", &self.input_checkpoint_oid)?;
         validate_sha256("workspace_state_digest", &self.workspace_state_digest)?;
         validate_sha256("evidence_digest", &self.evidence_digest)?;
+        let tools = validated_unique_tools(&self.tool_names)?;
+        let ceiling = crate::agent_runtime::coder_tools::portable_coder_tool_names();
+        if let Some(denied) = tools.iter().find(|name| !ceiling.contains(*name)) {
+            return invalid(format!(
+                "portable Coder result reports a tool outside its contract: {denied}"
+            ));
+        }
         if self.changed_files.len() > MAX_PORTABLE_CHANGED_FILES {
             return invalid("portable Coder result contains too many changed files");
         }
@@ -572,8 +579,7 @@ mod daemon_runner {
 
     impl PortableCoderTask {
         fn validate_for_runner(&self) -> Result<(), WorkEnvironmentError> {
-            if self.task_execution_grant.is_some() {
-                let grant = self.task_execution_grant.as_ref().expect("checked");
+            if let Some(grant) = &self.task_execution_grant {
                 if !self
                     .effective_tool_names()
                     .iter()

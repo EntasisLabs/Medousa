@@ -40,8 +40,10 @@ use crate::pairing::{PairedDeviceRecord, PairingService};
 use crate::peer_execution_policy::{PeerExecutionPolicyStore, PortableCoderAdmission};
 use crate::portable_coder::requested_network_policy;
 use crate::work_environment_federation::{
-    RemoteWorkEnvironmentDispatcher, RemoteWorkEnvironmentResult, SignedFederatedTerminalDelivery,
-    accept_remote_work_environment_job_with_grant, decode_remote_work_environment_payload,
+    DurableBlobRetentionPort, RemoteWorkEnvironmentDispatcher, RemoteWorkEnvironmentResult,
+    SignedFederatedTerminalDelivery, accept_remote_work_environment_job_with_grant,
+    decode_remote_work_environment_payload, remote_terminal_graph_descriptors,
+    terminal_result_record_id,
 };
 use crate::work_environment_job::WorkEnvironmentJobPayload;
 use medousa_runtime::WorkEnvironmentCheckpointManifest;
@@ -56,6 +58,7 @@ pub struct MeshWorkEnvironmentFederationState {
     pub pairing: Arc<PairingService>,
     pub runtime: Arc<RuntimeComposition>,
     pub blobs: Arc<dyn BlobTransferPort>,
+    pub blob_retention: Option<Arc<dyn DurableBlobRetentionPort>>,
     pub worker_capabilities: WorkerCapabilities,
     pub execution_policies: Arc<PeerExecutionPolicyStore>,
 }
@@ -371,6 +374,23 @@ async fn accept_terminal_result(
         .put(&bytes, Some(FEDERATED_TERMINAL_MEDIA_TYPE))
         .await
         .map_err(map_stasis)?;
+    if let Some(retention) = state.blob_retention.as_ref() {
+        let mut graph = remote_terminal_graph_descriptors(state.blobs.as_ref(), &wrapped.payload)
+            .await
+            .map_err(map_stasis)?;
+        graph.push(stored.clone());
+        retention
+            .pin_root(
+                &format!(
+                    "federated-result:{}",
+                    terminal_result_record_id(&wrapped.payload.envelope_id)
+                ),
+                graph,
+                None,
+            )
+            .await
+            .map_err(map_stasis)?;
+    }
     crate::work_environment_federation::record_remote_terminal_result(
         state.runtime.as_ref(),
         &wrapped.payload,

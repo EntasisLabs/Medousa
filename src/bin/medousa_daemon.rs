@@ -843,6 +843,8 @@ async fn start_daemon() -> Result<()> {
                 pairing: Arc::clone(pairing),
                 runtime: Arc::new(platform.composition().clone()),
                 blobs,
+                blob_retention: Some(work_environment_blobs.clone()
+                    as Arc<dyn medousa::work_environment_federation::DurableBlobRetentionPort>),
                 worker_capabilities,
                 execution_policies: peer_execution_policies.clone(),
             },
@@ -874,6 +876,15 @@ async fn start_daemon() -> Result<()> {
     )
     .await
     .context("register parallel work-environment job handlers")?;
+    medousa::portable_coder_handoff::register_portable_coder_handoff_job_handler(
+        platform.composition(),
+        state.forge.clone(),
+        state.forge_execution.clone(),
+        work_environment_blobs.clone()
+            as Arc<dyn stasis::ports::outbound::runtime::blob_transfer::BlobTransferPort>,
+    )
+    .await
+    .context("register portable Coder handoff job handler")?;
 
     let mut app = build_daemon_router(
         state.clone(),

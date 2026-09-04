@@ -1583,7 +1583,8 @@
                 "workshop.cancel",
                 "workshop.spawn",
                 "workshop.status",
-                "workshop.steer"
+                "workshop.steer",
+                "workshop.targets"
               ],
               "type": "string"
             },
@@ -1937,7 +1938,8 @@
         "properties": {
           "action": {
             "enum": [
-              "workshop.status"
+              "workshop.status",
+              "workshop.targets"
             ],
             "type": "string"
           },
@@ -4120,7 +4122,8 @@
                 "workshop.cancel",
                 "workshop.spawn",
                 "workshop.status",
-                "workshop.steer"
+                "workshop.steer",
+                "workshop.targets"
               ],
               "type": "string"
             },
@@ -4189,6 +4192,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "general:authorized",
+        "general:domain:execute",
         "workshop:authorized:general",
         "workshop:authorized:research",
         "workshop:domain:execute"
@@ -4308,6 +4313,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "general:authorized",
+        "general:domain:execute",
         "workshop:authorized:general",
         "workshop:authorized:research",
         "workshop:domain:execute"
@@ -4575,7 +4582,7 @@
       "input_schema": {
         "properties": {
           "domain": {
-            "description": "Domain id — host: memory|catalog|runtime|vault|history|identity|skill|overlay|environment|browser; worker: execute|discover|memory|vault|openshell|scripts",
+            "description": "Domain id — host: memory|catalog|runtime|execute|vault|history|identity|skill|overlay|environment|browser; worker: execute|discover|memory|vault|openshell|scripts",
             "type": "string"
           },
           "lane": {
@@ -4976,13 +4983,14 @@
     {
       "registry": "general_runtime",
       "name": "cognition_workshop_query",
-      "description": "Read workshop/worker status. action is a typed name (workshop.status). Fetch fields with cognition_schema types=[...].",
+      "description": "Read workshop/worker status and authorized targets. action is a typed name (workshop.status, workshop.targets). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
           "action": {
             "enum": [
-              "workshop.status"
+              "workshop.status",
+              "workshop.targets"
             ],
             "type": "string"
           }

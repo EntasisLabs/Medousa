@@ -1055,6 +1055,53 @@ impl GitEngine {
         Ok(())
     }
 
+    /// Create one Forge-owned ref only when it does not already exist.
+    ///
+    /// This is the publication primitive for remote result identities: a
+    /// replay may observe the same value, but a stale or colliding attempt can
+    /// never replace newer work under the same logical ref.
+    pub fn create_forge_ref_cas(&self, cwd: &Path, ref_name: &str, new_oid: &GitOid) -> Result<()> {
+        self.validate_forge_ref(cwd, ref_name)?;
+        let object_id_width = new_oid.as_str().len();
+        if !matches!(object_id_width, 40 | 64)
+            || !new_oid
+                .as_str()
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
+        {
+            return Err(ForgeError::Git(
+                "Forge ref target must be a complete Git object id".to_string(),
+            ));
+        }
+        let missing = "0".repeat(object_id_width);
+        self.run(
+            cwd,
+            &["update-ref", ref_name, new_oid.as_str(), missing.as_str()],
+        )?;
+        Ok(())
+    }
+
+    /// Resolve a Forge-owned ref without treating absence as a Git failure.
+    pub fn forge_ref_oid(&self, cwd: &Path, ref_name: &str) -> Result<Option<GitOid>> {
+        self.validate_forge_ref(cwd, ref_name)?;
+        let args = ["rev-parse", "--verify", "--quiet", ref_name];
+        let (stdout, stderr, truncated, status) = self.run_capped(cwd, &args)?;
+        if truncated {
+            return Err(ForgeError::Git(format_git_command_error(
+                &args,
+                "output exceeded capture budget",
+            )));
+        }
+        match status.code() {
+            Some(0) => Ok(Some(GitOid::new(String::from_utf8_lossy(&stdout).trim()))),
+            Some(1) => Ok(None),
+            _ => Err(ForgeError::Git(format_git_command_error(
+                &args,
+                String::from_utf8_lossy(&stderr).trim(),
+            ))),
+        }
+    }
+
     pub fn ref_oid(&self, cwd: &Path, ref_name: &str) -> Result<GitOid> {
         let out = self.run(cwd, &["rev-parse", ref_name])?;
         Ok(GitOid::new(out.trim()))
@@ -1321,6 +1368,25 @@ impl GitEngine {
         bundle: &Path,
         checkpoint: &GitOid,
     ) -> Result<()> {
+        self.import_checkpoint_objects(cwd, bundle, checkpoint)?;
+        self.run(cwd, &["checkout", "--detach", checkpoint.as_str()])?;
+        if self.head_oid(cwd)? != *checkpoint {
+            return Err(ForgeError::EnvironmentDrift(
+                "restored checkpoint head does not match its manifest".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Import a verified checkpoint object graph without touching HEAD, the
+    /// index, or any working-tree file. Origin-side reconciliation uses this
+    /// before creating a private, compare-and-swap protected result ref.
+    pub fn import_checkpoint_objects(
+        &self,
+        cwd: &Path,
+        bundle: &Path,
+        checkpoint: &GitOid,
+    ) -> Result<()> {
         let bundle = bundle.to_str().ok_or_else(|| {
             ForgeError::Store("checkpoint bundle path is not valid UTF-8".to_string())
         })?;
@@ -1329,12 +1395,7 @@ impl GitEngine {
         // particular advertised ref name. Portable Forge snapshots use an
         // ephemeral private ref while older bundles advertise HEAD.
         self.run(cwd, &["bundle", "unbundle", bundle])?;
-        self.run(cwd, &["checkout", "--detach", checkpoint.as_str()])?;
-        if self.head_oid(cwd)? != *checkpoint {
-            return Err(ForgeError::EnvironmentDrift(
-                "restored checkpoint head does not match its manifest".to_string(),
-            ));
-        }
+        self.resolve_oid(cwd, checkpoint.as_str())?;
         Ok(())
     }
 
@@ -2328,6 +2389,47 @@ summary second
         assert_eq!(
             fs::read_to_string(restored.path().join("portable.txt")).unwrap(),
             "portable\n"
+        );
+    }
+
+    #[test]
+    fn object_only_import_and_create_only_forge_ref_preserve_checkout() {
+        let (source, git, _) = init_repo();
+        fs::write(source.path().join("portable.txt"), "portable\n").unwrap();
+        let checkpoint = git
+            .commit_checkpoint(source.path(), "portable", &CheckpointAuthor::default())
+            .unwrap();
+        let durable = TempDir::new().unwrap();
+        let bundle = durable.path().join("checkpoint.bundle");
+        git.export_checkpoint_bundle(source.path(), &checkpoint, &bundle)
+            .unwrap();
+
+        let (origin, _, origin_head) = init_repo();
+        let origin_index = git.index_tree_oid(origin.path()).unwrap();
+        let origin_file = fs::read_to_string(origin.path().join("hello.txt")).unwrap();
+        git.import_checkpoint_objects(origin.path(), &bundle, &checkpoint)
+            .unwrap();
+        assert_eq!(git.head_oid(origin.path()).unwrap(), origin_head);
+        assert_eq!(git.index_tree_oid(origin.path()).unwrap(), origin_index);
+        assert_eq!(
+            fs::read_to_string(origin.path().join("hello.txt")).unwrap(),
+            origin_file
+        );
+
+        let reference = "refs/medousa/forge/remote/work/op/result";
+        git.create_forge_ref_cas(origin.path(), reference, &checkpoint)
+            .unwrap();
+        assert_eq!(
+            git.forge_ref_oid(origin.path(), reference).unwrap(),
+            Some(checkpoint.clone())
+        );
+        assert!(
+            git.create_forge_ref_cas(origin.path(), reference, &origin_head)
+                .is_err()
+        );
+        assert_eq!(
+            git.forge_ref_oid(origin.path(), reference).unwrap(),
+            Some(checkpoint)
         );
     }
 

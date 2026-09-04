@@ -358,13 +358,36 @@ fn remote_proxy_job(
     queue: &str,
     parent: &Job,
 ) -> StasisResult<NewJob> {
+    remote_work_environment_proxy_job(
+        child.work.clone(),
+        target_runtime_id,
+        job_id,
+        queue,
+        &parent.id,
+        &parent.correlation_id,
+        &parent.trace_id,
+        parent.started_at.unwrap_or(parent.scheduled_at),
+    )
+}
+
+/// Build the origin-owned durable proxy used by both parallel children and a
+/// single portable Coder handoff. The proxy itself has unrestricted local
+/// placement; only the signed payload carries destination authority.
+#[allow(clippy::too_many_arguments)]
+pub fn remote_work_environment_proxy_job(
+    mut work: WorkEnvironmentJobPayload,
+    target_runtime_id: &str,
+    job_id: &str,
+    queue: &str,
+    causation_id: &str,
+    correlation_id: &str,
+    trace_id: &str,
+    scheduled_at: DateTime<Utc>,
+) -> StasisResult<NewJob> {
     validate_id("target_runtime_id", target_runtime_id)?;
-    let scheduled_at = parent.started_at.unwrap_or(parent.scheduled_at);
-    let deadline = child
-        .work
+    let deadline = work
         .deadline_at
         .unwrap_or(scheduled_at + chrono::Duration::hours(24));
-    let mut work = child.work.clone();
     work.spec.requirements.placement.target_node = Some(target_runtime_id.to_string());
     let payload = RemoteWorkEnvironmentProxyPayload {
         schema_version: 1,
@@ -375,14 +398,11 @@ fn remote_proxy_job(
     };
     let payload_ref = serde_json::to_string(&payload)
         .map_err(|error| invalid(format!("encode remote work-environment proxy: {error}")))?;
-    let mut candidate = work.into_job(
-        job_id.to_string(),
-        queue.to_string(),
-        parent.id.clone(),
-        Utc::now(),
-    )?;
+    let mut candidate = work.into_job(job_id, queue, causation_id, scheduled_at)?;
     candidate.job_type = REMOTE_WORK_ENVIRONMENT_PROXY_JOB_TYPE.to_string();
     candidate.payload_ref = payload_ref;
+    candidate.correlation_id = correlation_id.to_string();
+    candidate.trace_id = trace_id.to_string();
     // This durable proxy executes on the origin. Only its signed remote
     // envelope carries the destination's OCI placement constraints.
     candidate.placement = PlacementConstraints::unrestricted();
@@ -798,6 +818,9 @@ async fn complete_remote_proxy(
         ));
     }
     let remote = decode_remote_terminal_result(blobs, &result).await?;
+    if let Err(error) = validate_remote_portable_completion(payload, &remote, blobs).await {
+        return Ok(fatal(job, error.to_string(), None));
+    }
     let progress = WorkEnvironmentJobProgress {
         schema_version: 1,
         phase: WorkEnvironmentWorkflowPhase::CleanupEnqueued,
@@ -835,6 +858,84 @@ async fn complete_remote_proxy(
             diagnostics,
         ))
     }
+}
+
+async fn validate_remote_portable_completion(
+    payload: &RemoteWorkEnvironmentProxyPayload,
+    remote: &crate::work_environment_federation::RemoteWorkEnvironmentResult,
+    blobs: &dyn BlobTransferPort,
+) -> StasisResult<()> {
+    let Some(task) = payload.work.portable_coder.as_ref() else {
+        if remote.portable_coder_result.is_some() {
+            return Err(invalid(
+                "remote result supplied portable Coder output for an ordinary environment job",
+            ));
+        }
+        return Ok(());
+    };
+    if !remote.succeeded {
+        return Ok(());
+    }
+    let result = remote.portable_coder_result.as_ref().ok_or_else(|| {
+        invalid("successful portable Coder result is missing its typed agent output")
+    })?;
+    result
+        .validate()
+        .map_err(|error| invalid(error.to_string()))?;
+    if result.operation_id != task.operation_id
+        || result.work_id != task.work_id
+        || result.project_id != task.project_id
+        || result.input_checkpoint_oid != task.expected_checkpoint_oid
+        || result.destination_runtime_id != payload.target_runtime_id
+        || result.grant_id.is_none()
+    {
+        return Err(invalid(
+            "remote portable Coder result does not match the signed task identity",
+        ));
+    }
+    let requested = task
+        .requested_tool_names
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    if result
+        .tool_names
+        .iter()
+        .any(|name| !requested.contains(name.as_str()))
+    {
+        return Err(invalid(
+            "remote portable Coder result reports a tool outside the signed request",
+        ));
+    }
+    if remote.publication.is_some() || payload.work.spec.publication.is_some() {
+        return Err(invalid(
+            "portable Coder destinations must return checkpoints instead of publishing",
+        ));
+    }
+    let checkpoint = remote
+        .checkpoint
+        .as_ref()
+        .ok_or_else(|| invalid("successful portable Coder result has no checkpoint"))?;
+    let bytes = blobs.get(&checkpoint.manifest).await?;
+    let manifest: WorkEnvironmentCheckpointManifest = serde_json::from_slice(&bytes)
+        .map_err(|error| invalid(format!("decode portable Coder checkpoint: {error}")))?;
+    manifest
+        .validate()
+        .map_err(|error| invalid(error.to_string()))?;
+    let expected_fence = &payload.work.spec.fence;
+    if manifest.environment_id != payload.work.spec.environment_id
+        || manifest.workspace_id != payload.work.spec.workspace_id
+        || manifest.base_commit != payload.work.spec.base_commit
+        || manifest.fence.forge_environment_generation
+            != expected_fence.forge_environment_generation
+        || manifest.fence.forge_execution_generation != expected_fence.forge_execution_generation
+        || manifest.fence.stasis_attempt.0 < expected_fence.stasis_attempt.0
+    {
+        return Err(invalid(
+            "remote portable Coder checkpoint does not match its signed environment and fences",
+        ));
+    }
+    Ok(())
 }
 
 #[async_trait]
@@ -1328,6 +1429,57 @@ mod tests {
                 .get("MEDOUSA_RECONCILIATION_MANIFEST")
                 .map(String::as_str),
             Some("/workspace/.medousa/reconciliation/manifest.json")
+        );
+    }
+
+    #[tokio::test]
+    async fn three_lost_daemons_reconcile_on_a_fourth_from_transferred_graphs() {
+        let plan = plan();
+        let alpha_store = InMemoryBlobTransfer::new();
+        let beta_store = InMemoryBlobTransfer::new();
+        let gamma_store = InMemoryBlobTransfer::new();
+        let fourth_daemon = InMemoryBlobTransfer::new();
+        let source_stores = [&alpha_store, &beta_store, &gamma_store];
+        let mut results = Vec::new();
+
+        for (index, (child, source)) in plan.children.iter().zip(source_stores).enumerate() {
+            let result = child_result(source, child, (index + 1) as u8).await;
+            crate::work_environment_federation::transfer_checkpoint_graph(
+                source,
+                &fourth_daemon,
+                &result.checkpoint,
+            )
+            .await
+            .unwrap();
+            results.push(result);
+        }
+
+        // From here onward no source runtime, container, filesystem, or blob
+        // store participates. The fourth daemon has only immutable descriptors
+        // and transferred content.
+        drop(alpha_store);
+        drop(beta_store);
+        drop(gamma_store);
+
+        let prepared = prepare_reconciliation_input(&fourth_daemon, &plan, &results, Utc::now())
+            .await
+            .unwrap();
+        assert_eq!(prepared.manifest.children.len(), 3);
+        let bytes = fourth_daemon
+            .get(&prepared.checkpoint.manifest)
+            .await
+            .unwrap();
+        let manifest: WorkEnvironmentCheckpointManifest = serde_json::from_slice(&bytes).unwrap();
+        manifest.validate().unwrap();
+        assert!(fourth_daemon.exists(&manifest.source_bundle).await.unwrap());
+        for artifact in &manifest.artifacts {
+            assert!(fourth_daemon.exists(&artifact.blob).await.unwrap());
+        }
+        assert_eq!(
+            reconciliation_work_payload(&plan, &prepared)
+                .spec
+                .checkpoint_ref,
+            Some(prepared.checkpoint)
         );
     }
 

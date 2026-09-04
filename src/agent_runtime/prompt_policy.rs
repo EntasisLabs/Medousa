@@ -519,7 +519,7 @@ mod tests {
                 "t6_status",
             ],
             &["s1_prose", "s2_tools", "s3_terminal"],
-            &["f1_preferred", "f2_fallback"],
+            &["f1_preferred", "f2_required"],
         ] {
             let positions = ordered_fields
                 .iter()

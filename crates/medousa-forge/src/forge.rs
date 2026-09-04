@@ -24,9 +24,9 @@ use crate::model::{
     CompactEvidenceRetention, Digest, EvidenceId, EvidenceManifest, ExecutionLease,
     ExecutorDescriptor, GitWorkTarget, GovernedEnv, IntegrationStrategy, LeaseId,
     MODEL_SCHEMA_VERSION, OperationId, PolicyReport, PolicyViolation, PortableForgeCheckpoint,
-    RawEvidenceDisposition, RecoveryDisposition, ReviewComment, ReviewCommentId, ReviewDecision,
-    ReviewDecisionId, WorkId, WorkItem, WorkPolicy, WorkState, WorkTarget, WorkspaceMode,
-    anchor_digest_for, compose_revision_brief,
+    RawEvidenceDisposition, RecoveryDisposition, RepoId, ReviewComment, ReviewCommentId,
+    ReviewDecision, ReviewDecisionId, WorkId, WorkItem, WorkPolicy, WorkState, WorkTarget,
+    WorkspaceMode, anchor_digest_for, compose_revision_brief,
 };
 use crate::observation::{SharedWatcherFence, WorkspaceObserver};
 use crate::owner::ForgeItemRegistry;
@@ -572,7 +572,10 @@ impl Forge {
         Ok(PortableForgeCheckpoint {
             schema_version: 1,
             work_id: item.id.clone(),
-            repository_id: environment.repo.repo_id.clone(),
+            // `RepoIdentity` is intentionally host-local and its raw id may
+            // contain the canonical Git common-dir path. Portable state gets
+            // only the domain-separated storage identity.
+            repository_id: RepoId::from(environment.repo.repo_id.storage_key()),
             base_ref: target.base_ref,
             expected_base_oid: target.base_oid,
             parent_oid,
@@ -3355,6 +3358,12 @@ mod tests {
         let checkpoint = forge.export_portable_checkpoint(&item.id, &bundle).unwrap();
 
         assert_eq!(checkpoint.work_id, item.id);
+        assert_eq!(
+            checkpoint.repository_id,
+            RepoId::from(environment.repo.repo_id.storage_key())
+        );
+        assert!(!checkpoint.repository_id.as_str().contains('/'));
+        assert!(!checkpoint.repository_id.as_str().contains('\\'));
         assert_eq!(checkpoint.parent_oid, head_before);
         assert_ne!(checkpoint.checkpoint_oid, head_before);
         assert_eq!(
