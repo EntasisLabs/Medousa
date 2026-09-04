@@ -16,6 +16,10 @@ export type SideRow = {
   newParts?: WordPart[];
 };
 
+const MAX_WORD_DIFF_CHARS = 12_000;
+const MAX_LCS_CELLS = 40_000;
+const MAX_PAIR_CELLS = 4_096;
+
 /** Tokenize for word-level diff — words, whitespace, and punctuation. */
 export function tokenizeForWordDiff(text: string): string[] {
   return text.match(/\w+|[^\w\s]|\s+/g) ?? (text ? [text] : []);
@@ -54,6 +58,19 @@ export function wordDiffParts(before: string, after: string): {
     };
   }
 
+  // A generated/minified line can contain tens of thousands of tokens. The
+  // LCS matrix is quadratic, so fall back to one changed span before a single
+  // pathological line can monopolize the renderer or exhaust a mobile WebView.
+  if (
+    before.length + after.length > MAX_WORD_DIFF_CHARS ||
+    a.length * b.length > MAX_LCS_CELLS
+  ) {
+    return {
+      before: before ? [{ text: before, changed: true }] : [],
+      after: after ? [{ text: after, changed: true }] : [],
+    };
+  }
+
   // Prefer character LCS for short single-token changes.
   const useChars =
     a.length <= 1 && b.length <= 1 && Math.max(before.length, after.length) <= 80;
@@ -89,6 +106,7 @@ export function wordDiffParts(before: string, after: string): {
 export function lineSimilarity(a: string, b: string): number {
   if (a === b) return 1;
   if (!a.length || !b.length) return 0;
+  if (a.length + b.length > MAX_WORD_DIFF_CHARS) return 0;
   if (a.length === 1 && b.length === 1) return a === b ? 1 : 0;
   const bigrams = (value: string): Map<string, number> => {
     const map = new Map<string, number>();
@@ -118,6 +136,28 @@ export function pairSideRows(
   deletions: DiffLine[],
   additions: DiffLine[],
 ): SideRow[] {
+  if (deletions.length * additions.length > MAX_PAIR_CELLS) {
+    const count = Math.max(deletions.length, additions.length);
+    return Array.from({ length: count }, (_, offset): SideRow => {
+      const del = deletions[offset];
+      const add = additions[offset];
+      const oldContent = del?.content ?? "";
+      const newContent = add?.content ?? "";
+      const kind = del && add ? "replacement" : del ? "deletion" : "addition";
+      const parts = kind === "replacement" ? wordDiffParts(oldContent, newContent) : null;
+      return {
+        key: `${hunkKey}:bounded-change:${offset}`,
+        oldNumber: del?.old_line,
+        newNumber: add?.new_line,
+        oldContent,
+        newContent,
+        kind,
+        oldParts: parts?.before,
+        newParts: parts?.after,
+      };
+    });
+  }
+
   const usedAdds = new Set<number>();
   const pairs: Array<{ del: DiffLine | null; add: DiffLine | null; score: number }> = [];
 

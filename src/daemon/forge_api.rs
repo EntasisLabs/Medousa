@@ -4,6 +4,7 @@
 //! (material memory). Forge owns custody of intentional work episodes.
 
 use std::ffi::OsStr;
+use std::io::Read as _;
 use std::path::{Component, Path as FsPath, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -4273,6 +4274,8 @@ async fn get_changes(
 #[derive(Debug, Deserialize)]
 struct ChangesFileQuery {
     path: String,
+    #[serde(default)]
+    include_content: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -4293,8 +4296,121 @@ struct ChangesFileDiff {
     truncated: bool,
 }
 
-fn changes_file_diff(state: &AppState, id: &WorkId, raw_path: &str) -> ApiResult<ChangesFileDiff> {
+#[derive(Debug, Default)]
+struct BoundedReviewBytes {
+    exists: bool,
+    byte_size: u64,
+    bytes: Option<Vec<u8>>,
+    truncated: bool,
+}
+
+fn bounded_worktree_bytes(path: &FsPath, max_bytes: usize) -> ApiResult<BoundedReviewBytes> {
+    let metadata = match std::fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() => metadata,
+        Ok(_) => return Ok(BoundedReviewBytes::default()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(BoundedReviewBytes::default());
+        }
+        Err(error) => {
+            return Err(request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not inspect changed file: {error}"),
+            ));
+        }
+    };
+    let byte_size = metadata.len();
+    if byte_size > max_bytes as u64 {
+        return Ok(BoundedReviewBytes {
+            exists: true,
+            byte_size,
+            bytes: None,
+            truncated: true,
+        });
+    }
+
+    let mut bytes = Vec::with_capacity(byte_size.min(max_bytes as u64) as usize);
+    std::fs::File::open(path)
+        .and_then(|file| {
+            file.take(max_bytes.saturating_add(1) as u64)
+                .read_to_end(&mut bytes)
+        })
+        .map_err(|error| {
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not read changed file: {error}"),
+            )
+        })?;
+    let observed_size = bytes.len() as u64;
+    let truncated = bytes.len() > max_bytes;
+    if truncated {
+        bytes.clear();
+    }
+    Ok(BoundedReviewBytes {
+        exists: true,
+        byte_size: byte_size.max(observed_size),
+        bytes: (!truncated).then_some(bytes),
+        truncated,
+    })
+}
+
+fn bounded_git_bytes(
+    git: &GitEngine,
+    cwd: &FsPath,
+    oid: &GitOid,
+    path: &str,
+    max_bytes: usize,
+) -> ApiResult<BoundedReviewBytes> {
+    let Some(byte_size) = git.show_size(cwd, oid, path).map_err(map_err)? else {
+        return Ok(BoundedReviewBytes::default());
+    };
+    if byte_size > max_bytes as u64 {
+        return Ok(BoundedReviewBytes {
+            exists: true,
+            byte_size,
+            bytes: None,
+            truncated: true,
+        });
+    }
+    let bytes = git.show_bytes(cwd, oid, path).map_err(map_err)?;
+    let truncated = bytes.len() > max_bytes;
+    Ok(BoundedReviewBytes {
+        exists: true,
+        byte_size: byte_size.max(bytes.len() as u64),
+        bytes: (!truncated).then_some(bytes),
+        truncated,
+    })
+}
+
+fn bounded_review_version(
+    value: &BoundedReviewBytes,
+    binary: bool,
+    include_content: bool,
+) -> ReviewFileVersion {
+    ReviewFileVersion {
+        exists: value.exists,
+        binary,
+        byte_size: value.byte_size,
+        digest: value.bytes.as_ref().map(|bytes| source_digest(bytes)),
+        content: if binary || value.truncated || !include_content {
+            None
+        } else {
+            value
+                .bytes
+                .as_ref()
+                .and_then(|bytes| String::from_utf8(bytes.clone()).ok())
+        },
+    }
+}
+
+fn changes_file_diff(
+    state: &AppState,
+    id: &WorkId,
+    raw_path: &str,
+    include_content: bool,
+) -> ApiResult<ChangesFileDiff> {
     const MAX_CHANGES_FILE_BYTES: usize = 1024 * 1024;
+    const MAX_CHANGES_PATCH_BYTES: usize = 256 * 1024;
+    const MAX_CHANGES_DIFF_LINES: usize = 4_000;
     let (_, path) = normalize_source_relative(raw_path)?;
     let forge = forge(state);
     let item = forge.load(id).map_err(map_err)?;
@@ -4334,66 +4450,60 @@ fn changes_file_diff(state: &AppState, id: &WorkId, raw_path: &str) -> ApiResult
     .to_owned();
     let old_path = entry.and_then(|entry| entry.old_path.clone());
     let baseline_path = old_path.as_deref().unwrap_or(path.as_str());
-    let baseline_bytes = forge
-        .git()
-        .show_bytes(&environment.worktree, &baseline_oid, baseline_path)
-        .ok();
+    let baseline_bytes = bounded_git_bytes(
+        forge.git(),
+        &environment.worktree,
+        &baseline_oid,
+        baseline_path,
+        MAX_CHANGES_FILE_BYTES,
+    )?;
     let work_abs = environment.worktree.join(&path);
-    let working_bytes = if work_abs.is_file() {
-        std::fs::read(&work_abs).ok()
-    } else {
-        None
-    };
-    let binary = baseline_bytes
-        .as_ref()
-        .is_some_and(|bytes| looks_like_binary(bytes))
+    let working_bytes = bounded_worktree_bytes(&work_abs, MAX_CHANGES_FILE_BYTES)?;
+    let binary = entry.is_some_and(|entry| entry.is_binary)
+        || baseline_bytes
+            .bytes
+            .as_ref()
+            .is_some_and(|bytes| looks_like_binary(bytes))
         || working_bytes
+            .bytes
             .as_ref()
             .is_some_and(|bytes| looks_like_binary(bytes));
-    let truncated = baseline_bytes
-        .as_ref()
-        .is_some_and(|bytes| bytes.len() > MAX_CHANGES_FILE_BYTES)
-        || working_bytes
-            .as_ref()
-            .is_some_and(|bytes| bytes.len() > MAX_CHANGES_FILE_BYTES);
-    let version = |bytes: &Option<Vec<u8>>| ReviewFileVersion {
-        exists: bytes.is_some(),
-        binary,
-        byte_size: bytes.as_ref().map(|value| value.len() as u64).unwrap_or(0),
-        digest: bytes.as_ref().map(|value| source_digest(value)),
-        content: if binary || truncated {
-            None
-        } else {
-            bytes
-                .as_ref()
-                .and_then(|value| String::from_utf8(value.clone()).ok())
-        },
-    };
-    let patch = if binary {
-        Vec::new()
-    } else if status == "untracked" || (baseline_bytes.is_none() && working_bytes.is_some()) {
+    let (patch, patch_truncated) = if binary {
+        (Vec::new(), false)
+    } else if status == "untracked" || (!baseline_bytes.exists && working_bytes.exists) {
         forge
             .git()
-            .diff_untracked_path(&environment.worktree, &path)
+            .diff_untracked_path_bounded(&environment.worktree, &path, MAX_CHANGES_PATCH_BYTES)
             .unwrap_or_default()
     } else {
         forge
             .git()
-            .diff_path_worktree(&environment.worktree, &baseline_oid, &path)
+            .diff_path_worktree_bounded(
+                &environment.worktree,
+                &baseline_oid,
+                &path,
+                MAX_CHANGES_PATCH_BYTES,
+            )
             .map_err(map_err)?
     };
-    let hunks = parse_review_hunks(&String::from_utf8_lossy(&patch));
+    let (hunks, hunks_truncated) =
+        parse_review_hunks_bounded(&String::from_utf8_lossy(&patch), MAX_CHANGES_DIFF_LINES);
+    let truncated =
+        baseline_bytes.truncated || working_bytes.truncated || patch_truncated || hunks_truncated;
     Ok(ChangesFileDiff {
         work_id: id.as_str().to_owned(),
         path,
         status,
         old_path,
         baseline_oid: baseline_oid.as_str().to_owned(),
-        working_digest: working_bytes.as_ref().map(|value| source_digest(value)),
+        working_digest: working_bytes
+            .bytes
+            .as_ref()
+            .map(|value| source_digest(value)),
         binary,
         conflict,
-        baseline: version(&baseline_bytes),
-        working: version(&working_bytes),
+        baseline: bounded_review_version(&baseline_bytes, binary, include_content),
+        working: bounded_review_version(&working_bytes, binary, include_content),
         hunks,
         truncated,
     })
@@ -4412,7 +4522,15 @@ async fn get_changes_file(
         {
             let state = state.clone();
             let path = query.path.clone();
-            move || Ok(Json(changes_file_diff(&state, &id, &path)?))
+            let include_content = query.include_content.unwrap_or(true);
+            move || {
+                Ok(Json(changes_file_diff(
+                    &state,
+                    &id,
+                    &path,
+                    include_content,
+                )?))
+            }
         },
     )
     .await
@@ -4448,7 +4566,7 @@ async fn restore_changes_file(
             let state = state.clone();
             move || {
                 let id = parse_work_id(&work_id)?;
-                let comparison = changes_file_diff(&state, &id, &body.path)?;
+                let comparison = changes_file_diff(&state, &id, &body.path, true)?;
                 if comparison.binary && comparison.baseline.exists {
                     return Err(request_error(
                         StatusCode::UNSUPPORTED_MEDIA_TYPE,
@@ -5307,7 +5425,7 @@ async fn resolve_changes_conflict(
                 let environment = item.workspace_environment().cloned().ok_or_else(|| {
                     request_error(StatusCode::CONFLICT, "governed workspace is not prepared")
                 })?;
-                let comparison = changes_file_diff(&state, &id, &path)?;
+                let comparison = changes_file_diff(&state, &id, &path, true)?;
                 if !comparison.conflict && comparison.status != "unmerged" {
                     return Err(request_error(
                         StatusCode::CONFLICT,
@@ -5497,7 +5615,7 @@ async fn revert_changes_hunk(
             let state = state.clone();
             move || {
                 let id = parse_work_id(&work_id)?;
-                let comparison = changes_file_diff(&state, &id, &body.path)?;
+                let comparison = changes_file_diff(&state, &id, &body.path, true)?;
                 if comparison.binary {
                     return Err(request_error(
                         StatusCode::UNSUPPORTED_MEDIA_TYPE,
@@ -5506,6 +5624,12 @@ async fn revert_changes_hunk(
                 }
                 if comparison.hunks.is_empty() {
                     return Err(request_error(StatusCode::CONFLICT, "no hunks to revert"));
+                }
+                if comparison.truncated {
+                    return Err(request_error(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        "this diff is too large for safe hunk recovery; restore the whole file or edit it in Code",
+                    ));
                 }
                 if body.hunk_index >= comparison.hunks.len() {
                     return Err(request_error(
@@ -6020,6 +6144,8 @@ fn review_file_diff(
     selected_attempt_id: Option<&str>,
 ) -> ApiResult<ReviewFileDiff> {
     const MAX_REVIEW_FILE_BYTES: usize = 1024 * 1024;
+    const MAX_REVIEW_PATCH_BYTES: usize = 256 * 1024;
+    const MAX_REVIEW_DIFF_LINES: usize = 4_000;
     let (_, path) = normalize_source_relative(raw_path)?;
     let forge = forge(state);
     let item = forge.load(id).map_err(map_err)?;
@@ -6063,54 +6189,47 @@ fn review_file_diff(
             .ok_or_else(|| request_error(StatusCode::CONFLICT, "review has no saved revision"))?,
     );
     let baseline_path = changed.old_path.as_deref().unwrap_or(&changed.path);
-    let baseline_bytes = forge
-        .git()
-        .show_bytes(&environment.worktree, &baseline_oid, baseline_path)
-        .ok();
-    let reviewed_bytes = forge
-        .git()
-        .show_bytes(&environment.worktree, &reviewed_oid, &changed.path)
-        .ok();
+    let baseline_bytes = bounded_git_bytes(
+        forge.git(),
+        &environment.worktree,
+        &baseline_oid,
+        baseline_path,
+        MAX_REVIEW_FILE_BYTES,
+    )?;
+    let reviewed_bytes = bounded_git_bytes(
+        forge.git(),
+        &environment.worktree,
+        &reviewed_oid,
+        &changed.path,
+        MAX_REVIEW_FILE_BYTES,
+    )?;
     let binary = changed.is_binary
         || baseline_bytes
+            .bytes
             .as_ref()
             .is_some_and(|bytes| std::str::from_utf8(bytes).is_err())
         || reviewed_bytes
+            .bytes
             .as_ref()
             .is_some_and(|bytes| std::str::from_utf8(bytes).is_err());
-    let truncated = baseline_bytes
-        .as_ref()
-        .is_some_and(|bytes| bytes.len() > MAX_REVIEW_FILE_BYTES)
-        || reviewed_bytes
-            .as_ref()
-            .is_some_and(|bytes| bytes.len() > MAX_REVIEW_FILE_BYTES);
-    let version = |bytes: &Option<Vec<u8>>| ReviewFileVersion {
-        exists: bytes.is_some(),
-        binary,
-        byte_size: bytes.as_ref().map(|value| value.len() as u64).unwrap_or(0),
-        digest: bytes.as_ref().map(|value| source_digest(value)),
-        content: if binary || truncated {
-            None
-        } else {
-            bytes
-                .as_ref()
-                .and_then(|value| String::from_utf8(value.clone()).ok())
-        },
-    };
-    let patch = if binary {
-        Vec::new()
+    let (patch, patch_truncated) = if binary {
+        (Vec::new(), false)
     } else {
         forge
             .git()
-            .diff_path(
+            .diff_path_bounded(
                 &environment.worktree,
                 &baseline_oid,
                 &reviewed_oid,
                 &changed.path,
+                MAX_REVIEW_PATCH_BYTES,
             )
             .map_err(map_err)?
     };
-    let hunks = parse_review_hunks(&String::from_utf8_lossy(&patch));
+    let (hunks, hunks_truncated) =
+        parse_review_hunks_bounded(&String::from_utf8_lossy(&patch), MAX_REVIEW_DIFF_LINES);
+    let truncated =
+        baseline_bytes.truncated || reviewed_bytes.truncated || patch_truncated || hunks_truncated;
     let mut changed_lines = Vec::new();
     for hunk in &hunks {
         for line in &hunk.lines {
@@ -6140,8 +6259,8 @@ fn review_file_diff(
         baseline_oid: baseline_oid.as_str().to_owned(),
         reviewed_oid: reviewed_oid.as_str().to_owned(),
         binary,
-        baseline: version(&baseline_bytes),
-        reviewed: version(&reviewed_bytes),
+        baseline: bounded_review_version(&baseline_bytes, binary, true),
+        reviewed: bounded_review_version(&reviewed_bytes, binary, true),
         hunks,
         changed_lines,
         truncated,
@@ -6156,12 +6275,26 @@ fn parse_range(raw: &str) -> Option<(usize, usize)> {
     Some((start, count))
 }
 
+#[cfg(test)]
 fn parse_review_hunks(patch: &str) -> Vec<ReviewDiffHunk> {
+    parse_review_hunks_bounded(patch, usize::MAX).0
+}
+
+fn parse_review_hunks_bounded(patch: &str, max_lines: usize) -> (Vec<ReviewDiffHunk>, bool) {
     let mut hunks = Vec::new();
     let mut current: Option<ReviewDiffHunk> = None;
     let mut old_line = 0usize;
     let mut new_line = 0usize;
+    let mut retained_lines = 0usize;
     for raw in patch.lines() {
+        if retained_lines >= max_lines {
+            if let Some(hunk) = current.take()
+                && !hunk.lines.is_empty()
+            {
+                hunks.push(hunk);
+            }
+            return (hunks, true);
+        }
         if let Some(header) = raw.strip_prefix("@@ ")
             && let Some((ranges, _)) = header.split_once(" @@")
         {
@@ -6214,11 +6347,12 @@ fn parse_review_hunks(patch: &str) -> Vec<ReviewDiffHunk> {
             new_line: new_number,
             content: content.into(),
         });
+        retained_lines += 1;
     }
     if let Some(hunk) = current {
         hunks.push(hunk);
     }
-    hunks
+    (hunks, false)
 }
 
 async fn get_review_file(
@@ -6291,6 +6425,12 @@ async fn restore_review_file(
                     return Err(request_error(
                         StatusCode::UNSUPPORTED_MEDIA_TYPE,
                         "binary recovery is preserved in Git but cannot yet be restored from Home",
+                    ));
+                }
+                if comparison.truncated && comparison.baseline.exists {
+                    return Err(request_error(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        "this reviewed file is too large to restore safely in Home",
                     ));
                 }
                 let forge = forge(&state);
@@ -11560,6 +11700,29 @@ mod source_tests {
     }
 
     #[test]
+    fn working_change_preview_refuses_to_materialize_oversized_files() {
+        let root = tempfile::tempdir().unwrap();
+        let small_path = root.path().join("small.txt");
+        std::fs::write(&small_path, b"small").unwrap();
+        let small = bounded_worktree_bytes(&small_path, 8).unwrap();
+        assert!(small.exists);
+        assert!(!small.truncated);
+        assert_eq!(small.bytes.as_deref(), Some(b"small".as_slice()));
+
+        let large_path = root.path().join("large.txt");
+        std::fs::write(&large_path, vec![b'x'; 64]).unwrap();
+        let large = bounded_worktree_bytes(&large_path, 8).unwrap();
+        assert!(large.exists);
+        assert!(large.truncated);
+        assert_eq!(large.byte_size, 64);
+        assert!(large.bytes.is_none());
+
+        let missing = bounded_worktree_bytes(&root.path().join("missing.txt"), 8).unwrap();
+        assert!(!missing.exists);
+        assert!(!missing.truncated);
+    }
+
+    #[test]
     fn workspace_source_edits_apply_mixed_operations_atomically() {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("modify.rs"), "old\n").unwrap();
@@ -12458,6 +12621,20 @@ mod source_tests {
         assert_eq!(hunks[0].lines[1].kind, "deletion");
         assert_eq!(hunks[0].lines[2].new_line, Some(2));
         assert_eq!(hunks[0].lines[3].new_line, Some(3));
+    }
+
+    #[test]
+    fn review_patch_parser_caps_retained_lines() {
+        let patch = format!(
+            "diff --git a/app.txt b/app.txt\n--- a/app.txt\n+++ b/app.txt\n@@ -1,5 +1,5 @@\n{}",
+            (0..5)
+                .map(|line| format!(" line {line}\n"))
+                .collect::<String>()
+        );
+        let (hunks, truncated) = parse_review_hunks_bounded(&patch, 3);
+        assert!(truncated);
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(hunks[0].lines.len(), 3);
     }
 
     #[test]

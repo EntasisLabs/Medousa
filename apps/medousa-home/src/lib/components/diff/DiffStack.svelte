@@ -74,10 +74,11 @@
 
   let mounted = $state<Record<string, boolean>>({});
   let itemEls = $state<Record<string, HTMLElement | null>>({});
+  let intersectionObserver = $state<IntersectionObserver | null>(null);
   let prefsOpen = $state(false);
 
   onMount(() => {
-    const observer = new IntersectionObserver(
+    intersectionObserver = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           const path = (entry.target as HTMLElement).dataset.diffPath;
@@ -87,18 +88,24 @@
       },
       { rootMargin: "240px 0px" },
     );
-    for (const el of Object.values(itemEls)) {
-      if (el) observer.observe(el);
-    }
-    return () => observer.disconnect();
+    return () => {
+      intersectionObserver?.disconnect();
+      intersectionObserver = null;
+    };
   });
 
   $effect(() => {
-    const paths = files.map((file) => file.path);
-    for (const path of paths) {
-      const el = itemEls[path];
-      void el;
+    const observer = intersectionObserver;
+    const elements = files
+      .map((file) => itemEls[file.path])
+      .filter((element): element is HTMLElement => Boolean(element));
+    if (!observer) return;
+    for (const element of elements) {
+      observer.observe(element);
     }
+    return () => {
+      for (const element of elements) observer.unobserve(element);
+    };
   });
 
   function fileLabel(path: string): string {
@@ -264,7 +271,7 @@
             collapsed={isCollapsed(file, index)}
             viewed={viewedSet.has(file.path)}
             inventory={files.length > 1}
-            mountHunks={mounted[file.path] || index < 4 || !isCollapsed(file, index)}
+            mountHunks={mounted[file.path] || index < 2}
             {onOpenFile}
             {restoreHint}
             {restoreLabel}

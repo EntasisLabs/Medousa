@@ -148,15 +148,28 @@ impl GitEngine {
     /// Like `run_bytes`, but treats exit status 1 as success (git diff found
     /// differences, especially with `--no-index`).
     fn run_diff_bytes(&self, cwd: &Path, args: &[&str]) -> Result<Vec<u8>> {
-        let (stdout, stderr, truncated, status) = self.run_capped(cwd, args)?;
+        let (stdout, truncated) = self.run_diff_bytes_bounded(cwd, args, MAX_CAPTURE_BYTES)?;
         if truncated {
             return Err(ForgeError::Git(format_git_command_error(
                 args,
                 "output exceeded capture budget",
             )));
         }
+        Ok(stdout)
+    }
+
+    /// Like `run_diff_bytes`, but returns a bounded prefix and reports whether
+    /// stdout or stderr exceeded the caller's cap. Excess output is drained so
+    /// Git cannot block on a full pipe.
+    fn run_diff_bytes_bounded(
+        &self,
+        cwd: &Path,
+        args: &[&str],
+        max_bytes: usize,
+    ) -> Result<(Vec<u8>, bool)> {
+        let (stdout, stderr, truncated, status) = self.run_capped_to(cwd, args, max_bytes)?;
         match status.code() {
-            Some(0) | Some(1) => Ok(stdout),
+            Some(0) | Some(1) => Ok((stdout, truncated)),
             _ => {
                 let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
                 Err(ForgeError::Git(format_git_command_error(
@@ -176,6 +189,15 @@ impl GitEngine {
         cwd: &Path,
         args: &[&str],
     ) -> Result<(Vec<u8>, Vec<u8>, bool, std::process::ExitStatus)> {
+        self.run_capped_to(cwd, args, MAX_CAPTURE_BYTES)
+    }
+
+    fn run_capped_to(
+        &self,
+        cwd: &Path,
+        args: &[&str],
+        max_bytes: usize,
+    ) -> Result<(Vec<u8>, Vec<u8>, bool, std::process::ExitStatus)> {
         let mut command = self.command();
         command
             .args(args)
@@ -183,7 +205,8 @@ impl GitEngine {
             .env_remove("GIT_DIR")
             .env_remove("GIT_WORK_TREE")
             .env("GIT_TERMINAL_PROMPT", "0");
-        run_command_bounded(command, MAX_CAPTURE_BYTES).map_err(|err| match err {
+        run_command_bounded(command, max_bytes.clamp(1, MAX_CAPTURE_BYTES)).map_err(|err| match err
+        {
             ForgeError::Git(message) if message.contains("failed to spawn") => {
                 ForgeError::Git(format_git_spawn_error(args, &message))
             }
@@ -679,6 +702,31 @@ impl GitEngine {
         )
     }
 
+    /// Bounded variant of [`Self::diff_path`] for interactive previews.
+    pub fn diff_path_bounded(
+        &self,
+        cwd: &Path,
+        from: &GitOid,
+        to: &GitOid,
+        path: &str,
+        max_bytes: usize,
+    ) -> Result<(Vec<u8>, bool)> {
+        self.run_diff_bytes_bounded(
+            cwd,
+            &[
+                "diff",
+                "--no-ext-diff",
+                "--no-color",
+                "--unified=3",
+                from.as_str(),
+                to.as_str(),
+                "--",
+                path,
+            ],
+            max_bytes,
+        )
+    }
+
     /// Unified text diff for one path between an exact revision and the
     /// *working tree* (includes unstaged edits). Exit status 1 (differences)
     /// is treated as success and returns the patch bytes.
@@ -697,6 +745,30 @@ impl GitEngine {
         )
     }
 
+    /// Bounded worktree diff for UI previews. The boolean reports that only a
+    /// prefix was retained; the remaining child output is still drained.
+    pub fn diff_path_worktree_bounded(
+        &self,
+        cwd: &Path,
+        from: &GitOid,
+        path: &str,
+        max_bytes: usize,
+    ) -> Result<(Vec<u8>, bool)> {
+        self.run_diff_bytes_bounded(
+            cwd,
+            &[
+                "diff",
+                "--no-ext-diff",
+                "--no-color",
+                "--unified=3",
+                from.as_str(),
+                "--",
+                path,
+            ],
+            max_bytes,
+        )
+    }
+
     /// Diff an untracked worktree file against `/dev/null` (all additions).
     pub fn diff_untracked_path(&self, cwd: &Path, path: &str) -> Result<Vec<u8>> {
         self.run_diff_bytes(
@@ -711,6 +783,29 @@ impl GitEngine {
                 "/dev/null",
                 path,
             ],
+        )
+    }
+
+    /// Bounded untracked-file diff for UI previews.
+    pub fn diff_untracked_path_bounded(
+        &self,
+        cwd: &Path,
+        path: &str,
+        max_bytes: usize,
+    ) -> Result<(Vec<u8>, bool)> {
+        self.run_diff_bytes_bounded(
+            cwd,
+            &[
+                "diff",
+                "--no-ext-diff",
+                "--no-color",
+                "--unified=3",
+                "--no-index",
+                "--",
+                "/dev/null",
+                path,
+            ],
+            max_bytes,
         )
     }
 
@@ -1480,6 +1575,32 @@ impl GitEngine {
         self.run_bytes(cwd, &["show", &format!("{}:{path}", oid.as_str())])
     }
 
+    /// Size of a path at an exact commit, or `None` when that path does not
+    /// exist there. This lets preview callers reject oversized blobs before
+    /// asking Git to materialize them.
+    pub fn show_size(&self, cwd: &Path, oid: &GitOid, path: &str) -> Result<Option<u64>> {
+        let object = format!("{}:{path}", oid.as_str());
+        let (stdout, _stderr, truncated, status) =
+            self.run_capped_to(cwd, &["cat-file", "-s", &object], 1024)?;
+        if !status.success() {
+            return Ok(None);
+        }
+        if truncated {
+            return Err(ForgeError::Git(format_git_command_error(
+                &["cat-file", "-s"],
+                "output exceeded capture budget",
+            )));
+        }
+        let value = String::from_utf8_lossy(&stdout);
+        let size = value.trim().parse::<u64>().map_err(|_| {
+            ForgeError::Git(format_git_command_error(
+                &["cat-file", "-s"],
+                "object size was not an integer",
+            ))
+        })?;
+        Ok(Some(size))
+    }
+
     /// Submodule pins at HEAD of `cwd` (from the index, stage-0 gitlinks).
     pub fn submodule_pins(&self, cwd: &Path, baseline: &GitOid) -> Result<Vec<SubmodulePin>> {
         let out = self.run(cwd, &["ls-files", "--stage"])?;
@@ -2093,6 +2214,26 @@ mod tests {
             .unwrap();
         let untracked_text = String::from_utf8_lossy(&untracked);
         assert!(untracked_text.contains("+fresh"));
+    }
+
+    #[test]
+    fn interactive_diff_and_blob_metadata_are_bounded() {
+        let (tmp, git, head) = init_repo();
+        fs::write(tmp.path().join("hello.txt"), "changed\n".repeat(4_096)).unwrap();
+        let (patch, truncated) = git
+            .diff_path_worktree_bounded(tmp.path(), &head, "hello.txt", 512)
+            .unwrap();
+        assert!(truncated);
+        assert_eq!(patch.len(), 512);
+
+        assert_eq!(
+            git.show_size(tmp.path(), &head, "hello.txt").unwrap(),
+            Some("hello\n".len() as u64)
+        );
+        assert_eq!(
+            git.show_size(tmp.path(), &head, "missing.txt").unwrap(),
+            None
+        );
     }
 
     #[test]

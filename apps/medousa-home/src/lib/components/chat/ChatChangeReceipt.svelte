@@ -6,22 +6,19 @@
     FileDiff,
     LoaderCircle,
     MessageSquareText,
+    RefreshCw,
     ShieldCheck,
     X,
   } from "@lucide/svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
-  import DiffStack from "$lib/components/diff/DiffStack.svelte";
+  import WorkingChangesBrowser from "$lib/components/chat/WorkingChangesBrowser.svelte";
   import ForgeReviewSurface from "$lib/components/work/ForgeReviewSurface.svelte";
   import ReviewCommentRail from "$lib/components/work/ReviewCommentRail.svelte";
-  import { layout } from "$lib/runtime/layout.svelte";
-  import { countDiffStats, type DiffFileSection } from "$lib/diff/diffTypes";
   import {
     addReviewComment,
     deleteReviewComment,
-    getChangesFile,
     getForgeChanges,
     resolveReviewComment,
-    type ChangesFileDiff,
     type ForgeChanges,
     type ReviewProjection,
   } from "$lib/forge";
@@ -49,10 +46,11 @@
   }: Props = $props();
 
   let changes = $state<ForgeChanges | null>(null);
-  let fileDiffs = $state<Record<string, ChangesFileDiff>>({});
   let loading = $state(false);
   let loadError = $state<string | null>(null);
   let sheetOpen = $state(false);
+  let refreshAvailable = $state(false);
+  let loadedEventRevision = $state(-1);
   let commentCompose = $state<{
     path: string;
     side: "new" | "old";
@@ -62,7 +60,8 @@
   let commentDraft = $state("");
   let commentBusy = $state(false);
   let commentError = $state<string | null>(null);
-  let requestSerial = 0;
+  let snapshotRequestSerial = 0;
+  let loadedWorkId = "";
 
   const sealedReview = $derived(
     review?.work_id === workId &&
@@ -71,53 +70,32 @@
       : null,
   );
 
-  function toStackFile(diff: ChangesFileDiff): DiffFileSection {
-    const stats = countDiffStats(diff.hunks);
-    return {
-      path: diff.path,
-      oldPath: diff.old_path,
-      status: diff.status,
-      binary: diff.binary,
-      conflict: diff.conflict,
-      additions: stats.additions,
-      deletions: stats.deletions,
-      hunks: diff.hunks,
-      baselineBytes: diff.baseline.byte_size,
-      reviewedBytes: diff.working.byte_size,
-      baselineExists: diff.baseline.exists,
-      reviewedExists: diff.working.exists,
-      beforeText: diff.baseline.content ?? null,
-      afterText: diff.working.content ?? null,
-    };
-  }
-
-  const workingFiles = $derived.by(() =>
-    (changes?.files ?? [])
-      .map((file) => fileDiffs[file.path])
-      .filter((diff): diff is ChangesFileDiff => Boolean(diff))
-      .map(toStackFile),
-  );
-
   const receiptFiles = $derived.by(() => {
     if (sealedReview) {
       return sealedReview.changed_files.map((file) => ({
         path: file.path,
         additions: file.lines_added ?? 0,
         deletions: file.lines_removed ?? 0,
+        status: file.status,
       }));
     }
-    return workingFiles.map((file) => ({
+    return (changes?.files ?? []).map((file) => ({
       path: file.path,
-      additions: file.additions ?? 0,
-      deletions: file.deletions ?? 0,
+      additions: null,
+      deletions: null,
+      status: file.status,
     }));
   });
 
   const expectedFileCount = $derived(
     sealedReview?.changed_files.length ?? changes?.files.length ?? 0,
   );
-  const additions = $derived(receiptFiles.reduce((total, file) => total + file.additions, 0));
-  const deletions = $derived(receiptFiles.reduce((total, file) => total + file.deletions, 0));
+  const additions = $derived(
+    receiptFiles.reduce((total, file) => total + (file.additions ?? 0), 0),
+  );
+  const deletions = $derived(
+    receiptFiles.reduce((total, file) => total + (file.deletions ?? 0), 0),
+  );
   const visibleFiles = $derived(receiptFiles.slice(0, 3));
   const moreFileCount = $derived(Math.max(0, expectedFileCount - visibleFiles.length));
   const isReady = $derived(Boolean(sealedReview));
@@ -134,50 +112,43 @@
     return index > 0 ? normalized.slice(0, index) : "";
   }
 
-  async function loadWorkingChanges(id: string) {
-    const serial = ++requestSerial;
+  function statusLabel(status: string): string {
+    switch (status) {
+      case "added": return "Added";
+      case "deleted": return "Deleted";
+      case "renamed": return "Renamed";
+      case "copied": return "Copied";
+      case "type_changed": return "Type changed";
+      case "untracked": return "New";
+      case "unmerged": return "Conflict";
+      default: return "Modified";
+    }
+  }
+
+  async function loadWorkingChanges(id: string, revision: number) {
+    const serial = ++snapshotRequestSerial;
     loading = true;
     loadError = null;
     try {
       const snapshot = await getForgeChanges(id);
-      if (serial !== requestSerial) return;
+      if (serial !== snapshotRequestSerial) return;
       changes = snapshot;
-      fileDiffs = {};
-      const next: Record<string, ChangesFileDiff> = {};
-      let cursor = 0;
-      let previewFailed = false;
-      const loadNext = async () => {
-        while (cursor < snapshot.files.length) {
-          const file = snapshot.files[cursor++];
-          if (!file) return;
-          try {
-            const diff = await getChangesFile(id, file.path);
-            next[diff.path] = diff;
-            if (serial === requestSerial) fileDiffs = { ...next };
-          } catch {
-            previewFailed = true;
-          }
-        }
-      };
-      await Promise.all(
-        Array.from(
-          { length: Math.min(4, snapshot.files.length) },
-          () => loadNext(),
-        ),
-      );
-      if (serial !== requestSerial) return;
-      fileDiffs = next;
-      if (previewFailed) {
-        loadError = "Some file previews could not be loaded.";
-      }
+      loadedWorkId = id;
+      loadedEventRevision = revision;
+      refreshAvailable = false;
     } catch (error) {
-      if (serial !== requestSerial) return;
+      if (serial !== snapshotRequestSerial) return;
       changes = null;
-      fileDiffs = {};
       loadError = error instanceof Error ? error.message : String(error);
     } finally {
-      if (serial === requestSerial) loading = false;
+      if (serial === snapshotRequestSerial) loading = false;
     }
+  }
+
+  async function refreshWorkingSnapshot() {
+    const id = workId.trim();
+    if (!id) return;
+    await loadWorkingChanges(id, eventRevision);
   }
 
   function closeSheet() {
@@ -274,9 +245,21 @@
 
   $effect(() => {
     const id = workId.trim();
-    void eventRevision;
-    if (!id || sealedReview) return;
-    const timer = window.setTimeout(() => void loadWorkingChanges(id), 220);
+    const revision = eventRevision;
+    const reviewReady = Boolean(sealedReview);
+    if (!id || reviewReady) {
+      snapshotRequestSerial += 1;
+      changes = null;
+      loadedWorkId = "";
+      loadedEventRevision = -1;
+      refreshAvailable = false;
+      return;
+    }
+    if (sheetOpen && loadedWorkId === id && loadedEventRevision >= 0) {
+      if (revision !== loadedEventRevision) refreshAvailable = true;
+      return;
+    }
+    const timer = window.setTimeout(() => void loadWorkingChanges(id, revision), 220);
     return () => window.clearTimeout(timer);
   });
 
@@ -306,14 +289,17 @@
         <p>{isReady ? "Ready for review" : "Working changes"}</p>
         <span>{expectedFileCount} {expectedFileCount === 1 ? "file" : "files"}</span>
       </div>
-      <div
-        class="chat-change-receipt-stats"
-        aria-label={`${additions} additions and ${deletions} deletions${loading && !isReady ? " counted so far" : ""}`}
-      >
-        {#if loading && !isReady}<LoaderCircle size={10} class="animate-spin" />{/if}
-        <span class="chat-change-add">+{additions}</span>
-        <span class="chat-change-del">−{deletions}</span>
-      </div>
+      {#if isReady}
+        <div
+          class="chat-change-receipt-stats"
+          aria-label={`${additions} additions and ${deletions} deletions`}
+        >
+          <span class="chat-change-add">+{additions}</span>
+          <span class="chat-change-del">−{deletions}</span>
+        </div>
+      {:else if loading}
+        <LoaderCircle size={11} class="animate-spin chat-change-refreshing" aria-label="Refreshing changes" />
+      {/if}
       <button type="button" class="chat-change-review-button" onclick={() => (sheetOpen = true)}>
         Review
       </button>
@@ -340,10 +326,14 @@
           {#if parentPath(file.path)}
             <span class="chat-change-file-parent">{parentPath(file.path)}</span>
           {/if}
-          <span class="chat-change-file-stats">
-            <span class="chat-change-add">+{file.additions}</span>
-            <span class="chat-change-del">−{file.deletions}</span>
-          </span>
+          {#if file.additions != null && file.deletions != null}
+            <span class="chat-change-file-stats">
+              <span class="chat-change-add">+{file.additions}</span>
+              <span class="chat-change-del">−{file.deletions}</span>
+            </span>
+          {:else if file.status}
+            <span class="chat-change-file-status">{statusLabel(file.status)}</span>
+          {/if}
         </li>
       {/each}
     </ul>
@@ -387,8 +377,10 @@
           </div>
           <div class="chat-review-summary">
             <span>{expectedFileCount} {expectedFileCount === 1 ? "file" : "files"}</span>
-            <span class="chat-change-add">+{additions}</span>
-            <span class="chat-change-del">−{deletions}</span>
+            {#if isReady}
+              <span class="chat-change-add">+{additions}</span>
+              <span class="chat-change-del">−{deletions}</span>
+            {/if}
           </div>
           <button type="button" class="chat-review-close" aria-label="Close review" onclick={closeSheet}>
             <X size={17} strokeWidth={1.8} />
@@ -407,6 +399,14 @@
               {sealedReview.synthesis.risk_summary || `${risk ?? "unknown"} risk`}
             </span>
           </div>
+        {:else if refreshAvailable}
+          <div class="chat-review-update-bar">
+            <span>Changes updated while you were reviewing.</span>
+            <button type="button" onclick={() => void refreshWorkingSnapshot()} disabled={loading}>
+              <RefreshCw size={12} class={loading ? "animate-spin" : undefined} />
+              Refresh
+            </button>
+          </div>
         {/if}
 
         <div class="chat-review-content">
@@ -418,19 +418,17 @@
                 onOpenFile={(path, line) => onOpenCode(path, line)}
                 onComment={openComment}
               />
-            {:else if loading && workingFiles.length === 0}
-              <div class="chat-review-empty"><LoaderCircle size={16} class="animate-spin" />Loading changes…</div>
-            {:else if workingFiles.length > 0}
-              <DiffStack
-                files={workingFiles}
-                density="compact"
-                chrome="prefs"
-                showJumpList
-                wrap={layout.isMobile}
-                onOpenFile={(path, line) => onOpenCode(path, line)}
-              />
             {:else}
-              <div class="chat-review-empty">No text changes to preview.</div>
+              {#key `${workId}:${loadedEventRevision}`}
+                <WorkingChangesBrowser
+                  {workId}
+                  {changes}
+                  {loading}
+                  error={loadError}
+                  onOpenFile={(path, line) => onOpenCode(path, line)}
+                  onRefresh={refreshWorkingSnapshot}
+                />
+              {/key}
             {/if}
           </div>
           {#if isReady && sealedReview && (commentCompose || (sealedReview.comments?.length ?? 0) > 0)}
@@ -460,7 +458,11 @@
         </div>
 
         <footer class="chat-review-actions">
-          <button type="button" class="chat-review-action chat-review-action--quiet" onclick={() => void onOpenCode()}>
+          <button
+            type="button"
+            class="chat-review-action chat-review-action--quiet"
+            onclick={() => void onOpenCode()}
+          >
             <ArrowUpRight size={13} />
             Open in Code
           </button>
@@ -537,6 +539,17 @@
     gap: 0.35rem;
     font-size: 0.625rem;
     font-variant-numeric: tabular-nums;
+  }
+
+  :global(.chat-change-refreshing) {
+    flex: 0 0 auto;
+    color: rgb(var(--theme-text-tertiary));
+  }
+
+  .chat-change-file-status {
+    margin-left: auto;
+    color: rgb(var(--theme-text-tertiary));
+    font-size: 0.5625rem;
   }
 
   .chat-change-add {
@@ -746,6 +759,38 @@
     padding: 0.5rem 0.9rem;
   }
 
+  .chat-review-update-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    border-bottom: 1px solid rgb(var(--theme-focus) / 0.18);
+    padding: 0.48rem 0.9rem;
+    background: rgb(var(--theme-focus) / 0.06);
+    color: rgb(var(--theme-text-secondary));
+    font-size: 0.6875rem;
+  }
+
+  .chat-review-update-bar button {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 0.3rem;
+    border-radius: var(--theme-control-radius);
+    padding: 0.25rem 0.4rem;
+    color: rgb(var(--theme-link));
+    font-size: 0.6875rem;
+  }
+
+  .chat-review-update-bar button:hover,
+  .chat-review-update-bar button:focus-visible {
+    background: rgb(var(--theme-card-hover) / 0.65);
+  }
+
+  .chat-review-update-bar button:disabled {
+    opacity: 0.55;
+  }
+
   .chat-review-content {
     display: flex;
     min-width: 0;
@@ -781,16 +826,6 @@
     margin: 0.5rem 0 0;
     color: rgb(var(--theme-error));
     font-size: 0.625rem;
-  }
-
-  .chat-review-empty {
-    display: flex;
-    min-height: 12rem;
-    align-items: center;
-    justify-content: center;
-    gap: 0.45rem;
-    color: rgb(var(--theme-text-tertiary));
-    font-size: 0.75rem;
   }
 
   .chat-review-actions {

@@ -20,4 +20,11 @@ describe("highlightDiffLine", () => {
     const second = highlightDiffLine("const x = 1;", "typescript");
     expect(second).toBe(first);
   });
+
+  it("leaves pathological generated lines plain", () => {
+    const line = `const generated = "${"x".repeat(12_100)}";`;
+    expect(highlightDiffLine(line, "typescript")).toEqual([
+      { text: line, style: null },
+    ]);
+  });
 });

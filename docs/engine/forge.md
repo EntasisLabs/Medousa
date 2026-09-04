@@ -66,7 +66,7 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | GET (SSE) | `/v1/forge/stream` | Live undertaking list freshness (state/kind only; no path cursor) |
 | GET | `/v1/forge/items/{id}/tree` | List tracked and unignored repository files (bounded to 20,000) |
 | GET | `/v1/forge/items/{id}/changes` | Working-copy Changes: branch, upstream ahead/behind, conflict flag, dirty/merge flags, and changed-file statuses |
-| GET, POST | `/v1/forge/items/{id}/changes/file` | Per-file working-copy vs baseline diff (`GET`) or lease-fenced restore to baseline (`POST`) |
+| GET, POST | `/v1/forge/items/{id}/changes/file` | Per-file working-copy vs baseline diff (`GET`; bounded preview, optional `include_content=false`) or lease-fenced restore to baseline (`POST`) |
 | POST | `/v1/forge/items/{id}/changes/file/hunk` | Lease-fenced revert of one diff hunk |
 | POST | `/v1/forge/items/{id}/changes/fetch` | Fetch remotes for the governed worktree |
 | POST | `/v1/forge/items/{id}/changes/pull` | Fast-forward-only pull |
@@ -89,7 +89,7 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 | POST | `/v1/forge/items/{id}/task-runs/{run_id}/preview` | Mint a tokenized private preview path for a ready run |
 | ANY | `/v1/forge/preview/{token}/…` | Reverse-proxy to workshop `127.0.0.1:{port}` (token-gated; no public app bind) |
 | GET | `/v1/forge/items/{id}/tests?attempt_id=…` | Discover addressable project tests, optionally pinned to one exact attempt |
-| GET | `/v1/forge/items/{id}/review/file?path=…` | Exact baseline-to-reviewed file comparison with structured hunks |
+| GET | `/v1/forge/items/{id}/review/file?path=…` | Exact baseline-to-reviewed file comparison with bounded structured hunks |
 | POST | `/v1/forge/items/{id}/review/file` | Reopen work and restore one text file to its baseline while retaining the reviewed checkpoint |
 | GET, POST | `/v1/forge/items/{id}/review/comments` | List or add line-anchored review comments bound to sealed evidence |
 | PATCH, DELETE | `/v1/forge/items/{id}/review/comments/{comment_id}` | Resolve/edit or delete a review comment |

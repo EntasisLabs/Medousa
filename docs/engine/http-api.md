@@ -523,7 +523,7 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 | POST | `/v1/forge/items/{id}/export` | Export bundle |
 | GET | `/v1/forge/items/{id}/tree` | Browse governed source tree |
 | GET | `/v1/forge/items/{id}/changes` | Working-copy Changes (branch, upstream, conflict, file statuses) |
-| GET, POST | `/v1/forge/items/{id}/changes/file` | Per-file working-copy vs baseline diff, or lease-fenced restore to baseline |
+| GET, POST | `/v1/forge/items/{id}/changes/file` | Bounded per-file working-copy vs baseline diff (`include_content=false` omits duplicate full-file bodies), or lease-fenced restore to baseline |
 | POST | `/v1/forge/items/{id}/changes/file/hunk` | Lease-fenced single-hunk revert |
 | POST | `/v1/forge/items/{id}/changes/fetch` | Fetch remotes |
 | POST | `/v1/forge/items/{id}/changes/pull` | Fast-forward-only pull |
