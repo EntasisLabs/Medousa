@@ -3,20 +3,21 @@ use crate::daemon::types::{
     AgentModeProposalResponse, AgentModeScope, AgentModeTransitionPolicy,
     CancelActiveSessionTurnResponse, CodeIntentContext, CreatePromptStashRequest,
     CreateSessionRequest, CreateSessionResponse, DeletePromptStashResponse, DeriveSessionRequest,
-    DeriveSessionResponse, MediaRef, PromptStash, PromptStashListResponse,
-    SessionAgentModeResponse, SessionCodeBindingResponse, SessionCodeProjectResponse,
-    SessionDeleteQuery, SessionDeleteResponse, SessionHistoryListResponse, SessionHistoryResponse,
-    SessionSetDisplayNameResponse, SetSessionAgentModeRequest, StageRoutingMatrix,
-    StartSessionCodeProjectRequest, TurnSurfaceContext,
+    DeriveSessionResponse, ExecutionTargetSelection, MediaRef, PromptStash,
+    PromptStashListResponse, SessionAgentModeResponse, SessionCodeBindingResponse,
+    SessionCodeProjectResponse, SessionDeleteQuery, SessionDeleteResponse,
+    SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameResponse,
+    SetSessionAgentModeRequest, StageRoutingMatrix, StartSessionCodeProjectRequest,
+    TurnSurfaceContext,
 };
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::embedded_daemon::EmbeddedDaemonState;
 
-use super::DaemonState;
 use super::sdk::{client, sdk_error};
 use super::workshop_http;
+use super::DaemonState;
 
 #[tauri::command]
 pub async fn session_create(
@@ -668,6 +669,8 @@ struct CreateTurnTicketBody {
     code_context: Option<CodeIntentContext>,
     #[serde(default)]
     code_project_setup_authorized: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    worker_execution_target: Option<ExecutionTargetSelection>,
     #[serde(default)]
     mode: TurnTicketMode,
     #[serde(default = "default_persist_user_turn")]
@@ -712,6 +715,7 @@ pub async fn turn_create(
     agent_mode: Option<AgentModeId>,
     code_context: Option<CodeIntentContext>,
     code_project_setup_authorized: Option<bool>,
+    worker_execution_target: Option<ExecutionTargetSelection>,
     mode: Option<String>,
     provider: Option<String>,
     model: Option<String>,
@@ -803,6 +807,7 @@ pub async fn turn_create(
                 embedded_response_depth,
                 embedded_reasoning_effort,
                 media_refs.clone().unwrap_or_default(),
+                worker_execution_target.clone(),
             )
             .await
             .map_err(|error| error.to_string())?;
@@ -874,6 +879,7 @@ pub async fn turn_create(
         agent_mode,
         code_context,
         code_project_setup_authorized: code_project_setup_authorized.unwrap_or(false),
+        worker_execution_target,
         mode: ticket_mode,
         persist_user_turn: true,
         response_depth_mode,

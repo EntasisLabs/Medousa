@@ -1657,6 +1657,42 @@ impl AgentModeId {
     }
 }
 
+/// Location-neutral requirements used when a turn asks Medousa to choose a
+/// worker workshop. `selection_key` makes Auto placement stable for the same
+/// eligible target set without exposing transport details to the client.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ExecutionTargetRequirements {
+    #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
+    pub required_capabilities: std::collections::BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub architecture: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection_key: Option<String>,
+}
+
+/// User-facing placement preference for workers spawned during a turn.
+/// Agent-authored worker requests use the same wire shape, but are admitted
+/// against the stricter agent-selectable inventory.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ExecutionTargetSelection {
+    #[default]
+    SameAsParent,
+    Exact {
+        runtime_id: String,
+    },
+    Auto {
+        #[serde(default)]
+        requirements: ExecutionTargetRequirements,
+    },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct InteractiveTurnRequest {
@@ -1672,6 +1708,10 @@ pub struct InteractiveTurnRequest {
     /// to choose, bind, or create a project for this turn.
     #[serde(default)]
     pub code_project_setup_authorized: bool,
+    /// User-selected default workshop for workers created during this turn.
+    /// This does not grant the model permission to select the same target.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker_execution_target: Option<ExecutionTargetSelection>,
     pub persist_user_turn: bool,
     pub response_depth_mode: String,
     #[serde(default)]
@@ -1763,6 +1803,9 @@ pub struct CreateTurnTicketRequest {
     /// Structured principal authorization from a project-setup surface action.
     #[serde(default)]
     pub code_project_setup_authorized: bool,
+    /// User-selected default workshop for workers created during this turn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker_execution_target: Option<ExecutionTargetSelection>,
     #[serde(default)]
     pub mode: TurnTicketMode,
     #[serde(default = "default_persist_user_turn")]

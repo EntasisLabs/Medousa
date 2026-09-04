@@ -161,6 +161,7 @@ pub struct TurnExecutionContext {
     deadline: Instant,
     legacy_scope: Arc<TurnContinuationScope>,
     bot: Option<BotTurnIdentity>,
+    worker_execution_target: Option<crate::workshop_contract::ExecutionTargetSelection>,
     work_environment: Option<medousa_runtime::WorkEnvironmentBinding>,
     work_environment_operation_sequence: AtomicU64,
     last_grapheme_source: Mutex<Option<Arc<str>>>,
@@ -193,6 +194,7 @@ impl TurnExecutionContext {
             deadline,
             legacy_scope: Arc::new(legacy_scope),
             bot: None,
+            worker_execution_target: None,
             work_environment: None,
             work_environment_operation_sequence: AtomicU64::new(0),
             last_grapheme_source: Mutex::new(None),
@@ -278,6 +280,20 @@ impl TurnExecutionContext {
 
     pub fn bot_identity(&self) -> Option<&BotTurnIdentity> {
         self.bot.as_ref()
+    }
+
+    pub fn with_worker_execution_target(
+        mut self,
+        target: crate::workshop_contract::ExecutionTargetSelection,
+    ) -> Self {
+        self.worker_execution_target = Some(target);
+        self
+    }
+
+    pub fn worker_execution_target(
+        &self,
+    ) -> Option<&crate::workshop_contract::ExecutionTargetSelection> {
+        self.worker_execution_target.as_ref()
     }
 
     /// Memory tools use Bot continuity when present while transcript, artifact,

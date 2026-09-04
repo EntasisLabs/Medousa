@@ -11889,6 +11889,17 @@
           "string",
           "null"
         ]
+      },
+      "worker_execution_target": {
+        "description": "User-selected default workshop for workers created during this turn. This does not grant the model permission to select the same target.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ExecutionTargetSelection"
+          },
+          {
+            "type": "null"
+          }
+        ]
       }
     },
     "definitions": {
@@ -11985,6 +11996,102 @@
             ]
           }
         }
+      },
+      "ExecutionTargetRequirements": {
+        "description": "Location-neutral requirements used when a turn asks Medousa to choose a worker workshop. `selection_key` makes Auto placement stable for the same eligible target set without exposing transport details to the client.",
+        "type": "object",
+        "properties": {
+          "architecture": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "platform": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "region": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "required_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "selection_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ExecutionTargetSelection": {
+        "description": "User-facing placement preference for workers spawned during a turn. Agent-authored worker requests use the same wire shape, but are admitted against the stricter agent-selectable inventory.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "same_as_parent"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "runtime_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "exact"
+                ]
+              },
+              "runtime_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "auto"
+                ]
+              },
+              "requirements": {
+                "default": {},
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/ExecutionTargetRequirements"
+                  }
+                ]
+              }
+            }
+          }
+        ]
       },
       "HostContextDiagnostic": {
         "type": "object",

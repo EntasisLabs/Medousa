@@ -1816,6 +1816,7 @@ fn worker_settings_from_record(record: &TurnWorkRecord) -> RuntimeSettings {
         agent_mode: None,
         code_context: None,
         code_project_setup_authorized: false,
+        worker_execution_target: None,
         persist_user_turn: false,
         response_depth_mode: record.response_depth_mode.clone(),
         reasoning_effort: crate::reasoning_effort::REASONING_EFFORT_DEFAULT.to_string(),

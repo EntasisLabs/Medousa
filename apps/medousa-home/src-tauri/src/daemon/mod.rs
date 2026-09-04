@@ -508,6 +508,7 @@ pub async fn interactive_turn_send(
         agent_mode,
         code_context,
         code_project_setup_authorized: false,
+        worker_execution_target: None,
         persist_user_turn: true,
         response_depth_mode,
         reasoning_effort,

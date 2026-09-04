@@ -32,6 +32,8 @@ pub struct ExecutionTargetInventoryEntryDto {
 pub struct ExecutionTargetInventoryDto {
     pub schema_version: u32,
     pub parent_runtime_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_runtime_id: Option<String>,
     pub targets: Vec<ExecutionTargetInventoryEntryDto>,
 }
 

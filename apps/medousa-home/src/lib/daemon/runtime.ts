@@ -34,8 +34,22 @@ export type ExecutionTargetInventoryEntry = {
 export type ExecutionTargetInventory = {
   schema_version: number;
   parent_runtime_id: string;
+  default_runtime_id?: string | null;
   targets: ExecutionTargetInventoryEntry[];
 };
+
+export type ExecutionTargetRequirements = {
+  required_capabilities?: string[];
+  platform?: string | null;
+  architecture?: string | null;
+  region?: string | null;
+  selection_key?: string | null;
+};
+
+export type ExecutionTargetSelection =
+  | { kind: "same_as_parent" }
+  | { kind: "exact"; runtime_id: string }
+  | { kind: "auto"; requirements?: ExecutionTargetRequirements };
 
 export async function getExecutionTargets(): Promise<ExecutionTargetInventory> {
   return invoke<ExecutionTargetInventory>("runtime_get_execution_targets");

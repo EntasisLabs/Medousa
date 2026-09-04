@@ -553,6 +553,7 @@ pub fn build_interactive_turn_request_for_ingest(
         agent_mode: None,
         code_context: None,
         code_project_setup_authorized: false,
+        worker_execution_target: None,
         persist_user_turn: true,
         response_depth_mode: response_depth_mode.to_string(),
         reasoning_effort: reasoning_effort.to_string(),

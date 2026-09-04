@@ -288,6 +288,7 @@ export async function createTurnTicket(
     agentMode: request.agentMode ?? null,
     codeContext: invokePlain(request.codeContext ?? null),
     codeProjectSetupAuthorized: request.codeProjectSetupAuthorized ?? false,
+    workerExecutionTarget: invokePlain(request.workerExecutionTarget ?? null),
     mode: request.mode ?? "interactive",
     provider: request.provider ?? null,
     model: request.model ?? null,

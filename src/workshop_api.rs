@@ -236,6 +236,7 @@ impl WorkshopExecutionRouter {
             }
         }
         candidates.sort_by(|left, right| left.1.runtime_id.cmp(&right.1.runtime_id));
+        candidates.dedup_by(|left, right| left.1.runtime_id == right.1.runtime_id);
         Ok(candidates)
     }
 
@@ -249,10 +250,35 @@ impl WorkshopExecutionRouter {
     )> {
         let candidates = self.candidates().await?;
         let parent_runtime_id = self.parent_runtime.runtime_id();
-        let requested = match (&input.execution_target, self.ingress_default) {
-            (Some(requested), _) => requested.clone(),
-            (None, WorkshopIngressDefault::SameAsParent) => ExecutionTargetSelection::SameAsParent,
-            (None, WorkshopIngressDefault::BoundRemote) => {
+        enum SelectionAuthority {
+            User,
+            Agent,
+        }
+
+        let user_default = crate::agent_runtime::execution_context::active_turn_execution_context()
+            .and_then(|context| context.worker_execution_target().cloned());
+        let (requested, authority) = match user_default {
+            Some(
+                requested @ (ExecutionTargetSelection::SameAsParent
+                | ExecutionTargetSelection::Exact { .. }),
+            ) => (requested, SelectionAuthority::User),
+            Some(requested @ ExecutionTargetSelection::Auto { .. }) => input
+                .execution_target
+                .clone()
+                .map(|agent_request| (agent_request, SelectionAuthority::Agent))
+                .unwrap_or((requested, SelectionAuthority::Agent)),
+            None if input.execution_target.is_some() => (
+                input
+                    .execution_target
+                    .clone()
+                    .expect("checked execution target"),
+                SelectionAuthority::Agent,
+            ),
+            None if self.ingress_default == WorkshopIngressDefault::SameAsParent => (
+                ExecutionTargetSelection::SameAsParent,
+                SelectionAuthority::User,
+            ),
+            None => {
                 let mut bound_runtime_id = None;
                 for target in &self.targets {
                     if let Some(runtime_id) = target.ingress_default_runtime_id().await? {
@@ -265,12 +291,19 @@ impl WorkshopExecutionRouter {
                         detail: "the legacy bound remote workshop is not configured".to_string(),
                     })
                 })?;
-                ExecutionTargetSelection::Exact { runtime_id }
+                (
+                    ExecutionTargetSelection::Exact { runtime_id },
+                    SelectionAuthority::User,
+                )
             }
         };
         let candidate_values = candidates
             .iter()
             .map(|(_, candidate)| candidate.clone())
+            .filter(|candidate| match authority {
+                SelectionAuthority::User => candidate.user_selectable,
+                SelectionAuthority::Agent => candidate.agent_selectable,
+            })
             .collect::<Vec<_>>();
         let mut resolution =
             resolve_execution_target(requested, &parent_runtime_id, &candidate_values)
@@ -329,9 +362,28 @@ impl WorkshopExecution for WorkshopExecutionRouter {
             .map(|candidate| candidate.inventory_entry())
             .collect::<Vec<_>>();
         targets.dedup_by(|left, right| left.runtime_id == right.runtime_id);
+        let requested_default = match self.ingress_default {
+            WorkshopIngressDefault::SameAsParent => Some(parent_runtime_id.clone()),
+            WorkshopIngressDefault::BoundRemote => {
+                let mut runtime_id = None;
+                for target in &self.targets {
+                    if let Some(candidate) = target.ingress_default_runtime_id().await? {
+                        runtime_id = Some(candidate);
+                        break;
+                    }
+                }
+                runtime_id
+            }
+        };
+        let default_runtime_id = requested_default.filter(|runtime_id| {
+            targets
+                .iter()
+                .any(|candidate| candidate.runtime_id == *runtime_id)
+        });
         Ok(ExecutionTargetInventory {
             schema_version: EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION,
             parent_runtime_id,
+            default_runtime_id,
             targets,
         })
     }
@@ -549,12 +601,15 @@ impl WorkshopSteer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::workshop_contract::ExecutionTargetRequirements;
     use serde_json::json;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct FakeExecutionTarget {
         runtime_id: String,
         spawn_count: Arc<AtomicUsize>,
+        user_selectable: bool,
+        agent_selectable: bool,
     }
 
     #[async_trait]
@@ -566,8 +621,8 @@ mod tests {
                 capabilities: stasis::domain::runtime::placement::WorkerCapabilities::any()
                     .node_id(&self.runtime_id)
                     .with_capability("assistant.work"),
-                user_selectable: true,
-                agent_selectable: true,
+                user_selectable: self.user_selectable,
+                agent_selectable: self.agent_selectable,
             }])
         }
 
@@ -665,6 +720,8 @@ mod tests {
             vec![Arc::new(FakeExecutionTarget {
                 runtime_id: "runtime-local".to_string(),
                 spawn_count: spawn_count.clone(),
+                user_selectable: true,
+                agent_selectable: true,
             })],
         );
         let error = router
@@ -686,6 +743,8 @@ mod tests {
             vec![Arc::new(FakeExecutionTarget {
                 runtime_id: "runtime-remote".to_string(),
                 spawn_count: spawn_count.clone(),
+                user_selectable: true,
+                agent_selectable: true,
             })],
         );
         let output = router
@@ -700,5 +759,155 @@ mod tests {
             "runtime-remote"
         );
         assert_eq!(output["parent_runtime_id"], "runtime-parent");
+    }
+
+    #[tokio::test]
+    async fn agent_cannot_select_a_user_only_target() {
+        let spawn_count = Arc::new(AtomicUsize::new(0));
+        let router = WorkshopExecutionRouter::new(
+            "runtime-parent",
+            WorkshopIngressDefault::SameAsParent,
+            vec![Arc::new(FakeExecutionTarget {
+                runtime_id: "runtime-user-only".to_string(),
+                spawn_count: spawn_count.clone(),
+                user_selectable: true,
+                agent_selectable: false,
+            })],
+        );
+        let error = router
+            .spawn(spawn_for(Some(ExecutionTargetSelection::Exact {
+                runtime_id: "runtime-user-only".to_string(),
+            })))
+            .await
+            .expect_err("model-selected target must require agent targeting");
+        assert!(error.to_string().contains("execution_target_unavailable"));
+        assert_eq!(spawn_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn user_default_can_select_a_user_only_target() {
+        use crate::agent_runtime::execution_context::{
+            ProviderRoute, SurfaceCapabilities, TurnExecutionContext, with_turn_execution_context,
+        };
+        use crate::request_principal::{RequestPrincipal, TransportClass};
+        use crate::session_storage::SessionId;
+        use crate::turn_continuation::TurnContinuationScope;
+        use std::time::{Duration, Instant};
+        use tokio_util::sync::CancellationToken;
+
+        let spawn_count = Arc::new(AtomicUsize::new(0));
+        let router = WorkshopExecutionRouter::new(
+            "runtime-parent",
+            WorkshopIngressDefault::SameAsParent,
+            vec![Arc::new(FakeExecutionTarget {
+                runtime_id: "runtime-user-only".to_string(),
+                spawn_count: spawn_count.clone(),
+                user_selectable: true,
+                agent_selectable: false,
+            })],
+        );
+        let scope = TurnContinuationScope {
+            turn_correlation_id: "turn-user-placement".to_string(),
+            session_id: "session-user-placement".to_string(),
+            identity_user_id: None,
+            original_prompt: "help me".to_string(),
+            delivery_target: None,
+            provider: "test".to_string(),
+            model: "test".to_string(),
+            response_depth_mode: "standard".to_string(),
+            supports_ui_artifacts: false,
+            supports_liquid_markdown: false,
+            supports_browser_host: false,
+            channel_surface: None,
+        };
+        let context = TurnExecutionContext::new(
+            "turn-user-placement",
+            "turn-user-placement",
+            SessionId::parse("session-user-placement").expect("session"),
+            RequestPrincipal::local_app(Arc::from("test"), TransportClass::Loopback),
+            ProviderRoute::new("test", "test"),
+            SurfaceCapabilities::default(),
+            CancellationToken::new(),
+            Instant::now() + Duration::from_secs(60),
+            scope,
+        )
+        .with_worker_execution_target(ExecutionTargetSelection::Exact {
+            runtime_id: "runtime-user-only".to_string(),
+        });
+
+        let output = with_turn_execution_context(
+            Arc::new(context),
+            router.spawn(spawn_for(Some(ExecutionTargetSelection::Exact {
+                runtime_id: "runtime-agent-invented".to_string(),
+            }))),
+        )
+        .await
+        .expect("explicit user placement overrides model placement");
+        assert_eq!(spawn_count.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            output["execution_placement"]["resolved_runtime_id"],
+            "runtime-user-only"
+        );
+    }
+
+    #[tokio::test]
+    async fn agent_inventory_omits_user_only_targets() {
+        let router = WorkshopExecutionRouter::new(
+            "runtime-parent",
+            WorkshopIngressDefault::SameAsParent,
+            vec![
+                Arc::new(FakeExecutionTarget {
+                    runtime_id: "runtime-agent".to_string(),
+                    spawn_count: Arc::new(AtomicUsize::new(0)),
+                    user_selectable: true,
+                    agent_selectable: true,
+                }),
+                Arc::new(FakeExecutionTarget {
+                    runtime_id: "runtime-user-only".to_string(),
+                    spawn_count: Arc::new(AtomicUsize::new(0)),
+                    user_selectable: true,
+                    agent_selectable: false,
+                }),
+            ],
+        );
+        let inventory = router.inventory(true).await.expect("agent inventory");
+        assert_eq!(inventory.targets.len(), 1);
+        assert_eq!(inventory.targets[0].runtime_id, "runtime-agent");
+    }
+
+    #[tokio::test]
+    async fn agent_auto_uses_only_agent_selectable_targets() {
+        let user_only_spawns = Arc::new(AtomicUsize::new(0));
+        let agent_spawns = Arc::new(AtomicUsize::new(0));
+        let router = WorkshopExecutionRouter::new(
+            "runtime-parent",
+            WorkshopIngressDefault::SameAsParent,
+            vec![
+                Arc::new(FakeExecutionTarget {
+                    runtime_id: "runtime-a-user-only".to_string(),
+                    spawn_count: user_only_spawns.clone(),
+                    user_selectable: true,
+                    agent_selectable: false,
+                }),
+                Arc::new(FakeExecutionTarget {
+                    runtime_id: "runtime-z-agent".to_string(),
+                    spawn_count: agent_spawns.clone(),
+                    user_selectable: true,
+                    agent_selectable: true,
+                }),
+            ],
+        );
+        let output = router
+            .spawn(spawn_for(Some(ExecutionTargetSelection::Auto {
+                requirements: ExecutionTargetRequirements::default(),
+            })))
+            .await
+            .expect("authorized auto target");
+        assert_eq!(user_only_spawns.load(Ordering::SeqCst), 0);
+        assert_eq!(agent_spawns.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            output["execution_placement"]["resolved_runtime_id"],
+            "runtime-z-agent"
+        );
     }
 }
