@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use stasis::domain::errors::StasisError;
 use tokio::sync::mpsc;
 
-use crate::browser_host_client::browser_host_act;
+use crate::browser_host_client::{browser_host_act, browser_host_current_context};
 use crate::browser_search::{client_executed, surface_from_scope};
 use crate::browser_sessions::{
     BrowserSessionCreateRequest, BrowserSessionStatus, attach_browser_act_request,
@@ -66,6 +66,15 @@ impl BrowserActAction {
 
     fn needs_selector(self) -> bool {
         matches!(self, Self::Click | Self::Type | Self::Press | Self::Select)
+    }
+
+    fn world_effect_class(self) -> medousa_world::WorldEffectClass {
+        match self {
+            Self::Scroll | Self::Wait => medousa_world::WorldEffectClass::LocalReversible,
+            Self::Click | Self::Type | Self::Press | Self::Select => {
+                medousa_world::WorldEffectClass::LocalMutation
+            }
+        }
     }
 }
 
@@ -310,7 +319,7 @@ impl CognitionBrowserActTool {
             .event_tx
             .send(TuiEvent::ToolInvoked {
                 tool_name: COGNITION_BROWSER_ACT.to_string(),
-                input_summary: summary,
+                input_summary: summary.clone(),
             })
             .await;
 
@@ -324,15 +333,90 @@ impl CognitionBrowserActTool {
                 .map(ExternalJson::new);
         }
 
-        let outcome = browser_host_act(body)
+        let browser_context = browser_host_current_context()
             .await
             .map_err(StasisError::PortFailure)?;
+        if browser_context.control != "agent" {
+            let (code, error) = if browser_context.control == "awaiting_operator" {
+                (
+                    "awaiting_operator",
+                    "tab is awaiting operator verification (CAPTCHA/login). Act is blocked until control returns to the agent.",
+                )
+            } else {
+                (
+                    "control_required",
+                    "agent does not control this tab. Hand control to the agent before acting.",
+                )
+            };
+            return Ok(ExternalJson::new(json!({
+                "ok": false,
+                "code": code,
+                "error": error,
+                "binding_used": "human_webview",
+                "decision": "block",
+            })));
+        }
+
+        let authority_id = crate::workshop_authority::current()
+            .map_err(StasisError::PortFailure)?
+            .to_string();
+        let trace_id = scope
+            .as_ref()
+            .map(|scope| scope.turn_correlation_id.as_str())
+            .filter(|trace_id| !trace_id.trim().is_empty())
+            .unwrap_or("browser-action");
+        let admission = crate::world_authority::admit_browser_action(
+            &authority_id,
+            &browser_context.tab_group_id,
+            &browser_context.tab_id,
+            trace_id,
+            &summary,
+            command.action.world_effect_class(),
+        )
+        .map_err(|error| {
+            StasisError::PortFailure(format!(
+                "{COGNITION_BROWSER_ACT}: world admission denied: {error}"
+            ))
+        })?;
+        body["world_permit"] = serde_json::to_value(&admission.permit).map_err(|error| {
+            StasisError::PortFailure(format!(
+                "{COGNITION_BROWSER_ACT}: could not encode world permit: {error}"
+            ))
+        })?;
+        // A browser tab keeps the same id across navigation. Carry the state
+        // observed at admission so the driver cannot execute this permit on a
+        // different page that happened to load before dispatch.
+        body["world_expected_url"] = json!(browser_context.url);
+
+        let outcome = match browser_host_act(&browser_context.tab_group_id, body).await {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                let world_outcome = crate::world_authority::mark_browser_action_indeterminate(
+                    &admission,
+                    &format!("BrowserHost result unavailable: {error}"),
+                )
+                .map_err(StasisError::PortFailure)?;
+                return Err(StasisError::PortFailure(format!(
+                    "{error}; world action {} is indeterminate at revision {}",
+                    world_outcome.intent_id, world_outcome.committed_revision
+                )));
+            }
+        };
         if outcome
             .get("ok")
             .and_then(|value| value.as_bool())
             .unwrap_or(false)
         {
-            return Ok(ExternalJson::new(outcome));
+            let world_outcome = crate::world_authority::complete_browser_action(
+                &admission,
+                &format!("BrowserHost completed {summary}"),
+            )
+            .map_err(StasisError::PortFailure)?;
+            return Ok(ExternalJson::new(with_world_provenance(
+                outcome,
+                admission.provenance(Some(world_outcome)),
+                "allow",
+            )));
         }
 
         let code = outcome
@@ -345,14 +429,42 @@ impl CognitionBrowserActTool {
             .and_then(|value| value.as_str())
             .unwrap_or("browser act failed")
             .to_string();
-        Ok(ExternalJson::new(json!({
-            "ok": false,
-            "code": code,
-            "error": error,
-            "binding_used": outcome.get("binding_used").cloned().unwrap_or(json!("browser_host")),
-            "decision": "block",
-        })))
+        let world_outcome = if matches!(code.as_str(), "act_failed" | "stale_surface_lease") {
+            Some(
+                crate::world_authority::mark_browser_action_indeterminate(
+                    &admission,
+                    &format!("BrowserHost could not prove the action outcome: {error}"),
+                )
+                .map_err(StasisError::PortFailure)?,
+            )
+        } else {
+            crate::world_authority::fail_browser_action(&admission, &error)
+                .map_err(StasisError::PortFailure)?;
+            None
+        };
+        Ok(ExternalJson::new(with_world_provenance(
+            json!({
+                "ok": false,
+                "code": code,
+                "error": error,
+                "binding_used": outcome.get("binding_used").cloned().unwrap_or(json!("browser_host")),
+            }),
+            admission.provenance(world_outcome),
+            "block",
+        )))
     }
+}
+
+fn with_world_provenance(
+    mut value: Value,
+    provenance: crate::world_authority::BrowserWorldProvenance,
+    decision: &str,
+) -> Value {
+    if let Some(object) = value.as_object_mut() {
+        object.insert("decision".to_string(), json!(decision));
+        object.insert("world".to_string(), json!(provenance));
+    }
+    value
 }
 
 impl CognitionBrowserActTool {

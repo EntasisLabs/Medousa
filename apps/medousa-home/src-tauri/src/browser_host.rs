@@ -312,6 +312,20 @@ struct TabActRequest {
     delta_y: Option<i64>,
     #[serde(default)]
     ms: Option<u64>,
+    /// Daemon-minted world permit. Optional only while legacy clients migrate;
+    /// when present the driver binds it to the concrete active tab.
+    #[serde(default)]
+    world_permit: Option<BrowserWorldPermitWire>,
+    /// URL observed by the daemon when it admitted the world action. A tab id
+    /// survives navigation, so the driver also fences the page state.
+    #[serde(default)]
+    world_expected_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BrowserWorldPermitWire {
+    resource_id: String,
+    expires_at_ms: u64,
 }
 
 fn act_blocked_json(control: BrowserControl) -> serde_json::Value {
@@ -354,6 +368,39 @@ async fn act_tab_group(
             "error": "tab group has no active tab",
         }));
     };
+    if let Some(permit) = request.world_permit.as_ref() {
+        let expected_resource = format!("browser-tab:{}", active_tab.id);
+        if permit.resource_id != expected_resource {
+            return Json(serde_json::json!({
+                "ok": false,
+                "code": "world_permit_resource_mismatch",
+                "error": "world permit is not bound to the active browser tab",
+                "binding_used": "human_webview",
+            }));
+        }
+        if request.world_expected_url.as_deref() != Some(active_tab.url.as_str()) {
+            return Json(serde_json::json!({
+                "ok": false,
+                "code": "world_permit_state_mismatch",
+                "error": "browser tab navigated after the world action was admitted",
+                "binding_used": "human_webview",
+            }));
+        }
+        let now_ms: u64 = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+            .try_into()
+            .unwrap_or(u64::MAX);
+        if permit.expires_at_ms <= now_ms {
+            return Json(serde_json::json!({
+                "ok": false,
+                "code": "world_permit_expired",
+                "error": "world permit expired before the browser action was dispatched",
+                "binding_used": "human_webview",
+            }));
+        }
+    }
     if !crate::human_browser::urls_match_for_snapshot(
         &crate::human_browser::human_browser_active_url(),
         &active_tab.url,
@@ -396,6 +443,9 @@ async fn act_tab_group(
             "selector": request.selector,
             "url": report.url,
             "binding_used": "human_webview",
+            "world_permit_bound": request.world_permit.is_some(),
+            "world_state_bound": request.world_permit.is_some()
+                && request.world_expected_url.is_some(),
             "decision": "allow",
         })),
         Ok(report) => Json(serde_json::json!({
