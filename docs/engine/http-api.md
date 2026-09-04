@@ -754,6 +754,26 @@ hard/inactivity policy expires; access sessions are short-lived and rotate.
 
 Cookbook: [mobile-and-lan.md](../cookbook/mobile-and-lan.md)
 
+### Peer execution policy administration
+
+These native-only routes require `admin.execute` on the workshop whose inbound
+authority is being edited. A paired portal or peer cannot use its ordinary
+pairing bearer to grant itself work:
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/v1/peers/execution-policies` | List paired devices and this workshop's effective inbound policy for each |
+| GET | `/v1/peers/{device_id}/execution-policy` | Read one effective policy, including whether it is stored, a safe legacy mapping, or default-deny |
+| PUT | `/v1/peers/{device_id}/execution-policy` | Replace one peer's preset/scopes/expiry and increment its policy revision |
+| GET | `/v1/peers/execution-policy-audit?limit=100` | Read bounded policy-update and task-admission audit events |
+
+`PUT` accepts `connected_only`, `assistant_work`, `sandboxed_work`,
+`approved_projects`, or `custom` plus the corresponding optional scope fields.
+The daemon synchronizes the coarse `task.request` transport bit only when safe
+assistant work is enabled. Reducing or revoking a scope cancels active remote
+workers that require the removed authority; completed results retain the grant
+and policy revision under which they ran.
+
 ## Explicit daemon delegation
 
 `POST /v1/mesh/tasks` is a native-only daemon-to-daemon route. It requires all

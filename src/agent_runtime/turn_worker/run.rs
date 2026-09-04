@@ -983,6 +983,18 @@ pub async fn run_worker_turn(
             return;
         }
     };
+    let execution_budget = record
+        .task_execution_grant
+        .as_ref()
+        .and_then(|grant| {
+            grant
+                .expires_at
+                .signed_duration_since(Utc::now())
+                .to_std()
+                .ok()
+        })
+        .map(|remaining| remaining.min(std::time::Duration::from_secs(2 * 60 * 60)))
+        .unwrap_or_else(|| std::time::Duration::from_secs(2 * 60 * 60));
     let scope = worker_turn_scope(&record);
     let execution_context = Arc::new(
         crate::agent_runtime::execution_context::TurnExecutionContext::new(
@@ -1003,7 +1015,7 @@ pub async fn run_worker_turn(
                 browser_host: record.supports_browser_host,
             },
             execution_lease.cancellation().clone(),
-            std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60),
+            std::time::Instant::now() + execution_budget,
             scope.clone(),
         ),
     );

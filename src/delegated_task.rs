@@ -752,6 +752,11 @@ fn validate_task_execution_grant(
             .effective_tool_domains
             .iter()
             .any(|domain| !grant.requested_tool_domains.contains(domain))
+        || (grant.network_policy == crate::peer_execution_policy::PeerNetworkPolicy::Deny
+            && grant
+                .effective_tool_domains
+                .iter()
+                .any(|domain| domain == "web"))
     {
         return Err(DelegatedTaskError::conflict(
             "delegated task execution grant does not match the request",

@@ -447,6 +447,7 @@ mod tests {
             schema_version: crate::peer_execution_policy::TASK_EXECUTION_GRANT_SCHEMA_VERSION,
             grant_id: "grant-1".to_string(),
             peer_device_id: "peer-1".to_string(),
+            peer_pairing_id: "pairing-1".to_string(),
             origin_runtime_id: "runtime-origin".to_string(),
             destination_runtime_id: "runtime-destination".to_string(),
             parent_session_id: "session-1".to_string(),
@@ -462,6 +463,7 @@ mod tests {
                 "web".to_string(),
             ],
             effective_tool_domains: vec!["turn".to_string(), "utility".to_string()],
+            network_policy: crate::peer_execution_policy::PeerNetworkPolicy::WebOnly,
             issued_at: now,
             expires_at: now + chrono::Duration::minutes(5),
         };

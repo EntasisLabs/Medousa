@@ -590,6 +590,14 @@ pub enum DaemonOperation {
     PeerMessagesPost,
     #[serde(rename = "peer.messages.unread_count.get")]
     PeerMessagesUnreadCountGet,
+    #[serde(rename = "peers.by_device_id.execution_policy.get")]
+    PeersByDeviceIdExecutionPolicyGet,
+    #[serde(rename = "peers.by_device_id.execution_policy.put")]
+    PeersByDeviceIdExecutionPolicyPut,
+    #[serde(rename = "peers.execution_policies.get")]
+    PeersExecutionPoliciesGet,
+    #[serde(rename = "peers.execution_policy_audit.get")]
+    PeersExecutionPolicyAuditGet,
     #[serde(rename = "prompt_stashes.by_stash_id.delete")]
     PromptStashesByStashIdDelete,
     #[serde(rename = "prompt_stashes.get")]
@@ -1136,6 +1144,10 @@ impl DaemonOperation {
             Self::PeerMessagesGet => "peer.messages.get",
             Self::PeerMessagesPost => "peer.messages.post",
             Self::PeerMessagesUnreadCountGet => "peer.messages.unread_count.get",
+            Self::PeersByDeviceIdExecutionPolicyGet => "peers.by_device_id.execution_policy.get",
+            Self::PeersByDeviceIdExecutionPolicyPut => "peers.by_device_id.execution_policy.put",
+            Self::PeersExecutionPoliciesGet => "peers.execution_policies.get",
+            Self::PeersExecutionPolicyAuditGet => "peers.execution_policy_audit.get",
             Self::PromptStashesByStashIdDelete => "prompt_stashes.by_stash_id.delete",
             Self::PromptStashesGet => "prompt_stashes.get",
             Self::PromptStashesPost => "prompt_stashes.post",
