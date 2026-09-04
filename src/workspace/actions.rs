@@ -376,9 +376,11 @@ mod tests {
     #[test]
     fn cancel_turn_worker_marks_cancelled() {
         let store = turn_worker_store();
+        let session_id = format!("session-cancel-test-{}", uuid::Uuid::new_v4().simple());
+        let work_id = format!("work-cancel-test-{}", uuid::Uuid::new_v4().simple());
         let record = TurnWorkRecord {
-            work_id: "work-cancel-test".to_string(),
-            session_id: "sess".to_string(),
+            work_id: work_id.clone(),
+            session_id,
             identity_user_id: None,
             parent_turn_correlation_id: None,
             parent_stream_turn_id: 0,
@@ -428,9 +430,9 @@ mod tests {
         };
         store.insert(record);
 
-        let (ok, _, _) = cancel_turn_worker("work-cancel-test").expect("cancel");
+        let (ok, _, _) = cancel_turn_worker(&work_id).expect("cancel");
         assert!(ok);
-        let updated = store.get("work-cancel-test").expect("record");
+        let updated = store.get(&work_id).expect("record");
         assert_eq!(updated.status, TurnWorkStatus::Cancelled);
     }
 

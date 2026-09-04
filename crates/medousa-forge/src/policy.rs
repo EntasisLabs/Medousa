@@ -211,7 +211,7 @@ pub fn secret_pattern_in_bytes(bytes: &[u8]) -> Option<String> {
     if bytes.iter().take(8192).any(|b| *b == 0) {
         return None; // binary
     }
-    let text = String::from_utf8_lossy(&bytes);
+    let text = String::from_utf8_lossy(bytes);
     for (begin, end, name) in SECRET_ENVELOPES {
         if contains_armored_secret(&text, begin, end) {
             return Some((*name).to_string());

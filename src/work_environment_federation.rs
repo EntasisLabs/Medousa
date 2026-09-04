@@ -5,6 +5,7 @@
 //! and moves immutable bytes through `BlobTransferPort`. Pairing, HTTP/Iroh,
 //! and signing-key custody remain host transport adapters.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -98,8 +99,26 @@ impl RemoteWorkEnvironmentResult {
                 "successful remote work-environment result has no checkpoint".to_string(),
             ));
         }
+        if let Some(result) = self.portable_coder_result.as_ref() {
+            result
+                .validate()
+                .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+        }
         Ok(())
     }
+}
+
+/// Retains a complete immutable blob graph independently of any live
+/// environment or transport. Filesystem-backed daemon stores implement this
+/// with durable content roots; in-memory and test transports may omit it.
+#[async_trait]
+pub trait DurableBlobRetentionPort: Send + Sync {
+    async fn pin_root(
+        &self,
+        root_id: &str,
+        blobs: Vec<BlobDescriptor>,
+        retain_until: Option<DateTime<Utc>>,
+    ) -> StasisResult<()>;
 }
 
 /// Host adapter contract that signs and delivers one Stasis terminal result.
@@ -506,6 +525,62 @@ pub async fn decode_remote_terminal_result(
         ));
     }
     Ok(decoded)
+}
+
+/// Resolve every immutable object needed to inspect or reconstruct a signed
+/// terminal result. Callers pin this graph before acknowledging delivery so
+/// destination loss cannot turn an accepted result into dangling metadata.
+pub async fn remote_terminal_graph_descriptors(
+    blobs: &dyn BlobTransferPort,
+    result: &FederatedTerminalResult,
+) -> StasisResult<Vec<BlobDescriptor>> {
+    let decoded = decode_remote_terminal_result(blobs, result).await?;
+    let mut descriptors = Vec::new();
+    if let Some(output) = result.output.as_ref() {
+        descriptors.push(output.clone());
+    }
+    if let Some(checkpoint) = decoded.checkpoint.as_ref() {
+        append_checkpoint_graph(blobs, checkpoint, &mut descriptors).await?;
+    }
+    if let Some(WorkEnvironmentPublicationResult::Conflict {
+        preserved_checkpoint,
+        ..
+    }) = decoded.publication.as_ref()
+        && decoded.checkpoint.as_ref() != Some(preserved_checkpoint)
+    {
+        append_checkpoint_graph(blobs, preserved_checkpoint, &mut descriptors).await?;
+    }
+
+    let mut seen = BTreeSet::new();
+    descriptors.retain(|descriptor| {
+        seen.insert((
+            descriptor.digest.algorithm.clone(),
+            descriptor.digest.hex.clone(),
+        ))
+    });
+    Ok(descriptors)
+}
+
+async fn append_checkpoint_graph(
+    blobs: &dyn BlobTransferPort,
+    checkpoint: &WorkEnvironmentCheckpoint,
+    descriptors: &mut Vec<BlobDescriptor>,
+) -> StasisResult<()> {
+    checkpoint
+        .validate()
+        .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+    let bytes = blobs.get(&checkpoint.manifest).await?;
+    let manifest: WorkEnvironmentCheckpointManifest =
+        serde_json::from_slice(&bytes).map_err(|error| {
+            StasisError::PortFailure(format!("decode checkpoint manifest: {error}"))
+        })?;
+    manifest
+        .validate()
+        .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+    descriptors.push(checkpoint.manifest.clone());
+    descriptors.push(manifest.source_bundle);
+    descriptors.extend(manifest.artifacts.into_iter().map(|artifact| artifact.blob));
+    Ok(())
 }
 
 /// Persist terminal ingress as a terminal Stasis record. Remote proxy jobs can

@@ -21,6 +21,8 @@ use stasis::domain::runtime::provenance::ContentDigest;
 use stasis::ports::outbound::runtime::blob_transfer::BlobTransferPort;
 use stasis::prelude::{Result as StasisResult, StasisError};
 
+use crate::work_environment_federation::DurableBlobRetentionPort;
+
 const MAX_DURABLE_BLOB_BYTES: u64 = 512 * 1024 * 1024;
 
 pub struct FsBlobTransferPort {
@@ -370,6 +372,18 @@ impl FsBlobTransferPort {
             })
             .await
             .map_err(Self::map_forge)
+    }
+}
+
+#[async_trait]
+impl DurableBlobRetentionPort for FsBlobTransferPort {
+    async fn pin_root(
+        &self,
+        root_id: &str,
+        blobs: Vec<BlobDescriptor>,
+        retain_until: Option<DateTime<Utc>>,
+    ) -> StasisResult<()> {
+        FsBlobTransferPort::pin_root(self, root_id, blobs, retain_until).await
     }
 }
 

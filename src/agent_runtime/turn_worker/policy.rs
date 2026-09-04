@@ -451,7 +451,7 @@ mod tests {
     }
 
     #[test]
-    fn destination_grant_compiles_only_named_safe_domains() {
+    fn destination_grant_compiles_only_exact_named_tools() {
         let now = chrono::Utc::now();
         let grant = TaskExecutionGrant {
             schema_version: crate::peer_execution_policy::TASK_EXECUTION_GRANT_SCHEMA_VERSION,
@@ -490,7 +490,7 @@ mod tests {
 
         let names = remote_delegated_tool_ceiling_for_grant(Some(&grant));
         assert!(names.contains("cognition_turn"));
-        assert!(names.contains("cognition_utility_time_now"));
+        assert!(!names.contains("cognition_utility_time_now"));
         assert!(!names.contains("cognition_web_search"));
         assert!(!names.contains("cognition_shell_run"));
     }

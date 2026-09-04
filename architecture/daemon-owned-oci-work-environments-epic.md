@@ -1,6 +1,6 @@
 # Daemon-owned OCI work environments
 
-> **Status:** Active implementation — Phase 5 complete, Phase 6 in progress
+> **Status:** Active implementation — Phase 7 complete, Phase 8 planned
 >
 > **Date:** 2026-08-28
 >
@@ -791,7 +791,20 @@ OCI work itself; the signed destination payload and envelope alone carry the
 selected node and OCI requirements. This preserves one placement contract
 without making the origin impersonate the destination worker.
 
-The fourth-daemon reconstruction proof remains.
+**Sixth landed boundary:** the fourth-daemon reconstruction proof is closed.
+Each independent child checkpoint graph is transferred by digest before its
+source is discarded. A fourth daemon with no shared filesystem, Stasis store,
+container, or source process validates all three manifests and reconstructs
+the complete portable reconciliation checkpoint from those immutable graphs
+alone.
+
+Portable Coder handoff builds on the same boundary. The destination result
+graph is retained before acknowledgement; the origin consumes its
+authenticated local proxy record, imports the returned bundle without moving
+its checkout, and places the result behind a create-only Forge ref. Diverged
+origin work produces a typed two-ref conflict, and an acknowledged checkpoint
+can be retried on another authorized daemon without consulting the lost
+destination.
 
 ### Phase 8 — Attachments, UX, and operations
 
@@ -910,7 +923,7 @@ Progress begins here:
 - [x] Phase 4 — persist portable checkpoints and publish with atomic CAS.
 - [x] Phase 5 — coordinate the resumable environment workflow through Stasis.
 - [x] Phase 6 — deliver signed portable work results without destination polling.
-- [ ] Phase 7 — close the fourth-daemon loss-and-reconstruction proof.
+- [x] Phase 7 — close the fourth-daemon loss-and-reconstruction proof.
 - [ ] Phases 8–9 — UX, operations, hardening, and additional host adapters.
 
 ## Definition of done

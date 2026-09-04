@@ -1,6 +1,6 @@
 # Bots and authorized remote execution
 
-> **Status:** Phases 1–6 complete — phase 7 planned
+> **Status:** Complete — phases 1–7 landed
 >
 > **Date:** 2026-09-03
 >
@@ -765,6 +765,29 @@ Suggested commit boundary:
 - feat(forge): produce portable governed coder checkpoints
 - feat(coder): execute portable work on an authorized workshop
 - feat(federation): reconcile signed remote coder results
+
+**Landed boundary:** the origin now captures a Forge undertaking into a
+path-free, secret-scanned checkpoint graph before transport and pins the graph
+independently of a live environment. The ordinary signed work-environment
+proxy remains the only remote transport and destination admission path. Its
+successful terminal record must carry a matching typed Coder result, exact
+environment/workspace/base identities, non-regressing Stasis and Forge fences,
+an effective destination grant, and a complete durable checkpoint graph.
+
+The origin imports returned Git objects without changing HEAD, the index, a
+working file, or a user ref. Each operation receives a create-only private
+Forge result ref. Replays may observe the same value, but a different result
+under the same operation identity is rejected. If the origin tree or base
+moved while work ran, reconciliation also captures a private origin ref and
+returns a typed conflict containing both immutable sides. Otherwise the remote
+ref becomes review-ready; publication remains an explicit later decision.
+
+Retries create a fresh environment and operation identity from the last
+acknowledged checkpoint while preserving the logical workspace and original
+comparison anchor. The Phase 7 proof transfers three independent checkpoint
+graphs into a fourth daemon, discards every source store, and constructs the
+complete reconciliation input using only the fourth daemon's immutable
+content.
 
 ## Cross-phase migration rules
 

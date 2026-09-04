@@ -47,6 +47,7 @@ pub mod model_capability_registry;
 pub mod prompt_stash;
 pub mod public_api;
 pub mod portable_coder;
+pub mod portable_coder_handoff;
 pub mod recurring_agent_turn;
 pub mod recurring_delivery;
 pub mod recurring_feed;

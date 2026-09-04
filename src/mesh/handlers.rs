@@ -1265,7 +1265,7 @@ mod tests {
     #[test]
     fn mesh_inventory_is_complete_and_peer_scoped() {
         let entries = mesh_surface().inventory().entries().collect::<Vec<_>>();
-        assert_eq!(entries.len(), 14);
+        assert_eq!(entries.len(), 16);
         assert!(entries.iter().all(|entry| {
             entry.group == RouteGroup::PeerExchange
                 && entry.required_capability == Some("peer.exchange")
@@ -1281,6 +1281,12 @@ mod tests {
         assert_eq!(outbox[0].body_limit, 1024);
         assert_eq!(outbox[1].method, "POST");
         assert_eq!(outbox[1].body_limit, 2 * 1024 * 1024);
+        assert!(entries.iter().any(|entry| {
+            entry.method == "POST" && entry.path == "/v1/mesh/execution-target"
+        }));
+        assert!(entries.iter().any(|entry| {
+            entry.method == "POST" && entry.path == "/v1/mesh/tasks/{work_id}/control"
+        }));
     }
 
     #[test]
