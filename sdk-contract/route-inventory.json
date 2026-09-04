@@ -93,6 +93,34 @@
       "trust_group": "peer_exchange"
     },
     {
+      "body_limit": 8192,
+      "bootstrap_public": true,
+      "browser_policy": "public",
+      "capabilities": [],
+      "feature_profile": "pairing",
+      "method": "POST",
+      "operation_id": "pair.session.challenge.post",
+      "path": "/pair/session/challenge",
+      "rate_limit_class": "pairing_ceremony",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "pairing_ceremony"
+    },
+    {
+      "body_limit": 16384,
+      "bootstrap_public": true,
+      "browser_policy": "public",
+      "capabilities": [],
+      "feature_profile": "pairing",
+      "method": "POST",
+      "operation_id": "pair.session.refresh.post",
+      "path": "/pair/session/refresh",
+      "rate_limit_class": "pairing_ceremony",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "pairing_ceremony"
+    },
+    {
       "body_limit": 1024,
       "bootstrap_public": false,
       "browser_policy": "native_only",
@@ -137,6 +165,22 @@
       "stream_transport": null,
       "streaming": false,
       "trust_group": "peer_exchange"
+    },
+    {
+      "body_limit": 8192,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.identity"
+      ],
+      "feature_profile": "pairing",
+      "method": "PUT",
+      "operation_id": "pair.by_pairing_id.policy.put",
+      "path": "/pair/{pairing_id}/policy",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
     },
     {
       "body_limit": 1024,
@@ -585,6 +629,118 @@
       "stream_transport": null,
       "streaming": false,
       "trust_group": "administration"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "bots.get",
+      "path": "/v1/bots",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 131072,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "bots.post",
+      "path": "/v1/bots",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "bots.by_bot_id.get",
+      "path": "/v1/bots/{bot_id}",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 131072,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "PUT",
+      "operation_id": "bots.by_bot_id.put",
+      "path": "/v1/bots/{bot_id}",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 16384,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "PUT",
+      "operation_id": "bots.by_bot_id.archive.put",
+      "path": "/v1/bots/{bot_id}/archive",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 16384,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "bots.by_bot_id.duplicate.post",
+      "path": "/v1/bots/{bot_id}/duplicate",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "bots.by_bot_id.open.post",
+      "path": "/v1/bots/{bot_id}/open",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
     },
     {
       "body_limit": 1024,
@@ -5177,6 +5333,54 @@
       "method": "PUT",
       "operation_id": "sessions.by_session_id.agent_mode.proposals.by_proposal_id.put",
       "path": "/v1/sessions/{session_id}/agent-mode/proposals/{proposal_id}",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "DELETE",
+      "operation_id": "sessions.by_session_id.bot.delete",
+      "path": "/v1/sessions/{session_id}/bot",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "sessions.by_session_id.bot.get",
+      "path": "/v1/sessions/{session_id}/bot",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 16384,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "PUT",
+      "operation_id": "sessions.by_session_id.bot.put",
+      "path": "/v1/sessions/{session_id}/bot",
       "rate_limit_class": "mutation",
       "stream_transport": null,
       "streaming": false,

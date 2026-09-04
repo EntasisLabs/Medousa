@@ -112,6 +112,46 @@ pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
             request: Some("CreateSessionRequest"),
             response: "CreateSessionResponse",
         },
+        "bots.get" => WireBinding {
+            request: None,
+            response: "BotListResponse",
+        },
+        "bots.post" => WireBinding {
+            request: Some("CreateBotRequest"),
+            response: "BotOpenResponse",
+        },
+        "bots.by_bot_id.get" => WireBinding {
+            request: None,
+            response: "BotProfile",
+        },
+        "bots.by_bot_id.put" => WireBinding {
+            request: Some("UpdateBotRequest"),
+            response: "BotProfile",
+        },
+        "bots.by_bot_id.archive.put" => WireBinding {
+            request: Some("SetBotArchivedRequest"),
+            response: "BotProfile",
+        },
+        "bots.by_bot_id.duplicate.post" => WireBinding {
+            request: Some("DuplicateBotRequest"),
+            response: "BotOpenResponse",
+        },
+        "bots.by_bot_id.open.post" => WireBinding {
+            request: None,
+            response: "BotOpenResponse",
+        },
+        "sessions.by_session_id.bot.get" => WireBinding {
+            request: None,
+            response: "SessionBotResponse",
+        },
+        "sessions.by_session_id.bot.put" => WireBinding {
+            request: Some("SetSessionBotRequest"),
+            response: "SessionBotResponse",
+        },
+        "sessions.by_session_id.bot.delete" => WireBinding {
+            request: None,
+            response: "SessionBotResponse",
+        },
         "sessions.search.get" => WireBinding {
             request: None,
             response: "SessionTranscriptSearchResponse",

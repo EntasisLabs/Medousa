@@ -52,6 +52,20 @@ pub enum DaemonOperation {
     AuthChatgptModelsGet,
     #[serde(rename = "auth.chatgpt.refresh.post")]
     AuthChatgptRefreshPost,
+    #[serde(rename = "bots.by_bot_id.archive.put")]
+    BotsByBotIdArchivePut,
+    #[serde(rename = "bots.by_bot_id.duplicate.post")]
+    BotsByBotIdDuplicatePost,
+    #[serde(rename = "bots.by_bot_id.get")]
+    BotsByBotIdGet,
+    #[serde(rename = "bots.by_bot_id.open.post")]
+    BotsByBotIdOpenPost,
+    #[serde(rename = "bots.by_bot_id.put")]
+    BotsByBotIdPut,
+    #[serde(rename = "bots.get")]
+    BotsGet,
+    #[serde(rename = "bots.post")]
+    BotsPost,
     #[serde(rename = "browser.sessions.by_session_id.complete.post")]
     BrowserSessionsBySessionIdCompletePost,
     #[serde(rename = "browser.sessions.by_session_id.complete_act.post")]
@@ -548,6 +562,8 @@ pub enum DaemonOperation {
     ModelsCatalogRefreshPost,
     #[serde(rename = "pair.by_pairing_id.delete")]
     PairByPairingIdDelete,
+    #[serde(rename = "pair.by_pairing_id.policy.put")]
+    PairByPairingIdPolicyPut,
     #[serde(rename = "pair.code.get")]
     PairCodeGet,
     #[serde(rename = "pair.heartbeat.get")]
@@ -558,6 +574,10 @@ pub enum DaemonOperation {
     PairInitPost,
     #[serde(rename = "pair.iroh_ticket.get")]
     PairIrohTicketGet,
+    #[serde(rename = "pair.session.challenge.post")]
+    PairSessionChallengePost,
+    #[serde(rename = "pair.session.refresh.post")]
+    PairSessionRefreshPost,
     #[serde(rename = "pair.status.get")]
     PairStatusGet,
     #[serde(rename = "pair.verify.post")]
@@ -638,6 +658,12 @@ pub enum DaemonOperation {
     SessionsBySessionIdAgentModeProposalsGet,
     #[serde(rename = "sessions.by_session_id.agent_mode.put")]
     SessionsBySessionIdAgentModePut,
+    #[serde(rename = "sessions.by_session_id.bot.delete")]
+    SessionsBySessionIdBotDelete,
+    #[serde(rename = "sessions.by_session_id.bot.get")]
+    SessionsBySessionIdBotGet,
+    #[serde(rename = "sessions.by_session_id.bot.put")]
+    SessionsBySessionIdBotPut,
     #[serde(rename = "sessions.by_session_id.code_binding.delete")]
     SessionsBySessionIdCodeBindingDelete,
     #[serde(rename = "sessions.by_session_id.code_binding.get")]
@@ -841,6 +867,13 @@ impl DaemonOperation {
             Self::AuthChatgptGet => "auth.chatgpt.get",
             Self::AuthChatgptModelsGet => "auth.chatgpt.models.get",
             Self::AuthChatgptRefreshPost => "auth.chatgpt.refresh.post",
+            Self::BotsByBotIdArchivePut => "bots.by_bot_id.archive.put",
+            Self::BotsByBotIdDuplicatePost => "bots.by_bot_id.duplicate.post",
+            Self::BotsByBotIdGet => "bots.by_bot_id.get",
+            Self::BotsByBotIdOpenPost => "bots.by_bot_id.open.post",
+            Self::BotsByBotIdPut => "bots.by_bot_id.put",
+            Self::BotsGet => "bots.get",
+            Self::BotsPost => "bots.post",
             Self::BrowserSessionsBySessionIdCompletePost => "browser.sessions.by_session_id.complete.post",
             Self::BrowserSessionsBySessionIdCompleteActPost => "browser.sessions.by_session_id.complete_act.post",
             Self::BrowserSessionsBySessionIdGet => "browser.sessions.by_session_id.get",
@@ -1089,11 +1122,14 @@ impl DaemonOperation {
             Self::ModelsCatalogGet => "models.catalog.get",
             Self::ModelsCatalogRefreshPost => "models.catalog.refresh.post",
             Self::PairByPairingIdDelete => "pair.by_pairing_id.delete",
+            Self::PairByPairingIdPolicyPut => "pair.by_pairing_id.policy.put",
             Self::PairCodeGet => "pair.code.get",
             Self::PairHeartbeatGet => "pair.heartbeat.get",
             Self::PairHeartbeatPost => "pair.heartbeat.post",
             Self::PairInitPost => "pair.init.post",
             Self::PairIrohTicketGet => "pair.iroh_ticket.get",
+            Self::PairSessionChallengePost => "pair.session.challenge.post",
+            Self::PairSessionRefreshPost => "pair.session.refresh.post",
             Self::PairStatusGet => "pair.status.get",
             Self::PairVerifyPost => "pair.verify.post",
             Self::PeerMessagesByMessageIdReadPost => "peer.messages.by_message_id.read.post",
@@ -1134,6 +1170,9 @@ impl DaemonOperation {
             Self::SessionsBySessionIdAgentModeProposalsByProposalIdPut => "sessions.by_session_id.agent_mode.proposals.by_proposal_id.put",
             Self::SessionsBySessionIdAgentModeProposalsGet => "sessions.by_session_id.agent_mode.proposals.get",
             Self::SessionsBySessionIdAgentModePut => "sessions.by_session_id.agent_mode.put",
+            Self::SessionsBySessionIdBotDelete => "sessions.by_session_id.bot.delete",
+            Self::SessionsBySessionIdBotGet => "sessions.by_session_id.bot.get",
+            Self::SessionsBySessionIdBotPut => "sessions.by_session_id.bot.put",
             Self::SessionsBySessionIdCodeBindingDelete => "sessions.by_session_id.code_binding.delete",
             Self::SessionsBySessionIdCodeBindingGet => "sessions.by_session_id.code_binding.get",
             Self::SessionsBySessionIdCodeBindingPut => "sessions.by_session_id.code_binding.put",

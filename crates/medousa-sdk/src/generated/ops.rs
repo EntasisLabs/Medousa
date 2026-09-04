@@ -177,6 +177,55 @@ pub const AUTH_CHATGPT_REFRESH_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const BOTS_BY_BOT_ID_ARCHIVE_PUT: Operation = Operation {
+    id: "bots.by_bot_id.archive.put",
+    method: "PUT",
+    path: "/v1/bots/{bot_id}/archive",
+    streaming: false,
+};
+
+pub const BOTS_BY_BOT_ID_DUPLICATE_POST: Operation = Operation {
+    id: "bots.by_bot_id.duplicate.post",
+    method: "POST",
+    path: "/v1/bots/{bot_id}/duplicate",
+    streaming: false,
+};
+
+pub const BOTS_BY_BOT_ID_GET: Operation = Operation {
+    id: "bots.by_bot_id.get",
+    method: "GET",
+    path: "/v1/bots/{bot_id}",
+    streaming: false,
+};
+
+pub const BOTS_BY_BOT_ID_OPEN_POST: Operation = Operation {
+    id: "bots.by_bot_id.open.post",
+    method: "POST",
+    path: "/v1/bots/{bot_id}/open",
+    streaming: false,
+};
+
+pub const BOTS_BY_BOT_ID_PUT: Operation = Operation {
+    id: "bots.by_bot_id.put",
+    method: "PUT",
+    path: "/v1/bots/{bot_id}",
+    streaming: false,
+};
+
+pub const BOTS_GET: Operation = Operation {
+    id: "bots.get",
+    method: "GET",
+    path: "/v1/bots",
+    streaming: false,
+};
+
+pub const BOTS_POST: Operation = Operation {
+    id: "bots.post",
+    method: "POST",
+    path: "/v1/bots",
+    streaming: false,
+};
+
 pub const BROWSER_SESSIONS_BY_SESSION_ID_COMPLETE_POST: Operation = Operation {
     id: "browser.sessions.by_session_id.complete.post",
     method: "POST",
@@ -1913,6 +1962,13 @@ pub const PAIR_BY_PAIRING_ID_DELETE: Operation = Operation {
     streaming: false,
 };
 
+pub const PAIR_BY_PAIRING_ID_POLICY_PUT: Operation = Operation {
+    id: "pair.by_pairing_id.policy.put",
+    method: "PUT",
+    path: "/pair/{pairing_id}/policy",
+    streaming: false,
+};
+
 pub const PAIR_CODE_GET: Operation = Operation {
     id: "pair.code.get",
     method: "GET",
@@ -1945,6 +2001,20 @@ pub const PAIR_IROH_TICKET_GET: Operation = Operation {
     id: "pair.iroh_ticket.get",
     method: "GET",
     path: "/pair/iroh-ticket",
+    streaming: false,
+};
+
+pub const PAIR_SESSION_CHALLENGE_POST: Operation = Operation {
+    id: "pair.session.challenge.post",
+    method: "POST",
+    path: "/pair/session/challenge",
+    streaming: false,
+};
+
+pub const PAIR_SESSION_REFRESH_POST: Operation = Operation {
+    id: "pair.session.refresh.post",
+    method: "POST",
+    path: "/pair/session/refresh",
     streaming: false,
 };
 
@@ -2225,6 +2295,27 @@ pub const SESSIONS_BY_SESSION_ID_AGENT_MODE_PUT: Operation = Operation {
     id: "sessions.by_session_id.agent_mode.put",
     method: "PUT",
     path: "/v1/sessions/{session_id}/agent-mode",
+    streaming: false,
+};
+
+pub const SESSIONS_BY_SESSION_ID_BOT_DELETE: Operation = Operation {
+    id: "sessions.by_session_id.bot.delete",
+    method: "DELETE",
+    path: "/v1/sessions/{session_id}/bot",
+    streaming: false,
+};
+
+pub const SESSIONS_BY_SESSION_ID_BOT_GET: Operation = Operation {
+    id: "sessions.by_session_id.bot.get",
+    method: "GET",
+    path: "/v1/sessions/{session_id}/bot",
+    streaming: false,
+};
+
+pub const SESSIONS_BY_SESSION_ID_BOT_PUT: Operation = Operation {
+    id: "sessions.by_session_id.bot.put",
+    method: "PUT",
+    path: "/v1/sessions/{session_id}/bot",
     streaming: false,
 };
 
@@ -2862,6 +2953,13 @@ pub static ALL: &[Operation] = &[
     AUTH_CHATGPT_GET,
     AUTH_CHATGPT_MODELS_GET,
     AUTH_CHATGPT_REFRESH_POST,
+    BOTS_BY_BOT_ID_ARCHIVE_PUT,
+    BOTS_BY_BOT_ID_DUPLICATE_POST,
+    BOTS_BY_BOT_ID_GET,
+    BOTS_BY_BOT_ID_OPEN_POST,
+    BOTS_BY_BOT_ID_PUT,
+    BOTS_GET,
+    BOTS_POST,
     BROWSER_SESSIONS_BY_SESSION_ID_COMPLETE_POST,
     BROWSER_SESSIONS_BY_SESSION_ID_COMPLETE_ACT_POST,
     BROWSER_SESSIONS_BY_SESSION_ID_GET,
@@ -3110,11 +3208,14 @@ pub static ALL: &[Operation] = &[
     MODELS_CATALOG_GET,
     MODELS_CATALOG_REFRESH_POST,
     PAIR_BY_PAIRING_ID_DELETE,
+    PAIR_BY_PAIRING_ID_POLICY_PUT,
     PAIR_CODE_GET,
     PAIR_HEARTBEAT_GET,
     PAIR_HEARTBEAT_POST,
     PAIR_INIT_POST,
     PAIR_IROH_TICKET_GET,
+    PAIR_SESSION_CHALLENGE_POST,
+    PAIR_SESSION_REFRESH_POST,
     PAIR_STATUS_GET,
     PAIR_VERIFY_POST,
     PEER_MESSAGES_BY_MESSAGE_ID_READ_POST,
@@ -3155,6 +3256,9 @@ pub static ALL: &[Operation] = &[
     SESSIONS_BY_SESSION_ID_AGENT_MODE_PROPOSALS_BY_PROPOSAL_ID_PUT,
     SESSIONS_BY_SESSION_ID_AGENT_MODE_PROPOSALS_GET,
     SESSIONS_BY_SESSION_ID_AGENT_MODE_PUT,
+    SESSIONS_BY_SESSION_ID_BOT_DELETE,
+    SESSIONS_BY_SESSION_ID_BOT_GET,
+    SESSIONS_BY_SESSION_ID_BOT_PUT,
     SESSIONS_BY_SESSION_ID_CODE_BINDING_DELETE,
     SESSIONS_BY_SESSION_ID_CODE_BINDING_GET,
     SESSIONS_BY_SESSION_ID_CODE_BINDING_PUT,

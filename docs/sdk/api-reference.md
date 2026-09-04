@@ -160,6 +160,28 @@ per-surface results. Raw HTTP clients can query
 
 ---
 
+## `bots()`
+
+| Method | HTTP | Types |
+|--------|------|-------|
+| `list()` | `GET /v1/bots` | `BotListResponse` |
+| `create(request)` | `POST /v1/bots` | `CreateBotRequest` -> `BotOpenResponse` |
+| `get(bot_id)` | `GET /v1/bots/{id}` | `BotProfile` |
+| `update(bot_id, request)` | `PUT /v1/bots/{id}` | `UpdateBotRequest` -> `BotProfile` |
+| `set_archived(bot_id, request)` | `PUT /v1/bots/{id}/archive` | `SetBotArchivedRequest` -> `BotProfile` |
+| `duplicate(bot_id, request)` | `POST /v1/bots/{id}/duplicate` | `DuplicateBotRequest` -> `BotOpenResponse` |
+| `open(bot_id)` | `POST /v1/bots/{id}/open` | `BotOpenResponse` |
+| `session(session_id)` | `GET /v1/sessions/{id}/bot` | `SessionBotResponse` |
+| `bind_session(session_id, request)` | `PUT /v1/sessions/{id}/bot` | `SetSessionBotRequest` -> `SessionBotResponse` |
+| `unbind_session(session_id)` | `DELETE /v1/sessions/{id}/bot` | `SessionBotResponse` |
+
+The accessor is available on Rust async and blocking clients and on Python
+async and sync clients. Bot updates and archive transitions require the current
+profile revision. `open` returns the durable primary conversation, creating a
+replacement only when the previous primary binding was explicitly removed.
+
+---
+
 ## `prompt_stashes()`
 
 | Method | HTTP | Types |

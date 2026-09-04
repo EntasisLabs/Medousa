@@ -2120,6 +2120,447 @@
       }
     }
   },
+  "BotId": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "BotId",
+    "description": "Stable daemon-issued identity for one durable Bot profile.",
+    "type": "string"
+  },
+  "BotListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "BotListResponse",
+    "type": "object",
+    "required": [
+      "bots"
+    ],
+    "properties": {
+      "bots": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/BotProfile"
+        }
+      }
+    },
+    "definitions": {
+      "AgentModeId": {
+        "description": "Behavioral runtime profile for an agent turn.\n\nThis is distinct from [`TurnTicketMode`], which selects interactive versus background delivery. Agent modes preserve one Medousa identity while changing context, tools, lane policy, and completion behavior.",
+        "type": "string",
+        "enum": [
+          "general",
+          "teacher",
+          "instant",
+          "coder"
+        ]
+      },
+      "BotId": {
+        "description": "Stable daemon-issued identity for one durable Bot profile.",
+        "type": "string"
+      },
+      "BotProfile": {
+        "type": "object",
+        "required": [
+          "bot_id",
+          "created_at",
+          "display_name",
+          "memory_scope_id",
+          "owner_profile_id",
+          "primary_manuscript_id",
+          "revision",
+          "schema_version",
+          "updated_at"
+        ],
+        "properties": {
+          "additional_manuscript_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "archived": {
+            "default": false,
+            "type": "boolean"
+          },
+          "avatar_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bot_id": {
+            "$ref": "#/definitions/BotId"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "default_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/AgentModeId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "memory_scope_id": {
+            "type": "string"
+          },
+          "owner_profile_id": {
+            "type": "string"
+          },
+          "primary_manuscript_id": {
+            "type": "string"
+          },
+          "primary_session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "role_description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  },
+  "BotOpenResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "BotOpenResponse",
+    "type": "object",
+    "required": [
+      "binding",
+      "bot"
+    ],
+    "properties": {
+      "binding": {
+        "$ref": "#/definitions/BotSessionBinding"
+      },
+      "bot": {
+        "$ref": "#/definitions/BotProfile"
+      }
+    },
+    "definitions": {
+      "AgentModeId": {
+        "description": "Behavioral runtime profile for an agent turn.\n\nThis is distinct from [`TurnTicketMode`], which selects interactive versus background delivery. Agent modes preserve one Medousa identity while changing context, tools, lane policy, and completion behavior.",
+        "type": "string",
+        "enum": [
+          "general",
+          "teacher",
+          "instant",
+          "coder"
+        ]
+      },
+      "BotId": {
+        "description": "Stable daemon-issued identity for one durable Bot profile.",
+        "type": "string"
+      },
+      "BotProfile": {
+        "type": "object",
+        "required": [
+          "bot_id",
+          "created_at",
+          "display_name",
+          "memory_scope_id",
+          "owner_profile_id",
+          "primary_manuscript_id",
+          "revision",
+          "schema_version",
+          "updated_at"
+        ],
+        "properties": {
+          "additional_manuscript_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "archived": {
+            "default": false,
+            "type": "boolean"
+          },
+          "avatar_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bot_id": {
+            "$ref": "#/definitions/BotId"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "default_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/AgentModeId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "memory_scope_id": {
+            "type": "string"
+          },
+          "owner_profile_id": {
+            "type": "string"
+          },
+          "primary_manuscript_id": {
+            "type": "string"
+          },
+          "primary_session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "role_description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "BotSessionBinding": {
+        "type": "object",
+        "required": [
+          "bot_id",
+          "bot_revision_at_bind",
+          "created_at",
+          "kind",
+          "session_id"
+        ],
+        "properties": {
+          "bot_id": {
+            "$ref": "#/definitions/BotId"
+          },
+          "bot_revision_at_bind": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "kind": {
+            "$ref": "#/definitions/BotSessionKind"
+          },
+          "session_id": {
+            "type": "string"
+          }
+        }
+      },
+      "BotSessionKind": {
+        "type": "string",
+        "enum": [
+          "primary",
+          "secondary"
+        ]
+      }
+    }
+  },
+  "BotProfile": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "BotProfile",
+    "type": "object",
+    "required": [
+      "bot_id",
+      "created_at",
+      "display_name",
+      "memory_scope_id",
+      "owner_profile_id",
+      "primary_manuscript_id",
+      "revision",
+      "schema_version",
+      "updated_at"
+    ],
+    "properties": {
+      "additional_manuscript_ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "archived": {
+        "default": false,
+        "type": "boolean"
+      },
+      "avatar_ref": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "bot_id": {
+        "$ref": "#/definitions/BotId"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "default_mode": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/AgentModeId"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "display_name": {
+        "type": "string"
+      },
+      "memory_scope_id": {
+        "type": "string"
+      },
+      "owner_profile_id": {
+        "type": "string"
+      },
+      "primary_manuscript_id": {
+        "type": "string"
+      },
+      "primary_session_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "role_description": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "schema_version": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "definitions": {
+      "AgentModeId": {
+        "description": "Behavioral runtime profile for an agent turn.\n\nThis is distinct from [`TurnTicketMode`], which selects interactive versus background delivery. Agent modes preserve one Medousa identity while changing context, tools, lane policy, and completion behavior.",
+        "type": "string",
+        "enum": [
+          "general",
+          "teacher",
+          "instant",
+          "coder"
+        ]
+      },
+      "BotId": {
+        "description": "Stable daemon-issued identity for one durable Bot profile.",
+        "type": "string"
+      }
+    }
+  },
+  "BotSessionBinding": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "BotSessionBinding",
+    "type": "object",
+    "required": [
+      "bot_id",
+      "bot_revision_at_bind",
+      "created_at",
+      "kind",
+      "session_id"
+    ],
+    "properties": {
+      "bot_id": {
+        "$ref": "#/definitions/BotId"
+      },
+      "bot_revision_at_bind": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "kind": {
+        "$ref": "#/definitions/BotSessionKind"
+      },
+      "session_id": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "BotId": {
+        "description": "Stable daemon-issued identity for one durable Bot profile.",
+        "type": "string"
+      },
+      "BotSessionKind": {
+        "type": "string",
+        "enum": [
+          "primary",
+          "secondary"
+        ]
+      }
+    }
+  },
+  "BotSessionKind": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "BotSessionKind",
+    "type": "string",
+    "enum": [
+      "primary",
+      "secondary"
+    ]
+  },
   "CalendarDeleteResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "CalendarDeleteResponse",
@@ -3793,6 +4234,63 @@
       }
     }
   },
+  "CreateBotRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreateBotRequest",
+    "type": "object",
+    "required": [
+      "display_name",
+      "primary_manuscript_id"
+    ],
+    "properties": {
+      "additional_manuscript_ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "avatar_ref": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "default_mode": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/AgentModeId"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "display_name": {
+        "type": "string"
+      },
+      "primary_manuscript_id": {
+        "type": "string"
+      },
+      "role_description": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "definitions": {
+      "AgentModeId": {
+        "description": "Behavioral runtime profile for an agent turn.\n\nThis is distinct from [`TurnTicketMode`], which selects interactive versus background delivery. Agent modes preserve one Medousa identity while changing context, tools, lane policy, and completion behavior.",
+        "type": "string",
+        "enum": [
+          "general",
+          "teacher",
+          "instant",
+          "coder"
+        ]
+      }
+    }
+  },
   "CreateIntegrationConnectionRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "CreateIntegrationConnectionRequest",
@@ -4481,6 +4979,19 @@
       },
       "server_id": {
         "type": "string"
+      }
+    }
+  },
+  "DuplicateBotRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "DuplicateBotRequest",
+    "type": "object",
+    "properties": {
+      "display_name": {
+        "type": [
+          "string",
+          "null"
+        ]
       }
     }
   },
@@ -16621,6 +17132,179 @@
       }
     }
   },
+  "SessionBotResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SessionBotResponse",
+    "type": "object",
+    "required": [
+      "session_id"
+    ],
+    "properties": {
+      "binding": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/BotSessionBinding"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "bot": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/BotProfile"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "session_id": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "AgentModeId": {
+        "description": "Behavioral runtime profile for an agent turn.\n\nThis is distinct from [`TurnTicketMode`], which selects interactive versus background delivery. Agent modes preserve one Medousa identity while changing context, tools, lane policy, and completion behavior.",
+        "type": "string",
+        "enum": [
+          "general",
+          "teacher",
+          "instant",
+          "coder"
+        ]
+      },
+      "BotId": {
+        "description": "Stable daemon-issued identity for one durable Bot profile.",
+        "type": "string"
+      },
+      "BotProfile": {
+        "type": "object",
+        "required": [
+          "bot_id",
+          "created_at",
+          "display_name",
+          "memory_scope_id",
+          "owner_profile_id",
+          "primary_manuscript_id",
+          "revision",
+          "schema_version",
+          "updated_at"
+        ],
+        "properties": {
+          "additional_manuscript_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "archived": {
+            "default": false,
+            "type": "boolean"
+          },
+          "avatar_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bot_id": {
+            "$ref": "#/definitions/BotId"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "default_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/AgentModeId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "memory_scope_id": {
+            "type": "string"
+          },
+          "owner_profile_id": {
+            "type": "string"
+          },
+          "primary_manuscript_id": {
+            "type": "string"
+          },
+          "primary_session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "role_description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "BotSessionBinding": {
+        "type": "object",
+        "required": [
+          "bot_id",
+          "bot_revision_at_bind",
+          "created_at",
+          "kind",
+          "session_id"
+        ],
+        "properties": {
+          "bot_id": {
+            "$ref": "#/definitions/BotId"
+          },
+          "bot_revision_at_bind": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "kind": {
+            "$ref": "#/definitions/BotSessionKind"
+          },
+          "session_id": {
+            "type": "string"
+          }
+        }
+      },
+      "BotSessionKind": {
+        "type": "string",
+        "enum": [
+          "primary",
+          "secondary"
+        ]
+      }
+    }
+  },
   "SessionCodeBindingResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "SessionCodeBindingResponse",
@@ -18093,6 +18777,25 @@
       }
     }
   },
+  "SetBotArchivedRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SetBotArchivedRequest",
+    "type": "object",
+    "required": [
+      "archived",
+      "expected_revision"
+    ],
+    "properties": {
+      "archived": {
+        "type": "boolean"
+      },
+      "expected_revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    }
+  },
   "SetSessionAgentModeRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "SetSessionAgentModeRequest",
@@ -18142,6 +18845,40 @@
         "enum": [
           "session",
           "task"
+        ]
+      }
+    }
+  },
+  "SetSessionBotRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SetSessionBotRequest",
+    "type": "object",
+    "required": [
+      "bot_id"
+    ],
+    "properties": {
+      "bot_id": {
+        "$ref": "#/definitions/BotId"
+      },
+      "kind": {
+        "default": "secondary",
+        "allOf": [
+          {
+            "$ref": "#/definitions/BotSessionKind"
+          }
+        ]
+      }
+    },
+    "definitions": {
+      "BotId": {
+        "description": "Stable daemon-issued identity for one durable Bot profile.",
+        "type": "string"
+      },
+      "BotSessionKind": {
+        "type": "string",
+        "enum": [
+          "primary",
+          "secondary"
         ]
       }
     }
@@ -23439,6 +24176,69 @@
           "done",
           "error",
           "cancelled"
+        ]
+      }
+    }
+  },
+  "UpdateBotRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "UpdateBotRequest",
+    "type": "object",
+    "required": [
+      "display_name",
+      "expected_revision",
+      "primary_manuscript_id"
+    ],
+    "properties": {
+      "additional_manuscript_ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "avatar_ref": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "default_mode": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/AgentModeId"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "display_name": {
+        "type": "string"
+      },
+      "expected_revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "primary_manuscript_id": {
+        "type": "string"
+      },
+      "role_description": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "definitions": {
+      "AgentModeId": {
+        "description": "Behavioral runtime profile for an agent turn.\n\nThis is distinct from [`TurnTicketMode`], which selects interactive versus background delivery. Agent modes preserve one Medousa identity while changing context, tools, lane policy, and completion behavior.",
+        "type": "string",
+        "enum": [
+          "general",
+          "teacher",
+          "instant",
+          "coder"
         ]
       }
     }

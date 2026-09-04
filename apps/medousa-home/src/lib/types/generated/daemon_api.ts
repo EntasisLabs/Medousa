@@ -531,6 +531,84 @@ export interface DeletePromptStashResponse {
   stash_id: PromptStashId;
 }
 
+export type BotId = string;
+
+export type BotSessionKind = "primary" | "secondary";
+
+export interface BotProfile {
+  additional_manuscript_ids?: string[];
+  archived?: boolean;
+  avatar_ref?: string | null;
+  bot_id: BotId;
+  created_at: string;
+  default_mode?: AgentModeId | null;
+  display_name: string;
+  memory_scope_id: string;
+  owner_profile_id: string;
+  primary_manuscript_id: string;
+  primary_session_id?: string | null;
+  revision: number;
+  role_description?: string | null;
+  schema_version: number;
+  updated_at: string;
+}
+
+export interface BotSessionBinding {
+  bot_id: BotId;
+  bot_revision_at_bind: number;
+  created_at: string;
+  kind: BotSessionKind;
+  session_id: string;
+}
+
+export interface CreateBotRequest {
+  additional_manuscript_ids?: string[];
+  avatar_ref?: string | null;
+  default_mode?: AgentModeId | null;
+  display_name: string;
+  primary_manuscript_id: string;
+  role_description?: string | null;
+}
+
+export interface UpdateBotRequest {
+  additional_manuscript_ids?: string[];
+  avatar_ref?: string | null;
+  default_mode?: AgentModeId | null;
+  display_name: string;
+  expected_revision: number;
+  primary_manuscript_id: string;
+  role_description?: string | null;
+}
+
+export interface DuplicateBotRequest {
+  display_name?: string | null;
+}
+
+export interface SetBotArchivedRequest {
+  archived: boolean;
+  expected_revision: number;
+}
+
+export interface SetSessionBotRequest {
+  bot_id: BotId;
+  kind?: BotSessionKind;
+}
+
+export interface BotListResponse {
+  bots: BotProfile[];
+}
+
+export interface BotOpenResponse {
+  binding: BotSessionBinding;
+  bot: BotProfile;
+}
+
+export interface SessionBotResponse {
+  binding?: BotSessionBinding | null;
+  bot?: BotProfile | null;
+  session_id: string;
+}
+
 export type CodeProjectSource = "blank" | "repository";
 
 export interface StartSessionCodeProjectRequest {

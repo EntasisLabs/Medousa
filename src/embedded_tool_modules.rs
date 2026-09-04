@@ -19,6 +19,7 @@ pub mod browser_search;
 pub mod browser_sessions;
 pub mod browser_snapshot_tools;
 pub mod browser_tools;
+pub mod bot_profiles;
 pub mod calendar;
 pub mod calendar_api;
 pub mod calendar_tools;

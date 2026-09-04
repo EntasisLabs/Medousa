@@ -6,6 +6,7 @@ from medousa.transport import HttpTransport, Transport
 
 if TYPE_CHECKING:
     from medousa.agents import AgentsApi
+    from medousa.bots import BotsApi
     from medousa.budget import BudgetApi
     from medousa.calendar import CalendarApi
     from medousa.capabilities import CapabilitiesApi
@@ -73,6 +74,11 @@ class MedousaClient:
         from medousa.sessions import SessionsApi
 
         return SessionsApi(self)
+
+    def bots(self) -> BotsApi:
+        from medousa.bots import BotsApi
+
+        return BotsApi(self)
 
     def prompt_stashes(self) -> PromptStashesApi:
         from medousa.prompt_stashes import PromptStashesApi

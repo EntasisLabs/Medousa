@@ -169,6 +169,31 @@ preserves the complete-history response for existing clients.
 `SessionHistoryResponse`; clients must not substitute the selected connection
 or another workshop when it is absent.
 
+### Bots
+
+Bots are daemon-owned durable teammate profiles. A Bot references existing
+Specialist Manuscripts and owns a stable memory scope plus explicit conversation
+bindings; it does not grant tools, credentials, or execution authority.
+
+| Method | Path | Types | SDK |
+|--------|------|-------|-----|
+| GET | `/v1/bots` | `BotListResponse` | `bots().list` |
+| POST | `/v1/bots` | `CreateBotRequest` -> `BotOpenResponse` | `bots().create` |
+| GET | `/v1/bots/{bot_id}` | `BotProfile` | `bots().get` |
+| PUT | `/v1/bots/{bot_id}` | `UpdateBotRequest` -> `BotProfile` | `bots().update` |
+| PUT | `/v1/bots/{bot_id}/archive` | `SetBotArchivedRequest` -> `BotProfile` | `bots().set_archived` |
+| POST | `/v1/bots/{bot_id}/duplicate` | `DuplicateBotRequest` -> `BotOpenResponse` | `bots().duplicate` |
+| POST | `/v1/bots/{bot_id}/open` | `BotOpenResponse` | `bots().open` |
+| GET | `/v1/sessions/{session_id}/bot` | `SessionBotResponse` | `bots().session` |
+| PUT | `/v1/sessions/{session_id}/bot` | `SetSessionBotRequest` -> `SessionBotResponse` | `bots().bind_session` |
+| DELETE | `/v1/sessions/{session_id}/bot` | `SessionBotResponse` | `bots().unbind_session` |
+
+All operations are scoped to the authenticated workshop profile. Create and
+duplicate allocate a fresh primary conversation on the daemon. Duplicate copies
+configuration and Specialist references, but never transcript or learned
+memory. Archive preserves both memory and conversation bindings. Updates use
+`expected_revision` for optimistic concurrency.
+
 `POST /v1/sessions/derive` requires an `Idempotency-Key` header. Its ordered
 `sources` select committed ranges with an exclusive `after_entry_seq` and
 inclusive `through_entry_seq`; omitting the lower bound selects from entry 1.

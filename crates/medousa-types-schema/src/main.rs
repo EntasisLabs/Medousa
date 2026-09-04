@@ -182,6 +182,20 @@ fn main() {
     export_type!(schemas, AgentModeListResponse, "AgentModeListResponse");
     export_type!(schemas, SessionDeleteResponse, "SessionDeleteResponse");
 
+    // Bots
+    export_type!(schemas, BotId, "BotId");
+    export_type!(schemas, BotSessionKind, "BotSessionKind");
+    export_type!(schemas, BotProfile, "BotProfile");
+    export_type!(schemas, BotSessionBinding, "BotSessionBinding");
+    export_type!(schemas, CreateBotRequest, "CreateBotRequest");
+    export_type!(schemas, UpdateBotRequest, "UpdateBotRequest");
+    export_type!(schemas, DuplicateBotRequest, "DuplicateBotRequest");
+    export_type!(schemas, SetBotArchivedRequest, "SetBotArchivedRequest");
+    export_type!(schemas, SetSessionBotRequest, "SetSessionBotRequest");
+    export_type!(schemas, BotListResponse, "BotListResponse");
+    export_type!(schemas, BotOpenResponse, "BotOpenResponse");
+    export_type!(schemas, SessionBotResponse, "SessionBotResponse");
+
     // Ingest & interactive
     export_type!(schemas, IngestRequest, "IngestRequest");
     export_type!(schemas, IngestResponse, "IngestResponse");

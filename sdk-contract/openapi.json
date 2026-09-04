@@ -446,6 +446,166 @@
         "title": "BeginMcpOAuthResponse",
         "type": "object"
       },
+      "BotId": {
+        "description": "Stable daemon-issued identity for one durable Bot profile.",
+        "type": "string"
+      },
+      "BotListResponse": {
+        "properties": {
+          "bots": {
+            "items": {
+              "$ref": "#/components/schemas/BotProfile"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "bots"
+        ],
+        "title": "BotListResponse",
+        "type": "object"
+      },
+      "BotOpenResponse": {
+        "properties": {
+          "binding": {
+            "$ref": "#/components/schemas/BotSessionBinding"
+          },
+          "bot": {
+            "$ref": "#/components/schemas/BotProfile"
+          }
+        },
+        "required": [
+          "binding",
+          "bot"
+        ],
+        "title": "BotOpenResponse",
+        "type": "object"
+      },
+      "BotProfile": {
+        "properties": {
+          "additional_manuscript_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "archived": {
+            "default": false,
+            "type": "boolean"
+          },
+          "avatar_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bot_id": {
+            "$ref": "#/components/schemas/BotId"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "default_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentModeId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "memory_scope_id": {
+            "type": "string"
+          },
+          "owner_profile_id": {
+            "type": "string"
+          },
+          "primary_manuscript_id": {
+            "type": "string"
+          },
+          "primary_session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "role_description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schema_version": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "bot_id",
+          "created_at",
+          "display_name",
+          "memory_scope_id",
+          "owner_profile_id",
+          "primary_manuscript_id",
+          "revision",
+          "schema_version",
+          "updated_at"
+        ],
+        "title": "BotProfile",
+        "type": "object"
+      },
+      "BotSessionBinding": {
+        "properties": {
+          "bot_id": {
+            "$ref": "#/components/schemas/BotId"
+          },
+          "bot_revision_at_bind": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/BotSessionKind"
+          },
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bot_id",
+          "bot_revision_at_bind",
+          "created_at",
+          "kind",
+          "session_id"
+        ],
+        "type": "object"
+      },
+      "BotSessionKind": {
+        "enum": [
+          "primary",
+          "secondary"
+        ],
+        "type": "string"
+      },
       "CalendarAlarm": {
         "description": "Display alarm relative to event start (VALARM projection).",
         "properties": {
@@ -1703,6 +1863,50 @@
         "title": "CreateAgentSessionResponse",
         "type": "object"
       },
+      "CreateBotRequest": {
+        "properties": {
+          "additional_manuscript_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "avatar_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "default_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentModeId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "primary_manuscript_id": {
+            "type": "string"
+          },
+          "role_description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "display_name",
+          "primary_manuscript_id"
+        ],
+        "title": "CreateBotRequest",
+        "type": "object"
+      },
       "CreatePromptStashRequest": {
         "properties": {
           "context_manifest_id": {
@@ -2158,6 +2362,18 @@
           "path",
           "sha256"
         ],
+        "type": "object"
+      },
+      "DuplicateBotRequest": {
+        "properties": {
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "title": "DuplicateBotRequest",
         "type": "object"
       },
       "EnqueueAskRequest": {
@@ -4337,6 +4553,38 @@
         "title": "SessionAppendTurnResponse",
         "type": "object"
       },
+      "SessionBotResponse": {
+        "properties": {
+          "binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BotSessionBinding"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BotProfile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "SessionBotResponse",
+        "type": "object"
+      },
       "SessionCodeBindingResponse": {
         "properties": {
           "session_id": {
@@ -4763,6 +5011,24 @@
         "title": "SessionTranscriptSearchResponse",
         "type": "object"
       },
+      "SetBotArchivedRequest": {
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "expected_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "archived",
+          "expected_revision"
+        ],
+        "title": "SetBotArchivedRequest",
+        "type": "object"
+      },
       "SetSessionAgentModeRequest": {
         "properties": {
           "expires_at_utc": {
@@ -4794,6 +5060,26 @@
           "mode"
         ],
         "title": "SetSessionAgentModeRequest",
+        "type": "object"
+      },
+      "SetSessionBotRequest": {
+        "properties": {
+          "bot_id": {
+            "$ref": "#/components/schemas/BotId"
+          },
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BotSessionKind"
+              }
+            ],
+            "default": "secondary"
+          }
+        },
+        "required": [
+          "bot_id"
+        ],
+        "title": "SetSessionBotRequest",
         "type": "object"
       },
       "SetSessionCodeBindingRequest": {
@@ -6721,6 +7007,56 @@
         ],
         "type": "string"
       },
+      "UpdateBotRequest": {
+        "properties": {
+          "additional_manuscript_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "avatar_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "default_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentModeId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "primary_manuscript_id": {
+            "type": "string"
+          },
+          "role_description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "display_name",
+          "expected_revision",
+          "primary_manuscript_id"
+        ],
+        "title": "UpdateBotRequest",
+        "type": "object"
+      },
       "VaultAddRootRequest": {
         "properties": {
           "id": {
@@ -7856,6 +8192,64 @@
         }
       }
     },
+    "/pair/session/challenge": {
+      "post": {
+        "operationId": "pair.session.challenge.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "PAIR_SESSION_CHALLENGE_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "pair.session.challenge.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 8192,
+          "bootstrap_public": true,
+          "browser_policy": "public",
+          "capabilities": [],
+          "credential_scheme": "none",
+          "feature_profile": "pairing",
+          "rate_limit_class": "pairing_ceremony",
+          "trust_group": "pairing_ceremony"
+        }
+      }
+    },
+    "/pair/session/refresh": {
+      "post": {
+        "operationId": "pair.session.refresh.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "PAIR_SESSION_REFRESH_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "pair.session.refresh.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
+          "bootstrap_public": true,
+          "browser_policy": "public",
+          "capabilities": [],
+          "credential_scheme": "none",
+          "feature_profile": "pairing",
+          "rate_limit_class": "pairing_ceremony",
+          "trust_group": "pairing_ceremony"
+        }
+      }
+    },
     "/pair/status": {
       "get": {
         "operationId": "pair.status.get",
@@ -7993,6 +8387,66 @@
           "feature_profile": "pairing",
           "rate_limit_class": "peer_exchange",
           "trust_group": "peer_exchange"
+        }
+      }
+    },
+    "/pair/{pairing_id}/policy": {
+      "put": {
+        "operationId": "pair.by_pairing_id.policy.put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pairing_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "PAIR_BY_PAIRING_ID_POLICY_PUTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "pair.by_pairing_id.policy.put"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "pair.by_pairing_id.policy.put"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "pair.by_pairing_id.policy.put"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 8192,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.identity"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "pairing",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
         }
       }
     },
@@ -9543,6 +9997,437 @@
           "feature_profile": "core",
           "rate_limit_class": "administration",
           "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/bots": {
+      "get": {
+        "operationId": "bots.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotListResponse"
+                }
+              }
+            },
+            "description": "bots.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      },
+      "post": {
+        "operationId": "bots.post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBotRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotOpenResponse"
+                }
+              }
+            },
+            "description": "bots.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 131072,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/bots/{bot_id}": {
+      "get": {
+        "operationId": "bots.by_bot_id.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bot_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotProfile"
+                }
+              }
+            },
+            "description": "bots.by_bot_id.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.by_bot_id.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.by_bot_id.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      },
+      "put": {
+        "operationId": "bots.by_bot_id.put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bot_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateBotRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotProfile"
+                }
+              }
+            },
+            "description": "bots.by_bot_id.put"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.by_bot_id.put"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.by_bot_id.put"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 131072,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/bots/{bot_id}/archive": {
+      "put": {
+        "operationId": "bots.by_bot_id.archive.put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bot_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetBotArchivedRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotProfile"
+                }
+              }
+            },
+            "description": "bots.by_bot_id.archive.put"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.by_bot_id.archive.put"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.by_bot_id.archive.put"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/bots/{bot_id}/duplicate": {
+      "post": {
+        "operationId": "bots.by_bot_id.duplicate.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bot_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DuplicateBotRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotOpenResponse"
+                }
+              }
+            },
+            "description": "bots.by_bot_id.duplicate.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.by_bot_id.duplicate.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.by_bot_id.duplicate.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/bots/{bot_id}/open": {
+      "post": {
+        "operationId": "bots.by_bot_id.open.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bot_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotOpenResponse"
+                }
+              }
+            },
+            "description": "bots.by_bot_id.open.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.by_bot_id.open.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.by_bot_id.open.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
         }
       }
     },
@@ -25875,6 +26760,189 @@
         },
         "x-medousa-policy": {
           "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/sessions/{session_id}/bot": {
+      "delete": {
+        "operationId": "sessions.by_session_id.bot.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionBotResponse"
+                }
+              }
+            },
+            "description": "sessions.by_session_id.bot.delete"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.by_session_id.bot.delete"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.by_session_id.bot.delete"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      },
+      "get": {
+        "operationId": "sessions.by_session_id.bot.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionBotResponse"
+                }
+              }
+            },
+            "description": "sessions.by_session_id.bot.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.by_session_id.bot.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.by_session_id.bot.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      },
+      "put": {
+        "operationId": "sessions.by_session_id.bot.put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetSessionBotRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionBotResponse"
+                }
+              }
+            },
+            "description": "sessions.by_session_id.bot.put"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.by_session_id.bot.put"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.by_session_id.bot.put"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
           "bootstrap_public": false,
           "browser_policy": "native_only",
           "capabilities": [
