@@ -204,6 +204,7 @@ impl JobHandler for RecurringAgentTurnJobHandler {
             agent_mode: None,
             code_context: None,
             code_project_setup_authorized: false,
+            worker_execution_target: None,
             persist_user_turn: false,
             response_depth_mode: payload
                 .response_depth_mode

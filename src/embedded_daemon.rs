@@ -2779,9 +2779,20 @@ impl EmbeddedDaemonClient {
                 .cmp(&right.label.to_ascii_lowercase())
                 .then(left.runtime_id.cmp(&right.runtime_id))
         });
+        let default_runtime_id = service
+            .binding()
+            .await
+            .map_err(|error| anyhow!(error.to_string()))?
+            .map(|binding| binding.target.peer_device_id)
+            .filter(|runtime_id| {
+                targets
+                    .iter()
+                    .any(|candidate| candidate.runtime_id == *runtime_id)
+            });
         Ok(crate::workshop_contract::ExecutionTargetInventory {
             schema_version: crate::workshop_contract::EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION,
             parent_runtime_id,
+            default_runtime_id,
             targets,
         })
     }
@@ -5135,6 +5146,7 @@ impl EmbeddedDaemonClient {
             "standard".to_string(),
             "default".to_string(),
             Vec::new(),
+            None,
         )
         .await
     }
@@ -5151,6 +5163,7 @@ impl EmbeddedDaemonClient {
         response_depth_mode: String,
         reasoning_effort: String,
         media_refs: Vec<medousa_types::daemon_api::MediaRef>,
+        worker_execution_target: Option<crate::workshop_contract::ExecutionTargetSelection>,
     ) -> Result<InteractiveTurnResponse> {
         self.require(Capability::WorkshopInteract)?;
         if self.daemon.backgrounded.load(Ordering::Acquire) {
@@ -5279,7 +5292,7 @@ impl EmbeddedDaemonClient {
             supports_browser_host: false,
             channel_surface: channel_surface.or_else(|| Some("mobile".to_string())),
         };
-        let context = TurnExecutionContext::new(
+        let mut context = TurnExecutionContext::new(
             turn_id.clone(),
             turn_id.clone(),
             session_id,
@@ -5294,6 +5307,9 @@ impl EmbeddedDaemonClient {
             Instant::now() + self.daemon.foreground_turn_timeout,
             scope,
         );
+        if let Some(target) = worker_execution_target {
+            context = context.with_worker_execution_target(target);
+        }
         let lease = match self.daemon.executions.admit(context) {
             Ok(lease) => lease,
             Err(error) => {

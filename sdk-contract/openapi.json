@@ -2874,6 +2874,102 @@
         ],
         "type": "object"
       },
+      "ExecutionTargetRequirements": {
+        "description": "Location-neutral requirements used when a turn asks Medousa to choose a worker workshop. `selection_key` makes Auto placement stable for the same eligible target set without exposing transport details to the client.",
+        "properties": {
+          "architecture": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "platform": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "region": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "required_capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "selection_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "ExecutionTargetSelection": {
+        "description": "User-facing placement preference for workers spawned during a turn. Agent-authored worker requests use the same wire shape, but are admitted against the stricter agent-selectable inventory.",
+        "oneOf": [
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "same_as_parent"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "exact"
+                ],
+                "type": "string"
+              },
+              "runtime_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "runtime_id"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "auto"
+                ],
+                "type": "string"
+              },
+              "requirements": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ExecutionTargetRequirements"
+                  }
+                ],
+                "default": {}
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          }
+        ]
+      },
       "FeedEvent": {
         "properties": {
           "emittedAtUtc": {
@@ -3737,6 +3833,17 @@
               "string",
               "null"
             ]
+          },
+          "worker_execution_target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionTargetSelection"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "User-selected default workshop for workers created during this turn. This does not grant the model permission to select the same target."
           }
         },
         "required": [

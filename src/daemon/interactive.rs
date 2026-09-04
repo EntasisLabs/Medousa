@@ -54,6 +54,7 @@ pub fn build_interactive_request_from_ticket(
         agent_mode: request.agent_mode,
         code_context: request.code_context.clone(),
         code_project_setup_authorized: request.code_project_setup_authorized,
+        worker_execution_target: request.worker_execution_target.clone(),
         persist_user_turn: request.persist_user_turn,
         response_depth_mode: request.response_depth_mode.clone(),
         reasoning_effort: request.reasoning_effort.clone(),
@@ -191,6 +192,9 @@ pub async fn spawn_turn_ticket(
     );
     if let Some(bot_identity) = bot_identity {
         execution_context = execution_context.with_bot_identity(bot_identity);
+    }
+    if let Some(target) = interactive_request.worker_execution_target.clone() {
+        execution_context = execution_context.with_worker_execution_target(target);
     }
     let execution_lease = state
         .platform
@@ -509,6 +513,7 @@ pub async fn start_interactive_turn(
         agent_mode: request.agent_mode,
         code_context: request.code_context.clone(),
         code_project_setup_authorized: request.code_project_setup_authorized,
+        worker_execution_target: request.worker_execution_target.clone(),
         mode: crate::turn_ticket::TurnTicketMode::Interactive,
         persist_user_turn: request.persist_user_turn,
         response_depth_mode: request.response_depth_mode.clone(),

@@ -906,6 +906,7 @@ async fn attempt_daemon_interactive_turn(
         agent_mode: None,
         code_context: None,
         code_project_setup_authorized: false,
+        worker_execution_target: None,
         persist_user_turn,
         response_depth_mode: state.response_depth_mode.clone(),
         reasoning_effort: state.reasoning_effort.clone(),

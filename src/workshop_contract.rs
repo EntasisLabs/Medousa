@@ -1,11 +1,11 @@
 //! Location-neutral workshop worker request contract.
 
-use std::collections::BTreeSet;
 use std::fmt;
 
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest as _, Sha256};
 use stasis::domain::runtime::placement::{PlacementConstraints, WorkerCapabilities};
 
 use crate::public_api::COGNITION_WORKSHOP_MUTATE;
@@ -14,60 +14,10 @@ use crate::typed_tools::ToolId;
 
 const WORKSHOP_MUTATE_ID: ToolId = ToolId::new(COGNITION_WORKSHOP_MUTATE);
 
+pub use crate::daemon_api::{ExecutionTargetRequirements, ExecutionTargetSelection};
+
 pub const UNKNOWN_EXECUTION_RUNTIME_ID: &str = "unknown";
 pub const EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION: u32 = 1;
-
-/// Public, location-neutral requirements used by automatic target selection.
-/// Internally these compile directly into Stasis placement constraints.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct ExecutionTargetRequirements {
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub required_capabilities: BTreeSet<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub platform: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub architecture: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub region: Option<String>,
-}
-
-impl ExecutionTargetRequirements {
-    pub fn to_placement_constraints(&self) -> PlacementConstraints {
-        PlacementConstraints {
-            required_capabilities: self.required_capabilities.clone(),
-            platform: self.platform.clone(),
-            architecture: self.architecture.clone(),
-            region: self.region.clone(),
-            target_node: None,
-        }
-    }
-}
-
-/// Where a worker should execute. Omission at the API boundary is equivalent
-/// to `same_as_parent` unless a deployment supplies a documented migration
-/// default for an older single-target route.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ExecutionTargetSelection {
-    #[default]
-    SameAsParent,
-    Exact {
-        runtime_id: String,
-    },
-    Auto {
-        #[serde(default)]
-        requirements: ExecutionTargetRequirements,
-    },
-}
-
-impl ExecutionTargetSelection {
-    pub fn exact_runtime_id(&self) -> Option<&str> {
-        match self {
-            Self::Exact { runtime_id } => Some(runtime_id),
-            Self::SameAsParent | Self::Auto { .. } => None,
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -194,8 +144,11 @@ impl ExecutionTargetCandidate {
 pub struct ExecutionTargetInventoryEntry {
     pub runtime_id: String,
     pub label: String,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub capabilities: BTreeSet<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "std::collections::BTreeSet::is_empty"
+    )]
+    pub capabilities: std::collections::BTreeSet<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub platform: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -210,6 +163,8 @@ pub struct ExecutionTargetInventoryEntry {
 pub struct ExecutionTargetInventory {
     pub schema_version: u32,
     pub parent_runtime_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_runtime_id: Option<String>,
     pub targets: Vec<ExecutionTargetInventoryEntry>,
 }
 
@@ -323,10 +278,26 @@ pub fn resolve_execution_target(
             )
         }
         ExecutionTargetSelection::Auto { requirements } => {
-            let placement = requirements.to_placement_constraints();
-            let candidate = candidates
+            let placement = PlacementConstraints {
+                required_capabilities: requirements.required_capabilities.clone(),
+                platform: requirements.platform.clone(),
+                architecture: requirements.architecture.clone(),
+                region: requirements.region.clone(),
+                target_node: None,
+            };
+            let mut eligible = candidates
                 .iter()
-                .find(|candidate| placement.matches(&candidate.capabilities))
+                .filter(|candidate| placement.matches(&candidate.capabilities))
+                .collect::<Vec<_>>();
+            eligible.sort_by(|left, right| left.runtime_id.cmp(&right.runtime_id));
+            let index = deterministic_auto_index(
+                requirements.selection_key.as_deref(),
+                eligible.iter().map(|candidate| candidate.runtime_id.as_str()),
+                eligible.len(),
+            );
+            let candidate = eligible
+                .get(index)
+                .copied()
                 .ok_or(ExecutionTargetResolutionError::NoCapableTarget)?;
             (
                 candidate.runtime_id.clone(),
@@ -338,6 +309,29 @@ pub fn resolve_execution_target(
     Ok(ExecutionPlacementResolution::resolved(
         requested, runtime_id, reason,
     ))
+}
+
+fn deterministic_auto_index<'a>(
+    selection_key: Option<&str>,
+    runtime_ids: impl Iterator<Item = &'a str>,
+    candidate_count: usize,
+) -> usize {
+    if candidate_count <= 1 {
+        return 0;
+    }
+    let Some(selection_key) = selection_key.map(str::trim).filter(|key| !key.is_empty()) else {
+        return 0;
+    };
+    let mut digest = Sha256::new();
+    digest.update(selection_key.as_bytes());
+    for runtime_id in runtime_ids {
+        digest.update([0]);
+        digest.update(runtime_id.as_bytes());
+    }
+    let bytes: [u8; 8] = digest.finalize()[..8]
+        .try_into()
+        .expect("sha256 prefix has a fixed length");
+    (u64::from_be_bytes(bytes) as usize) % candidate_count
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -379,6 +373,7 @@ pub fn workshop_type_schemas() -> Vec<TypedActionSchema> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
 
     fn candidate(runtime_id: &str) -> ExecutionTargetCandidate {
         ExecutionTargetCandidate {
@@ -428,6 +423,7 @@ mod tests {
                     platform: Some("macos".to_string()),
                     architecture: Some("aarch64".to_string()),
                     region: None,
+                    selection_key: Some("turn-42".to_string()),
                 },
             },
             "runtime-parent",
@@ -439,5 +435,23 @@ mod tests {
             resolution.resolution_reason,
             ExecutionResolutionReason::AutoMatch
         );
+    }
+
+    #[test]
+    fn auto_is_deterministic_for_the_same_key_and_candidate_set() {
+        let requested = ExecutionTargetSelection::Auto {
+            requirements: ExecutionTargetRequirements {
+                required_capabilities: BTreeSet::from(["assistant.work".to_string()]),
+                selection_key: Some("session-42".to_string()),
+                ..ExecutionTargetRequirements::default()
+            },
+        };
+        let forward = vec![candidate("runtime-c"), candidate("runtime-a"), candidate("runtime-b")];
+        let reverse = vec![candidate("runtime-b"), candidate("runtime-c"), candidate("runtime-a")];
+        let first = resolve_execution_target(requested.clone(), "runtime-parent", &forward)
+            .expect("forward auto");
+        let second = resolve_execution_target(requested, "runtime-parent", &reverse)
+            .expect("reverse auto");
+        assert_eq!(first.resolved_runtime_id, second.resolved_runtime_id);
     }
 }

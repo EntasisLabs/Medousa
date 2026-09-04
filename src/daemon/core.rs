@@ -112,7 +112,8 @@ pub async fn execution_targets(
     Json(crate::workshop_contract::ExecutionTargetInventory {
         schema_version:
             crate::workshop_contract::EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION,
-        parent_runtime_id: runtime_id,
+        parent_runtime_id: runtime_id.clone(),
+        default_runtime_id: Some(runtime_id),
         targets: vec![candidate.inventory_entry()],
     })
 }
