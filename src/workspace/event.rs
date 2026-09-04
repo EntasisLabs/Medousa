@@ -326,6 +326,7 @@ mod tests {
             thinking_finished_at: None,
             live_status_line: None,
             model: None,
+            execution_runtime_id: None,
         }
     }
 

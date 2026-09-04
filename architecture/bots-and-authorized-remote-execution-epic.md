@@ -1,6 +1,6 @@
 # Bots and authorized remote execution
 
-> **Status:** Phases 1–4 complete — phases 5–7 planned
+> **Status:** Phases 1–5 complete — phases 6–7 planned
 >
 > **Date:** 2026-09-03
 >
@@ -656,6 +656,21 @@ Suggested commit boundary:
 - feat(runtime): expose authorized execution targets
 - feat(agent): select eligible worker placement
 - feat(home): add worker target controls and provenance
+
+Landed boundary:
+
+- Signed and immediately revalidated inventories expose only reachable targets
+  and capabilities allowed by directional peer policy.
+- A user's exact or SameAsParent choice outranks model input and may use a
+  user-selectable destination; Auto and model-authored routing can use only
+  agent-selectable destinations.
+- Auto placement is deterministic for the same session key and eligible target
+  set, while invented, stale, offline, or revoked targets fail closed.
+- The admitted destination and resolution reason are durable worker provenance;
+  an in-flight worker never follows a later default or UI selection change.
+- Home offers per-conversation Default, SameAsParent, Auto, and exact workshop
+  controls on desktop and mobile, and worker activity identifies where the work
+  ran.
 
 ### Phase 6 — Remote Coder on an existing project
 

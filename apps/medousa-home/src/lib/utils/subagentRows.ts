@@ -14,6 +14,7 @@ export interface SubagentRow {
   title: string;
   disposition: "bound" | "parallel";
   model?: string | null;
+  executionRuntimeId?: string | null;
   statusLine: string;
   toolRuns: ToolRunState[];
   thinking: string;
@@ -62,7 +63,10 @@ function dispositionForDetail(detail: WorkCardDetail): "bound" | "parallel" {
 function rowFromTranscript(
   workId: string,
   transcript: WorkerTranscript | null,
-  base: Pick<SubagentRow, "title" | "disposition" | "model" | "statusLine" | "terminal">,
+  base: Pick<
+    SubagentRow,
+    "title" | "disposition" | "model" | "executionRuntimeId" | "statusLine" | "terminal"
+  >,
 ): SubagentRow {
   return {
     workId,
@@ -96,6 +100,8 @@ export function subagentRowsForSession(sessionId: string): SubagentRow[] {
         title: titleForDetail(detail),
         disposition: dispositionForDetail(detail),
         model: detail.model?.trim() || transcript?.model || null,
+        executionRuntimeId:
+          detail.execution_runtime_id?.trim() || transcript?.executionRuntimeId || null,
         statusLine:
           transcript?.statusLine?.trim() ||
           detail.live_status_line?.trim() ||
@@ -117,6 +123,7 @@ export function subagentRowsForSession(sessionId: string): SubagentRow[] {
         title: transcript?.title ?? "Subagent",
         disposition: transcript?.disposition ?? "parallel",
         model: transcript?.model ?? null,
+        executionRuntimeId: transcript?.executionRuntimeId ?? null,
         statusLine: transcript?.statusLine ?? "Working…",
         terminal: transcript?.terminal ?? false,
       }),

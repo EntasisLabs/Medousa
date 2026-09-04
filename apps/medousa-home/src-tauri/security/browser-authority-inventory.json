@@ -177,6 +177,7 @@
     "daemon::runtime::runtime_get_continuation_status",
     "daemon::runtime::runtime_get_defaults",
     "daemon::runtime::runtime_get_delivery_status",
+    "daemon::runtime::runtime_get_execution_targets",
     "daemon::runtime::runtime_get_stats",
     "daemon::runtime::runtime_get_tui_defaults",
     "daemon::runtime::runtime_get_worker_config",

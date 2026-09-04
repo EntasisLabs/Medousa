@@ -5,6 +5,7 @@
    */
   import { Bot, ChevronDown, Square } from "@lucide/svelte";
   import ToolRunChips from "$lib/components/chat/ToolRunChips.svelte";
+  import { executionTargets } from "$lib/stores/executionTargets.svelte";
   import type { SubagentRow } from "$lib/utils/subagentRows";
 
   interface Props {
@@ -18,6 +19,9 @@
   let { row, onOpen, onStop, compact = false }: Props = $props();
 
   const badge = $derived(row.disposition === "bound" ? "Workshop" : "Peer");
+  const executionTargetLabel = $derived(
+    executionTargets.runtimeLabel(row.executionRuntimeId),
+  );
   const thinking = $derived(row.thinking.trim());
   const hasEvidence = $derived(row.toolRuns.length > 0 || thinking.length > 0);
   const thoughtLabel = $derived(
@@ -48,6 +52,13 @@
         : 'text-content-faint'}"
     >
       <span class="text-content-quiet">{badge}</span>
+      {#if executionTargetLabel}
+        <span class="text-content-faint"> · </span>
+        <span
+          class="text-content-quiet"
+          title={row.executionRuntimeId ?? undefined}
+        >{row.streaming ? "Running on" : "Ran on"} {executionTargetLabel}</span>
+      {/if}
       <span class="text-content-faint"> · </span>
       {row.title}
       {#if row.statusLine}

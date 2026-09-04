@@ -7,6 +7,7 @@ import { createTurnTicket, promptAgentSession } from "$lib/daemon";
 import type { TurnTicketResponse } from "$lib/types/session";
 import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
 import { chat } from "$lib/stores/chat.svelte";
+import { executionTargets } from "$lib/stores/executionTargets.svelte";
 import { userProfiles } from "$lib/stores/userProfiles.svelte";
 import { voicePresets } from "$lib/stores/voicePresets.svelte";
 import { activeCodeContext } from "$lib/utils/undertakingWorkspace";
@@ -88,6 +89,7 @@ export async function submitChatTurn(input: {
     mode: input.mode,
     codeContext,
     codeProjectSetupAuthorized,
+    workerExecutionTarget: executionTargets.turnSelection(chat.sessionId),
     provider: opts.provider,
     model: opts.model,
     responseDepthMode: opts.responseDepthMode,

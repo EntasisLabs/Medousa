@@ -55,6 +55,8 @@ export interface WorkCardDetail {
   live_status_line?: string | null;
   /** Worker model/provider whisper. */
   model?: string | null;
+  /** Stable runtime identity that actually executed this worker. */
+  execution_runtime_id?: string | null;
 }
 
 /**
@@ -64,6 +66,7 @@ export interface WorkCardDetail {
 export interface WorkerProgress {
   work_id: string;
   session_id?: string | null;
+  execution_runtime_id?: string | null;
   live_tool_activity?: WorkerToolActivity[];
   live_thinking?: string;
   live_output?: string;

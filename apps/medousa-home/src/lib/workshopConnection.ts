@@ -1,5 +1,6 @@
 import { chat } from "$lib/stores/chat.svelte";
 import { bots } from "$lib/stores/bots.svelte";
+import { executionTargets } from "$lib/stores/executionTargets.svelte";
 import { connection } from "$lib/stores/connection.svelte";
 import { automations } from "$lib/stores/automations.svelte";
 import { runtime } from "$lib/stores/runtime.svelte";
@@ -273,6 +274,7 @@ export async function prepareForWorkshopSwitch(): Promise<void> {
 function clearWorkshopState(): void {
   chat.prepareForWorkshopSwitch();
   bots.resetForWorkshopSwitch();
+  executionTargets.resetForWorkshopSwitch();
   runtime.resetWorkshopRuntime();
   workshopDefaults.resetForReconnect();
   userProfiles.resetForReconnect();
@@ -291,6 +293,7 @@ export function activateWorkshopScope(workshopId: string): void {
   }
   chat.activateWorkshopScope(workshopId);
   bots.activateWorkshopScope(workshopId);
+  executionTargets.activateWorkshopScope(workshopId);
 }
 
 async function startWorkshopStreams(): Promise<void> {
@@ -305,6 +308,7 @@ async function startWorkshopStreams(): Promise<void> {
   await startWorkspaceStream(workspace.revision || undefined);
   await startEnvironmentSync();
   void automations.refresh();
+  void executionTargets.refresh({ force: true }).catch(() => undefined);
   await Promise.all([
     chat.refreshSessions({ force: true }),
     chat.ensureSessionHydrated({ notice: false }),
