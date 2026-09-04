@@ -255,6 +255,26 @@ pub struct GovernedEnv {
     pub derived_from: Option<EnvironmentLineage>,
 }
 
+/// Immutable, path-free description of a governed checkout exported for
+/// reconstruction by another workshop. The bundle itself is persisted by the
+/// caller in a content-addressed blob store; this record proves exactly what
+/// Forge admitted into it without leaking source-host paths.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PortableForgeCheckpoint {
+    pub schema_version: u32,
+    pub work_id: WorkId,
+    pub repository_id: RepoId,
+    pub base_ref: String,
+    pub expected_base_oid: GitOid,
+    pub parent_oid: GitOid,
+    pub checkpoint_oid: GitOid,
+    pub environment_generation: u32,
+    pub changed_files: Vec<ChangedFile>,
+    pub bundle_digest: Digest,
+    pub bundle_bytes: u64,
+    pub created_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkState {
