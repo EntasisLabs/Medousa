@@ -769,10 +769,11 @@ pairing bearer to grant itself work:
 
 `PUT` accepts `connected_only`, `assistant_work`, `sandboxed_work`,
 `approved_projects`, or `custom` plus the corresponding optional scope fields.
-The daemon synchronizes the coarse `task.request` transport bit only when safe
-assistant work is enabled. Reducing or revoking a scope cancels active remote
-workers that require the removed authority; completed results retain the grant
-and policy revision under which they ran.
+The daemon synchronizes the coarse `task.request` transport bit only while at
+least one execution scope is enabled; that bit still does not choose or grant a
+particular lane. Reducing or revoking a scope cancels active remote workers that
+require the removed authority; completed results retain the grant and policy
+revision under which they ran.
 
 ## Explicit daemon delegation
 

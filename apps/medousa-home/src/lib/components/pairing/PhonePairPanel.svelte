@@ -14,6 +14,7 @@
     fetchPairingQr,
     fetchPairingQrImage,
     fetchPairingStatus,
+    fetchPeerExecutionPolicies,
     formatCountdown,
     formatShortCode,
     revokePairingDevice,
@@ -23,7 +24,9 @@
     type BonjourStatus,
     type PairedDeviceSummary,
     type PairingQrImage,
+    type PeerExecutionPolicyEntry,
   } from "$lib/utils/pairingApi";
+  import PairedDeviceExecutionControls from "./PairedDeviceExecutionControls.svelte";
   import PairedDeviceTrustControls from "./PairedDeviceTrustControls.svelte";
   import { waitForEngine } from "$lib/utils/providersApi";
   import { workshops } from "$lib/stores/workshops.svelte";
@@ -46,6 +49,7 @@
   let countdown = $state(0);
   let bonjour = $state<BonjourStatus | null>(null);
   let devices = $state<PairedDeviceSummary[]>([]);
+  let executionPolicies = $state<PeerExecutionPolicyEntry[]>([]);
   let knownPairingIds = $state<string[]>([]);
   let connectedDevice = $state<PairedDeviceSummary | null>(null);
   let showDiagnostics = $state(false);
@@ -107,6 +111,16 @@
     }
   }
 
+  async function loadExecutionPolicies() {
+    try {
+      executionPolicies = await fetchPeerExecutionPolicies();
+    } catch {
+      // Older daemons and non-administrative remote connections do not expose
+      // destination-owned execution controls. Pairing remains usable.
+      executionPolicies = [];
+    }
+  }
+
   async function loadPairingBundle(timeoutSeconds = 45) {
     qrLoading = true;
     try {
@@ -136,6 +150,7 @@
       }
       if (settingsMode) {
         await loadStatusOnly();
+        await loadExecutionPolicies();
         startDevicePoll();
       } else {
         await loadPairingBundle(60);
@@ -286,6 +301,7 @@
         connectedDevice = fresh;
         knownPairingIds = status.pairedDevices.map((device) => device.pairingId);
         void workshops.load();
+        void loadExecutionPolicies();
         onPaired?.(fresh);
         if (settingsMode && sheetOpen) {
           closePairingSheet();
@@ -318,6 +334,9 @@
     try {
       await revokePairingDevice(pairingId);
       devices = devices.filter((device) => device.pairingId !== pairingId);
+      executionPolicies = executionPolicies.filter(
+        (entry) => entry.pairingId !== pairingId,
+      );
       knownPairingIds = knownPairingIds.filter((id) => id !== pairingId);
       if (connectedDevice?.pairingId === pairingId) {
         connectedDevice = null;
@@ -498,12 +517,15 @@
 
       {#if devices.length > 0}
         {#each devices as device (device.pairingId)}
+          {@const executionEntry = executionPolicies.find(
+            (entry) => entry.pairingId === device.pairingId,
+          )}
           <details class="pair-more pair-device">
             <summary class="pair-more-summary">
               <span class="pair-tile-copy">
                 <span class="pair-tile-title">{device.phoneName}</span>
                 <span class="pair-tile-meta">
-                  {device.role === "peer" ? "Share only" : "Full access"}
+                  {device.role === "peer" ? "Peer · share only" : "Workshop portal"}
                   · {formatLastSeen(device.lastSeen)}
                 </span>
               </span>
@@ -512,6 +534,17 @@
                 <ChevronDown size={14} strokeWidth={2} class="pair-more-chevron" aria-hidden="true" />
               </span>
             </summary>
+            {#if executionEntry}
+              <PairedDeviceExecutionControls
+                entry={executionEntry}
+                onupdated={(updated) => {
+                  executionPolicies = executionPolicies.map((entry) =>
+                    entry.pairingId === updated.pairingId ? updated : entry,
+                  );
+                }}
+                onerror={(message) => (error = message)}
+              />
+            {/if}
             <PairedDeviceTrustControls
               {device}
               onupdated={(updated) => {

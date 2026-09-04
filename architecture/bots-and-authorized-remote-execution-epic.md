@@ -1,6 +1,6 @@
 # Bots and authorized remote execution
 
-> **Status:** Phases 1–2 complete — phases 3–7 planned
+> **Status:** Phases 1–3 complete — phases 4–7 planned
 >
 > **Date:** 2026-09-03
 >
@@ -515,7 +515,7 @@ Suggested commit boundary:
 - feat(runtime): carry explicit worker placement and provenance
 - refactor(workshop): route execution through one target resolver
 
-### Phase 3 — Per-peer daemon permissions
+### Phase 3 — Per-peer daemon permissions ✅
 
 **Outcome:** The owner of each workshop explicitly controls what every paired
 peer may request from it.
@@ -556,6 +556,15 @@ Suggested commit boundary:
 - feat(mesh): persist and enforce directional peer execution policy
 - feat(api): expose peer execution administration
 - feat(home): manage connected peer permissions
+
+Landed boundary:
+
+- Destination-owned, pairing-bound policies now compile every admitted remote
+  task into an expiring signed execution grant.
+- Native administrator routes expose policy read, update, presets, expiry, and
+  audit without granting browsers peer-administration authority.
+- Settings → Connection presents calm per-peer presets with optional advanced
+  scopes, while pairing removal revokes policy and active delegated work.
 
 ### Phase 4 — Remote worker contract parity
 

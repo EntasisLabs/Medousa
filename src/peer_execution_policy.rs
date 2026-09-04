@@ -460,6 +460,45 @@ impl PeerExecutionPolicyStore {
         }))
     }
 
+    pub fn remove_policy(
+        &self,
+        peer_device_id: &str,
+        peer_pairing_id: &str,
+        actor: &str,
+    ) -> Result<bool> {
+        let peer_device_id = validate_identity("peer device id", peer_device_id)?;
+        let peer_pairing_id = validate_identity("peer pairing id", peer_pairing_id)?;
+        let actor = validate_identity("policy actor", actor)?;
+        let _guard = self.io.lock().expect("peer execution policy lock");
+        let mut file = self.load()?;
+        let Some(policy) = file
+            .policies
+            .get(peer_device_id)
+            .filter(|policy| policy.peer_pairing_id == peer_pairing_id)
+            .cloned()
+        else {
+            return Ok(false);
+        };
+        file.policies.remove(peer_device_id);
+        append_audit(
+            &mut file,
+            PeerExecutionAuditEvent {
+                event_id: format!("pea_{}", uuid::Uuid::new_v4().simple()),
+                occurred_at: Utc::now(),
+                action: "policy.removed".to_string(),
+                peer_device_id: peer_device_id.to_string(),
+                scope: "policy".to_string(),
+                policy_revision: policy.revision,
+                decision: "removed".to_string(),
+                work_id: None,
+                reason: "pairing_removed".to_string(),
+                actor: actor.to_string(),
+            },
+        );
+        self.save(&file)?;
+        Ok(true)
+    }
+
     pub fn audit_events(&self, limit: usize) -> Result<Vec<PeerExecutionAuditEvent>> {
         let _guard = self.io.lock().expect("peer execution policy lock");
         let file = self.load()?;
