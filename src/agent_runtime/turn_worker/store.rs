@@ -111,6 +111,10 @@ pub struct TurnWorkRecord {
     /// request was admitted. Local and pre-policy records leave this empty.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_execution_grant: Option<TaskExecutionGrant>,
+    /// Canonical semantic worker contract. Legacy and bound-workshop records
+    /// may omit it; new local and remote parallel workers persist it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker_spawn_spec: Option<crate::delegated_task::WorkerSpawnSpec>,
     pub intent: String,
     pub task_prompt: String,
     pub status: TurnWorkStatus,
@@ -210,6 +214,7 @@ impl TurnWorkRecord {
             parent_runtime_id,
             execution_placement,
             task_execution_grant: Some(task_execution_grant),
+            worker_spawn_spec: None,
             intent: "research".to_string(),
             task_prompt,
             status: TurnWorkStatus::Pending,
@@ -540,6 +545,7 @@ impl TurnWorkerStore {
                 && existing.parent_turn_correlation_id == record.parent_turn_correlation_id
                 && existing.parent_runtime_id == record.parent_runtime_id
                 && existing.execution_placement == record.execution_placement
+                && existing.worker_spawn_spec == record.worker_spawn_spec
                 && existing.task_prompt == record.task_prompt;
             return if matches {
                 Ok(false)
@@ -1057,6 +1063,7 @@ mod tests {
             parent_runtime_id: "runtime-test".to_string(),
             execution_placement: Default::default(),
             task_execution_grant: None,
+            worker_spawn_spec: None,
             intent: "research".to_string(),
             task_prompt: "task".to_string(),
             status,

@@ -22,6 +22,7 @@ pub use policy::{
     allowed_tool_names_for_intent, host_bus_tool_names, max_worker_tool_rounds,
     mobile_foreground_tool_ceiling, remote_delegated_tool_ceiling,
     remote_delegated_tool_ceiling_for_grant, tool_allowed,
+    worker_allowlist_for_intent_and_tools,
 };
 pub use prompts::{
     host_system_prompt_for_parent_mode, system_prompt_for_host_profile, worker_system_prompt,

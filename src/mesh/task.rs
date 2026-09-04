@@ -18,8 +18,8 @@ use crate::agent_runtime::turn_worker::{
 use crate::delegated_task::{
     DELEGATED_TASK_SCHEMA_VERSION, DelegatedTaskAdmission, DelegatedTaskError,
     DelegatedTaskObservation, DelegatedTaskRequest, DelegatedTaskResult, DelegatedTaskStatus,
-    delegated_context_prompt, delegated_work_id, materialize_delegated_context,
-    validate_task_request,
+    WorkerManuscriptSpec, WorkerRouteProvenance, delegated_context_prompt, delegated_work_id,
+    materialize_delegated_context, validate_task_request, worker_spec_digest,
 };
 use crate::pairing::PairedDeviceRecord;
 use crate::peer_execution_policy::TaskExecutionGrant;
@@ -75,6 +75,34 @@ impl DaemonDelegatedTaskExecutor {
             .filter(|value| !value.is_empty())
             .map(str::to_string)
             .ok_or_else(|| DelegatedTaskError::invalid("delegated task prompt is required"))
+    }
+
+    fn manuscript_handoff(
+        request: &DelegatedTaskRequest,
+    ) -> Result<Option<crate::identity_manuscript::WorkerManuscriptHandoff>, DelegatedTaskError>
+    {
+        let Some(worker) = request.worker.as_ref() else {
+            return Ok(None);
+        };
+        if let Some(manuscript) = worker.manuscript.as_ref() {
+            return Ok(Some(worker_manuscript_handoff(manuscript)));
+        }
+        let Some(manuscript_id) = worker.manuscript_ids.first() else {
+            return Ok(None);
+        };
+        let context = crate::identity_manuscript::build_manuscript_context(manuscript_id)
+            .map_err(|error| DelegatedTaskError::conflict(error.to_string()))?;
+        Ok(Some((&context).into()))
+    }
+
+    fn route_provenance(record: &TurnWorkRecord) -> WorkerRouteProvenance {
+        WorkerRouteProvenance {
+            provider: record.provider.clone(),
+            model: record.model.clone(),
+            response_depth_mode: record.response_depth_mode.clone(),
+            stage_role: record.stage_role.clone(),
+            model_hint: record.model_hint.clone(),
+        }
     }
 
     async fn ensure_worker_job(
@@ -178,6 +206,14 @@ impl DaemonDelegatedTaskExecutor {
             parent_runtime_id: terminal_record.parent_runtime_id.clone(),
             execution_placement: terminal_record.execution_placement.clone(),
             task_execution_grant: terminal_record.task_execution_grant.clone(),
+            worker_spec_digest: request
+                .worker
+                .as_ref()
+                .and_then(|worker| worker_spec_digest(worker).ok()),
+            worker_route: request
+                .worker
+                .as_ref()
+                .map(|_| Self::route_provenance(terminal_record)),
             derivation: derivation.clone(),
         }
     }
@@ -223,12 +259,55 @@ impl DelegatedTaskExecutor for DaemonDelegatedTaskExecutor {
             .expect("validated delegated turn id");
         let work_id = delegated_work_id(&sender.phone_id, turn_id);
         let task_prompt = Self::task_prompt(request)?;
+        let manuscript = Self::manuscript_handoff(request)?;
+        let worker_intent = request
+            .worker
+            .as_ref()
+            .map(|worker| worker.intent.as_str())
+            .unwrap_or("research");
+        let parsed_intent = crate::agent_runtime::turn_worker::TurnWorkerIntent::parse(worker_intent)
+            .ok_or_else(|| DelegatedTaskError::invalid("delegated worker intent is unsupported"))?;
+        let stage_role = request
+            .worker
+            .as_ref()
+            .and_then(|worker| worker.stage_role.clone());
+        let model_hint = request
+            .worker
+            .as_ref()
+            .and_then(|worker| worker.model_hint.clone());
+        let (provider, model) = crate::agent_runtime::turn_worker::resolve_worker_llm_target(
+            &self.provider,
+            &self.model,
+            parsed_intent,
+            stage_role.as_deref(),
+            model_hint.as_deref(),
+        );
+        let response_depth_mode = request
+            .worker
+            .as_ref()
+            .map(|worker| worker.parent.response_depth_mode.clone())
+            .unwrap_or_else(|| self.response_depth_mode.clone());
+        let max_tool_rounds = request
+            .worker
+            .as_ref()
+            .map(|worker| worker.max_tool_rounds)
+            .unwrap_or(self.max_tool_rounds)
+            .max(1);
         let context_prompt = delegated_context_prompt(&request.context);
         let mut handoff = WorkerHandoffCapsule::from_host_context(
             target_session.as_str(),
-            0,
+            request
+                .worker
+                .as_ref()
+                .map(|worker| worker.parent.stream_turn_id)
+                .unwrap_or(0),
             Some(request.grant.correlation_id.clone()),
-            &context_prompt,
+            request
+                .worker
+                .as_ref()
+                .map(|worker| worker.parent.original_user_prompt.as_str())
+                .filter(|prompt| !prompt.is_empty())
+                .unwrap_or(&context_prompt),
             &TurnScratchpad::default(),
             None,
             None,
@@ -237,22 +316,70 @@ impl DelegatedTaskExecutor for DaemonDelegatedTaskExecutor {
         // `from_host_context` protects ordinary host prompts with a smaller
         // cap. This context was already bounded and digest-checked as a grant.
         handoff.parent_user_prompt = context_prompt;
-        handoff.apply_spawn("research", &task_prompt, &work_id);
-        let record = TurnWorkRecord::delegated(
+        handoff.manuscript = manuscript;
+        handoff.bot_profile_appendix = request
+            .worker
+            .as_ref()
+            .and_then(|worker| worker.parent.bot.as_ref())
+            .map(|bot| bot.prompt_appendix.clone());
+        handoff.apply_spawn(worker_intent, &task_prompt, &work_id);
+        let mut record = TurnWorkRecord::delegated(
             work_id.clone(),
             target_session.to_string(),
             profile_id.clone(),
             request.grant.correlation_id.clone(),
             task_prompt,
-            self.provider.clone(),
-            self.model.clone(),
-            self.response_depth_mode.clone(),
-            self.max_tool_rounds,
+            provider,
+            model,
+            response_depth_mode,
+            max_tool_rounds,
             handoff,
             request.parent_runtime_id.clone(),
             request.execution_placement.clone(),
             task_execution_grant.clone(),
         );
+        record.worker_spawn_spec = request.worker.clone();
+        record.intent = worker_intent.to_string();
+        record.user_ack = request
+            .worker
+            .as_ref()
+            .map(|worker| worker.user_ack.clone())
+            .unwrap_or_default();
+        record.parent_stream_turn_id = request
+            .worker
+            .as_ref()
+            .map(|worker| worker.parent.stream_turn_id)
+            .unwrap_or(0);
+        record.parent_user_prompt = request
+            .worker
+            .as_ref()
+            .map(|worker| worker.parent.original_user_prompt.clone());
+        record.parent_agent_mode = request
+            .worker
+            .as_ref()
+            .and_then(|worker| worker.parent.agent_mode.clone());
+        record.parent_code_work_id = request
+            .worker
+            .as_ref()
+            .and_then(|worker| worker.parent.code_work_id.clone());
+        record.stage_role = stage_role;
+        record.model_hint = model_hint;
+        record.manuscript_id = request
+            .worker
+            .as_ref()
+            .and_then(|worker| worker.manuscript_ids.first().cloned());
+        record.supports_ui_artifacts = request
+            .worker
+            .as_ref()
+            .is_some_and(|worker| worker.parent.supports_ui_artifacts);
+        record.supports_liquid_markdown = request
+            .worker
+            .as_ref()
+            .is_some_and(|worker| worker.parent.supports_liquid_markdown);
+        record.supports_browser_host = request
+            .worker
+            .as_ref()
+            .is_some_and(|worker| worker.parent.supports_browser_host);
         let created =
             turn_worker_store()
                 .try_insert_delegated(record)
@@ -309,8 +436,34 @@ impl DelegatedTaskExecutor for DaemonDelegatedTaskExecutor {
             parent_runtime_id: current.parent_runtime_id.clone(),
             execution_placement: current.execution_placement.clone(),
             task_execution_grant: current.task_execution_grant.clone(),
+            worker_spec_digest: request
+                .worker
+                .as_ref()
+                .and_then(|worker| worker_spec_digest(worker).ok()),
+            worker_route: request
+                .worker
+                .as_ref()
+                .map(|_| Self::route_provenance(&current)),
             derivation: materialized.derivation,
             result,
         })
+    }
+}
+
+fn worker_manuscript_handoff(
+    manuscript: &WorkerManuscriptSpec,
+) -> crate::identity_manuscript::WorkerManuscriptHandoff {
+    crate::identity_manuscript::WorkerManuscriptHandoff {
+        id: manuscript.id.clone(),
+        name: manuscript.name.clone(),
+        worker_intent: manuscript.worker_intent.clone(),
+        stage_role: manuscript.stage_role.clone(),
+        model_hint: manuscript.model_hint.clone(),
+        voice_appendix: manuscript.voice_appendix.clone(),
+        system_appendix: manuscript.system_appendix.clone(),
+        tools_allow: manuscript.tools_allow.clone(),
+        openshell_enabled: manuscript.openshell_enabled,
+        openshell_policy_template: manuscript.openshell_policy_template.clone(),
+        openshell_sandbox_from: manuscript.openshell_sandbox_from.clone(),
     }
 }

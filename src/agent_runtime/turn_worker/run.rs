@@ -91,6 +91,17 @@ fn delegated_task_grant_error(
         // the historical safe assistant ceiling and cannot gain new scopes.
         return None;
     };
+    if let Some(spec) = record.worker_spawn_spec.as_ref()
+        && (crate::delegated_task::validate_worker_spawn_spec(spec).is_err()
+            || spec.intent != record.intent
+            || spec.task != record.task_prompt
+            || spec.execution_placement != record.execution_placement
+            || spec.parent.turn_correlation_id
+                != record.parent_turn_correlation_id.as_deref().unwrap_or_default()
+            || grant.requested_tool_names != spec.tools.names)
+    {
+        return Some("canonical worker specification does not match the durable worker");
+    }
     if grant.schema_version
         != crate::peer_execution_policy::TASK_EXECUTION_GRANT_SCHEMA_VERSION
     {
@@ -554,6 +565,82 @@ impl TurnWorkerScheduler {
             resolved_model_hint.as_deref(),
         );
         let manuscript_id = manuscript.as_ref().map(|ctx| ctx.id.clone());
+        let manuscript_spec = manuscript.as_ref().map(|value| {
+            crate::delegated_task::WorkerManuscriptSpec {
+                id: value.id.clone(),
+                name: value.name.clone(),
+                worker_intent: value.worker_intent.clone(),
+                stage_role: value.worker_stage_role.clone(),
+                model_hint: value.worker_model_hint.clone(),
+                voice_appendix: value.voice_appendix.clone(),
+                system_appendix: value.system_appendix.clone(),
+                max_tool_rounds: value.max_tool_rounds,
+                tools_allow: value.tools_allow.clone(),
+                openshell_enabled: value.openshell_enabled,
+                openshell_policy_template: value.openshell_policy_template.clone(),
+                openshell_sandbox_from: value.openshell_sandbox_from.clone(),
+            }
+        });
+        let mut requested_tool_names =
+            super::policy::worker_allowlist_for_intent_and_tools(
+                intent,
+                manuscript_spec
+                    .as_ref()
+                    .map(|value| value.tools_allow.as_slice())
+                    .unwrap_or(&[]),
+            )
+            .into_iter()
+            .collect::<Vec<_>>();
+        requested_tool_names.sort();
+        let bot = crate::agent_runtime::execution_context::active_turn_execution_context()
+            .and_then(|execution| {
+                execution.bot_identity().map(|bot| crate::delegated_task::WorkerBotSpec {
+                    bot_id: bot.bot_id().to_string(),
+                    profile_revision: bot.profile_revision(),
+                    memory_scope_id: bot.memory_scope_id().to_string(),
+                    prompt_appendix: bot.prompt_appendix(),
+                })
+            });
+        let worker_spawn_spec = crate::delegated_task::WorkerSpawnSpec {
+            schema_version: crate::delegated_task::WORKER_SPAWN_SPEC_SCHEMA_VERSION,
+            intent: intent.as_str().to_string(),
+            task: task.trim().to_string(),
+            user_ack: user_ack.trim().to_string(),
+            manuscript_ids: manuscript_id.clone().into_iter().collect(),
+            manuscript: manuscript_spec,
+            stage_role: resolved_stage_role.clone(),
+            model_hint: resolved_model_hint.clone(),
+            parent: crate::delegated_task::WorkerParentSpec {
+                stream_turn_id: bus.stream_turn_id,
+                turn_correlation_id: parent_turn_correlation_id
+                    .clone()
+                    .unwrap_or_else(|| work_id.clone()),
+                agent_mode: bus.parent_agent_mode.clone(),
+                original_user_prompt: parent_user_prompt
+                    .map(str::trim)
+                    .filter(|prompt| !prompt.is_empty())
+                    .unwrap_or(&bus.parent_user_prompt)
+                    .to_string(),
+                provider: bus.provider.clone(),
+                model: bus.model.clone(),
+                response_depth_mode: bus.response_depth_mode.clone(),
+                code_work_id: bus.parent_code_work_id.clone(),
+                bot,
+                supports_ui_artifacts: bus.supports_ui_artifacts,
+                supports_liquid_markdown: bus.supports_liquid_markdown,
+                supports_browser_host: bus.supports_browser_host,
+            },
+            execution_placement: execution_placement.clone(),
+            max_tool_rounds,
+            tools: crate::delegated_task::WorkerToolRequest {
+                names: requested_tool_names,
+            },
+        };
+        crate::delegated_task::validate_worker_spawn_spec(&worker_spawn_spec).map_err(|error| {
+            stasis::domain::errors::StasisError::PortFailure(format!(
+                "cognition_workshop_mutate: invalid worker specification: {error}"
+            ))
+        })?;
 
         let record = TurnWorkRecord {
             work_id: work_id.clone(),
@@ -564,6 +651,7 @@ impl TurnWorkerScheduler {
             parent_runtime_id: parent_runtime_id.clone(),
             execution_placement: execution_placement.clone(),
             task_execution_grant: None,
+            worker_spawn_spec: Some(worker_spawn_spec),
             intent: intent.as_str().to_string(),
             task_prompt: task.trim().to_string(),
             status: TurnWorkStatus::Pending,
@@ -774,6 +862,7 @@ impl TurnWorkerScheduler {
             parent_runtime_id: parent_runtime_id.clone(),
             execution_placement: execution_placement.clone(),
             task_execution_grant: None,
+            worker_spawn_spec: None,
             intent: intent.as_str().to_string(),
             task_prompt: task.to_string(),
             status: TurnWorkStatus::Pending,
@@ -1079,9 +1168,15 @@ async fn run_worker_turn_inner(
         .map(|manuscript| manuscript.tools_allow.as_slice())
         .unwrap_or(&[] as &[String]);
     let allowlist = if is_delegated {
-        super::policy::remote_delegated_tool_ceiling_for_grant(
+        let destination_grant = super::policy::remote_delegated_tool_ceiling_for_grant(
             record.task_execution_grant.as_ref(),
-        )
+        );
+        let semantic_ceiling =
+            super::policy::worker_allowlist_for_intent_and_tools(intent, manuscript_tools);
+        destination_grant
+            .intersection(&semantic_ceiling)
+            .cloned()
+            .collect()
     } else {
         super::policy::worker_allowlist_for_intent_and_tools(intent, manuscript_tools)
     };
@@ -1870,6 +1965,7 @@ mod tests {
             parent_runtime_id: "runtime-test".to_string(),
             execution_placement: Default::default(),
             task_execution_grant: None,
+            worker_spawn_spec: None,
             intent: "general".to_string(),
             task_prompt: "task".to_string(),
             status: TurnWorkStatus::Completed,
