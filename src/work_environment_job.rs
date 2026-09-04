@@ -28,6 +28,7 @@ use stasis::ports::outbound::runtime::blob_transfer::BlobTransferPort;
 use stasis::ports::outbound::runtime::job_store::JobStore;
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
 
+use crate::portable_coder::{PortableCoderResult, PortableCoderRunner, PortableCoderTask};
 use crate::work_environment_federation::{
     SignedFederatedTerminalDelivery, WorkEnvironmentFederationContext,
     WorkEnvironmentFederationServices, encode_remote_terminal_result,
@@ -50,6 +51,8 @@ fn default_require_successful_exit() -> bool {
 pub struct WorkEnvironmentJobPayload {
     pub spec: WorkEnvironmentSpec,
     pub execution: WorkEnvironmentExecRequest,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub portable_coder: Option<PortableCoderTask>,
     #[serde(default)]
     pub checkpoint: WorkEnvironmentCheckpointPolicy,
     #[serde(default = "default_require_successful_exit")]
@@ -81,6 +84,17 @@ impl WorkEnvironmentJobPayload {
             return Err(WorkEnvironmentError::InvalidSpec(
                 "work-environment display_name is invalid".to_string(),
             ));
+        }
+        if let Some(task) = self.portable_coder.as_ref() {
+            task.validate(&self.spec, now, self.federation.is_some())?;
+            if self
+                .deadline_at
+                .is_some_and(|deadline| task.deadline_at > deadline)
+            {
+                return Err(WorkEnvironmentError::InvalidSpec(
+                    "portable Coder deadline exceeds its work-environment deadline".to_string(),
+                ));
+            }
         }
         Ok(())
     }
@@ -153,6 +167,8 @@ pub struct WorkEnvironmentJobProgress {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_result: Option<WorkEnvironmentExecResult>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub portable_coder_result: Option<PortableCoderResult>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checkpoint: Option<WorkEnvironmentCheckpoint>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub publication: Option<WorkEnvironmentPublicationResult>,
@@ -170,6 +186,7 @@ impl WorkEnvironmentJobProgress {
             fence: fence_for_attempt(spec, attempt),
             environment_state: None,
             execution_result: None,
+            portable_coder_result: None,
             checkpoint: None,
             publication: None,
             cleanup_job_id: None,
@@ -207,6 +224,7 @@ struct WorkEnvironmentJobHandler {
     environment: Arc<dyn WorkEnvironmentPort>,
     jobs: Arc<dyn JobStore>,
     federated_terminal_enabled: bool,
+    portable_coder_runner: Option<Arc<dyn PortableCoderRunner>>,
 }
 
 struct WorkEnvironmentCleanupJobHandler {
@@ -229,7 +247,21 @@ pub async fn register_work_environment_job_handlers(
     composition: &RuntimeComposition,
     environment: Arc<dyn WorkEnvironmentPort>,
 ) -> anyhow::Result<()> {
-    register_work_environment_job_handlers_inner(composition, environment, None).await
+    register_work_environment_job_handlers_inner(composition, environment, None, None).await
+}
+
+pub async fn register_work_environment_job_handlers_with_portable_coder(
+    composition: &RuntimeComposition,
+    environment: Arc<dyn WorkEnvironmentPort>,
+    portable_coder_runner: Arc<dyn PortableCoderRunner>,
+) -> anyhow::Result<()> {
+    register_work_environment_job_handlers_inner(
+        composition,
+        environment,
+        None,
+        Some(portable_coder_runner),
+    )
+    .await
 }
 
 pub async fn register_federated_work_environment_job_handlers(
@@ -237,13 +269,30 @@ pub async fn register_federated_work_environment_job_handlers(
     environment: Arc<dyn WorkEnvironmentPort>,
     federation: WorkEnvironmentFederationServices,
 ) -> anyhow::Result<()> {
-    register_work_environment_job_handlers_inner(composition, environment, Some(federation)).await
+    register_work_environment_job_handlers_inner(composition, environment, Some(federation), None)
+        .await
+}
+
+pub async fn register_federated_work_environment_job_handlers_with_portable_coder(
+    composition: &RuntimeComposition,
+    environment: Arc<dyn WorkEnvironmentPort>,
+    federation: WorkEnvironmentFederationServices,
+    portable_coder_runner: Arc<dyn PortableCoderRunner>,
+) -> anyhow::Result<()> {
+    register_work_environment_job_handlers_inner(
+        composition,
+        environment,
+        Some(federation),
+        Some(portable_coder_runner),
+    )
+    .await
 }
 
 async fn register_work_environment_job_handlers_inner(
     composition: &RuntimeComposition,
     environment: Arc<dyn WorkEnvironmentPort>,
     federation: Option<WorkEnvironmentFederationServices>,
+    portable_coder_runner: Option<Arc<dyn PortableCoderRunner>>,
 ) -> anyhow::Result<()> {
     let federated_terminal_enabled = federation.is_some();
     match composition {
@@ -253,6 +302,7 @@ async fn register_work_environment_job_handlers_inner(
                 environment: Arc::clone(&environment),
                 jobs: Arc::clone(&jobs),
                 federated_terminal_enabled,
+                portable_coder_runner: portable_coder_runner.clone(),
             })?;
             runtime.register_handler(WorkEnvironmentCleanupJobHandler { environment })?;
             if let Some(federation) = federation {
@@ -269,6 +319,7 @@ async fn register_work_environment_job_handlers_inner(
                 environment: Arc::clone(&environment),
                 jobs: Arc::clone(&jobs),
                 federated_terminal_enabled,
+                portable_coder_runner: portable_coder_runner.clone(),
             })?;
             runtime.register_handler(WorkEnvironmentCleanupJobHandler { environment })?;
             if let Some(federation) = federation {
@@ -467,6 +518,11 @@ impl WorkEnvironmentJobHandler {
         ctx: &JobContext,
         progress: &mut WorkEnvironmentJobProgress,
     ) -> StasisResult<JobExecutionOutcome> {
+        if payload.portable_coder.is_some() && progress.portable_coder_result.is_none() {
+            return Err(StasisError::PortFailure(
+                "work-environment completed without its portable Coder result".to_string(),
+            ));
+        }
         let cleanup_job_id = self.enqueue_cleanup(job, payload, progress).await?;
         progress.cleanup_job_id = Some(cleanup_job_id.clone());
         progress.phase = WorkEnvironmentWorkflowPhase::CleanupEnqueued;
@@ -613,19 +669,61 @@ impl JobHandler for WorkEnvironmentJobHandler {
                     Err(failure) => return Ok(boundary_failure(job, failure)),
                 };
                 progress.environment_state = Some(state);
-                let mut execution = payload.execution.clone();
-                execution.idempotency_key = format!("{}:execute", job.id);
-                let result = match run_boundary(
-                    &ctx,
-                    payload.deadline_at,
-                    self.environment.exec(&handle, execution, &progress.fence),
-                )
-                .await
-                {
-                    Ok(result) => result,
-                    Err(failure) => return Ok(boundary_failure(job, failure)),
-                };
-                progress.execution_result = Some(result);
+                if let Some(task) = payload.portable_coder.as_ref() {
+                    let Some(runner) = self.portable_coder_runner.as_ref() else {
+                        return Ok(fatal(
+                            job,
+                            "portable Coder execution is not configured on this workshop"
+                                .to_string(),
+                            None,
+                        ));
+                    };
+                    let deadline = payload
+                        .deadline_at
+                        .map(|deadline| {
+                            let remaining =
+                                (deadline - Utc::now()).to_std().unwrap_or(Duration::ZERO);
+                            std::time::Instant::now() + remaining
+                        })
+                        .unwrap_or_else(|| {
+                            std::time::Instant::now() + Duration::from_secs(60 * 60)
+                        });
+                    let binding = medousa_runtime::WorkEnvironmentBinding {
+                        port: Arc::clone(&self.environment),
+                        handle: handle.clone(),
+                        fence: progress.fence.clone(),
+                    };
+                    let result = match run_boundary(
+                        &ctx,
+                        payload.deadline_at,
+                        runner.run(
+                            task,
+                            binding,
+                            tokio_util::sync::CancellationToken::new(),
+                            deadline,
+                        ),
+                    )
+                    .await
+                    {
+                        Ok(result) => result,
+                        Err(failure) => return Ok(boundary_failure(job, failure)),
+                    };
+                    progress.portable_coder_result = Some(result);
+                } else {
+                    let mut execution = payload.execution.clone();
+                    execution.idempotency_key = format!("{}:execute", job.id);
+                    let result = match run_boundary(
+                        &ctx,
+                        payload.deadline_at,
+                        self.environment.exec(&handle, execution, &progress.fence),
+                    )
+                    .await
+                    {
+                        Ok(result) => result,
+                        Err(failure) => return Ok(boundary_failure(job, failure)),
+                    };
+                    progress.execution_result = Some(result);
+                }
                 Self::defer(
                     &ctx,
                     &mut progress,
@@ -658,7 +756,8 @@ impl JobHandler for WorkEnvironmentJobHandler {
                 .await
             }
             WorkEnvironmentWorkflowPhase::Checkpointed => {
-                if payload.require_successful_exit
+                if payload.portable_coder.is_none()
+                    && payload.require_successful_exit
                     && progress
                         .execution_result
                         .as_ref()
@@ -1011,6 +1110,13 @@ fn terminal_diagnostics(progress: &WorkEnvironmentJobProgress, cleanup_job_id: &
         "attempt": progress.attempt,
         "execution_id": progress.execution_result.as_ref().map(|result| result.execution_id.as_str()),
         "exit_code": progress.execution_result.as_ref().and_then(|result| result.exit_code),
+        "portable_coder": progress.portable_coder_result.as_ref().map(|result| json!({
+            "operation_id": result.operation_id,
+            "work_id": result.work_id,
+            "destination_runtime_id": result.destination_runtime_id,
+            "evidence_digest": result.evidence_digest,
+            "grant_id": result.grant_id,
+        })),
         "checkpoint": progress.checkpoint.as_ref().map(|checkpoint| checkpoint.provenance.compact()),
         "publication": progress.publication,
         "cleanup_job_id": cleanup_job_id,
@@ -1025,20 +1131,61 @@ fn map_port(error: WorkEnvironmentError) -> StasisError {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Instant;
 
+    use async_trait::async_trait;
     use chrono::Duration as ChronoDuration;
+    use medousa_forge::model::WorkPolicy;
     use medousa_runtime::{
         InMemoryWorkEnvironmentPort, WorkEnvironmentImage, WorkEnvironmentNetworkPolicy,
         WorkEnvironmentPublication, WorkEnvironmentRepository, WorkEnvironmentRequirements,
         WorkEnvironmentRetention, WorkspaceId,
     };
     use stasis::application::runtime::in_memory_runtime::InMemoryRuntime;
+    use stasis::domain::runtime::blob_descriptor::BlobDescriptor;
     use stasis::domain::runtime::job::JobState;
     use stasis::domain::runtime::placement::WorkerCapabilities;
     use stasis::domain::runtime::provenance::ContentDigest;
     use stasis::ports::outbound::runtime::job_store::JobStore;
 
     use super::*;
+
+    struct RecordingPortableCoderRunner {
+        runs: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl PortableCoderRunner for RecordingPortableCoderRunner {
+        async fn run(
+            &self,
+            task: &PortableCoderTask,
+            _binding: medousa_runtime::WorkEnvironmentBinding,
+            _cancellation: tokio_util::sync::CancellationToken,
+            _deadline: Instant,
+        ) -> Result<PortableCoderResult, WorkEnvironmentError> {
+            self.runs.fetch_add(1, Ordering::SeqCst);
+            Ok(PortableCoderResult {
+                schema_version: crate::portable_coder::PORTABLE_CODER_RESULT_SCHEMA_VERSION,
+                operation_id: task.operation_id.clone(),
+                work_id: task.work_id.clone(),
+                destination_runtime_id: "runtime-b".to_string(),
+                project_id: task.project_id.clone(),
+                input_checkpoint_oid: task.expected_checkpoint_oid.clone(),
+                response_text: "portable work completed".to_string(),
+                tool_names: vec![crate::public_api::COGNITION_TURN.to_string()],
+                changed_files: Vec::new(),
+                termination_reason: "completed".to_string(),
+                workspace_state_digest: format!("sha256:{}", "a".repeat(64)),
+                evidence_digest: format!("sha256:{}", "b".repeat(64)),
+                grant_id: task
+                    .task_execution_grant
+                    .as_ref()
+                    .map(|grant| grant.grant_id.clone()),
+                completed_at: Utc::now(),
+            })
+        }
+    }
 
     fn payload(environment_id: &str) -> WorkEnvironmentJobPayload {
         WorkEnvironmentJobPayload {
@@ -1086,6 +1233,7 @@ mod tests {
             deadline_at: Some(Utc::now() + ChronoDuration::minutes(5)),
             display_name: Some("Phase 5 proof".to_string()),
             federation: None,
+            portable_coder: None,
         }
     }
 
@@ -1228,6 +1376,82 @@ mod tests {
         let cleanup = process_until_terminal(&runtime, &cleanup_id).await;
         assert_eq!(cleanup.state, JobState::Succeeded);
         assert_eq!(cleanup.causation_id, completed.id);
+    }
+
+    #[tokio::test]
+    async fn portable_coder_result_is_durable_before_checkpoint_and_reused_at_completion() {
+        let runtime = InMemoryRuntime::new();
+        let environment = Arc::new(InMemoryWorkEnvironmentPort::new());
+        let runner = Arc::new(RecordingPortableCoderRunner {
+            runs: AtomicUsize::new(0),
+        });
+        register_work_environment_job_handlers_with_portable_coder(
+            &RuntimeComposition::InMemory(runtime.clone()),
+            environment,
+            runner.clone(),
+        )
+        .await
+        .unwrap();
+
+        let now = Utc::now();
+        let mut payload = payload("portable-coder-durable-result");
+        let input_checkpoint = WorkEnvironmentCheckpoint::from_manifest(
+            BlobDescriptor::from_bytes(b"portable-input")
+                .with_media_type("application/vnd.medousa.work-environment-checkpoint+json"),
+        );
+        payload.spec.checkpoint_ref = Some(input_checkpoint);
+        payload.portable_coder = Some(PortableCoderTask {
+            schema_version: crate::portable_coder::PORTABLE_CODER_TASK_SCHEMA_VERSION,
+            operation_id: "portable-operation".to_string(),
+            work_id: "portable-work".to_string(),
+            parent_session_id: "portable-session".to_string(),
+            correlation_id: "portable-correlation".to_string(),
+            project_id: payload.spec.repository.repository_id.clone(),
+            root_ref: "project:portable".to_string(),
+            expected_base_oid: payload.spec.base_commit.clone(),
+            expected_checkpoint_oid: payload.spec.base_commit.clone(),
+            prompt: "Inspect and improve the project".to_string(),
+            provider: "test".to_string(),
+            model: "test-model".to_string(),
+            response_depth_mode: "standard".to_string(),
+            max_tool_rounds: 8,
+            work_policy: WorkPolicy::default(),
+            requested_tool_names: vec![crate::public_api::COGNITION_TURN.to_string()],
+            requested_at: now,
+            deadline_at: now + ChronoDuration::minutes(5),
+            task_execution_grant: None,
+        });
+        payload.deadline_at = Some(now + ChronoDuration::minutes(5));
+        let job = payload
+            .into_job("portable-coder-durable-result-job", "default", "test", now)
+            .unwrap();
+        runtime.enqueue(job).await.unwrap();
+
+        let executed = process_until_phase(
+            &runtime,
+            "portable-coder-durable-result-job",
+            WorkEnvironmentWorkflowPhase::Executed,
+        )
+        .await;
+        let executed_progress: WorkEnvironmentJobProgress =
+            serde_json::from_str(executed.progress_json.as_deref().unwrap()).unwrap();
+        assert_eq!(
+            executed_progress
+                .portable_coder_result
+                .as_ref()
+                .map(|result| result.response_text.as_str()),
+            Some("portable work completed")
+        );
+        assert!(executed_progress.checkpoint.is_none());
+        assert_eq!(runner.runs.load(Ordering::SeqCst), 1);
+
+        let completed = process_until_terminal(&runtime, "portable-coder-durable-result-job").await;
+        assert_eq!(completed.state, JobState::Succeeded);
+        let completed_progress: WorkEnvironmentJobProgress =
+            serde_json::from_str(completed.progress_json.as_deref().unwrap()).unwrap();
+        assert!(completed_progress.portable_coder_result.is_some());
+        assert!(completed_progress.checkpoint.is_some());
+        assert_eq!(runner.runs.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]

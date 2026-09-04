@@ -200,13 +200,21 @@ pub fn secret_scan_file(path: &Path) -> Result<Option<String>> {
         return Ok(None);
     }
     let bytes = std::fs::read(path)?;
+    Ok(secret_pattern_in_bytes(&bytes))
+}
+
+/// Apply the same high-signal secret detector to bytes obtained through a
+/// remote execution port. This keeps portable work-environment validation on
+/// the Forge policy vocabulary without materializing destination files on the
+/// daemon host.
+pub fn secret_pattern_in_bytes(bytes: &[u8]) -> Option<String> {
     if bytes.iter().take(8192).any(|b| *b == 0) {
-        return Ok(None); // binary
+        return None; // binary
     }
     let text = String::from_utf8_lossy(&bytes);
     for (begin, end, name) in SECRET_ENVELOPES {
         if contains_armored_secret(&text, begin, end) {
-            return Ok(Some((*name).to_string()));
+            return Some((*name).to_string());
         }
     }
     // High-signal token prefixes.
@@ -214,17 +222,17 @@ pub fn secret_scan_file(path: &Path) -> Result<Option<String>> {
         for token in line.split_whitespace() {
             let t = token.trim_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != '-');
             if t.starts_with("AKIA") && t.len() == 20 {
-                return Ok(Some("aws_access_key_id".into()));
+                return Some("aws_access_key_id".into());
             }
             if t.starts_with("ghp_") && t.len() >= 36 {
-                return Ok(Some("github_pat".into()));
+                return Some("github_pat".into());
             }
             if t.starts_with("xoxb-") {
-                return Ok(Some("slack_bot_token".into()));
+                return Some("slack_bot_token".into());
             }
         }
     }
-    Ok(None)
+    None
 }
 
 /// Worktree hygiene scan: symlinks and nested repositories, skipping `.git`.

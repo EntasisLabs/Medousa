@@ -805,6 +805,7 @@ async fn complete_remote_proxy(
         fence: payload.work.spec.fence.clone(),
         environment_state: None,
         execution_result: remote.execution_result.clone(),
+        portable_coder_result: remote.portable_coder_result.clone(),
         checkpoint: remote.checkpoint.clone(),
         publication: remote.publication.clone(),
         cleanup_job_id: None,
@@ -1167,6 +1168,7 @@ mod tests {
             deadline_at: Some(Utc::now() + Duration::minutes(5)),
             display_name: Some(id.to_string()),
             federation: None,
+            portable_coder: None,
         }
     }
 
@@ -1251,6 +1253,7 @@ mod tests {
                 fence: child.work.spec.fence.clone(),
                 environment_state: None,
                 execution_result: None,
+                portable_coder_result: None,
                 checkpoint,
                 publication: None,
                 cleanup_job_id: Some(format!("{job_id}:cleanup")),
@@ -1472,6 +1475,7 @@ mod tests {
             succeeded: true,
             terminal_state: "succeeded".to_string(),
             execution_result: None,
+            portable_coder_result: None,
             checkpoint: Some(child_result.checkpoint.clone()),
             publication: None,
             error_message: None,
@@ -1609,6 +1613,7 @@ mod tests {
                 fence: plan.reconciliation.spec.fence.clone(),
                 environment_state: None,
                 execution_result: None,
+                portable_coder_result: None,
                 checkpoint: Some(checkpoint),
                 publication: Some(
                     medousa_runtime::WorkEnvironmentPublicationResult::Published {

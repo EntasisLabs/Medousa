@@ -496,6 +496,11 @@ impl Forge {
                 "portable checkpoints require checkpoint_capture_all".into(),
             ));
         }
+        if !item.policy.checkpoint_secret_scan {
+            return Err(ForgeError::CaptureBlocked(
+                "portable checkpoints require checkpoint_secret_scan".into(),
+            ));
+        }
         if environment.kind == crate::model::EnvironmentKind::AttachedCheckout {
             self.verify_attached_checkout(&item, environment)?;
         }

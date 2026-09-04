@@ -547,6 +547,12 @@ impl OciCliWorkEnvironmentPort {
                 "the OCI CLI adapter currently supports deny-network environments only".into(),
             ));
         }
+        if !spec.secret_refs.is_empty() {
+            return Err(WorkEnvironmentError::Unsupported(
+                "the OCI CLI adapter has no destination secret resolver; refusing to silently omit requested secret references"
+                    .into(),
+            ));
+        }
         if spec.requirements.accelerator.is_some() {
             return Err(WorkEnvironmentError::AdmissionDenied(
                 "the initial OCI CLI adapter does not advertise an accelerator".into(),
@@ -813,28 +819,43 @@ impl OciCliWorkEnvironmentPort {
             .parent()
             .expect("workspace path always has a parent")
             .to_path_buf();
-        self.run_git(
-            parent,
-            vec![
-                "clone".into(),
-                "--no-checkout".into(),
-                "--".into(),
-                spec.repository.authorized_origin.clone(),
-                workspace.display().to_string(),
-            ],
-        )
-        .await?;
-        self.run_git(
-            workspace.clone(),
-            vec![
-                "checkout".into(),
-                "--detach".into(),
-                spec.base_commit.clone(),
-            ],
-        )
-        .await?;
         if let Some(manifest) = checkpoint_manifest.as_ref() {
+            // A portable checkpoint is the complete immutable source graph.
+            // Initialize an empty repository and reconstruct from CAS so the
+            // destination never needs the source daemon's filesystem path or
+            // ambient credentials for its origin.
+            self.run_git(
+                parent,
+                vec![
+                    "init".into(),
+                    "--quiet".into(),
+                    "--template=".into(),
+                    workspace.display().to_string(),
+                ],
+            )
+            .await?;
             self.restore_checkpoint(&workspace, spec, manifest).await?;
+        } else {
+            self.run_git(
+                parent,
+                vec![
+                    "clone".into(),
+                    "--no-checkout".into(),
+                    "--".into(),
+                    spec.repository.authorized_origin.clone(),
+                    workspace.display().to_string(),
+                ],
+            )
+            .await?;
+            self.run_git(
+                workspace.clone(),
+                vec![
+                    "checkout".into(),
+                    "--detach".into(),
+                    spec.base_commit.clone(),
+                ],
+            )
+            .await?;
         }
         Ok(workspace)
     }
@@ -2024,6 +2045,155 @@ mod tests {
             },
             &current
         ));
+    }
+
+    #[tokio::test]
+    async fn portable_checkpoint_reconstructs_without_accessing_its_origin() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(temp.path()).unwrap();
+        let source = root.join("source");
+        std::fs::create_dir_all(&source).unwrap();
+        run_test_git(&source, &["init", "--quiet", "--template="]);
+        std::fs::write(source.join("README.md"), "base\n").unwrap();
+        run_test_git(&source, &["add", "README.md"]);
+        run_test_git(
+            &source,
+            &[
+                "-c",
+                "user.name=Medousa Test",
+                "-c",
+                "user.email=test@medousa.local",
+                "commit",
+                "--quiet",
+                "-m",
+                "base",
+            ],
+        );
+        let base_commit = test_git_output(&source, &["rev-parse", "HEAD"]);
+        std::fs::write(source.join("README.md"), "portable checkpoint\n").unwrap();
+        std::fs::write(source.join("untracked.txt"), "captured\n").unwrap();
+        run_test_git(&source, &["add", "-A"]);
+        run_test_git(
+            &source,
+            &[
+                "-c",
+                "user.name=Medousa Test",
+                "-c",
+                "user.email=test@medousa.local",
+                "commit",
+                "--quiet",
+                "-m",
+                "checkpoint",
+            ],
+        );
+        let checkpoint_commit = test_git_output(&source, &["rev-parse", "HEAD"]);
+        let bundle_path = root.join("portable.bundle");
+        GitEngine::detect()
+            .unwrap()
+            .export_checkpoint_bundle(
+                &source,
+                &medousa_forge::model::GitOid::new(&checkpoint_commit),
+                &bundle_path,
+            )
+            .unwrap();
+
+        let execution = Arc::new(ForgeExecutionService::new());
+        let adapter_root = root.join("adapter");
+        let blobs = FsBlobTransferPort::open(
+            &adapter_root.join("durable/blobs"),
+            Arc::clone(&execution),
+        )
+        .unwrap();
+        let source_bundle = blobs
+            .put(
+                &std::fs::read(&bundle_path).unwrap(),
+                Some("application/vnd.git.bundle"),
+            )
+            .await
+            .unwrap();
+        let environment_id = WorkEnvironmentId::parse("portable-no-origin").unwrap();
+        let workspace_id = WorkspaceId::parse("portable-no-origin").unwrap();
+        let fence = WorkEnvironmentFence {
+            stasis_attempt: FencingToken(1),
+            forge_environment_generation: Some(3),
+            forge_execution_generation: Some(5),
+        };
+        let manifest = WorkEnvironmentCheckpointManifest {
+            schema_version: WORK_ENVIRONMENT_CHECKPOINT_SCHEMA_VERSION,
+            environment_id: environment_id.clone(),
+            workspace_id: workspace_id.clone(),
+            base_commit: base_commit.clone(),
+            checkpoint_commit: checkpoint_commit.clone(),
+            source_bundle,
+            artifacts: Vec::new(),
+            fence: fence.clone(),
+            label: Some("portable Coder input".into()),
+            created_at: Utc::now(),
+        };
+        let manifest_descriptor = blobs
+            .put(
+                &serde_json::to_vec(&manifest).unwrap(),
+                Some("application/vnd.medousa.work-environment-checkpoint+json"),
+            )
+            .await
+            .unwrap();
+        let checkpoint = WorkEnvironmentCheckpoint::from_manifest(manifest_descriptor);
+        let publications = FsWorkEnvironmentPublicationStore::open(
+            &adapter_root.join("durable/publications"),
+            Arc::clone(&execution),
+        )
+        .unwrap();
+        let adapter = OciCliWorkEnvironmentPort {
+            runtime: OciCliRuntime {
+                backend: OciCliBackend::Docker,
+                executable: PathBuf::from("unused-oci-runtime"),
+            },
+            git: PathBuf::from("git"),
+            root: adapter_root,
+            execution,
+            blobs,
+            publications,
+            lifecycle: tokio::sync::Mutex::new(()),
+        };
+        std::fs::create_dir_all(adapter.environment_root(&environment_id)).unwrap();
+        std::fs::remove_dir_all(&source).unwrap();
+        let spec = WorkEnvironmentSpec {
+            environment_id,
+            workspace_id,
+            repository: WorkEnvironmentRepository {
+                repository_id: "portable-repository".into(),
+                authorized_origin: "medousa://portable/repository".into(),
+            },
+            base_commit,
+            image: WorkEnvironmentImage {
+                reference: "example.invalid/medousa/coder".into(),
+                digest: ContentDigest::sha256_bytes(b"portable-image"),
+                platform: "linux/amd64".into(),
+            },
+            checkpoint_ref: Some(checkpoint),
+            requirements: WorkEnvironmentRequirements::default(),
+            mounts: Vec::new(),
+            network_policy: WorkEnvironmentNetworkPolicy::Deny,
+            secret_refs: Vec::new(),
+            fence,
+            publication: None,
+            retention: WorkEnvironmentRetention::Delete,
+        };
+
+        let workspace = adapter.materialize_repository(&spec, None).await.unwrap();
+
+        assert_eq!(
+            test_git_output(&workspace, &["rev-parse", "HEAD"]),
+            checkpoint_commit
+        );
+        assert_eq!(
+            std::fs::read_to_string(workspace.join("README.md")).unwrap(),
+            "portable checkpoint\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(workspace.join("untracked.txt")).unwrap(),
+            "captured\n"
+        );
     }
 
     #[tokio::test]

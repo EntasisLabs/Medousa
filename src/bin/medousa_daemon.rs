@@ -790,6 +790,17 @@ async fn start_daemon() -> Result<()> {
     } else {
         None
     };
+    let local_runtime_node_id = share_api_state
+        .pairing
+        .as_ref()
+        .map(|pairing| pairing.device_id().to_string())
+        .unwrap_or_else(|| worker_id.clone());
+    let portable_coder_runner: Arc<dyn medousa::portable_coder::PortableCoderRunner> =
+        Arc::new(medousa::portable_coder::AgentPortableCoderRunner::new(
+            platform.agent_handle(),
+            peer_execution_policies.clone(),
+            local_runtime_node_id.clone(),
+        ));
 
     let mut remote_work_environment_dispatcher: Option<
         Arc<dyn medousa::work_environment_federation::RemoteWorkEnvironmentDispatcher>,
@@ -810,7 +821,7 @@ async fn start_daemon() -> Result<()> {
             ),
         );
         if let Some(adapter) = work_environment_adapter.as_ref() {
-            medousa::work_environment_job::register_federated_work_environment_job_handlers(
+            medousa::work_environment_job::register_federated_work_environment_job_handlers_with_portable_coder(
                 platform.composition(),
                 Arc::clone(adapter) as Arc<dyn medousa_runtime::WorkEnvironmentPort>,
                 medousa::work_environment_federation::WorkEnvironmentFederationServices {
@@ -821,6 +832,7 @@ async fn start_daemon() -> Result<()> {
                         ),
                     ),
                 },
+                Arc::clone(&portable_coder_runner),
             )
             .await
             .context("register federated work-environment job handlers")?;
@@ -832,24 +844,21 @@ async fn start_daemon() -> Result<()> {
                 runtime: Arc::new(platform.composition().clone()),
                 blobs,
                 worker_capabilities,
+                execution_policies: peer_execution_policies.clone(),
             },
         )
     } else {
         if let Some(adapter) = work_environment_adapter.as_ref() {
-            medousa::work_environment_job::register_work_environment_job_handlers(
+            medousa::work_environment_job::register_work_environment_job_handlers_with_portable_coder(
                 platform.composition(),
                 Arc::clone(adapter) as Arc<dyn medousa_runtime::WorkEnvironmentPort>,
+                portable_coder_runner,
             )
             .await
             .context("register durable work-environment job handlers")?;
         }
         None
     };
-    let local_runtime_node_id = share_api_state
-        .pairing
-        .as_ref()
-        .map(|pairing| pairing.device_id().to_string())
-        .unwrap_or_else(|| worker_id.clone());
     state
         .platform
         .agent()

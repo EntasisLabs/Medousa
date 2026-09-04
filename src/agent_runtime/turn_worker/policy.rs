@@ -466,6 +466,9 @@ mod tests {
             correlation_id: "correlation-1".to_string(),
             worker_intent: "research".to_string(),
             project_id: None,
+            work_environment_materialization: false,
+            authorized_root_ref: None,
+            authorized_secret_refs: Vec::new(),
             policy_revision: 2,
             policy_source: crate::peer_execution_policy::PeerExecutionPolicySource::Stored,
             requested_tool_domains: vec![

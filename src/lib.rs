@@ -77,6 +77,8 @@ pub mod peer_execution_policy;
 #[path = "runtime/persistent_locus.rs"]
 pub mod persistent_locus;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod portable_coder;
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod reasoning_effort;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod recurring_schedule;
