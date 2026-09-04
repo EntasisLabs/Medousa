@@ -37,9 +37,11 @@ use crate::mesh::envelope::{
 use crate::mesh::{record_has_capability, registry};
 use crate::pairing::crypto::{base64url_encode, parse_verifying_key, sign_message, verify_message};
 use crate::pairing::{PairedDeviceRecord, PairingService};
+use crate::peer_execution_policy::{PeerExecutionPolicyStore, PortableCoderAdmission};
+use crate::portable_coder::requested_network_policy;
 use crate::work_environment_federation::{
     RemoteWorkEnvironmentDispatcher, RemoteWorkEnvironmentResult, SignedFederatedTerminalDelivery,
-    accept_remote_work_environment_job,
+    accept_remote_work_environment_job_with_grant, decode_remote_work_environment_payload,
 };
 use crate::work_environment_job::WorkEnvironmentJobPayload;
 use medousa_runtime::WorkEnvironmentCheckpointManifest;
@@ -55,6 +57,7 @@ pub struct MeshWorkEnvironmentFederationState {
     pub runtime: Arc<RuntimeComposition>,
     pub blobs: Arc<dyn BlobTransferPort>,
     pub worker_capabilities: WorkerCapabilities,
+    pub execution_policies: Arc<PeerExecutionPolicyStore>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -255,10 +258,57 @@ async fn accept_remote_job(
             "remote job origin does not match the authenticated peer".to_string(),
         ));
     }
-    let job_id = accept_remote_work_environment_job(
+    let decoded = decode_remote_work_environment_payload(state.blobs.as_ref(), &wrapped.payload)
+        .await
+        .map_err(map_stasis)?;
+    let destination_grant = if let Some(task) = decoded.portable_coder.as_ref() {
+        let secret_refs = decoded
+            .spec
+            .secret_refs
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        let requested_tool_names = task
+            .requested_tool_names
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        match state
+            .execution_policies
+            .admit_portable_coder(PortableCoderAdmission {
+                peer_device_id: &record.phone_id,
+                peer_pairing_id: &record.pairing_id,
+                origin_runtime_id: &wrapped.payload.origin_authority.runtime_id,
+                destination_runtime_id: state.pairing.device_id(),
+                parent_session_id: &task.parent_session_id,
+                work_id: &task.work_id,
+                correlation_id: &task.correlation_id,
+                project_id: &task.project_id,
+                root_ref: &task.root_ref,
+                secret_refs: &secret_refs,
+                requested_tool_names: &requested_tool_names,
+                requested_network_policy: requested_network_policy(&decoded.spec.network_policy),
+                request_issued_at: task.requested_at,
+                request_expires_at: task.deadline_at.min(wrapped.payload.deadline),
+            })
+            .map_err(internal)?
+        {
+            Ok(grant) => Some(grant),
+            Err(reason) => {
+                return Err((
+                    StatusCode::FORBIDDEN,
+                    format!("{}: portable Coder execution denied", reason.code()),
+                ));
+            }
+        }
+    } else {
+        None
+    };
+    let job_id = accept_remote_work_environment_job_with_grant(
         state.runtime.as_ref(),
         state.blobs.as_ref(),
         &wrapped.payload,
+        destination_grant,
     )
     .await
     .map_err(map_stasis)?;

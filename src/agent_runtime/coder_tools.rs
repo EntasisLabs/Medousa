@@ -708,6 +708,273 @@ pub trait CoderExecutionGuard: Send + Sync {
     fn verify(&self) -> Result<()>;
 }
 
+/// Exact environment-aware Coder surface used after a portable undertaking is
+/// admitted on another workshop. Forge remains authoritative on the origin;
+/// the destination receives only code operations that can be rebound to the
+/// active `/workspace` environment plus the structural turn tool.
+pub const PORTABLE_CODER_TOOL_NAMES: &[&str] = &[
+    crate::public_api::COGNITION_TURN,
+    crate::public_api::COGNITION_STORE_READ,
+    crate::public_api::COGNITION_STORE_WRITE,
+    crate::coding_tools::COGNITION_CODER_SHELL_RUN,
+    crate::coding_tools::COGNITION_CODER_SHELL_STATUS,
+    crate::code_intelligence_tools::COGNITION_CODE_HOVER,
+    crate::code_intelligence_tools::COGNITION_CODE_DEFINITION,
+    crate::code_intelligence_tools::COGNITION_CODE_DIAGNOSTICS,
+    crate::code_intelligence_tools::COGNITION_CODE_SYMBOLS,
+];
+
+pub fn portable_coder_tool_names() -> HashSet<String> {
+    PORTABLE_CODER_TOOL_NAMES
+        .iter()
+        .map(|name| (*name).to_string())
+        .collect()
+}
+
+#[derive(Clone)]
+pub struct PortableCoderToolRegistry {
+    inner: Arc<dyn ToolRegistry>,
+    catalog: Arc<ToolCatalog>,
+    policy: WorkPolicy,
+    allowed: Arc<HashSet<String>>,
+    execution_guard: Option<Arc<dyn CoderExecutionGuard>>,
+}
+
+impl PortableCoderToolRegistry {
+    pub fn new(
+        inner: Arc<dyn ToolRegistry>,
+        catalog: Arc<ToolCatalog>,
+        policy: WorkPolicy,
+        requested: impl IntoIterator<Item = String>,
+        execution_guard: Option<Arc<dyn CoderExecutionGuard>>,
+    ) -> Result<Self> {
+        let ceiling = portable_coder_tool_names();
+        let requested = requested.into_iter().collect::<HashSet<_>>();
+        if requested.is_empty() {
+            return Err(StasisError::PortFailure(
+                "portable Coder requires at least one tool".to_string(),
+            ));
+        }
+        if let Some(denied) = requested.iter().find(|name| !ceiling.contains(*name)) {
+            return Err(StasisError::PortFailure(format!(
+                "tool is outside the portable Coder contract: {denied}"
+            )));
+        }
+        for name in &requested {
+            let id = catalog.resolve_wire_id(name).map_err(|error| {
+                StasisError::PortFailure(format!(
+                    "tool is absent from the assembled portable Coder catalog: {error}"
+                ))
+            })?;
+            let entry = catalog.get(id).ok_or_else(|| {
+                StasisError::PortFailure(format!("missing catalog entry for {name}"))
+            })?;
+            if !entry
+                .placement
+                .exposes_mode(crate::tool_catalog::CODER_MODE_ID)
+            {
+                return Err(StasisError::PortFailure(format!(
+                    "tool is not exposed to Coder mode: {name}"
+                )));
+            }
+        }
+        Ok(Self {
+            inner,
+            catalog,
+            policy,
+            allowed: Arc::new(requested),
+            execution_guard,
+        })
+    }
+
+    fn verify(&self) -> Result<()> {
+        if let Some(guard) = self.execution_guard.as_ref() {
+            guard.verify()?;
+        }
+        Ok(())
+    }
+
+    fn resolve(&self, wire_name: &str) -> Result<ToolId> {
+        let id = self.catalog.resolve_wire_id(wire_name).map_err(|error| {
+            StasisError::PortFailure(format!("unknown portable Coder tool: {error}"))
+        })?;
+        if !self.allowed.contains(id.as_str()) {
+            return Err(StasisError::PortFailure(format!(
+                "tool was not admitted for this portable Coder task: {wire_name}"
+            )));
+        }
+        let entry = self.catalog.get(id).ok_or_else(|| {
+            StasisError::PortFailure(format!("missing catalog entry for {wire_name}"))
+        })?;
+        if !entry
+            .placement
+            .exposes_mode(crate::tool_catalog::CODER_MODE_ID)
+        {
+            return Err(StasisError::PortFailure(format!(
+                "tool is not exposed to Coder mode: {wire_name}"
+            )));
+        }
+        Ok(id)
+    }
+
+    fn bind_input(&self, tool_name: &str, mut input: Value) -> Result<Value> {
+        let map = input.as_object_mut().ok_or_else(|| {
+            StasisError::PortFailure("portable Coder tools require object input".to_string())
+        })?;
+        match tool_name {
+            crate::public_api::COGNITION_STORE_READ => {
+                let action = map.get("action").and_then(Value::as_str).unwrap_or_default();
+                if !matches!(action, "code.read" | "code.search") {
+                    return Err(StasisError::PortFailure(
+                        "portable Coder store reads are limited to code.read and code.search"
+                            .to_string(),
+                    ));
+                }
+                if let Some(path) = map.get("path").and_then(Value::as_str) {
+                    map.insert(
+                        "path".to_string(),
+                        Value::String(normalize_relative_path(path)?),
+                    );
+                }
+                map.insert(
+                    "root".to_string(),
+                    Value::String(medousa_runtime::WORK_ENVIRONMENT_WORKSPACE_ROOT.to_string()),
+                );
+            }
+            crate::public_api::COGNITION_STORE_WRITE => {
+                if map.get("action").and_then(Value::as_str) != Some("code.write") {
+                    return Err(StasisError::PortFailure(
+                        "portable Coder store writes are limited to code.write".to_string(),
+                    ));
+                }
+                let path = map.get("path").and_then(Value::as_str).ok_or_else(|| {
+                    StasisError::PortFailure("portable code.write requires path".to_string())
+                })?;
+                let path = normalize_relative_path(path)?;
+                let violations = medousa_forge::policy::evaluate_paths(
+                    &self.policy,
+                    &[ChangedFile {
+                        path: path.clone(),
+                        status: ChangeStatus::Modified,
+                        old_path: None,
+                        is_binary: false,
+                        byte_size: None,
+                    }],
+                )
+                .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+                if let Some(violation) = violations.first() {
+                    return Err(StasisError::PortFailure(format!(
+                        "portable Coder mutation denied for {}: {}",
+                        violation.path, violation.rule
+                    )));
+                }
+                map.insert("path".to_string(), Value::String(path));
+                map.insert(
+                    "root".to_string(),
+                    Value::String(medousa_runtime::WORK_ENVIRONMENT_WORKSPACE_ROOT.to_string()),
+                );
+            }
+            crate::coding_tools::COGNITION_CODER_SHELL_RUN => {
+                let command = map
+                    .get("command")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| {
+                        StasisError::PortFailure(
+                            "portable Coder shell requires command".to_string(),
+                        )
+                    })?;
+                if attached_shell_command_mutates_git_authority(command) {
+                    return Err(StasisError::PortFailure(
+                        "portable Coder shell cannot mutate Git authority; the durable environment owns checkpoints and publication"
+                            .to_string(),
+                    ));
+                }
+                for field in [
+                    "session_id",
+                    "work_id",
+                    "lease_id",
+                    "lease_generation",
+                    "attempt_id",
+                    "after_sequence",
+                ] {
+                    map.remove(field);
+                }
+            }
+            crate::coding_tools::COGNITION_CODER_SHELL_STATUS => {
+                for field in ["work_id", "lease_id", "lease_generation", "attempt_id"] {
+                    map.remove(field);
+                }
+            }
+            name if crate::code_intelligence_tools::is_code_cognition_tool(name) => {
+                let uri = map.get("uri").and_then(Value::as_str).ok_or_else(|| {
+                    StasisError::PortFailure(
+                        "portable Coder code intelligence requires uri".to_string(),
+                    )
+                })?;
+                let parsed = reqwest::Url::parse(uri).map_err(|error| {
+                    StasisError::PortFailure(format!("invalid portable code URI: {error}"))
+                })?;
+                if parsed.scheme() != "file" || !parsed.path().starts_with("/workspace/") {
+                    return Err(StasisError::PortFailure(
+                        "portable Coder code intelligence is limited to file:///workspace/..."
+                            .to_string(),
+                    ));
+                }
+            }
+            crate::public_api::COGNITION_TURN => {}
+            _ => {
+                return Err(StasisError::PortFailure(format!(
+                    "tool has no portable Coder adapter: {tool_name}"
+                )));
+            }
+        }
+        Ok(input)
+    }
+}
+
+#[async_trait]
+impl ToolRegistry for PortableCoderToolRegistry {
+    async fn list_tools(&self) -> Result<Vec<Tool>> {
+        self.verify()?;
+        self.catalog
+            .definitions_matching(|entry| {
+                self.allowed.contains(entry.id.as_str())
+                    && entry
+                        .placement
+                        .exposes_mode(crate::tool_catalog::CODER_MODE_ID)
+            })
+            .into_iter()
+            .map(|tool| {
+                let tool = match tool.name.as_str() {
+                    crate::public_api::COGNITION_STORE_READ => tool.with_description(
+                        "Read the portable /workspace using only action=code.read or action=code.search.",
+                    ),
+                    crate::public_api::COGNITION_STORE_WRITE => tool.with_description(
+                        "Write the portable /workspace using only action=code.write and a digest precondition.",
+                    ),
+                    _ => tool,
+                };
+                with_required_coder_intent(tool).map_err(|error| {
+                    StasisError::PortFailure(format!(
+                        "cannot compile portable Coder tool surface: {error}"
+                    ))
+                })
+            })
+            .collect()
+    }
+
+    async fn invoke_tool(&self, tool_name: &str, input: Value) -> Result<Value> {
+        self.verify()?;
+        let id = self.resolve(tool_name)?;
+        let (_, input) = take_coder_call(input)?;
+        let input = self.bind_input(id.as_str(), input)?;
+        self.verify()?;
+        self.inner.invoke_tool(id.as_str(), input).await
+    }
+}
+
 impl CoderTurnLease {
     pub fn new(
         forge: Arc<Forge>,

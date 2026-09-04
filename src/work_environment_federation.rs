@@ -27,6 +27,8 @@ use stasis::domain::runtime::remote_job_envelope::{
 use stasis::ports::outbound::runtime::blob_transfer::BlobTransferPort;
 use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
 
+use crate::peer_execution_policy::TaskExecutionGrant;
+use crate::portable_coder::PortableCoderResult;
 use crate::runtime_composition_ext::RuntimeCompositionExt;
 use crate::work_environment_job::{
     WORK_ENVIRONMENT_JOB_TYPE, WorkEnvironmentJobPayload, WorkEnvironmentJobProgress,
@@ -60,6 +62,8 @@ pub struct RemoteWorkEnvironmentResult {
     pub terminal_state: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_result: Option<WorkEnvironmentExecResult>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub portable_coder_result: Option<PortableCoderResult>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checkpoint: Option<WorkEnvironmentCheckpoint>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -264,6 +268,16 @@ pub async fn accept_remote_work_environment_job(
     blobs: &dyn BlobTransferPort,
     envelope: &RemoteJobEnvelope,
 ) -> StasisResult<String> {
+    accept_remote_work_environment_job_with_grant(runtime, blobs, envelope, None).await
+}
+
+/// Decode and authenticate the portable application payload before the
+/// destination evaluates its own execution policy. Authority-bearing fields
+/// are never accepted from the source daemon.
+pub async fn decode_remote_work_environment_payload(
+    blobs: &dyn BlobTransferPort,
+    envelope: &RemoteJobEnvelope,
+) -> StasisResult<WorkEnvironmentJobPayload> {
     envelope
         .validate_for_acceptance(Utc::now())
         .map_err(StasisError::PortFailure)?;
@@ -279,12 +293,62 @@ pub async fn accept_remote_work_environment_job(
             "remote work-environment payload failed bounds or digest verification".to_string(),
         ));
     }
-    let mut payload: WorkEnvironmentJobPayload = serde_json::from_slice(&bytes)
+    let payload: WorkEnvironmentJobPayload = serde_json::from_slice(&bytes)
         .map_err(|error| StasisError::PortFailure(format!("decode remote payload: {error}")))?;
     if envelope.placement != payload.spec.placement_constraints() {
         return Err(StasisError::PortFailure(
             "remote envelope placement does not match the environment spec".to_string(),
         ));
+    }
+    if payload.federation.is_some() {
+        return Err(StasisError::PortFailure(
+            "remote work-environment payload cannot supply federation context".to_string(),
+        ));
+    }
+    if let Some(task) = payload.portable_coder.as_ref() {
+        if task.task_execution_grant.is_some() {
+            return Err(StasisError::PortFailure(
+                "remote portable Coder payload cannot supply its destination grant".to_string(),
+            ));
+        }
+        if task.correlation_id != envelope.correlation_id || task.deadline_at > envelope.deadline {
+            return Err(StasisError::PortFailure(
+                "portable Coder identity or deadline does not match its signed envelope"
+                    .to_string(),
+            ));
+        }
+    }
+    payload
+        .validate(Utc::now())
+        .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+    Ok(payload)
+}
+
+/// Accept a remote job after the authenticated destination has evaluated its
+/// current policy. `destination_grant` is minted locally and is bound into the
+/// durable payload before any work-environment lifecycle step can run.
+pub async fn accept_remote_work_environment_job_with_grant(
+    runtime: &RuntimeComposition,
+    blobs: &dyn BlobTransferPort,
+    envelope: &RemoteJobEnvelope,
+    destination_grant: Option<TaskExecutionGrant>,
+) -> StasisResult<String> {
+    let mut payload = decode_remote_work_environment_payload(blobs, envelope).await?;
+    match payload.portable_coder.as_mut() {
+        Some(task) => {
+            let grant = destination_grant.ok_or_else(|| {
+                StasisError::PortFailure(
+                    "remote portable Coder task was not admitted by the destination".to_string(),
+                )
+            })?;
+            task.task_execution_grant = Some(grant);
+        }
+        None if destination_grant.is_some() => {
+            return Err(StasisError::PortFailure(
+                "destination execution grant supplied for a non-Coder job".to_string(),
+            ));
+        }
+        None => {}
     }
     payload.deadline_at = Some(
         payload
@@ -364,6 +428,9 @@ pub async fn encode_remote_terminal_result(
         execution_result: progress
             .as_ref()
             .and_then(|progress| progress.execution_result.clone()),
+        portable_coder_result: progress
+            .as_ref()
+            .and_then(|progress| progress.portable_coder_result.clone()),
         checkpoint: progress
             .as_ref()
             .and_then(|progress| progress.checkpoint.clone()),
@@ -629,6 +696,7 @@ mod tests {
             deadline_at: Some(Utc::now() + Duration::minutes(5)),
             display_name: Some("Phase 6 remote proof".to_string()),
             federation: None,
+            portable_coder: None,
         }
     }
 
@@ -690,6 +758,7 @@ mod tests {
             succeeded: false,
             terminal_state: "failed".to_string(),
             execution_result: None,
+            portable_coder_result: None,
             checkpoint: None,
             publication: None,
             error_message: Some("expected failure".to_string()),

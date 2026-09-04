@@ -297,6 +297,15 @@ pub struct TaskExecutionGrant {
     pub worker_intent: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_id: Option<String>,
+    /// True only when the destination separately admitted construction of a
+    /// portable work environment for this task. Ordinary remote Coder grants
+    /// retain their existing destination-checkout semantics.
+    #[serde(default)]
+    pub work_environment_materialization: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authorized_root_ref: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub authorized_secret_refs: Vec<String>,
     pub policy_revision: u64,
     pub policy_source: PeerExecutionPolicySource,
     pub requested_tool_domains: Vec<String>,
@@ -317,7 +326,11 @@ pub enum PeerExecutionDenialReason {
     PolicyExpired,
     AssistantWorkDenied,
     CoderWorkDenied,
+    WorkEnvironmentDenied,
     ProjectDenied,
+    RootRefDenied,
+    SecretDenied,
+    NetworkDenied,
     ToolDomainDenied,
     RequestExpired,
 }
@@ -329,7 +342,11 @@ impl PeerExecutionDenialReason {
             Self::PolicyExpired => "peer_execution_policy_expired",
             Self::AssistantWorkDenied => "peer_execution_assistant_denied",
             Self::CoderWorkDenied => "peer_execution_coder_denied",
+            Self::WorkEnvironmentDenied => "peer_execution_work_environment_denied",
             Self::ProjectDenied => "peer_execution_project_denied",
+            Self::RootRefDenied => "peer_execution_root_ref_denied",
+            Self::SecretDenied => "peer_execution_secret_denied",
+            Self::NetworkDenied => "peer_execution_network_denied",
             Self::ToolDomainDenied => "peer_execution_tool_domain_denied",
             Self::RequestExpired => "peer_execution_request_expired",
         }
@@ -358,6 +375,27 @@ pub struct AssistantWorkAdmission<'a> {
     pub requested_tool_names: &'a [&'a str],
     pub request_expires_at: DateTime<Utc>,
     pub legacy_task_request_granted: bool,
+}
+
+/// Exact authority requested by a portable Coder undertaking. This is
+/// evaluated only by the destination daemon after mesh authentication; the
+/// source cannot manufacture the resulting task grant.
+#[derive(Debug, Clone)]
+pub struct PortableCoderAdmission<'a> {
+    pub peer_device_id: &'a str,
+    pub peer_pairing_id: &'a str,
+    pub origin_runtime_id: &'a str,
+    pub destination_runtime_id: &'a str,
+    pub parent_session_id: &'a str,
+    pub work_id: &'a str,
+    pub correlation_id: &'a str,
+    pub project_id: &'a str,
+    pub root_ref: &'a str,
+    pub secret_refs: &'a [&'a str],
+    pub requested_tool_names: &'a [&'a str],
+    pub requested_network_policy: PeerNetworkPolicy,
+    pub request_issued_at: DateTime<Utc>,
+    pub request_expires_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -565,6 +603,139 @@ impl PeerExecutionPolicyStore {
         }))
     }
 
+    /// Admit one portable, environment-backed Coder undertaking. Stored
+    /// policy is mandatory: the legacy `task.request` compatibility grant is
+    /// intentionally unable to acquire project, environment, root, network,
+    /// or secret authority.
+    pub fn admit_portable_coder(
+        &self,
+        admission: PortableCoderAdmission<'_>,
+    ) -> Result<Result<TaskExecutionGrant, PeerExecutionDenialReason>> {
+        let peer_device_id = validate_identity("peer device id", admission.peer_device_id)?;
+        let peer_pairing_id = validate_identity("peer pairing id", admission.peer_pairing_id)?;
+        let work_id = validate_identity("work id", admission.work_id)?;
+        validate_identity("origin runtime id", admission.origin_runtime_id)?;
+        validate_identity("destination runtime id", admission.destination_runtime_id)?;
+        validate_identity("parent session id", admission.parent_session_id)?;
+        validate_identity("correlation id", admission.correlation_id)?;
+        let project_id = validate_identity("project id", admission.project_id)?;
+        let root_ref = validate_identity("root reference", admission.root_ref)?;
+        if admission.secret_refs.len() > 64 || admission.requested_tool_names.len() > 256 {
+            bail!("portable Coder authority exceeds its collection bounds");
+        }
+        for secret_ref in admission.secret_refs {
+            validate_identity("secret reference", secret_ref)?;
+        }
+        for tool_name in admission.requested_tool_names {
+            validate_identity("requested tool name", tool_name)?;
+            if !matches!(portable_coder_tool_domain(tool_name), "turn" | "code") {
+                bail!("portable Coder requested a tool outside turn/code authority");
+            }
+        }
+        let now = Utc::now();
+        if admission.request_issued_at > now + chrono::Duration::minutes(5)
+            || admission.request_expires_at <= now
+            || admission.request_expires_at <= admission.request_issued_at
+        {
+            return Ok(Err(PeerExecutionDenialReason::RequestExpired));
+        }
+
+        let _guard = self.io.lock().expect("peer execution policy lock");
+        let mut file = self.load()?;
+        let view = resolve_policy(&file, peer_device_id, peer_pairing_id, false, now);
+        let policy = &view.policy;
+        let decision = if !policy.enabled {
+            Err(PeerExecutionDenialReason::PolicyDisabled)
+        } else if policy.is_expired_at(now) {
+            Err(PeerExecutionDenialReason::PolicyExpired)
+        } else if !policy.coder_work {
+            Err(PeerExecutionDenialReason::CoderWorkDenied)
+        } else if !policy.work_environment_materialization {
+            Err(PeerExecutionDenialReason::WorkEnvironmentDenied)
+        } else if !policy.allowed_project_ids.contains(project_id) {
+            Err(PeerExecutionDenialReason::ProjectDenied)
+        } else if !policy.allowed_root_refs.contains(root_ref) {
+            Err(PeerExecutionDenialReason::RootRefDenied)
+        } else if admission
+            .secret_refs
+            .iter()
+            .any(|secret_ref| !policy.allowed_secret_refs.contains(*secret_ref))
+        {
+            Err(PeerExecutionDenialReason::SecretDenied)
+        } else if !network_policy_permits(policy.network_policy, admission.requested_network_policy)
+        {
+            Err(PeerExecutionDenialReason::NetworkDenied)
+        } else if !policy.allowed_tool_domains.contains("turn")
+            || !policy.allowed_tool_domains.contains("code")
+        {
+            Err(PeerExecutionDenialReason::ToolDomainDenied)
+        } else {
+            let expires_at = policy
+                .expires_at
+                .map(|expiry| expiry.min(admission.request_expires_at))
+                .unwrap_or(admission.request_expires_at);
+            Ok(TaskExecutionGrant {
+                schema_version: TASK_EXECUTION_GRANT_SCHEMA_VERSION,
+                grant_id: task_grant_id(peer_device_id, work_id, policy.revision),
+                peer_device_id: peer_device_id.to_string(),
+                peer_pairing_id: peer_pairing_id.to_string(),
+                origin_runtime_id: admission.origin_runtime_id.to_string(),
+                destination_runtime_id: admission.destination_runtime_id.to_string(),
+                parent_session_id: admission.parent_session_id.to_string(),
+                bot_id: None,
+                work_id: work_id.to_string(),
+                correlation_id: admission.correlation_id.to_string(),
+                worker_intent: "coder".to_string(),
+                project_id: Some(project_id.to_string()),
+                work_environment_materialization: true,
+                authorized_root_ref: Some(root_ref.to_string()),
+                authorized_secret_refs: admission
+                    .secret_refs
+                    .iter()
+                    .map(|value| (*value).to_string())
+                    .collect(),
+                policy_revision: policy.revision,
+                policy_source: PeerExecutionPolicySource::Stored,
+                requested_tool_domains: vec!["code".to_string(), "turn".to_string()],
+                effective_tool_domains: vec!["code".to_string(), "turn".to_string()],
+                requested_tool_names: admission
+                    .requested_tool_names
+                    .iter()
+                    .map(|value| (*value).to_string())
+                    .collect(),
+                effective_tool_names: admission
+                    .requested_tool_names
+                    .iter()
+                    .map(|value| (*value).to_string())
+                    .collect(),
+                network_policy: admission.requested_network_policy,
+                issued_at: admission.request_issued_at,
+                expires_at,
+            })
+        };
+        let (decision_label, reason) = match &decision {
+            Ok(_) => ("allowed", "portable_coder_allowed".to_string()),
+            Err(reason) => ("denied", reason.code().to_string()),
+        };
+        append_audit(
+            &mut file,
+            PeerExecutionAuditEvent {
+                event_id: format!("pea_{}", uuid::Uuid::new_v4().simple()),
+                occurred_at: now,
+                action: "task.admission".to_string(),
+                peer_device_id: peer_device_id.to_string(),
+                scope: "portable_coder".to_string(),
+                policy_revision: policy.revision,
+                decision: decision_label.to_string(),
+                work_id: Some(work_id.to_string()),
+                reason,
+                actor: format!("peer:{peer_device_id}"),
+            },
+        );
+        self.save(&file)?;
+        Ok(decision)
+    }
+
     /// Revalidate a previously admitted remote Coder grant at a mutation
     /// boundary. The immutable grant remains provenance, while the current
     /// destination-owned policy may narrow or revoke future operations.
@@ -591,7 +762,18 @@ impl PeerExecutionPolicyStore {
             && policy.coder_work
             && policy.allowed_project_ids.contains(project_id)
             && policy.allowed_tool_domains.contains("turn")
-            && policy.allowed_tool_domains.contains("code"))
+            && policy.allowed_tool_domains.contains("code")
+            && (!grant.work_environment_materialization
+                || (policy.work_environment_materialization
+                    && grant
+                        .authorized_root_ref
+                        .as_ref()
+                        .is_some_and(|root_ref| policy.allowed_root_refs.contains(root_ref))
+                    && grant
+                        .authorized_secret_refs
+                        .iter()
+                        .all(|secret_ref| policy.allowed_secret_refs.contains(secret_ref))
+                    && network_policy_permits(policy.network_policy, grant.network_policy))))
     }
 
     pub fn remove_policy(
@@ -880,6 +1062,9 @@ fn evaluate_assistant_work(
         correlation_id: admission.correlation_id.to_string(),
         worker_intent: admission.worker_intent.to_string(),
         project_id: admission.project_id.map(str::to_string),
+        work_environment_materialization: false,
+        authorized_root_ref: None,
+        authorized_secret_refs: Vec::new(),
         policy_revision: policy.revision,
         policy_source: PeerExecutionPolicySource::Stored,
         requested_tool_domains: requested.into_iter().collect(),
@@ -890,6 +1075,32 @@ fn evaluate_assistant_work(
         issued_at: now,
         expires_at,
     })
+}
+
+fn network_policy_permits(allowed: PeerNetworkPolicy, requested: PeerNetworkPolicy) -> bool {
+    matches!(
+        (allowed, requested),
+        (_, PeerNetworkPolicy::Deny)
+            | (PeerNetworkPolicy::WebOnly, PeerNetworkPolicy::WebOnly)
+            | (PeerNetworkPolicy::Unrestricted, PeerNetworkPolicy::WebOnly)
+            | (
+                PeerNetworkPolicy::Unrestricted,
+                PeerNetworkPolicy::Unrestricted
+            )
+    )
+}
+
+fn portable_coder_tool_domain(tool_name: &str) -> &'static str {
+    match tool_name {
+        // The portable registry narrows these public multiplexers to only
+        // `code.read`, `code.search`, and `code.write` before delegation.
+        // Treating their unfiltered public form as code authority elsewhere
+        // would incorrectly grant vault and artifact access.
+        crate::public_api::COGNITION_STORE_READ | crate::public_api::COGNITION_STORE_WRITE => {
+            "code"
+        }
+        _ => execution_tool_domain(tool_name),
+    }
 }
 
 fn validate_identity<'a>(label: &str, value: &'a str) -> Result<&'a str> {
@@ -962,6 +1173,13 @@ mod tests {
     ];
     const TEST_CODER_TOOL_DOMAINS: [&str; 2] = ["turn", "code"];
     const TEST_CODER_TOOL_NAMES: [&str; 2] = ["cognition_turn", "cognition_coder_file_read"];
+    const TEST_PORTABLE_CODER_TOOL_NAMES: [&str; 5] = [
+        "cognition_turn",
+        "cognition_store_read",
+        "cognition_store_write",
+        "cognition_coder_shell_run",
+        "cognition_coder_shell_status",
+    ];
 
     fn test_store() -> (PeerExecutionPolicyStore, PathBuf) {
         let root = std::env::temp_dir().join(format!(
@@ -1013,6 +1231,32 @@ mod tests {
             requested_tool_names: &TEST_CODER_TOOL_NAMES,
             request_expires_at: Utc::now() + chrono::Duration::minutes(5),
             legacy_task_request_granted: false,
+        }
+    }
+
+    fn portable_coder_admission<'a>(
+        peer: &'a str,
+        work: &'a str,
+        project: &'a str,
+        root_ref: &'a str,
+        secret_refs: &'a [&'a str],
+        network: PeerNetworkPolicy,
+    ) -> PortableCoderAdmission<'a> {
+        PortableCoderAdmission {
+            peer_device_id: peer,
+            peer_pairing_id: "pairing-1",
+            origin_runtime_id: peer,
+            destination_runtime_id: "runtime-local",
+            parent_session_id: "session-1",
+            work_id: work,
+            correlation_id: "correlation-1",
+            project_id: project,
+            root_ref,
+            secret_refs,
+            requested_tool_names: &TEST_PORTABLE_CODER_TOOL_NAMES,
+            requested_network_policy: network,
+            request_issued_at: Utc::now(),
+            request_expires_at: Utc::now() + chrono::Duration::minutes(5),
         }
     }
 
@@ -1193,6 +1437,106 @@ mod tests {
             )
             .unwrap();
         assert!(!store.coder_grant_is_active(&grant).unwrap());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn portable_coder_grant_binds_environment_root_secrets_network_and_tools() {
+        let (store, root) = test_store();
+        store
+            .update_policy(
+                "peer-a",
+                "pairing-1",
+                PeerExecutionPolicyUpdate {
+                    preset: PeerExecutionPolicyPreset::ApprovedProjects,
+                    allowed_project_ids: Some(BTreeSet::from(["repo-a".to_string()])),
+                    allowed_root_refs: Some(BTreeSet::from(["workspace:repo-a".to_string()])),
+                    allowed_secret_refs: Some(BTreeSet::from(["github-ci".to_string()])),
+                    network_policy: Some(PeerNetworkPolicy::WebOnly),
+                    ..Default::default()
+                },
+                "local:operator",
+            )
+            .unwrap();
+
+        let grant = store
+            .admit_portable_coder(portable_coder_admission(
+                "peer-a",
+                "work-a",
+                "repo-a",
+                "workspace:repo-a",
+                &["github-ci"],
+                PeerNetworkPolicy::WebOnly,
+            ))
+            .unwrap()
+            .expect("portable Coder authority");
+
+        assert!(grant.work_environment_materialization);
+        assert_eq!(grant.project_id.as_deref(), Some("repo-a"));
+        assert_eq!(
+            grant.authorized_root_ref.as_deref(),
+            Some("workspace:repo-a")
+        );
+        assert_eq!(grant.authorized_secret_refs, vec!["github-ci"]);
+        assert_eq!(grant.effective_tool_names, TEST_PORTABLE_CODER_TOOL_NAMES);
+        assert!(store.coder_grant_is_active(&grant).unwrap());
+
+        let denied_root = store
+            .admit_portable_coder(portable_coder_admission(
+                "peer-a",
+                "work-b",
+                "repo-a",
+                "workspace:other",
+                &[],
+                PeerNetworkPolicy::Deny,
+            ))
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(denied_root, PeerExecutionDenialReason::RootRefDenied);
+
+        let denied_secret = store
+            .admit_portable_coder(portable_coder_admission(
+                "peer-a",
+                "work-c",
+                "repo-a",
+                "workspace:repo-a",
+                &["production-token"],
+                PeerNetworkPolicy::Deny,
+            ))
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(denied_secret, PeerExecutionDenialReason::SecretDenied);
+
+        let denied_network = store
+            .admit_portable_coder(portable_coder_admission(
+                "peer-a",
+                "work-d",
+                "repo-a",
+                "workspace:repo-a",
+                &[],
+                PeerNetworkPolicy::Unrestricted,
+            ))
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(denied_network, PeerExecutionDenialReason::NetworkDenied);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn portable_coder_never_inherits_legacy_task_request_authority() {
+        let (store, root) = test_store();
+        let denial = store
+            .admit_portable_coder(portable_coder_admission(
+                "peer-a",
+                "work-a",
+                "repo-a",
+                "workspace:repo-a",
+                &[],
+                PeerNetworkPolicy::Deny,
+            ))
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(denial, PeerExecutionDenialReason::CoderWorkDenied);
         let _ = std::fs::remove_dir_all(root);
     }
 
