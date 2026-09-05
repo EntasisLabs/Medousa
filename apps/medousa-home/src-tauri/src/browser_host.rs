@@ -6,11 +6,14 @@ use std::sync::{Arc, Mutex};
 use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use base64::Engine as _;
 use medousa_browser_bridge::{
-    BrowserControl, BrowserObservation, BrowserSnapshot, TabGroup, TabGroupManager, TabOpenedBy,
+    BROWSER_SCREENSHOT_SCHEMA_VERSION, BrowserControl, BrowserObservation,
+    BrowserScreenshotCapture, BrowserSnapshot, TabGroup, TabGroupManager, TabOpenedBy,
 };
 use medousa_browser_lite::{SearchResponse, fetch_url_markdown, search_ddg_html_cached};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest as _, Sha256};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::oneshot;
 
@@ -199,8 +202,22 @@ struct TabObservationRequest {
     max_nodes: usize,
 }
 
+#[derive(Debug, Deserialize)]
+struct TabScreenshotRequest {
+    expected_document_id: String,
+    expected_observation_revision: u64,
+    #[serde(default = "default_screenshot_width")]
+    max_width: u32,
+    world_permit: BrowserWorldPermitWire,
+    world_expected_url: String,
+}
+
 fn default_observation_nodes() -> usize {
     256
+}
+
+fn default_screenshot_width() -> u32 {
+    crate::human_browser::DEFAULT_BROWSER_SCREENSHOT_WIDTH
 }
 
 fn parse_opened_by(value: Option<&str>) -> TabOpenedBy {
@@ -390,6 +407,8 @@ impl TabActStepRequest {
 struct BrowserWorldPermitWire {
     resource_id: String,
     expires_at_ms: u64,
+    #[serde(default)]
+    effect_class: Option<String>,
 }
 
 fn normalized_tab_act_steps(
@@ -555,6 +574,21 @@ fn validate_live_act_fence(
         }
     }
     if let Some(permit) = request.world_permit.as_ref() {
+        if permit
+            .effect_class
+            .as_deref()
+            .is_some_and(|effect| {
+                !matches!(
+                    effect,
+                    "local_reversible" | "local_mutation" | "external_effect" | "irreversible"
+                )
+            })
+        {
+            return Err((
+                "world_permit_effect_mismatch".to_string(),
+                "observation-only world permit cannot execute browser mutations".to_string(),
+            ));
+        }
         if permit.resource_id != format!("browser-tab:{tab_id}") {
             return Err((
                 "world_permit_resource_mismatch".to_string(),
@@ -1003,6 +1037,106 @@ async fn capture_tab_observation(
     )
 }
 
+async fn screenshot_tab_group(
+    Path(tab_group_id): Path<String>,
+    Json(request): Json<TabScreenshotRequest>,
+) -> Result<Json<BrowserScreenshotCapture>, String> {
+    let group = TabGroupManager::get_group(&tab_group_id)
+        .ok_or_else(|| format!("tab group not found: {tab_group_id}"))?;
+    if group.control == BrowserControl::AwaitingOperator {
+        return Err("operator-only browser state cannot be captured".to_string());
+    }
+    let tab = group
+        .tabs
+        .iter()
+        .find(|tab| tab.active)
+        .ok_or_else(|| "tab group has no active tab".to_string())?;
+    if request.world_permit.resource_id != format!("browser-tab:{}", tab.id) {
+        return Err("world permit is not bound to the active browser tab".to_string());
+    }
+    if request.world_permit.effect_class.as_deref() != Some("observe_pixels") {
+        return Err("world permit does not authorize pixel observation".to_string());
+    }
+    if request.world_permit.expires_at_ms <= host_now_ms() {
+        return Err("world permit expired before pixel capture".to_string());
+    }
+    if !crate::human_browser::urls_match_for_snapshot(&request.world_expected_url, &tab.url)
+        || !crate::human_browser::urls_match_for_snapshot(
+            &crate::human_browser::human_browser_active_url(),
+            &tab.url,
+        )
+    {
+        return Err("active browser tab changed before pixel capture".to_string());
+    }
+    let observation = TabGroupManager::current_observation(&tab_group_id, &tab.id)
+        .ok_or_else(|| "browser semantic mirror is unavailable for pixel capture".to_string())?;
+    if observation.document_id != request.expected_document_id
+        || observation.revision != request.expected_observation_revision
+        || !crate::human_browser::urls_match_for_snapshot(&observation.url, &tab.url)
+    {
+        return Err("pixel capture requested for a stale browser observation".to_string());
+    }
+
+    let app = crate::human_browser::app_handle()
+        .ok_or_else(|| "human browser webview is not available".to_string())?;
+    let captured = crate::human_browser::capture_viewport_screenshot(
+        &app,
+        &observation.viewport,
+        request.max_width,
+    )
+    .await?;
+
+    // Re-observe after the native frame is captured. If DOM, navigation, or
+    // viewport state moved, the pixels cannot honestly carry the old refs.
+    let post_observation = capture_tab_observation(
+        &tab_group_id,
+        &tab.id,
+        &tab.url,
+        Some(request.expected_observation_revision),
+        512,
+    )
+    .await?;
+    let post_state = TabGroupManager::observation_state(&tab_group_id, &tab.id)
+        .ok_or_else(|| "browser semantic mirror disappeared after pixel capture".to_string())?;
+    if post_state.document_id != request.expected_document_id
+        || post_state.revision != request.expected_observation_revision
+        || post_observation.viewport != observation.viewport
+    {
+        return Err("browser state changed while its pixels were captured; observe again".to_string());
+    }
+
+    let sha256 = format!("{:x}", Sha256::digest(&captured.png));
+    let byte_size = captured.png.len();
+    Ok(Json(BrowserScreenshotCapture {
+        schema_version: BROWSER_SCREENSHOT_SCHEMA_VERSION,
+        tab_id: tab.id.clone(),
+        url: tab.url.clone(),
+        title: observation.title,
+        document_id: request.expected_document_id,
+        observation_revision: request.expected_observation_revision,
+        viewport: observation.viewport,
+        coordinate_frame: "css_viewport".to_string(),
+        mime: "image/png".to_string(),
+        image_width: captured.image_width,
+        image_height: captured.image_height,
+        byte_size,
+        sha256,
+        sensitive_regions_redacted: captured.sensitive_regions_redacted,
+        captured_at_ms: host_now_ms(),
+        untrusted_content: true,
+        image_base64: base64::engine::general_purpose::STANDARD.encode(captured.png),
+    }))
+}
+
+fn host_now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .try_into()
+        .unwrap_or(u64::MAX)
+}
+
 fn build_router(state: BrowserHostState) -> Router {
     Router::new()
         .route("/health", get(health))
@@ -1036,6 +1170,10 @@ fn build_router(state: BrowserHostState) -> Router {
         .route(
             "/v1/tab-groups/{tab_group_id}/observe",
             post(observe_tab_group),
+        )
+        .route(
+            "/v1/tab-groups/{tab_group_id}/screenshot",
+            post(screenshot_tab_group),
         )
         .route("/v1/tab-groups/{tab_group_id}/act", post(act_tab_group))
         .with_state(state)

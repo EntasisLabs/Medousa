@@ -765,6 +765,7 @@ impl WorldAuthority {
 fn all_capabilities() -> BTreeSet<WorldCapability> {
     [
         WorldCapability::Observe,
+        WorldCapability::ObservePixels,
         WorldCapability::Interact,
         WorldCapability::ExternalEffect,
         WorldCapability::IrreversibleEffect,
@@ -1284,6 +1285,67 @@ mod tests {
                 ..
             } if resource == WorldResourceId::new("tab:two")
         ));
+    }
+
+    #[test]
+    fn pixel_observation_is_distinct_and_does_not_require_control() {
+        let mut authority = WorldAuthority::default();
+        create_world(&mut authority);
+        grant_agent(&mut authority, &[WorldCapability::Observe]);
+        let state = authority.world(&world_id()).unwrap();
+        let intent = WorldActionIntent {
+            intent_id: WorldIntentId::new("intent:pixels"),
+            trace_id: WorldTraceId::new("trace:pixels"),
+            principal: agent(),
+            resource_id: WorldResourceId::new("tab:one"),
+            expected_revision: state.revision,
+            expected_control_generation: None,
+            required_capability: WorldCapability::ObservePixels,
+            effect_class: WorldEffectClass::ObservePixels,
+            idempotency_key: "observe-pixels".to_string(),
+            permit_expires_at_ms: NOW + 100,
+            summary: "capture viewport".to_string(),
+        };
+
+        let error = authority
+            .admit_action(&world_id(), intent.clone(), NOW + 1)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            WorldAuthorityError::CapabilityDenied {
+                capability: WorldCapability::ObservePixels,
+                ..
+            }
+        ));
+
+        authority
+            .grant_capabilities(
+                &world_id(),
+                WorldGrantRequest {
+                    grant_id: WorldGrantId::new("grant:pixels"),
+                    issued_by: human(),
+                    subject: agent(),
+                    capabilities: [WorldCapability::ObservePixels].into_iter().collect(),
+                    resource_scope: WorldResourceScope::All,
+                    expires_at_ms: Some(NOW + 1_000),
+                },
+                NOW + 1,
+            )
+            .unwrap();
+        let state = authority.world(&world_id()).unwrap();
+        let admission = authority
+            .admit_action(
+                &world_id(),
+                WorldActionIntent {
+                    intent_id: WorldIntentId::new("intent:pixels-admitted"),
+                    expected_revision: state.revision,
+                    idempotency_key: "observe-pixels-admitted".to_string(),
+                    ..intent
+                },
+                NOW + 2,
+            )
+            .unwrap();
+        assert!(matches!(admission, WorldAdmission::Admitted { .. }));
     }
 
     #[test]

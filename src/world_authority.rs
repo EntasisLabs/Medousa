@@ -150,6 +150,46 @@ pub fn admit_browser_observation(
     }
 }
 
+pub fn admit_browser_pixel_observation(
+    authority_id: &str,
+    tab_group_id: &str,
+    tab_id: &str,
+    trace_id: &str,
+    summary: &str,
+) -> Result<BrowserWorldAdmission, String> {
+    let now_ms = now_ms();
+    let resource_id = WorldResourceId::new(format!("browser-tab:{tab_id}"));
+    let mut authority = AUTHORITY
+        .lock()
+        .map_err(|_| "world authority lock poisoned".to_string())?;
+    let (world_id, agent) =
+        ensure_browser_world(&mut authority, authority_id, tab_group_id, now_ms)?;
+    let state = authority.world(&world_id).map_err(|error| error.to_string())?;
+    let operation_id = Uuid::new_v4().to_string();
+    let intent = WorldActionIntent {
+        intent_id: medousa_world::WorldIntentId::new(format!("intent:{operation_id}")),
+        trace_id: WorldTraceId::new(trace_id),
+        principal: agent,
+        resource_id,
+        expected_revision: state.revision,
+        expected_control_generation: None,
+        required_capability: WorldCapability::ObservePixels,
+        effect_class: WorldEffectClass::ObservePixels,
+        idempotency_key: format!("browser-pixel-observation:{operation_id}"),
+        permit_expires_at_ms: now_ms.saturating_add(BROWSER_ACTION_PERMIT_MS),
+        summary: summary.to_string(),
+    };
+    match authority
+        .admit_action(&world_id, intent, now_ms)
+        .map_err(|error| error.to_string())?
+    {
+        WorldAdmission::Admitted { permit } => Ok(BrowserWorldAdmission { permit }),
+        WorldAdmission::Replay { .. } => {
+            Err("new browser pixel observation unexpectedly resolved as a replay".to_string())
+        }
+    }
+}
+
 fn ensure_browser_world(
     authority: &mut WorldAuthority,
     authority_id: &str,
@@ -185,7 +225,11 @@ fn ensure_browser_world(
             grant_id,
             issued_by: system,
             subject: agent.clone(),
-            capabilities: [WorldCapability::Observe, WorldCapability::Interact]
+            capabilities: [
+                WorldCapability::Observe,
+                WorldCapability::ObservePixels,
+                WorldCapability::Interact,
+            ]
                 .into_iter()
                 .collect::<BTreeSet<_>>(),
             resource_scope: WorldResourceScope::All,
@@ -264,6 +308,31 @@ pub fn record_browser_observation(
         None => {
             return Err("browser observation delta arrived before a full mirror".to_string());
         }
+    }
+    Ok(())
+}
+
+pub fn validate_browser_pixel_fence(
+    authority_id: &str,
+    tab_group_id: &str,
+    tab_id: &str,
+    expected_url: &str,
+    document_id: &str,
+    observation_revision: u64,
+) -> Result<(), String> {
+    let world_id = browser_world_id(authority_id, tab_group_id);
+    let mirrors = BROWSER_OBSERVATIONS
+        .lock()
+        .map_err(|_| "browser observation mirror lock poisoned".to_string())?;
+    let observation = mirrors
+        .get(&world_id)
+        .ok_or_else(|| "daemon has no semantic observation for this browser world".to_string())?;
+    if observation.tab_id != tab_id
+        || observation.document_id != document_id
+        || observation.revision != observation_revision
+        || !same_browser_url(&observation.url, expected_url)
+    {
+        return Err("pixel capture belongs to stale browser state".to_string());
     }
     Ok(())
 }

@@ -262,9 +262,14 @@
     {
       "registry": "coder_bound",
       "name": "cognition_browser_snapshot",
-      "description": "Observe the current shared page as a bounded semantic projection with opaque element refs and revisioned deltas; falls back to markdown for other URLs.",
+      "description": "Observe the current shared page as a bounded semantic projection with opaque element refs and revisioned deltas; optionally persist a redacted viewport screenshot; falls back to markdown for other URLs.",
       "input_schema": {
         "properties": {
+          "capture_screenshot": {
+            "default": false,
+            "description": "Capture the visible viewport as a redacted out-of-band PNG artifact",
+            "type": "boolean"
+          },
           "intent": {
             "description": "Short purpose of this tool call.",
             "maxLength": 320,
@@ -273,6 +278,13 @@
           "max_chars": {
             "default": 4000,
             "description": "Maximum excerpt length in characters",
+            "type": "integer"
+          },
+          "screenshot_max_width": {
+            "default": 1280,
+            "description": "Maximum stored screenshot width in pixels",
+            "maximum": 1600,
+            "minimum": 320,
             "type": "integer"
           },
           "since_revision": {
@@ -2456,12 +2468,24 @@
     {
       "registry": "general_runtime",
       "name": "cognition_browser_snapshot",
-      "description": "Observe the current shared page as a bounded semantic projection with opaque element refs and revisioned deltas; falls back to markdown for other URLs.",
+      "description": "Observe the current shared page as a bounded semantic projection with opaque element refs and revisioned deltas; optionally persist a redacted viewport screenshot; falls back to markdown for other URLs.",
       "input_schema": {
         "properties": {
+          "capture_screenshot": {
+            "default": false,
+            "description": "Capture the visible viewport as a redacted out-of-band PNG artifact",
+            "type": "boolean"
+          },
           "max_chars": {
             "default": 4000,
             "description": "Maximum excerpt length in characters",
+            "type": "integer"
+          },
+          "screenshot_max_width": {
+            "default": 1280,
+            "description": "Maximum stored screenshot width in pixels",
+            "maximum": 1600,
+            "minimum": 320,
             "type": "integer"
           },
           "since_revision": {

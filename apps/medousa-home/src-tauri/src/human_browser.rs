@@ -12,7 +12,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use medousa_browser_bridge::{
-    BrowserObservationCapture, BrowserObservationViewport, BrowserSemanticNode,
+    BrowserObservationBounds, BrowserObservationCapture, BrowserObservationViewport,
+    BrowserSemanticNode,
 };
 use medousa_browser_lite::{
     FetchResult, SearchResponse, markdown_from_html, search_response_from_ddg_html,
@@ -497,6 +498,12 @@ struct SemanticObservationReport {
     unchanged: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SensitiveBoundsReport {
+    bounds: Vec<BrowserObservationBounds>,
+    truncated: bool,
+}
+
 const MAX_BROWSER_PENDING_REQUESTS: usize = 64;
 const MAX_BROWSER_PENDING_PER_SURFACE: usize = 8;
 const MAX_SNAPSHOT_CAPTURE_CHARS: usize = 128 * 1024;
@@ -504,6 +511,11 @@ const MAX_SNAPSHOT_REPORT_BYTES: usize = 512 * 1024;
 const MAX_BROWSER_CONTROL_REPORT_BYTES: usize = 64 * 1024;
 const MAX_BROWSER_OBSERVATION_REPORT_BYTES: usize = 512 * 1024;
 const MAX_BROWSER_OBSERVATION_NODES: usize = 512;
+const MAX_BROWSER_SENSITIVE_REGIONS: usize = 256;
+const MAX_BROWSER_SCREENSHOT_BYTES: usize = 8 * 1024 * 1024;
+const MAX_BROWSER_SCREENSHOT_PIXELS: u64 = 16 * 1024 * 1024;
+pub const DEFAULT_BROWSER_SCREENSHOT_WIDTH: u32 = 1280;
+pub const MAX_BROWSER_SCREENSHOT_WIDTH: u32 = 1600;
 const MAX_SNAPSHOT_MARKDOWN_CHARS: usize = 64 * 1024;
 const MAX_SNAPSHOT_SEARCH_RESULTS: usize = 32;
 
@@ -511,6 +523,7 @@ const MAX_SNAPSHOT_SEARCH_RESULTS: usize = 32;
 enum BrowserRequestKind {
     Snapshot,
     Observation,
+    SensitiveBounds,
     Act,
     Navigation,
     Find,
@@ -519,6 +532,7 @@ enum BrowserRequestKind {
 enum BrowserPendingReply {
     Snapshot(oneshot::Sender<SnapshotReport>),
     Observation(oneshot::Sender<Result<SemanticObservationReport, String>>),
+    SensitiveBounds(oneshot::Sender<Result<SensitiveBoundsReport, String>>),
     Act(oneshot::Sender<BrowserActReport>),
     Navigation(oneshot::Sender<HumanBrowserNavStatePayload>),
     Find(oneshot::Sender<FindInPageResult>),
@@ -529,6 +543,7 @@ impl BrowserPendingReply {
         match self {
             Self::Snapshot(_) => BrowserRequestKind::Snapshot,
             Self::Observation(_) => BrowserRequestKind::Observation,
+            Self::SensitiveBounds(_) => BrowserRequestKind::SensitiveBounds,
             Self::Act(_) => BrowserRequestKind::Act,
             Self::Navigation(_) => BrowserRequestKind::Navigation,
             Self::Find(_) => BrowserRequestKind::Find,
@@ -591,6 +606,13 @@ pub(crate) enum BrowserPageReportV1 {
         nodes: Vec<BrowserSemanticNode>,
         truncated: bool,
         unchanged: bool,
+        #[serde(default)]
+        error: Option<String>,
+    },
+    SensitiveBounds {
+        request_id: String,
+        bounds: Vec<BrowserObservationBounds>,
+        truncated: bool,
         #[serde(default)]
         error: Option<String>,
     },
@@ -905,6 +927,31 @@ pub(crate) fn accept_browser_page_report<R: tauri::Runtime>(
                         truncated,
                         unchanged,
                     })
+                };
+                let _ = tx.send(result);
+            }
+        }
+        BrowserPageReportV1::SensitiveBounds {
+            request_id,
+            bounds,
+            truncated,
+            error,
+        } => {
+            let validated_request_id = validate_request_id(&request_id)?;
+            if bounds.len() > MAX_BROWSER_SENSITIVE_REGIONS {
+                BROWSER_HOST_STATE.cancel_request(validated_request_id);
+                BROWSER_HOST_STATE.record_oversize();
+                return Err("sensitive browser bounds exceed their bounded report limit".to_string());
+            }
+            if let Some(BrowserPendingReply::SensitiveBounds(tx)) = BROWSER_HOST_STATE.take(
+                validated_request_id,
+                &identity,
+                BrowserRequestKind::SensitiveBounds,
+            ) {
+                let result = if let Some(error) = error {
+                    Err(error)
+                } else {
+                    Ok(SensitiveBoundsReport { bounds, truncated })
                 };
                 let _ = tx.send(result);
             }
@@ -3622,6 +3669,228 @@ pub async fn capture_semantic_observation(
     })
 }
 
+#[derive(Debug)]
+pub struct BrowserViewportScreenshot {
+    pub png: Vec<u8>,
+    pub image_width: u32,
+    pub image_height: u32,
+    pub sensitive_regions_redacted: usize,
+}
+
+pub async fn capture_viewport_screenshot(
+    app: &AppHandle,
+    viewport: &BrowserObservationViewport,
+    max_width: u32,
+) -> Result<BrowserViewportScreenshot, String> {
+    let content = embedded_content_webview(app)
+        .ok_or_else(|| "browser content webview not ready".to_string())?;
+    let before = capture_sensitive_bounds(&content).await?;
+    if before.truncated {
+        return Err("sensitive browser regions exceed the redaction budget".to_string());
+    }
+    let raw = capture_native_viewport_png(content.clone()).await?;
+    let after = capture_sensitive_bounds(&content).await?;
+    if after.truncated || before.bounds != after.bounds {
+        return Err("sensitive browser regions moved while pixels were captured".to_string());
+    }
+    process_viewport_screenshot(raw, viewport, &after.bounds, max_width)
+}
+
+fn process_viewport_screenshot(
+    raw: Vec<u8>,
+    viewport: &BrowserObservationViewport,
+    sensitive_bounds: &[BrowserObservationBounds],
+    max_width: u32,
+) -> Result<BrowserViewportScreenshot, String> {
+    use image::{DynamicImage, ImageFormat, Rgba, imageops::FilterType};
+    use std::io::Cursor;
+
+    if raw.is_empty() || raw.len() > MAX_BROWSER_SCREENSHOT_BYTES {
+        return Err("native browser screenshot is empty or exceeds the 8 MB cap".to_string());
+    }
+    if viewport.width == 0 || viewport.height == 0 {
+        return Err("browser screenshot requires a non-empty semantic viewport".to_string());
+    }
+    let decoded = image::load_from_memory_with_format(&raw, ImageFormat::Png)
+        .map_err(|error| format!("could not decode native browser screenshot: {error}"))?;
+    let mut pixels = decoded.to_rgba8();
+    let (original_width, original_height) = pixels.dimensions();
+    if original_width == 0
+        || original_height == 0
+        || u64::from(original_width) * u64::from(original_height) > MAX_BROWSER_SCREENSHOT_PIXELS
+    {
+        return Err("native browser screenshot dimensions exceed the pixel budget".to_string());
+    }
+    let scale_x = f64::from(original_width) / f64::from(viewport.width);
+    let scale_y = f64::from(original_height) / f64::from(viewport.height);
+    let mut sensitive_regions_redacted = 0usize;
+    for bounds in sensitive_bounds {
+        let Some((x_start, x_end)) = scaled_redaction_axis(
+            bounds.x.saturating_sub(2),
+            bounds.width.saturating_add(4),
+            scale_x,
+            original_width,
+        ) else {
+            continue;
+        };
+        let Some((y_start, y_end)) = scaled_redaction_axis(
+            bounds.y.saturating_sub(2),
+            bounds.height.saturating_add(4),
+            scale_y,
+            original_height,
+        ) else {
+            continue;
+        };
+        for y in y_start..y_end {
+            for x in x_start..x_end {
+                pixels.put_pixel(x, y, Rgba([20, 18, 28, 255]));
+            }
+        }
+        sensitive_regions_redacted = sensitive_regions_redacted.saturating_add(1);
+    }
+
+    // Redact at native resolution before resizing so resampling cannot bleed
+    // secret-field pixels outside the covered rectangle.
+    let max_width = max_width.clamp(320, MAX_BROWSER_SCREENSHOT_WIDTH);
+    if original_width > max_width {
+        let resized_height = ((u64::from(original_height) * u64::from(max_width))
+            / u64::from(original_width))
+        .max(1)
+        .try_into()
+        .unwrap_or(u32::MAX);
+        pixels = image::imageops::resize(&pixels, max_width, resized_height, FilterType::Triangle);
+    }
+    let (image_width, image_height) = pixels.dimensions();
+
+    let mut encoded = Cursor::new(Vec::new());
+    DynamicImage::ImageRgba8(pixels)
+        .write_to(&mut encoded, ImageFormat::Png)
+        .map_err(|error| format!("could not encode redacted browser screenshot: {error}"))?;
+    let png = encoded.into_inner();
+    if png.len() > MAX_BROWSER_SCREENSHOT_BYTES {
+        return Err("redacted browser screenshot exceeds the 8 MB cap".to_string());
+    }
+    Ok(BrowserViewportScreenshot {
+        png,
+        image_width,
+        image_height,
+        sensitive_regions_redacted,
+    })
+}
+
+async fn capture_sensitive_bounds(
+    content: &tauri::Webview,
+) -> Result<SensitiveBoundsReport, String> {
+    let identity = request_identity(content, BrowserSurface::Embed)?;
+    let (tx, rx) = oneshot::channel();
+    let request_id = BROWSER_HOST_STATE.register(
+        &identity,
+        BrowserPendingReply::SensitiveBounds(tx),
+    )?;
+    let _guard = BrowserPendingGuard::new(&BROWSER_HOST_STATE, request_id.clone());
+    content
+        .eval(&sensitive_bounds_capture_js(&request_id)?)
+        .map_err(|error| error.to_string())?;
+    tokio::time::timeout(Duration::from_secs(4), rx)
+        .await
+        .map_err(|_| "sensitive browser bounds capture timed out".to_string())?
+        .map_err(|_| "sensitive browser bounds channel closed".to_string())?
+}
+
+fn sensitive_bounds_capture_js(request_id: &str) -> Result<String, String> {
+    let request_id = serde_json::to_string(request_id).map_err(|error| error.to_string())?;
+    Ok(format!(
+        r#"(function(){{
+try{{
+  var max={MAX_BROWSER_SENSITIVE_REGIONS};
+  var selector='input[type="password"],input[type="file"],[autocomplete="current-password"],[autocomplete="new-password"],[autocomplete="one-time-code"],[autocomplete^="cc-"],[autocomplete*="webauthn"],[data-medousa-sensitive="true"]';
+  var candidates=Array.prototype.slice.call(document.querySelectorAll(selector));
+  var bounds=[],truncated=candidates.length>max;
+  for(var index=0;index<candidates.length&&bounds.length<max;index++){{
+    var el=candidates[index],style=getComputedStyle(el),rect=el.getBoundingClientRect();
+    if(style.display==="none"||style.visibility==="hidden"||rect.width<=0||rect.height<=0)continue;
+    bounds.push({{x:Math.round(rect.x),y:Math.round(rect.y),width:Math.max(0,Math.round(rect.width)),height:Math.max(0,Math.round(rect.height))}});
+  }}
+  var i=window.__TAURI_INTERNALS__||window.__TAURI__;
+  if(i&&i.invoke)i.invoke("plugin:browser-bridge|report",{{report:{{version:1,kind:"sensitiveBounds",requestId:{request_id},bounds:bounds,truncated:truncated,error:null}}}});
+}}catch(e){{
+  var i=window.__TAURI_INTERNALS__||window.__TAURI__;
+  if(i&&i.invoke)i.invoke("plugin:browser-bridge|report",{{report:{{version:1,kind:"sensitiveBounds",requestId:{request_id},bounds:[],truncated:true,error:String(e)}}}});
+}}
+}})();"#
+    ))
+}
+
+fn scaled_redaction_axis(origin: i32, size: u32, scale: f64, limit: u32) -> Option<(u32, u32)> {
+    if size == 0 || !scale.is_finite() || scale <= 0.0 || limit == 0 {
+        return None;
+    }
+    let start = (f64::from(origin) * scale).floor().max(0.0);
+    let end = ((f64::from(origin) + f64::from(size)) * scale)
+        .ceil()
+        .min(f64::from(limit));
+    if end <= start {
+        return None;
+    }
+    Some((start as u32, end as u32))
+}
+
+#[cfg(target_os = "macos")]
+async fn capture_native_viewport_png(content: tauri::Webview) -> Result<Vec<u8>, String> {
+    let (tx, rx) = oneshot::channel();
+    content
+        .with_webview(move |platform| unsafe {
+            use block2::RcBlock;
+            use objc2::runtime::AnyObject;
+            use objc2_app_kit::{
+                NSBitmapImageFileType, NSBitmapImageRep, NSBitmapImageRepPropertyKey, NSImage,
+            };
+            use objc2_foundation::NSDictionary;
+            use objc2_web_kit::WKWebView;
+            use std::cell::RefCell;
+
+            let webview: &WKWebView = &*platform.inner().cast();
+            let sender = RefCell::new(Some(tx));
+            let completion = RcBlock::new(
+                move |image: *mut NSImage, _error: *mut objc2_foundation::NSError| {
+                let result = (|| {
+                    let image = image
+                        .as_ref()
+                        .ok_or_else(|| "WKWebView returned no screenshot".to_string())?;
+                    let tiff = image
+                        .TIFFRepresentation()
+                        .ok_or_else(|| "WKWebView screenshot has no bitmap data".to_string())?;
+                    let bitmap = NSBitmapImageRep::imageRepWithData(&tiff)
+                        .ok_or_else(|| "could not decode WKWebView screenshot".to_string())?;
+                    let properties =
+                        NSDictionary::<NSBitmapImageRepPropertyKey, AnyObject>::new();
+                    let png = bitmap
+                        .representationUsingType_properties(
+                            NSBitmapImageFileType::PNG,
+                            &properties,
+                        )
+                        .ok_or_else(|| "could not encode WKWebView screenshot as PNG".to_string())?;
+                    Ok(png.to_vec())
+                })();
+                if let Some(sender) = sender.borrow_mut().take() {
+                    let _ = sender.send(result);
+                }
+                },
+            );
+            webview.takeSnapshotWithConfiguration_completionHandler(None, &completion);
+        })
+        .map_err(|error| error.to_string())?;
+    tokio::time::timeout(Duration::from_secs(8), rx)
+        .await
+        .map_err(|_| "native browser screenshot timed out".to_string())?
+        .map_err(|_| "native browser screenshot channel closed".to_string())?
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn capture_native_viewport_png(_content: tauri::Webview) -> Result<Vec<u8>, String> {
+    Err("viewport screenshots are not supported by this desktop browser driver yet".to_string())
+}
+
 #[tauri::command]
 pub async fn human_browser_snapshot_html(app: AppHandle) -> Result<SnapshotHtmlDto, String> {
     let report = capture_html(&app).await?;
@@ -3829,6 +4098,52 @@ pub async fn human_browser_popout_find_in_page(
 #[cfg(test)]
 mod request_broker_tests {
     use super::*;
+
+    #[test]
+    fn viewport_screenshot_redacts_sensitive_semantic_bounds() {
+        use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
+        use std::io::Cursor;
+
+        let source = RgbaImage::from_pixel(100, 50, Rgba([240, 240, 240, 255]));
+        let mut encoded = Cursor::new(Vec::new());
+        DynamicImage::ImageRgba8(source)
+            .write_to(&mut encoded, ImageFormat::Png)
+            .unwrap();
+        let viewport = BrowserObservationViewport {
+            width: 50,
+            height: 25,
+            scroll_x: 0,
+            scroll_y: 0,
+            device_scale_factor: 2.0,
+        };
+        let bounds = BrowserObservationBounds {
+            x: 10,
+            y: 5,
+            width: 10,
+            height: 5,
+        };
+
+        let captured = process_viewport_screenshot(
+            encoded.into_inner(),
+            &viewport,
+            &[bounds],
+            DEFAULT_BROWSER_SCREENSHOT_WIDTH,
+        )
+        .unwrap();
+        assert_eq!(captured.sensitive_regions_redacted, 1);
+        let output = image::load_from_memory_with_format(&captured.png, ImageFormat::Png)
+            .unwrap()
+            .to_rgba8();
+        assert_eq!(*output.get_pixel(25, 15), Rgba([20, 18, 28, 255]));
+        assert_eq!(*output.get_pixel(5, 5), Rgba([240, 240, 240, 255]));
+    }
+
+    #[test]
+    fn redaction_axis_clips_offscreen_bounds() {
+        assert_eq!(scaled_redaction_axis(-10, 20, 2.0, 100), Some((0, 20)));
+        assert_eq!(scaled_redaction_axis(60, 10, 2.0, 100), None);
+        assert_eq!(scaled_redaction_axis(10, 0, 2.0, 100), None);
+    }
 
     #[test]
     fn remote_navigation_policy_is_http_only_with_bounded_blank_bootstrap() {

@@ -570,6 +570,20 @@ impl TabGroupManager {
             .cloned()
     }
 
+    /// Return the complete current mirror for a revision-bound pixel capture.
+    /// Unlike `record_observation`, this never returns a delta.
+    pub fn current_observation(tab_group_id: &str, tab_id: &str) -> Option<BrowserObservation> {
+        let registry = REGISTRY.lock().expect("tab groups");
+        let group = registry.groups.get(tab_group_id)?;
+        if !group.tabs.iter().any(|tab| tab.active && tab.id == tab_id) {
+            return None;
+        }
+        registry
+            .observations
+            .get(tab_id)
+            .map(|record| record.full_projection(MAX_OBSERVATION_NODES))
+    }
+
     pub fn snapshot_active_tab(
         tab_group_id: &str,
         max_chars: usize,

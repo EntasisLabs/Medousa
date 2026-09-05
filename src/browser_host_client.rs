@@ -1,12 +1,13 @@
 //! HTTP client for desktop Home BrowserHost (`127.0.0.1:7422`).
 
 use medousa_browser_lite::{FetchResult, SearchResponse};
-use medousa_browser_bridge::BrowserObservation;
+use medousa_browser_bridge::{BrowserObservation, BrowserScreenshotCapture};
 use serde::Deserialize;
 
 const DEFAULT_BROWSER_HOST_URL: &str = "http://127.0.0.1:7422";
 const REQUEST_TIMEOUT_SECS: u64 = 8;
 const BATCH_REQUEST_TIMEOUT_SECS: u64 = 16;
+const MAX_SCREENSHOT_RESPONSE_BYTES: usize = 12 * 1024 * 1024;
 
 pub fn browser_host_base_url() -> String {
     std::env::var("MEDOUSA_BROWSER_HOST_URL")
@@ -132,6 +133,60 @@ pub async fn browser_host_observe(
         }),
     )
     .await
+}
+
+pub async fn browser_host_screenshot(
+    tab_group_id: &str,
+    body: serde_json::Value,
+) -> Result<BrowserScreenshotCapture, String> {
+    let encoded_group = urlencoding::encode(tab_group_id);
+    let url = format!(
+        "{}/v1/tab-groups/{encoded_group}/screenshot",
+        browser_host_base_url()
+    );
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .build()
+        .map_err(|err| err.to_string())?;
+    let mut response = client
+        .post(url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|err| format!("browser_host unreachable: {err}"))?;
+    let status = response.status();
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_SCREENSHOT_RESPONSE_BYTES as u64)
+    {
+        return Err("browser_host screenshot response exceeds 12 MB".to_string());
+    }
+    let mut bytes = Vec::with_capacity(
+        response
+            .content_length()
+            .and_then(|length| usize::try_from(length).ok())
+            .unwrap_or(0)
+            .min(MAX_SCREENSHOT_RESPONSE_BYTES),
+    );
+    while let Some(chunk) = response.chunk().await.map_err(|err| err.to_string())? {
+        if bytes.len().saturating_add(chunk.len()) > MAX_SCREENSHOT_RESPONSE_BYTES {
+            return Err("browser_host screenshot response exceeds 12 MB".to_string());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    if !status.is_success() {
+        let detail = String::from_utf8_lossy(&bytes)
+            .trim()
+            .chars()
+            .take(512)
+            .collect::<String>();
+        return Err(if detail.is_empty() {
+            format!("browser_host error: status {}", status.as_u16())
+        } else {
+            format!("browser_host error: status {}: {detail}", status.as_u16())
+        });
+    }
+    serde_json::from_slice(&bytes).map_err(|err| err.to_string())
 }
 
 pub async fn browser_host_fetch(url: &str, max_chars: usize) -> Result<FetchResult, String> {

@@ -2,6 +2,7 @@ use chrono::{DateTime, Duration, Utc};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest as _, Sha256};
 use stasis::prelude::RuntimeComposition;
 use std::collections::{HashMap, HashSet};
 use std::future::IntoFuture;
@@ -116,6 +117,13 @@ pub struct FetchedArtifact {
     pub mime: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct FetchedBinaryArtifact {
+    pub record: ArtifactRecord,
+    pub bytes: Vec<u8>,
+    pub mime: String,
+}
+
 pub const UI_ARTIFACT_MAX_BYTES: usize = 512 * 1024;
 
 #[derive(Debug, Clone)]
@@ -189,6 +197,78 @@ pub fn persist_tool_artifact(
         root_artifact_id: None,
     };
 
+    append_index_record(&record)?;
+    Ok(record)
+}
+
+/// Persist an opaque binary payload without placing it in the turn transcript.
+/// The first consumer is revision-bound browser screenshots; the narrow MIME
+/// allowlist keeps this from becoming an arbitrary file-write primitive.
+pub fn persist_binary_artifact(
+    session_id: &str,
+    tool_name: &str,
+    direction: &str,
+    content_type: &str,
+    label: Option<&str>,
+    bytes: &[u8],
+) -> std::result::Result<ArtifactRecord, String> {
+    let (extension, content_type) = match content_type.trim().to_ascii_lowercase().as_str() {
+        "image/png" => ("png", "image/png"),
+        other => return Err(format!("binary artifact mime type is not allowed: {other}")),
+    };
+    if bytes.is_empty() {
+        return Err("binary artifact is empty".to_string());
+    }
+    if content_type == "image/png" && !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Err("binary artifact payload is not a PNG".to_string());
+    }
+    if bytes.len() as u64 > MAX_ARTIFACT_PAYLOAD_BYTES {
+        return Err(format!(
+            "binary artifact exceeds {} MB cap",
+            MAX_ARTIFACT_PAYLOAD_BYTES / (1024 * 1024)
+        ));
+    }
+
+    let (session_id, _mutation) = crate::session_deletion::acquire_mutation_for_str(session_id)?;
+    let hash64 = format!("{:x}", Sha256::digest(bytes));
+    let tool_slug = slugify_tool_name(tool_name);
+    let hash_short = hash64.chars().take(12).collect::<String>();
+    let artifact_id = format!(
+        "art:{}:{}:{}:{}",
+        short_session(session_id.as_str()),
+        tool_slug,
+        direction,
+        hash_short
+    );
+    let payload_path = artifact_payload_path(tool_name, direction, &hash64, extension);
+    if !ARTIFACT_FILES
+        .is_file(&session_id, &payload_path)
+        .map_err(|err| err.to_string())?
+    {
+        ARTIFACT_FILES
+            .atomic_write(&session_id, &payload_path, bytes)
+            .map_err(|err| err.to_string())?;
+    }
+
+    let record = ArtifactRecord {
+        artifact_id,
+        session_id: session_id.to_string(),
+        tool_name: tool_name.to_string(),
+        direction: direction.to_string(),
+        hash64,
+        byte_size: bytes.len(),
+        stored_at_utc: Utc::now(),
+        payload_path: payload_path.file_name().to_string(),
+        content_type: content_type.to_string(),
+        label: label
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        presentation: None,
+        height_px: None,
+        supersedes_artifact_id: None,
+        root_artifact_id: None,
+    };
     append_index_record(&record)?;
     Ok(record)
 }
@@ -298,6 +378,38 @@ pub fn fetch_artifact(session_id: &str, artifact_id: &str) -> Option<FetchedArti
     let latest_id =
         resolve_latest_artifact_id(session_id, &resolved).unwrap_or_else(|| resolved.clone());
     fetch_artifact_at_id(session_id, &latest_id)
+}
+
+pub fn fetch_binary_artifact(
+    session_id: &str,
+    artifact_id: &str,
+) -> Option<FetchedBinaryArtifact> {
+    let query = artifact_id.trim();
+    if query.is_empty() {
+        return None;
+    }
+    let records = read_index_records();
+    let record = records
+        .into_iter()
+        .find(|record| {
+            record.session_id == session_id
+                && (record.artifact_id == query || record.artifact_id.starts_with(query))
+                && record.content_type.starts_with("image/")
+        })?;
+    let parsed_session = crate::session_storage::SessionId::parse(&record.session_id).ok()?;
+    let bytes = ARTIFACT_FILES
+        .read_limited(
+            &parsed_session,
+            &artifact_payload_path_for_record(&record),
+            MAX_ARTIFACT_PAYLOAD_BYTES,
+        )
+        .ok()?;
+    let mime = record.content_type.clone();
+    Some(FetchedBinaryArtifact {
+        record,
+        bytes,
+        mime,
+    })
 }
 
 /// Resolve a presentation reference: canonical `art:…` ids, registered aliases, and hash suffixes.
@@ -779,7 +891,11 @@ pub fn find_artifact(session_id: &str, query: Option<&str>) -> Option<StoredArti
     let query = query.map(str::trim).unwrap_or("");
     let mut candidates: Vec<ArtifactRecord> = records
         .into_iter()
-        .filter(|record| record.session_id == session_id)
+        .filter(|record| {
+            record.session_id == session_id
+                && (record.content_type.is_empty()
+                    || record.content_type == "application/json")
+        })
         .collect();
 
     if candidates.is_empty() {
@@ -1099,11 +1215,7 @@ fn artifact_payload_path(
 }
 
 fn artifact_payload_path_for_record(record: &ArtifactRecord) -> StorePath {
-    let extension = if record.content_type == "text/html" || record.direction == "ui" {
-        "html"
-    } else {
-        "json"
-    };
+    let extension = artifact_extension(record);
     artifact_payload_path(
         &record.tool_name,
         &record.direction,
@@ -1113,11 +1225,10 @@ fn artifact_payload_path_for_record(record: &ArtifactRecord) -> StorePath {
 }
 
 fn legacy_artifact_payload_path_for_record(record: &ArtifactRecord) -> Option<StorePath> {
-    let extension = if record.content_type == "text/html" || record.direction == "ui" {
-        "html"
-    } else {
-        "json"
-    };
+    if record.content_type.starts_with("image/") {
+        return None;
+    }
+    let extension = artifact_extension(record);
     if record.hash64.is_empty() || !record.hash64.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return None;
     }
@@ -1129,6 +1240,16 @@ fn legacy_artifact_payload_path_for_record(record: &ArtifactRecord) -> Option<St
         extension,
     ))
     .ok()
+}
+
+fn artifact_extension(record: &ArtifactRecord) -> &'static str {
+    if record.content_type == "image/png" {
+        "png"
+    } else if record.content_type == "text/html" || record.direction == "ui" {
+        "html"
+    } else {
+        "json"
+    }
 }
 
 fn artifact_payload_identity(record: &ArtifactRecord) -> (String, String) {
@@ -1180,6 +1301,69 @@ mod tests {
 
     fn parsed_session_id(value: &str) -> crate::session_storage::SessionId {
         crate::session_storage::SessionId::parse(value).unwrap()
+    }
+
+    #[test]
+    fn persist_binary_artifact_round_trips_without_text_decoding() {
+        let session_id = "test-binary-artifact-session";
+        let png = b"\x89PNG\r\n\x1a\nopaque-pixel-payload";
+        let record = persist_binary_artifact(
+            session_id,
+            "cognition_browser_snapshot",
+            "screenshot",
+            "image/png",
+            Some("Browser viewport"),
+            png,
+        )
+        .expect("persist binary artifact");
+
+        assert_eq!(record.content_type, "image/png");
+        assert!(record.payload_path.ends_with(".png"));
+        let fetched = fetch_binary_artifact(session_id, &record.artifact_id).expect("fetch");
+        assert_eq!(fetched.bytes, png);
+        assert_eq!(fetched.mime, "image/png");
+    }
+
+    #[test]
+    fn persist_binary_artifact_rejects_mime_spoofing() {
+        let err = persist_binary_artifact(
+            "test-binary-artifact-spoof",
+            "cognition_browser_snapshot",
+            "screenshot",
+            "image/png",
+            None,
+            b"not really a png",
+        )
+        .expect_err("invalid PNG should fail");
+        assert!(err.contains("not a PNG"));
+    }
+
+    #[test]
+    fn structured_artifact_lookup_skips_newer_binary_artifacts() {
+        let session_id = "test-binary-artifact-structured-lookup";
+        let payload = serde_json::json!({ "kind": "structured" });
+        let structured = persist_tool_artifact(
+            session_id,
+            "structured_tool",
+            "output",
+            "1234567890abcdef",
+            21,
+            &payload,
+        )
+        .expect("persist structured artifact");
+        persist_binary_artifact(
+            session_id,
+            "cognition_browser_snapshot",
+            "screenshot",
+            "image/png",
+            Some("Browser viewport"),
+            b"\x89PNG\r\n\x1a\nopaque-pixel-payload",
+        )
+        .expect("persist binary artifact");
+
+        let found = find_artifact(session_id, Some("last")).expect("structured artifact");
+        assert_eq!(found.record.artifact_id, structured.artifact_id);
+        assert_eq!(found.payload, payload);
     }
 
     #[test]

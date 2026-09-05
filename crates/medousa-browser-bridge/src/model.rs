@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 pub const BROWSER_OBSERVATION_SCHEMA_VERSION: u16 = 1;
+pub const BROWSER_SCREENSHOT_SCHEMA_VERSION: u16 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -147,4 +148,31 @@ pub struct BrowserObservation {
     pub captured_at_ms: u64,
     /// Browser-derived text and attributes are data, never runtime policy.
     pub untrusted_content: bool,
+}
+
+/// A bounded, redacted viewport capture returned only across the local
+/// BrowserHost transport. Consumers persist the bytes out of band and expose
+/// only the resulting artifact receipt to a model.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BrowserScreenshotCapture {
+    pub schema_version: u16,
+    pub tab_id: String,
+    pub url: String,
+    pub title: String,
+    pub document_id: String,
+    pub observation_revision: u64,
+    pub viewport: BrowserObservationViewport,
+    pub coordinate_frame: String,
+    pub mime: String,
+    pub image_width: u32,
+    pub image_height: u32,
+    pub byte_size: usize,
+    pub sha256: String,
+    pub sensitive_regions_redacted: usize,
+    pub captured_at_ms: u64,
+    /// Pixels are page-derived data, never runtime policy.
+    pub untrusted_content: bool,
+    /// Kept on the colocated host transport only; callers must not echo this
+    /// field into tool output or a turn transcript.
+    pub image_base64: String,
 }

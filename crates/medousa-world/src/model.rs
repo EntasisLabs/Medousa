@@ -113,6 +113,7 @@ impl WorldPrincipal {
 #[serde(rename_all = "snake_case")]
 pub enum WorldCapability {
     Observe,
+    ObservePixels,
     Interact,
     ExternalEffect,
     IrreversibleEffect,
@@ -152,6 +153,7 @@ impl WorldResourceScope {
 #[serde(rename_all = "snake_case")]
 pub enum WorldEffectClass {
     Observe,
+    ObservePixels,
     LocalReversible,
     LocalMutation,
     ExternalEffect,
@@ -162,6 +164,7 @@ impl WorldEffectClass {
     pub fn required_capability(self) -> WorldCapability {
         match self {
             Self::Observe => WorldCapability::Observe,
+            Self::ObservePixels => WorldCapability::ObservePixels,
             Self::LocalReversible | Self::LocalMutation => WorldCapability::Interact,
             Self::ExternalEffect => WorldCapability::ExternalEffect,
             Self::Irreversible => WorldCapability::IrreversibleEffect,
@@ -169,7 +172,7 @@ impl WorldEffectClass {
     }
 
     pub fn requires_control(self) -> bool {
-        !matches!(self, Self::Observe)
+        !matches!(self, Self::Observe | Self::ObservePixels)
     }
 }
 

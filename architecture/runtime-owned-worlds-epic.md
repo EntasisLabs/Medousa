@@ -1,6 +1,6 @@
 # Runtime-owned worlds
 
-> **Status:** Active — architecture locked; Phases 1–2 and the Phase 3 semantic/batch vertical slice implemented locally
+> **Status:** Active — architecture locked; Phases 1–2 plus the Phase 3 semantic/batch and macOS screenshot-artifact slices implemented locally
 >
 > **Date:** 2026-09-04
 >
@@ -386,7 +386,7 @@ destination daemon does not enforce.
 revision, scoped capabilities, control generation, and idempotency without I/O
 on the hot path.
 
-**Proof status (2026-09-04):** Implemented locally in `medousa-world`. Twelve
+**Proof status (2026-09-04):** Implemented locally in `medousa-world`. Thirteen
 focused state-transition tests cover preemption, stale state, grants, resource
 scope, id and idempotency collisions, late results, and bounded events. A
 20,000-iteration local benchmark measured admission plus completion at
@@ -490,9 +490,18 @@ Current local slice:
 - Human control changes cancel pending action replies and fence the next step.
   Applied prefixes are reported as partial/indeterminate rather than falsely
   claiming rollback.
-- Screenshot artifacts, pushed console/network deltas, and the latency/pixel
-  harness remain open before Phase 3 is considered complete. Mobile and
-  extension transports remain intentionally deferred to Phase 4.
+- Pixel observation is an explicit capability separate from semantic
+  observation. On macOS, the colocated BrowserHost can capture the current
+  WKWebView viewport only when it matches an admitted semantic document and
+  revision. It scans known sensitive controls before and after capture,
+  rejects moving/truncated redaction state, redacts at native resolution,
+  bounds dimensions and bytes, then persists a content-addressed PNG outside
+  the model transcript. The tool returns only a revisioned artifact receipt.
+- Windows/Linux/mobile screenshot drivers, model or client hydration of binary
+  artifacts, pushed console/network deltas, hardened isolated-world DOM
+  inspection, and the latency/pixel harness remain open before Phase 3 is
+  considered complete. Mobile and extension action transports remain
+  intentionally deferred to Phase 4.
 
 Implementation:
 

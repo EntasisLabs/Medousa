@@ -1,14 +1,19 @@
 //! `cognition_browser_snapshot` — markdown snapshot of a URL via Agent Browser.
 
-use medousa_browser_bridge::BrowserObservation;
+use base64::Engine as _;
+use medousa_browser_bridge::{
+    BROWSER_SCREENSHOT_SCHEMA_VERSION, BrowserObservation, BrowserScreenshotCapture,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
+use sha2::{Digest as _, Sha256};
 use stasis::domain::errors::StasisError;
 use tokio::sync::mpsc;
 
 use crate::browser_host_client::{
-    browser_host_current_context, browser_host_fetch, browser_host_healthy, browser_host_observe,
+    BrowserHostWorldContext, browser_host_current_context, browser_host_fetch,
+    browser_host_healthy, browser_host_observe, browser_host_screenshot,
 };
 use crate::browser_search::surface_from_scope;
 use crate::browser_tools::{
@@ -47,6 +52,10 @@ fn default_browser_max_chars() -> usize {
     4_000
 }
 
+fn default_browser_screenshot_width() -> u32 {
+    1280
+}
+
 fn deserialize_browser_max_chars<'de, D>(deserializer: D) -> Result<usize, D::Error>
 where
     D: Deserializer<'de>,
@@ -73,6 +82,16 @@ pub struct BrowserSnapshotInput {
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
     since_revision: CompatOption<u64>,
+    /// Capture the visible viewport as a redacted out-of-band PNG artifact
+    #[serde(default)]
+    capture_screenshot: bool,
+    /// Maximum stored screenshot width in pixels
+    #[serde(default = "default_browser_screenshot_width")]
+    #[schemars(
+        default = "default_browser_screenshot_width",
+        range(min = 320, max = 1600)
+    )]
+    screenshot_max_width: u32,
 }
 
 impl<'de> Deserialize<'de> for BrowserSnapshotInput {
@@ -91,6 +110,10 @@ impl<'de> Deserialize<'de> for BrowserSnapshotInput {
             max_chars: usize,
             #[serde(default)]
             since_revision: CompatOption<u64>,
+            #[serde(default)]
+            capture_screenshot: bool,
+            #[serde(default = "default_browser_screenshot_width")]
+            screenshot_max_width: u32,
         }
 
         let input = WireInput::deserialize(deserializer)?;
@@ -98,6 +121,8 @@ impl<'de> Deserialize<'de> for BrowserSnapshotInput {
             url: input.url,
             max_chars: input.max_chars,
             since_revision: input.since_revision,
+            capture_screenshot: input.capture_screenshot,
+            screenshot_max_width: input.screenshot_max_width,
         })
     }
 }
@@ -111,6 +136,25 @@ pub struct BrowserSnapshotOutput {
     decision: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     observation: Option<BrowserSemanticObservationOutput>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    screenshot: Option<BrowserScreenshotArtifactOutput>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct BrowserScreenshotArtifactOutput {
+    artifact_id: String,
+    mime: String,
+    byte_size: usize,
+    sha256: String,
+    document_id: String,
+    observation_revision: u64,
+    viewport: BrowserSemanticViewportOutput,
+    coordinate_frame: String,
+    image_width: u32,
+    image_height: u32,
+    sensitive_regions_redacted: usize,
+    captured_at_ms: u64,
+    untrusted_content: bool,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -168,6 +212,18 @@ pub struct BrowserSemanticViewportOutput {
 
 fn same_browser_url(left: &str, right: &str) -> bool {
     left.trim().trim_end_matches('/') == right.trim().trim_end_matches('/')
+}
+
+fn png_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    if bytes.len() < 24
+        || !bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+        || bytes.get(12..16) != Some(b"IHDR".as_slice())
+    {
+        return None;
+    }
+    let width = u32::from_be_bytes(bytes.get(16..20)?.try_into().ok()?);
+    let height = u32::from_be_bytes(bytes.get(20..24)?.try_into().ok()?);
+    (width > 0 && height > 0).then_some((width, height))
 }
 
 fn semantic_markdown(observation: &BrowserObservation, max_chars: usize) -> String {
@@ -228,21 +284,171 @@ fn semantic_output(observation: &BrowserObservation) -> BrowserSemanticObservati
             })
             .collect(),
         removed_refs: observation.removed_refs.clone(),
-        viewport: BrowserSemanticViewportOutput {
-            width: observation.viewport.width,
-            height: observation.viewport.height,
-            scroll_x: observation.viewport.scroll_x,
-            scroll_y: observation.viewport.scroll_y,
-            device_scale_factor: observation.viewport.device_scale_factor,
-        },
+        viewport: semantic_viewport_output(&observation.viewport),
         truncated: observation.truncated,
         untrusted_content: observation.untrusted_content,
     }
 }
 
+fn semantic_viewport_output(
+    viewport: &medousa_browser_bridge::BrowserObservationViewport,
+) -> BrowserSemanticViewportOutput {
+    BrowserSemanticViewportOutput {
+        width: viewport.width,
+        height: viewport.height,
+        scroll_x: viewport.scroll_x,
+        scroll_y: viewport.scroll_y,
+        device_scale_factor: viewport.device_scale_factor,
+    }
+}
+
+async fn capture_screenshot_artifact(
+    authority_id: &str,
+    context: &BrowserHostWorldContext,
+    trace_id: &str,
+    session_id: &str,
+    observation: &BrowserObservation,
+    max_width: u32,
+) -> Result<BrowserScreenshotArtifactOutput, String> {
+    crate::world_authority::validate_browser_pixel_fence(
+        authority_id,
+        &context.tab_group_id,
+        &context.tab_id,
+        &context.url,
+        &observation.document_id,
+        observation.revision,
+    )?;
+    let admission = crate::world_authority::admit_browser_pixel_observation(
+        authority_id,
+        &context.tab_group_id,
+        &context.tab_id,
+        trace_id,
+        "capture current browser viewport pixels",
+    )?;
+    let result = capture_screenshot_artifact_inner(
+        &admission,
+        context,
+        session_id,
+        observation,
+        max_width,
+    )
+    .await;
+    match result {
+        Ok(output) => {
+            crate::world_authority::complete_browser_action(
+                &admission,
+                "redacted browser screenshot artifact persisted",
+            )?;
+            Ok(output)
+        }
+        Err(error) => {
+            let _ = crate::world_authority::fail_browser_action(&admission, &error);
+            Err(error)
+        }
+    }
+}
+
+async fn capture_screenshot_artifact_inner(
+    admission: &crate::world_authority::BrowserWorldAdmission,
+    context: &BrowserHostWorldContext,
+    session_id: &str,
+    observation: &BrowserObservation,
+    max_width: u32,
+) -> Result<BrowserScreenshotArtifactOutput, String> {
+    const MAX_SCREENSHOT_BYTES: usize = 8 * 1024 * 1024;
+    const MAX_SCREENSHOT_BASE64_BYTES: usize = 12 * 1024 * 1024;
+    const MAX_SCREENSHOT_PIXELS: u64 = 16_000_000;
+
+    let capture: BrowserScreenshotCapture = browser_host_screenshot(
+        &context.tab_group_id,
+        serde_json::json!({
+            "expected_document_id": observation.document_id,
+            "expected_observation_revision": observation.revision,
+            "max_width": max_width.clamp(320, 1600),
+            "world_permit": admission.permit,
+            "world_expected_url": context.url,
+        }),
+    )
+    .await?;
+    if capture.schema_version != BROWSER_SCREENSHOT_SCHEMA_VERSION
+        || capture.tab_id != context.tab_id
+        || !same_browser_url(&capture.url, &context.url)
+        || capture.document_id != observation.document_id
+        || capture.observation_revision != observation.revision
+        || capture.viewport != observation.viewport
+        || capture.coordinate_frame != "css_viewport"
+        || capture.mime != "image/png"
+        || !capture.untrusted_content
+    {
+        return Err("BrowserHost returned screenshot metadata for the wrong browser state".to_string());
+    }
+    if capture.image_width == 0
+        || capture.image_height == 0
+        || capture.image_width > 1600
+        || capture.image_base64.len() > MAX_SCREENSHOT_BASE64_BYTES
+    {
+        return Err("BrowserHost screenshot exceeds its declared bounds".to_string());
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&capture.image_base64)
+        .map_err(|error| format!("BrowserHost returned invalid screenshot bytes: {error}"))?;
+    if bytes.is_empty()
+        || bytes.len() > MAX_SCREENSHOT_BYTES
+        || bytes.len() != capture.byte_size
+    {
+        return Err("BrowserHost screenshot payload does not match its receipt".to_string());
+    }
+    let (png_width, png_height) = png_dimensions(&bytes)
+        .ok_or_else(|| "BrowserHost screenshot payload is not a bounded PNG".to_string())?;
+    if png_width != capture.image_width
+        || png_height != capture.image_height
+        || u64::from(png_width) * u64::from(png_height) > MAX_SCREENSHOT_PIXELS
+    {
+        return Err("BrowserHost screenshot dimensions do not match its receipt".to_string());
+    }
+    let sha256 = format!("{:x}", Sha256::digest(&bytes));
+    if sha256 != capture.sha256 {
+        return Err("BrowserHost screenshot digest does not match its pixels".to_string());
+    }
+
+    let stored_session_id = session_id.to_string();
+    let label = format!("Browser viewport — {}", capture.title);
+    let record = tokio::task::spawn_blocking(move || {
+        crate::artifact_store::persist_binary_artifact(
+            &stored_session_id,
+            COGNITION_BROWSER_SNAPSHOT,
+            "screenshot",
+            "image/png",
+            Some(&label),
+            &bytes,
+        )
+    })
+    .await
+    .map_err(|error| format!("browser screenshot persistence task failed: {error}"))??;
+    if record.hash64 != capture.sha256 || record.byte_size != capture.byte_size {
+        return Err("persisted browser screenshot receipt does not match the capture".to_string());
+    }
+
+    Ok(BrowserScreenshotArtifactOutput {
+        artifact_id: record.artifact_id,
+        mime: capture.mime,
+        byte_size: capture.byte_size,
+        sha256: capture.sha256,
+        document_id: capture.document_id,
+        observation_revision: capture.observation_revision,
+        viewport: semantic_viewport_output(&capture.viewport),
+        coordinate_frame: capture.coordinate_frame,
+        image_width: capture.image_width,
+        image_height: capture.image_height,
+        sensitive_regions_redacted: capture.sensitive_regions_redacted,
+        captured_at_ms: capture.captured_at_ms,
+        untrusted_content: true,
+    })
+}
+
 #[medousa_tool(id = COGNITION_BROWSER_SNAPSHOT_ID)]
 impl CognitionBrowserSnapshotTool {
-    /// Observe the current shared page as a bounded semantic projection with opaque element refs and revisioned deltas; falls back to markdown for other URLs.
+    /// Observe the current shared page as a bounded semantic projection with opaque element refs and revisioned deltas; optionally persist a redacted viewport screenshot; falls back to markdown for other URLs.
     async fn invoke_typed(
         &self,
         input: BrowserSnapshotInput,
@@ -261,6 +467,8 @@ impl CognitionBrowserSnapshotTool {
         let url = command.url.into_string();
         let max_chars = command.max_chars;
         let since_revision = input.since_revision.into_option();
+        let capture_screenshot = input.capture_screenshot;
+        let screenshot_max_width = input.screenshot_max_width.clamp(320, 1600);
 
         let _ = self
             .event_tx
@@ -278,6 +486,10 @@ impl CognitionBrowserSnapshotTool {
             .map(|scope| scope.turn_correlation_id.as_str())
             .filter(|trace_id| !trace_id.trim().is_empty())
             .unwrap_or("browser-observation");
+        let session_id = scope
+            .as_ref()
+            .map(|scope| scope.session_id.as_str())
+            .filter(|session_id| !session_id.trim().is_empty());
 
         if browser_host_healthy().await {
             if let Ok(context) = browser_host_current_context().await
@@ -347,6 +559,31 @@ impl CognitionBrowserSnapshotTool {
                             "browser semantic observation committed",
                         )
                         .map_err(StasisError::PortFailure)?;
+                        let screenshot = if capture_screenshot {
+                            let session_id = session_id.ok_or_else(|| {
+                                StasisError::PortFailure(format!(
+                                    "{COGNITION_BROWSER_SNAPSHOT}: screenshot capture requires an admitted turn session"
+                                ))
+                            })?;
+                            Some(
+                                capture_screenshot_artifact(
+                                    &authority_id,
+                                    &context,
+                                    trace_id,
+                                    session_id,
+                                    &observation,
+                                    screenshot_max_width,
+                                )
+                                .await
+                                .map_err(|error| {
+                                    StasisError::PortFailure(format!(
+                                        "{COGNITION_BROWSER_SNAPSHOT}: pixel observation failed: {error}"
+                                    ))
+                                })?,
+                            )
+                        } else {
+                            None
+                        };
                         let semantic = semantic_output(&observation);
                         return Ok(BrowserSnapshotOutput {
                             url: context.url,
@@ -355,13 +592,24 @@ impl CognitionBrowserSnapshotTool {
                             binding_used: "browser_host_semantic".to_string(),
                             decision: "allow".to_string(),
                             observation: Some(semantic),
+                            screenshot,
                         });
                     }
                     Err(error) => {
                         crate::world_authority::fail_browser_action(&admission, &error)
                             .map_err(StasisError::PortFailure)?;
+                        if capture_screenshot {
+                            return Err(StasisError::PortFailure(format!(
+                                "{COGNITION_BROWSER_SNAPSHOT}: semantic observation required before pixel capture: {error}"
+                            )));
+                        }
                     }
                 }
+            }
+            if capture_screenshot {
+                return Err(StasisError::PortFailure(format!(
+                    "{COGNITION_BROWSER_SNAPSHOT}: screenshot capture is limited to the current shared browser tab"
+                )));
             }
             let fetched = browser_host_fetch(&url, max_chars)
                 .await
@@ -373,7 +621,14 @@ impl CognitionBrowserSnapshotTool {
                 binding_used: "browser_host".to_string(),
                 decision: "allow".to_string(),
                 observation: None,
+                screenshot: None,
             });
+        }
+
+        if capture_screenshot {
+            return Err(StasisError::PortFailure(format!(
+                "{COGNITION_BROWSER_SNAPSHOT}: screenshot capture requires a healthy shared BrowserHost"
+            )));
         }
 
         let fetched = tokio::task::spawn_blocking(move || {
@@ -390,6 +645,7 @@ impl CognitionBrowserSnapshotTool {
             binding_used: "browser_host_lite".to_string(),
             decision: "allow".to_string(),
             observation: None,
+            screenshot: None,
         })
     }
 }
@@ -418,6 +674,32 @@ mod tests {
         assert!(input.url.into_option().is_none());
         assert_eq!(input.max_chars, 4_000);
         assert!(input.since_revision.into_option().is_none());
+        assert!(!input.capture_screenshot);
+        assert_eq!(input.screenshot_max_width, 1_280);
+    }
+
+    #[test]
+    fn screenshot_capture_is_explicit_and_width_is_bounded_at_execution() {
+        let input: BrowserSnapshotInput = serde_json::from_value(serde_json::json!({
+            "url": "https://example.test",
+            "capture_screenshot": true,
+            "screenshot_max_width": 9000,
+        }))
+        .expect("snapshot input");
+        assert!(input.capture_screenshot);
+        assert_eq!(input.screenshot_max_width.clamp(320, 1600), 1600);
+    }
+
+    #[test]
+    fn png_dimensions_require_a_nonempty_ihdr() {
+        let mut header = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+        header.extend_from_slice(&640_u32.to_be_bytes());
+        header.extend_from_slice(&480_u32.to_be_bytes());
+        assert_eq!(png_dimensions(&header), Some((640, 480)));
+
+        header[16..20].copy_from_slice(&0_u32.to_be_bytes());
+        assert_eq!(png_dimensions(&header), None);
+        assert_eq!(png_dimensions(b"not a png"), None);
     }
 
     #[test]
