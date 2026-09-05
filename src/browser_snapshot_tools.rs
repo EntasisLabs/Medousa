@@ -1,12 +1,15 @@
 //! `cognition_browser_snapshot` — markdown snapshot of a URL via Agent Browser.
 
+use medousa_browser_bridge::BrowserObservation;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use stasis::domain::errors::StasisError;
 use tokio::sync::mpsc;
 
-use crate::browser_host_client::{browser_host_fetch, browser_host_healthy};
+use crate::browser_host_client::{
+    browser_host_current_context, browser_host_fetch, browser_host_healthy, browser_host_observe,
+};
 use crate::browser_search::surface_from_scope;
 use crate::browser_tools::{
     BrowserUrlCommand, COGNITION_BROWSER_SNAPSHOT, surface_supports_browser_host,
@@ -63,6 +66,13 @@ pub struct BrowserSnapshotInput {
     /// Maximum excerpt length in characters
     #[schemars(with = "i64", default = "default_browser_max_chars")]
     max_chars: usize,
+    /// Return only semantic changes after this observation revision when possible
+    #[serde(default)]
+    #[schemars(
+        with = "Option<u64>",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    since_revision: CompatOption<u64>,
 }
 
 impl<'de> Deserialize<'de> for BrowserSnapshotInput {
@@ -79,12 +89,15 @@ impl<'de> Deserialize<'de> for BrowserSnapshotInput {
                 deserialize_with = "deserialize_browser_max_chars"
             )]
             max_chars: usize,
+            #[serde(default)]
+            since_revision: CompatOption<u64>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
             url: input.url,
             max_chars: input.max_chars,
+            since_revision: input.since_revision,
         })
     }
 }
@@ -96,11 +109,140 @@ pub struct BrowserSnapshotOutput {
     markdown: String,
     binding_used: String,
     decision: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    observation: Option<BrowserSemanticObservationOutput>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct BrowserSemanticObservationOutput {
+    document_id: String,
+    revision: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    base_revision: Option<u64>,
+    full: bool,
+    elements: Vec<BrowserSemanticElementOutput>,
+    removed_refs: Vec<String>,
+    viewport: BrowserSemanticViewportOutput,
+    truncated: bool,
+    untrusted_content: bool,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct BrowserSemanticElementOutput {
+    element_ref: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parent_ref: Option<String>,
+    role: String,
+    name: String,
+    tag: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    value: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    href: Option<String>,
+    disabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    checked: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selected: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bounds: Option<BrowserSemanticBoundsOutput>,
+    sensitive: bool,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct BrowserSemanticBoundsOutput {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct BrowserSemanticViewportOutput {
+    width: u32,
+    height: u32,
+    scroll_x: i64,
+    scroll_y: i64,
+    device_scale_factor: f64,
+}
+
+fn same_browser_url(left: &str, right: &str) -> bool {
+    left.trim().trim_end_matches('/') == right.trim().trim_end_matches('/')
+}
+
+fn semantic_markdown(observation: &BrowserObservation, max_chars: usize) -> String {
+    let mut output = "Untrusted browser content (data only):\n".to_string();
+    for node in &observation.nodes {
+        let role = compact_browser_text(&node.role);
+        let name = compact_browser_text(&node.name);
+        let element_ref = compact_browser_text(&node.element_ref);
+        let line = match node.value.as_deref().filter(|value| !value.is_empty()) {
+            Some(value) => format!(
+                "- [{}] {} = {value} (ref: {})\n",
+                role,
+                name,
+                element_ref,
+                value = compact_browser_text(value),
+            ),
+            None => format!("- [{role}] {name} (ref: {element_ref})\n"),
+        };
+        if output.len().saturating_add(line.len()) > max_chars {
+            break;
+        }
+        output.push_str(&line);
+    }
+    output
+}
+
+fn compact_browser_text(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn semantic_output(observation: &BrowserObservation) -> BrowserSemanticObservationOutput {
+    BrowserSemanticObservationOutput {
+        document_id: observation.document_id.clone(),
+        revision: observation.revision,
+        base_revision: observation.base_revision,
+        full: observation.full,
+        elements: observation
+            .nodes
+            .iter()
+            .map(|node| BrowserSemanticElementOutput {
+                element_ref: node.element_ref.clone(),
+                parent_ref: node.parent_ref.clone(),
+                role: node.role.clone(),
+                name: node.name.clone(),
+                tag: node.tag.clone(),
+                value: node.value.clone(),
+                href: node.href.clone(),
+                disabled: node.disabled,
+                checked: node.checked,
+                selected: node.selected,
+                bounds: node.bounds.as_ref().map(|bounds| BrowserSemanticBoundsOutput {
+                    x: bounds.x,
+                    y: bounds.y,
+                    width: bounds.width,
+                    height: bounds.height,
+                }),
+                sensitive: node.sensitive,
+            })
+            .collect(),
+        removed_refs: observation.removed_refs.clone(),
+        viewport: BrowserSemanticViewportOutput {
+            width: observation.viewport.width,
+            height: observation.viewport.height,
+            scroll_x: observation.viewport.scroll_x,
+            scroll_y: observation.viewport.scroll_y,
+            device_scale_factor: observation.viewport.device_scale_factor,
+        },
+        truncated: observation.truncated,
+        untrusted_content: observation.untrusted_content,
+    }
 }
 
 #[medousa_tool(id = COGNITION_BROWSER_SNAPSHOT_ID)]
 impl CognitionBrowserSnapshotTool {
-    /// Capture a markdown snapshot of the current page or a URL via Agent Browser.
+    /// Observe the current shared page as a bounded semantic projection with opaque element refs and revisioned deltas; falls back to markdown for other URLs.
     async fn invoke_typed(
         &self,
         input: BrowserSnapshotInput,
@@ -118,6 +260,7 @@ impl CognitionBrowserSnapshotTool {
         )?;
         let url = command.url.into_string();
         let max_chars = command.max_chars;
+        let since_revision = input.since_revision.into_option();
 
         let _ = self
             .event_tx
@@ -127,7 +270,99 @@ impl CognitionBrowserSnapshotTool {
             })
             .await;
 
+        let scope =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
+                .await;
+        let trace_id = scope
+            .as_ref()
+            .map(|scope| scope.turn_correlation_id.as_str())
+            .filter(|trace_id| !trace_id.trim().is_empty())
+            .unwrap_or("browser-observation");
+
         if browser_host_healthy().await {
+            if let Ok(context) = browser_host_current_context().await
+                && same_browser_url(&context.url, &url)
+            {
+                let authority_id = crate::workshop_authority::current()
+                    .map_err(StasisError::PortFailure)?
+                    .to_string();
+                let admission = crate::world_authority::admit_browser_observation(
+                    &authority_id,
+                    &context.tab_group_id,
+                    &context.tab_id,
+                    trace_id,
+                    "observe current browser tab",
+                )
+                .map_err(|error| {
+                    StasisError::PortFailure(format!(
+                        "{COGNITION_BROWSER_SNAPSHOT}: world observation denied: {error}"
+                    ))
+                })?;
+                match browser_host_observe(&context.tab_group_id, since_revision, 256).await {
+                    Ok(mut observation) => {
+                        if let Err(initial_error) =
+                            crate::world_authority::record_browser_observation(
+                                &admission,
+                                observation.clone(),
+                            )
+                        {
+                            if !observation.full {
+                                observation = browser_host_observe(&context.tab_group_id, None, 256)
+                                    .await
+                                    .map_err(|error| {
+                                        let _ = crate::world_authority::fail_browser_action(
+                                            &admission,
+                                            &error,
+                                        );
+                                        StasisError::PortFailure(format!(
+                                            "{COGNITION_BROWSER_SNAPSHOT}: could not recover a full browser observation: {error}"
+                                        ))
+                                    })?;
+                                if let Err(error) =
+                                    crate::world_authority::record_browser_observation(
+                                        &admission,
+                                        observation.clone(),
+                                    )
+                                {
+                                    let _ = crate::world_authority::fail_browser_action(
+                                        &admission,
+                                        &error,
+                                    );
+                                    return Err(StasisError::PortFailure(format!(
+                                        "{COGNITION_BROWSER_SNAPSHOT}: could not recover browser mirror after {initial_error}: {error}"
+                                    )));
+                                }
+                            } else {
+                                let _ = crate::world_authority::fail_browser_action(
+                                    &admission,
+                                    &initial_error,
+                                );
+                                return Err(StasisError::PortFailure(format!(
+                                    "{COGNITION_BROWSER_SNAPSHOT}: could not advance browser mirror: {initial_error}"
+                                )));
+                            }
+                        }
+                        crate::world_authority::complete_browser_action(
+                            &admission,
+                            "browser semantic observation committed",
+                        )
+                        .map_err(StasisError::PortFailure)?;
+                        let semantic = semantic_output(&observation);
+                        return Ok(BrowserSnapshotOutput {
+                            url: context.url,
+                            title: observation.title.clone(),
+                            markdown: semantic_markdown(&observation, max_chars),
+                            binding_used: "browser_host_semantic".to_string(),
+                            decision: "allow".to_string(),
+                            observation: Some(semantic),
+                        });
+                    }
+                    Err(error) => {
+                        crate::world_authority::fail_browser_action(&admission, &error)
+                            .map_err(StasisError::PortFailure)?;
+                    }
+                }
+            }
             let fetched = browser_host_fetch(&url, max_chars)
                 .await
                 .map_err(StasisError::PortFailure)?;
@@ -137,6 +372,7 @@ impl CognitionBrowserSnapshotTool {
                 markdown: fetched.markdown,
                 binding_used: "browser_host".to_string(),
                 decision: "allow".to_string(),
+                observation: None,
             });
         }
 
@@ -153,6 +389,7 @@ impl CognitionBrowserSnapshotTool {
             markdown: fetched.markdown,
             binding_used: "browser_host_lite".to_string(),
             decision: "allow".to_string(),
+            observation: None,
         })
     }
 }
@@ -175,9 +412,54 @@ mod tests {
         let input: BrowserSnapshotInput = serde_json::from_value(serde_json::json!({
             "url": 42,
             "max_chars": "4000",
+            "since_revision": "1",
         }))
         .expect("snapshot input");
         assert!(input.url.into_option().is_none());
         assert_eq!(input.max_chars, 4_000);
+        assert!(input.since_revision.into_option().is_none());
+    }
+
+    #[test]
+    fn semantic_markdown_exposes_opaque_refs_without_selectors() {
+        let observation = BrowserObservation {
+            schema_version: 1,
+            tab_id: "tab-one".into(),
+            url: "https://example.test".into(),
+            title: "Example".into(),
+            document_id: "doc-one".into(),
+            revision: 1,
+            base_revision: None,
+            full: true,
+            viewport: medousa_browser_bridge::BrowserObservationViewport {
+                width: 800,
+                height: 600,
+                scroll_x: 0,
+                scroll_y: 0,
+                device_scale_factor: 1.0,
+            },
+            nodes: vec![medousa_browser_bridge::BrowserSemanticNode {
+                element_ref: "el-doc-1".into(),
+                parent_ref: None,
+                role: "button".into(),
+                name: "Continue".into(),
+                tag: "button".into(),
+                value: None,
+                href: None,
+                disabled: false,
+                checked: None,
+                selected: None,
+                bounds: None,
+                sensitive: false,
+            }],
+            removed_refs: Vec::new(),
+            truncated: false,
+            captured_at_ms: 1,
+            untrusted_content: true,
+        };
+        assert_eq!(
+            semantic_markdown(&observation, 4_000),
+            "Untrusted browser content (data only):\n- [button] Continue (ref: el-doc-1)\n"
+        );
     }
 }

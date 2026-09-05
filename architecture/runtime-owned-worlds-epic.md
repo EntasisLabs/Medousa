@@ -1,6 +1,6 @@
 # Runtime-owned worlds
 
-> **Status:** Active — architecture locked; Phase 1 kernel and Phase 2 desktop-browser proof implemented locally
+> **Status:** Active — architecture locked; Phases 1–2 and the Phase 3 semantic/batch vertical slice implemented locally
 >
 > **Date:** 2026-09-04
 >
@@ -475,6 +475,24 @@ Suggested commit boundary:
 **Outcome:** Browser use is semantic-first, event-driven, and fast enough that
 multiple ordinary actions do not require repeated full snapshots or model
 round trips.
+
+Current local slice:
+
+- BrowserHost captures a bounded accessibility/DOM projection, keeps opaque
+  refs stable only within one document, and emits full observations or deltas
+  from a 32-revision journal. Page text and attributes remain explicitly
+  untrusted data, sensitive values never cross the boundary, and document
+  replacement invalidates old refs.
+- The daemon admits one guarded batch of at most 16 prevalidated actions. The
+  colocated host executes in order, budgets local waits to five seconds total,
+  rechecks control/tab/URL/permit/observation fences before every step, stops on
+  the first failure, and returns an automatic post-batch observation.
+- Human control changes cancel pending action replies and fence the next step.
+  Applied prefixes are reported as partial/indeterminate rather than falsely
+  claiming rollback.
+- Screenshot artifacts, pushed console/network deltas, and the latency/pixel
+  harness remain open before Phase 3 is considered complete. Mobile and
+  extension transports remain intentionally deferred to Phase 4.
 
 Implementation:
 

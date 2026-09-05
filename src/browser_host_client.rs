@@ -1,10 +1,12 @@
 //! HTTP client for desktop Home BrowserHost (`127.0.0.1:7422`).
 
 use medousa_browser_lite::{FetchResult, SearchResponse};
+use medousa_browser_bridge::BrowserObservation;
 use serde::Deserialize;
 
 const DEFAULT_BROWSER_HOST_URL: &str = "http://127.0.0.1:7422";
 const REQUEST_TIMEOUT_SECS: u64 = 8;
+const BATCH_REQUEST_TIMEOUT_SECS: u64 = 16;
 
 pub fn browser_host_base_url() -> String {
     std::env::var("MEDOUSA_BROWSER_HOST_URL")
@@ -103,7 +105,33 @@ pub async fn browser_host_act(
     body: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let encoded_group = urlencoding::encode(tab_group_id);
-    post_json(&format!("/v1/tab-groups/{encoded_group}/act"), body).await
+    let timeout_secs = if body.get("actions").is_some() {
+        BATCH_REQUEST_TIMEOUT_SECS
+    } else {
+        REQUEST_TIMEOUT_SECS
+    };
+    post_json_with_timeout(
+        &format!("/v1/tab-groups/{encoded_group}/act"),
+        body,
+        timeout_secs,
+    )
+    .await
+}
+
+pub async fn browser_host_observe(
+    tab_group_id: &str,
+    since_revision: Option<u64>,
+    max_nodes: usize,
+) -> Result<BrowserObservation, String> {
+    let encoded_group = urlencoding::encode(tab_group_id);
+    post_json(
+        &format!("/v1/tab-groups/{encoded_group}/observe"),
+        serde_json::json!({
+            "since_revision": since_revision,
+            "max_nodes": max_nodes,
+        }),
+    )
+    .await
 }
 
 pub async fn browser_host_fetch(url: &str, max_chars: usize) -> Result<FetchResult, String> {
@@ -121,9 +149,17 @@ async fn post_json<T: serde::de::DeserializeOwned>(
     path: &str,
     body: serde_json::Value,
 ) -> Result<T, String> {
+    post_json_with_timeout(path, body, REQUEST_TIMEOUT_SECS).await
+}
+
+async fn post_json_with_timeout<T: serde::de::DeserializeOwned>(
+    path: &str,
+    body: serde_json::Value,
+    timeout_secs: u64,
+) -> Result<T, String> {
     let url = format!("{}{}", browser_host_base_url(), path);
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .timeout(std::time::Duration::from_secs(timeout_secs))
         .build()
         .map_err(|err| err.to_string())?;
     let response = client

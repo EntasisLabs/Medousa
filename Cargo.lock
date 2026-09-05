@@ -7579,6 +7579,7 @@ dependencies = [
  "medousa-acp-client",
  "medousa-adapter-common",
  "medousa-api-contract",
+ "medousa-browser-bridge",
  "medousa-browser-lite",
  "medousa-engine",
  "medousa-forge",

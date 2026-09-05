@@ -4,7 +4,7 @@
 //! path. Drivers remain responsible for platform checks and execution; only
 //! this daemon service mints permits and advances authoritative world state.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -14,6 +14,7 @@ use medousa_world::{
     WorldGrantRequest, WorldId, WorldOwnership, WorldPrincipal, WorldPrincipalId, WorldResourceId,
     WorldResourceScope, WorldSessionSpec, WorldSurfaceKind, WorldTraceId,
 };
+use medousa_browser_bridge::BrowserObservation;
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -23,6 +24,8 @@ const BROWSER_AGENT_PRINCIPAL: &str = "agent:medousa-foreground";
 
 static AUTHORITY: LazyLock<Mutex<WorldAuthority>> =
     LazyLock::new(|| Mutex::new(WorldAuthority::default()));
+static BROWSER_OBSERVATIONS: LazyLock<Mutex<HashMap<WorldId, BrowserObservation>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[derive(Debug, Clone)]
 pub struct BrowserWorldAdmission {
@@ -64,52 +67,12 @@ pub fn admit_browser_action(
     effect_class: WorldEffectClass,
 ) -> Result<BrowserWorldAdmission, String> {
     let now_ms = now_ms();
-    let world_id = browser_world_id(authority_id, tab_group_id);
     let resource_id = WorldResourceId::new(format!("browser-tab:{tab_id}"));
-    let system = WorldPrincipal::system(WorldPrincipalId::new(format!(
-        "runtime:{authority_id}"
-    )));
-    let agent = WorldPrincipal::agent(WorldPrincipalId::new(BROWSER_AGENT_PRINCIPAL));
     let mut authority = AUTHORITY
         .lock()
         .map_err(|_| "world authority lock poisoned".to_string())?;
-
-    if matches!(
-        authority.world(&world_id),
-        Err(WorldAuthorityError::WorldNotFound(_))
-    ) {
-        authority
-            .create_world(
-                WorldSessionSpec {
-                    world_id: world_id.clone(),
-                    authority_id: WorldAuthorityId::new(authority_id),
-                    ownership: WorldOwnership::Managed,
-                    surface: WorldSurfaceKind::Browser,
-                },
-                system.clone(),
-                now_ms,
-            )
-            .map_err(|error| error.to_string())?;
-    }
-
-    let grant_id = WorldGrantId::new(format!("grant:browser-agent:{tab_group_id}"));
-    match authority.grant_capabilities(
-        &world_id,
-        WorldGrantRequest {
-            grant_id,
-            issued_by: system,
-            subject: agent.clone(),
-            capabilities: [WorldCapability::Observe, WorldCapability::Interact]
-                .into_iter()
-                .collect::<BTreeSet<_>>(),
-            resource_scope: WorldResourceScope::All,
-            expires_at_ms: None,
-        },
-        now_ms,
-    ) {
-        Ok(_) | Err(WorldAuthorityError::GrantAlreadyExists(_)) => {}
-        Err(error) => return Err(error.to_string()),
-    }
+    let (world_id, agent) =
+        ensure_browser_world(&mut authority, authority_id, tab_group_id, now_ms)?;
 
     let lease = authority
         .acquire_control(
@@ -145,6 +108,95 @@ pub fn admit_browser_action(
             Err("new browser action unexpectedly resolved as an idempotent replay".to_string())
         }
     }
+}
+
+pub fn admit_browser_observation(
+    authority_id: &str,
+    tab_group_id: &str,
+    tab_id: &str,
+    trace_id: &str,
+    summary: &str,
+) -> Result<BrowserWorldAdmission, String> {
+    let now_ms = now_ms();
+    let resource_id = WorldResourceId::new(format!("browser-tab:{tab_id}"));
+    let mut authority = AUTHORITY
+        .lock()
+        .map_err(|_| "world authority lock poisoned".to_string())?;
+    let (world_id, agent) =
+        ensure_browser_world(&mut authority, authority_id, tab_group_id, now_ms)?;
+    let state = authority.world(&world_id).map_err(|error| error.to_string())?;
+    let operation_id = Uuid::new_v4().to_string();
+    let intent = WorldActionIntent {
+        intent_id: medousa_world::WorldIntentId::new(format!("intent:{operation_id}")),
+        trace_id: WorldTraceId::new(trace_id),
+        principal: agent,
+        resource_id,
+        expected_revision: state.revision,
+        expected_control_generation: None,
+        required_capability: WorldCapability::Observe,
+        effect_class: WorldEffectClass::Observe,
+        idempotency_key: format!("browser-observation:{operation_id}"),
+        permit_expires_at_ms: now_ms.saturating_add(BROWSER_ACTION_PERMIT_MS),
+        summary: summary.to_string(),
+    };
+    match authority
+        .admit_action(&world_id, intent, now_ms)
+        .map_err(|error| error.to_string())?
+    {
+        WorldAdmission::Admitted { permit } => Ok(BrowserWorldAdmission { permit }),
+        WorldAdmission::Replay { .. } => {
+            Err("new browser observation unexpectedly resolved as a replay".to_string())
+        }
+    }
+}
+
+fn ensure_browser_world(
+    authority: &mut WorldAuthority,
+    authority_id: &str,
+    tab_group_id: &str,
+    now_ms: u64,
+) -> Result<(WorldId, WorldPrincipal), String> {
+    let world_id = browser_world_id(authority_id, tab_group_id);
+    let system = WorldPrincipal::system(WorldPrincipalId::new(format!(
+        "runtime:{authority_id}"
+    )));
+    let agent = WorldPrincipal::agent(WorldPrincipalId::new(BROWSER_AGENT_PRINCIPAL));
+    if matches!(
+        authority.world(&world_id),
+        Err(WorldAuthorityError::WorldNotFound(_))
+    ) {
+        authority
+            .create_world(
+                WorldSessionSpec {
+                    world_id: world_id.clone(),
+                    authority_id: WorldAuthorityId::new(authority_id),
+                    ownership: WorldOwnership::Managed,
+                    surface: WorldSurfaceKind::Browser,
+                },
+                system.clone(),
+                now_ms,
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    let grant_id = WorldGrantId::new(format!("grant:browser-agent:{tab_group_id}"));
+    match authority.grant_capabilities(
+        &world_id,
+        WorldGrantRequest {
+            grant_id,
+            issued_by: system,
+            subject: agent.clone(),
+            capabilities: [WorldCapability::Observe, WorldCapability::Interact]
+                .into_iter()
+                .collect::<BTreeSet<_>>(),
+            resource_scope: WorldResourceScope::All,
+            expires_at_ms: None,
+        },
+        now_ms,
+    ) {
+        Ok(_) | Err(WorldAuthorityError::GrantAlreadyExists(_)) => {}
+        Err(error) => return Err(error.to_string()),
+    }
+    Ok((world_id, agent))
 }
 
 pub fn complete_browser_action(
@@ -193,6 +245,153 @@ pub fn mark_browser_action_indeterminate(
         .map_err(|error| error.to_string())
 }
 
+pub fn record_browser_observation(
+    admission: &BrowserWorldAdmission,
+    observation: BrowserObservation,
+) -> Result<(), String> {
+    let expected_resource = format!("browser-tab:{}", observation.tab_id);
+    if admission.permit.resource_id.as_str() != expected_resource {
+        return Err("browser observation does not match its admitted resource".to_string());
+    }
+    let mut mirrors = BROWSER_OBSERVATIONS
+        .lock()
+        .map_err(|_| "browser observation mirror lock poisoned".to_string())?;
+    match mirrors.get_mut(&admission.permit.world_id) {
+        Some(current) => merge_browser_observation(current, observation)?,
+        None if observation.full => {
+            mirrors.insert(admission.permit.world_id.clone(), observation);
+        }
+        None => {
+            return Err("browser observation delta arrived before a full mirror".to_string());
+        }
+    }
+    Ok(())
+}
+
+pub struct BrowserElementRefFence<'a> {
+    pub authority_id: &'a str,
+    pub tab_group_id: &'a str,
+    pub tab_id: &'a str,
+    pub expected_url: &'a str,
+    pub document_id: &'a str,
+    pub revision: u64,
+    pub targets: &'a [(String, String)],
+    pub allow_high_risk: bool,
+}
+
+pub fn validate_browser_element_refs(fence: BrowserElementRefFence<'_>) -> Result<(), String> {
+    let world_id = browser_world_id(fence.authority_id, fence.tab_group_id);
+    let mirrors = BROWSER_OBSERVATIONS
+        .lock()
+        .map_err(|_| "browser observation mirror lock poisoned".to_string())?;
+    let observation = mirrors
+        .get(&world_id)
+        .ok_or_else(|| "daemon has no semantic observation for this browser world".to_string())?;
+    if observation.tab_id != fence.tab_id
+        || observation.document_id != fence.document_id
+        || observation.revision != fence.revision
+        || !same_browser_url(&observation.url, fence.expected_url)
+    {
+        return Err("semantic target belongs to stale browser state".to_string());
+    }
+    for (action, element_ref) in fence.targets {
+        let node = observation
+            .nodes
+            .iter()
+            .find(|node| node.element_ref == *element_ref)
+            .ok_or_else(|| {
+                format!(
+                    "opaque element ref is not in revision {}",
+                    fence.revision
+                )
+            })?;
+        if node.sensitive {
+            return Err("credential, payment, and file inputs remain operator-only".to_string());
+        }
+        if !fence.allow_high_risk && semantic_action_is_high_risk(action, node) {
+            return Err(
+                "resolved target semantics require explicit high-risk authorization".to_string(),
+            );
+        }
+    }
+    Ok(())
+}
+
+fn semantic_action_is_high_risk(
+    action: &str,
+    node: &medousa_browser_bridge::BrowserSemanticNode,
+) -> bool {
+    if !matches!(action, "click" | "press" | "select") {
+        return false;
+    }
+    let semantics = format!("{} {} {}", node.role, node.name, node.tag).to_lowercase();
+    [
+        "submit",
+        "checkout",
+        "purchase",
+        "delete",
+        "remove account",
+        "pay now",
+        "confirm order",
+    ]
+    .iter()
+    .any(|marker| semantics.contains(marker))
+}
+
+fn same_browser_url(left: &str, right: &str) -> bool {
+    left.trim().trim_end_matches('/') == right.trim().trim_end_matches('/')
+}
+
+fn merge_browser_observation(
+    current: &mut BrowserObservation,
+    next: BrowserObservation,
+) -> Result<(), String> {
+    if next.full {
+        if next.revision < current.revision {
+            return Err("browser observation revision moved backwards".to_string());
+        }
+        *current = next;
+        return Ok(());
+    }
+    if next.document_id != current.document_id {
+        return Err("browser observation delta does not extend the daemon mirror".to_string());
+    }
+    if next.revision == current.revision {
+        current.captured_at_ms = current.captured_at_ms.max(next.captured_at_ms);
+        return Ok(());
+    }
+    if next.revision < current.revision
+        || next.base_revision.is_none_or(|base| base > current.revision)
+    {
+        return Err("browser observation delta does not extend the daemon mirror".to_string());
+    }
+    let mut nodes = current
+        .nodes
+        .drain(..)
+        .map(|node| (node.element_ref.clone(), node))
+        .collect::<BTreeMap<_, _>>();
+    for element_ref in &next.removed_refs {
+        nodes.remove(element_ref);
+    }
+    for node in next.nodes {
+        nodes.insert(node.element_ref.clone(), node);
+    }
+    current.schema_version = next.schema_version;
+    current.tab_id = next.tab_id;
+    current.url = next.url;
+    current.title = next.title;
+    current.revision = next.revision;
+    current.base_revision = None;
+    current.full = true;
+    current.viewport = next.viewport;
+    current.nodes = nodes.into_values().collect();
+    current.removed_refs.clear();
+    current.truncated |= next.truncated;
+    current.captured_at_ms = next.captured_at_ms;
+    current.untrusted_content = true;
+    Ok(())
+}
+
 fn browser_world_id(authority_id: &str, tab_group_id: &str) -> WorldId {
     WorldId::new(format!("world:browser:{authority_id}:{tab_group_id}"))
 }
@@ -210,6 +409,55 @@ fn now_ms() -> u64 {
 mod tests {
     use super::*;
 
+    fn semantic_node(element_ref: &str, name: &str) -> medousa_browser_bridge::BrowserSemanticNode {
+        medousa_browser_bridge::BrowserSemanticNode {
+            element_ref: element_ref.to_string(),
+            parent_ref: None,
+            role: "button".to_string(),
+            name: name.to_string(),
+            tag: "button".to_string(),
+            value: None,
+            href: None,
+            disabled: false,
+            checked: None,
+            selected: None,
+            bounds: None,
+            sensitive: false,
+        }
+    }
+
+    fn observation(
+        document_id: &str,
+        revision: u64,
+        base_revision: Option<u64>,
+        full: bool,
+        nodes: Vec<medousa_browser_bridge::BrowserSemanticNode>,
+        removed_refs: Vec<&str>,
+    ) -> BrowserObservation {
+        BrowserObservation {
+            schema_version: medousa_browser_bridge::BROWSER_OBSERVATION_SCHEMA_VERSION,
+            tab_id: "tab-one".to_string(),
+            url: "https://example.test/".to_string(),
+            title: "Example".to_string(),
+            document_id: document_id.to_string(),
+            revision,
+            base_revision,
+            full,
+            viewport: medousa_browser_bridge::BrowserObservationViewport {
+                width: 1280,
+                height: 720,
+                scroll_x: 0,
+                scroll_y: 0,
+                device_scale_factor: 2.0,
+            },
+            nodes,
+            removed_refs: removed_refs.into_iter().map(str::to_string).collect(),
+            truncated: false,
+            captured_at_ms: revision,
+            untrusted_content: true,
+        }
+    }
+
     #[test]
     fn browser_world_identity_is_bound_to_authority_and_tab_group() {
         assert_ne!(
@@ -220,5 +468,151 @@ mod tests {
             browser_world_id("workshop:a", "group:one"),
             browser_world_id("workshop:a", "group:two")
         );
+    }
+
+    #[test]
+    fn browser_observation_delta_advances_the_daemon_mirror() {
+        let mut current = observation(
+            "doc-one",
+            1,
+            None,
+            true,
+            vec![semantic_node("ref-one", "Before"), semantic_node("ref-two", "Remove")],
+            Vec::new(),
+        );
+        merge_browser_observation(
+            &mut current,
+            observation(
+                "doc-one",
+                2,
+                Some(1),
+                false,
+                vec![semantic_node("ref-one", "After")],
+                vec!["ref-two"],
+            ),
+        )
+        .expect("delta should merge");
+
+        assert!(current.full);
+        assert_eq!(current.revision, 2);
+        assert_eq!(current.base_revision, None);
+        assert_eq!(current.nodes.len(), 1);
+        assert_eq!(current.nodes[0].name, "After");
+    }
+
+    #[test]
+    fn browser_observation_delta_cannot_cross_documents() {
+        let mut current = observation(
+            "doc-one",
+            1,
+            None,
+            true,
+            vec![semantic_node("ref-one", "Before")],
+            Vec::new(),
+        );
+        let error = merge_browser_observation(
+            &mut current,
+            observation(
+                "doc-two",
+                2,
+                Some(1),
+                false,
+                vec![semantic_node("ref-two", "After")],
+                Vec::new(),
+            ),
+        )
+        .expect_err("cross-document delta must fail");
+        assert!(error.contains("does not extend"));
+    }
+
+    #[test]
+    fn browser_element_refs_are_resolved_against_the_daemon_mirror() {
+        let authority_id = "workshop:semantic-test";
+        let tab_group_id = "group:semantic-test";
+        let mut observed = observation(
+            "doc-one",
+            4,
+            None,
+            true,
+            vec![semantic_node("ref-one", "Continue")],
+            Vec::new(),
+        );
+        observed.tab_id = "tab-one".to_string();
+        BROWSER_OBSERVATIONS
+            .lock()
+            .expect("browser observations")
+            .insert(
+                browser_world_id(authority_id, tab_group_id),
+                observed,
+            );
+
+        validate_browser_element_refs(BrowserElementRefFence {
+            authority_id,
+            tab_group_id,
+            tab_id: "tab-one",
+            expected_url: "https://example.test",
+            document_id: "doc-one",
+            revision: 4,
+            targets: &[("click".to_string(), "ref-one".to_string())],
+            allow_high_risk: false,
+        })
+        .expect("known ref should pass");
+        let error = validate_browser_element_refs(BrowserElementRefFence {
+            authority_id,
+            tab_group_id,
+            tab_id: "tab-one",
+            expected_url: "https://example.test",
+            document_id: "doc-one",
+            revision: 3,
+            targets: &[("click".to_string(), "ref-one".to_string())],
+            allow_high_risk: false,
+        })
+        .expect_err("stale revision must fail");
+        assert!(error.contains("stale browser state"));
+    }
+
+    #[test]
+    fn browser_element_semantics_require_explicit_high_risk_authority() {
+        let authority_id = "workshop:risk-test";
+        let tab_group_id = "group:risk-test";
+        BROWSER_OBSERVATIONS
+            .lock()
+            .expect("browser observations")
+            .insert(
+                browser_world_id(authority_id, tab_group_id),
+                observation(
+                    "doc-one",
+                    1,
+                    None,
+                    true,
+                    vec![semantic_node("ref-delete", "Delete account")],
+                    Vec::new(),
+                ),
+            );
+
+        let targets = [("click".to_string(), "ref-delete".to_string())];
+        let error = validate_browser_element_refs(BrowserElementRefFence {
+            authority_id,
+            tab_group_id,
+            tab_id: "tab-one",
+            expected_url: "https://example.test",
+            document_id: "doc-one",
+            revision: 1,
+            targets: &targets,
+            allow_high_risk: false,
+        })
+        .expect_err("high-risk target must fail");
+        assert!(error.contains("high-risk authorization"));
+        validate_browser_element_refs(BrowserElementRefFence {
+            authority_id,
+            tab_group_id,
+            tab_id: "tab-one",
+            expected_url: "https://example.test",
+            document_id: "doc-one",
+            revision: 1,
+            targets: &targets,
+            allow_high_risk: true,
+        })
+        .expect("explicit high-risk authority should pass");
     }
 }

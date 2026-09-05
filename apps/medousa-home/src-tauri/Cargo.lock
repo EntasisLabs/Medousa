@@ -5558,6 +5558,7 @@ dependencies = [
  "hmac",
  "icalendar",
  "locus-core-rs",
+ "medousa-browser-bridge",
  "medousa-browser-lite",
  "medousa-engine",
  "medousa-mcp-gateway",

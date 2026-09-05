@@ -1,10 +1,12 @@
 //! `cognition_browser_act` — click/type automation on the shared human webview via Agent Browser.
 
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use stasis::domain::errors::StasisError;
 use tokio::sync::mpsc;
+
+use medousa_browser_bridge::BrowserObservation;
 
 use crate::browser_host_client::{browser_host_act, browser_host_current_context};
 use crate::browser_search::{client_executed, surface_from_scope};
@@ -141,8 +143,22 @@ fn default_browser_act_allow_high_risk() -> bool {
 #[derive(Debug, JsonSchema)]
 pub struct BrowserActInput {
     /// Interaction to perform
-    #[schemars(required, with = "BrowserActActionSchema")]
+    #[schemars(with = "Option<BrowserActActionSchema>")]
     action: CompatOption<String>,
+    /// Guarded actions to execute locally in order (maximum 16); use instead of action
+    #[serde(default)]
+    #[schemars(
+        with = "Option<Vec<BrowserActStepInput>>",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    actions: CompatOption<Vec<BrowserActStepInput>>,
+    /// Opaque element ref from cognition_browser_snapshot (preferred over CSS)
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    target_ref: CompatOption<String>,
     /// CSS selector of the target element (required for click/type/press/select)
     #[serde(default)]
     #[schemars(
@@ -150,6 +166,27 @@ pub struct BrowserActInput {
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
     selector: CompatOption<String>,
+    /// Observation revision that produced target_ref
+    #[serde(default)]
+    #[schemars(
+        with = "i64",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    observation_revision: CompatOption<u64>,
+    /// Observation document id that produced target_ref
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    document_id: CompatOption<String>,
+    /// Optional semantic preconditions checked immediately before the action
+    #[serde(default)]
+    #[schemars(
+        with = "Option<BrowserActGuardInput>",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    guard: CompatOption<BrowserActGuardInput>,
     /// Text to type (action=type)
     #[serde(default)]
     #[schemars(
@@ -186,6 +223,53 @@ pub struct BrowserActInput {
     allow_high_risk: CompatOption<bool>,
 }
 
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct BrowserActGuardInput {
+    #[serde(default)]
+    role: CompatOption<String>,
+    #[serde(default)]
+    name: CompatOption<String>,
+    #[serde(default)]
+    value: CompatOption<String>,
+}
+
+impl BrowserActGuardInput {
+    fn is_empty(&self) -> bool {
+        self.role.is_none() && self.name.is_none() && self.value.is_none()
+    }
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct BrowserActStepInput {
+    #[serde(default)]
+    #[schemars(required, with = "BrowserActActionSchema")]
+    action: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(with = "Option<String>")]
+    target_ref: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(with = "Option<String>")]
+    selector: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(with = "Option<String>")]
+    text: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(with = "Option<String>")]
+    key: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(with = "Option<i64>")]
+    delta_y: CompatOption<i64>,
+    #[serde(default)]
+    #[schemars(with = "Option<String>")]
+    value: CompatOption<String>,
+    #[serde(default)]
+    #[schemars(with = "Option<i64>")]
+    ms: CompatOption<i64>,
+    #[serde(default)]
+    #[schemars(with = "Option<BrowserActGuardInput>")]
+    guard: CompatOption<BrowserActGuardInput>,
+}
+
 impl<'de> Deserialize<'de> for BrowserActInput {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -196,7 +280,17 @@ impl<'de> Deserialize<'de> for BrowserActInput {
             #[serde(default)]
             action: CompatOption<String>,
             #[serde(default)]
+            actions: CompatOption<Vec<BrowserActStepInput>>,
+            #[serde(default)]
+            target_ref: CompatOption<String>,
+            #[serde(default)]
             selector: CompatOption<String>,
+            #[serde(default)]
+            observation_revision: CompatOption<u64>,
+            #[serde(default)]
+            document_id: CompatOption<String>,
+            #[serde(default)]
+            guard: CompatOption<BrowserActGuardInput>,
             #[serde(default)]
             text: CompatOption<String>,
             #[serde(default)]
@@ -214,7 +308,16 @@ impl<'de> Deserialize<'de> for BrowserActInput {
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
             action: input.action,
+            actions: input.actions,
+            target_ref: input.target_ref,
             selector: input.selector,
+            observation_revision: input.observation_revision,
+            document_id: input.document_id,
+            guard: input
+                .guard
+                .into_option()
+                .filter(|guard| !guard.is_empty())
+                .into(),
             text: input.text,
             key: input.key,
             delta_y: input.delta_y,
@@ -228,47 +331,207 @@ impl<'de> Deserialize<'de> for BrowserActInput {
 #[derive(Debug)]
 struct BrowserActCommand {
     action: BrowserActAction,
+    target_ref: Option<TrimmedText>,
     selector: Option<TrimmedText>,
+    guard: Option<BrowserActGuardInput>,
     text: Option<String>,
     key: Option<String>,
     delta_y: Option<i64>,
     value: Option<String>,
     ms: Option<i64>,
-    allow_high_risk: bool,
 }
 
-impl TryFrom<BrowserActInput> for BrowserActCommand {
+impl TryFrom<BrowserActStepInput> for BrowserActCommand {
     type Error = stasis::prelude::StasisError;
 
-    fn try_from(input: BrowserActInput) -> Result<Self, Self::Error> {
+    fn try_from(input: BrowserActStepInput) -> Result<Self, Self::Error> {
         let action = BrowserActAction::parse(input.action.into_option().as_deref())?;
         let selector_value = input.selector.into_option();
         let selector = selector_value
             .as_deref()
             .and_then(|value| TrimmedText::new(value).ok());
-        if action.needs_selector() && selector.is_none() {
+        let target_ref_value = input.target_ref.into_option();
+        let target_ref = target_ref_value
+            .as_deref()
+            .and_then(|value| TrimmedText::new(value).ok());
+        if selector.is_some() && target_ref.is_some() {
             return Err(StasisError::PortFailure(format!(
-                "{COGNITION_BROWSER_ACT}: selector is required for action '{}'",
+                "{COGNITION_BROWSER_ACT}: use target_ref or selector, not both"
+            )));
+        }
+        if action.needs_selector() && selector.is_none() && target_ref.is_none() {
+            return Err(StasisError::PortFailure(format!(
+                "{COGNITION_BROWSER_ACT}: target_ref or selector is required for action '{}'",
                 action.as_str()
             )));
         }
-
         Ok(Self {
             action,
+            target_ref,
             selector,
+            guard: input
+                .guard
+                .into_option()
+                .filter(|guard| !guard.is_empty()),
             text: input.text.into_option(),
             key: input.key.into_option(),
             delta_y: input.delta_y.into_option(),
             value: input.value.into_option(),
             ms: input.ms.into_option(),
-            allow_high_risk: input.allow_high_risk.into_option().unwrap_or(false),
         })
     }
 }
 
+#[derive(Debug)]
+struct BrowserActInvocation {
+    steps: Vec<BrowserActCommand>,
+    is_batch: bool,
+    observation_revision: Option<u64>,
+    document_id: Option<TrimmedText>,
+    allow_high_risk: bool,
+}
+
+impl BrowserActInvocation {
+    fn world_effect_class(&self) -> medousa_world::WorldEffectClass {
+        if self.steps.iter().any(|step| {
+            step.action.world_effect_class() == medousa_world::WorldEffectClass::LocalMutation
+        }) {
+            medousa_world::WorldEffectClass::LocalMutation
+        } else {
+            medousa_world::WorldEffectClass::LocalReversible
+        }
+    }
+}
+
+impl TryFrom<BrowserActInput> for BrowserActInvocation {
+    type Error = stasis::prelude::StasisError;
+
+    fn try_from(input: BrowserActInput) -> Result<Self, Self::Error> {
+        const MAX_BATCH_STEPS: usize = 16;
+        const MAX_BATCH_WAIT_MS: i64 = 5_000;
+        let BrowserActInput {
+            action,
+            actions,
+            target_ref,
+            selector,
+            observation_revision,
+            document_id,
+            guard,
+            text,
+            key,
+            delta_y,
+            value,
+            ms,
+            allow_high_risk,
+        } = input;
+        let batch = actions.into_option();
+        let is_batch = batch.is_some();
+        let steps = if let Some(steps) = batch {
+            if !action.is_none()
+                || !target_ref.is_none()
+                || !selector.is_none()
+                || !guard.is_none()
+                || !text.is_none()
+                || !key.is_none()
+                || !delta_y.is_none()
+                || !value.is_none()
+                || !ms.is_none()
+            {
+                return Err(StasisError::PortFailure(format!(
+                    "{COGNITION_BROWSER_ACT}: actions cannot be combined with singular action fields"
+                )));
+            }
+            if steps.is_empty() || steps.len() > MAX_BATCH_STEPS {
+                return Err(StasisError::PortFailure(format!(
+                    "{COGNITION_BROWSER_ACT}: actions must contain 1 to {MAX_BATCH_STEPS} steps"
+                )));
+            }
+            steps
+                .into_iter()
+                .map(BrowserActCommand::try_from)
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            vec![BrowserActCommand::try_from(BrowserActStepInput {
+                action,
+                target_ref,
+                selector,
+                text,
+                key,
+                delta_y,
+                value,
+                ms,
+                guard,
+            })?]
+        };
+        let total_wait_ms = steps
+            .iter()
+            .filter(|step| step.action == BrowserActAction::Wait)
+            .map(|step| step.ms.unwrap_or(1_000).max(0))
+            .sum::<i64>();
+        if total_wait_ms > MAX_BATCH_WAIT_MS {
+            return Err(StasisError::PortFailure(format!(
+                "{COGNITION_BROWSER_ACT}: batch waits exceed {MAX_BATCH_WAIT_MS} ms"
+            )));
+        }
+
+        let document_id_value = document_id.into_option();
+        let document_id = document_id_value
+            .as_deref()
+            .and_then(|value| TrimmedText::new(value).ok());
+        let observation_revision = observation_revision.into_option();
+        if steps.iter().any(|step| step.target_ref.is_some())
+            && (document_id.is_none() || observation_revision.is_none())
+        {
+            return Err(StasisError::PortFailure(format!(
+                "{COGNITION_BROWSER_ACT}: target_ref requires document_id and observation_revision"
+            )));
+        }
+        Ok(Self {
+            steps,
+            is_batch,
+            observation_revision,
+            document_id,
+            allow_high_risk: allow_high_risk.into_option().unwrap_or(false),
+        })
+    }
+}
+
+fn browser_step_body(command: BrowserActCommand) -> stasis::prelude::Result<Value> {
+    let mut body = json!({ "action": command.action.as_str() });
+    if let Some(target_ref) = command.target_ref {
+        body["target_ref"] = json!(target_ref.into_string());
+    }
+    if let Some(selector) = command.selector {
+        body["selector"] = json!(selector.into_string());
+    }
+    if let Some(guard) = command.guard {
+        body["guard"] = serde_json::to_value(guard).map_err(|error| {
+            StasisError::PortFailure(format!(
+                "{COGNITION_BROWSER_ACT}: could not encode semantic guard: {error}"
+            ))
+        })?;
+    }
+    if let Some(value) = command.text {
+        body["text"] = json!(value);
+    }
+    if let Some(value) = command.key {
+        body["key"] = json!(value);
+    }
+    if let Some(value) = command.value {
+        body["value"] = json!(value);
+    }
+    if let Some(value) = command.delta_y {
+        body["delta_y"] = json!(value);
+    }
+    if let Some(value) = command.ms {
+        body["ms"] = json!(value);
+    }
+    Ok(body)
+}
+
 #[medousa_tool(id = COGNITION_BROWSER_ACT_ID)]
 impl CognitionBrowserActTool {
-    /// Click, type, press, scroll, select, or wait on the shared Web tab. Use cognition_browser_snapshot to find selectors.
+    /// Act on the shared Web tab using opaque refs from cognition_browser_snapshot. A guarded actions batch executes locally in order and stops at the first failure.
     async fn invoke_typed(&self, input: BrowserActInput) -> stasis::prelude::Result<ExternalJson> {
         if !self.browser_enabled().await {
             return Err(StasisError::PortFailure(format!(
@@ -276,45 +539,76 @@ impl CognitionBrowserActTool {
             )));
         }
 
-        let command = BrowserActCommand::try_from(input)?;
-
-        if !command.allow_high_risk
-            && target_is_high_risk(
-                command.action.as_str(),
-                command.selector.as_ref().map(|selector| selector.as_str()),
-            )
+        let invocation = BrowserActInvocation::try_from(input)?;
+        if !invocation.allow_high_risk
+            && invocation.steps.iter().any(|step| {
+                target_is_high_risk(
+                    step.action.as_str(),
+                    step.selector.as_ref().map(|selector| selector.as_str()),
+                )
+            })
         {
             return Err(StasisError::PortFailure(format!(
                 "{COGNITION_BROWSER_ACT}: target looks high-risk (submit/password/checkout-like). \
                  Re-run with allow_high_risk=true only if the operator asked for this action."
             )));
         }
-
-        let mut body = json!({ "action": command.action.as_str() });
-        if let Some(selector) = command.selector {
-            body["selector"] = json!(selector.into_string());
+        let world_effect_class = invocation.world_effect_class();
+        let is_batch = invocation.is_batch;
+        let allow_high_risk = invocation.allow_high_risk;
+        let observation_revision = invocation.observation_revision;
+        let semantic_document_id = invocation
+            .document_id
+            .as_ref()
+            .map(|document_id| document_id.as_str().to_string());
+        let semantic_targets = invocation
+            .steps
+            .iter()
+            .filter_map(|step| {
+                step.target_ref.as_ref().map(|target_ref| {
+                    (
+                        step.action.as_str().to_string(),
+                        target_ref.as_str().to_string(),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        let document_id = invocation.document_id;
+        let mut steps = invocation
+            .steps
+            .into_iter()
+            .map(browser_step_body)
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut body = if is_batch {
+            json!({ "actions": steps })
+        } else {
+            steps.pop().expect("one validated browser action")
+        };
+        body["allow_high_risk"] = json!(allow_high_risk);
+        if let Some(revision) = observation_revision {
+            body["expected_observation_revision"] = json!(revision);
         }
-        if let Some(value) = command.text {
-            body["text"] = json!(value);
+        if let Some(document_id) = document_id {
+            body["expected_document_id"] = json!(document_id.into_string());
         }
-        if let Some(value) = command.key {
-            body["key"] = json!(value);
-        }
-        if let Some(value) = command.value {
-            body["value"] = json!(value);
-        }
-        if let Some(value) = command.delta_y {
-            body["delta_y"] = json!(value);
-        }
-        if let Some(value) = command.ms {
-            body["ms"] = json!(value);
-        }
-
-        let summary = body
-            .get("selector")
-            .and_then(|value| value.as_str())
-            .map(|selector| format!("{} {selector}", command.action.as_str()))
-            .unwrap_or_else(|| command.action.as_str().to_string());
+        let summary = if is_batch {
+            format!(
+                "guarded browser batch ({} steps)",
+                body.get("actions")
+                    .and_then(Value::as_array)
+                    .map_or(0, Vec::len)
+            )
+        } else {
+            let action = body
+                .get("action")
+                .and_then(Value::as_str)
+                .unwrap_or("browser action");
+            body.get("target_ref")
+                .or_else(|| body.get("selector"))
+                .and_then(Value::as_str)
+                .map(|target| format!("{action} {target}"))
+                .unwrap_or_else(|| action.to_string())
+        };
         let _ = self
             .event_tx
             .send(TuiEvent::ToolInvoked {
@@ -327,6 +621,11 @@ impl CognitionBrowserActTool {
             crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
                 .await;
         if client_executed(scope.as_ref()) {
+            if is_batch {
+                return Err(StasisError::PortFailure(format!(
+                    "{COGNITION_BROWSER_ACT}: guarded batches currently require the desktop BrowserHost"
+                )));
+            }
             return self
                 .invoke_client_executed(body, &scope)
                 .await
@@ -360,6 +659,25 @@ impl CognitionBrowserActTool {
         let authority_id = crate::workshop_authority::current()
             .map_err(StasisError::PortFailure)?
             .to_string();
+        if !semantic_targets.is_empty() {
+            crate::world_authority::validate_browser_element_refs(
+                crate::world_authority::BrowserElementRefFence {
+                    authority_id: &authority_id,
+                    tab_group_id: &browser_context.tab_group_id,
+                    tab_id: &browser_context.tab_id,
+                    expected_url: &browser_context.url,
+                    document_id: semantic_document_id.as_deref().unwrap_or_default(),
+                    revision: observation_revision.unwrap_or_default(),
+                    targets: &semantic_targets,
+                    allow_high_risk,
+                },
+            )
+            .map_err(|error| {
+                StasisError::PortFailure(format!(
+                    "{COGNITION_BROWSER_ACT}: semantic target denied: {error}"
+                ))
+            })?;
+        }
         let trace_id = scope
             .as_ref()
             .map(|scope| scope.turn_correlation_id.as_str())
@@ -371,7 +689,7 @@ impl CognitionBrowserActTool {
             &browser_context.tab_id,
             trace_id,
             &summary,
-            command.action.world_effect_class(),
+            world_effect_class,
         )
         .map_err(|error| {
             StasisError::PortFailure(format!(
@@ -388,7 +706,7 @@ impl CognitionBrowserActTool {
         // different page that happened to load before dispatch.
         body["world_expected_url"] = json!(browser_context.url);
 
-        let outcome = match browser_host_act(&browser_context.tab_group_id, body).await {
+        let mut outcome = match browser_host_act(&browser_context.tab_group_id, body).await {
             Ok(outcome) => outcome,
             Err(error) => {
                 let world_outcome = crate::world_authority::mark_browser_action_indeterminate(
@@ -402,6 +720,7 @@ impl CognitionBrowserActTool {
                 )));
             }
         };
+        mirror_browser_observation_from_outcome(&admission, &mut outcome);
         if outcome
             .get("ok")
             .and_then(|value| value.as_bool())
@@ -429,7 +748,16 @@ impl CognitionBrowserActTool {
             .and_then(|value| value.as_str())
             .unwrap_or("browser act failed")
             .to_string();
-        let world_outcome = if matches!(code.as_str(), "act_failed" | "stale_surface_lease") {
+        let has_applied_steps = outcome
+            .get("executed_steps")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0);
+        let world_outcome = if has_applied_steps
+            || matches!(
+                code.as_str(),
+                "act_failed" | "stale_surface_lease" | "batch_partial"
+            )
+        {
             Some(
                 crate::world_authority::mark_browser_action_indeterminate(
                     &admission,
@@ -443,16 +771,33 @@ impl CognitionBrowserActTool {
             None
         };
         Ok(ExternalJson::new(with_world_provenance(
-            json!({
-                "ok": false,
-                "code": code,
-                "error": error,
-                "binding_used": outcome.get("binding_used").cloned().unwrap_or(json!("browser_host")),
-            }),
+            outcome,
             admission.provenance(world_outcome),
             "block",
         )))
     }
+}
+
+fn mirror_browser_observation_from_outcome(
+    admission: &crate::world_authority::BrowserWorldAdmission,
+    outcome: &mut Value,
+) {
+    let Some(observation) = outcome
+        .get("observation")
+        .filter(|value| !value.is_null())
+        .cloned()
+        .and_then(|value| serde_json::from_value::<BrowserObservation>(value).ok())
+    else {
+        return;
+    };
+    let Err(error) = crate::world_authority::record_browser_observation(admission, observation)
+    else {
+        return;
+    };
+    let Some(object) = outcome.as_object_mut() else {
+        return;
+    };
+    object.insert("observation_mirror_error".to_string(), json!(error));
 }
 
 fn with_world_provenance(
@@ -575,9 +920,14 @@ mod tests {
 
     #[test]
     fn browser_act_command_normalizes_controls_and_preserves_text() {
-        let command = BrowserActCommand::try_from(BrowserActInput {
+        let invocation = BrowserActInvocation::try_from(BrowserActInput {
             action: Some("  type  ".to_string()).into(),
+            actions: None.into(),
+            target_ref: None.into(),
             selector: Some("  #search  ".to_string()).into(),
+            observation_revision: None.into(),
+            document_id: None.into(),
+            guard: None.into(),
             text: Some("  keep surrounding text  ".to_string()).into(),
             key: Some(" Enter ".to_string()).into(),
             delta_y: None.into(),
@@ -585,7 +935,8 @@ mod tests {
             ms: None.into(),
             allow_high_risk: None.into(),
         })
-        .expect("command");
+        .expect("invocation");
+        let command = &invocation.steps[0];
 
         assert_eq!(command.action, BrowserActAction::Type);
         assert_eq!(
@@ -594,14 +945,19 @@ mod tests {
         );
         assert_eq!(command.text.as_deref(), Some("  keep surrounding text  "));
         assert_eq!(command.key.as_deref(), Some(" Enter "));
-        assert!(!command.allow_high_risk);
+        assert!(!invocation.allow_high_risk);
     }
 
     #[test]
     fn browser_act_command_requires_selector_for_targeted_actions() {
-        let error = BrowserActCommand::try_from(BrowserActInput {
+        let error = BrowserActInvocation::try_from(BrowserActInput {
             action: Some("click".to_string()).into(),
+            actions: None.into(),
+            target_ref: None.into(),
             selector: None.into(),
+            observation_revision: None.into(),
+            document_id: None.into(),
+            guard: None.into(),
             text: None.into(),
             key: None.into(),
             delta_y: None.into(),
@@ -614,7 +970,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("selector is required for action 'click'")
+                .contains("target_ref or selector is required for action 'click'")
         );
     }
 
@@ -622,7 +978,11 @@ mod tests {
     fn browser_act_wire_optionals_remain_lenient_for_legacy_values() {
         let input: BrowserActInput = serde_json::from_value(serde_json::json!({
             "action": "click",
+            "target_ref": 42,
             "selector": 42,
+            "observation_revision": "1",
+            "document_id": false,
+            "guard": [],
             "text": false,
             "key": [],
             "delta_y": "10",
@@ -632,12 +992,132 @@ mod tests {
         }))
         .expect("browser act input");
         assert_eq!(input.action.into_option().as_deref(), Some("click"));
+        assert!(input.actions.into_option().is_none());
+        assert!(input.target_ref.into_option().is_none());
         assert!(input.selector.into_option().is_none());
+        assert!(input.observation_revision.into_option().is_none());
+        assert!(input.document_id.into_option().is_none());
+        assert!(input.guard.into_option().is_none());
         assert!(input.text.into_option().is_none());
         assert!(input.key.into_option().is_none());
         assert!(input.delta_y.into_option().is_none());
         assert!(input.value.into_option().is_none());
         assert!(input.ms.into_option().is_none());
         assert!(input.allow_high_risk.into_option().is_none());
+    }
+
+    fn batch_step(action: &str) -> BrowserActStepInput {
+        BrowserActStepInput {
+            action: Some(action.to_string()).into(),
+            ..BrowserActStepInput::default()
+        }
+    }
+
+    #[test]
+    fn browser_act_batch_is_bounded_and_classifies_the_strongest_effect() {
+        let invocation = BrowserActInvocation::try_from(BrowserActInput {
+            action: None.into(),
+            actions: Some(vec![batch_step("wait"), BrowserActStepInput {
+                action: Some("click".to_string()).into(),
+                target_ref: Some("el:doc:1".to_string()).into(),
+                ..BrowserActStepInput::default()
+            }])
+            .into(),
+            target_ref: None.into(),
+            selector: None.into(),
+            observation_revision: Some(7).into(),
+            document_id: Some("doc:one".to_string()).into(),
+            guard: None.into(),
+            text: None.into(),
+            key: None.into(),
+            delta_y: None.into(),
+            value: None.into(),
+            ms: None.into(),
+            allow_high_risk: None.into(),
+        })
+        .expect("batch invocation");
+
+        assert!(invocation.is_batch);
+        assert_eq!(invocation.steps.len(), 2);
+        assert_eq!(
+            invocation.world_effect_class(),
+            medousa_world::WorldEffectClass::LocalMutation
+        );
+    }
+
+    #[test]
+    fn browser_act_batch_rejects_mixed_singular_fields_and_excess_waits() {
+        let mixed = BrowserActInvocation::try_from(BrowserActInput {
+            action: Some("wait".to_string()).into(),
+            actions: Some(vec![batch_step("wait")]).into(),
+            target_ref: None.into(),
+            selector: None.into(),
+            observation_revision: None.into(),
+            document_id: None.into(),
+            guard: None.into(),
+            text: None.into(),
+            key: None.into(),
+            delta_y: None.into(),
+            value: None.into(),
+            ms: None.into(),
+            allow_high_risk: None.into(),
+        })
+        .expect_err("mixed invocation must fail");
+        assert!(mixed.to_string().contains("cannot be combined"));
+
+        let waits = BrowserActInvocation::try_from(BrowserActInput {
+            action: None.into(),
+            actions: Some(vec![
+                BrowserActStepInput {
+                    action: Some("wait".to_string()).into(),
+                    ms: Some(3_000).into(),
+                    ..BrowserActStepInput::default()
+                },
+                BrowserActStepInput {
+                    action: Some("wait".to_string()).into(),
+                    ms: Some(3_000).into(),
+                    ..BrowserActStepInput::default()
+                },
+            ])
+            .into(),
+            target_ref: None.into(),
+            selector: None.into(),
+            observation_revision: None.into(),
+            document_id: None.into(),
+            guard: None.into(),
+            text: None.into(),
+            key: None.into(),
+            delta_y: None.into(),
+            value: None.into(),
+            ms: None.into(),
+            allow_high_risk: None.into(),
+        })
+        .expect_err("excess wait budget must fail");
+        assert!(waits.to_string().contains("batch waits exceed"));
+    }
+
+    #[test]
+    fn browser_act_ref_requires_observation_identity() {
+        let error = BrowserActInvocation::try_from(BrowserActInput {
+            action: Some("click".to_string()).into(),
+            actions: None.into(),
+            target_ref: Some("el:doc:1".to_string()).into(),
+            selector: None.into(),
+            observation_revision: None.into(),
+            document_id: None.into(),
+            guard: None.into(),
+            text: None.into(),
+            key: None.into(),
+            delta_y: None.into(),
+            value: None.into(),
+            ms: None.into(),
+            allow_high_risk: None.into(),
+        })
+        .expect_err("unbound ref must fail");
+        assert!(
+            error
+                .to_string()
+                .contains("target_ref requires document_id and observation_revision")
+        );
     }
 }

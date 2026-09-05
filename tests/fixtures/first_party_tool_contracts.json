@@ -4,20 +4,136 @@
     {
       "registry": "coder_bound",
       "name": "cognition_browser_act",
-      "description": "Click, type, press, scroll, select, or wait on the shared Web tab. Use cognition_browser_snapshot to find selectors.",
+      "description": "Act on the shared Web tab using opaque refs from cognition_browser_snapshot. A guarded actions batch executes locally in order and stops at the first failure.",
       "input_schema": {
         "properties": {
           "action": {
-            "description": "Interaction to perform",
-            "enum": [
-              "click",
-              "press",
-              "scroll",
-              "select",
-              "type",
-              "wait"
+            "anyOf": [
+              {
+                "enum": [
+                  "click",
+                  "press",
+                  "scroll",
+                  "select",
+                  "type",
+                  "wait"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "type": "string"
+            "description": "Interaction to perform"
+          },
+          "actions": {
+            "description": "Guarded actions to execute locally in order (maximum 16); use instead of action",
+            "items": {
+              "properties": {
+                "action": {
+                  "default": null,
+                  "enum": [
+                    "click",
+                    "press",
+                    "scroll",
+                    "select",
+                    "type",
+                    "wait"
+                  ],
+                  "type": "string"
+                },
+                "delta_y": {
+                  "default": null,
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "guard": {
+                  "anyOf": [
+                    {
+                      "properties": {
+                        "name": {
+                          "default": null,
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "role": {
+                          "default": null,
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "value": {
+                          "default": null,
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "key": {
+                  "default": null,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "ms": {
+                  "default": null,
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "selector": {
+                  "default": null,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "target_ref": {
+                  "default": null,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "text": {
+                  "default": null,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "value": {
+                  "default": null,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "allow_high_risk": {
             "default": false,
@@ -27,6 +143,44 @@
           "delta_y": {
             "description": "Vertical scroll delta in px (action=scroll; positive = down)",
             "type": "integer"
+          },
+          "document_id": {
+            "description": "Observation document id that produced target_ref",
+            "type": "string"
+          },
+          "guard": {
+            "anyOf": [
+              {
+                "properties": {
+                  "name": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "role": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "value": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional semantic preconditions checked immediately before the action"
           },
           "intent": {
             "description": "Short purpose of this tool call.",
@@ -42,8 +196,16 @@
             "description": "Wait duration in milliseconds (action=wait)",
             "type": "integer"
           },
+          "observation_revision": {
+            "description": "Observation revision that produced target_ref",
+            "type": "integer"
+          },
           "selector": {
             "description": "CSS selector of the target element (required for click/type/press/select)",
+            "type": "string"
+          },
+          "target_ref": {
+            "description": "Opaque element ref from cognition_browser_snapshot (preferred over CSS)",
             "type": "string"
           },
           "text": {
@@ -56,7 +218,6 @@
           }
         },
         "required": [
-          "action",
           "intent"
         ],
         "type": "object"
@@ -101,7 +262,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_browser_snapshot",
-      "description": "Capture a markdown snapshot of the current page or a URL via Agent Browser.",
+      "description": "Observe the current shared page as a bounded semantic projection with opaque element refs and revisioned deltas; falls back to markdown for other URLs.",
       "input_schema": {
         "properties": {
           "intent": {
@@ -113,6 +274,15 @@
             "default": 4000,
             "description": "Maximum excerpt length in characters",
             "type": "integer"
+          },
+          "since_revision": {
+            "description": "Return only semantic changes after this observation revision when possible",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "url": {
             "description": "Absolute URL to snapshot (required)",
@@ -2038,20 +2208,136 @@
     {
       "registry": "general_runtime",
       "name": "cognition_browser_act",
-      "description": "Click, type, press, scroll, select, or wait on the shared Web tab. Use cognition_browser_snapshot to find selectors.",
+      "description": "Act on the shared Web tab using opaque refs from cognition_browser_snapshot. A guarded actions batch executes locally in order and stops at the first failure.",
       "input_schema": {
         "properties": {
           "action": {
-            "description": "Interaction to perform",
-            "enum": [
-              "click",
-              "press",
-              "scroll",
-              "select",
-              "type",
-              "wait"
+            "anyOf": [
+              {
+                "enum": [
+                  "click",
+                  "press",
+                  "scroll",
+                  "select",
+                  "type",
+                  "wait"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "type": "string"
+            "description": "Interaction to perform"
+          },
+          "actions": {
+            "description": "Guarded actions to execute locally in order (maximum 16); use instead of action",
+            "items": {
+              "properties": {
+                "action": {
+                  "default": null,
+                  "enum": [
+                    "click",
+                    "press",
+                    "scroll",
+                    "select",
+                    "type",
+                    "wait"
+                  ],
+                  "type": "string"
+                },
+                "delta_y": {
+                  "default": null,
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "guard": {
+                  "anyOf": [
+                    {
+                      "properties": {
+                        "name": {
+                          "default": null,
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "role": {
+                          "default": null,
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "value": {
+                          "default": null,
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "key": {
+                  "default": null,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "ms": {
+                  "default": null,
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "selector": {
+                  "default": null,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "target_ref": {
+                  "default": null,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "text": {
+                  "default": null,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "value": {
+                  "default": null,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "allow_high_risk": {
             "default": false,
@@ -2062,6 +2348,44 @@
             "description": "Vertical scroll delta in px (action=scroll; positive = down)",
             "type": "integer"
           },
+          "document_id": {
+            "description": "Observation document id that produced target_ref",
+            "type": "string"
+          },
+          "guard": {
+            "anyOf": [
+              {
+                "properties": {
+                  "name": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "role": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "value": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional semantic preconditions checked immediately before the action"
+          },
           "key": {
             "description": "Key name such as Enter/Tab/Escape (action=press)",
             "type": "string"
@@ -2071,8 +2395,16 @@
             "description": "Wait duration in milliseconds (action=wait)",
             "type": "integer"
           },
+          "observation_revision": {
+            "description": "Observation revision that produced target_ref",
+            "type": "integer"
+          },
           "selector": {
             "description": "CSS selector of the target element (required for click/type/press/select)",
+            "type": "string"
+          },
+          "target_ref": {
+            "description": "Opaque element ref from cognition_browser_snapshot (preferred over CSS)",
             "type": "string"
           },
           "text": {
@@ -2084,9 +2416,6 @@
             "type": "string"
           }
         },
-        "required": [
-          "action"
-        ],
         "type": "object"
       },
       "output_schema_present": true,
@@ -2127,13 +2456,22 @@
     {
       "registry": "general_runtime",
       "name": "cognition_browser_snapshot",
-      "description": "Capture a markdown snapshot of the current page or a URL via Agent Browser.",
+      "description": "Observe the current shared page as a bounded semantic projection with opaque element refs and revisioned deltas; falls back to markdown for other URLs.",
       "input_schema": {
         "properties": {
           "max_chars": {
             "default": 4000,
             "description": "Maximum excerpt length in characters",
             "type": "integer"
+          },
+          "since_revision": {
+            "description": "Return only semantic changes after this observation revision when possible",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "url": {
             "description": "Absolute URL to snapshot (required)",

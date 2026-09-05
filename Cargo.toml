@@ -94,6 +94,7 @@ detamu-source-git = { version = "0.1.1", optional = true }
 detamu-language-rust = { version = "0.1.1", optional = true }
 detamu-language = { version = "0.1.1", optional = true }
 medousa-browser-lite = { path = "crates/medousa-browser-lite", optional = true }
+medousa-browser-bridge = { path = "crates/medousa-browser-bridge", optional = true }
 medousa-world = { path = "crates/medousa-world" }
 medousa-local-inference = { path = "crates/medousa-local-inference", optional = true }
 anyhow = "1"
@@ -202,6 +203,7 @@ full-daemon = [
     "dep:detamu-language-rust",
     "dep:detamu-language",
     "dep:medousa-browser-lite",
+    "dep:medousa-browser-bridge",
     "dep:medousa-local-inference",
     "dep:clap",
     "dep:chrono-tz",
@@ -264,6 +266,7 @@ embedded-daemon = [
     "dep:icalendar",
     "dep:futures-util",
     "dep:medousa-browser-lite",
+    "dep:medousa-browser-bridge",
     "dep:medousa-mcp-gateway",
     "dep:medousa-secrets",
     "dep:medousa-tool-macros",
