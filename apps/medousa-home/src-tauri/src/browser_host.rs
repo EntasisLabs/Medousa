@@ -1412,7 +1412,10 @@ fn resolve_daemon_url(daemon_url: Option<&str>) -> Result<String, String> {
         .map_err(|_| "MEDOUSA_DAEMON_URL not set".to_string())
 }
 
-pub async fn register_browser_client_with_daemon(daemon_url: &str, channel_surface: &str) {
+pub async fn register_browser_client_with_workshop(
+    state: &tauri::State<'_, crate::daemon::DaemonState>,
+    channel_surface: &str,
+) -> Result<(), String> {
     let supports =
         if channel_surface.starts_with("home-ios") || channel_surface.starts_with("home-android") {
             true
@@ -1435,23 +1438,23 @@ pub async fn register_browser_client_with_daemon(daemon_url: &str, channel_surfa
             Vec::new()
         },
     });
-    let url = format!("{}/v1/clients/register", daemon_url.trim_end_matches('/'));
-    let Ok(client) = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-    else {
-        return;
-    };
-    let _ = client.post(url).json(&body).send().await;
+    let _: serde_json::Value = crate::daemon::workshop_http::post_json(
+        state,
+        medousa_sdk::generated::ops::CLIENTS_REGISTER_POST.path,
+        &body,
+    )
+    .await?;
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn browser_host_register_client(
+    state: tauri::State<'_, crate::daemon::DaemonState>,
     daemon_url: String,
     channel_surface: String,
 ) -> Result<(), String> {
-    register_browser_client_with_daemon(&daemon_url, &channel_surface).await;
-    Ok(())
+    let _ = daemon_url;
+    register_browser_client_with_workshop(&state, &channel_surface).await
 }
 
 // ── Browser bridge (in-process; avoids CORS from Vite dev → :7422) ───────────

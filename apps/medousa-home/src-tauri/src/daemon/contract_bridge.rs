@@ -15,6 +15,7 @@ use crate::daemon::DaemonState;
 use crate::daemon::generated_ops::DaemonOperation;
 use crate::daemon::sse::stream_sse_json_workshop;
 use crate::daemon::workshop_http;
+use crate::embedded_daemon::EmbeddedDaemonState;
 use crate::workshop_transport;
 
 static STREAM_SEQ: AtomicU64 = AtomicU64::new(1);
@@ -22,10 +23,22 @@ static STREAM_SEQ: AtomicU64 = AtomicU64::new(1);
 #[tauri::command]
 pub async fn daemon_unary(
     state: State<'_, DaemonState>,
+    embedded_state: State<'_, EmbeddedDaemonState>,
     operation: DaemonOperation,
     path_params: HashMap<String, String>,
     body: Option<Value>,
 ) -> Result<Value, String> {
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    if let Some(client) = embedded_state.client_if_active().await? {
+        if let Some(response) =
+            embedded_browser_session_unary(&client, operation, &path_params, body.as_ref())?
+        {
+            return Ok(response);
+        }
+    }
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    let _ = embedded_state;
+
     let op = medousa_sdk::generated::ops::by_id(operation.id())
         .ok_or_else(|| format!("unknown operation {}", operation.id()))?;
     if op.streaming {
@@ -43,6 +56,110 @@ pub async fn daemon_unary(
         "PATCH" => workshop_http::patch_json(&state, &path, &body.unwrap_or(Value::Null)).await,
         other => Err(format!("unsupported method {other}")),
     }
+}
+
+#[cfg(any(target_os = "ios", target_os = "android"))]
+fn embedded_browser_session_unary(
+    client: &medousa::embedded_daemon::EmbeddedDaemonClient,
+    operation: DaemonOperation,
+    path_params: &HashMap<String, String>,
+    body: Option<&Value>,
+) -> Result<Option<Value>, String> {
+    use medousa::browser_sessions::{BrowserActOutcome, BrowserSessionCompleteRequest};
+
+    let session_id = || {
+        path_params
+            .get("session_id")
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| "session_id is required".to_string())
+    };
+    let response = match operation {
+        DaemonOperation::BrowserSessionsBySessionIdGet => match client
+            .browser_session(session_id()?)
+            .map_err(|error| error.to_string())?
+        {
+            Some(session) => serde_json::json!({ "ok": true, "session": session }),
+            None => serde_json::json!({
+                "ok": false,
+                "error": format!("session not found: {}", session_id()?),
+            }),
+        },
+        DaemonOperation::BrowserSessionsBySessionIdCompletePost => {
+            let body = body.cloned().unwrap_or(Value::Null);
+            let world_driver_id = body
+                .get("world_driver_id")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            let search_response = body
+                .get("search_response")
+                .filter(|value| !value.is_null())
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|error| format!("invalid browser search response: {error}"))?;
+            let error = body
+                .get("error")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            match client.complete_browser_session(
+                session_id()?,
+                world_driver_id.as_deref(),
+                BrowserSessionCompleteRequest {
+                    search_response,
+                    error,
+                },
+            ) {
+                Ok(Some(session)) => serde_json::json!({
+                    "ok": true,
+                    "session_id": session.session_id,
+                    "status": session.status,
+                }),
+                Ok(None) => serde_json::json!({
+                    "ok": false,
+                    "error": format!("session not found: {}", session_id()?),
+                }),
+                Err(error) => serde_json::json!({ "ok": false, "error": error.to_string() }),
+            }
+        }
+        DaemonOperation::BrowserSessionsBySessionIdCompleteActPost => {
+            let body = body.cloned().unwrap_or(Value::Null);
+            let world_driver_id = body
+                .get("world_driver_id")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            let outcome = BrowserActOutcome {
+                ok: body.get("ok").and_then(Value::as_bool).unwrap_or(false),
+                url: body
+                    .get("url")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                error: body
+                    .get("error")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+            };
+            match client.complete_browser_act_session(
+                session_id()?,
+                world_driver_id.as_deref(),
+                outcome,
+            ) {
+                Ok(Some(session)) => serde_json::json!({
+                    "ok": true,
+                    "session_id": session.session_id,
+                    "status": session.status,
+                }),
+                Ok(None) => serde_json::json!({
+                    "ok": false,
+                    "error": format!("session not found: {}", session_id()?),
+                }),
+                Err(error) => serde_json::json!({ "ok": false, "error": error.to_string() }),
+            }
+        }
+        _ => return Ok(None),
+    };
+    Ok(Some(response))
 }
 
 #[tauri::command]

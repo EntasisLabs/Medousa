@@ -3,6 +3,7 @@
 
 use medousa_browser_lite::{SearchResponse, search_ddg_html_cached};
 use serde::Serialize;
+use tauri::State;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -13,7 +14,10 @@ pub struct BrowserHostStatusDto {
     pub driver_id: String,
 }
 
-async fn register_browser_client_with_daemon(daemon_url: &str, channel_surface: &str) {
+async fn register_browser_client_with_workshop(
+    state: &State<'_, crate::daemon::DaemonState>,
+    channel_surface: &str,
+) -> Result<(), String> {
     let client_id = crate::browser_driver::client_id(channel_surface);
     let body = serde_json::json!({
         "client_id": client_id,
@@ -22,14 +26,13 @@ async fn register_browser_client_with_daemon(daemon_url: &str, channel_surface: 
         "browser_host_url": null,
         "world_drivers": [crate::browser_driver::registration()],
     });
-    let url = format!("{}/v1/clients/register", daemon_url.trim_end_matches('/'));
-    let Ok(client) = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-    else {
-        return;
-    };
-    let _ = client.post(url).json(&body).send().await;
+    let _: serde_json::Value = crate::daemon::workshop_http::post_json(
+        state,
+        medousa_sdk::generated::ops::CLIENTS_REGISTER_POST.path,
+        &body,
+    )
+    .await?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -49,11 +52,18 @@ pub async fn browser_host_search(
 
 #[tauri::command]
 pub async fn browser_host_register_client(
+    state: State<'_, crate::daemon::DaemonState>,
+    embedded_state: State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     daemon_url: String,
     channel_surface: String,
 ) -> Result<(), String> {
-    register_browser_client_with_daemon(&daemon_url, &channel_surface).await;
-    Ok(())
+    let _ = daemon_url;
+    if embedded_state.client_if_active().await?.is_some() {
+        // Personal is in-process. Its exact Home driver is admitted with every
+        // turn instead of being registered through a nonexistent HTTP socket.
+        return Ok(());
+    }
+    register_browser_client_with_workshop(&state, &channel_surface).await
 }
 
 #[tauri::command]

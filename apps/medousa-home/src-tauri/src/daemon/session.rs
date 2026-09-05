@@ -781,6 +781,32 @@ pub async fn turn_create(
     } else {
         Some(model.as_str())
     };
+    let channel_surface = channel_surface
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(super::default_home_channel_surface);
+    let browser_driver_id = browser_driver_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    if browser_driver_id
+        .as_deref()
+        .is_some_and(|driver_id| driver_id.len() > 256 || driver_id.chars().any(char::is_control))
+    {
+        return Err("browser driver identity is invalid".to_string());
+    }
+    let supports_browser_host =
+        browser_driver_id.is_some() || super::resolve_supports_browser_host().await;
+    let surface = TurnSurfaceContext {
+        channel_surface: Some(channel_surface),
+        channel_id: Some(trimmed_session.to_string()),
+        user_id: None,
+        supports_ui_artifacts: true,
+        supports_liquid_markdown: true,
+        supports_browser_host,
+        browser_driver_id: browser_driver_id.or_else(|| {
+            supports_browser_host.then(|| crate::browser_driver::id().to_string())
+        }),
+    };
     #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state
         .client_if_active_for_route(
@@ -821,7 +847,7 @@ pub async fn turn_create(
                 trimmed_session,
                 prompt.clone(),
                 identity_user_id.clone(),
-                channel_surface.clone(),
+                surface.clone(),
                 voice_preset_id.clone(),
                 voice_appendix.clone(),
                 embedded_response_depth,
@@ -878,34 +904,6 @@ pub async fn turn_create(
     } else {
         stage_routing
     };
-    let channel_surface = channel_surface
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
-    let browser_driver_id = browser_driver_id
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
-    if browser_driver_id
-        .as_deref()
-        .is_some_and(|driver_id| driver_id.len() > 256 || driver_id.chars().any(char::is_control))
-    {
-        return Err("browser driver identity is invalid".to_string());
-    }
-
-    let supports_browser_host =
-        browser_driver_id.is_some() || super::resolve_supports_browser_host().await;
-
-    let surface = channel_surface.map(|channel_surface| TurnSurfaceContext {
-        channel_surface: Some(channel_surface),
-        channel_id: Some(trimmed_session.to_string()),
-        user_id: None,
-        supports_ui_artifacts: true,
-        supports_liquid_markdown: true,
-        supports_browser_host,
-        browser_driver_id: browser_driver_id.or_else(|| {
-            supports_browser_host.then(|| crate::browser_driver::id().to_string())
-        }),
-    });
-
     let body = CreateTurnTicketBody {
         session_id: trimmed_session.to_string(),
         prompt,
@@ -920,7 +918,7 @@ pub async fn turn_create(
         provider,
         model,
         stage_routing: Some(stage_routing),
-        surface,
+        surface: Some(surface),
         media_refs: media_refs.unwrap_or_default(),
         voice_preset_id: voice_preset_id
             .map(|value| value.trim().to_string())
