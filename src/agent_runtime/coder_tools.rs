@@ -712,20 +712,8 @@ pub trait CoderExecutionGuard: Send + Sync {
 /// admitted on another workshop. Forge remains authoritative on the origin;
 /// the destination receives only code operations that can be rebound to the
 /// active `/workspace` environment plus the structural turn tool.
-pub const PORTABLE_CODER_TOOL_NAMES: &[&str] = &[
-    crate::public_api::COGNITION_TURN,
-    crate::public_api::COGNITION_STORE_READ,
-    crate::public_api::COGNITION_STORE_WRITE,
-    crate::coding_tools::COGNITION_CODER_SHELL_RUN,
-    crate::coding_tools::COGNITION_CODER_SHELL_STATUS,
-    crate::code_intelligence_tools::COGNITION_CODE_HOVER,
-    crate::code_intelligence_tools::COGNITION_CODE_DEFINITION,
-    crate::code_intelligence_tools::COGNITION_CODE_DIAGNOSTICS,
-    crate::code_intelligence_tools::COGNITION_CODE_SYMBOLS,
-];
-
 pub fn portable_coder_tool_names() -> HashSet<String> {
-    PORTABLE_CODER_TOOL_NAMES
+    crate::portable_coder::PORTABLE_CODER_TOOL_NAMES
         .iter()
         .map(|name| (*name).to_string())
         .collect()

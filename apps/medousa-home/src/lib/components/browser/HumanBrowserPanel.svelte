@@ -9,6 +9,8 @@
   import BrowserCaptchaBanner from "$lib/components/browser/BrowserCaptchaBanner.svelte";
   import BrowserFindBar from "$lib/components/browser/BrowserFindBar.svelte";
   import BrowserStartPage from "$lib/components/browser/BrowserStartPage.svelte";
+  import BrowserSurfacePicker from "$lib/components/browser/BrowserSurfacePicker.svelte";
+  import GovernedBrowserPanel from "$lib/components/browser/GovernedBrowserPanel.svelte";
   import {
     createBrowserCompositor,
     registerBrowserCompositor,
@@ -23,6 +25,7 @@
     runBrowserHotkeyAction,
   } from "$lib/utils/browserHotkeys";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
+  import { governedBrowser } from "$lib/stores/governedBrowser.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { isTauri, shouldUseMobileShell } from "$lib/platform";
@@ -57,6 +60,12 @@
       focusUrlBar();
       return;
     }
+    if (governedBrowser.usesWorkshopWorld) {
+      if (action === "goBack") void governedBrowser.goBack();
+      if (action === "goForward") void governedBrowser.goForward();
+      if (action === "reload") void governedBrowser.reload();
+      return;
+    }
     runBrowserHotkeyAction(action, humanBrowser);
   }
 
@@ -64,7 +73,12 @@
     if (isTauri() && !shouldUseMobileShell()) {
       compositor = createBrowserCompositor({
         mode: "desktop",
-        getActive: () => visible && isTauri() && !layout.isMobile && !shouldUseMobileShell(),
+        getActive: () =>
+          visible &&
+          !governedBrowser.usesWorkshopWorld &&
+          isTauri() &&
+          !layout.isMobile &&
+          !shouldUseMobileShell(),
         getShowStartPage: () => humanBrowser.showStartPage,
         getActiveUrl: () => humanBrowser.activeUrl,
         getActiveTabId: () => humanBrowser.activeTab?.id ?? null,
@@ -92,6 +106,16 @@
         (target.tagName === "INPUT" ||
           target.tagName === "TEXTAREA" ||
           target.isContentEditable);
+
+      if (
+        governedBrowser.usesWorkshopWorld &&
+        key !== "l" &&
+        key !== "r" &&
+        event.key !== "[" &&
+        event.key !== "]"
+      ) {
+        return;
+      }
 
       // Core browser hotkeys — work even while the URL bar / find field is focused.
       if (key === "l") {
@@ -156,6 +180,7 @@
     const isVisible = visible;
     if (isVisible && !wasPanelVisible) {
       wasPanelVisible = true;
+      if (governedBrowser.usesWorkshopWorld) return;
       void (async () => {
         await tick();
         await new Promise<void>((resolve) => {
@@ -172,6 +197,11 @@
   });
 
   $effect(() => {
+    const workshopWorld = governedBrowser.usesWorkshopWorld;
+    if (workshopWorld) {
+      compositor?.detach();
+      return;
+    }
     if (!useDesktopCompositor || !visible || !compositor || !embedHostEl || !chromeEl) return;
     humanBrowser.showStartPage;
     layout.activityWidth;
@@ -193,12 +223,15 @@
   });
 </script>
 
-<div
-  bind:this={panelEl}
-  class="human-browser-panel flex h-full min-h-0 min-w-0 w-full flex-col"
-  data-browser-panel
-  data-debug-label="browser-panel"
->
+{#if governedBrowser.usesWorkshopWorld}
+  <GovernedBrowserPanel {visible} {shellTabChrome} {urlBarFocusNonce} />
+{:else}
+  <div
+    bind:this={panelEl}
+    class="human-browser-panel flex h-full min-h-0 min-w-0 w-full flex-col"
+    data-browser-panel
+    data-debug-label="browser-panel"
+  >
   <div
     bind:this={chromeEl}
     class="human-browser-chrome relative z-50 flex w-full shrink-0 flex-col"
@@ -269,6 +302,7 @@
           <ExternalLink size={15} strokeWidth={1.75} />
         </button>
       {/if}
+      <BrowserSurfacePicker />
       <BrowserChromeActions />
     </div>
 
@@ -292,4 +326,5 @@
       </div>
     {/if}
   </div>
-</div>
+  </div>
+{/if}

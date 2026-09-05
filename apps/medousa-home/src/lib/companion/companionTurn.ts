@@ -41,6 +41,7 @@ export async function sendCompanionPrompt(
     reasoningEffort: options.reasoningEffort,
     stageRouting: options.stageRouting,
     channelSurface: options.channelSurface,
+    browserDriverId: options.browserDriverId,
     voicePresetId: voice.voicePresetId,
     voiceAppendix: voice.voiceAppendix,
     identityUserId: options.identityUserId,

@@ -11037,6 +11037,66 @@
         }
       }
     },
+    "/v1/browser/worlds/isolated/{world_id}/input": {
+      "post": {
+        "operationId": "browser.worlds.isolated.by_world_id.input.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "world_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_INPUT_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.input.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.input.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.input.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 49152,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
     "/v1/browser/worlds/isolated/{world_id}/lifecycle": {
       "post": {
         "operationId": "browser.worlds.isolated.by_world_id.lifecycle.post",

@@ -1,15 +1,13 @@
 import {
   approveTurnBudgetRequest,
   checkDaemonHealth,
+  createTurnTicket,
   denyTurnBudgetRequest,
   getSessionHistory,
   listManuscripts,
   listTurnBudgetRequests,
 } from "$lib/daemon";
-import {
-  resetContentZoom,
-  stepContentZoom,
-} from "$lib/config/contentZoom";
+import { resetContentZoom, stepContentZoom } from "$lib/config/contentZoom";
 import { homeChannelSurface, formatShortcut } from "$lib/platform";
 import { onThisHostPhrase } from "$lib/platformCopy";
 import { appUpdate } from "$lib/stores/appUpdate.svelte";
@@ -29,7 +27,6 @@ import {
 } from "$lib/utils/mouseShake";
 import { reconnectWorkshop } from "$lib/workshopConnection";
 import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
-import { createTurnTicket } from "$lib/daemon";
 import { connection } from "$lib/stores/connection.svelte";
 import { layout } from "$lib/runtime/layout.svelte";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
@@ -690,6 +687,7 @@ export function buildAskCommands(): WorkshopCommand[] {
           reasoningEffort: opts.reasoningEffort,
           stageRouting: opts.stageRouting,
           channelSurface: opts.channelSurface,
+          browserDriverId: opts.browserDriverId,
           identityUserId: opts.identityUserId,
         });
         ctx.chat.beginTurn(text, accepted, [], opts.identityUserId);

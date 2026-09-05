@@ -143,7 +143,7 @@ pub async fn resolve_browser_host_enabled(
     if scope
         .browser_driver_id
         .as_deref()
-        .is_some_and(crate::daemon::isolated_browser_host::is_isolated_driver_id)
+        .is_some_and(crate::browser_tools::is_isolated_browser_driver_id)
     {
         // Search results are provider data, not a reason to silently move the
         // turn onto Home's shared browser identity. Isolated worlds navigate

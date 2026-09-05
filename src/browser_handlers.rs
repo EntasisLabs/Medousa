@@ -32,7 +32,7 @@ use crate::request_principal::Capability;
 
 use crate::daemon::isolated_browser_host::{
     CreateIsolatedBrowserWorldRequest, IsolatedBrowserCleanupQuery, IsolatedBrowserError,
-    IsolatedBrowserLifecycleRequest, IsolatedBrowserNavigateRequest,
+    IsolatedBrowserInputRequest, IsolatedBrowserLifecycleRequest, IsolatedBrowserNavigateRequest,
     IsolatedBrowserObserveRequest, IsolatedBrowserScreenshotRequest,
 };
 
@@ -338,6 +338,67 @@ pub async fn screenshot_isolated_browser_world(
         "ok": true,
         "screenshot": screenshot,
     })))
+}
+
+pub async fn input_isolated_browser_world(
+    State(state): State<AppState>,
+    Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
+    Path(world_id): Path<String>,
+    Json(request): Json<IsolatedBrowserInputRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let profile_id = principal_profile_id(&principal);
+    let current = state
+        .isolated_browser
+        .get(&profile_id, &world_id)
+        .await
+        .map_err(isolated_browser_error)?;
+    let tab_id = current.tab_id.as_deref().ok_or_else(|| {
+        isolated_browser_error(IsolatedBrowserError::Unavailable(
+            "isolated browser has no active page".to_string(),
+        ))
+    })?;
+    crate::world_authority::validate_browser_pixel_fence(
+        &current.authority_id,
+        current.driver.driver_id.as_str(),
+        &current.tab_group_id,
+        tab_id,
+        &current.url,
+        &request.expected_document_id,
+        request.expected_observation_revision,
+    )
+    .map_err(isolated_browser_authority_error)?;
+    let owner_principal_id = format!("human:{profile_id}");
+    let trace_id = isolated_browser_trace_id("input");
+    let admission = crate::world_authority::admit_owned_browser_human_intent(
+        crate::world_authority::OwnedBrowserHumanIntent {
+            authority_id: &current.authority_id,
+            driver_id: current.driver.driver_id.as_str(),
+            tab_group_id: &current.tab_group_id,
+            tab_id,
+            owner_principal_id: &owner_principal_id,
+            trace_id: &trace_id,
+            summary: "human interacted with isolated browser viewport",
+            effect_class: WorldEffectClass::LocalReversible,
+        },
+    )
+    .map_err(isolated_browser_authority_error)?;
+    let world = match state
+        .isolated_browser
+        .human_input(&profile_id, &world_id, &request, &admission.permit)
+        .await
+    {
+        Ok(world) => world,
+        Err(error) => {
+            let _ = crate::world_authority::fail_browser_action(&admission, &error.to_string());
+            return Err(isolated_browser_error(error));
+        }
+    };
+    crate::world_authority::complete_browser_action(
+        &admission,
+        "human isolated-browser input committed",
+    )
+    .map_err(isolated_browser_authority_error)?;
+    Ok(Json(serde_json::json!({ "ok": true, "world": world })))
 }
 
 pub async fn cleanup_isolated_browser_world(
@@ -719,6 +780,14 @@ pub fn browser_surface() -> DeclaredRouter<AppState> {
                 RateLimitClass::Read,
             ),
             post(screenshot_isolated_browser_world),
+        )
+        .route(
+            browser_write_policy(
+                axum::http::Method::POST,
+                "/v1/browser/worlds/isolated/{world_id}/input",
+                48 * 1024,
+            ),
+            post(input_isolated_browser_world),
         )
 }
 

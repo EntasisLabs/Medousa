@@ -96,6 +96,7 @@ export async function submitChatTurn(input: {
     reasoningEffort: opts.reasoningEffort,
     stageRouting: opts.stageRouting,
     channelSurface: opts.channelSurface,
+    browserDriverId: opts.browserDriverId,
     mediaRefs,
     voicePresetId: voice.voicePresetId,
     voiceAppendix: voice.voiceAppendix,

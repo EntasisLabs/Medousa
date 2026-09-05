@@ -137,7 +137,7 @@ impl CognitionBrowserFetchTool {
 
         let shared_driver_matches = match selected_driver_id {
             Some(driver_id)
-                if crate::daemon::isolated_browser_host::is_isolated_driver_id(driver_id) =>
+                if crate::browser_tools::is_isolated_browser_driver_id(driver_id) =>
             {
                 false
             }

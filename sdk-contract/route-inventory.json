@@ -871,6 +871,22 @@
       "trust_group": "portal"
     },
     {
+      "body_limit": 49152,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "browser.worlds.isolated.by_world_id.input.post",
+      "path": "/v1/browser/worlds/isolated/{world_id}/input",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
       "body_limit": 8192,
       "bootstrap_public": false,
       "browser_policy": "exact_origin",

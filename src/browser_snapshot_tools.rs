@@ -457,6 +457,7 @@ async fn validate_and_persist_screenshot_capture(
     })
 }
 
+#[cfg(feature = "full-daemon")]
 struct IsolatedScreenshotArtifactRequest<'a> {
     host: &'a crate::daemon::isolated_browser_host::IsolatedBrowserHost,
     owner_profile_id: &'a str,
@@ -468,6 +469,7 @@ struct IsolatedScreenshotArtifactRequest<'a> {
     max_width: u32,
 }
 
+#[cfg(feature = "full-daemon")]
 async fn capture_isolated_screenshot_artifact(
     request: IsolatedScreenshotArtifactRequest<'_>,
 ) -> Result<BrowserScreenshotArtifactOutput, String> {
@@ -572,12 +574,11 @@ impl CognitionBrowserSnapshotTool {
             .map(|scope| scope.session_id.as_str())
             .filter(|session_id| !session_id.trim().is_empty());
 
+        #[cfg(feature = "full-daemon")]
         if let Some(driver_id) = scope
             .as_ref()
             .and_then(|scope| scope.browser_driver_id.as_deref())
-            .filter(|driver_id| {
-                crate::daemon::isolated_browser_host::is_isolated_driver_id(driver_id)
-            })
+            .filter(|driver_id| crate::browser_tools::is_isolated_browser_driver_id(driver_id))
         {
             let owner_profile_id = scope
                 .as_ref()
@@ -727,6 +728,16 @@ impl CognitionBrowserSnapshotTool {
                 observation: Some(semantic_output(&observation)),
                 screenshot,
             });
+        }
+        #[cfg(not(feature = "full-daemon"))]
+        if scope
+            .as_ref()
+            .and_then(|scope| scope.browser_driver_id.as_deref())
+            .is_some_and(crate::browser_tools::is_isolated_browser_driver_id)
+        {
+            return Err(StasisError::PortFailure(format!(
+                "{COGNITION_BROWSER_SNAPSHOT}: selected Workshop browser belongs to another daemon"
+            )));
         }
 
         if browser_host_healthy().await {

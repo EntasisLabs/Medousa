@@ -742,6 +742,7 @@ pub async fn turn_create(
     reasoning_effort: Option<String>,
     stage_routing: Option<StageRoutingMatrix>,
     channel_surface: Option<String>,
+    browser_driver_id: Option<String>,
     media_refs: Option<Vec<MediaRef>>,
     voice_preset_id: Option<String>,
     voice_appendix: Option<String>,
@@ -880,8 +881,18 @@ pub async fn turn_create(
     let channel_surface = channel_surface
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
+    let browser_driver_id = browser_driver_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    if browser_driver_id
+        .as_deref()
+        .is_some_and(|driver_id| driver_id.len() > 256 || driver_id.chars().any(char::is_control))
+    {
+        return Err("browser driver identity is invalid".to_string());
+    }
 
-    let supports_browser_host = super::resolve_supports_browser_host().await;
+    let supports_browser_host =
+        browser_driver_id.is_some() || super::resolve_supports_browser_host().await;
 
     let surface = channel_surface.map(|channel_surface| TurnSurfaceContext {
         channel_surface: Some(channel_surface),
@@ -890,8 +901,9 @@ pub async fn turn_create(
         supports_ui_artifacts: true,
         supports_liquid_markdown: true,
         supports_browser_host,
-        browser_driver_id: supports_browser_host
-            .then(|| crate::browser_driver::id().to_string()),
+        browser_driver_id: browser_driver_id.or_else(|| {
+            supports_browser_host.then(|| crate::browser_driver::id().to_string())
+        }),
     });
 
     let body = CreateTurnTicketBody {

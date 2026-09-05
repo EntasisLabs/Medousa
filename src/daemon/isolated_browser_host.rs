@@ -32,7 +32,7 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 use uuid::Uuid;
 
 const CATALOG_SCHEMA_VERSION: u16 = 1;
-const DRIVER_PREFIX: &str = "driver:isolated-browser:";
+const DRIVER_PREFIX: &str = crate::browser_tools::ISOLATED_BROWSER_DRIVER_PREFIX;
 const STARTUP_ATTEMPTS: usize = 200;
 const STARTUP_POLL_MS: u64 = 50;
 const CDP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -40,6 +40,7 @@ const MAX_PROFILE_ID_BYTES: usize = 80;
 const MAX_DISPLAY_NAME_BYTES: usize = 120;
 const MAX_URL_BYTES: usize = 8 * 1024;
 const MAX_ACTION_STEPS: usize = 16;
+const MAX_HUMAN_INPUT_TEXT_BYTES: usize = 32 * 1024;
 const MAX_SCREENSHOT_BYTES: usize = 12 * 1024 * 1024;
 const MAX_WORLDS_PER_PROFILE: usize = 32;
 const MAX_CATALOG_WORLDS: usize = 256;
@@ -159,6 +160,44 @@ pub struct IsolatedBrowserScreenshotRequest {
 
 fn default_screenshot_width() -> u32 {
     1280
+}
+
+/// A presentation client sends input in the exact CSS viewport coordinate
+/// frame returned with its last screenshot. The observation fence prevents a
+/// delayed tap from landing on a different document after navigation.
+#[derive(Debug, Clone, Deserialize)]
+pub struct IsolatedBrowserInputRequest {
+    pub expected_document_id: String,
+    pub expected_observation_revision: u64,
+    #[serde(flatten)]
+    pub input: IsolatedBrowserHumanInput,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum IsolatedBrowserHumanInput {
+    Click {
+        x: f64,
+        y: f64,
+        #[serde(default)]
+        button: Option<String>,
+    },
+    Scroll {
+        #[serde(default)]
+        x: Option<f64>,
+        #[serde(default)]
+        y: Option<f64>,
+        delta_x: f64,
+        delta_y: f64,
+    },
+    Text {
+        text: String,
+    },
+    Key {
+        key: String,
+        #[serde(default)]
+        modifiers: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -815,6 +854,87 @@ impl IsolatedBrowserHost {
         .await
     }
 
+    /// Dispatch authenticated human input into the daemon-owned page.
+    ///
+    /// The caller admits the intent through world authority first. This method
+    /// then repeats the observation and permit fences immediately beside CDP,
+    /// flips the host-local control epoch before dispatch, and never accepts a
+    /// raw client-authored permit.
+    pub async fn human_input(
+        &self,
+        owner_profile_id: &str,
+        world_id: &str,
+        request: &IsolatedBrowserInputRequest,
+        permit: &WorldActionPermit,
+    ) -> Result<IsolatedBrowserWorld, IsolatedBrowserError> {
+        let (world, websocket_url, target_id) = self
+            .runtime_binding(owner_profile_id, world_id, false)
+            .await?;
+        let tab_id = world.tab_id.clone().ok_or_else(|| {
+            IsolatedBrowserError::Unavailable("isolated browser has no active page".to_string())
+        })?;
+        validate_human_input_permit(&world, permit, &tab_id)?;
+        crate::world_authority::validate_browser_pixel_fence(
+            &world.authority_id,
+            world.driver.driver_id.as_str(),
+            &world.tab_group_id,
+            &tab_id,
+            &world.url,
+            &request.expected_document_id,
+            request.expected_observation_revision,
+        )
+        .map_err(IsolatedBrowserError::Conflict)?;
+        let observation = TabGroupManager::current_observation(&world.tab_group_id, &tab_id)
+            .ok_or_else(|| {
+                IsolatedBrowserError::Conflict(
+                    "observe the isolated browser before sending input".to_string(),
+                )
+            })?;
+        validate_human_input(&request.input, &observation.viewport)?;
+
+        {
+            let mut state = self.state.lock().await;
+            if !state.runtimes.contains_key(world_id) {
+                return Err(IsolatedBrowserError::Unavailable(
+                    "isolated browser process is unavailable".to_string(),
+                ));
+            }
+            let current = owned_world_mut(&mut state, owner_profile_id, world_id)?;
+            if current.run_state != IsolatedBrowserRunState::Running {
+                return Err(IsolatedBrowserError::Conflict(
+                    "isolated browser is paused or stopped".to_string(),
+                ));
+            }
+            if current.control != BrowserControl::User {
+                current.control = BrowserControl::User;
+                current.control_epoch = current.control_epoch.saturating_add(1);
+                current.updated_at_ms = now_ms();
+                TabGroupManager::set_control(&current.tab_group_id, BrowserControl::User);
+            }
+        }
+
+        crate::world_authority::validate_browser_action_permit(permit)
+            .map_err(IsolatedBrowserError::Conflict)?;
+        let (mut connection, session_id) = connect_page(&websocket_url, &target_id).await?;
+        dispatch_human_input(
+            &mut connection,
+            &session_id,
+            &request.input,
+            &observation.viewport,
+        )
+        .await?;
+
+        // Navigation can be caused by a click or key. Identity refresh is
+        // best-effort because the input itself may already have taken effect
+        // while the next document is still loading.
+        if let Ok((url, title)) = page_identity(&websocket_url, &target_id).await {
+            self.update_page_identity_as(world_id, &url, &title, TabOpenedBy::User)
+                .await;
+        }
+        self.persist().await?;
+        self.get(owner_profile_id, world_id).await
+    }
+
     pub async fn act_for_driver(
         &self,
         owner_profile_id: &str,
@@ -952,6 +1072,17 @@ impl IsolatedBrowserHost {
     }
 
     async fn update_page_identity(&self, world_id: &str, url: &str, title: &str) -> bool {
+        self.update_page_identity_as(world_id, url, title, TabOpenedBy::Agent)
+            .await
+    }
+
+    async fn update_page_identity_as(
+        &self,
+        world_id: &str,
+        url: &str,
+        title: &str,
+        opened_by: TabOpenedBy,
+    ) -> bool {
         if let Some(world) = self.state.lock().await.worlds.get_mut(world_id) {
             if world.url == url && world.title == title {
                 return false;
@@ -963,7 +1094,7 @@ impl IsolatedBrowserHost {
                 &world.tab_group_id,
                 url,
                 Some(title),
-                TabOpenedBy::Agent,
+                opened_by,
             );
             return true;
         }
@@ -1207,7 +1338,7 @@ pub fn global_host() -> Option<Arc<IsolatedBrowserHost>> {
 }
 
 pub fn is_isolated_driver_id(driver_id: &str) -> bool {
-    driver_id.trim().starts_with(DRIVER_PREFIX)
+    crate::browser_tools::is_isolated_browser_driver_id(driver_id)
 }
 
 fn ensure_authoritative_world(world: &IsolatedBrowserWorld) -> Result<(), IsolatedBrowserError> {
@@ -2124,6 +2255,237 @@ const CLEAR_REDACTION_SCRIPT: &str = r#"(() => {
   return true;
 })()"#;
 
+fn validate_human_input(
+    input: &IsolatedBrowserHumanInput,
+    viewport: &BrowserObservationViewport,
+) -> Result<(), IsolatedBrowserError> {
+    let validate_point = |x: f64, y: f64| {
+        if !x.is_finite()
+            || !y.is_finite()
+            || x < 0.0
+            || y < 0.0
+            || x > f64::from(viewport.width)
+            || y > f64::from(viewport.height)
+        {
+            return Err(IsolatedBrowserError::Invalid(
+                "browser input point is outside the observed CSS viewport".to_string(),
+            ));
+        }
+        Ok(())
+    };
+
+    match input {
+        IsolatedBrowserHumanInput::Click { x, y, button } => {
+            validate_point(*x, *y)?;
+            if button
+                .as_deref()
+                .is_some_and(|button| !matches!(button, "left" | "middle" | "right"))
+            {
+                return Err(IsolatedBrowserError::Invalid(
+                    "browser input button must be left, middle, or right".to_string(),
+                ));
+            }
+        }
+        IsolatedBrowserHumanInput::Scroll {
+            x,
+            y,
+            delta_x,
+            delta_y,
+        } => {
+            if let (Some(x), Some(y)) = (x, y) {
+                validate_point(*x, *y)?;
+            } else if x.is_some() || y.is_some() {
+                return Err(IsolatedBrowserError::Invalid(
+                    "browser scroll coordinates must include both x and y".to_string(),
+                ));
+            }
+            if !delta_x.is_finite()
+                || !delta_y.is_finite()
+                || delta_x.abs() > 10_000.0
+                || delta_y.abs() > 10_000.0
+            {
+                return Err(IsolatedBrowserError::Invalid(
+                    "browser scroll delta is invalid or exceeds 10000 CSS pixels".to_string(),
+                ));
+            }
+        }
+        IsolatedBrowserHumanInput::Text { text } => {
+            if text.len() > MAX_HUMAN_INPUT_TEXT_BYTES || text.contains('\0') {
+                return Err(IsolatedBrowserError::Invalid(format!(
+                    "browser text input must be valid text no larger than {MAX_HUMAN_INPUT_TEXT_BYTES} bytes"
+                )));
+            }
+        }
+        IsolatedBrowserHumanInput::Key { key, modifiers } => {
+            if key.trim().is_empty() || key.len() > 64 || key.contains('\0') {
+                return Err(IsolatedBrowserError::Invalid(
+                    "browser key input must name one bounded key".to_string(),
+                ));
+            }
+            if modifiers.iter().any(|modifier| {
+                !matches!(
+                    modifier.trim().to_ascii_lowercase().as_str(),
+                    "alt" | "control" | "ctrl" | "meta" | "command" | "shift"
+                )
+            }) {
+                return Err(IsolatedBrowserError::Invalid(
+                    "browser key modifiers allow only alt, control, meta, and shift".to_string(),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_human_input_permit(
+    world: &IsolatedBrowserWorld,
+    permit: &WorldActionPermit,
+    tab_id: &str,
+) -> Result<(), IsolatedBrowserError> {
+    if permit.world_id.as_str() != world.world_id
+        || permit.driver_id != world.driver.driver_id
+        || permit.resource_id.as_str() != format!("browser-tab:{tab_id}")
+        || permit.effect_class != medousa_world::WorldEffectClass::LocalReversible
+    {
+        return Err(IsolatedBrowserError::Conflict(
+            "human input permit is bound to another browser resource".to_string(),
+        ));
+    }
+    crate::world_authority::validate_browser_action_permit(permit)
+        .map_err(IsolatedBrowserError::Conflict)
+}
+
+async fn dispatch_human_input(
+    connection: &mut CdpConnection,
+    session_id: &str,
+    input: &IsolatedBrowserHumanInput,
+    viewport: &BrowserObservationViewport,
+) -> Result<(), IsolatedBrowserError> {
+    match input {
+        IsolatedBrowserHumanInput::Click { x, y, button } => {
+            let button = button.as_deref().unwrap_or("left");
+            connection
+                .call(
+                    Some(session_id),
+                    "Input.dispatchMouseEvent",
+                    json!({ "type": "mouseMoved", "x": x, "y": y }),
+                )
+                .await?;
+            connection
+                .call(
+                    Some(session_id),
+                    "Input.dispatchMouseEvent",
+                    json!({
+                        "type": "mousePressed", "x": x, "y": y,
+                        "button": button, "clickCount": 1,
+                    }),
+                )
+                .await?;
+            connection
+                .call(
+                    Some(session_id),
+                    "Input.dispatchMouseEvent",
+                    json!({
+                        "type": "mouseReleased", "x": x, "y": y,
+                        "button": button, "clickCount": 1,
+                    }),
+                )
+                .await?;
+        }
+        IsolatedBrowserHumanInput::Scroll {
+            x,
+            y,
+            delta_x,
+            delta_y,
+        } => {
+            connection
+                .call(
+                    Some(session_id),
+                    "Input.dispatchMouseEvent",
+                    json!({
+                        "type": "mouseWheel",
+                        "x": x.unwrap_or(f64::from(viewport.width) / 2.0),
+                        "y": y.unwrap_or(f64::from(viewport.height) / 2.0),
+                        "deltaX": delta_x,
+                        "deltaY": delta_y,
+                    }),
+                )
+                .await?;
+        }
+        IsolatedBrowserHumanInput::Text { text } => {
+            connection
+                .call(
+                    Some(session_id),
+                    "Input.insertText",
+                    json!({ "text": text }),
+                )
+                .await?;
+        }
+        IsolatedBrowserHumanInput::Key { key, modifiers } => {
+            let modifiers = cdp_modifier_mask(modifiers);
+            let (code, virtual_key) = cdp_key_identity(key);
+            let mut down = json!({
+                "type": "rawKeyDown",
+                "key": key,
+                "code": code,
+                "modifiers": modifiers,
+            });
+            if let Some(virtual_key) = virtual_key {
+                down["windowsVirtualKeyCode"] = json!(virtual_key);
+                down["nativeVirtualKeyCode"] = json!(virtual_key);
+            }
+            connection
+                .call(Some(session_id), "Input.dispatchKeyEvent", down)
+                .await?;
+            connection
+                .call(
+                    Some(session_id),
+                    "Input.dispatchKeyEvent",
+                    json!({
+                        "type": "keyUp", "key": key, "code": code,
+                        "modifiers": modifiers,
+                        "windowsVirtualKeyCode": virtual_key.unwrap_or_default(),
+                        "nativeVirtualKeyCode": virtual_key.unwrap_or_default(),
+                    }),
+                )
+                .await?;
+        }
+    }
+    Ok(())
+}
+
+fn cdp_modifier_mask(modifiers: &[String]) -> u8 {
+    modifiers.iter().fold(0, |mask, modifier| {
+        mask | match modifier.trim().to_ascii_lowercase().as_str() {
+            "alt" => 1,
+            "control" | "ctrl" => 2,
+            "meta" | "command" => 4,
+            "shift" => 8,
+            _ => 0,
+        }
+    })
+}
+
+fn cdp_key_identity(key: &str) -> (&str, Option<u16>) {
+    match key {
+        "Backspace" => ("Backspace", Some(8)),
+        "Tab" => ("Tab", Some(9)),
+        "Enter" => ("Enter", Some(13)),
+        "Escape" => ("Escape", Some(27)),
+        " " | "Space" => ("Space", Some(32)),
+        "PageUp" => ("PageUp", Some(33)),
+        "PageDown" => ("PageDown", Some(34)),
+        "End" => ("End", Some(35)),
+        "Home" => ("Home", Some(36)),
+        "ArrowLeft" => ("ArrowLeft", Some(37)),
+        "ArrowUp" => ("ArrowUp", Some(38)),
+        "ArrowRight" => ("ArrowRight", Some(39)),
+        "ArrowDown" => ("ArrowDown", Some(40)),
+        "Delete" => ("Delete", Some(46)),
+        _ => ("", None),
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct BrowserActionGuard {
     #[serde(default)]
@@ -2400,6 +2762,81 @@ mod tests {
     }
 
     #[test]
+    fn human_input_is_bounded_to_the_observed_viewport() {
+        let viewport = BrowserObservationViewport {
+            width: 390,
+            height: 844,
+            scroll_x: 0,
+            scroll_y: 0,
+            device_scale_factor: 3.0,
+        };
+        assert!(validate_human_input(
+            &IsolatedBrowserHumanInput::Click {
+                x: 195.0,
+                y: 422.0,
+                button: None,
+            },
+            &viewport,
+        )
+        .is_ok());
+        assert!(validate_human_input(
+            &IsolatedBrowserHumanInput::Click {
+                x: 391.0,
+                y: 422.0,
+                button: None,
+            },
+            &viewport,
+        )
+        .is_err());
+        assert!(validate_human_input(
+            &IsolatedBrowserHumanInput::Scroll {
+                x: None,
+                y: None,
+                delta_x: 0.0,
+                delta_y: 240.0,
+            },
+            &viewport,
+        )
+        .is_ok());
+        assert!(validate_human_input(
+            &IsolatedBrowserHumanInput::Scroll {
+                x: Some(10.0),
+                y: None,
+                delta_x: 0.0,
+                delta_y: 240.0,
+            },
+            &viewport,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn human_input_rejects_unbounded_text_and_unknown_modifiers() {
+        let viewport = BrowserObservationViewport {
+            width: 1280,
+            height: 900,
+            scroll_x: 0,
+            scroll_y: 0,
+            device_scale_factor: 1.0,
+        };
+        assert!(validate_human_input(
+            &IsolatedBrowserHumanInput::Text {
+                text: "x".repeat(MAX_HUMAN_INPUT_TEXT_BYTES + 1),
+            },
+            &viewport,
+        )
+        .is_err());
+        assert!(validate_human_input(
+            &IsolatedBrowserHumanInput::Key {
+                key: "Enter".to_string(),
+                modifiers: vec!["hyper".to_string()],
+            },
+            &viewport,
+        )
+        .is_err());
+    }
+
+    #[test]
     fn isolated_driver_inventory_is_owned_and_profile_capable() {
         let registration = isolated_driver_registration("driver:isolated-browser:test", None);
         assert_eq!(registration.kind, WorldDriverKind::IsolatedBrowser);
@@ -2579,25 +3016,137 @@ mod tests {
             .unwrap()
             .iter()
             .any(|node| node["value"] == "Medousa"));
-        let action_observation: BrowserObservation =
-            serde_json::from_value(action["observation"].clone()).unwrap();
         crate::world_authority::complete_browser_action(
             &action_admission,
             "smoke action completed",
+        )
+        .unwrap();
+        let human_principal = format!("human:{owner}");
+        let view_admission = crate::world_authority::admit_owned_browser_human_intent(
+            crate::world_authority::OwnedBrowserHumanIntent {
+                authority_id: &authority,
+                driver_id: world.driver.driver_id.as_str(),
+                tab_group_id: &world.tab_group_id,
+                tab_id: world.tab_id.as_deref().unwrap(),
+                owner_principal_id: &human_principal,
+                trace_id: "isolated-smoke-human-view",
+                summary: "present the browser to its human owner",
+                effect_class: medousa_world::WorldEffectClass::Observe,
+            },
+        )
+        .unwrap();
+        let presented_observation = host
+            .observe(&owner, &world.world_id, None, 16)
+            .await
+            .unwrap();
+        crate::world_authority::record_browser_observation(
+            &view_admission,
+            presented_observation.clone(),
+        )
+        .unwrap();
+        crate::world_authority::complete_browser_action(
+            &view_admission,
+            "human browser view committed",
         )
         .unwrap();
         let screenshot = host
             .screenshot(
                 &owner,
                 &world.world_id,
-                &action_observation.document_id,
-                action_observation.revision,
+                &presented_observation.document_id,
+                presented_observation.revision,
                 640,
             )
             .await
             .unwrap();
         assert_eq!(screenshot.mime, "image/png");
         assert!(screenshot.byte_size > 0);
+        let input_bounds = presented_observation
+            .nodes
+            .iter()
+            .find(|node| node.name == "Name")
+            .and_then(|node| node.bounds.clone())
+            .unwrap();
+        let click_admission = crate::world_authority::admit_owned_browser_human_intent(
+            crate::world_authority::OwnedBrowserHumanIntent {
+                authority_id: &authority,
+                driver_id: world.driver.driver_id.as_str(),
+                tab_group_id: &world.tab_group_id,
+                tab_id: world.tab_id.as_deref().unwrap(),
+                owner_principal_id: &human_principal,
+                trace_id: "isolated-smoke-human-click",
+                summary: "focus the name input",
+                effect_class: medousa_world::WorldEffectClass::LocalReversible,
+            },
+        )
+        .unwrap();
+        let clicked = host
+            .human_input(
+                &owner,
+                &world.world_id,
+                &IsolatedBrowserInputRequest {
+                    expected_document_id: presented_observation.document_id.clone(),
+                    expected_observation_revision: presented_observation.revision,
+                    input: IsolatedBrowserHumanInput::Click {
+                        x: f64::from(input_bounds.x) + f64::from(input_bounds.width) / 2.0,
+                        y: f64::from(input_bounds.y) + f64::from(input_bounds.height) / 2.0,
+                        button: None,
+                    },
+                },
+                &click_admission.permit,
+            )
+            .await
+            .unwrap();
+        crate::world_authority::complete_browser_action(
+            &click_admission,
+            "human click completed",
+        )
+        .unwrap();
+        assert_eq!(clicked.control, BrowserControl::User);
+
+        let text_admission = crate::world_authority::admit_owned_browser_human_intent(
+            crate::world_authority::OwnedBrowserHumanIntent {
+                authority_id: &authority,
+                driver_id: world.driver.driver_id.as_str(),
+                tab_group_id: &world.tab_group_id,
+                tab_id: world.tab_id.as_deref().unwrap(),
+                owner_principal_id: &human_principal,
+                trace_id: "isolated-smoke-human-text",
+                summary: "type into the focused input",
+                effect_class: medousa_world::WorldEffectClass::LocalReversible,
+            },
+        )
+        .unwrap();
+        host.human_input(
+            &owner,
+            &world.world_id,
+            &IsolatedBrowserInputRequest {
+                expected_document_id: presented_observation.document_id.clone(),
+                expected_observation_revision: presented_observation.revision,
+                input: IsolatedBrowserHumanInput::Text {
+                    text: " Home".to_string(),
+                },
+            },
+            &text_admission.permit,
+        )
+        .await
+        .unwrap();
+        crate::world_authority::complete_browser_action(
+            &text_admission,
+            "human text completed",
+        )
+        .unwrap();
+        let human_observation = host
+            .observe(&owner, &world.world_id, None, 16)
+            .await
+            .unwrap();
+        assert!(human_observation.nodes.iter().any(|node| {
+            node.name == "Name"
+                && node
+                    .value
+                    .as_deref()
+                    .is_some_and(|value| value.contains(" Home"))
+        }));
         let detached = host
             .lifecycle(
                 &owner,

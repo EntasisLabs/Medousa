@@ -7763,6 +7763,7 @@ dependencies = [
  "globset",
  "medousa-host",
  "medousa-store",
+ "medousa-types",
  "serde",
  "serde_json",
  "sha2 0.10.9",

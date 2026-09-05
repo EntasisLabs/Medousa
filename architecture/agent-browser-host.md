@@ -1,6 +1,6 @@
 # Agent Browser Host
 
-**Status:** Accepted (shared v1 plus daemon-owned isolated driver)
+**Status:** Accepted (shared v1, daemon-owned isolated driver, and attached Home viewport)
 
 ## Problem
 
@@ -63,6 +63,23 @@ Catalog records recover across daemon restart. Processes themselves are not
 assumed to survive a daemon crash: a previously active world recovers as
 `stopped` and must be resumed explicitly against the same profile.
 
+## One Browser surface, explicit identity
+
+Home exposes shared and isolated implementations through one Browser surface,
+not as competing product destinations. **Workshop** attaches to the selected
+daemon-owned world and is the primary lane for agent-created browser work.
+**Device** retains the native WebView and its local cookies, passkeys, and
+human-owned session. The source control names that identity boundary directly;
+an error in one source never falls back to the other.
+
+The Workshop view is a bounded sequence of redacted screenshot observations,
+not a second client-owned browser process. Home retains one frame, adapts its
+refresh cadence around input and visibility, and maps click, scroll, keyboard,
+and mobile text input back into the observation's CSS coordinate frame. Human
+input is admitted by world authority and fences queued agent action before the
+daemon dispatches it through CDP. Closing or switching the view detaches it but
+does not stop the daemon-owned browser.
+
 ## Session model
 
 - Daemon stores in-memory `BrowserSession` records (`src/browser_sessions.rs`)
@@ -113,7 +130,7 @@ Safety:
 
 - Separate browser sidecar binary
 - Playwright/BiDi parity, SearXNG, Google-first SERP, full form-recording macros
-- A polished Home isolated-world picker and streamed remote viewport (Phase 4 follow-up)
+- Continuous video transport and full isolated multi-tab chrome
 
 ## References
 

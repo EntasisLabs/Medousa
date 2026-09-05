@@ -1,6 +1,6 @@
 # Runtime-owned worlds
 
-> **Status:** Active — architecture locked; Phases 1–3 plus the concrete-driver and daemon-owned-browser slices of Phase 4 implemented locally
+> **Status:** Active — architecture locked; Phases 1–4 implemented locally, with computer-use drivers next
 >
 > **Date:** 2026-09-04
 >
@@ -569,9 +569,23 @@ Current local slice:
   serializes mutating permits per resource, and permanently fences admitted
   work after takeover even when control is returned immediately. Expired
   pending permits are reaped with an audit event.
-- Approval-aware extension mutations, a polished Home world/profile picker and
-  live attached viewport, and destination-aware private/local URL routing
-  remain open in this phase.
+- Home now presents one Browser product surface with two explicit sources:
+  **Workshop** is a daemon-owned world and **Device** is the existing native
+  WebView with this device's cookies and passkeys. Source selection is scoped
+  to the active workshop, an agent-attached world may surface automatically,
+  and failure never silently moves identity between the two sources.
+- Desktop and mobile can attach to a workshop world without owning its
+  lifecycle. The view keeps one bounded redacted frame in memory, polls faster
+  after interaction and slower while idle or hidden, and detaches without
+  stopping the remote browser.
+- Pointer, wheel, keyboard, and mobile software-keyboard input are mapped from
+  the rendered frame into its CSS viewport. Each input names the exact
+  document and observation revision shown to the human, is admitted as
+  authenticated human intent, and takes control before CDP dispatch so queued
+  agent work is fenced immediately.
+- Approval-aware extension mutations, richer isolated multi-tab chrome, and
+  destination-aware private/local URL routing remain follow-up hardening; none
+  may become an implicit identity fallback.
 
 Implementation:
 
@@ -597,6 +611,7 @@ Suggested commit boundary:
 
 - feat(browser): register concrete governed browser drivers
 - feat(browser): add daemon-owned isolated browser worlds
+- feat(browser): attach governed worlds to the Browser surface
 
 ### Phase 5 — Computer-use drivers
 

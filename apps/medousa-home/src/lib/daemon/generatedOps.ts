@@ -46,6 +46,7 @@ export const OPERATIONS = {
   "browser.sessions.by_session_id.resume.post": { id: "browser.sessions.by_session_id.resume.post", method: "POST", path: "/v1/browser/sessions/{session_id}/resume", streaming: false },
   "browser.worlds.isolated.by_world_id.delete": { id: "browser.worlds.isolated.by_world_id.delete", method: "DELETE", path: "/v1/browser/worlds/isolated/{world_id}", streaming: false },
   "browser.worlds.isolated.by_world_id.get": { id: "browser.worlds.isolated.by_world_id.get", method: "GET", path: "/v1/browser/worlds/isolated/{world_id}", streaming: false },
+  "browser.worlds.isolated.by_world_id.input.post": { id: "browser.worlds.isolated.by_world_id.input.post", method: "POST", path: "/v1/browser/worlds/isolated/{world_id}/input", streaming: false },
   "browser.worlds.isolated.by_world_id.lifecycle.post": { id: "browser.worlds.isolated.by_world_id.lifecycle.post", method: "POST", path: "/v1/browser/worlds/isolated/{world_id}/lifecycle", streaming: false },
   "browser.worlds.isolated.by_world_id.navigate.post": { id: "browser.worlds.isolated.by_world_id.navigate.post", method: "POST", path: "/v1/browser/worlds/isolated/{world_id}/navigate", streaming: false },
   "browser.worlds.isolated.by_world_id.observe.post": { id: "browser.worlds.isolated.by_world_id.observe.post", method: "POST", path: "/v1/browser/worlds/isolated/{world_id}/observe", streaming: false },

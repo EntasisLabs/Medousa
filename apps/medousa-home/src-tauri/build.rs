@@ -1,5 +1,6 @@
 fn main() {
     println!("cargo:rustc-check-cfg=cfg(p02_benchmark)");
+    println!("cargo:rustc-check-cfg=cfg(live_activity_native)");
     println!("cargo:rerun-if-env-changed=PUBLIC_P02_HARNESS");
     if std::env::var("PUBLIC_P02_HARNESS").as_deref() == Ok("1") {
         println!("cargo:rustc-cfg=p02_benchmark");
@@ -71,7 +72,9 @@ fn compile_ios_live_activity() {
             String::from_utf8_lossy(&output.stdout).trim().to_string()
         }
         _ => {
-            eprintln!("cargo:warning=Could not resolve iOS SDK — Live Activity native bridge skipped");
+            eprintln!(
+                "cargo:warning=Could not resolve iOS SDK — Live Activity native bridge skipped"
+            );
             return;
         }
     };

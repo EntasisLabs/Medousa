@@ -268,6 +268,13 @@ pub const BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_GET: Operation = Operation {
     streaming: false,
 };
 
+pub const BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_INPUT_POST: Operation = Operation {
+    id: "browser.worlds.isolated.by_world_id.input.post",
+    method: "POST",
+    path: "/v1/browser/worlds/isolated/{world_id}/input",
+    streaming: false,
+};
+
 pub const BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_LIFECYCLE_POST: Operation = Operation {
     id: "browser.worlds.isolated.by_world_id.lifecycle.post",
     method: "POST",
@@ -3071,6 +3078,7 @@ pub static ALL: &[Operation] = &[
     BROWSER_SESSIONS_BY_SESSION_ID_RESUME_POST,
     BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_DELETE,
     BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_GET,
+    BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_INPUT_POST,
     BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_LIFECYCLE_POST,
     BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_NAVIGATE_POST,
     BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_OBSERVE_POST,

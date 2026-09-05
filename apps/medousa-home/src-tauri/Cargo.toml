@@ -42,6 +42,7 @@ url = "2"
 medousa-types = { path = "../../../crates/medousa-types" }
 medousa-runtime = { path = "../../../crates/medousa-runtime" }
 medousa-secrets = { path = "../../../crates/medousa-secrets" }
+medousa-world = { path = "../../../crates/medousa-world" }
 medousa-sdk = { path = "../../../crates/medousa-sdk", default-features = false, features = ["async", "sse"] }
 medousa-sdk-iroh = { path = "../../../crates/medousa-sdk-iroh", default-features = false, features = ["async", "sse"] }
 medousa-iroh-http = { path = "../../../crates/medousa-iroh-http" }
@@ -57,7 +58,6 @@ medousa-local-inference = { path = "../../../crates/medousa-local-inference", fe
 axum = "0.8"
 image = { version = "0.25.6", default-features = false, features = ["png"] }
 medousa-browser-bridge = { path = "../../../crates/medousa-browser-bridge" }
-medousa-world = { path = "../../../crates/medousa-world" }
 tauri-plugin-window-state = "2"
 
 [target.'cfg(unix)'.dependencies]

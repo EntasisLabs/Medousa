@@ -620,12 +620,11 @@ impl CognitionBrowserActTool {
         let scope =
             crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
                 .await;
+        #[cfg(feature = "full-daemon")]
         if let Some(driver_id) = scope
             .as_ref()
             .and_then(|scope| scope.browser_driver_id.as_deref())
-            .filter(|driver_id| {
-                crate::daemon::isolated_browser_host::is_isolated_driver_id(driver_id)
-            })
+            .filter(|driver_id| crate::browser_tools::is_isolated_browser_driver_id(driver_id))
         {
             let owner_profile_id = scope
                 .as_ref()
@@ -722,6 +721,16 @@ impl CognitionBrowserActTool {
                 outcome,
                 admission.provenance(Some(world_outcome)),
                 "allow",
+            )));
+        }
+        #[cfg(not(feature = "full-daemon"))]
+        if scope
+            .as_ref()
+            .and_then(|scope| scope.browser_driver_id.as_deref())
+            .is_some_and(crate::browser_tools::is_isolated_browser_driver_id)
+        {
+            return Err(StasisError::PortFailure(format!(
+                "{COGNITION_BROWSER_ACT}: selected Workshop browser belongs to another daemon"
             )));
         }
         if client_executed(scope.as_ref()) {

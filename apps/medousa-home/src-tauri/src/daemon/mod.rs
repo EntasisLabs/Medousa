@@ -458,6 +458,7 @@ pub async fn interactive_turn_send(
     code_context: Option<crate::daemon::types::CodeIntentContext>,
     stage_routing: Option<StageRoutingMatrix>,
     channel_surface: Option<String>,
+    browser_driver_id: Option<String>,
 ) -> Result<InteractiveTurnAccepted, String> {
     let provider = provider
         .map(|value| value.trim().to_string())
@@ -499,8 +500,18 @@ pub async fn interactive_turn_send(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(default_home_channel_surface);
+    let browser_driver_id = browser_driver_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    if browser_driver_id
+        .as_deref()
+        .is_some_and(|driver_id| driver_id.len() > 256 || driver_id.chars().any(char::is_control))
+    {
+        return Err("browser driver identity is invalid".to_string());
+    }
 
-    let supports_browser_host = resolve_supports_browser_host().await;
+    let supports_browser_host =
+        browser_driver_id.is_some() || resolve_supports_browser_host().await;
 
     let request = InteractiveTurnRequest {
         session_id: session_id.clone(),
@@ -522,8 +533,9 @@ pub async fn interactive_turn_send(
             supports_ui_artifacts: true,
             supports_liquid_markdown: true,
             supports_browser_host,
-            browser_driver_id: supports_browser_host
-                .then(|| crate::browser_driver::id().to_string()),
+            browser_driver_id: browser_driver_id.or_else(|| {
+                supports_browser_host.then(|| crate::browser_driver::id().to_string())
+            }),
         }),
         host_context: None,
         max_tool_rounds: None,

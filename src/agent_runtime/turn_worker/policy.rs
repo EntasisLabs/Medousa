@@ -192,7 +192,8 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
             push(&mut names, crate::tool_bootstrap::ENVIRONMENT_DOMAIN_TOOLS);
         }
         TurnWorkerIntent::Coder => {
-            names.extend(super::super::coder_tools::coder_worker_tool_names());
+            #[cfg(feature = "full-daemon")]
+            names.extend(crate::agent_runtime::coder_tools::coder_worker_tool_names());
         }
     }
 

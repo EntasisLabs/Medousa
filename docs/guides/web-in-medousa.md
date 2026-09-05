@@ -1,14 +1,40 @@
 # Browse the web inside Medousa
 
-The **Web** surface lets you keep a normal website beside chat and hand a
-specific tab to Medousa when a task needs page context. The website remains an
-untrusted page: it cannot use Medousa's native files, windows, menus, events, or
-commands.
+The **Web** surface keeps a website beside chat. Its browser-source control
+shows where the browser runs and which identity it uses:
 
-## Use the shared browser
+- **Workshop** runs on the selected workshop daemon. This is where
+  agent-created browser work appears. Choose a private browser for temporary
+  identity or a saved browser when that workshop should retain its cookies.
+- **Device** is Medousa's native browser on the device in your hand. It uses
+  that device's cookies and passkeys.
+
+These are separate browser identities. Medousa never moves a login or action
+between them automatically when one becomes unavailable.
+
+Every website remains untrusted: it cannot use Medousa's native files,
+windows, menus, events, or commands.
+
+## Use a workshop browser
+
+1. Open **Web**, open the browser-source control, and choose an existing
+   workshop browser or create a private or saved one.
+2. Enter an address. The page runs on the selected workshop even if you close
+   the view or disconnect your phone.
+3. When Medousa is driving, choose **Take control** before interacting. A tap,
+   click, scroll, or typed character also gives you priority and stops queued
+   agent actions from continuing against the page.
+4. Choose **Hand back** when Medousa may continue.
+
+Workshop browser frames are bounded and sensitive fields are redacted before
+they reach Home. On mobile, use **Type** over the page to open the software
+keyboard.
+
+## Use the device browser
 
 1. Open **Web** and navigate to an `http://` or `https://` address.
-2. Browse normally while the control indicator says **You**.
+2. Choose **Device** in the browser-source control and browse normally while
+   the control indicator says **You**.
 3. Hand control to the agent only for the tab and task you want it to work on.
 4. Take control back at any time. Navigation, tab replacement, closing the tab,
    timeout, or taking control back cancels pending agent actions.
