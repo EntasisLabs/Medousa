@@ -5,7 +5,7 @@
 //! this daemon service mints permits and advances authoritative world state.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use medousa_world::{
@@ -22,10 +22,47 @@ const BROWSER_AGENT_LEASE_MS: u64 = 5 * 60 * 1_000;
 const BROWSER_ACTION_PERMIT_MS: u64 = 10_000;
 const BROWSER_AGENT_PRINCIPAL: &str = "agent:medousa-foreground";
 
-static AUTHORITY: LazyLock<Mutex<WorldAuthority>> =
-    LazyLock::new(|| Mutex::new(WorldAuthority::default()));
-static BROWSER_OBSERVATIONS: LazyLock<Mutex<HashMap<WorldId, BrowserObservation>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+/// Process-local authority service owned by the workshop daemon composition.
+///
+/// The pure `medousa-world` kernel stays deterministic and I/O-free. This
+/// wrapper supplies synchronization and host-side mirrors so every concrete
+/// driver shares one authority instead of growing a parallel policy system.
+#[derive(Debug, Default)]
+pub struct WorldAuthorityService {
+    kernel: Mutex<WorldAuthority>,
+    browser_observations: Mutex<HashMap<WorldId, BrowserObservation>>,
+}
+
+impl WorldAuthorityService {
+    pub(crate) fn write<T>(
+        &self,
+        operation: impl FnOnce(&mut WorldAuthority) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let mut authority = self
+            .kernel
+            .lock()
+            .map_err(|_| "world authority lock poisoned".to_string())?;
+        operation(&mut authority)
+    }
+
+    pub(crate) fn read<T>(
+        &self,
+        operation: impl FnOnce(&WorldAuthority) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let authority = self
+            .kernel
+            .lock()
+            .map_err(|_| "world authority lock poisoned".to_string())?;
+        operation(&authority)
+    }
+}
+
+static AUTHORITY: LazyLock<Arc<WorldAuthorityService>> =
+    LazyLock::new(|| Arc::new(WorldAuthorityService::default()));
+
+pub fn shared_world_authority() -> Arc<WorldAuthorityService> {
+    Arc::clone(&AUTHORITY)
+}
 
 #[derive(Debug, Clone)]
 pub struct BrowserWorldAdmission {
@@ -72,6 +109,7 @@ pub fn admit_browser_action(
     let now_ms = now_ms();
     let resource_id = WorldResourceId::new(format!("browser-tab:{tab_id}"));
     let mut authority = AUTHORITY
+        .kernel
         .lock()
         .map_err(|_| "world authority lock poisoned".to_string())?;
     let (world_id, agent) = ensure_browser_world(
@@ -130,6 +168,7 @@ pub fn admit_browser_observation(
     let now_ms = now_ms();
     let resource_id = WorldResourceId::new(format!("browser-tab:{tab_id}"));
     let mut authority = AUTHORITY
+        .kernel
         .lock()
         .map_err(|_| "world authority lock poisoned".to_string())?;
     let (world_id, agent) = ensure_browser_world(
@@ -177,6 +216,7 @@ pub fn admit_browser_pixel_observation(
     let now_ms = now_ms();
     let resource_id = WorldResourceId::new(format!("browser-tab:{tab_id}"));
     let mut authority = AUTHORITY
+        .kernel
         .lock()
         .map_err(|_| "world authority lock poisoned".to_string())?;
     let (world_id, agent) = ensure_browser_world(
@@ -289,6 +329,7 @@ pub fn register_owned_browser_world(
 ) -> Result<WorldId, String> {
     let now_ms = now_ms();
     let mut authority = AUTHORITY
+        .kernel
         .lock()
         .map_err(|_| "world authority lock poisoned".to_string())?;
     let (world_id, _) = ensure_browser_world(
@@ -355,6 +396,7 @@ pub fn admit_owned_browser_human_intent(
     let owner = WorldPrincipal::human(WorldPrincipalId::new(request.owner_principal_id));
     let resource_id = WorldResourceId::new(format!("browser-tab:{}", request.tab_id));
     let mut authority = AUTHORITY
+        .kernel
         .lock()
         .map_err(|_| "world authority lock poisoned".to_string())?;
     let control_generation = if request.effect_class.requires_control() {
@@ -405,6 +447,7 @@ pub fn take_owned_browser_control(
     let now_ms = now_ms();
     let world_id = browser_world_id(authority_id, driver_id, tab_group_id);
     let mut authority = AUTHORITY
+        .kernel
         .lock()
         .map_err(|_| "world authority lock poisoned".to_string())?;
     let lease = authority
@@ -431,6 +474,7 @@ pub fn return_owned_browser_control(
     let world_id = browser_world_id(authority_id, driver_id, tab_group_id);
     let owner = WorldPrincipal::human(WorldPrincipalId::new(owner_principal_id));
     let mut authority = AUTHORITY
+        .kernel
         .lock()
         .map_err(|_| "world authority lock poisoned".to_string())?;
     let state = authority.world(&world_id).map_err(|error| error.to_string())?;
@@ -447,6 +491,7 @@ pub fn return_owned_browser_control(
 
 pub fn validate_browser_action_permit(permit: &WorldActionPermit) -> Result<(), String> {
     AUTHORITY
+        .kernel
         .lock()
         .map_err(|_| "world authority lock poisoned".to_string())?
         .validate_action_permit(permit, now_ms())
@@ -460,6 +505,7 @@ pub fn forget_owned_browser_world(
     let world_id = WorldId::new(world_id);
     let owner = WorldPrincipal::human(WorldPrincipalId::new(owner_principal_id));
     match AUTHORITY
+        .kernel
         .lock()
         .map_err(|_| "world authority lock poisoned".to_string())?
         .remove_world(&world_id, &owner, now_ms())
@@ -467,7 +513,8 @@ pub fn forget_owned_browser_world(
         Ok(_) | Err(WorldAuthorityError::WorldNotFound(_)) => {}
         Err(error) => return Err(error.to_string()),
     };
-    BROWSER_OBSERVATIONS
+    AUTHORITY
+        .browser_observations
         .lock()
         .map_err(|_| "browser observation mirror lock poisoned".to_string())?
         .remove(&world_id);
@@ -479,6 +526,7 @@ pub fn complete_browser_action(
     summary: &str,
 ) -> Result<WorldActionOutcome, String> {
     AUTHORITY
+        .kernel
         .lock()
         .map_err(|_| "world authority lock poisoned".to_string())?
         .complete_action(
@@ -494,6 +542,7 @@ pub fn fail_browser_action(
     error: &str,
 ) -> Result<(), String> {
     AUTHORITY
+        .kernel
         .lock()
         .map_err(|_| "world authority lock poisoned".to_string())?
         .fail_action(
@@ -510,6 +559,7 @@ pub fn mark_browser_action_indeterminate(
     summary: &str,
 ) -> Result<WorldActionOutcome, String> {
     AUTHORITY
+        .kernel
         .lock()
         .map_err(|_| "world authority lock poisoned".to_string())?
         .mark_action_indeterminate(
@@ -528,7 +578,8 @@ pub fn record_browser_observation(
     if admission.permit.resource_id.as_str() != expected_resource {
         return Err("browser observation does not match its admitted resource".to_string());
     }
-    let mut mirrors = BROWSER_OBSERVATIONS
+    let mut mirrors = AUTHORITY
+        .browser_observations
         .lock()
         .map_err(|_| "browser observation mirror lock poisoned".to_string())?;
     match mirrors.get_mut(&admission.permit.world_id) {
@@ -553,7 +604,8 @@ pub fn validate_browser_pixel_fence(
     observation_revision: u64,
 ) -> Result<(), String> {
     let world_id = browser_world_id(authority_id, driver_id, tab_group_id);
-    let mirrors = BROWSER_OBSERVATIONS
+    let mirrors = AUTHORITY
+        .browser_observations
         .lock()
         .map_err(|_| "browser observation mirror lock poisoned".to_string())?;
     let observation = mirrors
@@ -583,7 +635,8 @@ pub struct BrowserElementRefFence<'a> {
 
 pub fn validate_browser_element_refs(fence: BrowserElementRefFence<'_>) -> Result<(), String> {
     let world_id = browser_world_id(fence.authority_id, fence.driver_id, fence.tab_group_id);
-    let mirrors = BROWSER_OBSERVATIONS
+    let mirrors = AUTHORITY
+        .browser_observations
         .lock()
         .map_err(|_| "browser observation mirror lock poisoned".to_string())?;
     let observation = mirrors
@@ -847,7 +900,8 @@ mod tests {
             Vec::new(),
         );
         observed.tab_id = "tab-one".to_string();
-        BROWSER_OBSERVATIONS
+        AUTHORITY
+            .browser_observations
             .lock()
             .expect("browser observations")
             .insert(
@@ -887,7 +941,8 @@ mod tests {
         let authority_id = "workshop:risk-test";
         let driver_id = "driver:risk-test";
         let tab_group_id = "group:risk-test";
-        BROWSER_OBSERVATIONS
+        AUTHORITY
+            .browser_observations
             .lock()
             .expect("browser observations")
             .insert(

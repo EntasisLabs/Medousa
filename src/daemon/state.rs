@@ -94,6 +94,11 @@ pub struct AppState {
     /// Latest turn-start context budget per session (from `context_usage` stream events).
     pub last_context_usage_by_session: Arc<RwLock<HashMap<String, ContextUsageReport>>>,
     pub client_registry: ClientRegistry,
+    /// Shared authority for every browser and computer world owned by this
+    /// workshop daemon.
+    pub world_authority: Arc<crate::world_authority::WorldAuthorityService>,
+    /// Exact native computer drivers colocated with this workshop.
+    pub computer_drivers: Arc<crate::computer_driver::ComputerDriverBroker>,
     /// Daemon-owned isolated Chromium worlds. These outlive any Home
     /// connection and are scoped to the authenticated profile that created
     /// them.

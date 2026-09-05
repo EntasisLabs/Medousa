@@ -1,6 +1,6 @@
 # Runtime-owned worlds
 
-> **Status:** Active — architecture locked; Phases 1–4 implemented locally, with computer-use drivers next
+> **Status:** Active — architecture locked; Phases 1–4 implemented; Phase 5 driver foundation in progress
 >
 > **Date:** 2026-09-04
 >
@@ -617,6 +617,19 @@ Suggested commit boundary:
 
 **Outcome:** The world contract drives native applications and desktops while
 preserving platform security boundaries and background execution semantics.
+
+Current foundation slice:
+
+- The daemon composition owns one explicit world-authority service shared by
+  browser and native-computer adapters.
+- `medousa-computer-bridge` defines the platform-neutral, bounded preflight and
+  semantic-observation protocol, including sensitive-value redaction and exact
+  desktop-session identity.
+- The native driver broker admits observation through that authority, fences
+  it to one registered colocated driver, validates the result, and records a
+  confirmed or failed effect.
+- An in-memory fake driver proves the governed path. No platform sidecar,
+  computer action, doctor surface, or Home control is claimed by this slice.
 
 Implementation:
 

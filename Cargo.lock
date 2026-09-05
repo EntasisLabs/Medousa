@@ -7581,6 +7581,7 @@ dependencies = [
  "medousa-api-contract",
  "medousa-browser-bridge",
  "medousa-browser-lite",
+ "medousa-computer-bridge",
  "medousa-engine",
  "medousa-forge",
  "medousa-host",
@@ -7721,6 +7722,15 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid 1.23.1",
+]
+
+[[package]]
+name = "medousa-computer-bridge"
+version = "0.10.0"
+dependencies = [
+ "medousa-world",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

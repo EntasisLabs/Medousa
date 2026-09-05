@@ -107,6 +107,7 @@ pub mod component_runtime_handlers;
 pub mod component_runtime_store;
 pub mod component_store;
 pub mod component_store_handlers;
+pub mod computer_driver;
 pub mod context_pointer_index;
 pub mod context_pointer_tools;
 pub mod credential_lifecycle;
