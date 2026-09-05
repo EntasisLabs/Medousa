@@ -393,7 +393,7 @@ pub fn fetch_binary_artifact(
         .into_iter()
         .find(|record| {
             record.session_id == session_id
-                && (record.artifact_id == query || record.artifact_id.starts_with(query))
+                && record.artifact_id == query
                 && record.content_type.starts_with("image/")
         })?;
     let parsed_session = crate::session_storage::SessionId::parse(&record.session_id).ok()?;
@@ -1322,6 +1322,10 @@ mod tests {
         let fetched = fetch_binary_artifact(session_id, &record.artifact_id).expect("fetch");
         assert_eq!(fetched.bytes, png);
         assert_eq!(fetched.mime, "image/png");
+        assert!(fetch_binary_artifact(session_id, "art:test").is_none());
+        assert!(
+            fetch_binary_artifact("another-binary-artifact-session", &record.artifact_id).is_none()
+        );
     }
 
     #[test]

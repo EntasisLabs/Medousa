@@ -7,6 +7,7 @@ description = "Portable Medousa foreground turn runtime and policy kernel"
 
 [dependencies]
 async-trait = "0.1"
+base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
 futures-util = "0.3"
 genai = "0.6.5"

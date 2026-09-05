@@ -1,6 +1,6 @@
 # Runtime-owned worlds
 
-> **Status:** Active — architecture locked; Phases 1–2 plus the Phase 3 semantic/batch and macOS screenshot-artifact slices implemented locally
+> **Status:** Active — architecture locked; Phases 1–2 plus the Phase 3 semantic/batch, macOS screenshot-artifact, and vision-hydration slices implemented locally
 >
 > **Date:** 2026-09-04
 >
@@ -497,7 +497,13 @@ Current local slice:
   rejects moving/truncated redaction state, redacts at native resolution,
   bounds dimensions and bytes, then persists a content-addressed PNG outside
   the model transcript. The tool returns only a revisioned artifact receipt.
-- Windows/Linux/mobile screenshot drivers, model or client hydration of binary
+- Vision-capable model routes can hydrate that receipt transiently through a
+  narrow runtime port. The daemon requires an exact session-bound artifact id,
+  revalidates tool provenance, MIME, byte count, digest, and PNG dimensions,
+  and marks the pixels as untrusted external content. Base64 never enters tool
+  receipts or durable checkpoints, and each tool round replaces the prior
+  pixel attachment so long turns stay memory-bounded.
+- Windows/Linux/mobile screenshot drivers, client hydration of binary
   artifacts, pushed console/network deltas, hardened isolated-world DOM
   inspection, and the latency/pixel harness remain open before Phase 3 is
   considered complete. Mobile and extension action transports remain
@@ -527,6 +533,7 @@ Suggested commit boundary:
 
 - feat(browser): add revisioned semantic observations
 - feat(browser): execute cancellable guarded action batches
+- feat(browser): hydrate governed screenshots for vision turns
 
 ### Phase 4 — Shared and isolated browser worlds
 

@@ -31,6 +31,7 @@ use genai::chat::{
     ChatOptions, ChatRequest, ChatResponse, ContentPart, MessageContent, Tool, ToolCall,
 };
 use serde_json::{Value, json};
+use sha2::Digest as _;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -49,7 +50,8 @@ use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta};
 use crate::execution_boundary::{TurnExecutionBoundary, with_turn_execution_boundary};
 use crate::loop_gate::ToolLoopCompletionGate;
 use crate::ports::{
-    RuntimePortFuture, RuntimePorts, ToolRunEventPort, ToolRunFinish, ToolRunStart,
+    HydratedToolObservation, RuntimePortFuture, RuntimePorts, ToolObservationHydrationPort,
+    ToolObservationHydrationRequest, ToolRunEventPort, ToolRunFinish, ToolRunStart,
     TurnPresentationPort,
 };
 use crate::tool_loop::MedousaToolLoopPipeline;
@@ -249,6 +251,48 @@ impl StasisTool for LargeDataProbeTool {
             "orientation": {"next": "query a narrower diagnostic range"},
             "content": "x".repeat(100_000),
         }))
+    }
+}
+
+struct ScreenshotProbeTool;
+
+#[async_trait]
+impl StasisTool for ScreenshotProbeTool {
+    fn name(&self) -> &'static str {
+        "screenshot_probe"
+    }
+
+    async fn invoke(&self, _input: Value) -> StasisResult<Value> {
+        Ok(json!({
+            "ok": true,
+            "screenshot": { "artifact_id": "art:golden:screenshot:abc" }
+        }))
+    }
+}
+
+struct GoldenScreenshotHydrationPort;
+
+impl ToolObservationHydrationPort for GoldenScreenshotHydrationPort {
+    fn accepts(&self, tool_name: &str) -> bool {
+        tool_name == "screenshot_probe"
+    }
+
+    fn hydrate(
+        &self,
+        request: ToolObservationHydrationRequest,
+    ) -> RuntimePortFuture<Result<Option<HydratedToolObservation>, String>> {
+        Box::pin(async move {
+            let bytes = b"\x89PNG\r\n\x1a\ngolden-pixels".to_vec();
+            Ok(Some(HydratedToolObservation {
+                tool_name: request.tool_name,
+                source_call_id: request.source_call_id,
+                artifact_id: "art:golden:screenshot:abc".to_string(),
+                content_type: "image/png".to_string(),
+                sha256: format!("{:x}", sha2::Sha256::digest(&bytes)),
+                bytes,
+                untrusted_content: true,
+            }))
+        })
     }
 }
 
@@ -478,6 +522,66 @@ async fn run_golden(
 }
 
 // ── Golden cases ─────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn golden_screenshot_pixels_are_transient_between_model_rounds() {
+    let registry = InMemoryToolRegistry::default();
+    registry.register_tool(ScreenshotProbeTool).unwrap();
+    register_golden_turn_tool(&registry);
+    let client = Arc::new(ScriptedClient::new(vec![
+        tool_response(vec![tool_call("screenshot_probe", json!({}))]),
+        tool_response(vec![tool_call("screenshot_probe", json!({}))]),
+        tool_response(vec![finish_call("Done after inspecting the pixels.")]),
+    ]));
+    let pipeline = MedousaToolLoopPipeline::new(
+        PromptExecutionPipeline::new(client.clone()),
+        Arc::new(registry),
+    );
+    let runtime_ports = RuntimePorts::new()
+        .with_tool_observation_hydration(Arc::new(GoldenScreenshotHydrationPort));
+    let mut gate = ToolLoopCompletionGate::new_for_execution(1, runtime_ports, 4);
+    let request = ToolLoopExecutionRequest {
+        user_prompt: "inspect two browser frames".to_string(),
+        system_prompt: None,
+        context: PromptExecutionContext::default(),
+        tool_name: String::new(),
+        tool_input: Value::Null,
+        tool_call_mode: ToolCallMode::Auto,
+    };
+
+    let response = with_turn_execution_boundary(
+        golden_execution_boundary(),
+        pipeline.execute_with_stream_prior_messages_max_rounds(
+            request,
+            Vec::new(),
+            None,
+            4,
+            Some(&mut gate),
+            None,
+        ),
+    )
+    .await
+    .expect("tool loop");
+
+    assert_eq!(response.termination_reason, "cognition_turn_finish");
+    let requests = client.requests();
+    assert_eq!(requests.len(), 3);
+    for request in &requests[1..] {
+        let binary_count = request
+            .messages
+            .iter()
+            .flat_map(|message| message.content.parts())
+            .filter(|part| matches!(part, ContentPart::Binary(_)))
+            .count();
+        assert_eq!(binary_count, 1, "only the newest pixels remain attached");
+        assert!(request.messages.iter().any(|message| {
+            message.content.parts().iter().any(|part| {
+                part.as_text()
+                    .is_some_and(|text| text.contains("[MEDOUSA_RUNTIME_TOOL_OBSERVATION]"))
+            })
+        }));
+    }
+}
 
 #[tokio::test]
 async fn golden_round_context_is_injected_before_the_next_inference() {
