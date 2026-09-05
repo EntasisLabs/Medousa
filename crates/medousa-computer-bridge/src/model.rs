@@ -7,6 +7,10 @@ pub const COMPUTER_DRIVER_PROTOCOL_VERSION: u16 = 1;
 pub const COMPUTER_OBSERVATION_SCHEMA_VERSION: u16 = 1;
 pub const DEFAULT_COMPUTER_OBSERVATION_NODE_LIMIT: u32 = 2_048;
 pub const MAX_COMPUTER_OBSERVATION_NODES: u32 = 4_096;
+pub const MAX_COMPUTER_OBSERVATION_DISPLAYS: usize = 32;
+pub const MAX_COMPUTER_OBSERVATION_APPLICATIONS: usize = 256;
+pub const MAX_COMPUTER_OBSERVATION_WINDOWS: usize = 1_024;
+pub const MAX_COMPUTER_OBSERVATION_TEXT_BYTES: usize = 4_096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -14,6 +18,16 @@ pub enum ComputerPermissionKind {
     Accessibility,
     ScreenCapture,
     InputControl,
+}
+
+impl ComputerPermissionKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Accessibility => "accessibility",
+            Self::ScreenCapture => "screen_capture",
+            Self::InputControl => "input_control",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -24,6 +38,18 @@ pub enum ComputerPermissionStatus {
     NotDetermined,
     Restricted,
     Unsupported,
+}
+
+impl ComputerPermissionStatus {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Granted => "granted",
+            Self::Denied => "denied",
+            Self::NotDetermined => "not_determined",
+            Self::Restricted => "restricted",
+            Self::Unsupported => "unsupported",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -63,7 +89,7 @@ impl ComputerDriverPreflight {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ComputerRect {
     pub x: i32,
     pub y: i32,
@@ -222,6 +248,12 @@ impl ComputerObservation {
         if self.nodes.len() > request.max_nodes as usize {
             return Err("computer observation exceeded its requested node bound".to_string());
         }
+        if self.displays.len() > MAX_COMPUTER_OBSERVATION_DISPLAYS
+            || self.applications.len() > MAX_COMPUTER_OBSERVATION_APPLICATIONS
+            || self.windows.len() > MAX_COMPUTER_OBSERVATION_WINDOWS
+        {
+            return Err("computer observation exceeded its resource bounds".to_string());
+        }
         if !self.untrusted_content {
             return Err("computer observation must mark application content untrusted".to_string());
         }
@@ -259,9 +291,83 @@ impl ComputerObservation {
             }
         }
 
+        let mut resources = BTreeSet::new();
+        for display in &self.displays {
+            validate_identifier("computer display resource", display.resource_id.as_str())?;
+            validate_text("computer display name", &display.name)?;
+            if !display.scale_factor.is_finite()
+                || display.scale_factor <= 0.0
+                || display.scale_factor > 16.0
+            {
+                return Err("computer display scale factor is invalid".to_string());
+            }
+            if !resources.insert(display.resource_id.as_str()) {
+                return Err("computer observation contains duplicate resources".to_string());
+            }
+        }
+        for application in &self.applications {
+            validate_identifier(
+                "computer application resource",
+                application.resource_id.as_str(),
+            )?;
+            validate_text("computer application name", &application.name)?;
+            if let Some(application_id) = application.application_id.as_deref() {
+                validate_text("computer application identity", application_id)?;
+            }
+            if !resources.insert(application.resource_id.as_str()) {
+                return Err("computer observation contains duplicate resources".to_string());
+            }
+        }
+        for window in &self.windows {
+            validate_identifier("computer window resource", window.resource_id.as_str())?;
+            validate_identifier(
+                "computer window application resource",
+                window.application_resource_id.as_str(),
+            )?;
+            validate_text("computer window title", &window.title)?;
+            if !resources.insert(window.resource_id.as_str()) {
+                return Err("computer observation contains duplicate resources".to_string());
+            }
+        }
+        if self.full {
+            if let Some(active) = self.active_application_resource_id.as_ref()
+                && !self
+                    .applications
+                    .iter()
+                    .any(|application| &application.resource_id == active && application.active)
+            {
+                return Err("active computer application is missing from the snapshot".to_string());
+            }
+            if let Some(focused) = self.focused_window_resource_id.as_ref()
+                && !self
+                    .windows
+                    .iter()
+                    .any(|window| &window.resource_id == focused && window.focused)
+            {
+                return Err("focused computer window is missing from the snapshot".to_string());
+            }
+            if self.windows.iter().any(|window| {
+                !self
+                    .applications
+                    .iter()
+                    .any(|application| application.resource_id == window.application_resource_id)
+            }) {
+                return Err("computer window references an unknown application".to_string());
+            }
+        }
+
         let mut refs = BTreeSet::new();
         for node in &self.nodes {
             validate_identifier("computer element reference", &node.element_ref)?;
+            validate_identifier(
+                "computer element window resource",
+                node.window_resource_id.as_str(),
+            )?;
+            validate_text("computer element role", &node.role)?;
+            validate_text("computer element name", &node.name)?;
+            if let Some(value) = node.value.as_deref() {
+                validate_text("computer element value", value)?;
+            }
             if !refs.insert(node.element_ref.as_str()) {
                 return Err(
                     "computer observation contains duplicate element references".to_string()
@@ -269,6 +375,14 @@ impl ComputerObservation {
             }
             if node.sensitive && node.value.is_some() {
                 return Err("sensitive computer node exposed its value".to_string());
+            }
+            if self.full
+                && !self
+                    .windows
+                    .iter()
+                    .any(|window| window.resource_id == node.window_resource_id)
+            {
+                return Err("computer element references an unknown window".to_string());
             }
         }
         let mut removed_refs = BTreeSet::new();
@@ -292,6 +406,13 @@ fn validate_identifier(label: &str, value: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_text(label: &str, value: &str) -> Result<(), String> {
+    if value.len() > MAX_COMPUTER_OBSERVATION_TEXT_BYTES {
+        return Err(format!("{label} exceeded its byte bound"));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -310,8 +431,21 @@ mod tests {
             active_application_resource_id: None,
             focused_window_resource_id: None,
             displays: Vec::new(),
-            applications: Vec::new(),
-            windows: Vec::new(),
+            applications: vec![ComputerApplication {
+                resource_id: WorldResourceId::new("application:one"),
+                name: "Test application".to_string(),
+                application_id: None,
+                process_id: Some(42),
+                active: false,
+            }],
+            windows: vec![ComputerWindow {
+                resource_id: WorldResourceId::new("window:one"),
+                application_resource_id: WorldResourceId::new("application:one"),
+                title: "Test window".to_string(),
+                frame: ComputerRect::default(),
+                minimized: false,
+                focused: false,
+            }],
             nodes: vec![ComputerSemanticNode {
                 element_ref: "ax:button:one".to_string(),
                 parent_ref: None,

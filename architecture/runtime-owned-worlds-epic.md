@@ -1,6 +1,6 @@
 # Runtime-owned worlds
 
-> **Status:** Active — architecture locked; Phases 1–4 implemented; Phase 5 driver foundation in progress
+> **Status:** Active — architecture locked; Phases 1–4 implemented; Phase 5 macOS observation driver in progress
 >
 > **Date:** 2026-09-04
 >
@@ -628,8 +628,21 @@ Current foundation slice:
 - The native driver broker admits observation through that authority, fences
   it to one registered colocated driver, validates the result, and records a
   confirmed or failed effect.
-- An in-memory fake driver proves the governed path. No platform sidecar,
-  computer action, doctor surface, or Home control is claimed by this slice.
+- An in-memory fake driver proves the governed path.
+
+Current macOS observation slice:
+
+- `medousa-computer` is a persistent, colocated sidecar with a bounded private
+  stdin/stdout protocol. It does not open a network listener.
+- Read-only preflight reports Accessibility, Screen Recording, and input-event
+  permission state without asking macOS to display a permission prompt.
+- The first sensor projects active displays, the focused application, windows,
+  and a bounded accessibility tree. Secure text values never cross the bridge,
+  AX calls have a hard messaging timeout, and the daemon kills/restarts a
+  wedged sidecar inside a bounded request window.
+- `medousa doctor` reports the installed driver identity, exact login session,
+  and permission guidance. Pixel observations, actions, package/release
+  shipping, and Home controls remain later slices.
 
 Implementation:
 

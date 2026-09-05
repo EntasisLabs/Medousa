@@ -27,6 +27,7 @@ members = [
     "crates/medousa-browser-lite",
     "crates/medousa-browser-bridge",
     "crates/medousa-computer-bridge",
+    "crates/medousa-computer",
     "crates/medousa-world",
     "crates/medousa-install-support",
     "crates/medousa-local-credential",

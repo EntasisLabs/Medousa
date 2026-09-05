@@ -7725,6 +7725,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "medousa-computer"
+version = "0.10.0"
+dependencies = [
+ "libc",
+ "medousa-computer-bridge",
+ "medousa-world",
+ "serde_json",
+ "uuid 1.23.1",
+]
+
+[[package]]
 name = "medousa-computer-bridge"
 version = "0.10.0"
 dependencies = [

@@ -1170,6 +1170,8 @@ fn run_doctor(args: &[String]) -> Result<()> {
         .clone()
         .or_else(|| defaults.backend.clone())
         .unwrap_or_else(|| "in-memory".to_string());
+    let computer_driver =
+        medousa::daemon::computer_driver_host::collect_computer_driver_doctor_report();
 
     if json_output {
         let profiles = defaults.inference_profiles.clone().unwrap_or_default();
@@ -1198,6 +1200,7 @@ fn run_doctor(args: &[String]) -> Result<()> {
             },
             "mcp_gateway_url": medousa::resolve_mcp_gateway_url(None),
             "api_key": tui_api_key_configured(),
+            "computer_driver": computer_driver,
         });
         println!("{}", serde_json::to_string_pretty(&payload)?);
         return Ok(());
@@ -1317,6 +1320,37 @@ fn run_doctor(args: &[String]) -> Result<()> {
             "open Medousa to start the engine"
         }
     );
+    if let Some(preflight) = computer_driver.preflight.as_ref() {
+        println!(
+            "computer_driver=ready binary={} platform={} session={}",
+            computer_driver.binary.as_deref().unwrap_or("(unknown)"),
+            preflight.platform,
+            preflight.session_id,
+        );
+        for permission in &preflight.permissions {
+            println!(
+                "computer_permission_{}={} can_request={}",
+                permission.permission.as_str(),
+                permission.status.as_str(),
+                permission.can_request
+            );
+            if let Some(guidance) = permission.guidance.as_deref() {
+                println!("computer_permission_hint={guidance}");
+            }
+        }
+    } else if let Some(error) = computer_driver.error.as_deref() {
+        println!("computer_driver=error detail={error}");
+    } else if computer_driver.supported {
+        println!(
+            "computer_driver=not_installed hint=Install medousa-computer into {}",
+            medousa::paths::medousa_data_dir().join("bin").display()
+        );
+    } else {
+        println!(
+            "computer_driver=unsupported platform={}",
+            std::env::consts::OS
+        );
+    }
     if let Some(lock_path) = surrealkv_lock_path(&backend) {
         println!(
             "surrealkv_lock={} exists={}",

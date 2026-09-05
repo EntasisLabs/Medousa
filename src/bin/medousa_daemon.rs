@@ -484,6 +484,13 @@ async fn start_daemon() -> Result<()> {
     let computer_drivers = Arc::new(medousa::computer_driver::ComputerDriverBroker::new(
         world_authority.clone(),
     ));
+    match medousa::daemon::computer_driver_host::register_native_computer_driver(&computer_drivers)
+        .await
+    {
+        Ok(Some(driver_id)) => tracing::info!(%driver_id, "registered native computer driver"),
+        Ok(None) => tracing::debug!("native computer driver is not installed for this workshop"),
+        Err(error) => tracing::warn!(%error, "native computer driver is unavailable"),
+    }
 
     let forge_execution = Arc::new(medousa_forge::execution::ForgeExecutionService::new());
     let mut forge = medousa::daemon::forge_host::open_forge()?;
