@@ -25,6 +25,32 @@ let response: InteractiveTurnResponse = client
 let stream_url = response.stream_url;
 ```
 
+### Select an exact browser world
+
+Browser identity is request-scoped. After creating or listing a daemon-owned
+world through the [browser world HTTP API](../engine/http-api.md#isolated-browser-worlds),
+copy its `driver.driver_id` into the turn surface:
+
+```rust
+use medousa_types::{InteractiveTurnRequest, TurnSurfaceContext};
+
+let request = InteractiveTurnRequest {
+    session_id: "research".into(),
+    prompt: "Compare the open plans and summarize the tradeoffs.".into(),
+    surface: Some(TurnSurfaceContext {
+        channel_surface: Some("api".into()),
+        supports_browser_host: true,
+        browser_driver_id: Some(isolated_world.driver.driver_id.to_string()),
+        ..Default::default()
+    }),
+    ..Default::default()
+};
+```
+
+The id addresses one concrete shared or isolated driver. If it is detached,
+stopped, owned by another profile, or under human control, mutation fails
+closed; the runtime never substitutes another browser with different cookies.
+
 ---
 
 ## Step 2 — Open SSE

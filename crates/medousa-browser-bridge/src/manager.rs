@@ -377,6 +377,18 @@ impl TabGroupManager {
         group
     }
 
+    pub fn remove_group(tab_group_id: &str) -> Option<TabGroup> {
+        let mut registry = REGISTRY.lock().expect("tab groups");
+        let group = registry.groups.remove(tab_group_id)?;
+        for tab in &group.tabs {
+            registry.observations.remove(&tab.id);
+        }
+        if registry.current_group_id.as_deref() == Some(tab_group_id) {
+            registry.current_group_id = None;
+        }
+        Some(group)
+    }
+
     pub fn set_control(tab_group_id: &str, control: BrowserControl) -> Option<TabGroup> {
         let mut registry = REGISTRY.lock().expect("tab groups");
         let group = {
@@ -767,5 +779,28 @@ mod tests {
         let error = ObservationRecord::new(observation_capture("doc-one", vec![node]))
             .expect_err("oversized ref must fail");
         assert!(error.contains("element ref exceeds"));
+    }
+
+    #[test]
+    fn removing_a_group_discards_its_observation_mirror() {
+        let group = TabGroupManager::create_group("driver:cleanup-test", None, None);
+        let tab = TabGroupManager::navigate_active_tab(
+            &group.id,
+            "https://example.test/",
+            Some("Example"),
+            TabOpenedBy::Agent,
+        )
+        .expect("group should have an active tab");
+        let mut capture =
+            observation_capture("doc-one", vec![semantic_node("ref-one", "Before cleanup")]);
+        capture.tab_id = tab.id.clone();
+        TabGroupManager::record_observation(&group.id, capture, None, 16)
+            .expect("observation should be recorded");
+        assert!(TabGroupManager::current_observation(&group.id, &tab.id).is_some());
+
+        TabGroupManager::remove_group(&group.id).expect("group should be removed");
+
+        assert!(TabGroupManager::get_group(&group.id).is_none());
+        assert!(TabGroupManager::current_observation(&group.id, &tab.id).is_none());
     }
 }

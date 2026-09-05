@@ -1,6 +1,6 @@
 # Runtime-owned worlds
 
-> **Status:** Active — architecture locked; Phases 1–3 plus the first Phase 4 concrete-driver slice implemented locally
+> **Status:** Active — architecture locked; Phases 1–3 plus the concrete-driver and daemon-owned-browser slices of Phase 4 implemented locally
 >
 > **Date:** 2026-09-04
 >
@@ -551,9 +551,27 @@ Current local slice:
 - Exact driver routing prevents a newer client on the same surface from
   stealing a turn's tool request. Legacy clients remain surface-routed only
   when no driver id was supplied.
-- Approval-aware extension mutations, isolated Chromium, profile identity,
-  lifecycle controls, and destination-aware URL routing remain open in this
-  phase.
+- The workshop daemon can now create an owned Chromium world with either an
+  ephemeral profile or an explicitly named persistent profile. Its catalog,
+  ownership, URL identity, control epoch, and lifecycle survive Home
+  disconnects; daemon restart recovers active processes as stopped worlds that
+  require an explicit resume.
+- The isolated driver implements the same bounded semantic observation,
+  opaque-ref action, guarded batch, redacted screenshot, and world-provenance
+  contracts as the shared BrowserHost. It talks to a loopback-only random CDP
+  endpoint in a named isolated execution world and never disables Chromium's
+  sandbox.
+- Authenticated profile-scoped HTTP controls expose create/list/get, navigate,
+  observe, screenshot, pause/resume, human takeover/return, view
+  attach/detach, stop, and cleanup. Detaching a view does not stop execution;
+  persistent identity is never selected implicitly.
+- The authority kernel revalidates every permit at the driver boundary,
+  serializes mutating permits per resource, and permanently fences admitted
+  work after takeover even when control is returned immediately. Expired
+  pending permits are reaped with an audit event.
+- Approval-aware extension mutations, a polished Home world/profile picker and
+  live attached viewport, and destination-aware private/local URL routing
+  remain open in this phase.
 
 Implementation:
 

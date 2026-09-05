@@ -6,7 +6,9 @@ use serde_json::Value;
 use stasis::domain::errors::StasisError;
 use tokio::sync::mpsc;
 
-use crate::browser_host_client::{browser_host_fetch, browser_host_healthy};
+use crate::browser_host_client::{
+    browser_host_current_context, browser_host_fetch, browser_host_healthy,
+};
 use crate::browser_search::surface_from_scope;
 use crate::browser_tools::{
     BrowserUrlCommand, COGNITION_BROWSER_FETCH, surface_supports_browser_host,
@@ -118,6 +120,12 @@ impl CognitionBrowserFetchTool {
         )?;
         let url = command.url.into_string();
         let max_chars = command.max_chars;
+        let scope =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
+                .await;
+        let selected_driver_id = scope
+            .as_ref()
+            .and_then(|scope| scope.browser_driver_id.as_deref());
 
         let _ = self
             .event_tx
@@ -127,7 +135,18 @@ impl CognitionBrowserFetchTool {
             })
             .await;
 
-        if browser_host_healthy().await {
+        let shared_driver_matches = match selected_driver_id {
+            Some(driver_id)
+                if crate::daemon::isolated_browser_host::is_isolated_driver_id(driver_id) =>
+            {
+                false
+            }
+            Some(driver_id) => browser_host_current_context()
+                .await
+                .is_ok_and(|context| context.driver_id == driver_id),
+            None => true,
+        };
+        if shared_driver_matches && browser_host_healthy().await {
             let fetched = browser_host_fetch(&url, max_chars)
                 .await
                 .map_err(StasisError::PortFailure)?;

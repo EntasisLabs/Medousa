@@ -620,6 +620,110 @@ impl CognitionBrowserActTool {
         let scope =
             crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
                 .await;
+        if let Some(driver_id) = scope
+            .as_ref()
+            .and_then(|scope| scope.browser_driver_id.as_deref())
+            .filter(|driver_id| {
+                crate::daemon::isolated_browser_host::is_isolated_driver_id(driver_id)
+            })
+        {
+            let owner_profile_id = scope
+                .as_ref()
+                .and_then(|scope| scope.identity_user_id.as_deref())
+                .map(str::to_string)
+                .unwrap_or_else(crate::user_profiles::resolve_workshop_identity_user_id);
+            let host = crate::daemon::isolated_browser_host::global_host().ok_or_else(|| {
+                StasisError::PortFailure(format!(
+                    "{COGNITION_BROWSER_ACT}: isolated browser host is unavailable"
+                ))
+            })?;
+            let browser_context = host
+                .context_for_driver(&owner_profile_id, driver_id)
+                .await
+                .map_err(|error| {
+                    StasisError::PortFailure(format!(
+                        "{COGNITION_BROWSER_ACT}: {error}"
+                    ))
+                })?;
+            let authority_id = crate::workshop_authority::current()
+                .map_err(StasisError::PortFailure)?
+                .to_string();
+            if !semantic_targets.is_empty() {
+                crate::world_authority::validate_browser_element_refs(
+                    crate::world_authority::BrowserElementRefFence {
+                        authority_id: &authority_id,
+                        driver_id: &browser_context.driver_id,
+                        tab_group_id: &browser_context.tab_group_id,
+                        tab_id: &browser_context.tab_id,
+                        expected_url: &browser_context.url,
+                        document_id: semantic_document_id.as_deref().unwrap_or_default(),
+                        revision: observation_revision.unwrap_or_default(),
+                        targets: &semantic_targets,
+                        allow_high_risk,
+                    },
+                )
+                .map_err(|error| {
+                    StasisError::PortFailure(format!(
+                        "{COGNITION_BROWSER_ACT}: semantic target denied: {error}"
+                    ))
+                })?;
+            }
+            let trace_id = scope
+                .as_ref()
+                .map(|scope| scope.turn_correlation_id.as_str())
+                .filter(|trace_id| !trace_id.trim().is_empty())
+                .unwrap_or("browser-action");
+            let admission = crate::world_authority::admit_browser_action(
+                &authority_id,
+                &browser_context.driver_id,
+                &browser_context.tab_group_id,
+                &browser_context.tab_id,
+                trace_id,
+                &summary,
+                world_effect_class,
+            )
+            .map_err(|error| {
+                StasisError::PortFailure(format!(
+                    "{COGNITION_BROWSER_ACT}: world admission denied: {error}"
+                ))
+            })?;
+            body["world_permit"] =
+                serde_json::to_value(&admission.permit).map_err(|error| {
+                    StasisError::PortFailure(format!(
+                        "{COGNITION_BROWSER_ACT}: could not encode world permit: {error}"
+                    ))
+                })?;
+            body["world_expected_url"] = json!(browser_context.url);
+            let mut outcome = match host
+                .act_for_driver(&owner_profile_id, driver_id, body)
+                .await
+            {
+                Ok(outcome) => outcome,
+                Err(error) => {
+                    let world_outcome =
+                        crate::world_authority::mark_browser_action_indeterminate(
+                            &admission,
+                            &format!("isolated browser result unavailable: {error}"),
+                        )
+                        .map_err(StasisError::PortFailure)?;
+                    return Err(StasisError::PortFailure(format!(
+                        "{error}; world action {} is indeterminate at revision {}",
+                        world_outcome.intent_id, world_outcome.committed_revision
+                    )));
+                }
+            };
+            mirror_browser_observation_from_outcome(&admission, &mut outcome);
+            let world_outcome = crate::world_authority::complete_browser_action(
+                &admission,
+                &format!("isolated browser completed {summary}"),
+            )
+            .map_err(StasisError::PortFailure)?;
+            return Ok(ExternalJson::new(with_world_provenance(
+                outcome,
+                admission.provenance(Some(world_outcome)),
+                "allow",
+            )));
+        }
         if client_executed(scope.as_ref()) {
             if is_batch {
                 return Err(StasisError::PortFailure(format!(
@@ -635,6 +739,15 @@ impl CognitionBrowserActTool {
         let browser_context = browser_host_current_context()
             .await
             .map_err(StasisError::PortFailure)?;
+        if let Some(selected_driver_id) = scope
+            .as_ref()
+            .and_then(|scope| scope.browser_driver_id.as_deref())
+            && selected_driver_id != browser_context.driver_id
+        {
+            return Err(StasisError::PortFailure(format!(
+                "{COGNITION_BROWSER_ACT}: selected browser driver is no longer attached"
+            )));
+        }
         if browser_context.control != "agent" {
             let (code, error) = if browser_context.control == "awaiting_operator" {
                 (

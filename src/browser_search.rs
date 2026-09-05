@@ -140,6 +140,16 @@ pub async fn resolve_browser_host_enabled(
     let Some(scope) = scope else {
         return (false, None, None);
     };
+    if scope
+        .browser_driver_id
+        .as_deref()
+        .is_some_and(crate::daemon::isolated_browser_host::is_isolated_driver_id)
+    {
+        // Search results are provider data, not a reason to silently move the
+        // turn onto Home's shared browser identity. Isolated worlds navigate
+        // only through their explicitly addressed driver.
+        return (false, scope.channel_surface, scope.browser_driver_id);
+    }
     if !scope.supports_browser_host {
         return (false, scope.channel_surface, scope.browser_driver_id);
     }

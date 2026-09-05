@@ -79,6 +79,7 @@ pub fn admit_browser_action(
         authority_id,
         driver_id,
         tab_group_id,
+        WorldOwnership::Managed,
         now_ms,
     )?;
 
@@ -136,6 +137,7 @@ pub fn admit_browser_observation(
         authority_id,
         driver_id,
         tab_group_id,
+        WorldOwnership::Managed,
         now_ms,
     )?;
     let state = authority.world(&world_id).map_err(|error| error.to_string())?;
@@ -182,6 +184,7 @@ pub fn admit_browser_pixel_observation(
         authority_id,
         driver_id,
         tab_group_id,
+        WorldOwnership::Managed,
         now_ms,
     )?;
     let state = authority.world(&world_id).map_err(|error| error.to_string())?;
@@ -215,6 +218,7 @@ fn ensure_browser_world(
     authority_id: &str,
     driver_id: &str,
     tab_group_id: &str,
+    ownership: WorldOwnership,
     now_ms: u64,
 ) -> Result<(WorldId, WorldPrincipal), String> {
     let world_id = browser_world_id(authority_id, driver_id, tab_group_id);
@@ -232,13 +236,21 @@ fn ensure_browser_world(
                     world_id: world_id.clone(),
                     authority_id: WorldAuthorityId::new(authority_id),
                     driver_id: WorldDriverId::new(driver_id),
-                    ownership: WorldOwnership::Managed,
+                    ownership,
                     surface: WorldSurfaceKind::Browser,
                 },
                 system.clone(),
                 now_ms,
             )
             .map_err(|error| error.to_string())?;
+    } else {
+        let state = authority.world(&world_id).map_err(|error| error.to_string())?;
+        if state.authority_id.as_str() != authority_id
+            || state.driver_id.as_str() != driver_id
+            || state.surface != WorldSurfaceKind::Browser
+        {
+            return Err("browser world identity conflicts with its registered authority".to_string());
+        }
     }
     let grant_id = WorldGrantId::new(format!("grant:browser-agent:{tab_group_id}"));
     match authority.grant_capabilities(
@@ -263,6 +275,203 @@ fn ensure_browser_world(
         Err(error) => return Err(error.to_string()),
     }
     Ok((world_id, agent))
+}
+
+/// Register a daemon-owned browser world before its Chromium process begins.
+///
+/// This keeps ownership explicit: a later agent admission cannot accidentally
+/// recreate an isolated world as a managed shared-browser attachment.
+pub fn register_owned_browser_world(
+    authority_id: &str,
+    driver_id: &str,
+    tab_group_id: &str,
+    owner_principal_id: &str,
+) -> Result<WorldId, String> {
+    let now_ms = now_ms();
+    let mut authority = AUTHORITY
+        .lock()
+        .map_err(|_| "world authority lock poisoned".to_string())?;
+    let (world_id, _) = ensure_browser_world(
+        &mut authority,
+        authority_id,
+        driver_id,
+        tab_group_id,
+        WorldOwnership::Owned,
+        now_ms,
+    )?;
+    let state = authority.world(&world_id).map_err(|error| error.to_string())?;
+    if state.ownership != WorldOwnership::Owned {
+        return Err("isolated browser driver is already bound to a non-owned world".to_string());
+    }
+    let system = WorldPrincipal::system(WorldPrincipalId::new(format!(
+        "runtime:{authority_id}"
+    )));
+    let owner = WorldPrincipal::human(WorldPrincipalId::new(owner_principal_id));
+    let grant_id = WorldGrantId::new(format!("grant:browser-owner:{tab_group_id}"));
+    match authority.grant_capabilities(
+        &world_id,
+        WorldGrantRequest {
+            grant_id,
+            issued_by: system,
+            subject: owner,
+            capabilities: [
+                WorldCapability::Observe,
+                WorldCapability::ObservePixels,
+                WorldCapability::Interact,
+                WorldCapability::Admin,
+            ]
+            .into_iter()
+            .collect::<BTreeSet<_>>(),
+            resource_scope: WorldResourceScope::All,
+            expires_at_ms: None,
+        },
+        now_ms,
+    ) {
+        Ok(_) | Err(WorldAuthorityError::GrantAlreadyExists(_)) => Ok(world_id),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+pub struct OwnedBrowserHumanIntent<'a> {
+    pub authority_id: &'a str,
+    pub driver_id: &'a str,
+    pub tab_group_id: &'a str,
+    pub tab_id: &'a str,
+    pub owner_principal_id: &'a str,
+    pub trace_id: &'a str,
+    pub summary: &'a str,
+    pub effect_class: WorldEffectClass,
+}
+
+pub fn admit_owned_browser_human_intent(
+    request: OwnedBrowserHumanIntent<'_>,
+) -> Result<BrowserWorldAdmission, String> {
+    let now_ms = now_ms();
+    let world_id = browser_world_id(
+        request.authority_id,
+        request.driver_id,
+        request.tab_group_id,
+    );
+    let owner = WorldPrincipal::human(WorldPrincipalId::new(request.owner_principal_id));
+    let resource_id = WorldResourceId::new(format!("browser-tab:{}", request.tab_id));
+    let mut authority = AUTHORITY
+        .lock()
+        .map_err(|_| "world authority lock poisoned".to_string())?;
+    let control_generation = if request.effect_class.requires_control() {
+        Some(
+            authority
+                .acquire_control(&world_id, owner.clone(), None, now_ms)
+                .map_err(|error| error.to_string())?
+                .generation,
+        )
+    } else {
+        None
+    };
+    let state = authority.world(&world_id).map_err(|error| error.to_string())?;
+    let operation_id = Uuid::new_v4().to_string();
+    let intent = WorldActionIntent {
+        intent_id: medousa_world::WorldIntentId::new(format!("intent:{operation_id}")),
+        trace_id: WorldTraceId::new(request.trace_id),
+        principal: owner,
+        resource_id,
+        expected_revision: state.revision,
+        expected_control_generation: control_generation,
+        required_capability: request.effect_class.required_capability(),
+        effect_class: request.effect_class,
+        idempotency_key: format!("browser-human:{operation_id}"),
+        permit_expires_at_ms: now_ms.saturating_add(BROWSER_ACTION_PERMIT_MS),
+        summary: request.summary.to_string(),
+    };
+    match authority
+        .admit_action(&world_id, intent, now_ms)
+        .map_err(|error| error.to_string())?
+    {
+        WorldAdmission::Admitted { permit } => Ok(BrowserWorldAdmission { permit }),
+        WorldAdmission::Replay { .. } => {
+            Err("new human browser intent unexpectedly resolved as a replay".to_string())
+        }
+    }
+}
+
+/// Fence agent work and hand an owned browser world to its authenticated
+/// human owner. The world kernel records the preemption and increments the
+/// canonical control generation before the driver sees human input.
+pub fn take_owned_browser_control(
+    authority_id: &str,
+    driver_id: &str,
+    tab_group_id: &str,
+    owner_principal_id: &str,
+) -> Result<u64, String> {
+    let now_ms = now_ms();
+    let world_id = browser_world_id(authority_id, driver_id, tab_group_id);
+    let mut authority = AUTHORITY
+        .lock()
+        .map_err(|_| "world authority lock poisoned".to_string())?;
+    let lease = authority
+        .acquire_control(
+            &world_id,
+            WorldPrincipal::human(WorldPrincipalId::new(owner_principal_id)),
+            None,
+            now_ms,
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(lease.generation)
+}
+
+/// Release an owned browser from its human owner. The next agent action must
+/// acquire a fresh generation; an old queued permit can never become live
+/// again merely because the UI returned control quickly.
+pub fn return_owned_browser_control(
+    authority_id: &str,
+    driver_id: &str,
+    tab_group_id: &str,
+    owner_principal_id: &str,
+) -> Result<u64, String> {
+    let now_ms = now_ms();
+    let world_id = browser_world_id(authority_id, driver_id, tab_group_id);
+    let owner = WorldPrincipal::human(WorldPrincipalId::new(owner_principal_id));
+    let mut authority = AUTHORITY
+        .lock()
+        .map_err(|_| "world authority lock poisoned".to_string())?;
+    let state = authority.world(&world_id).map_err(|error| error.to_string())?;
+    match state.active_control_lease {
+        Some(lease) if lease.principal == owner => authority
+            .release_control(&world_id, &owner, now_ms)
+            .map_err(|error| error.to_string()),
+        Some(lease) if lease.principal.kind == medousa_world::WorldPrincipalKind::Human => Err(
+            "owned browser is controlled by another human principal".to_string(),
+        ),
+        _ => Ok(state.control_generation),
+    }
+}
+
+pub fn validate_browser_action_permit(permit: &WorldActionPermit) -> Result<(), String> {
+    AUTHORITY
+        .lock()
+        .map_err(|_| "world authority lock poisoned".to_string())?
+        .validate_action_permit(permit, now_ms())
+        .map_err(|error| error.to_string())
+}
+
+pub fn forget_owned_browser_world(
+    world_id: &str,
+    owner_principal_id: &str,
+) -> Result<(), String> {
+    let world_id = WorldId::new(world_id);
+    let owner = WorldPrincipal::human(WorldPrincipalId::new(owner_principal_id));
+    match AUTHORITY
+        .lock()
+        .map_err(|_| "world authority lock poisoned".to_string())?
+        .remove_world(&world_id, &owner, now_ms())
+    {
+        Ok(_) | Err(WorldAuthorityError::WorldNotFound(_)) => {}
+        Err(error) => return Err(error.to_string()),
+    };
+    BROWSER_OBSERVATIONS
+        .lock()
+        .map_err(|_| "browser observation mirror lock poisoned".to_string())?
+        .remove(&world_id);
+    Ok(())
 }
 
 pub fn complete_browser_action(
@@ -719,5 +928,68 @@ mod tests {
             allow_high_risk: true,
         })
         .expect("explicit high-risk authority should pass");
+    }
+
+    #[test]
+    fn owned_browser_human_intents_share_the_authority_lifecycle() {
+        let suffix = Uuid::new_v4().simple().to_string();
+        let authority_id = format!("workshop:owned-{suffix}");
+        let driver_id = format!("isolated-browser:{suffix}");
+        let tab_group_id = format!("group:{suffix}");
+        let owner_principal_id = format!("human:profile-{suffix}");
+        let world_id = register_owned_browser_world(
+            &authority_id,
+            &driver_id,
+            &tab_group_id,
+            &owner_principal_id,
+        )
+        .expect("owned world should register");
+
+        let observation = admit_owned_browser_human_intent(OwnedBrowserHumanIntent {
+            authority_id: &authority_id,
+            driver_id: &driver_id,
+            tab_group_id: &tab_group_id,
+            tab_id: "tab-one",
+            owner_principal_id: &owner_principal_id,
+            trace_id: "trace:human-observe",
+            summary: "human observation",
+            effect_class: WorldEffectClass::Observe,
+        })
+        .expect("owner should observe");
+        assert_eq!(observation.permit.world_id, world_id);
+        assert_eq!(observation.permit.control_generation, None);
+        complete_browser_action(&observation, "observation committed")
+            .expect("observation should commit");
+
+        let navigation = admit_owned_browser_human_intent(OwnedBrowserHumanIntent {
+            authority_id: &authority_id,
+            driver_id: &driver_id,
+            tab_group_id: &tab_group_id,
+            tab_id: "tab-one",
+            owner_principal_id: &owner_principal_id,
+            trace_id: "trace:human-navigate",
+            summary: "human navigation",
+            effect_class: WorldEffectClass::LocalReversible,
+        })
+        .expect("owner should navigate");
+        assert!(navigation.permit.control_generation.is_some());
+        complete_browser_action(&navigation, "navigation committed")
+            .expect("navigation should commit");
+
+        forget_owned_browser_world(world_id.as_str(), &owner_principal_id)
+            .expect("owner should clean up the world");
+        assert!(
+            admit_owned_browser_human_intent(OwnedBrowserHumanIntent {
+                authority_id: &authority_id,
+                driver_id: &driver_id,
+                tab_group_id: &tab_group_id,
+                tab_id: "tab-one",
+                owner_principal_id: &owner_principal_id,
+                trace_id: "trace:after-cleanup",
+                summary: "stale action",
+                effect_class: WorldEffectClass::Observe,
+            })
+            .is_err()
+        );
     }
 }

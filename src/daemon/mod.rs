@@ -20,6 +20,7 @@ pub mod heartbeat;
 pub mod http;
 pub mod identity;
 pub mod ingest;
+pub mod isolated_browser_host;
 pub mod interactive;
 pub mod jobs;
 pub mod request_boundary;

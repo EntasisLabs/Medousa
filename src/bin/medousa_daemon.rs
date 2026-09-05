@@ -474,6 +474,13 @@ async fn start_daemon() -> Result<()> {
     let default_runtime_config = session_mapping::IngestSessionRuntimeConfig::from_saved_defaults();
     let retention_config = medousa::session_retention::SessionRetentionConfig::from_env();
 
+    let isolated_browser =
+        medousa::daemon::isolated_browser_host::IsolatedBrowserHost::open_default()
+            .await
+            .context("open daemon-owned isolated browser host")?;
+    medousa::daemon::isolated_browser_host::register_global_host(isolated_browser.clone())
+        .map_err(|error| anyhow::anyhow!("register daemon-owned isolated browser host: {error}"))?;
+
     let forge_execution = Arc::new(medousa_forge::execution::ForgeExecutionService::new());
     let mut forge = medousa::daemon::forge_host::open_forge()?;
     forge.attach_execution(Arc::clone(&forge_execution));
@@ -622,6 +629,7 @@ async fn start_daemon() -> Result<()> {
         last_storage_maintenance_at: Arc::new(RwLock::new(None)),
         last_context_usage_by_session: Arc::new(RwLock::new(HashMap::new())),
         client_registry: platform.client_registry(),
+        isolated_browser,
         forge,
         forge_execution,
         work_environment,

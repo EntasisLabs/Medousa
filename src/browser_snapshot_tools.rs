@@ -357,10 +357,6 @@ async fn capture_screenshot_artifact_inner(
     observation: &BrowserObservation,
     max_width: u32,
 ) -> Result<BrowserScreenshotArtifactOutput, String> {
-    const MAX_SCREENSHOT_BYTES: usize = 8 * 1024 * 1024;
-    const MAX_SCREENSHOT_BASE64_BYTES: usize = 12 * 1024 * 1024;
-    const MAX_SCREENSHOT_PIXELS: u64 = 16_000_000;
-
     let capture: BrowserScreenshotCapture = browser_host_screenshot(
         &context.tab_group_id,
         serde_json::json!({
@@ -372,6 +368,19 @@ async fn capture_screenshot_artifact_inner(
         }),
     )
     .await?;
+    validate_and_persist_screenshot_capture(context, session_id, observation, capture).await
+}
+
+async fn validate_and_persist_screenshot_capture(
+    context: &BrowserHostWorldContext,
+    session_id: &str,
+    observation: &BrowserObservation,
+    capture: BrowserScreenshotCapture,
+) -> Result<BrowserScreenshotArtifactOutput, String> {
+    const MAX_SCREENSHOT_BYTES: usize = 8 * 1024 * 1024;
+    const MAX_SCREENSHOT_BASE64_BYTES: usize = 12 * 1024 * 1024;
+    const MAX_SCREENSHOT_PIXELS: u64 = 16_000_000;
+
     if capture.schema_version != BROWSER_SCREENSHOT_SCHEMA_VERSION
         || capture.tab_id != context.tab_id
         || !same_browser_url(&capture.url, &context.url)
@@ -448,6 +457,76 @@ async fn capture_screenshot_artifact_inner(
     })
 }
 
+struct IsolatedScreenshotArtifactRequest<'a> {
+    host: &'a crate::daemon::isolated_browser_host::IsolatedBrowserHost,
+    owner_profile_id: &'a str,
+    authority_id: &'a str,
+    context: &'a BrowserHostWorldContext,
+    trace_id: &'a str,
+    session_id: &'a str,
+    observation: &'a BrowserObservation,
+    max_width: u32,
+}
+
+async fn capture_isolated_screenshot_artifact(
+    request: IsolatedScreenshotArtifactRequest<'_>,
+) -> Result<BrowserScreenshotArtifactOutput, String> {
+    let IsolatedScreenshotArtifactRequest {
+        host,
+        owner_profile_id,
+        authority_id,
+        context,
+        trace_id,
+        session_id,
+        observation,
+        max_width,
+    } = request;
+    crate::world_authority::validate_browser_pixel_fence(
+        authority_id,
+        &context.driver_id,
+        &context.tab_group_id,
+        &context.tab_id,
+        &context.url,
+        &observation.document_id,
+        observation.revision,
+    )?;
+    let admission = crate::world_authority::admit_browser_pixel_observation(
+        authority_id,
+        &context.driver_id,
+        &context.tab_group_id,
+        &context.tab_id,
+        trace_id,
+        "capture current isolated browser viewport pixels",
+    )?;
+    let result = async {
+        let capture = host
+            .screenshot_for_driver(
+                owner_profile_id,
+                &context.driver_id,
+                &observation.document_id,
+                observation.revision,
+                max_width,
+            )
+            .await
+            .map_err(|error| error.to_string())?;
+        validate_and_persist_screenshot_capture(context, session_id, observation, capture).await
+    }
+    .await;
+    match result {
+        Ok(output) => {
+            crate::world_authority::complete_browser_action(
+                &admission,
+                "redacted isolated browser screenshot artifact persisted",
+            )?;
+            Ok(output)
+        }
+        Err(error) => {
+            let _ = crate::world_authority::fail_browser_action(&admission, &error);
+            Err(error)
+        }
+    }
+}
+
 #[medousa_tool(id = COGNITION_BROWSER_SNAPSHOT_ID)]
 impl CognitionBrowserSnapshotTool {
     /// Observe the current shared page as a bounded semantic projection with opaque element refs and revisioned deltas; optionally persist a redacted viewport screenshot; falls back to markdown for other URLs.
@@ -493,10 +572,176 @@ impl CognitionBrowserSnapshotTool {
             .map(|scope| scope.session_id.as_str())
             .filter(|session_id| !session_id.trim().is_empty());
 
+        if let Some(driver_id) = scope
+            .as_ref()
+            .and_then(|scope| scope.browser_driver_id.as_deref())
+            .filter(|driver_id| {
+                crate::daemon::isolated_browser_host::is_isolated_driver_id(driver_id)
+            })
+        {
+            let owner_profile_id = scope
+                .as_ref()
+                .and_then(|scope| scope.identity_user_id.as_deref())
+                .map(str::to_string)
+                .unwrap_or_else(crate::user_profiles::resolve_workshop_identity_user_id);
+            let host = crate::daemon::isolated_browser_host::global_host().ok_or_else(|| {
+                StasisError::PortFailure(format!(
+                    "{COGNITION_BROWSER_SNAPSHOT}: isolated browser host is unavailable"
+                ))
+            })?;
+            let isolated_context = host
+                .observation_context_for_driver(&owner_profile_id, driver_id)
+                .await
+                .map_err(|error| {
+                    StasisError::PortFailure(format!(
+                        "{COGNITION_BROWSER_SNAPSHOT}: {error}"
+                    ))
+                })?;
+            if !same_browser_url(&isolated_context.url, &url) {
+                return Err(StasisError::PortFailure(format!(
+                    "{COGNITION_BROWSER_SNAPSHOT}: selected isolated browser is at {}; navigate that world explicitly before observing {}",
+                    isolated_context.url, url
+                )));
+            }
+            let context = BrowserHostWorldContext {
+                driver_id: isolated_context.driver_id,
+                tab_group_id: isolated_context.tab_group_id,
+                tab_id: isolated_context.tab_id,
+                url: isolated_context.url,
+                control: match isolated_context.control {
+                    medousa_browser_bridge::BrowserControl::Agent => "agent",
+                    medousa_browser_bridge::BrowserControl::User => "user",
+                    medousa_browser_bridge::BrowserControl::AwaitingOperator => {
+                        "awaiting_operator"
+                    }
+                }
+                .to_string(),
+            };
+            let authority_id = crate::workshop_authority::current()
+                .map_err(StasisError::PortFailure)?
+                .to_string();
+            let admission = crate::world_authority::admit_browser_observation(
+                &authority_id,
+                &context.driver_id,
+                &context.tab_group_id,
+                &context.tab_id,
+                trace_id,
+                "observe current isolated browser tab",
+            )
+            .map_err(|error| {
+                StasisError::PortFailure(format!(
+                    "{COGNITION_BROWSER_SNAPSHOT}: world observation denied: {error}"
+                ))
+            })?;
+            let mut observation = match host
+                .observe_for_driver(&owner_profile_id, &context.driver_id, since_revision, 256)
+                .await
+            {
+                Ok(observation) => observation,
+                Err(error) => {
+                    let _ = crate::world_authority::fail_browser_action(
+                        &admission,
+                        &error.to_string(),
+                    );
+                    return Err(StasisError::PortFailure(format!(
+                        "{COGNITION_BROWSER_SNAPSHOT}: {error}"
+                    )));
+                }
+            };
+            if let Err(initial_error) = crate::world_authority::record_browser_observation(
+                &admission,
+                observation.clone(),
+            ) {
+                if observation.full {
+                    let _ = crate::world_authority::fail_browser_action(
+                        &admission,
+                        &initial_error,
+                    );
+                    return Err(StasisError::PortFailure(format!(
+                        "{COGNITION_BROWSER_SNAPSHOT}: could not advance isolated browser mirror: {initial_error}"
+                    )));
+                }
+                observation = match host
+                    .observe_for_driver(&owner_profile_id, &context.driver_id, None, 256)
+                    .await
+                {
+                    Ok(observation) => observation,
+                    Err(error) => {
+                        let _ = crate::world_authority::fail_browser_action(
+                            &admission,
+                            &error.to_string(),
+                        );
+                        return Err(StasisError::PortFailure(format!(
+                            "{COGNITION_BROWSER_SNAPSHOT}: could not recover a full isolated browser observation: {error}"
+                        )));
+                    }
+                };
+                if let Err(error) = crate::world_authority::record_browser_observation(
+                    &admission,
+                    observation.clone(),
+                ) {
+                    let _ = crate::world_authority::fail_browser_action(&admission, &error);
+                    return Err(StasisError::PortFailure(format!(
+                        "{COGNITION_BROWSER_SNAPSHOT}: could not recover isolated browser mirror after {initial_error}: {error}"
+                    )));
+                }
+            }
+            crate::world_authority::complete_browser_action(
+                &admission,
+                "isolated browser semantic observation committed",
+            )
+            .map_err(StasisError::PortFailure)?;
+            let screenshot = if capture_screenshot {
+                let session_id = session_id.ok_or_else(|| {
+                    StasisError::PortFailure(format!(
+                        "{COGNITION_BROWSER_SNAPSHOT}: screenshot capture requires an admitted turn session"
+                    ))
+                })?;
+                Some(
+                    capture_isolated_screenshot_artifact(IsolatedScreenshotArtifactRequest {
+                        host: &host,
+                        owner_profile_id: &owner_profile_id,
+                        authority_id: &authority_id,
+                        context: &context,
+                        trace_id,
+                        session_id,
+                        observation: &observation,
+                        max_width: screenshot_max_width,
+                    })
+                    .await
+                    .map_err(|error| {
+                        StasisError::PortFailure(format!(
+                            "{COGNITION_BROWSER_SNAPSHOT}: pixel observation failed: {error}"
+                        ))
+                    })?,
+                )
+            } else {
+                None
+            };
+            return Ok(BrowserSnapshotOutput {
+                url: context.url,
+                title: observation.title.clone(),
+                markdown: semantic_markdown(&observation, max_chars),
+                binding_used: "isolated_browser_semantic".to_string(),
+                decision: "allow".to_string(),
+                observation: Some(semantic_output(&observation)),
+                screenshot,
+            });
+        }
+
         if browser_host_healthy().await {
             if let Ok(context) = browser_host_current_context().await
                 && same_browser_url(&context.url, &url)
             {
+                if let Some(selected_driver_id) = scope
+                    .as_ref()
+                    .and_then(|scope| scope.browser_driver_id.as_deref())
+                    && selected_driver_id != context.driver_id
+                {
+                    return Err(StasisError::PortFailure(format!(
+                        "{COGNITION_BROWSER_SNAPSHOT}: selected browser driver is no longer attached"
+                    )));
+                }
                 let authority_id = crate::workshop_authority::current()
                     .map_err(StasisError::PortFailure)?
                     .to_string();

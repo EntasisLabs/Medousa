@@ -71,10 +71,14 @@ pub enum WorldAuthorityError {
     IdempotencyConflict(String),
     #[error("action intent is already pending: {0}")]
     IntentAlreadyPending(WorldIntentId),
+    #[error("resource already has a pending mutating action: {0}")]
+    ResourceActionAlreadyPending(WorldResourceId),
     #[error("action permit is not pending: {0}")]
     PermitNotPending(WorldIntentId),
     #[error("action permit does not match the admitted action")]
     PermitMismatch,
+    #[error("action permit has expired")]
+    PermitExpired,
 }
 
 #[derive(Debug)]
@@ -120,6 +124,61 @@ impl WorldAuthority {
             worlds: HashMap::new(),
             event_capacity: event_capacity.max(1),
         }
+    }
+
+    /// Revalidate a previously admitted permit immediately before driver
+    /// dispatch. Drivers call this at guarded-batch boundaries so a human
+    /// takeover, state revision, expiry, or replaced permit fences stale work
+    /// before another effect is applied.
+    pub fn validate_action_permit(
+        &self,
+        permit: &WorldActionPermit,
+        now_ms: u64,
+    ) -> Result<(), WorldAuthorityError> {
+        let record = self
+            .worlds
+            .get(&permit.world_id)
+            .ok_or_else(|| WorldAuthorityError::WorldNotFound(permit.world_id.clone()))?;
+        let pending = record
+            .pending
+            .get(&permit.intent_id)
+            .ok_or_else(|| WorldAuthorityError::PermitNotPending(permit.intent_id.clone()))?;
+        if pending != permit || record.state.driver_id != permit.driver_id {
+            return Err(WorldAuthorityError::PermitMismatch);
+        }
+        if permit.expires_at_ms <= now_ms {
+            return Err(WorldAuthorityError::PermitExpired);
+        }
+        if record.state.revision != permit.admitted_revision {
+            return Err(WorldAuthorityError::StaleRevision {
+                expected: permit.admitted_revision,
+                current: record.state.revision,
+            });
+        }
+        if permit.effect_class.requires_control() {
+            let expected = permit
+                .control_generation
+                .ok_or(WorldAuthorityError::MissingControlGeneration)?;
+            let lease = record
+                .state
+                .active_control_lease
+                .as_ref()
+                .filter(|lease| lease.is_active_at(now_ms))
+                .ok_or(WorldAuthorityError::ControlRequired)?;
+            if lease.principal != permit.principal {
+                return Err(WorldAuthorityError::ControlHolderMismatch {
+                    holder: lease.principal.principal_id.to_string(),
+                    principal: permit.principal.principal_id.to_string(),
+                });
+            }
+            if lease.generation != expected {
+                return Err(WorldAuthorityError::StaleControlGeneration {
+                    expected,
+                    current: lease.generation,
+                });
+            }
+        }
+        Ok(())
     }
 
     pub fn create_world(
@@ -201,6 +260,33 @@ impl WorldAuthority {
         self.worlds
             .get(world_id)
             .map(|record| record.state.clone())
+            .ok_or_else(|| WorldAuthorityError::WorldNotFound(world_id.clone()))
+    }
+
+    /// Remove a world after its owner has stopped and cleaned up the concrete
+    /// driver. The in-memory journal and all outstanding permits disappear
+    /// with the authority record.
+    pub fn remove_world(
+        &mut self,
+        world_id: &WorldId,
+        principal: &WorldPrincipal,
+        now_ms: u64,
+    ) -> Result<WorldSession, WorldAuthorityError> {
+        let admin = self.principal_has_capability(
+            world_id,
+            principal,
+            WorldCapability::Admin,
+            &WorldResourceId::new("world"),
+            now_ms,
+        )?;
+        if !admin {
+            return Err(WorldAuthorityError::AdministrationDenied(
+                principal.principal_id.to_string(),
+            ));
+        }
+        self.worlds
+            .remove(world_id)
+            .map(|record| record.state)
             .ok_or_else(|| WorldAuthorityError::WorldNotFound(world_id.clone()))
     }
 
@@ -444,6 +530,7 @@ impl WorldAuthority {
             .worlds
             .get_mut(world_id)
             .ok_or_else(|| WorldAuthorityError::WorldNotFound(world_id.clone()))?;
+        expire_pending_permits(record, self.event_capacity, now_ms);
         if let Some(outcome) = record.completed_idempotency.get(idempotency_key) {
             if outcome.principal != intent.principal
                 || outcome.resource_id != intent.resource_id
@@ -465,6 +552,15 @@ impl WorldAuthority {
         if record.pending.contains_key(&intent.intent_id) {
             return Err(WorldAuthorityError::IntentAlreadyPending(
                 intent.intent_id.clone(),
+            ));
+        }
+        if intent.effect_class.requires_control()
+            && record.pending.values().any(|permit| {
+                permit.effect_class.requires_control() && permit.resource_id == intent.resource_id
+            })
+        {
+            return Err(WorldAuthorityError::ResourceActionAlreadyPending(
+                intent.resource_id.clone(),
             ));
         }
         if intent.expected_revision != record.state.revision {
@@ -840,6 +936,34 @@ fn push_event(
     item
 }
 
+fn expire_pending_permits(record: &mut WorldRecord, capacity: usize, now_ms: u64) {
+    let expired = record
+        .pending
+        .values()
+        .filter(|permit| permit.expires_at_ms <= now_ms)
+        .cloned()
+        .collect::<Vec<_>>();
+    for permit in expired {
+        record.pending.remove(&permit.intent_id);
+        record
+            .pending_idempotency
+            .remove(permit.idempotency_key.as_str());
+        push_event(
+            record,
+            capacity,
+            now_ms,
+            Some(permit.principal),
+            Some(permit.resource_id),
+            Some(permit.intent_id),
+            Some(permit.trace_id),
+            WorldEventKind::ActionFailed {
+                effect_class: permit.effect_class,
+                error: "action permit expired before completion".to_string(),
+            },
+        );
+    }
+}
+
 fn take_matching_permit(
     record: &mut WorldRecord,
     permit: &WorldActionPermit,
@@ -980,6 +1104,96 @@ mod tests {
                 .principal,
             human()
         );
+    }
+
+    #[test]
+    fn human_takeover_permanently_fences_an_admitted_permit() {
+        let mut authority = WorldAuthority::default();
+        create_world(&mut authority);
+        grant_agent(&mut authority, &[WorldCapability::Interact]);
+        authority
+            .acquire_control(&world_id(), agent(), Some(NOW + 5_000), NOW + 1)
+            .unwrap();
+        let permit = admit_agent_action(&mut authority, "click-before-takeover");
+        authority.validate_action_permit(&permit, NOW + 3).unwrap();
+
+        authority
+            .acquire_control(&world_id(), human(), None, NOW + 4)
+            .unwrap();
+        authority
+            .release_control(&world_id(), &human(), NOW + 5)
+            .unwrap();
+
+        assert!(matches!(
+            authority.validate_action_permit(&permit, NOW + 6),
+            Err(WorldAuthorityError::StaleRevision { .. })
+                | Err(WorldAuthorityError::StaleControlGeneration { .. })
+        ));
+    }
+
+    #[test]
+    fn expired_control_lease_fences_a_still_live_permit() {
+        let mut authority = WorldAuthority::default();
+        create_world(&mut authority);
+        grant_agent(&mut authority, &[WorldCapability::Interact]);
+        authority
+            .acquire_control(&world_id(), agent(), Some(NOW + 10), NOW + 1)
+            .unwrap();
+        let permit = admit_agent_action_with_expiry(&mut authority, "lease-expiry", NOW + 1_000);
+
+        assert_eq!(
+            authority
+                .validate_action_permit(&permit, NOW + 11)
+                .unwrap_err(),
+            WorldAuthorityError::ControlRequired
+        );
+    }
+
+    #[test]
+    fn mutating_permits_serialize_per_resource_and_expired_work_is_reaped() {
+        let mut authority = WorldAuthority::default();
+        create_world(&mut authority);
+        grant_agent(&mut authority, &[WorldCapability::Interact]);
+        let lease = authority
+            .acquire_control(&world_id(), agent(), Some(NOW + 5_000), NOW + 1)
+            .unwrap();
+        let first = admit_agent_action_with_expiry(&mut authority, "first", NOW + 10);
+        let state = authority.world(&world_id()).unwrap();
+        let second_intent =
+            |intent_id: &str, idempotency_key: &str, expires_at_ms: u64| WorldActionIntent {
+                intent_id: WorldIntentId::new(intent_id),
+                trace_id: WorldTraceId::new("trace:serialized"),
+                principal: agent(),
+                resource_id: first.resource_id.clone(),
+                expected_revision: state.revision,
+                expected_control_generation: Some(lease.generation),
+                required_capability: WorldCapability::Interact,
+                effect_class: WorldEffectClass::LocalMutation,
+                idempotency_key: idempotency_key.to_string(),
+                permit_expires_at_ms: expires_at_ms,
+                summary: "second click".to_string(),
+            };
+
+        assert_eq!(
+            authority
+                .admit_action(
+                    &world_id(),
+                    second_intent("intent:second", "second", NOW + 1_000),
+                    NOW + 3,
+                )
+                .unwrap_err(),
+            WorldAuthorityError::ResourceActionAlreadyPending(first.resource_id.clone())
+        );
+        assert!(matches!(
+            authority
+                .admit_action(
+                    &world_id(),
+                    second_intent("intent:after-expiry", "after-expiry", NOW + 2_000),
+                    NOW + 11,
+                )
+                .unwrap(),
+            WorldAdmission::Admitted { .. }
+        ));
     }
 
     #[test]
