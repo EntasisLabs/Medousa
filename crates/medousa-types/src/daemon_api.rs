@@ -1379,6 +1379,9 @@ pub struct TurnSurfaceContext {
     /// Telegram/TUI/ingest leave this false; Home desktop/iOS set true when browser is available.
     #[serde(default)]
     pub supports_browser_host: bool,
+    /// Exact registered browser driver instance selected for this turn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browser_driver_id: Option<String>,
 }
 
 impl TurnSurfaceContext {
@@ -1390,6 +1393,7 @@ impl TurnSurfaceContext {
             supports_ui_artifacts: false,
             supports_liquid_markdown: false,
             supports_browser_host: false,
+            browser_driver_id: None,
         }
     }
 
@@ -1401,6 +1405,7 @@ impl TurnSurfaceContext {
             supports_ui_artifacts: false,
             supports_liquid_markdown: false,
             supports_browser_host: false,
+            browser_driver_id: None,
         }
     }
 
@@ -1416,6 +1421,12 @@ impl TurnSurfaceContext {
 
     pub fn with_browser_host(mut self, enabled: bool) -> Self {
         self.supports_browser_host = enabled;
+        self
+    }
+
+    pub fn with_browser_driver(mut self, driver_id: impl Into<String>) -> Self {
+        self.supports_browser_host = true;
+        self.browser_driver_id = Some(driver_id.into());
         self
     }
 }

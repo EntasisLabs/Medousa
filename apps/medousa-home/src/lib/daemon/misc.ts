@@ -64,6 +64,7 @@ export async function registerBrowserClient(
 export async function completeBrowserSession(
   sessionId: string,
   payload: {
+    worldDriverId?: string | null;
     searchResponse?: unknown;
     error?: string | null;
   },
@@ -75,6 +76,7 @@ export async function completeBrowserSession(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        world_driver_id: payload.worldDriverId ?? null,
         search_response: payload.searchResponse ?? null,
         error: payload.error ?? null,
       }),
@@ -99,6 +101,7 @@ export interface BrowserActRequestPayload {
 
 export interface BrowserSessionRecord {
   session_id: string;
+  world_driver_id?: string | null;
   query: string;
   max_results: number;
   status: string;
@@ -107,7 +110,12 @@ export interface BrowserSessionRecord {
 
 export async function completeBrowserActSession(
   sessionId: string,
-  outcome: { ok: boolean; url?: string; error?: string | null },
+  outcome: {
+    worldDriverId?: string | null;
+    ok: boolean;
+    url?: string;
+    error?: string | null;
+  },
 ): Promise<Record<string, unknown>> {
   const base = (await getDaemonUrl()).replace(/\/$/, "");
   const response = await fetch(
@@ -116,6 +124,7 @@ export async function completeBrowserActSession(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        world_driver_id: outcome.worldDriverId ?? null,
         ok: outcome.ok,
         url: outcome.url ?? "",
         error: outcome.error ?? null,

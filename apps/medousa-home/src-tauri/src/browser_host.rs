@@ -35,6 +35,7 @@ struct BrowserSessionRecord {
 struct HealthResponse {
     ok: bool,
     version: &'static str,
+    driver_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -88,6 +89,7 @@ async fn health() -> Json<HealthResponse> {
     Json(HealthResponse {
         ok: true,
         version: env!("CARGO_PKG_VERSION"),
+        driver_id: crate::browser_driver::id().to_string(),
     })
 }
 
@@ -237,6 +239,7 @@ fn parse_control(value: &str) -> BrowserControl {
 
 async fn create_tab_group(Json(request): Json<TabGroupCreateRequest>) -> Json<TabGroup> {
     Json(TabGroupManager::create_group(
+        crate::browser_driver::id().as_str(),
         request.chat_session_id,
         request.work_card_id,
     ))
@@ -274,7 +277,7 @@ async fn navigate_tab(
     Path(tab_group_id): Path<String>,
     Json(request): Json<TabNavigateRequest>,
 ) -> Json<serde_json::Value> {
-    TabGroupManager::ensure_group(&tab_group_id);
+    TabGroupManager::ensure_group(&tab_group_id, crate::browser_driver::id().as_str());
     match TabGroupManager::navigate_active_tab(
         &tab_group_id,
         &request.url,
@@ -405,6 +408,7 @@ impl TabActStepRequest {
 
 #[derive(Debug, Deserialize)]
 struct BrowserWorldPermitWire {
+    driver_id: String,
     resource_id: String,
     expires_at_ms: u64,
     #[serde(default)]
@@ -574,6 +578,14 @@ fn validate_live_act_fence(
         }
     }
     if let Some(permit) = request.world_permit.as_ref() {
+        if permit.driver_id != group.driver_id
+            || permit.driver_id != crate::browser_driver::id().as_str()
+        {
+            return Err((
+                "world_permit_driver_mismatch".to_string(),
+                "world permit is not bound to this browser driver".to_string(),
+            ));
+        }
         if permit
             .effect_class
             .as_deref()
@@ -1054,6 +1066,11 @@ async fn screenshot_tab_group(
     if request.world_permit.resource_id != format!("browser-tab:{}", tab.id) {
         return Err("world permit is not bound to the active browser tab".to_string());
     }
+    if request.world_permit.driver_id != group.driver_id
+        || request.world_permit.driver_id != crate::browser_driver::id().as_str()
+    {
+        return Err("world permit is not bound to this browser driver".to_string());
+    }
     if request.world_permit.effect_class.as_deref() != Some("observe_pixels") {
         return Err("world permit does not authorize pixel observation".to_string());
     }
@@ -1250,6 +1267,7 @@ pub struct BrowserHostStatusDto {
     pub running: bool,
     pub healthy: bool,
     pub base_url: String,
+    pub driver_id: String,
 }
 
 #[tauri::command]
@@ -1274,6 +1292,7 @@ pub async fn browser_host_status() -> Result<BrowserHostStatusDto, String> {
         running: RUNNING.load(Ordering::SeqCst) || healthy,
         healthy,
         base_url: browser_host_base_url(),
+        driver_id: crate::browser_driver::id().to_string(),
     })
 }
 
@@ -1400,7 +1419,7 @@ pub async fn register_browser_client_with_daemon(daemon_url: &str, channel_surfa
         } else {
             browser_host_http_healthy().await
         };
-    let client_id = format!("home-{channel_surface}");
+    let client_id = crate::browser_driver::client_id(channel_surface);
     let body = serde_json::json!({
         "client_id": client_id,
         "channel_surface": channel_surface,
@@ -1409,6 +1428,11 @@ pub async fn register_browser_client_with_daemon(daemon_url: &str, channel_surfa
             Some(browser_host_base_url())
         } else {
             None::<String>
+        },
+        "world_drivers": if supports {
+            vec![crate::browser_driver::registration()]
+        } else {
+            Vec::new()
         },
     });
     let url = format!("{}/v1/clients/register", daemon_url.trim_end_matches('/'));
@@ -1442,7 +1466,11 @@ pub fn browser_bridge_create_tab_group(
     chat_session_id: Option<String>,
     work_card_id: Option<String>,
 ) -> Result<TabGroup, String> {
-    let group = TabGroupManager::create_group(chat_session_id, work_card_id);
+    let group = TabGroupManager::create_group(
+        crate::browser_driver::id().as_str(),
+        chat_session_id,
+        work_card_id,
+    );
     emit_browser_context_updated(&app, &group.id);
     Ok(group)
 }
@@ -1481,7 +1509,7 @@ pub fn browser_bridge_navigate_tab(
     opened_by: Option<String>,
     title: Option<String>,
 ) -> Result<TabGroup, String> {
-    TabGroupManager::ensure_group(&tab_group_id);
+    TabGroupManager::ensure_group(&tab_group_id, crate::browser_driver::id().as_str());
     TabGroupManager::navigate_active_tab(
         &tab_group_id,
         &url,

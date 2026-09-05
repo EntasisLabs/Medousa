@@ -522,6 +522,8 @@ pub async fn interactive_turn_send(
             supports_ui_artifacts: true,
             supports_liquid_markdown: true,
             supports_browser_host,
+            browser_driver_id: supports_browser_host
+                .then(|| crate::browser_driver::id().to_string()),
         }),
         host_context: None,
         max_tool_rounds: None,

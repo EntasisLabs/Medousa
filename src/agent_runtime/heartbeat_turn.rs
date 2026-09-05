@@ -75,6 +75,7 @@ pub fn build_heartbeat_turn_prompt(snapshot: &HeartbeatRuntimeSnapshot) -> Strin
         supports_ui_artifacts: false,
         supports_liquid_markdown: false,
         supports_browser_host: false,
+        browser_driver_id: None,
     };
     let ambient = super::ambient_context::build_ambient_context(
         super::ambient_context::AmbientContextInput {
@@ -191,6 +192,7 @@ pub async fn run_heartbeat_agent_turn(
         supports_ui_artifacts: false,
         supports_liquid_markdown: false,
         supports_browser_host: false,
+        browser_driver_id: None,
         channel_surface: Some("heartbeat".to_string()),
     };
     let execution = super::execution_context::TurnExecutionContext::from_scope(

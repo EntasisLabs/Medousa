@@ -49,6 +49,7 @@ pub async fn browser_host_search(
 
 #[derive(Debug, Clone)]
 pub struct BrowserHostWorldContext {
+    pub driver_id: String,
     pub tab_group_id: String,
     pub tab_id: String,
     pub url: String,
@@ -67,6 +68,7 @@ struct TabGroupResponse {
 #[derive(Debug, Deserialize)]
 struct TabGroupWire {
     id: String,
+    driver_id: String,
     control: String,
     tabs: Vec<TabWire>,
 }
@@ -94,6 +96,7 @@ pub async fn browser_host_current_context() -> Result<BrowserHostWorldContext, S
         .find(|tab| tab.active)
         .ok_or_else(|| "BrowserHost current tab group has no active tab".to_string())?;
     Ok(BrowserHostWorldContext {
+        driver_id: group.driver_id,
         tab_group_id: group.id,
         tab_id: tab.id,
         url: tab.url,

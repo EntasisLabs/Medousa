@@ -34,12 +34,16 @@ export async function resumeBrowserChallenge(sessionId: string): Promise<void> {
           "Verification may still be required — finish the check in the browser tab, then try again.",
         );
       }
-      await completeBrowserSession(sessionId, { searchResponse });
+      await completeBrowserSession(sessionId, {
+        worldDriverId: session.world_driver_id,
+        searchResponse,
+      });
       return;
     }
 
     const snapshot = await humanBrowserSnapshotMarkdown(4000);
     await completeBrowserSession(sessionId, {
+      worldDriverId: session.world_driver_id,
       searchResponse: {
         query,
         provider: "human_webview",

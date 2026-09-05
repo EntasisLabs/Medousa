@@ -13,6 +13,10 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use genai::chat::Tool;
+use medousa_world::{
+    WorldDriverId, WorldDriverKind, WorldDriverRegistration, WorldDriverTransport,
+    WorldSurfaceKind,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use stasis::application::orchestration::tool_registry::ToolRegistry;
@@ -20,6 +24,9 @@ use stasis::domain::errors::StasisError;
 use tokio::sync::{Notify, oneshot};
 
 const MAX_CLIENT_TOOLS: usize = 32;
+const MAX_WORLD_DRIVERS: usize = 8;
+const MAX_DRIVER_ID_CHARS: usize = 160;
+const MAX_DRIVER_DISPLAY_NAME_CHARS: usize = 120;
 const MAX_TOOL_NAME_CHARS: usize = 64;
 const MAX_DESCRIPTION_CHARS: usize = 2000;
 const CLIENT_TTL: Duration = Duration::from_secs(90);
@@ -47,6 +54,10 @@ pub struct ClientRegistration {
     pub browser_host_url: Option<String>,
     #[serde(default)]
     pub tools: Vec<ClientToolDefinition>,
+    /// Concrete world adapters offered by this exact client process. Driver
+    /// mechanics are inventory only; they never become authority grants.
+    #[serde(default)]
+    pub world_drivers: Vec<WorldDriverRegistration>,
     pub registered_at_utc: DateTime<Utc>,
     pub last_seen_at_utc: DateTime<Utc>,
 }
@@ -60,6 +71,8 @@ pub struct RegisterClientRequest {
     pub browser_host_url: Option<String>,
     #[serde(default)]
     pub tools: Vec<ClientToolDefinition>,
+    #[serde(default)]
+    pub world_drivers: Vec<WorldDriverRegistration>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -67,12 +80,15 @@ pub struct RegisterClientResponse {
     pub ok: bool,
     pub browser_host_reachable: bool,
     pub registered_tools: Vec<String>,
+    pub registered_world_drivers: Vec<WorldDriverId>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ClientToolRequest {
     pub request_id: String,
     pub client_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub world_driver_id: Option<WorldDriverId>,
     pub tool_name: String,
     pub input: Value,
     pub turn_id: String,
@@ -97,6 +113,13 @@ pub struct ClientToolResultResponse {
 pub struct RegisteredClientTool {
     pub client_id: String,
     pub definition: ClientToolDefinition,
+}
+
+#[derive(Debug, Clone)]
+pub struct RegisteredWorldDriver {
+    pub client_id: String,
+    pub channel_surface: String,
+    pub registration: WorldDriverRegistration,
 }
 
 struct PendingClientToolCall {
@@ -140,7 +163,23 @@ impl ClientRegistry {
             .collect::<Vec<_>>();
 
         let mut guard = self.state.lock().expect("client registry");
+        prune_expired(&mut guard);
         let client_id = registration.client_id.clone();
+        for driver in &registration.world_drivers {
+            let collision = guard.clients.values().any(|client| {
+                client.client_id != client_id
+                    && client
+                        .world_drivers
+                        .iter()
+                        .any(|current| current.driver_id == driver.driver_id)
+            });
+            if collision {
+                return Err(format!(
+                    "world driver id is already registered by another client: {}",
+                    driver.driver_id
+                ));
+            }
+        }
         guard.clients.insert(client_id.clone(), registration);
         guard.queues.entry(client_id).or_default();
         drop(guard);
@@ -163,6 +202,59 @@ impl ClientRegistry {
             .clients
             .values()
             .any(|entry| entry.supports_browser_host)
+    }
+
+    pub fn world_driver(&self, driver_id: &WorldDriverId) -> Option<RegisteredWorldDriver> {
+        let mut guard = self.state.lock().expect("client registry");
+        prune_expired(&mut guard);
+        guard.clients.values().find_map(|client| {
+            client
+                .world_drivers
+                .iter()
+                .find(|driver| driver.driver_id == *driver_id)
+                .cloned()
+                .map(|registration| RegisteredWorldDriver {
+                    client_id: client.client_id.clone(),
+                    channel_surface: client.channel_surface.clone(),
+                    registration,
+                })
+        })
+    }
+
+    pub fn world_drivers_for_surface(
+        &self,
+        channel_surface: Option<&str>,
+    ) -> Vec<RegisteredWorldDriver> {
+        let Some(surface) = channel_surface
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            return Vec::new();
+        };
+        let mut guard = self.state.lock().expect("client registry");
+        prune_expired(&mut guard);
+        let mut drivers = guard
+            .clients
+            .values()
+            .filter(|client| client.channel_surface == surface)
+            .flat_map(|client| {
+                client
+                    .world_drivers
+                    .iter()
+                    .cloned()
+                    .map(|registration| RegisteredWorldDriver {
+                        client_id: client.client_id.clone(),
+                        channel_surface: client.channel_surface.clone(),
+                        registration,
+                    })
+            })
+            .collect::<Vec<_>>();
+        drivers.sort_by(|left, right| {
+            left.registration
+                .driver_id
+                .cmp(&right.registration.driver_id)
+        });
+        drivers
     }
 
     pub fn touch(&self, client_id: &str) -> bool {
@@ -212,6 +304,29 @@ impl ClientRegistry {
         tools
     }
 
+    pub fn tools_for_driver(&self, driver_id: &WorldDriverId) -> Vec<RegisteredClientTool> {
+        let Some(driver) = self.world_driver(driver_id) else {
+            return Vec::new();
+        };
+        let mut guard = self.state.lock().expect("client registry");
+        prune_expired(&mut guard);
+        guard
+            .clients
+            .get(&driver.client_id)
+            .map(|client| {
+                client
+                    .tools
+                    .iter()
+                    .cloned()
+                    .map(|definition| RegisteredClientTool {
+                        client_id: client.client_id.clone(),
+                        definition,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     pub fn tool_names_for_surface(&self, channel_surface: Option<&str>) -> HashSet<String> {
         self.tools_for_surface(channel_surface)
             .into_iter()
@@ -231,10 +346,53 @@ impl ClientRegistry {
             .into_iter()
             .find(|tool| tool.definition.name == tool_name)
             .ok_or_else(|| format!("client tool not registered for surface: {tool_name}"))?;
+        self.enqueue_registered_tool_call(registered, None, tool_name, input, turn_id)
+    }
+
+    pub async fn enqueue_tool_call_for_driver(
+        &self,
+        driver_id: &WorldDriverId,
+        tool_name: &str,
+        input: Value,
+        turn_id: String,
+    ) -> Result<(ClientToolRequest, oneshot::Receiver<Result<Value, String>>), String> {
+        let driver = self
+            .world_driver(driver_id)
+            .ok_or_else(|| format!("world driver is not registered: {driver_id}"))?;
+        if driver.registration.transport != WorldDriverTransport::ClientQueue {
+            return Err(format!(
+                "world driver {driver_id} does not accept client queue requests"
+            ));
+        }
+        let registered = self
+            .tools_for_driver(driver_id)
+            .into_iter()
+            .find(|tool| tool.definition.name == tool_name)
+            .ok_or_else(|| {
+                format!("client tool not registered for world driver {driver_id}: {tool_name}")
+            })?;
+        self.enqueue_registered_tool_call(
+            registered,
+            Some(driver_id.clone()),
+            tool_name,
+            input,
+            turn_id,
+        )
+    }
+
+    fn enqueue_registered_tool_call(
+        &self,
+        registered: RegisteredClientTool,
+        world_driver_id: Option<WorldDriverId>,
+        tool_name: &str,
+        input: Value,
+        turn_id: String,
+    ) -> Result<(ClientToolRequest, oneshot::Receiver<Result<Value, String>>), String> {
         let request_id = format!("client-tool-{}", uuid::Uuid::new_v4().simple());
         let request = ClientToolRequest {
             request_id: request_id.clone(),
             client_id: registered.client_id.clone(),
+            world_driver_id,
             tool_name: tool_name.to_string(),
             input,
             turn_id,
@@ -356,17 +514,31 @@ impl ClientToolRegistry {
         }
     }
 
-    async fn turn_surface(&self) -> (Option<String>, String) {
+    async fn turn_surface(&self) -> (Option<String>, Option<WorldDriverId>, String) {
         let scope =
             crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
                 .await;
         let surface = scope
             .as_ref()
             .and_then(|scope| scope.channel_surface.clone());
+        let world_driver_id = scope
+            .as_ref()
+            .and_then(|scope| scope.browser_driver_id.clone())
+            .map(WorldDriverId::new);
         let turn_id = scope
             .map(|scope| scope.turn_correlation_id)
             .unwrap_or_else(|| "client-tool-turn".to_string());
-        (surface, turn_id)
+        (surface, world_driver_id, turn_id)
+    }
+
+    fn tools_for_turn(
+        &self,
+        surface: Option<&str>,
+        world_driver_id: Option<&WorldDriverId>,
+    ) -> Vec<RegisteredClientTool> {
+        world_driver_id
+            .map(|driver_id| self.clients.tools_for_driver(driver_id))
+            .unwrap_or_else(|| self.clients.tools_for_surface(surface))
     }
 }
 
@@ -378,8 +550,8 @@ impl ToolRegistry for ClientToolRegistry {
             .iter()
             .map(|tool| tool.name.as_ref().to_string())
             .collect::<HashSet<_>>();
-        let (surface, _) = self.turn_surface().await;
-        for registered in self.clients.tools_for_surface(surface.as_deref()) {
+        let (surface, world_driver_id, _) = self.turn_surface().await;
+        for registered in self.tools_for_turn(surface.as_deref(), world_driver_id.as_ref()) {
             if existing.contains(&registered.definition.name) {
                 tracing::warn!(
                     tool = %registered.definition.name,
@@ -409,21 +581,25 @@ impl ToolRegistry for ClientToolRegistry {
             return self.inner.invoke_tool(tool_name, input).await;
         }
 
-        let (surface, turn_id) = self.turn_surface().await;
+        let (surface, world_driver_id, turn_id) = self.turn_surface().await;
         if self
-            .clients
-            .tools_for_surface(surface.as_deref())
+            .tools_for_turn(surface.as_deref(), world_driver_id.as_ref())
             .iter()
             .all(|tool| tool.definition.name != tool_name)
         {
             return self.inner.invoke_tool(tool_name, input).await;
         }
 
-        let (request, response_rx) = self
-            .clients
-            .enqueue_tool_call(surface.as_deref(), tool_name, input, turn_id)
-            .await
-            .map_err(StasisError::PortFailure)?;
+        let (request, response_rx) = if let Some(driver_id) = world_driver_id.as_ref() {
+            self.clients
+                .enqueue_tool_call_for_driver(driver_id, tool_name, input, turn_id)
+                .await
+        } else {
+            self.clients
+                .enqueue_tool_call(surface.as_deref(), tool_name, input, turn_id)
+                .await
+        }
+        .map_err(StasisError::PortFailure)?;
         match tokio::time::timeout(TOOL_CALL_TIMEOUT, response_rx).await {
             Ok(Ok(Ok(output))) => Ok(output),
             Ok(Ok(Err(error))) => Err(StasisError::PortFailure(error)),
@@ -450,6 +626,11 @@ fn validate_registration(registration: &ClientRegistration) -> Result<(), String
     if registration.tools.len() > MAX_CLIENT_TOOLS {
         return Err(format!(
             "a client may register at most {MAX_CLIENT_TOOLS} tools"
+        ));
+    }
+    if registration.world_drivers.len() > MAX_WORLD_DRIVERS {
+        return Err(format!(
+            "a client may register at most {MAX_WORLD_DRIVERS} world drivers"
         ));
     }
     let mut names = HashSet::new();
@@ -504,6 +685,57 @@ fn validate_registration(registration: &ClientRegistration) -> Result<(), String
             ));
         }
     }
+    let mut driver_ids = HashSet::new();
+    for driver in &registration.world_drivers {
+        let driver_id = driver.driver_id.as_str();
+        let valid_id = !driver_id.is_empty()
+            && driver_id.chars().count() <= MAX_DRIVER_ID_CHARS
+            && driver_id.chars().all(|character| {
+                character.is_ascii_alphanumeric()
+                    || matches!(character, ':' | '_' | '-' | '.')
+            });
+        if !valid_id {
+            return Err(format!(
+                "invalid world driver id '{driver_id}'; use at most {MAX_DRIVER_ID_CHARS} ASCII letters, numbers, ':', '_', '-' or '.'"
+            ));
+        }
+        if !driver_ids.insert(driver.driver_id.clone()) {
+            return Err(format!("duplicate world driver id '{driver_id}'"));
+        }
+        if driver.capabilities.is_empty() {
+            return Err(format!(
+                "world driver '{driver_id}' must advertise at least one mechanical capability"
+            ));
+        }
+        if driver
+            .display_name
+            .as_deref()
+            .is_some_and(|name| name.chars().count() > MAX_DRIVER_DISPLAY_NAME_CHARS)
+        {
+            return Err(format!(
+                "world driver '{driver_id}' display name may not exceed {MAX_DRIVER_DISPLAY_NAME_CHARS} characters"
+            ));
+        }
+        if driver.surface != WorldSurfaceKind::Browser {
+            return Err(format!(
+                "client world driver '{driver_id}' must currently use the browser surface"
+            ));
+        }
+        match (driver.kind, driver.transport) {
+            (WorldDriverKind::EmbeddedBrowser, WorldDriverTransport::LoopbackHttp)
+                if registration.supports_browser_host
+                    && registration.browser_host_url.is_some() => {}
+            (
+                WorldDriverKind::BrowserExtension | WorldDriverKind::MobileBrowser,
+                WorldDriverTransport::ClientQueue,
+            ) => {}
+            _ => {
+                return Err(format!(
+                    "world driver '{driver_id}' kind and transport are not valid for client registration"
+                ));
+            }
+        }
+    }
     Ok(())
 }
 
@@ -537,25 +769,40 @@ fn prune_expired(state: &mut ClientRegistryState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use medousa_world::{WorldDriverCapability, WorldOwnership};
     use serde_json::json;
+    use std::collections::BTreeSet;
+
+    fn browser_registration(client_id: &str, driver_id: &str) -> ClientRegistration {
+        ClientRegistration {
+            client_id: client_id.to_string(),
+            channel_surface: "browser".to_string(),
+            supports_browser_host: false,
+            browser_host_url: None,
+            tools: vec![ClientToolDefinition {
+                name: "browser_page_snapshot".to_string(),
+                description: Some("read the active tab".to_string()),
+                input_schema: Some(json!({"type": "object"})),
+                output_schema: None,
+                effect_class: Some("external_read".to_string()),
+            }],
+            world_drivers: vec![WorldDriverRegistration {
+                driver_id: WorldDriverId::new(driver_id),
+                kind: WorldDriverKind::BrowserExtension,
+                surface: WorldSurfaceKind::Browser,
+                ownership: WorldOwnership::Attached,
+                transport: WorldDriverTransport::ClientQueue,
+                capabilities: BTreeSet::from([WorldDriverCapability::SemanticObservation]),
+                display_name: Some("Test browser".to_string()),
+            }],
+            registered_at_utc: Utc::now(),
+            last_seen_at_utc: Utc::now(),
+        }
+    }
 
     fn registration(registry: &ClientRegistry) {
         registry
-            .register(ClientRegistration {
-                client_id: "browser-one".to_string(),
-                channel_surface: "browser".to_string(),
-                supports_browser_host: false,
-                browser_host_url: None,
-                tools: vec![ClientToolDefinition {
-                    name: "browser_page_snapshot".to_string(),
-                    description: Some("read the active tab".to_string()),
-                    input_schema: Some(json!({"type": "object"})),
-                    output_schema: None,
-                    effect_class: Some("external_read".to_string()),
-                }],
-                registered_at_utc: Utc::now(),
-                last_seen_at_utc: Utc::now(),
-            })
+            .register(browser_registration("browser-one", "driver:browser-one"))
             .unwrap();
     }
 
@@ -592,6 +839,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn exact_driver_routing_cannot_be_clobbered_by_another_browser_client() {
+        let registry = ClientRegistry::new();
+        registration(&registry);
+        registry
+            .register(browser_registration("browser-two", "driver:browser-two"))
+            .unwrap();
+
+        let (_, response) = registry
+            .enqueue_tool_call_for_driver(
+                &WorldDriverId::new("driver:browser-one"),
+                "browser_page_snapshot",
+                json!({"include_text": true}),
+                "turn-one".to_string(),
+            )
+            .await
+            .unwrap();
+        assert!(
+            registry
+                .next_tool_request("browser-two", Duration::ZERO)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let request = registry
+            .next_tool_request("browser-one", Duration::ZERO)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            request.world_driver_id,
+            Some(WorldDriverId::new("driver:browser-one"))
+        );
+        assert!(registry.complete_tool_request(
+            "browser-one",
+            &request.request_id,
+            Ok(json!({"title": "Exact"})),
+        ));
+        assert_eq!(response.await.unwrap().unwrap()["title"], "Exact");
+    }
+
+    #[test]
+    fn rejects_driver_identity_owned_by_another_client() {
+        let registry = ClientRegistry::new();
+        registration(&registry);
+        let error = registry
+            .register(browser_registration("browser-two", "driver:browser-one"))
+            .unwrap_err();
+        assert!(error.contains("already registered by another client"));
+    }
+
+    #[tokio::test]
     async fn dynamic_registry_lists_tools_for_active_surface() {
         let clients = ClientRegistry::new();
         registration(&clients);
@@ -608,6 +906,7 @@ mod tests {
                 supports_ui_artifacts: false,
                 supports_liquid_markdown: false,
                 supports_browser_host: false,
+                browser_driver_id: Some("driver:browser-one".to_string()),
                 channel_surface: Some("browser".to_string()),
             },
         );
@@ -639,6 +938,7 @@ mod tests {
                     output_schema: None,
                     effect_class: None,
                 }],
+                world_drivers: Vec::new(),
                 registered_at_utc: Utc::now(),
                 last_seen_at_utc: Utc::now(),
             })
@@ -662,6 +962,7 @@ mod tests {
                     output_schema: None,
                     effect_class: Some("external_side_effect".to_string()),
                 }],
+                world_drivers: Vec::new(),
                 registered_at_utc: Utc::now(),
                 last_seen_at_utc: Utc::now(),
             })
@@ -686,6 +987,7 @@ mod tests {
                     output_schema: None,
                     effect_class: Some("external_read".to_string()),
                 }],
+                world_drivers: Vec::new(),
                 registered_at_utc: Utc::now(),
                 last_seen_at_utc: Utc::now(),
             })

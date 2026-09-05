@@ -323,10 +323,15 @@ fn tab_label_from_url(url: &str) -> String {
 pub struct TabGroupManager;
 
 impl TabGroupManager {
-    pub fn create_group(chat_session_id: Option<String>, work_card_id: Option<String>) -> TabGroup {
+    pub fn create_group(
+        driver_id: &str,
+        chat_session_id: Option<String>,
+        work_card_id: Option<String>,
+    ) -> TabGroup {
         let id = format!("tg-{}", Uuid::new_v4());
         let group = TabGroup {
             id: id.clone(),
+            driver_id: driver_id.trim().to_string(),
             chat_session_id,
             work_card_id,
             tabs: Vec::new(),
@@ -352,12 +357,13 @@ impl TabGroupManager {
         group
     }
 
-    pub fn ensure_group(tab_group_id: &str) -> TabGroup {
+    pub fn ensure_group(tab_group_id: &str, driver_id: &str) -> TabGroup {
         if let Some(group) = Self::get_group(tab_group_id) {
             return group;
         }
         let group = TabGroup {
             id: tab_group_id.to_string(),
+            driver_id: driver_id.trim().to_string(),
             chat_session_id: None,
             work_card_id: None,
             tabs: Vec::new(),
@@ -657,6 +663,7 @@ mod tests {
     fn group(id: &str) -> TabGroup {
         TabGroup {
             id: id.to_string(),
+            driver_id: "driver:test".to_string(),
             chat_session_id: None,
             work_card_id: None,
             tabs: Vec::new(),

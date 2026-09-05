@@ -47,6 +47,7 @@ macro_rules! string_id {
 
 string_id!(WorldId);
 string_id!(WorldAuthorityId);
+string_id!(WorldDriverId);
 string_id!(WorldPrincipalId);
 string_id!(WorldResourceId);
 string_id!(WorldGrantId);
@@ -69,6 +70,55 @@ pub enum WorldSurfaceKind {
     Application,
     Terminal,
     Composite,
+}
+
+/// Concrete adapter implementation that senses and acts on a world.
+///
+/// This is placement metadata, not authority. A registered driver can only
+/// execute capabilities admitted by the world authority.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorldDriverKind {
+    EmbeddedBrowser,
+    BrowserExtension,
+    MobileBrowser,
+    IsolatedBrowser,
+    NativeDesktop,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorldDriverTransport {
+    InProcess,
+    LoopbackHttp,
+    ClientQueue,
+    LocalSidecar,
+}
+
+/// Mechanical features offered by a driver instance. These do not grant a
+/// principal permission to use any of them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorldDriverCapability {
+    SemanticObservation,
+    PixelObservation,
+    Navigation,
+    Interaction,
+    GuardedBatch,
+    HumanTakeover,
+    PersistentProfile,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorldDriverRegistration {
+    pub driver_id: WorldDriverId,
+    pub kind: WorldDriverKind,
+    pub surface: WorldSurfaceKind,
+    pub ownership: WorldOwnership,
+    pub transport: WorldDriverTransport,
+    pub capabilities: BTreeSet<WorldDriverCapability>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -180,6 +230,7 @@ impl WorldEffectClass {
 pub struct WorldSessionSpec {
     pub world_id: WorldId,
     pub authority_id: WorldAuthorityId,
+    pub driver_id: WorldDriverId,
     pub ownership: WorldOwnership,
     pub surface: WorldSurfaceKind,
 }
@@ -204,6 +255,7 @@ pub struct WorldSession {
     pub schema_version: u16,
     pub world_id: WorldId,
     pub authority_id: WorldAuthorityId,
+    pub driver_id: WorldDriverId,
     pub ownership: WorldOwnership,
     pub surface: WorldSurfaceKind,
     pub revision: u64,
@@ -278,6 +330,7 @@ pub struct WorldActionIntent {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorldActionPermit {
     pub world_id: WorldId,
+    pub driver_id: WorldDriverId,
     pub intent_id: WorldIntentId,
     pub trace_id: WorldTraceId,
     pub principal: WorldPrincipal,
@@ -303,6 +356,7 @@ pub enum WorldActionStatus {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorldActionOutcome {
     pub world_id: WorldId,
+    pub driver_id: WorldDriverId,
     pub intent_id: WorldIntentId,
     pub trace_id: WorldTraceId,
     pub principal: WorldPrincipal,
@@ -325,6 +379,7 @@ pub enum WorldAdmission {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WorldEventKind {
     WorldCreated {
+        driver_id: WorldDriverId,
         ownership: WorldOwnership,
         surface: WorldSurfaceKind,
     },

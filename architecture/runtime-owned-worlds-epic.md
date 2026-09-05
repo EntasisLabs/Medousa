@@ -1,6 +1,6 @@
 # Runtime-owned worlds
 
-> **Status:** Active — architecture locked; Phases 1–2 plus the Phase 3 semantic/batch, macOS screenshot-artifact, and vision-hydration slices implemented locally
+> **Status:** Active — architecture locked; Phases 1–3 plus the first Phase 4 concrete-driver slice implemented locally
 >
 > **Date:** 2026-09-04
 >
@@ -539,6 +539,21 @@ Suggested commit boundary:
 
 **Outcome:** A user or runtime may choose a shared real-session browser or an
 isolated daemon-owned browser on an authorized workshop.
+
+Current local slice:
+
+- The world contract now distinguishes concrete driver identity, kind,
+  transport, ownership, and mechanical capabilities from authority grants.
+- Home desktop, Home mobile, and the browser extension advertise stable
+  process-local browser drivers. Turn admission carries the selected driver
+  through tab groups, world sessions, permits, client queues, and client-side
+  browser-session completion.
+- Exact driver routing prevents a newer client on the same surface from
+  stealing a turn's tool request. Legacy clients remain surface-routed only
+  when no driver id was supplied.
+- Approval-aware extension mutations, isolated Chromium, profile identity,
+  lifecycle controls, and destination-aware URL routing remain open in this
+  phase.
 
 Implementation:
 

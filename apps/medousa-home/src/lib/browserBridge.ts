@@ -18,6 +18,7 @@ export interface BrowserTab {
 
 export interface TabGroup {
   id: string;
+  driver_id: string;
   chat_session_id?: string | null;
   work_card_id?: string | null;
   tabs: BrowserTab[];

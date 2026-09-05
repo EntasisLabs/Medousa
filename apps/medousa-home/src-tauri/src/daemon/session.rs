@@ -890,6 +890,8 @@ pub async fn turn_create(
         supports_ui_artifacts: true,
         supports_liquid_markdown: true,
         supports_browser_host,
+        browser_driver_id: supports_browser_host
+            .then(|| crate::browser_driver::id().to_string()),
     });
 
     let body = CreateTurnTicketBody {

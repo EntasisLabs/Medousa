@@ -19,8 +19,8 @@ pub use crate::client_tools::{
 };
 
 use crate::browser_sessions::{
-    BrowserActOutcome, BrowserSessionCompleteRequest, complete_browser_act_session,
-    complete_browser_session, get_browser_session,
+    BrowserActOutcome, BrowserSessionCompleteRequest, complete_browser_act_session_for_driver,
+    complete_browser_session, complete_browser_session_for_driver, get_browser_session,
 };
 use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
@@ -33,6 +33,11 @@ pub async fn register_client(
     Json(request): Json<RegisterClientRequest>,
 ) -> Result<Json<RegisterClientResponse>, (StatusCode, String)> {
     let supports_browser_host = request.supports_browser_host;
+    let registered_world_drivers = request
+        .world_drivers
+        .iter()
+        .map(|driver| driver.driver_id.clone())
+        .collect::<Vec<_>>();
     let registered_tools = state
         .client_registry
         .register(ClientRegistration {
@@ -41,6 +46,7 @@ pub async fn register_client(
             supports_browser_host,
             browser_host_url: request.browser_host_url,
             tools: request.tools,
+            world_drivers: request.world_drivers,
             registered_at_utc: chrono::Utc::now(),
             last_seen_at_utc: chrono::Utc::now(),
         })
@@ -54,6 +60,7 @@ pub async fn register_client(
         ok: true,
         browser_host_reachable: reachable,
         registered_tools,
+        registered_world_drivers,
     }))
 }
 
@@ -109,6 +116,8 @@ pub async fn complete_client_tool_request(
 #[derive(Debug, Deserialize)]
 pub struct CompleteBrowserSessionRequest {
     #[serde(default)]
+    pub world_driver_id: Option<String>,
+    #[serde(default)]
     pub search_response: Option<SearchResponse>,
     #[serde(default)]
     pub error: Option<String>,
@@ -118,22 +127,24 @@ pub async fn complete_browser_session_handler(
     Path(session_id): Path<String>,
     Json(request): Json<CompleteBrowserSessionRequest>,
 ) -> Json<serde_json::Value> {
-    match complete_browser_session(
+    match complete_browser_session_for_driver(
         &session_id,
+        request.world_driver_id.as_deref(),
         BrowserSessionCompleteRequest {
             search_response: request.search_response,
             error: request.error,
         },
     ) {
-        Some(session) => Json(serde_json::json!({
+        Ok(Some(session)) => Json(serde_json::json!({
             "ok": true,
             "session_id": session.session_id,
             "status": session.status,
         })),
-        None => Json(serde_json::json!({
+        Ok(None) => Json(serde_json::json!({
             "ok": false,
             "error": format!("session not found: {session_id}"),
         })),
+        Err(error) => Json(serde_json::json!({ "ok": false, "error": error })),
     }
 }
 
@@ -199,6 +210,8 @@ pub async fn resume_browser_session_handler(
 
 #[derive(Debug, Deserialize)]
 pub struct CompleteBrowserActRequest {
+    #[serde(default)]
+    pub world_driver_id: Option<String>,
     pub ok: bool,
     #[serde(default)]
     pub url: String,
@@ -210,23 +223,25 @@ pub async fn complete_browser_act_handler(
     Path(session_id): Path<String>,
     Json(request): Json<CompleteBrowserActRequest>,
 ) -> Json<serde_json::Value> {
-    match complete_browser_act_session(
+    match complete_browser_act_session_for_driver(
         &session_id,
+        request.world_driver_id.as_deref(),
         BrowserActOutcome {
             ok: request.ok,
             url: request.url,
             error: request.error,
         },
     ) {
-        Some(session) => Json(serde_json::json!({
+        Ok(Some(session)) => Json(serde_json::json!({
             "ok": true,
             "session_id": session.session_id,
             "status": session.status,
         })),
-        None => Json(serde_json::json!({
+        Ok(None) => Json(serde_json::json!({
             "ok": false,
             "error": format!("session not found: {session_id}"),
         })),
+        Err(error) => Json(serde_json::json!({ "ok": false, "error": error })),
     }
 }
 

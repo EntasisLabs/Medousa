@@ -7,6 +7,7 @@ mod app_update;
 mod autostart;
 mod active_workshop;
 mod badge;
+mod browser_driver;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 mod authorized_resource;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]

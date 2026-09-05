@@ -59,5 +59,6 @@ pub struct TurnContinuationScope {
     pub supports_ui_artifacts: bool,
     pub supports_liquid_markdown: bool,
     pub supports_browser_host: bool,
+    pub browser_driver_id: Option<String>,
     pub channel_surface: Option<String>,
 }

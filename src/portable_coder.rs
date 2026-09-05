@@ -462,6 +462,7 @@ mod daemon_runner {
                 supports_ui_artifacts: false,
                 supports_liquid_markdown: false,
                 supports_browser_host: false,
+                browser_driver_id: None,
                 channel_surface: Some("portable_coder".to_string()),
             };
             let session_id = SessionId::parse(&task.parent_session_id).map_err(|error| {

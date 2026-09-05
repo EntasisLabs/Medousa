@@ -312,6 +312,7 @@ async fn capture_screenshot_artifact(
 ) -> Result<BrowserScreenshotArtifactOutput, String> {
     crate::world_authority::validate_browser_pixel_fence(
         authority_id,
+        &context.driver_id,
         &context.tab_group_id,
         &context.tab_id,
         &context.url,
@@ -320,6 +321,7 @@ async fn capture_screenshot_artifact(
     )?;
     let admission = crate::world_authority::admit_browser_pixel_observation(
         authority_id,
+        &context.driver_id,
         &context.tab_group_id,
         &context.tab_id,
         trace_id,
@@ -500,6 +502,7 @@ impl CognitionBrowserSnapshotTool {
                     .to_string();
                 let admission = crate::world_authority::admit_browser_observation(
                     &authority_id,
+                    &context.driver_id,
                     &context.tab_group_id,
                     &context.tab_id,
                     trace_id,

@@ -655,6 +655,7 @@ mod tests {
                 supports_ui_artifacts: true,
                 supports_liquid_markdown: true,
                 supports_browser_host: true,
+                browser_driver_id: None,
             }),
             host_context: None,
             max_tool_rounds: None,

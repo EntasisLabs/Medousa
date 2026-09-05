@@ -293,6 +293,16 @@ export interface CodeIntentContext {
   work_id?: string | null;
 }
 
+export interface ExecutionTargetRequirements {
+  architecture?: string | null;
+  platform?: string | null;
+  region?: string | null;
+  required_capabilities?: string[];
+  selection_key?: string | null;
+}
+
+export type ExecutionTargetSelection = { kind: "same_as_parent" } | { kind: "exact"; runtime_id: string } | { kind: "auto"; requirements?: ExecutionTargetRequirements };
+
 export interface MediaRef {
   kind: string;
   label?: string | null;
@@ -319,6 +329,7 @@ export interface StageRoutingMatrix {
 }
 
 export interface TurnSurfaceContext {
+  browser_driver_id?: string | null;
   channel_id?: string | null;
   channel_surface?: string | null;
   supports_browser_host?: boolean;
@@ -351,6 +362,7 @@ export interface InteractiveTurnRequest {
   surface?: TurnSurfaceContext | null;
   voice_appendix?: string | null;
   voice_preset_id?: string | null;
+  worker_execution_target?: ExecutionTargetSelection | null;
 }
 
 export type AgentModeScope = "session" | "task";
@@ -370,7 +382,7 @@ export interface AgentModeLeaseResponse {
   task_id: string;
 }
 
-export type AgentModeSource = "default" | "session" | "task" | "turn";
+export type AgentModeSource = "default" | "bot" | "session" | "task" | "turn";
 
 export interface SessionAgentModeResponse {
   effective_mode: AgentModeId;
@@ -425,6 +437,8 @@ export interface AgentModeProposalListResponse {
 }
 
 export interface SessionCodeBindingResponse {
+  execution_runtime_id?: string | null;
+  repo_id?: string | null;
   session_id: string;
   updated_at_utc?: string | null;
   work_id?: string | null;
@@ -529,6 +543,84 @@ export interface PromptStashListResponse {
 export interface DeletePromptStashResponse {
   deleted: boolean;
   stash_id: PromptStashId;
+}
+
+export type BotId = string;
+
+export type BotSessionKind = "primary" | "secondary";
+
+export interface BotProfile {
+  additional_manuscript_ids?: string[];
+  archived?: boolean;
+  avatar_ref?: string | null;
+  bot_id: BotId;
+  created_at: string;
+  default_mode?: AgentModeId | null;
+  display_name: string;
+  memory_scope_id: string;
+  owner_profile_id: string;
+  primary_manuscript_id: string;
+  primary_session_id?: string | null;
+  revision: number;
+  role_description?: string | null;
+  schema_version: number;
+  updated_at: string;
+}
+
+export interface BotSessionBinding {
+  bot_id: BotId;
+  bot_revision_at_bind: number;
+  created_at: string;
+  kind: BotSessionKind;
+  session_id: string;
+}
+
+export interface CreateBotRequest {
+  additional_manuscript_ids?: string[];
+  avatar_ref?: string | null;
+  default_mode?: AgentModeId | null;
+  display_name: string;
+  primary_manuscript_id: string;
+  role_description?: string | null;
+}
+
+export interface UpdateBotRequest {
+  additional_manuscript_ids?: string[];
+  avatar_ref?: string | null;
+  default_mode?: AgentModeId | null;
+  display_name: string;
+  expected_revision: number;
+  primary_manuscript_id: string;
+  role_description?: string | null;
+}
+
+export interface DuplicateBotRequest {
+  display_name?: string | null;
+}
+
+export interface SetBotArchivedRequest {
+  archived: boolean;
+  expected_revision: number;
+}
+
+export interface SetSessionBotRequest {
+  bot_id: BotId;
+  kind?: BotSessionKind;
+}
+
+export interface BotListResponse {
+  bots: BotProfile[];
+}
+
+export interface BotOpenResponse {
+  binding: BotSessionBinding;
+  bot: BotProfile;
+}
+
+export interface SessionBotResponse {
+  binding?: BotSessionBinding | null;
+  bot?: BotProfile | null;
+  session_id: string;
 }
 
 export type CodeProjectSource = "blank" | "repository";

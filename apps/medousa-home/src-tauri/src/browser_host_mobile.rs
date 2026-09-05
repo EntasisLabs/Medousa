@@ -10,15 +10,17 @@ pub struct BrowserHostStatusDto {
     pub running: bool,
     pub healthy: bool,
     pub base_url: String,
+    pub driver_id: String,
 }
 
 async fn register_browser_client_with_daemon(daemon_url: &str, channel_surface: &str) {
-    let client_id = format!("home-{channel_surface}");
+    let client_id = crate::browser_driver::client_id(channel_surface);
     let body = serde_json::json!({
         "client_id": client_id,
         "channel_surface": channel_surface,
         "supports_browser_host": true,
         "browser_host_url": null,
+        "world_drivers": [crate::browser_driver::registration()],
     });
     let url = format!("{}/v1/clients/register", daemon_url.trim_end_matches('/'));
     let Ok(client) = reqwest::Client::builder()
@@ -60,6 +62,7 @@ pub async fn browser_host_status() -> Result<BrowserHostStatusDto, String> {
         running: false,
         healthy: false,
         base_url: String::new(),
+        driver_id: crate::browser_driver::id().to_string(),
     })
 }
 

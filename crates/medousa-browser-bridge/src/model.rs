@@ -32,6 +32,8 @@ pub struct BrowserTab {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TabGroup {
     pub id: String,
+    /// Exact driver instance that owns these tab resources.
+    pub driver_id: String,
     #[serde(default)]
     pub chat_session_id: Option<String>,
     #[serde(default)]

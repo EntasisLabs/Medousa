@@ -4,9 +4,9 @@ use std::time::Instant;
 
 use medousa_world::{
     WorldActionIntent, WorldAdmission, WorldAuthority, WorldAuthorityId, WorldCapability,
-    WorldEffectClass, WorldGrantId, WorldGrantRequest, WorldId, WorldIntentId, WorldOwnership,
-    WorldPrincipal, WorldPrincipalId, WorldResourceId, WorldResourceScope, WorldSessionSpec,
-    WorldSurfaceKind, WorldTraceId,
+    WorldDriverId, WorldEffectClass, WorldGrantId, WorldGrantRequest, WorldId, WorldIntentId,
+    WorldOwnership, WorldPrincipal, WorldPrincipalId, WorldResourceId, WorldResourceScope,
+    WorldSessionSpec, WorldSurfaceKind, WorldTraceId,
 };
 
 const ITERATIONS: usize = 20_000;
@@ -22,6 +22,7 @@ fn main() {
             WorldSessionSpec {
                 world_id: world_id.clone(),
                 authority_id: WorldAuthorityId::new("workshop:benchmark"),
+                driver_id: WorldDriverId::new("driver:benchmark"),
                 ownership: WorldOwnership::Managed,
                 surface: WorldSurfaceKind::Browser,
             },

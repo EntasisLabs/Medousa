@@ -293,6 +293,16 @@ export interface CodeIntentContext {
   work_id?: string | null;
 }
 
+export interface ExecutionTargetRequirements {
+  architecture?: string | null;
+  platform?: string | null;
+  region?: string | null;
+  required_capabilities?: string[];
+  selection_key?: string | null;
+}
+
+export type ExecutionTargetSelection = { kind: "same_as_parent" } | { kind: "exact"; runtime_id: string } | { kind: "auto"; requirements?: ExecutionTargetRequirements };
+
 export interface MediaRef {
   kind: string;
   label?: string | null;
@@ -319,6 +329,7 @@ export interface StageRoutingMatrix {
 }
 
 export interface TurnSurfaceContext {
+  browser_driver_id?: string | null;
   channel_id?: string | null;
   channel_surface?: string | null;
   supports_browser_host?: boolean;
@@ -351,6 +362,7 @@ export interface InteractiveTurnRequest {
   surface?: TurnSurfaceContext | null;
   voice_appendix?: string | null;
   voice_preset_id?: string | null;
+  worker_execution_target?: ExecutionTargetSelection | null;
 }
 
 export type AgentModeScope = "session" | "task";

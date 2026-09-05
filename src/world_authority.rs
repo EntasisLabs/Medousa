@@ -10,9 +10,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use medousa_world::{
     WorldActionIntent, WorldActionOutcome, WorldActionPermit, WorldAdmission, WorldAuthority,
-    WorldAuthorityError, WorldAuthorityId, WorldCapability, WorldEffectClass, WorldGrantId,
-    WorldGrantRequest, WorldId, WorldOwnership, WorldPrincipal, WorldPrincipalId, WorldResourceId,
-    WorldResourceScope, WorldSessionSpec, WorldSurfaceKind, WorldTraceId,
+    WorldAuthorityError, WorldAuthorityId, WorldCapability, WorldDriverId, WorldEffectClass,
+    WorldGrantId, WorldGrantRequest, WorldId, WorldOwnership, WorldPrincipal, WorldPrincipalId,
+    WorldResourceId, WorldResourceScope, WorldSessionSpec, WorldSurfaceKind, WorldTraceId,
 };
 use medousa_browser_bridge::BrowserObservation;
 use serde::Serialize;
@@ -35,6 +35,7 @@ pub struct BrowserWorldAdmission {
 #[derive(Debug, Clone, Serialize)]
 pub struct BrowserWorldProvenance {
     pub world_id: WorldId,
+    pub driver_id: WorldDriverId,
     pub intent_id: medousa_world::WorldIntentId,
     pub trace_id: WorldTraceId,
     pub resource_id: WorldResourceId,
@@ -48,6 +49,7 @@ impl BrowserWorldAdmission {
     pub fn provenance(&self, outcome: Option<WorldActionOutcome>) -> BrowserWorldProvenance {
         BrowserWorldProvenance {
             world_id: self.permit.world_id.clone(),
+            driver_id: self.permit.driver_id.clone(),
             intent_id: self.permit.intent_id.clone(),
             trace_id: self.permit.trace_id.clone(),
             resource_id: self.permit.resource_id.clone(),
@@ -60,6 +62,7 @@ impl BrowserWorldAdmission {
 
 pub fn admit_browser_action(
     authority_id: &str,
+    driver_id: &str,
     tab_group_id: &str,
     tab_id: &str,
     trace_id: &str,
@@ -71,8 +74,13 @@ pub fn admit_browser_action(
     let mut authority = AUTHORITY
         .lock()
         .map_err(|_| "world authority lock poisoned".to_string())?;
-    let (world_id, agent) =
-        ensure_browser_world(&mut authority, authority_id, tab_group_id, now_ms)?;
+    let (world_id, agent) = ensure_browser_world(
+        &mut authority,
+        authority_id,
+        driver_id,
+        tab_group_id,
+        now_ms,
+    )?;
 
     let lease = authority
         .acquire_control(
@@ -112,6 +120,7 @@ pub fn admit_browser_action(
 
 pub fn admit_browser_observation(
     authority_id: &str,
+    driver_id: &str,
     tab_group_id: &str,
     tab_id: &str,
     trace_id: &str,
@@ -122,8 +131,13 @@ pub fn admit_browser_observation(
     let mut authority = AUTHORITY
         .lock()
         .map_err(|_| "world authority lock poisoned".to_string())?;
-    let (world_id, agent) =
-        ensure_browser_world(&mut authority, authority_id, tab_group_id, now_ms)?;
+    let (world_id, agent) = ensure_browser_world(
+        &mut authority,
+        authority_id,
+        driver_id,
+        tab_group_id,
+        now_ms,
+    )?;
     let state = authority.world(&world_id).map_err(|error| error.to_string())?;
     let operation_id = Uuid::new_v4().to_string();
     let intent = WorldActionIntent {
@@ -152,6 +166,7 @@ pub fn admit_browser_observation(
 
 pub fn admit_browser_pixel_observation(
     authority_id: &str,
+    driver_id: &str,
     tab_group_id: &str,
     tab_id: &str,
     trace_id: &str,
@@ -162,8 +177,13 @@ pub fn admit_browser_pixel_observation(
     let mut authority = AUTHORITY
         .lock()
         .map_err(|_| "world authority lock poisoned".to_string())?;
-    let (world_id, agent) =
-        ensure_browser_world(&mut authority, authority_id, tab_group_id, now_ms)?;
+    let (world_id, agent) = ensure_browser_world(
+        &mut authority,
+        authority_id,
+        driver_id,
+        tab_group_id,
+        now_ms,
+    )?;
     let state = authority.world(&world_id).map_err(|error| error.to_string())?;
     let operation_id = Uuid::new_v4().to_string();
     let intent = WorldActionIntent {
@@ -193,10 +213,11 @@ pub fn admit_browser_pixel_observation(
 fn ensure_browser_world(
     authority: &mut WorldAuthority,
     authority_id: &str,
+    driver_id: &str,
     tab_group_id: &str,
     now_ms: u64,
 ) -> Result<(WorldId, WorldPrincipal), String> {
-    let world_id = browser_world_id(authority_id, tab_group_id);
+    let world_id = browser_world_id(authority_id, driver_id, tab_group_id);
     let system = WorldPrincipal::system(WorldPrincipalId::new(format!(
         "runtime:{authority_id}"
     )));
@@ -210,6 +231,7 @@ fn ensure_browser_world(
                 WorldSessionSpec {
                     world_id: world_id.clone(),
                     authority_id: WorldAuthorityId::new(authority_id),
+                    driver_id: WorldDriverId::new(driver_id),
                     ownership: WorldOwnership::Managed,
                     surface: WorldSurfaceKind::Browser,
                 },
@@ -314,13 +336,14 @@ pub fn record_browser_observation(
 
 pub fn validate_browser_pixel_fence(
     authority_id: &str,
+    driver_id: &str,
     tab_group_id: &str,
     tab_id: &str,
     expected_url: &str,
     document_id: &str,
     observation_revision: u64,
 ) -> Result<(), String> {
-    let world_id = browser_world_id(authority_id, tab_group_id);
+    let world_id = browser_world_id(authority_id, driver_id, tab_group_id);
     let mirrors = BROWSER_OBSERVATIONS
         .lock()
         .map_err(|_| "browser observation mirror lock poisoned".to_string())?;
@@ -339,6 +362,7 @@ pub fn validate_browser_pixel_fence(
 
 pub struct BrowserElementRefFence<'a> {
     pub authority_id: &'a str,
+    pub driver_id: &'a str,
     pub tab_group_id: &'a str,
     pub tab_id: &'a str,
     pub expected_url: &'a str,
@@ -349,7 +373,7 @@ pub struct BrowserElementRefFence<'a> {
 }
 
 pub fn validate_browser_element_refs(fence: BrowserElementRefFence<'_>) -> Result<(), String> {
-    let world_id = browser_world_id(fence.authority_id, fence.tab_group_id);
+    let world_id = browser_world_id(fence.authority_id, fence.driver_id, fence.tab_group_id);
     let mirrors = BROWSER_OBSERVATIONS
         .lock()
         .map_err(|_| "browser observation mirror lock poisoned".to_string())?;
@@ -461,8 +485,10 @@ fn merge_browser_observation(
     Ok(())
 }
 
-fn browser_world_id(authority_id: &str, tab_group_id: &str) -> WorldId {
-    WorldId::new(format!("world:browser:{authority_id}:{tab_group_id}"))
+fn browser_world_id(authority_id: &str, driver_id: &str, tab_group_id: &str) -> WorldId {
+    WorldId::new(format!(
+        "world:browser:{authority_id}:{driver_id}:{tab_group_id}"
+    ))
 }
 
 fn now_ms() -> u64 {
@@ -530,12 +556,16 @@ mod tests {
     #[test]
     fn browser_world_identity_is_bound_to_authority_and_tab_group() {
         assert_ne!(
-            browser_world_id("workshop:a", "group:one"),
-            browser_world_id("workshop:b", "group:one")
+            browser_world_id("workshop:a", "driver:one", "group:one"),
+            browser_world_id("workshop:b", "driver:one", "group:one")
         );
         assert_ne!(
-            browser_world_id("workshop:a", "group:one"),
-            browser_world_id("workshop:a", "group:two")
+            browser_world_id("workshop:a", "driver:one", "group:one"),
+            browser_world_id("workshop:a", "driver:one", "group:two")
+        );
+        assert_ne!(
+            browser_world_id("workshop:a", "driver:one", "group:one"),
+            browser_world_id("workshop:a", "driver:two", "group:one")
         );
     }
 
@@ -597,6 +627,7 @@ mod tests {
     #[test]
     fn browser_element_refs_are_resolved_against_the_daemon_mirror() {
         let authority_id = "workshop:semantic-test";
+        let driver_id = "driver:semantic-test";
         let tab_group_id = "group:semantic-test";
         let mut observed = observation(
             "doc-one",
@@ -611,12 +642,13 @@ mod tests {
             .lock()
             .expect("browser observations")
             .insert(
-                browser_world_id(authority_id, tab_group_id),
+                browser_world_id(authority_id, driver_id, tab_group_id),
                 observed,
             );
 
         validate_browser_element_refs(BrowserElementRefFence {
             authority_id,
+            driver_id,
             tab_group_id,
             tab_id: "tab-one",
             expected_url: "https://example.test",
@@ -628,6 +660,7 @@ mod tests {
         .expect("known ref should pass");
         let error = validate_browser_element_refs(BrowserElementRefFence {
             authority_id,
+            driver_id,
             tab_group_id,
             tab_id: "tab-one",
             expected_url: "https://example.test",
@@ -643,12 +676,13 @@ mod tests {
     #[test]
     fn browser_element_semantics_require_explicit_high_risk_authority() {
         let authority_id = "workshop:risk-test";
+        let driver_id = "driver:risk-test";
         let tab_group_id = "group:risk-test";
         BROWSER_OBSERVATIONS
             .lock()
             .expect("browser observations")
             .insert(
-                browser_world_id(authority_id, tab_group_id),
+                browser_world_id(authority_id, driver_id, tab_group_id),
                 observation(
                     "doc-one",
                     1,
@@ -662,6 +696,7 @@ mod tests {
         let targets = [("click".to_string(), "ref-delete".to_string())];
         let error = validate_browser_element_refs(BrowserElementRefFence {
             authority_id,
+            driver_id,
             tab_group_id,
             tab_id: "tab-one",
             expected_url: "https://example.test",
@@ -674,6 +709,7 @@ mod tests {
         assert!(error.contains("high-risk authorization"));
         validate_browser_element_refs(BrowserElementRefFence {
             authority_id,
+            driver_id,
             tab_group_id,
             tab_id: "tab-one",
             expected_url: "https://example.test",

@@ -716,6 +716,7 @@ mod tests {
                 supports_ui_artifacts: supports,
                 supports_liquid_markdown: supports,
                 supports_browser_host: false,
+                browser_driver_id: None,
                 channel_surface: Some("home-desktop".to_string()),
             },
         )

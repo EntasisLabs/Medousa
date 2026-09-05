@@ -18,6 +18,8 @@ pub enum WorldAuthorityError {
     EmptyWorldId,
     #[error("world already exists: {0}")]
     WorldAlreadyExists(WorldId),
+    #[error("world driver id is required")]
+    EmptyDriverId,
     #[error("world not found: {0}")]
     WorldNotFound(WorldId),
     #[error("principal id is required")]
@@ -127,6 +129,9 @@ impl WorldAuthority {
         now_ms: u64,
     ) -> Result<WorldSession, WorldAuthorityError> {
         validate_world_id(&spec.world_id)?;
+        if spec.driver_id.is_empty() {
+            return Err(WorldAuthorityError::EmptyDriverId);
+        }
         validate_principal(&created_by)?;
         if self.worlds.contains_key(&spec.world_id) {
             return Err(WorldAuthorityError::WorldAlreadyExists(spec.world_id));
@@ -136,6 +141,7 @@ impl WorldAuthority {
             schema_version: WORLD_SCHEMA_VERSION,
             world_id: spec.world_id.clone(),
             authority_id: spec.authority_id,
+            driver_id: spec.driver_id.clone(),
             ownership: spec.ownership,
             surface: spec.surface,
             revision: 0,
@@ -169,6 +175,7 @@ impl WorldAuthority {
             None,
             None,
             WorldEventKind::WorldCreated {
+                driver_id: spec.driver_id,
                 ownership: spec.ownership,
                 surface: spec.surface,
             },
@@ -508,6 +515,7 @@ impl WorldAuthority {
         let next_sequence = record.next_event_sequence;
         let permit = WorldActionPermit {
             world_id: world_id.clone(),
+            driver_id: record.state.driver_id.clone(),
             intent_id: intent.intent_id.clone(),
             trace_id: intent.trace_id.clone(),
             principal: intent.principal.clone(),
@@ -671,6 +679,7 @@ impl WorldAuthority {
         let event_sequence = record.next_event_sequence;
         let outcome = WorldActionOutcome {
             world_id: permit.world_id.clone(),
+            driver_id: permit.driver_id.clone(),
             intent_id: permit.intent_id.clone(),
             trace_id: permit.trace_id.clone(),
             principal: permit.principal.clone(),
@@ -853,8 +862,8 @@ fn take_matching_permit(
 mod tests {
     use super::*;
     use crate::model::{
-        WorldAuthorityId, WorldEffectClass, WorldOwnership, WorldPrincipalId, WorldSurfaceKind,
-        WorldTraceId,
+        WorldAuthorityId, WorldDriverId, WorldEffectClass, WorldOwnership, WorldPrincipalId,
+        WorldSurfaceKind, WorldTraceId,
     };
 
     const NOW: u64 = 1_000;
@@ -877,6 +886,7 @@ mod tests {
                 WorldSessionSpec {
                     world_id: world_id(),
                     authority_id: WorldAuthorityId::new("workshop:test"),
+                    driver_id: WorldDriverId::new("driver:test"),
                     ownership: WorldOwnership::Managed,
                     surface: WorldSurfaceKind::Browser,
                 },

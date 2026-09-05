@@ -663,6 +663,7 @@ impl CognitionBrowserActTool {
             crate::world_authority::validate_browser_element_refs(
                 crate::world_authority::BrowserElementRefFence {
                     authority_id: &authority_id,
+                    driver_id: &browser_context.driver_id,
                     tab_group_id: &browser_context.tab_group_id,
                     tab_id: &browser_context.tab_id,
                     expected_url: &browser_context.url,
@@ -685,6 +686,7 @@ impl CognitionBrowserActTool {
             .unwrap_or("browser-action");
         let admission = crate::world_authority::admit_browser_action(
             &authority_id,
+            &browser_context.driver_id,
             &browser_context.tab_group_id,
             &browser_context.tab_id,
             trace_id,
@@ -828,6 +830,7 @@ impl CognitionBrowserActTool {
         let session = create_browser_session(BrowserSessionCreateRequest {
             turn_id: scope.turn_correlation_id.clone(),
             chat_session_id: scope.session_id.clone(),
+            world_driver_id: scope.browser_driver_id.clone(),
             query: String::new(),
             max_results: 0,
             client_executed: true,
