@@ -227,6 +227,7 @@ pub fn load_legacy_keyring(service: &str, account: &str) -> Result<Option<String
             }
         }
         Err(keyring::Error::NoEntry) => Ok(None),
+        Err(error) if platform_keyring_backend_unavailable(&error) => Ok(None),
         Err(error) => Err(error).context("read legacy keyring entry"),
     }
 }
@@ -242,6 +243,7 @@ pub fn delete_legacy_keyring(service: &str, account: &str) -> Result<()> {
     };
     match entry.delete_password() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(error) if platform_keyring_backend_unavailable(&error) => Ok(()),
         Err(error) => Err(error).context("delete legacy keyring entry"),
     }
 }
@@ -273,12 +275,25 @@ fn load_secret(
     account: &str,
     storage_key: &str,
 ) -> Result<Option<SecretRead>> {
-    if let Some(value) = read_keyring(service, account)? {
-        return Ok(Some(SecretRead {
-            value,
-            backend: SecretBackend::Keyring,
-        }));
-    }
+    let keyring_read = read_keyring(service, account);
+    load_secret_with_keyring_read(data_dir, storage_key, keyring_read)
+}
+
+fn load_secret_with_keyring_read(
+    data_dir: &Path,
+    storage_key: &str,
+    keyring_read: Result<Option<String>>,
+) -> Result<Option<SecretRead>> {
+    let keyring_error = match keyring_read {
+        Ok(Some(value)) => {
+            return Ok(Some(SecretRead {
+                value,
+                backend: SecretBackend::Keyring,
+            }));
+        }
+        Ok(None) => None,
+        Err(error) => Some(error),
+    };
     let file_path = secret_file_path(data_dir, storage_key);
     if let Some(value) = load_legacy_file(&file_path)? {
         return Ok(Some(SecretRead {
@@ -286,7 +301,11 @@ fn load_secret(
             backend: SecretBackend::FileFallback,
         }));
     }
-    Ok(None)
+    match keyring_error {
+        Some(error) if platform_keyring_read_unavailable(&error) => Ok(None),
+        Some(error) => Err(error),
+        None => Ok(None),
+    }
 }
 
 fn save_secret(
@@ -303,10 +322,14 @@ fn save_secret(
     // Some hosts accept a keyring write that is not readable afterward (denied
     // ACL, mangled account). Only claim Keyring after a successful read-back.
     if write_keyring(service, account, trimmed).is_ok()
-        && read_keyring(service, account)?.as_deref() == Some(trimmed)
+        && let Ok(Some(mut stored)) = read_keyring(service, account)
     {
-        let _ = delete_legacy_file(&secret_file_path(data_dir, storage_key));
-        return Ok(SecretBackend::Keyring);
+        let matches = stored == trimmed;
+        stored.zeroize();
+        if matches {
+            let _ = delete_legacy_file(&secret_file_path(data_dir, storage_key));
+            return Ok(SecretBackend::Keyring);
+        }
     }
     let secrets_dir = data_dir.join(SECRETS_DIR);
     create_private_dir(&secrets_dir)?;
@@ -354,6 +377,27 @@ fn read_keyring(service: &str, account: &str) -> Result<Option<String>> {
         }
         Err(keyring::Error::NoEntry) => Ok(None),
         Err(error) => Err(error).context("read keyring entry"),
+    }
+}
+
+fn platform_keyring_read_unavailable(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<keyring::Error>()
+        .is_some_and(platform_keyring_backend_unavailable)
+}
+
+fn platform_keyring_backend_unavailable(error: &keyring::Error) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        // The Linux keyring backend reports a missing Secret Service, session
+        // bus, or otherwise unusable provider as PlatformFailure. Those hosts
+        // are exactly what the owner-only file backend exists to support.
+        matches!(error, keyring::Error::PlatformFailure(_))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = error;
+        false
     }
 }
 
@@ -431,6 +475,14 @@ mod tests {
     use super::*;
     use medousa_types::secrets::{ConnectionId, IntegrationSecretSlot};
 
+    #[cfg(target_os = "linux")]
+    fn unavailable_secret_service_error() -> anyhow::Error {
+        anyhow::Error::new(keyring::Error::PlatformFailure(Box::new(
+            std::io::Error::other("org.freedesktop.DBus.Error.ServiceUnknown"),
+        )))
+        .context("read keyring entry")
+    }
+
     #[test]
     fn installation_id_persists() {
         let dir = tempfile::tempdir().unwrap();
@@ -451,6 +503,52 @@ mod tests {
         assert!(secret_migration_completed(dir.path(), "daemon-legacy-v1").unwrap());
         assert!(!secret_migration_completed(dir.path(), "home-legacy-v1").unwrap());
         assert!(secret_migration_completed(dir.path(), "../escape").is_err());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn unavailable_secret_service_uses_owner_only_file_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        let storage_key = "headless-linux-secret";
+        let fallback = secret_file_path(dir.path(), storage_key);
+        create_private_dir(fallback.parent().unwrap()).unwrap();
+        replace_private_file(&fallback, b"stored-secret").unwrap();
+
+        let loaded = load_secret_with_keyring_read(
+            dir.path(),
+            storage_key,
+            Err(unavailable_secret_service_error()),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(loaded.value, "stored-secret");
+        assert_eq!(loaded.backend, SecretBackend::FileFallback);
+
+        fs::remove_file(&fallback).unwrap();
+        let missing = load_secret_with_keyring_read(
+            dir.path(),
+            storage_key,
+            Err(unavailable_secret_service_error()),
+        )
+        .unwrap();
+        assert!(missing.is_none());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn locked_secret_service_without_fallback_still_fails_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = load_secret_with_keyring_read(
+            dir.path(),
+            "locked-linux-secret",
+            Err(anyhow::Error::new(keyring::Error::NoStorageAccess(
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "keyring is locked",
+                )),
+            ))),
+        );
+        assert!(result.is_err());
     }
 
     #[test]

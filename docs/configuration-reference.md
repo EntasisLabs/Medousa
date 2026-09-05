@@ -82,7 +82,9 @@ OS Keychain: Medousa uses two services —
 `com.entasislabs.medousa.secrets.client` (pairing session tokens). On first
 write after upgrade, expect **two** Keychain prompts, then silence. Legacy
 services such as `medousa.providers` / `medousa.discord` are migrated and
-deleted on daemon start.
+deleted on daemon start. On Linux hosts without an activatable Secret Service,
+Medousa automatically uses owner-only files under the data directory instead;
+the secrets directory is mode `0700` and each secret file is mode `0600`.
 
 **Tauri app (desktop dev):**
 
