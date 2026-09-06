@@ -317,6 +317,10 @@ pub struct TaskExecutionGrant {
     pub requested_tool_names: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub effective_tool_names: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requested_world_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effective_world_ids: Vec<String>,
     pub network_policy: PeerNetworkPolicy,
     pub issued_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
@@ -376,6 +380,7 @@ pub struct AssistantWorkAdmission<'a> {
     pub project_id: Option<&'a str>,
     pub requested_tool_domains: &'a [&'a str],
     pub requested_tool_names: &'a [&'a str],
+    pub requested_world_ids: &'a [&'a str],
     pub request_expires_at: DateTime<Utc>,
     pub legacy_task_request_granted: bool,
 }
@@ -711,6 +716,8 @@ impl PeerExecutionPolicyStore {
                     .iter()
                     .map(|value| (*value).to_string())
                     .collect(),
+                requested_world_ids: Vec::new(),
+                effective_world_ids: Vec::new(),
                 network_policy: admission.requested_network_policy,
                 issued_at: admission.request_issued_at,
                 expires_at,
@@ -1047,6 +1054,17 @@ fn evaluate_assistant_work(
         .filter(|name| effective.contains(execution_tool_domain(name.as_str())))
         .cloned()
         .collect::<Vec<_>>();
+    let requested_world_ids = admission
+        .requested_world_ids
+        .iter()
+        .map(|world_id| (*world_id).to_string())
+        .collect::<Vec<_>>();
+    if crate::turn_scope::validate_world_ids(&requested_world_ids).is_err()
+        || (!requested_world_ids.is_empty() && !effective.contains("world"))
+    {
+        return Err(PeerExecutionDenialReason::ToolDomainDenied);
+    }
+    let effective_world_ids = requested_world_ids.clone();
     let expires_at = policy
         .expires_at
         .map(|policy_expiry| policy_expiry.min(admission.request_expires_at))
@@ -1074,6 +1092,8 @@ fn evaluate_assistant_work(
         effective_tool_domains: effective.into_iter().collect(),
         requested_tool_names: requested_tool_names.into_iter().collect(),
         effective_tool_names,
+        requested_world_ids,
+        effective_world_ids,
         network_policy: policy.network_policy,
         issued_at: now,
         expires_at,
@@ -1209,6 +1229,7 @@ mod tests {
             project_id: None,
             requested_tool_domains: &SAFE_ASSISTANT_TOOL_DOMAINS,
             requested_tool_names: &TEST_ASSISTANT_TOOL_NAMES,
+            requested_world_ids: &[],
             request_expires_at: Utc::now() + chrono::Duration::minutes(5),
             legacy_task_request_granted: false,
         }
@@ -1232,6 +1253,7 @@ mod tests {
             project_id: Some(project),
             requested_tool_domains: &TEST_CODER_TOOL_DOMAINS,
             requested_tool_names: &TEST_CODER_TOOL_NAMES,
+            requested_world_ids: &[],
             request_expires_at: Utc::now() + chrono::Duration::minutes(5),
             legacy_task_request_granted: false,
         }
@@ -1586,6 +1608,7 @@ mod tests {
             .expect("save world policy");
         let requested_domains = ["turn", "world"];
         let requested_tools = ["cognition_turn", "cognition_computer_snapshot"];
+        let requested_world_ids = ["world:computer:test"];
         let grant = store
             .admit_assistant_work(AssistantWorkAdmission {
                 peer_device_id: "peer-a",
@@ -1600,12 +1623,14 @@ mod tests {
                 project_id: None,
                 requested_tool_domains: &requested_domains,
                 requested_tool_names: &requested_tools,
+                requested_world_ids: &requested_world_ids,
                 request_expires_at: Utc::now() + chrono::Duration::minutes(5),
                 legacy_task_request_granted: false,
             })
             .expect("evaluate world policy")
             .expect("admit world tools");
         assert!(grant.effective_tool_domains.contains(&"world".to_string()));
+        assert_eq!(grant.effective_world_ids, ["world:computer:test"]);
         assert!(
             grant
                 .effective_tool_names

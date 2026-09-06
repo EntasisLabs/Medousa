@@ -520,6 +520,7 @@ impl WorkshopExecutionTarget for LocalWorkshopExecution {
                 stage_role: CompatOption::from(input.stage_role),
                 model_hint: CompatOption::from(input.model_hint),
                 execution_target: CompatOption::from(input.execution_target),
+                world_ids: input.world_ids,
             })
             .await?;
         serialize_output(CognitionSpawnTurnWorkerTool::tool_id(), output)
@@ -700,6 +701,7 @@ mod tests {
             stage_role: None,
             model_hint: None,
             execution_target: target,
+            world_ids: Vec::new(),
         }
     }
 
@@ -859,6 +861,7 @@ mod tests {
             supports_liquid_markdown: false,
             supports_browser_host: false,
             browser_driver_id: None,
+            selected_worlds: Vec::new(),
             channel_surface: None,
         };
         let context = TurnExecutionContext::new(

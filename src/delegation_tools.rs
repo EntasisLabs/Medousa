@@ -139,6 +139,12 @@ fn compile_remote_worker_spec(
         .and_then(|value| value.max_tool_rounds)
         .unwrap_or_else(|| crate::agent_runtime::turn_worker::max_worker_tool_rounds(intent))
         .max(1);
+    let world_ids = crate::turn_scope::resolve_requested_world_ids(
+        &spawn.world_ids,
+        &parent_scope.selected_worlds,
+        &resolution.resolved_runtime_id,
+    )
+    .map_err(worker_error)?;
     let code_binding =
         crate::agent_mode_state::get_session_code_binding(execution.session_id().as_str()).ok();
     let code_work_id = code_binding
@@ -199,6 +205,7 @@ fn compile_remote_worker_spec(
         },
         code_project,
         execution_placement: resolution.clone(),
+        world_ids,
         max_tool_rounds,
         tools: WorkerToolRequest { names: tool_names },
     })

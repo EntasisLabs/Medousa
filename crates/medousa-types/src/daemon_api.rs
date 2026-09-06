@@ -1357,6 +1357,18 @@ pub struct RuntimeConfigCommandResponse {
     pub should_persist_reasoning_defaults: bool,
 }
 
+/// One user-selected world and the workshop that currently owns it.
+///
+/// Clients carry placement only to the daemon admission boundary. Agent and
+/// worker prompts receive the opaque `world_id` alone; driver and transport
+/// details never enter model-authored requests.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct TurnWorldSelection {
+    pub world_id: String,
+    pub execution_runtime_id: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct TurnSurfaceContext {
@@ -1382,6 +1394,10 @@ pub struct TurnSurfaceContext {
     /// Exact registered browser driver instance selected for this turn.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub browser_driver_id: Option<String>,
+    /// Exact worlds selected by the user for this turn. The daemon validates,
+    /// bounds, and freezes these bindings before any model or worker runs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub selected_worlds: Vec<TurnWorldSelection>,
 }
 
 impl TurnSurfaceContext {
@@ -1394,6 +1410,7 @@ impl TurnSurfaceContext {
             supports_liquid_markdown: false,
             supports_browser_host: false,
             browser_driver_id: None,
+            selected_worlds: Vec::new(),
         }
     }
 
@@ -1406,6 +1423,7 @@ impl TurnSurfaceContext {
             supports_liquid_markdown: false,
             supports_browser_host: false,
             browser_driver_id: None,
+            selected_worlds: Vec::new(),
         }
     }
 

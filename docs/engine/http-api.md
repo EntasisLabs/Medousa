@@ -397,6 +397,13 @@ back to a shared browser if that instance is unavailable. A detached view does
 not stop execution. After daemon restart, previously active worlds recover as
 `stopped` and require `resume`.
 
+To make a resolved world eligible for a Bot or worker, an authenticated client
+may also include it in `InteractiveTurnRequest.surface.selected_worlds` as an
+exact `{ world_id, execution_runtime_id }` binding. Admission bounds,
+normalizes, and freezes the list. Models see and request only opaque world ids;
+the daemon keeps placement and rejects ids outside the admitted set or assigned
+to another runtime.
+
 ---
 
 ## Native computer drivers

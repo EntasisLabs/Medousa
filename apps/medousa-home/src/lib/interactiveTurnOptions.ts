@@ -12,6 +12,9 @@ export function buildInteractiveTurnOptions(): InteractiveTurnOptions {
     reasoningEffort: runtime.reasoningEffort,
     channelSurface,
     browserDriverId: governedBrowser.turnBrowserDriverId ?? undefined,
+    selectedWorlds: governedBrowser.turnWorldSelection
+      ? [governedBrowser.turnWorldSelection]
+      : undefined,
     identityUserId: userProfiles.turnIdentityUserId(),
   };
 

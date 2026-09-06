@@ -7115,6 +7115,13 @@
               "null"
             ]
           },
+          "selected_worlds": {
+            "description": "Exact worlds selected by the user for this turn. The daemon validates, bounds, and freezes these bindings before any model or worker runs.",
+            "items": {
+              "$ref": "#/components/schemas/TurnWorldSelection"
+            },
+            "type": "array"
+          },
           "supports_browser_host": {
             "default": false,
             "description": "When true, the connected client can run Agent Browser (local BrowserHost or client WebView). Telegram/TUI/ingest leave this false; Home desktop/iOS set true when browser is available.",
@@ -7138,6 +7145,22 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "TurnWorldSelection": {
+        "description": "One user-selected world and the workshop that currently owns it.\n\nClients carry placement only to the daemon admission boundary. Agent and worker prompts receive the opaque `world_id` alone; driver and transport details never enter model-authored requests.",
+        "properties": {
+          "execution_runtime_id": {
+            "type": "string"
+          },
+          "world_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "execution_runtime_id",
+          "world_id"
+        ],
         "type": "object"
       },
       "UiPresentation": {

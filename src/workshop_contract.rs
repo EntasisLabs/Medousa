@@ -474,6 +474,10 @@ pub struct WorkshopSpawn {
     /// Optional execution placement. Omitted means same as the parent turn.
     #[serde(default)]
     pub(crate) execution_target: Option<ExecutionTargetSelection>,
+    /// Optional subset of opaque world ids from MEDOUSA_ELIGIBLE_WORLDS. The
+    /// daemon resolves them against exact worker placement before spawning.
+    #[serde(default)]
+    pub(crate) world_ids: Vec<String>,
 }
 
 pub fn workshop_spawn_type_schema() -> TypedActionSchema {
@@ -516,6 +520,18 @@ mod tests {
         }))
         .expect("spawn");
         assert!(spawn.execution_target.is_none());
+        assert!(spawn.world_ids.is_empty());
+    }
+
+    #[test]
+    fn spawn_accepts_only_opaque_world_identifiers() {
+        let spawn: WorkshopSpawn = serde_json::from_value(serde_json::json!({
+            "task": "research",
+            "user_ack": "On it",
+            "world_ids": ["world:browser:research"]
+        }))
+        .expect("spawn");
+        assert_eq!(spawn.world_ids, ["world:browser:research"]);
     }
 
     #[test]

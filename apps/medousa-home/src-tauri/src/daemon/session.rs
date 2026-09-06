@@ -8,7 +8,7 @@ use crate::daemon::types::{
     SessionCodeProjectResponse, SessionDeleteQuery, SessionDeleteResponse,
     SessionHistoryListResponse, SessionHistoryResponse, SessionSetDisplayNameResponse,
     SetSessionAgentModeRequest, StageRoutingMatrix, StartSessionCodeProjectRequest,
-    TurnSurfaceContext,
+    TurnSurfaceContext, TurnWorldSelection,
 };
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -743,6 +743,7 @@ pub async fn turn_create(
     stage_routing: Option<StageRoutingMatrix>,
     channel_surface: Option<String>,
     browser_driver_id: Option<String>,
+    selected_worlds: Option<Vec<TurnWorldSelection>>,
     media_refs: Option<Vec<MediaRef>>,
     voice_preset_id: Option<String>,
     voice_appendix: Option<String>,
@@ -806,6 +807,7 @@ pub async fn turn_create(
         browser_driver_id: browser_driver_id.or_else(|| {
             supports_browser_host.then(|| crate::browser_driver::id().to_string())
         }),
+        selected_worlds: selected_worlds.unwrap_or_default(),
     };
     #[cfg(any(target_os = "ios", target_os = "android"))]
     if let Some(client) = _embedded_state

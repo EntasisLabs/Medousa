@@ -221,6 +221,10 @@ pub struct WorkerSpawnSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code_project: Option<WorkerCodeProjectRef>,
     pub execution_placement: ExecutionPlacementResolution,
+    /// Opaque world identities admitted for this worker. Placement and driver
+    /// details are intentionally held outside this model-authored contract.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub world_ids: Vec<String>,
     pub max_tool_rounds: usize,
     pub tools: WorkerToolRequest,
 }
@@ -545,6 +549,9 @@ pub fn validate_worker_spawn_spec(spec: &WorkerSpawnSpec) -> Result<(), Delegate
             "delegated worker tool-round budget must be between 1 and 128",
         ));
     }
+    crate::turn_scope::validate_world_ids(&spec.world_ids).map_err(|error| {
+        DelegatedTaskError::invalid(format!("delegated worker world scope is invalid: {error}"))
+    })?;
     if spec.manuscript_ids.len() > 8 {
         return Err(DelegatedTaskError::invalid(
             "delegated worker carries too many manuscript ids",
@@ -1164,6 +1171,17 @@ fn validate_task_execution_grant(
             .effective_tool_names
             .iter()
             .any(|name| !grant.requested_tool_names.contains(name))
+        || grant
+            .effective_world_ids
+            .iter()
+            .any(|world_id| !grant.requested_world_ids.contains(world_id))
+        || crate::turn_scope::validate_world_ids(&grant.requested_world_ids).is_err()
+        || crate::turn_scope::validate_world_ids(&grant.effective_world_ids).is_err()
+        || (!grant.effective_world_ids.is_empty()
+            && !grant
+                .effective_tool_domains
+                .iter()
+                .any(|domain| domain == "world"))
         || grant.effective_tool_names.iter().any(|name| {
             !grant
                 .effective_tool_domains
@@ -1184,6 +1202,8 @@ fn validate_task_execution_grant(
         && (grant.worker_intent != worker.intent
             || grant.bot_id.as_deref() != worker.parent.bot.as_ref().map(|bot| bot.bot_id.as_str())
             || grant.requested_tool_names != worker.tools.names
+            || grant.requested_world_ids != worker.world_ids
+            || grant.effective_world_ids != worker.world_ids
             || grant
                 .effective_tool_names
                 .iter()
@@ -1396,6 +1416,7 @@ mod tests {
             },
             code_project: None,
             execution_placement: request.execution_placement.clone(),
+            world_ids: Vec::new(),
             max_tool_rounds: 10,
             tools: WorkerToolRequest {
                 names: vec![

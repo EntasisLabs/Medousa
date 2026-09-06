@@ -131,6 +131,9 @@ pub struct PrepareTurnPromptParams<'a> {
     pub additional_manuscript_ids: Option<&'a [String]>,
     /// Immutable Bot identity/job snapshot captured at turn admission.
     pub bot_profile_appendix: Option<&'a str>,
+    /// Model-safe opaque world identities selected by the operator. Runtime
+    /// placement remains outside the prompt.
+    pub world_prompt_appendix: Option<&'a str>,
     pub suggested_capability_ids: Option<&'a [String]>,
     pub voice_preset_id: Option<&'a str>,
     pub voice_appendix: Option<&'a str>,
@@ -196,6 +199,13 @@ pub async fn prepare_turn_prompt(params: PrepareTurnPromptParams<'_>) -> Prepare
         .filter(|value| !value.is_empty())
     {
         resolved_prompt = format!("{resolved_prompt}\n\n{bot_profile_appendix}");
+    }
+    if let Some(world_prompt_appendix) = params
+        .world_prompt_appendix
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        resolved_prompt = format!("{resolved_prompt}\n\n{world_prompt_appendix}");
     }
     if let Some(ids) = params.suggested_capability_ids {
         resolved_prompt = append_suggested_capabilities_hint(&resolved_prompt, ids);
@@ -975,6 +985,10 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
         supports_ui_artifacts,
         supports_liquid_markdown,
         supports_browser_host,
+        selected_worlds: scope_snapshot
+            .as_ref()
+            .map(|scope| scope.selected_worlds.clone())
+            .unwrap_or_default(),
         parent_agent_mode: Some(agent_mode.id.as_str().to_string()),
         parent_code_work_id: evidence_undertaking_id.clone(),
     };

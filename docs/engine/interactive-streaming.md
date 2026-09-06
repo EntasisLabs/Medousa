@@ -163,9 +163,17 @@ Set `TurnSurfaceContext` in `InteractiveTurnRequest` so the runtime knows channe
 | `supports_liquid_markdown` | Parses and hydrates Medousa Liquid Markdown embeds in replies. Enables Liquid authoring guidance only. |
 | `supports_ui_artifacts` | Presents sandboxed HTML/scenes and may expose UI-artifact tools. It is not required for Liquid Markdown. |
 | `supports_browser_host` | Can run Agent Browser through a local host or client WebView. |
+| `browser_driver_id` | Selects one exact browser driver for the foreground turn. The runtime never substitutes another browser identity. |
+| `selected_worlds` | Binds up to eight operator-selected opaque world ids to their owning execution runtimes. Agent and worker prompts receive ids only; placement, driver, URL, host, and transport details remain runtime-owned. |
 
 Capability flags are independent. In particular, Markdown-capable extensions should set
 `supports_liquid_markdown=true` while leaving `supports_ui_artifacts=false` unless they
 also implement the artifact runtime.
+
+`selected_worlds` is an admission boundary, not ambient discovery. Clients
+should populate it only from worlds they just resolved through the authenticated
+owning-workshop API. A worker may request a sorted subset of those ids, and the
+daemon rejects any id that was not selected or does not belong to the worker's
+exact resolved runtime.
 
 App reference: `apps/medousa-home/src/lib/stores/chat.svelte.ts`

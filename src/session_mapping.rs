@@ -546,6 +546,7 @@ pub fn build_interactive_turn_request_for_ingest(
                 supports_liquid_markdown: false,
                 supports_browser_host: false,
                 browser_driver_id: None,
+                selected_worlds: Vec::new(),
             })
         });
     InteractiveTurnRequest {

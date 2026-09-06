@@ -517,6 +517,7 @@ mod tests {
                 supports_liquid_markdown: false,
                 supports_browser_host: false,
                 browser_driver_id: None,
+                selected_worlds: Vec::new(),
                 channel_surface: None,
             },
         );

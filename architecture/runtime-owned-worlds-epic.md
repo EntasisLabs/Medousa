@@ -807,6 +807,22 @@ Current user-placement slice:
 - Computer readiness follows the selected runtime, while an open live view
   captures the exact runtime, driver, and desktop session it began with.
 
+Current worker/Bot eligibility slice:
+
+- Turn admission accepts a bounded, normalized set of exact world-to-runtime
+  bindings resolved by the privileged client from the owning workshop. Home
+  advertises only a currently loaded workshop world, never a stale preference.
+- Foreground agents and Bots see only opaque eligible world ids. Driver, URL,
+  host, transport, and runtime placement do not enter model-authored prompts or
+  worker requests.
+- A worker may request only a sorted subset of the parent's eligible ids, and
+  every id must belong to that worker's exact resolved runtime. Omission grants
+  no implicit world inheritance.
+- Delegated worker specifications and destination-issued task grants preserve
+  the exact id subset. The destination still intersects the explicit `world`
+  domain, while signed world-intent transport and local execution remain the
+  next slice.
+
 Implementation:
 
 - Extend authorized execution inventory with world-driver capabilities.

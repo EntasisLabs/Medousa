@@ -86,6 +86,12 @@ pub async fn spawn_turn_ticket(
 ) -> Result<TurnTicketResponse, (StatusCode, String)> {
     let session_id = crate::session_storage::SessionId::parse(&interactive_request.session_id)
         .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    if let Some(surface) = interactive_request.surface.as_mut() {
+        surface.selected_worlds = crate::turn_scope::normalize_turn_world_selections(
+            std::mem::take(&mut surface.selected_worlds),
+        )
+        .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
+    }
     let principal_profile_id = principal
         .profile_id()
         .map(str::to_string)
@@ -171,6 +177,11 @@ pub async fn spawn_turn_ticket(
             .surface
             .as_ref()
             .and_then(|surface| surface.browser_driver_id.clone()),
+        selected_worlds: interactive_request
+            .surface
+            .as_ref()
+            .map(|surface| surface.selected_worlds.clone())
+            .unwrap_or_default(),
         channel_surface: interactive_request
             .surface
             .as_ref()

@@ -146,6 +146,14 @@ export class GovernedBrowserStore {
       ? this.selectedWorld?.driver.driver_id ?? this.cachedWorkshopDriverId
       : null,
   );
+  turnWorldSelection = $derived(
+    this.selectedWorld
+      ? {
+          world_id: this.selectedWorld.world_id,
+          execution_runtime_id: this.selectedWorld.execution_runtime_id,
+        }
+      : null,
+  );
   activeUrl = $derived(this.selectedWorld?.url ?? "about:blank");
   activeTitle = $derived(this.selectedWorld?.title?.trim() || "Workshop browser");
   targetRuntimeLabel = $derived(

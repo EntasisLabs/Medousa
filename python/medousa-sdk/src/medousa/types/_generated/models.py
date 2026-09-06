@@ -408,25 +408,9 @@ class SessionRef(MedousaModel):
     session_id: SessionId
 
 
-class TurnSurfaceContext(MedousaModel):
-    channel_id: str | None = None
-    channel_surface: str | None = Field(
-        None,
-        description='Adapter surface: telegram, discord, slack, home-desktop, home-ios, tui, api, …',
-    )
-    supports_browser_host: bool | None = Field(
-        False,
-        description='When true, the connected client can run Agent Browser (local BrowserHost or client WebView). Telegram/TUI/ingest leave this false; Home desktop/iOS set true when browser is available.',
-    )
-    supports_liquid_markdown: bool | None = Field(
-        False,
-        description='When true, the connected client can parse and hydrate Medousa Liquid Markdown embeds. This does not imply support for HTML artifacts, scenes, canvas, or UI authoring tools.',
-    )
-    supports_ui_artifacts: bool | None = Field(
-        False,
-        description='When true, the connected client can render sandboxed HTML UI artifacts (`cognition_ui_present`). Channel adapters and clients set this — the daemon does not infer it from channel name.',
-    )
-    user_id: str | None = None
+class TurnWorldSelection(MedousaModel):
+    execution_runtime_id: str
+    world_id: str
 
 
 class AgentSessionConfigOption(MedousaModel):
@@ -744,6 +728,49 @@ class IntegrationSecretSlot(Enum):
     bot_token = 'bot_token'
     app_token = 'app_token'
     auth_key = 'auth_key'
+
+
+class ExecutionTargetRequirements(MedousaModel):
+    architecture: str | None = None
+    platform: str | None = None
+    region: str | None = None
+    required_capabilities: list[str] | None = None
+    selection_key: str | None = None
+
+
+class Kind(Enum):
+    same_as_parent = 'same_as_parent'
+
+
+class ExecutionTargetSelection1(MedousaModel):
+    kind: Kind
+
+
+class Kind1(Enum):
+    exact = 'exact'
+
+
+class ExecutionTargetSelection2(MedousaModel):
+    kind: Kind1
+    runtime_id: str
+
+
+class Kind2(Enum):
+    auto = 'auto'
+
+
+class ExecutionTargetSelection3(MedousaModel):
+    kind: Kind2
+    requirements: ExecutionTargetRequirements | None = Field({}, validate_default=True)
+
+
+class ExecutionTargetSelection(
+    RootModel[ExecutionTargetSelection1 | ExecutionTargetSelection2 | ExecutionTargetSelection3]
+):
+    root: ExecutionTargetSelection1 | ExecutionTargetSelection2 | ExecutionTargetSelection3 = Field(
+        ...,
+        description='User-facing placement preference for workers spawned during a turn. Agent-authored worker requests use the same wire shape, but are admitted against the stricter agent-selectable inventory.',
+    )
 
 
 class HostContextPosition(MedousaModel):
@@ -1218,46 +1245,46 @@ class TurnArtifactRef(MedousaModel):
     role: str
 
 
-class Kind(Enum):
+class Kind3(Enum):
     model_receipt = 'model_receipt'
 
 
 class TurnPart1(MedousaModel):
-    kind: Kind
+    kind: Kind3
     model: str
     provider: str
 
 
-class Kind1(Enum):
+class Kind4(Enum):
     text = 'text'
 
 
 class TurnPart2(MedousaModel):
-    kind: Kind1
+    kind: Kind4
     markdown: str
     model_round: int | None = Field(None, ge=0)
     segment_id: str | None = None
 
 
-class Kind2(Enum):
+class Kind5(Enum):
     progress = 'progress'
 
 
 class TurnPart3(MedousaModel):
-    kind: Kind2
+    kind: Kind5
     markdown: str
 
 
-class Kind3(Enum):
+class Kind6(Enum):
     reasoning = 'reasoning'
 
 
 class TurnPart4(MedousaModel):
-    kind: Kind3
+    kind: Kind6
     markdown: str
 
 
-class Kind4(Enum):
+class Kind7(Enum):
     tool_run = 'tool_run'
 
 
@@ -1266,7 +1293,7 @@ class TurnPart5(MedousaModel):
     finished_at: AwareDatetime | None = None
     input_params: list[ToolInputParam] | None = None
     input_summary: str
-    kind: Kind4
+    kind: Kind7
     output_summary: str | None = None
     run_id: str
     started_at: AwareDatetime
@@ -1275,34 +1302,34 @@ class TurnPart5(MedousaModel):
     tool_round: int | None = Field(None, ge=0)
 
 
-class Kind5(Enum):
+class Kind8(Enum):
     handoff = 'handoff'
 
 
 class TurnPart6(MedousaModel):
     handoff_kind: str
-    kind: Kind5
+    kind: Kind8
     text: str
     work_id: str | None = None
 
 
-class Kind6(Enum):
+class Kind9(Enum):
     user_media = 'user_media'
 
 
 class TurnPart7(MedousaModel):
     byte_size: int | None = Field(None, ge=0)
-    kind: Kind6
+    kind: Kind9
     label: str | None = None
     media_id: str
     mime: str
 
 
-class Kind7(Enum):
+class Kind10(Enum):
     host_context = 'host_context'
 
 
-class Kind8(Enum):
+class Kind11(Enum):
     attachment_ref = 'attachment_ref'
 
 
@@ -1310,18 +1337,18 @@ class TurnPart9(MedousaModel):
     artifact_id: str
     byte_size: int | None = Field(None, ge=0)
     height_px: int | None = Field(None, ge=0)
-    kind: Kind8
+    kind: Kind11
     label: str
     mime: str
     presentation: str | None = None
 
 
-class Kind9(Enum):
+class Kind12(Enum):
     unknown = 'unknown'
 
 
 class TurnPart10(MedousaModel):
-    kind: Kind9
+    kind: Kind12
 
 
 class TurnSliceSummary(MedousaModel):
@@ -2570,27 +2597,6 @@ class ComponentStoreSetResponse(MedousaModel):
     updatedAtUtc: AwareDatetime
 
 
-class CreateAgentSessionRequest(MedousaModel):
-    args: list[str] | None = None
-    code_context: CodeIntentContext | None = None
-    command: str | None = None
-    cwd: str | None = None
-    prompt: str | None = None
-    resume_provider_token: str | None = Field(
-        None,
-        description='Optional ACP wire `sessionId` to resume (from a prior `RecoveryDisposition::ResumeSupported`). When omitted but `work_id` is set, the daemon looks up the latest resume token on that work item.',
-    )
-    runtime: str = Field(
-        ..., description='External runtime: `cursor`, `codex`, or `hermes` (not `medousa`).'
-    )
-    session_id: str
-    surface: TurnSurfaceContext | None = None
-    work_id: str | None = Field(
-        None,
-        description='Optional Forge undertaking binding (`/v1/forge/items/{id}`). When set, the ACP session runs inside the governed worktree and reports leases.',
-    )
-
-
 class CreateAgentSessionResponse(MedousaModel):
     accepted_at_utc: AwareDatetime
     agent_session_id: str
@@ -3118,6 +3124,14 @@ class SessionAppendTurnResponse(MedousaModel):
 
 
 class SessionCodeBindingResponse(MedousaModel):
+    execution_runtime_id: str | None = Field(
+        None,
+        description="Stable daemon identity that owns this Forge undertaking. Missing means the session's current workshop for records written before remote Coder.",
+    )
+    repo_id: str | None = Field(
+        None,
+        description='Destination-authored repository identity. This is provenance and a policy selector; it is never interpreted as a client filesystem path.',
+    )
     session_id: str
     updated_at_utc: AwareDatetime | None = None
     work_id: str | None = None
@@ -3205,6 +3219,8 @@ class SetSessionBotRequest(MedousaModel):
 
 
 class SetSessionCodeBindingRequest(MedousaModel):
+    execution_runtime_id: str | None = None
+    repo_id: str | None = None
     work_id: str
 
 
@@ -3480,6 +3496,34 @@ class ResolvedConversationRange(MedousaModel):
     selection_digest: str
 
 
+class TurnSurfaceContext(MedousaModel):
+    browser_driver_id: str | None = Field(
+        None, description='Exact registered browser driver instance selected for this turn.'
+    )
+    channel_id: str | None = None
+    channel_surface: str | None = Field(
+        None,
+        description='Adapter surface: telegram, discord, slack, home-desktop, home-ios, tui, api, …',
+    )
+    selected_worlds: list[TurnWorldSelection] | None = Field(
+        None,
+        description='Exact worlds selected by the user for this turn. The daemon validates, bounds, and freezes these bindings before any model or worker runs.',
+    )
+    supports_browser_host: bool | None = Field(
+        False,
+        description='When true, the connected client can run Agent Browser (local BrowserHost or client WebView). Telegram/TUI/ingest leave this false; Home desktop/iOS set true when browser is available.',
+    )
+    supports_liquid_markdown: bool | None = Field(
+        False,
+        description='When true, the connected client can parse and hydrate Medousa Liquid Markdown embeds. This does not imply support for HTML artifacts, scenes, canvas, or UI authoring tools.',
+    )
+    supports_ui_artifacts: bool | None = Field(
+        False,
+        description='When true, the connected client can render sandboxed HTML UI artifacts (`cognition_ui_present`). Channel adapters and clients set this — the daemon does not infer it from channel name.',
+    )
+    user_id: str | None = None
+
+
 class ContextManifest(MedousaModel):
     created_at: AwareDatetime
     created_by: str
@@ -3604,7 +3648,7 @@ class RuntimeConfigCommandSpec(
 
 class TurnPart8(MedousaModel):
     context: HostTurnContext
-    kind: Kind7
+    kind: Kind10
 
 
 class TurnPart(
@@ -3723,6 +3767,9 @@ class WorkCard(MedousaModel):
 
 class WorkerProgressDto(MedousaModel):
     column: WorkBoardColumn
+    execution_runtime_id: str | None = Field(
+        None, description='Stable runtime identity that actually executes this worker.'
+    )
     live_output: str | None = None
     live_status_line: str | None = None
     live_thinking: str | None = None
@@ -3790,6 +3837,27 @@ class AgentSecretResolveResponse(MedousaModel):
 class BotOpenResponse(MedousaModel):
     binding: BotSessionBinding
     bot: BotProfile
+
+
+class CreateAgentSessionRequest(MedousaModel):
+    args: list[str] | None = None
+    code_context: CodeIntentContext | None = None
+    command: str | None = None
+    cwd: str | None = None
+    prompt: str | None = None
+    resume_provider_token: str | None = Field(
+        None,
+        description='Optional ACP wire `sessionId` to resume (from a prior `RecoveryDisposition::ResumeSupported`). When omitted but `work_id` is set, the daemon looks up the latest resume token on that work item.',
+    )
+    runtime: str = Field(
+        ..., description='External runtime: `cursor`, `codex`, or `hermes` (not `medousa`).'
+    )
+    session_id: str
+    surface: TurnSurfaceContext | None = None
+    work_id: str | None = Field(
+        None,
+        description='Optional Forge undertaking binding (`/v1/forge/items/{id}`). When set, the ACP session runs inside the governed worktree and reports leases.',
+    )
 
 
 class DeriveSessionRequest(MedousaModel):
@@ -3879,6 +3947,10 @@ class InteractiveTurnRequest(MedousaModel):
     voice_preset_id: str | None = Field(
         None,
         description='Composer voice stance — short appendix block (not a manuscript specialty).',
+    )
+    worker_execution_target: ExecutionTargetSelection | None = Field(
+        None,
+        description='User-selected default workshop for workers created during this turn. This does not grant the model permission to select the same target.',
     )
 
 

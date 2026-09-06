@@ -488,6 +488,8 @@ mod tests {
                 "cognition_web_search".to_string(),
             ],
             effective_tool_names: vec!["cognition_turn".to_string()],
+            requested_world_ids: Vec::new(),
+            effective_world_ids: Vec::new(),
             network_policy: crate::peer_execution_policy::PeerNetworkPolicy::WebOnly,
             issued_at: now,
             expires_at: now + chrono::Duration::minutes(5),

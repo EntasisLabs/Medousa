@@ -306,6 +306,7 @@ export async function createTurnTicket(
     stageRouting: invokePlain(request.stageRouting ?? null),
     channelSurface: request.channelSurface ?? null,
     browserDriverId: request.browserDriverId ?? null,
+    selectedWorlds: invokePlain(request.selectedWorlds ?? null),
     mediaRefs: invokePlain(request.mediaRefs ?? null),
     voicePresetId: request.voicePresetId ?? null,
     voiceAppendix: request.voiceAppendix ?? null,
@@ -502,6 +503,7 @@ export interface InteractiveTurnOptions {
   stageRouting?: StageRoutingMatrix;
   channelSurface?: string;
   browserDriverId?: string;
+  selectedWorlds?: import("$lib/types/session").TurnWorldSelection[];
   identityUserId?: string;
 }
 
@@ -522,6 +524,7 @@ export async function sendInteractiveTurn(
     stageRouting: options?.stageRouting,
     channelSurface: options?.channelSurface,
     browserDriverId: options?.browserDriverId,
+    selectedWorlds: invokePlain(options?.selectedWorlds ?? null),
   });
 }
 

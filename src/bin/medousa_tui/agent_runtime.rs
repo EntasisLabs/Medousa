@@ -554,6 +554,7 @@ pub(crate) async fn start_prompt_run(
         manuscript_id: None,
         additional_manuscript_ids: None,
         bot_profile_appendix: None,
+        world_prompt_appendix: None,
         suggested_capability_ids: None,
         voice_preset_id: None,
         voice_appendix: None,
@@ -808,6 +809,7 @@ pub(crate) async fn start_prompt_run(
             supports_liquid_markdown: false,
             supports_browser_host: false,
             browser_driver_id: None,
+            selected_worlds: Vec::new(),
             channel_surface: Some("tui".to_string()),
         };
         let execution =

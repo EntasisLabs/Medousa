@@ -77,6 +77,10 @@ pub struct SpawnTurnWorkerInput {
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
     pub(crate) execution_target: CompatOption<ExecutionTargetSelection>,
+    /// Optional subset of opaque ids advertised in MEDOUSA_ELIGIBLE_WORLDS.
+    /// Never pass driver, URL, host, or transport identifiers here.
+    #[serde(default)]
+    pub(crate) world_ids: Vec<String>,
 }
 
 impl<'de> Deserialize<'de> for SpawnTurnWorkerInput {
@@ -100,6 +104,8 @@ impl<'de> Deserialize<'de> for SpawnTurnWorkerInput {
             model_hint: CompatOption<String>,
             #[serde(default)]
             execution_target: CompatOption<ExecutionTargetSelection>,
+            #[serde(default)]
+            world_ids: Vec<String>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
@@ -111,6 +117,7 @@ impl<'de> Deserialize<'de> for SpawnTurnWorkerInput {
             stage_role: input.stage_role,
             model_hint: input.model_hint,
             execution_target: input.execution_target,
+            world_ids: input.world_ids,
         })
     }
 }
@@ -124,6 +131,7 @@ struct SpawnTurnWorkerCommand {
     stage_role: Option<String>,
     model_hint: Option<String>,
     execution_target: Option<ExecutionTargetSelection>,
+    world_ids: Vec<String>,
 }
 
 impl TryFrom<SpawnTurnWorkerInput> for SpawnTurnWorkerCommand {
@@ -153,6 +161,7 @@ impl TryFrom<SpawnTurnWorkerInput> for SpawnTurnWorkerCommand {
             stage_role: optional_worker_text(input.stage_role.into_option()),
             model_hint: optional_worker_text(input.model_hint.into_option()),
             execution_target: input.execution_target.into_option(),
+            world_ids: input.world_ids,
         })
     }
 }
@@ -213,6 +222,7 @@ impl CognitionSpawnTurnWorkerTool {
                 command.stage_role.as_deref(),
                 command.model_hint.as_deref(),
                 command.execution_target,
+                &command.world_ids,
             )
             .await
     }
@@ -526,6 +536,7 @@ mod tests {
             stage_role: Some("  verifier  ".to_string()).into(),
             model_hint: Some("  auto  ".to_string()).into(),
             execution_target: Some(ExecutionTargetSelection::SameAsParent).into(),
+            world_ids: vec!["world:browser:test".to_string()],
         })
         .expect("spawn command");
 
@@ -538,6 +549,7 @@ mod tests {
         );
         assert_eq!(command.stage_role.as_deref(), Some("verifier"));
         assert_eq!(command.model_hint.as_deref(), Some("auto"));
+        assert_eq!(command.world_ids, ["world:browser:test"]);
     }
 
     #[test]
@@ -550,6 +562,7 @@ mod tests {
             stage_role: None.into(),
             model_hint: None.into(),
             execution_target: None.into(),
+            world_ids: Vec::new(),
         })
         .unwrap_err();
         assert!(blank.to_string().contains("task is required"));
@@ -562,6 +575,7 @@ mod tests {
             stage_role: None.into(),
             model_hint: None.into(),
             execution_target: None.into(),
+            world_ids: Vec::new(),
         })
         .unwrap_err();
         assert!(unknown.to_string().contains("unknown intent 'unknown'"));

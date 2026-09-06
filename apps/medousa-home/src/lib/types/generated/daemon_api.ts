@@ -328,10 +328,16 @@ export interface StageRoutingMatrix {
   verifier: StageRoute;
 }
 
+export interface TurnWorldSelection {
+  execution_runtime_id: string;
+  world_id: string;
+}
+
 export interface TurnSurfaceContext {
   browser_driver_id?: string | null;
   channel_id?: string | null;
   channel_surface?: string | null;
+  selected_worlds?: TurnWorldSelection[];
   supports_browser_host?: boolean;
   supports_liquid_markdown?: boolean;
   supports_ui_artifacts?: boolean;

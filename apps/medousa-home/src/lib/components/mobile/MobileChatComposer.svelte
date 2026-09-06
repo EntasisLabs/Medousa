@@ -76,6 +76,7 @@
       stageRouting: opts.stageRouting,
       channelSurface: opts.channelSurface,
       browserDriverId: opts.browserDriverId,
+      selectedWorlds: opts.selectedWorlds,
       mediaRefs,
       voicePresetId: voice.voicePresetId,
       voiceAppendix: voice.voiceAppendix,

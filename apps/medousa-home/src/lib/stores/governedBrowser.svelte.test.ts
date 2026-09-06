@@ -82,11 +82,27 @@ describe("GovernedBrowserStore runtime binding", () => {
 
     expect(store.targetRuntimeId).toBe("runtime-remote");
     expect(store.selectedWorld?.world_id).toBe(local.world_id);
+    expect(store.turnWorldSelection).toEqual({
+      world_id: local.world_id,
+      execution_runtime_id: "runtime-local",
+    });
     await store.navigate("https://example.com");
     expect(mocks.navigate).toHaveBeenCalledWith(
       local.world_id,
       "https://example.com",
       null,
     );
+  });
+
+  it("does not advertise a stale world that was not loaded from its workshop", () => {
+    const store = new GovernedBrowserStore();
+    store.source = {
+      kind: "workshop",
+      worldId: "world:stale",
+      runtimeId: "runtime-offline",
+    };
+
+    expect(store.selectedWorld).toBeNull();
+    expect(store.turnWorldSelection).toBeNull();
   });
 });
