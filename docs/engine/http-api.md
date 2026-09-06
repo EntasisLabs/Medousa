@@ -491,6 +491,28 @@ the redacted focused-window capture and does not accept interaction coordinates.
 
 ---
 
+## Governed-world timeline
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/v1/worlds/timeline?after_sequence=…&limit=…` | Page through the workshop's bounded browser/computer causal ledger |
+
+`after_sequence` is an exclusive daemon-wide cursor. `limit` defaults to 100
+and is capped at 200; the response returns `events`, `next_sequence`, and
+`has_more`. The projection includes stable world, authority, driver, principal,
+resource, intent, trace, effect, revision, checkpoint, and recovery metadata.
+It does not expose action idempotency keys, capability-grant ids, page bodies,
+credentials, or native handles.
+
+The daemon syncs an admission before its driver receives the action permit. On
+restart, an admission without a terminal receipt is recorded as
+`action_interrupted`: observations require re-observation, local mutations
+require fresh-state reconciliation, and external or irreversible effects
+require operator review. Recovery always requires a fresh admission; timeline
+records are evidence and never executable authority.
+
+---
+
 ## Vault
 
 | Method | Path | Purpose |

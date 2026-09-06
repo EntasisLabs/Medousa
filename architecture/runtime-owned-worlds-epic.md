@@ -1,6 +1,6 @@
 # Runtime-owned worlds
 
-> **Status:** Active — architecture locked; Phases 1–6 core outcomes implemented; Phase 7 planned
+> **Status:** Active — architecture locked; Phases 1–6 core outcomes implemented; Phase 7 in progress
 >
 > **Date:** 2026-09-04
 >
@@ -882,6 +882,23 @@ Suggested commit boundary:
 
 **Outcome:** World operation is explainable, recoverable where possible, and
 measurably more reliable than an opaque computer-use loop.
+
+Current durable causal-ledger slice:
+
+- The daemon appends every world-kernel event to one bounded, monotonic JSONL
+  ledger before an admitted permit reaches its driver. A durability failure
+  makes world mutation read-only rather than allowing untraceable effects.
+- Admission captures a surface revision, control generation, permit lifetime,
+  semantic summary, effect class, and an effect-specific recovery strategy.
+  It does not persist page bodies, native handles, credentials, or reusable
+  authority.
+- Startup pairs admissions with terminal receipts. An unmatched observation
+  becomes `needs_reconciliation`; an unmatched mutation or external effect
+  becomes `indeterminate`. In both cases the old permit is discarded and any
+  next attempt requires fresh admission.
+- Authenticated workshop clients can page through the redacted cross-world
+  ledger at `GET /v1/worlds/timeline`. This is the contract foundation for the
+  unified review UI and evidence promotion that remain in Phase 7.
 
 Implementation:
 

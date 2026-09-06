@@ -691,6 +691,49 @@ export interface BrowserPresentationFrame {
   world_id: string;
 }
 
+export interface WorldTimelineCheckpoint {
+  admitted_at_ms: number;
+  control_generation?: number | null;
+  permit_expires_at_ms: number;
+  surface: string;
+  world_revision: number;
+}
+
+export interface WorldTimelineRecovery {
+  requires_fresh_admission: boolean;
+  strategy: string;
+}
+
+export interface WorldTimelineEvent {
+  authority_id: string;
+  checkpoint?: WorldTimelineCheckpoint | null;
+  driver_id: string;
+  effect_class?: string | null;
+  event_type: string;
+  intent_id?: string | null;
+  occurred_at_ms: number;
+  ownership: string;
+  principal_id?: string | null;
+  principal_kind?: string | null;
+  recorded_at_ms: number;
+  recovery?: WorldTimelineRecovery | null;
+  resource_id?: string | null;
+  schema_version: number;
+  sequence: number;
+  status?: string | null;
+  summary?: string | null;
+  surface: string;
+  trace_id?: string | null;
+  world_id: string;
+  world_revision: number;
+}
+
+export interface WorldTimelineResponse {
+  events: WorldTimelineEvent[];
+  has_more: boolean;
+  next_sequence: number;
+}
+
 export type CodeProjectSource = "blank" | "repository";
 
 export interface StartSessionCodeProjectRequest {

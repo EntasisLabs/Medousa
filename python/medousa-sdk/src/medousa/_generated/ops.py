@@ -452,6 +452,7 @@ OPERATIONS: dict[str, Operation] = {
     "world.index.post": Operation("world.index.post", "POST", "/v1/world/index", False),
     "world.reset_store.post": Operation("world.reset_store.post", "POST", "/v1/world/reset-store", False),
     "world.status.get": Operation("world.status.get", "GET", "/v1/world/status", False),
+    "worlds.timeline.get": Operation("worlds.timeline.get", "GET", "/v1/worlds/timeline", False),
 }
 
 

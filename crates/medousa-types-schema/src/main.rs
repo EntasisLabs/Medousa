@@ -636,6 +636,12 @@ fn main() {
     export_type!(schemas, FeedStreamQuery, "FeedStreamQuery");
     export_type!(schemas, FeedStreamEvent, "FeedStreamEvent");
 
+    // Governed world causal timeline
+    export_type!(schemas, WorldTimelineCheckpoint, "WorldTimelineCheckpoint");
+    export_type!(schemas, WorldTimelineRecovery, "WorldTimelineRecovery");
+    export_type!(schemas, WorldTimelineEvent, "WorldTimelineEvent");
+    export_type!(schemas, WorldTimelineResponse, "WorldTimelineResponse");
+
     let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sdk-contract");
     fs::create_dir_all(&out_dir).expect("create sdk-contract dir");
     let path = out_dir.join("medousa-types.schema.json");

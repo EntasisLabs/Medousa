@@ -474,13 +474,21 @@ async fn start_daemon() -> Result<()> {
     let default_runtime_config = session_mapping::IngestSessionRuntimeConfig::from_saved_defaults();
     let retention_config = medousa::session_retention::SessionRetentionConfig::from_env();
 
+    let (world_authority, recovered_world_actions) =
+        medousa::world_authority::enable_shared_world_timeline()
+            .map_err(|error| anyhow::anyhow!("open world causal timeline: {error}"))?;
+    if recovered_world_actions > 0 {
+        tracing::warn!(
+            recovered_world_actions,
+            "marked interrupted world actions for reconciliation"
+        );
+    }
     let isolated_browser =
         medousa::daemon::isolated_browser_host::IsolatedBrowserHost::open_default()
             .await
             .context("open daemon-owned isolated browser host")?;
     medousa::daemon::isolated_browser_host::register_global_host(isolated_browser.clone())
         .map_err(|error| anyhow::anyhow!("register daemon-owned isolated browser host: {error}"))?;
-    let world_authority = medousa::world_authority::shared_world_authority();
     let computer_drivers = Arc::new(medousa::computer_driver::ComputerDriverBroker::new(
         world_authority.clone(),
     ));
@@ -983,6 +991,7 @@ async fn start_daemon() -> Result<()> {
         .merge(medousa::daemon::forge_api::forge_surface())
         .merge(medousa::browser_handlers::browser_surface())
         .merge(medousa::computer_handlers::computer_surface())
+        .merge(medousa::world_handlers::world_timeline_surface())
         .with_state(state.clone());
     declared = declared.merge(medousa::local_credential_handlers::surface().with_state(
         medousa::local_credential_handlers::LocalCredentialApiState {

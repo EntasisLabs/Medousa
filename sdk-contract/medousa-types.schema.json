@@ -26424,5 +26424,457 @@
         }
       }
     }
+  },
+  "WorldTimelineCheckpoint": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldTimelineCheckpoint",
+    "type": "object",
+    "required": [
+      "admitted_at_ms",
+      "permit_expires_at_ms",
+      "surface",
+      "world_revision"
+    ],
+    "properties": {
+      "admitted_at_ms": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "control_generation": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "permit_expires_at_ms": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "surface": {
+        "type": "string"
+      },
+      "world_revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    }
+  },
+  "WorldTimelineEvent": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldTimelineEvent",
+    "description": "One bounded, secret-free event in the workshop daemon's cross-world ledger.",
+    "type": "object",
+    "required": [
+      "authority_id",
+      "driver_id",
+      "event_type",
+      "occurred_at_ms",
+      "ownership",
+      "recorded_at_ms",
+      "schema_version",
+      "sequence",
+      "surface",
+      "world_id",
+      "world_revision"
+    ],
+    "properties": {
+      "authority_id": {
+        "type": "string"
+      },
+      "checkpoint": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/WorldTimelineCheckpoint"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "driver_id": {
+        "type": "string"
+      },
+      "effect_class": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "event_type": {
+        "type": "string"
+      },
+      "intent_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "occurred_at_ms": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "ownership": {
+        "type": "string"
+      },
+      "principal_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "principal_kind": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "recorded_at_ms": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "recovery": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/WorldTimelineRecovery"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "resource_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "schema_version": {
+        "type": "integer",
+        "format": "uint16",
+        "minimum": 0.0
+      },
+      "sequence": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "status": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "summary": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "surface": {
+        "type": "string"
+      },
+      "trace_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "world_id": {
+        "type": "string"
+      },
+      "world_revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    },
+    "definitions": {
+      "WorldTimelineCheckpoint": {
+        "type": "object",
+        "required": [
+          "admitted_at_ms",
+          "permit_expires_at_ms",
+          "surface",
+          "world_revision"
+        ],
+        "properties": {
+          "admitted_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "control_generation": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "permit_expires_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "surface": {
+            "type": "string"
+          },
+          "world_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      },
+      "WorldTimelineRecovery": {
+        "type": "object",
+        "required": [
+          "requires_fresh_admission",
+          "strategy"
+        ],
+        "properties": {
+          "requires_fresh_admission": {
+            "type": "boolean"
+          },
+          "strategy": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "WorldTimelineRecovery": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldTimelineRecovery",
+    "type": "object",
+    "required": [
+      "requires_fresh_admission",
+      "strategy"
+    ],
+    "properties": {
+      "requires_fresh_admission": {
+        "type": "boolean"
+      },
+      "strategy": {
+        "type": "string"
+      }
+    }
+  },
+  "WorldTimelineResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldTimelineResponse",
+    "type": "object",
+    "required": [
+      "events",
+      "has_more",
+      "next_sequence"
+    ],
+    "properties": {
+      "events": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/WorldTimelineEvent"
+        }
+      },
+      "has_more": {
+        "type": "boolean"
+      },
+      "next_sequence": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    },
+    "definitions": {
+      "WorldTimelineCheckpoint": {
+        "type": "object",
+        "required": [
+          "admitted_at_ms",
+          "permit_expires_at_ms",
+          "surface",
+          "world_revision"
+        ],
+        "properties": {
+          "admitted_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "control_generation": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "permit_expires_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "surface": {
+            "type": "string"
+          },
+          "world_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      },
+      "WorldTimelineEvent": {
+        "description": "One bounded, secret-free event in the workshop daemon's cross-world ledger.",
+        "type": "object",
+        "required": [
+          "authority_id",
+          "driver_id",
+          "event_type",
+          "occurred_at_ms",
+          "ownership",
+          "recorded_at_ms",
+          "schema_version",
+          "sequence",
+          "surface",
+          "world_id",
+          "world_revision"
+        ],
+        "properties": {
+          "authority_id": {
+            "type": "string"
+          },
+          "checkpoint": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorldTimelineCheckpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "driver_id": {
+            "type": "string"
+          },
+          "effect_class": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "intent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "occurred_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "ownership": {
+            "type": "string"
+          },
+          "principal_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "principal_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recorded_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "recovery": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorldTimelineRecovery"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resource_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "surface": {
+            "type": "string"
+          },
+          "trace_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "world_id": {
+            "type": "string"
+          },
+          "world_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      },
+      "WorldTimelineRecovery": {
+        "type": "object",
+        "required": [
+          "requires_fresh_admission",
+          "strategy"
+        ],
+        "properties": {
+          "requires_fresh_admission": {
+            "type": "boolean"
+          },
+          "strategy": {
+            "type": "string"
+          }
+        }
+      }
+    }
   }
 }

@@ -1,13 +1,14 @@
-use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use thiserror::Error;
 
 use crate::model::{
-    WORLD_SCHEMA_VERSION, WorldActionIntent, WorldActionOutcome, WorldActionPermit,
-    WorldActionStatus, WorldAdmission, WorldCapability, WorldCapabilityGrant, WorldControlLease,
-    WorldEvent, WorldEventKind, WorldGrantId, WorldGrantRequest, WorldId, WorldIntentId,
-    WorldPrincipal, WorldPrincipalKind, WorldResourceId, WorldResourceScope, WorldSession,
-    WorldSessionSpec,
+    WORLD_ACTION_CHECKPOINT_SCHEMA_VERSION, WORLD_EVENT_ENVELOPE_SCHEMA_VERSION,
+    WORLD_SCHEMA_VERSION, WorldActionCheckpoint, WorldActionIntent, WorldActionOutcome,
+    WorldActionPermit, WorldActionStatus, WorldAdmission, WorldCapability, WorldCapabilityGrant,
+    WorldControlLease, WorldEvent, WorldEventEnvelope, WorldEventKind, WorldGrantId,
+    WorldGrantRequest, WorldId, WorldIntentId, WorldPrincipal, WorldPrincipalKind,
+    WorldRecoveryPlan, WorldResourceId, WorldResourceScope, WorldSession, WorldSessionSpec,
 };
 
 const DEFAULT_EVENT_CAPACITY: usize = 4_096;
@@ -609,6 +610,18 @@ impl WorldAuthority {
         };
 
         let next_sequence = record.next_event_sequence;
+        let checkpoint = WorldActionCheckpoint {
+            schema_version: WORLD_ACTION_CHECKPOINT_SCHEMA_VERSION,
+            surface: record.state.surface,
+            world_revision: intent.expected_revision,
+            control_generation,
+            admitted_at_ms: now_ms,
+            permit_expires_at_ms: intent.permit_expires_at_ms,
+        };
+        let recovery = WorldRecoveryPlan {
+            strategy: intent.effect_class.recovery_strategy(),
+            requires_fresh_admission: true,
+        };
         let permit = WorldActionPermit {
             world_id: world_id.clone(),
             driver_id: record.state.driver_id.clone(),
@@ -623,6 +636,9 @@ impl WorldAuthority {
             idempotency_key: idempotency_key.to_string(),
             expires_at_ms: intent.permit_expires_at_ms,
             admitted_event_sequence: next_sequence,
+            summary: intent.summary.clone(),
+            checkpoint: checkpoint.clone(),
+            recovery: recovery.clone(),
         };
         push_event(
             record,
@@ -635,6 +651,9 @@ impl WorldAuthority {
             WorldEventKind::ActionAdmitted {
                 grant_id,
                 effect_class: intent.effect_class,
+                summary: intent.summary,
+                checkpoint,
+                recovery,
             },
         );
         record
@@ -738,6 +757,54 @@ impl WorldAuthority {
             .collect())
     }
 
+    /// Capture the per-world event cursors before a mutation. The daemon uses
+    /// these cursors to append only the events produced by that mutation to its
+    /// durable cross-world ledger.
+    pub fn event_cursors(&self) -> BTreeMap<WorldId, u64> {
+        self.worlds
+            .iter()
+            .map(|(world_id, record)| {
+                (
+                    world_id.clone(),
+                    record.next_event_sequence.saturating_sub(1),
+                )
+            })
+            .collect()
+    }
+
+    pub fn event_envelopes_after(
+        &self,
+        cursors: &BTreeMap<WorldId, u64>,
+    ) -> Vec<WorldEventEnvelope> {
+        let mut envelopes = self
+            .worlds
+            .iter()
+            .flat_map(|(world_id, record)| {
+                let after = cursors.get(world_id).copied().unwrap_or(0);
+                record
+                    .events
+                    .iter()
+                    .filter(move |event| event.sequence > after)
+                    .map(|event| WorldEventEnvelope {
+                        schema_version: WORLD_EVENT_ENVELOPE_SCHEMA_VERSION,
+                        authority_id: record.state.authority_id.clone(),
+                        driver_id: record.state.driver_id.clone(),
+                        ownership: record.state.ownership,
+                        surface: record.state.surface,
+                        event: event.clone(),
+                    })
+            })
+            .collect::<Vec<_>>();
+        envelopes.sort_by(|left, right| {
+            left.event
+                .at_ms
+                .cmp(&right.event.at_ms)
+                .then_with(|| left.event.world_id.cmp(&right.event.world_id))
+                .then_with(|| left.event.sequence.cmp(&right.event.sequence))
+        });
+        envelopes
+    }
+
     fn finish_effectful_action(
         &mut self,
         permit: &WorldActionPermit,
@@ -785,6 +852,7 @@ impl WorldAuthority {
             committed_revision: record.state.revision,
             event_sequence,
             summary: summary.clone(),
+            recovery: (status != WorldActionStatus::Confirmed).then(|| permit.recovery.clone()),
         };
         push_event(
             record,
@@ -798,6 +866,7 @@ impl WorldAuthority {
                 effect_class: permit.effect_class,
                 status,
                 summary,
+                recovery: (status != WorldActionStatus::Confirmed).then(|| permit.recovery.clone()),
             },
         );
         record
@@ -1074,6 +1143,40 @@ mod tests {
             WorldAdmission::Admitted { permit } => permit,
             WorldAdmission::Replay { .. } => panic!("unexpected replay"),
         }
+    }
+
+    #[test]
+    fn admission_emits_a_surface_checkpoint_and_fresh_recovery_plan() {
+        let mut authority = WorldAuthority::default();
+        create_world(&mut authority);
+        grant_agent(&mut authority, &[WorldCapability::Interact]);
+        authority
+            .acquire_control(&world_id(), agent(), Some(NOW + 5_000), NOW + 1)
+            .unwrap();
+
+        let cursors = authority.event_cursors();
+        let permit = admit_agent_action(&mut authority, "checkpointed-click");
+        assert_eq!(permit.summary, "click tab:one");
+        assert_eq!(permit.checkpoint.surface, WorldSurfaceKind::Browser);
+        assert_eq!(
+            permit.checkpoint.control_generation,
+            permit.control_generation
+        );
+        assert_eq!(
+            permit.recovery.strategy,
+            crate::model::WorldRecoveryStrategy::ReconcileFromFreshObservation
+        );
+        assert!(permit.recovery.requires_fresh_admission);
+
+        let envelopes = authority.event_envelopes_after(&cursors);
+        assert_eq!(envelopes.len(), 1);
+        assert_eq!(envelopes[0].authority_id.as_str(), "workshop:test");
+        assert_eq!(envelopes[0].driver_id.as_str(), "driver:test");
+        assert!(matches!(
+            &envelopes[0].event.event,
+            WorldEventKind::ActionAdmitted { checkpoint, recovery, .. }
+                if checkpoint == &permit.checkpoint && recovery == &permit.recovery
+        ));
     }
 
     #[test]

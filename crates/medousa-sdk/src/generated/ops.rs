@@ -3089,6 +3089,13 @@ pub const WORLD_STATUS_GET: Operation = Operation {
     streaming: false,
 };
 
+pub const WORLDS_TIMELINE_GET: Operation = Operation {
+    id: "worlds.timeline.get",
+    method: "GET",
+    path: "/v1/worlds/timeline",
+    streaming: false,
+};
+
 pub static ALL: &[Operation] = &[
     ADMIN_LOCAL_CREDENTIALS_BY_NAME_DELETE,
     ADMIN_LOCAL_CREDENTIALS_BY_NAME_ROTATE_POST,
@@ -3530,6 +3537,7 @@ pub static ALL: &[Operation] = &[
     WORLD_INDEX_POST,
     WORLD_RESET_STORE_POST,
     WORLD_STATUS_GET,
+    WORLDS_TIMELINE_GET,
 ];
 
 pub fn by_id(id: &str) -> Option<&'static Operation> {

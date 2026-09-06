@@ -7001,6 +7001,22 @@
       "stream_transport": null,
       "streaming": false,
       "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "worlds.timeline.get",
+      "path": "/v1/worlds/timeline",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
     }
   ],
   "x-medousa-generated": {

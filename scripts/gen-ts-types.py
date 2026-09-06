@@ -54,6 +54,7 @@ EXPORTED_TYPES = [
     "BotOpenResponse",
     "SessionBotResponse",
     "BrowserPresentationFrame",
+    "WorldTimelineResponse",
     "StartSessionCodeProjectRequest",
     "SessionCodeProjectResponse",
     "TurnTicketRecord",

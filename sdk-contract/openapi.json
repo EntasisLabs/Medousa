@@ -8374,6 +8374,213 @@
         ],
         "title": "WorkspaceStreamEvent",
         "type": "object"
+      },
+      "WorldTimelineCheckpoint": {
+        "properties": {
+          "admitted_at_ms": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "control_generation": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "permit_expires_at_ms": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "surface": {
+            "type": "string"
+          },
+          "world_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "admitted_at_ms",
+          "permit_expires_at_ms",
+          "surface",
+          "world_revision"
+        ],
+        "type": "object"
+      },
+      "WorldTimelineEvent": {
+        "description": "One bounded, secret-free event in the workshop daemon's cross-world ledger.",
+        "properties": {
+          "authority_id": {
+            "type": "string"
+          },
+          "checkpoint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorldTimelineCheckpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "driver_id": {
+            "type": "string"
+          },
+          "effect_class": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "intent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "occurred_at_ms": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "ownership": {
+            "type": "string"
+          },
+          "principal_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "principal_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recorded_at_ms": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "recovery": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorldTimelineRecovery"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resource_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schema_version": {
+            "format": "uint16",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "sequence": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "surface": {
+            "type": "string"
+          },
+          "trace_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "world_id": {
+            "type": "string"
+          },
+          "world_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "authority_id",
+          "driver_id",
+          "event_type",
+          "occurred_at_ms",
+          "ownership",
+          "recorded_at_ms",
+          "schema_version",
+          "sequence",
+          "surface",
+          "world_id",
+          "world_revision"
+        ],
+        "type": "object"
+      },
+      "WorldTimelineRecovery": {
+        "properties": {
+          "requires_fresh_admission": {
+            "type": "boolean"
+          },
+          "strategy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "requires_fresh_admission",
+          "strategy"
+        ],
+        "type": "object"
+      },
+      "WorldTimelineResponse": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/WorldTimelineEvent"
+            },
+            "type": "array"
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "next_sequence": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "events",
+          "has_more",
+          "next_sequence"
+        ],
+        "title": "WorldTimelineResponse",
+        "type": "object"
       }
     }
   },
@@ -32975,6 +33182,56 @@
           "body_limit": 1024,
           "bootstrap_public": false,
           "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/worlds/timeline": {
+      "get": {
+        "operationId": "worlds.timeline.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorldTimelineResponse"
+                }
+              }
+            },
+            "description": "worlds.timeline.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "worlds.timeline.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "worlds.timeline.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
           "capabilities": [
             "workshop.read"
           ],

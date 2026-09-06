@@ -5,6 +5,7 @@
 //! this daemon service mints permits and advances authoritative world state.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::path::PathBuf;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -17,6 +18,8 @@ use medousa_world::{
 use medousa_browser_bridge::BrowserObservation;
 use serde::Serialize;
 use uuid::Uuid;
+
+use crate::world_trace_store::{DurableWorldEvent, WorldTraceStore};
 
 const BROWSER_AGENT_LEASE_MS: u64 = 5 * 60 * 1_000;
 const BROWSER_ACTION_PERMIT_MS: u64 = 10_000;
@@ -31,6 +34,15 @@ const BROWSER_AGENT_PRINCIPAL: &str = "agent:medousa-foreground";
 pub struct WorldAuthorityService {
     kernel: Mutex<WorldAuthority>,
     browser_observations: Mutex<HashMap<WorldId, BrowserObservation>>,
+    timeline: Mutex<WorldTimelineState>,
+}
+
+#[derive(Debug, Default)]
+enum WorldTimelineState {
+    #[default]
+    Disabled,
+    Active(WorldTraceStore),
+    Failed { store: WorldTraceStore, error: String },
 }
 
 impl WorldAuthorityService {
@@ -38,11 +50,41 @@ impl WorldAuthorityService {
         &self,
         operation: impl FnOnce(&mut WorldAuthority) -> Result<T, String>,
     ) -> Result<T, String> {
+        // Lock the ledger first so a previous durability failure rejects new
+        // mutations before they touch the kernel or reach a driver.
+        let mut timeline = self
+            .timeline
+            .lock()
+            .map_err(|_| "world causal timeline lock poisoned".to_string())?;
+        if let WorldTimelineState::Failed { error, .. } = &*timeline {
+            return Err(format!(
+                "world authority is read-only after a causal timeline failure: {error}"
+            ));
+        }
         let mut authority = self
             .kernel
             .lock()
             .map_err(|_| "world authority lock poisoned".to_string())?;
-        operation(&mut authority)
+        let cursors = authority.event_cursors();
+        let result = operation(&mut authority);
+        let envelopes = authority.event_envelopes_after(&cursors);
+        if !envelopes.is_empty()
+            && let WorldTimelineState::Active(store) = &mut *timeline
+            && let Err(error) = store.append_envelopes(envelopes, now_ms())
+        {
+            let previous = std::mem::take(&mut *timeline);
+            let WorldTimelineState::Active(store) = previous else {
+                unreachable!("active world timeline changed while locked")
+            };
+            *timeline = WorldTimelineState::Failed {
+                store,
+                error: error.clone(),
+            };
+            return Err(format!(
+                "world causal timeline failed; further mutations are blocked: {error}"
+            ));
+        }
+        result
     }
 
     pub(crate) fn read<T>(
@@ -55,6 +97,50 @@ impl WorldAuthorityService {
             .map_err(|_| "world authority lock poisoned".to_string())?;
         operation(&authority)
     }
+
+    pub fn enable_durable_timeline(&self, path: impl Into<PathBuf>) -> Result<usize, String> {
+        let path = path.into();
+        let mut timeline = self
+            .timeline
+            .lock()
+            .map_err(|_| "world causal timeline lock poisoned".to_string())?;
+        match &*timeline {
+            WorldTimelineState::Disabled => {}
+            WorldTimelineState::Active(existing) => {
+                return if existing.path() == path.as_path() {
+                    Ok(0)
+                } else {
+                    Err(format!(
+                        "world causal timeline is already configured at {}",
+                        existing.path().display()
+                    ))
+                };
+            }
+            WorldTimelineState::Failed { error, .. } => {
+                return Err(format!("world causal timeline is unavailable: {error}"));
+            }
+        }
+        let (store, recovered) = WorldTraceStore::open(path, now_ms())?;
+        *timeline = WorldTimelineState::Active(store);
+        Ok(recovered)
+    }
+
+    pub fn durable_events_after(
+        &self,
+        sequence: u64,
+        limit: usize,
+    ) -> Result<Vec<DurableWorldEvent>, String> {
+        let timeline = self
+            .timeline
+            .lock()
+            .map_err(|_| "world causal timeline lock poisoned".to_string())?;
+        match &*timeline {
+            WorldTimelineState::Disabled => Ok(Vec::new()),
+            WorldTimelineState::Active(store) | WorldTimelineState::Failed { store, .. } => {
+                Ok(store.events_after(sequence, limit))
+            }
+        }
+    }
 }
 
 static AUTHORITY: LazyLock<Arc<WorldAuthorityService>> =
@@ -62,6 +148,18 @@ static AUTHORITY: LazyLock<Arc<WorldAuthorityService>> =
 
 pub fn shared_world_authority() -> Arc<WorldAuthorityService> {
     Arc::clone(&AUTHORITY)
+}
+
+pub fn default_world_timeline_path() -> PathBuf {
+    crate::paths::medousa_data_dir()
+        .join("worlds")
+        .join("causal-timeline.jsonl")
+}
+
+pub fn enable_shared_world_timeline() -> Result<(Arc<WorldAuthorityService>, usize), String> {
+    let authority = shared_world_authority();
+    let recovered = authority.enable_durable_timeline(default_world_timeline_path())?;
+    Ok((authority, recovered))
 }
 
 /// Resolve an opaque world id against this daemon's live authority. Callers
@@ -131,57 +229,57 @@ pub fn admit_browser_action(
 ) -> Result<BrowserWorldAdmission, String> {
     let now_ms = now_ms();
     let resource_id = WorldResourceId::new(format!("browser-tab:{tab_id}"));
-    let mut authority = AUTHORITY
-        .kernel
-        .lock()
-        .map_err(|_| "world authority lock poisoned".to_string())?;
-    let (world_id, agent, grant_expires_at_ms) = ensure_browser_world(
-        &mut authority,
-        authority_id,
-        driver_id,
-        tab_group_id,
-        WorldOwnership::Managed,
-        now_ms,
-    )?;
-
-    let lease = authority
-        .acquire_control(
-            &world_id,
-            agent.clone(),
-            Some(
-                grant_expires_at_ms
-                    .map(|expires_at| expires_at.min(now_ms.saturating_add(BROWSER_AGENT_LEASE_MS)))
-                    .unwrap_or_else(|| now_ms.saturating_add(BROWSER_AGENT_LEASE_MS)),
-            ),
+    AUTHORITY.write(|authority| {
+        let (world_id, agent, grant_expires_at_ms) = ensure_browser_world(
+            authority,
+            authority_id,
+            driver_id,
+            tab_group_id,
+            WorldOwnership::Managed,
             now_ms,
-        )
-        .map_err(|error| error.to_string())?;
-    let state = authority.world(&world_id).map_err(|error| error.to_string())?;
-    let operation_id = Uuid::new_v4().to_string();
-    let idempotency_key = format!("browser-action:{operation_id}");
-    let intent = WorldActionIntent {
-        intent_id: medousa_world::WorldIntentId::new(format!("intent:{operation_id}")),
-        trace_id: WorldTraceId::new(trace_id),
-        principal: agent,
-        resource_id,
-        expected_revision: state.revision,
-        expected_control_generation: Some(lease.generation),
-        required_capability: effect_class.required_capability(),
-        effect_class,
-        idempotency_key: idempotency_key.clone(),
-        permit_expires_at_ms: now_ms.saturating_add(BROWSER_ACTION_PERMIT_MS),
-        summary: summary.to_string(),
-    };
+        )?;
 
-    match authority
-        .admit_action(&world_id, intent, now_ms)
-        .map_err(|error| error.to_string())?
-    {
-        WorldAdmission::Admitted { permit } => Ok(BrowserWorldAdmission { permit }),
-        WorldAdmission::Replay { .. } => {
-            Err("new browser action unexpectedly resolved as an idempotent replay".to_string())
+        let lease = authority
+            .acquire_control(
+                &world_id,
+                agent.clone(),
+                Some(
+                    grant_expires_at_ms
+                        .map(|expires_at| {
+                            expires_at.min(now_ms.saturating_add(BROWSER_AGENT_LEASE_MS))
+                        })
+                        .unwrap_or_else(|| now_ms.saturating_add(BROWSER_AGENT_LEASE_MS)),
+                ),
+                now_ms,
+            )
+            .map_err(|error| error.to_string())?;
+        let state = authority.world(&world_id).map_err(|error| error.to_string())?;
+        let operation_id = Uuid::new_v4().to_string();
+        let idempotency_key = format!("browser-action:{operation_id}");
+        let intent = WorldActionIntent {
+            intent_id: medousa_world::WorldIntentId::new(format!("intent:{operation_id}")),
+            trace_id: WorldTraceId::new(trace_id),
+            principal: agent,
+            resource_id,
+            expected_revision: state.revision,
+            expected_control_generation: Some(lease.generation),
+            required_capability: effect_class.required_capability(),
+            effect_class,
+            idempotency_key: idempotency_key.clone(),
+            permit_expires_at_ms: now_ms.saturating_add(BROWSER_ACTION_PERMIT_MS),
+            summary: summary.to_string(),
+        };
+
+        match authority
+            .admit_action(&world_id, intent, now_ms)
+            .map_err(|error| error.to_string())?
+        {
+            WorldAdmission::Admitted { permit } => Ok(BrowserWorldAdmission { permit }),
+            WorldAdmission::Replay { .. } => Err(
+                "new browser action unexpectedly resolved as an idempotent replay".to_string(),
+            ),
         }
-    }
+    })
 }
 
 pub fn admit_browser_observation(
@@ -194,42 +292,40 @@ pub fn admit_browser_observation(
 ) -> Result<BrowserWorldAdmission, String> {
     let now_ms = now_ms();
     let resource_id = WorldResourceId::new(format!("browser-tab:{tab_id}"));
-    let mut authority = AUTHORITY
-        .kernel
-        .lock()
-        .map_err(|_| "world authority lock poisoned".to_string())?;
-    let (world_id, agent, _) = ensure_browser_world(
-        &mut authority,
-        authority_id,
-        driver_id,
-        tab_group_id,
-        WorldOwnership::Managed,
-        now_ms,
-    )?;
-    let state = authority.world(&world_id).map_err(|error| error.to_string())?;
-    let operation_id = Uuid::new_v4().to_string();
-    let intent = WorldActionIntent {
-        intent_id: medousa_world::WorldIntentId::new(format!("intent:{operation_id}")),
-        trace_id: WorldTraceId::new(trace_id),
-        principal: agent,
-        resource_id,
-        expected_revision: state.revision,
-        expected_control_generation: None,
-        required_capability: WorldCapability::Observe,
-        effect_class: WorldEffectClass::Observe,
-        idempotency_key: format!("browser-observation:{operation_id}"),
-        permit_expires_at_ms: now_ms.saturating_add(BROWSER_ACTION_PERMIT_MS),
-        summary: summary.to_string(),
-    };
-    match authority
-        .admit_action(&world_id, intent, now_ms)
-        .map_err(|error| error.to_string())?
-    {
-        WorldAdmission::Admitted { permit } => Ok(BrowserWorldAdmission { permit }),
-        WorldAdmission::Replay { .. } => {
-            Err("new browser observation unexpectedly resolved as a replay".to_string())
+    AUTHORITY.write(|authority| {
+        let (world_id, agent, _) = ensure_browser_world(
+            authority,
+            authority_id,
+            driver_id,
+            tab_group_id,
+            WorldOwnership::Managed,
+            now_ms,
+        )?;
+        let state = authority.world(&world_id).map_err(|error| error.to_string())?;
+        let operation_id = Uuid::new_v4().to_string();
+        let intent = WorldActionIntent {
+            intent_id: medousa_world::WorldIntentId::new(format!("intent:{operation_id}")),
+            trace_id: WorldTraceId::new(trace_id),
+            principal: agent,
+            resource_id,
+            expected_revision: state.revision,
+            expected_control_generation: None,
+            required_capability: WorldCapability::Observe,
+            effect_class: WorldEffectClass::Observe,
+            idempotency_key: format!("browser-observation:{operation_id}"),
+            permit_expires_at_ms: now_ms.saturating_add(BROWSER_ACTION_PERMIT_MS),
+            summary: summary.to_string(),
+        };
+        match authority
+            .admit_action(&world_id, intent, now_ms)
+            .map_err(|error| error.to_string())?
+        {
+            WorldAdmission::Admitted { permit } => Ok(BrowserWorldAdmission { permit }),
+            WorldAdmission::Replay { .. } => {
+                Err("new browser observation unexpectedly resolved as a replay".to_string())
+            }
         }
-    }
+    })
 }
 
 pub fn admit_browser_pixel_observation(
@@ -242,42 +338,40 @@ pub fn admit_browser_pixel_observation(
 ) -> Result<BrowserWorldAdmission, String> {
     let now_ms = now_ms();
     let resource_id = WorldResourceId::new(format!("browser-tab:{tab_id}"));
-    let mut authority = AUTHORITY
-        .kernel
-        .lock()
-        .map_err(|_| "world authority lock poisoned".to_string())?;
-    let (world_id, agent, _) = ensure_browser_world(
-        &mut authority,
-        authority_id,
-        driver_id,
-        tab_group_id,
-        WorldOwnership::Managed,
-        now_ms,
-    )?;
-    let state = authority.world(&world_id).map_err(|error| error.to_string())?;
-    let operation_id = Uuid::new_v4().to_string();
-    let intent = WorldActionIntent {
-        intent_id: medousa_world::WorldIntentId::new(format!("intent:{operation_id}")),
-        trace_id: WorldTraceId::new(trace_id),
-        principal: agent,
-        resource_id,
-        expected_revision: state.revision,
-        expected_control_generation: None,
-        required_capability: WorldCapability::ObservePixels,
-        effect_class: WorldEffectClass::ObservePixels,
-        idempotency_key: format!("browser-pixel-observation:{operation_id}"),
-        permit_expires_at_ms: now_ms.saturating_add(BROWSER_ACTION_PERMIT_MS),
-        summary: summary.to_string(),
-    };
-    match authority
-        .admit_action(&world_id, intent, now_ms)
-        .map_err(|error| error.to_string())?
-    {
-        WorldAdmission::Admitted { permit } => Ok(BrowserWorldAdmission { permit }),
-        WorldAdmission::Replay { .. } => {
-            Err("new browser pixel observation unexpectedly resolved as a replay".to_string())
+    AUTHORITY.write(|authority| {
+        let (world_id, agent, _) = ensure_browser_world(
+            authority,
+            authority_id,
+            driver_id,
+            tab_group_id,
+            WorldOwnership::Managed,
+            now_ms,
+        )?;
+        let state = authority.world(&world_id).map_err(|error| error.to_string())?;
+        let operation_id = Uuid::new_v4().to_string();
+        let intent = WorldActionIntent {
+            intent_id: medousa_world::WorldIntentId::new(format!("intent:{operation_id}")),
+            trace_id: WorldTraceId::new(trace_id),
+            principal: agent,
+            resource_id,
+            expected_revision: state.revision,
+            expected_control_generation: None,
+            required_capability: WorldCapability::ObservePixels,
+            effect_class: WorldEffectClass::ObservePixels,
+            idempotency_key: format!("browser-pixel-observation:{operation_id}"),
+            permit_expires_at_ms: now_ms.saturating_add(BROWSER_ACTION_PERMIT_MS),
+            summary: summary.to_string(),
+        };
+        match authority
+            .admit_action(&world_id, intent, now_ms)
+            .map_err(|error| error.to_string())?
+        {
+            WorldAdmission::Admitted { permit } => Ok(BrowserWorldAdmission { permit }),
+            WorldAdmission::Replay { .. } => {
+                Err("new browser pixel observation unexpectedly resolved as a replay".to_string())
+            }
         }
-    }
+    })
 }
 
 fn ensure_browser_world(
@@ -368,49 +462,49 @@ pub fn register_owned_browser_world(
     owner_principal_id: &str,
 ) -> Result<WorldId, String> {
     let now_ms = now_ms();
-    let mut authority = AUTHORITY
-        .kernel
-        .lock()
-        .map_err(|_| "world authority lock poisoned".to_string())?;
-    let (world_id, _, _) = ensure_browser_world(
-        &mut authority,
-        authority_id,
-        driver_id,
-        tab_group_id,
-        WorldOwnership::Owned,
-        now_ms,
-    )?;
-    let state = authority.world(&world_id).map_err(|error| error.to_string())?;
-    if state.ownership != WorldOwnership::Owned {
-        return Err("isolated browser driver is already bound to a non-owned world".to_string());
-    }
-    let system = WorldPrincipal::system(WorldPrincipalId::new(format!(
-        "runtime:{authority_id}"
-    )));
-    let owner = WorldPrincipal::human(WorldPrincipalId::new(owner_principal_id));
-    let grant_id = WorldGrantId::new(format!("grant:browser-owner:{tab_group_id}"));
-    match authority.grant_capabilities(
-        &world_id,
-        WorldGrantRequest {
-            grant_id,
-            issued_by: system,
-            subject: owner,
-            capabilities: [
-                WorldCapability::Observe,
-                WorldCapability::ObservePixels,
-                WorldCapability::Interact,
-                WorldCapability::Admin,
-            ]
-            .into_iter()
-            .collect::<BTreeSet<_>>(),
-            resource_scope: WorldResourceScope::All,
-            expires_at_ms: None,
-        },
-        now_ms,
-    ) {
-        Ok(_) | Err(WorldAuthorityError::GrantAlreadyExists(_)) => Ok(world_id),
-        Err(error) => Err(error.to_string()),
-    }
+    AUTHORITY.write(|authority| {
+        let (world_id, _, _) = ensure_browser_world(
+            authority,
+            authority_id,
+            driver_id,
+            tab_group_id,
+            WorldOwnership::Owned,
+            now_ms,
+        )?;
+        let state = authority.world(&world_id).map_err(|error| error.to_string())?;
+        if state.ownership != WorldOwnership::Owned {
+            return Err(
+                "isolated browser driver is already bound to a non-owned world".to_string(),
+            );
+        }
+        let system = WorldPrincipal::system(WorldPrincipalId::new(format!(
+            "runtime:{authority_id}"
+        )));
+        let owner = WorldPrincipal::human(WorldPrincipalId::new(owner_principal_id));
+        let grant_id = WorldGrantId::new(format!("grant:browser-owner:{tab_group_id}"));
+        match authority.grant_capabilities(
+            &world_id,
+            WorldGrantRequest {
+                grant_id,
+                issued_by: system,
+                subject: owner,
+                capabilities: [
+                    WorldCapability::Observe,
+                    WorldCapability::ObservePixels,
+                    WorldCapability::Interact,
+                    WorldCapability::Admin,
+                ]
+                .into_iter()
+                .collect::<BTreeSet<_>>(),
+                resource_scope: WorldResourceScope::All,
+                expires_at_ms: None,
+            },
+            now_ms,
+        ) {
+            Ok(_) | Err(WorldAuthorityError::GrantAlreadyExists(_)) => Ok(world_id),
+            Err(error) => Err(error.to_string()),
+        }
+    })
 }
 
 pub struct OwnedBrowserHumanIntent<'a> {
@@ -435,44 +529,42 @@ pub fn admit_owned_browser_human_intent(
     );
     let owner = WorldPrincipal::human(WorldPrincipalId::new(request.owner_principal_id));
     let resource_id = WorldResourceId::new(format!("browser-tab:{}", request.tab_id));
-    let mut authority = AUTHORITY
-        .kernel
-        .lock()
-        .map_err(|_| "world authority lock poisoned".to_string())?;
-    let control_generation = if request.effect_class.requires_control() {
-        Some(
-            authority
-                .acquire_control(&world_id, owner.clone(), None, now_ms)
-                .map_err(|error| error.to_string())?
-                .generation,
-        )
-    } else {
-        None
-    };
-    let state = authority.world(&world_id).map_err(|error| error.to_string())?;
-    let operation_id = Uuid::new_v4().to_string();
-    let intent = WorldActionIntent {
-        intent_id: medousa_world::WorldIntentId::new(format!("intent:{operation_id}")),
-        trace_id: WorldTraceId::new(request.trace_id),
-        principal: owner,
-        resource_id,
-        expected_revision: state.revision,
-        expected_control_generation: control_generation,
-        required_capability: request.effect_class.required_capability(),
-        effect_class: request.effect_class,
-        idempotency_key: format!("browser-human:{operation_id}"),
-        permit_expires_at_ms: now_ms.saturating_add(BROWSER_ACTION_PERMIT_MS),
-        summary: request.summary.to_string(),
-    };
-    match authority
-        .admit_action(&world_id, intent, now_ms)
-        .map_err(|error| error.to_string())?
-    {
-        WorldAdmission::Admitted { permit } => Ok(BrowserWorldAdmission { permit }),
-        WorldAdmission::Replay { .. } => {
-            Err("new human browser intent unexpectedly resolved as a replay".to_string())
+    AUTHORITY.write(|authority| {
+        let control_generation = if request.effect_class.requires_control() {
+            Some(
+                authority
+                    .acquire_control(&world_id, owner.clone(), None, now_ms)
+                    .map_err(|error| error.to_string())?
+                    .generation,
+            )
+        } else {
+            None
+        };
+        let state = authority.world(&world_id).map_err(|error| error.to_string())?;
+        let operation_id = Uuid::new_v4().to_string();
+        let intent = WorldActionIntent {
+            intent_id: medousa_world::WorldIntentId::new(format!("intent:{operation_id}")),
+            trace_id: WorldTraceId::new(request.trace_id),
+            principal: owner,
+            resource_id,
+            expected_revision: state.revision,
+            expected_control_generation: control_generation,
+            required_capability: request.effect_class.required_capability(),
+            effect_class: request.effect_class,
+            idempotency_key: format!("browser-human:{operation_id}"),
+            permit_expires_at_ms: now_ms.saturating_add(BROWSER_ACTION_PERMIT_MS),
+            summary: request.summary.to_string(),
+        };
+        match authority
+            .admit_action(&world_id, intent, now_ms)
+            .map_err(|error| error.to_string())?
+        {
+            WorldAdmission::Admitted { permit } => Ok(BrowserWorldAdmission { permit }),
+            WorldAdmission::Replay { .. } => {
+                Err("new human browser intent unexpectedly resolved as a replay".to_string())
+            }
         }
-    }
+    })
 }
 
 /// Fence agent work and hand an owned browser world to its authenticated
@@ -486,19 +578,17 @@ pub fn take_owned_browser_control(
 ) -> Result<u64, String> {
     let now_ms = now_ms();
     let world_id = browser_world_id(authority_id, driver_id, tab_group_id);
-    let mut authority = AUTHORITY
-        .kernel
-        .lock()
-        .map_err(|_| "world authority lock poisoned".to_string())?;
-    let lease = authority
-        .acquire_control(
-            &world_id,
-            WorldPrincipal::human(WorldPrincipalId::new(owner_principal_id)),
-            None,
-            now_ms,
-        )
-        .map_err(|error| error.to_string())?;
-    Ok(lease.generation)
+    AUTHORITY.write(|authority| {
+        authority
+            .acquire_control(
+                &world_id,
+                WorldPrincipal::human(WorldPrincipalId::new(owner_principal_id)),
+                None,
+                now_ms,
+            )
+            .map(|lease| lease.generation)
+            .map_err(|error| error.to_string())
+    })
 }
 
 /// Release an owned browser from its human owner. The next agent action must
@@ -513,29 +603,27 @@ pub fn return_owned_browser_control(
     let now_ms = now_ms();
     let world_id = browser_world_id(authority_id, driver_id, tab_group_id);
     let owner = WorldPrincipal::human(WorldPrincipalId::new(owner_principal_id));
-    let mut authority = AUTHORITY
-        .kernel
-        .lock()
-        .map_err(|_| "world authority lock poisoned".to_string())?;
-    let state = authority.world(&world_id).map_err(|error| error.to_string())?;
-    match state.active_control_lease {
-        Some(lease) if lease.principal == owner => authority
-            .release_control(&world_id, &owner, now_ms)
-            .map_err(|error| error.to_string()),
-        Some(lease) if lease.principal.kind == medousa_world::WorldPrincipalKind::Human => Err(
-            "owned browser is controlled by another human principal".to_string(),
-        ),
-        _ => Ok(state.control_generation),
-    }
+    AUTHORITY.write(|authority| {
+        let state = authority.world(&world_id).map_err(|error| error.to_string())?;
+        match state.active_control_lease {
+            Some(lease) if lease.principal == owner => authority
+                .release_control(&world_id, &owner, now_ms)
+                .map_err(|error| error.to_string()),
+            Some(lease) if lease.principal.kind == medousa_world::WorldPrincipalKind::Human => Err(
+                "owned browser is controlled by another human principal".to_string(),
+            ),
+            _ => Ok(state.control_generation),
+        }
+    })
 }
 
 pub fn validate_browser_action_permit(permit: &WorldActionPermit) -> Result<(), String> {
     AUTHORITY
-        .kernel
-        .lock()
-        .map_err(|_| "world authority lock poisoned".to_string())?
-        .validate_action_permit(permit, now_ms())
-        .map_err(|error| error.to_string())
+        .read(|authority| {
+            authority
+                .validate_action_permit(permit, now_ms())
+                .map_err(|error| error.to_string())
+        })
 }
 
 pub fn forget_owned_browser_world(
@@ -544,15 +632,10 @@ pub fn forget_owned_browser_world(
 ) -> Result<(), String> {
     let world_id = WorldId::new(world_id);
     let owner = WorldPrincipal::human(WorldPrincipalId::new(owner_principal_id));
-    match AUTHORITY
-        .kernel
-        .lock()
-        .map_err(|_| "world authority lock poisoned".to_string())?
-        .remove_world(&world_id, &owner, now_ms())
-    {
-        Ok(_) | Err(WorldAuthorityError::WorldNotFound(_)) => {}
-        Err(error) => return Err(error.to_string()),
-    };
+    AUTHORITY.write(|authority| match authority.remove_world(&world_id, &owner, now_ms()) {
+        Ok(_) | Err(WorldAuthorityError::WorldNotFound(_)) => Ok(()),
+        Err(error) => Err(error.to_string()),
+    })?;
     AUTHORITY
         .browser_observations
         .lock()
@@ -565,49 +648,34 @@ pub fn complete_browser_action(
     admission: &BrowserWorldAdmission,
     summary: &str,
 ) -> Result<WorldActionOutcome, String> {
-    AUTHORITY
-        .kernel
-        .lock()
-        .map_err(|_| "world authority lock poisoned".to_string())?
-        .complete_action(
-            &admission.permit,
-            summary,
-            now_ms(),
-        )
-        .map_err(|error| error.to_string())
+    AUTHORITY.write(|authority| {
+        authority
+            .complete_action(&admission.permit, summary, now_ms())
+            .map_err(|error| error.to_string())
+    })
 }
 
 pub fn fail_browser_action(
     admission: &BrowserWorldAdmission,
     error: &str,
 ) -> Result<(), String> {
-    AUTHORITY
-        .kernel
-        .lock()
-        .map_err(|_| "world authority lock poisoned".to_string())?
-        .fail_action(
-            &admission.permit,
-            error,
-            now_ms(),
-        )
-        .map(|_| ())
-        .map_err(|error| error.to_string())
+    AUTHORITY.write(|authority| {
+        authority
+            .fail_action(&admission.permit, error, now_ms())
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    })
 }
 
 pub fn mark_browser_action_indeterminate(
     admission: &BrowserWorldAdmission,
     summary: &str,
 ) -> Result<WorldActionOutcome, String> {
-    AUTHORITY
-        .kernel
-        .lock()
-        .map_err(|_| "world authority lock poisoned".to_string())?
-        .mark_action_indeterminate(
-            &admission.permit,
-            summary,
-            now_ms(),
-        )
-        .map_err(|error| error.to_string())
+    AUTHORITY.write(|authority| {
+        authority
+            .mark_action_indeterminate(&admission.permit, summary, now_ms())
+            .map_err(|error| error.to_string())
+    })
 }
 
 pub fn record_browser_observation(
@@ -1086,5 +1154,79 @@ mod tests {
             })
             .is_err()
         );
+    }
+
+    #[test]
+    fn durable_service_recovers_an_admission_without_reusing_its_permit() {
+        let dir = tempfile::tempdir().expect("timeline tempdir");
+        let path = dir.path().join("causal-timeline.jsonl");
+        let service = WorldAuthorityService::default();
+        service
+            .enable_durable_timeline(&path)
+            .expect("enable timeline");
+        let world_id = WorldId::new("world:durable-test");
+        let human = WorldPrincipal::human("human:durable-test");
+        service
+            .write(|authority| {
+                authority
+                    .create_world(
+                        WorldSessionSpec {
+                            world_id: world_id.clone(),
+                            authority_id: WorldAuthorityId::new("workshop:durable-test"),
+                            driver_id: WorldDriverId::new("driver:durable-test"),
+                            ownership: WorldOwnership::Owned,
+                            surface: WorldSurfaceKind::Browser,
+                        },
+                        human.clone(),
+                        10,
+                    )
+                    .map_err(|error| error.to_string())?;
+                let lease = authority
+                    .acquire_control(&world_id, human.clone(), None, 11)
+                    .map_err(|error| error.to_string())?;
+                let state = authority.world(&world_id).map_err(|error| error.to_string())?;
+                authority
+                    .admit_action(
+                        &world_id,
+                        WorldActionIntent {
+                            intent_id: medousa_world::WorldIntentId::new("intent:durable-test"),
+                            trace_id: WorldTraceId::new("trace:durable-test"),
+                            principal: human,
+                            resource_id: WorldResourceId::new("browser-tab:durable-test"),
+                            expected_revision: state.revision,
+                            expected_control_generation: Some(lease.generation),
+                            required_capability: WorldCapability::Interact,
+                            effect_class: WorldEffectClass::LocalMutation,
+                            idempotency_key: "durable-test".to_string(),
+                            permit_expires_at_ms: 100,
+                            summary: "press the durable test button".to_string(),
+                        },
+                        12,
+                    )
+                    .map_err(|error| error.to_string())?;
+                Ok(())
+            })
+            .expect("persist admission");
+        drop(service);
+
+        let restarted = WorldAuthorityService::default();
+        let recovered = restarted
+            .enable_durable_timeline(path)
+            .expect("reopen timeline");
+        assert_eq!(recovered, 1);
+        let events = restarted
+            .durable_events_after(0, 32)
+            .expect("read durable events");
+        assert!(events.iter().any(|record| matches!(
+            &record.envelope.event.event,
+            medousa_world::WorldEventKind::ActionInterrupted {
+                status: medousa_world::WorldActionStatus::Indeterminate,
+                recovery: medousa_world::WorldRecoveryPlan {
+                    requires_fresh_admission: true,
+                    ..
+                },
+                ..
+            }
+        )));
     }
 }

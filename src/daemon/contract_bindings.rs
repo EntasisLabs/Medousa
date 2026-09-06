@@ -55,6 +55,10 @@ pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
             request: None,
             response: "HealthResponse",
         },
+        "worlds.timeline.get" => WireBinding {
+            request: None,
+            response: "WorldTimelineResponse",
+        },
         "ingest.post" => WireBinding {
             request: Some("IngestRequest"),
             response: "IngestResponse",

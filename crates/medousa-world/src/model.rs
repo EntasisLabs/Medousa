@@ -4,6 +4,8 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 pub const WORLD_SCHEMA_VERSION: u16 = 1;
+pub const WORLD_ACTION_CHECKPOINT_SCHEMA_VERSION: u16 = 1;
+pub const WORLD_EVENT_ENVELOPE_SCHEMA_VERSION: u16 = 1;
 
 macro_rules! string_id {
     ($name:ident) => {
@@ -224,6 +226,50 @@ impl WorldEffectClass {
     pub fn requires_control(self) -> bool {
         !matches!(self, Self::Observe | Self::ObservePixels)
     }
+
+    pub fn recovery_strategy(self) -> WorldRecoveryStrategy {
+        match self {
+            Self::Observe | Self::ObservePixels => WorldRecoveryStrategy::Reobserve,
+            Self::LocalReversible | Self::LocalMutation => {
+                WorldRecoveryStrategy::ReconcileFromFreshObservation
+            }
+            Self::ExternalEffect | Self::Irreversible => WorldRecoveryStrategy::OperatorReview,
+        }
+    }
+}
+
+/// State fence captured before a driver receives an admitted action.
+///
+/// This is deliberately authority-free: recovering from it always requires a
+/// fresh admission. It records enough state to explain what must be reconciled
+/// without storing page content, credentials, or native handles.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorldActionCheckpoint {
+    pub schema_version: u16,
+    pub surface: WorldSurfaceKind,
+    pub world_revision: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control_generation: Option<u64>,
+    pub admitted_at_ms: u64,
+    pub permit_expires_at_ms: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorldRecoveryStrategy {
+    /// The interrupted operation had no mutation; acquire a new observation.
+    Reobserve,
+    /// Observe the resource again and compare it with the admission fence.
+    ReconcileFromFreshObservation,
+    /// Do not infer or retry an external/irreversible effect automatically.
+    OperatorReview,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorldRecoveryPlan {
+    pub strategy: WorldRecoveryStrategy,
+    /// Recovery never carries the old permit or grant into a new process.
+    pub requires_fresh_admission: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -343,6 +389,9 @@ pub struct WorldActionPermit {
     pub idempotency_key: String,
     pub expires_at_ms: u64,
     pub admitted_event_sequence: u64,
+    pub summary: String,
+    pub checkpoint: WorldActionCheckpoint,
+    pub recovery: WorldRecoveryPlan,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -366,6 +415,8 @@ pub struct WorldActionOutcome {
     pub committed_revision: u64,
     pub event_sequence: u64,
     pub summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery: Option<WorldRecoveryPlan>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -401,11 +452,16 @@ pub enum WorldEventKind {
     ActionAdmitted {
         grant_id: WorldGrantId,
         effect_class: WorldEffectClass,
+        summary: String,
+        checkpoint: WorldActionCheckpoint,
+        recovery: WorldRecoveryPlan,
     },
     ActionCommitted {
         effect_class: WorldEffectClass,
         status: WorldActionStatus,
         summary: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        recovery: Option<WorldRecoveryPlan>,
     },
     ActionFailed {
         effect_class: WorldEffectClass,
@@ -413,6 +469,15 @@ pub enum WorldEventKind {
     },
     ExternalMutationObserved {
         summary: String,
+    },
+    /// The daemon restarted after admission but before a terminal driver
+    /// receipt was durably recorded. This never authorizes an automatic replay.
+    ActionInterrupted {
+        effect_class: WorldEffectClass,
+        status: WorldActionStatus,
+        summary: String,
+        checkpoint: WorldActionCheckpoint,
+        recovery: WorldRecoveryPlan,
     },
 }
 
@@ -431,4 +496,17 @@ pub struct WorldEvent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trace_id: Option<WorldTraceId>,
     pub event: WorldEventKind,
+}
+
+/// Event plus stable world identity at the moment it left the pure kernel.
+/// The daemon assigns its own monotonic ledger sequence when persisting this
+/// envelope so events from multiple worlds form one causal timeline.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorldEventEnvelope {
+    pub schema_version: u16,
+    pub authority_id: WorldAuthorityId,
+    pub driver_id: WorldDriverId,
+    pub ownership: WorldOwnership,
+    pub surface: WorldSurfaceKind,
+    pub event: WorldEvent,
 }

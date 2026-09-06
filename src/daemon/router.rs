@@ -178,6 +178,9 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::computer_handlers::computer_surface().inventory())
         .expect("duplicate native computer route policy");
     inventory
+        .extend(crate::world_handlers::world_timeline_surface().inventory())
+        .expect("duplicate world timeline route policy");
+    inventory
 }
 
 pub fn build_identity_surface() -> DeclaredRouter<AppState> {
@@ -1357,12 +1360,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 420);
-        assert_eq!(with_pairing.entries().len(), 439);
+        assert_eq!(without_pairing.entries().len(), 422);
+        assert_eq!(with_pairing.entries().len(), 441);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 439);
+        assert_eq!(rows.len(), 441);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
