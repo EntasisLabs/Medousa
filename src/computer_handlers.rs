@@ -46,6 +46,8 @@ pub struct ActOnComputerRequest {
     pub element_ref: String,
     pub action: ComputerAction,
     #[serde(default)]
+    pub value: Option<String>,
+    #[serde(default)]
     pub allow_high_risk: bool,
 }
 
@@ -168,6 +170,7 @@ pub async fn act_on_computer_driver(
         observation_revision: request.observation_revision,
         element_ref: request.element_ref.clone(),
         action: request.action,
+        value: request.value.clone(),
     }
     .validate()
     .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
@@ -211,11 +214,15 @@ pub async fn act_on_computer_driver(
             ))),
             resource_id,
             trace_id: format!("computer-human:act:{}", Uuid::new_v4()),
-            summary: "human requested a semantic desktop press".to_string(),
+            summary: format!(
+                "human requested semantic desktop action {}",
+                request.action.as_str()
+            ),
             observation_generation: request.observation_generation,
             observation_revision: request.observation_revision,
             element_ref: request.element_ref,
             action: request.action,
+            value: request.value,
             allow_high_risk: request.allow_high_risk,
         })
         .await
@@ -264,7 +271,10 @@ fn computer_action_failed(error: String) -> (StatusCode, String) {
         || error.contains("observation_required")
     {
         StatusCode::CONFLICT
-    } else if error.contains("element_disabled") || error.contains("high_risk_target") {
+    } else if error.contains("element_disabled")
+        || error.contains("action_unavailable")
+        || error.contains("high_risk_target")
+    {
         StatusCode::PRECONDITION_FAILED
     } else {
         StatusCode::BAD_GATEWAY
@@ -380,6 +390,10 @@ mod tests {
         );
         assert_eq!(
             computer_action_failed("element_disabled: unavailable".to_string()).0,
+            StatusCode::PRECONDITION_FAILED
+        );
+        assert_eq!(
+            computer_action_failed("action_unavailable: observe again".to_string()).0,
             StatusCode::PRECONDITION_FAILED
         );
     }

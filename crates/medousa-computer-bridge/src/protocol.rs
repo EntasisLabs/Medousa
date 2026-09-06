@@ -159,6 +159,7 @@ mod tests {
                     observation_revision: 7,
                     element_ref: "ax:button:one".to_string(),
                     action: crate::ComputerAction::Press,
+                    value: None,
                 },
             },
         );

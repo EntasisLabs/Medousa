@@ -410,7 +410,7 @@ remain behind daemon bearer authentication and the exact-origin boundary.
 | GET | `/v1/computer/drivers` | List native drivers registered by this workshop |
 | GET | `/v1/computer/drivers/{driver_id}/preflight` | Read permission state and the exact desktop session without prompting |
 | POST | `/v1/computer/drivers/{driver_id}/observe` | Capture a bounded semantic snapshot through world authority |
-| POST | `/v1/computer/drivers/{driver_id}/act` | Press an element from the latest exact semantic snapshot |
+| POST | `/v1/computer/drivers/{driver_id}/act` | Perform one advertised action from the latest exact semantic snapshot |
 
 The observation body accepts `session_id`, optional `after_revision`, and
 optional `max_nodes` (default 2,048; maximum 4,096). The session must exactly
@@ -419,14 +419,24 @@ clients cannot choose one. Observation requires `admin.execute`, while inventory
 and preflight require `WorkshopRead`.
 
 The action body accepts `session_id`, `observation_generation`,
-`observation_revision`, `element_ref`, `action` (currently only `press`), and
-optional `allow_high_risk` (default `false`). All four identity fields must
-match the driver's latest snapshot. Disabled elements are rejected. Sensitive
-or effectful-looking targets require the caller to set `allow_high_risk=true`
-only after explicit operator intent. The action is admitted through world
-authority with an exact resource grant and control lease, then dispatched as a
-background accessibility action; it does not move the physical pointer or
-accept coordinates. Action transport is never retried after dispatch ambiguity.
+`observation_revision`, `element_ref`, `action`, optional `value`, and optional
+`allow_high_risk` (default `false`). Actions are `press`, `focus`, `set_value`,
+`show_menu`, `increment`, `decrement`, and `scroll_to_visible`; `value` is
+required only for `set_value` and capped at 8 KiB. All four identity fields must
+match the driver's latest snapshot, and the target node must advertise the
+requested action in that exact snapshot. Disabled elements are rejected.
+Secure text fields never advertise `set_value` because secret injection needs
+an opaque credential path rather than model-visible text.
+Sensitive or effectful-looking targets require the caller to set
+`allow_high_risk=true` only after explicit operator intent.
+
+An admitted mutation consumes its observation fence before native dispatch, so
+the same snapshot cannot be replayed for a second action; observe again after
+every admitted action, including a failed or indeterminate dispatch. The action
+crosses world authority with an exact resource grant and control lease, then is
+dispatched as a background accessibility operation. It does not move the
+physical pointer or accept coordinates. Action transport is never retried after
+dispatch ambiguity. `set_value` text is not copied into receipts or provenance.
 This slice exposes no foreground input or pixel-capture endpoint.
 
 ---

@@ -302,21 +302,45 @@ impl NativeComputerDriver {
                 retryable: false,
             });
         }
+        let role =
+            text_attribute(element.as_ptr(), "AXRole").unwrap_or_else(|| "AXUnknown".to_string());
+        let subrole = text_attribute(element.as_ptr(), "AXSubrole");
+        let sensitive = is_sensitive_ax_node(&role, subrole.as_deref());
+        if !semantic_actions(element.as_ptr(), &role, sensitive).contains(&request.action) {
+            return Err(PlatformDriverError {
+                code: "action_unavailable",
+                message: format!(
+                    "the target no longer supports semantic action '{}'",
+                    request.action.as_str()
+                ),
+                retryable: false,
+            });
+        }
 
         let status = match request.action {
-            ComputerAction::Press => {
-                let action = cf_string("AXPress").ok_or_else(|| PlatformDriverError {
-                    code: "action_unavailable",
-                    message: "could not construct the macOS accessibility action".to_string(),
-                    retryable: false,
-                })?;
-                unsafe { AXUIElementPerformAction(element.as_ptr(), action.as_ptr()) }
+            ComputerAction::Press => perform_ax_action(element.as_ptr(), "AXPress")?,
+            ComputerAction::Focus => set_focused(element.as_ptr())?,
+            ComputerAction::SetValue => set_text_value(
+                element.as_ptr(),
+                request
+                    .value
+                    .as_deref()
+                    .expect("validated set_value payload"),
+            )?,
+            ComputerAction::ShowMenu => perform_ax_action(element.as_ptr(), "AXShowMenu")?,
+            ComputerAction::Increment => perform_ax_action(element.as_ptr(), "AXIncrement")?,
+            ComputerAction::Decrement => perform_ax_action(element.as_ptr(), "AXDecrement")?,
+            ComputerAction::ScrollToVisible => {
+                perform_ax_action(element.as_ptr(), "AXScrollToVisible")?
             }
         };
         if status != AX_ERROR_SUCCESS {
             return Err(PlatformDriverError {
                 code: "action_failed",
-                message: format!("macOS rejected the accessibility action with status {status}"),
+                message: format!(
+                    "macOS rejected semantic action '{}' with status {status}",
+                    request.action.as_str()
+                ),
                 retryable: false,
             });
         }
@@ -392,10 +416,7 @@ fn snapshot_window(
         let role =
             text_attribute(element.as_ptr(), "AXRole").unwrap_or_else(|| "AXUnknown".to_string());
         let subrole = text_attribute(element.as_ptr(), "AXSubrole");
-        let sensitive = role == "AXSecureTextField"
-            || subrole
-                .as_deref()
-                .is_some_and(|value| value.contains("Secure"));
+        let sensitive = is_sensitive_ax_node(&role, subrole.as_deref());
         let element_ref = format!(
             "ax:pid:{pid}:window:{window_index}:path:{:016x}",
             stable_path_hash(&path)
@@ -412,6 +433,7 @@ fn snapshot_window(
         } else {
             text_attribute(element.as_ptr(), "AXValue")
         };
+        let actions = semantic_actions(element.as_ptr(), &role, sensitive);
         output.push(ComputerSemanticNode {
             element_ref: element_ref.clone(),
             parent_ref,
@@ -424,6 +446,7 @@ fn snapshot_window(
             focused: bool_attribute(element.as_ptr(), "AXFocused").unwrap_or(false),
             selected: bool_attribute(element.as_ptr(), "AXSelected"),
             sensitive,
+            actions,
         });
 
         if depth >= MAX_AX_DEPTH {
@@ -476,6 +499,104 @@ fn active_displays() -> Vec<ComputerDisplay> {
             }
         })
         .collect()
+}
+
+fn semantic_actions(element: AXUIElementRef, role: &str, sensitive: bool) -> Vec<ComputerAction> {
+    let mut actions = copy_action_names(element)
+        .into_iter()
+        .filter_map(|name| semantic_action_for_ax_name(&name))
+        .collect::<std::collections::BTreeSet<_>>();
+    if attribute_is_settable(element, "AXFocused") {
+        actions.insert(ComputerAction::Focus);
+    }
+    if !sensitive
+        && matches!(
+            role,
+            "AXTextField" | "AXTextArea" | "AXSearchField" | "AXComboBox" | "AXSecureTextField"
+        )
+        && attribute_is_settable(element, "AXValue")
+    {
+        actions.insert(ComputerAction::SetValue);
+    }
+    actions.into_iter().collect()
+}
+
+fn is_sensitive_ax_node(role: &str, subrole: Option<&str>) -> bool {
+    role == "AXSecureTextField" || subrole.is_some_and(|value| value.contains("Secure"))
+}
+
+fn semantic_action_for_ax_name(name: &str) -> Option<ComputerAction> {
+    match name {
+        "AXPress" => Some(ComputerAction::Press),
+        "AXShowMenu" => Some(ComputerAction::ShowMenu),
+        "AXIncrement" => Some(ComputerAction::Increment),
+        "AXDecrement" => Some(ComputerAction::Decrement),
+        "AXScrollToVisible" => Some(ComputerAction::ScrollToVisible),
+        _ => None,
+    }
+}
+
+fn copy_action_names(element: AXUIElementRef) -> Vec<String> {
+    let mut array = ptr::null();
+    if unsafe { AXUIElementCopyActionNames(element, &mut array) } != AX_ERROR_SUCCESS {
+        return Vec::new();
+    }
+    let Some(array) = (unsafe { OwnedCf::from_create(array) }) else {
+        return Vec::new();
+    };
+    if unsafe { CFGetTypeID(array.as_ptr()) != CFArrayGetTypeID() } {
+        return Vec::new();
+    }
+    let count = unsafe { CFArrayGetCount(array.as_ptr()) };
+    (0..count)
+        .filter_map(|index| {
+            let value = unsafe { CFArrayGetValueAtIndex(array.as_ptr(), index) };
+            (!value.is_null() && unsafe { CFGetTypeID(value) == CFStringGetTypeID() })
+                .then(|| cf_string_value(value))
+                .flatten()
+        })
+        .collect()
+}
+
+fn attribute_is_settable(element: AXUIElementRef, attribute: &str) -> bool {
+    let Some(attribute) = cf_string(attribute) else {
+        return false;
+    };
+    let mut settable = 0;
+    let status =
+        unsafe { AXUIElementIsAttributeSettable(element, attribute.as_ptr(), &mut settable) };
+    status == AX_ERROR_SUCCESS && settable != 0
+}
+
+fn perform_ax_action(
+    element: AXUIElementRef,
+    action: &str,
+) -> Result<AXError, PlatformDriverError> {
+    let action = cf_string(action).ok_or_else(action_construction_error)?;
+    Ok(unsafe { AXUIElementPerformAction(element, action.as_ptr()) })
+}
+
+fn set_focused(element: AXUIElementRef) -> Result<AXError, PlatformDriverError> {
+    let attribute = cf_string("AXFocused").ok_or_else(action_construction_error)?;
+    Ok(unsafe { AXUIElementSetAttributeValue(element, attribute.as_ptr(), kCFBooleanTrue) })
+}
+
+fn set_text_value(element: AXUIElementRef, value: &str) -> Result<AXError, PlatformDriverError> {
+    let attribute = cf_string("AXValue").ok_or_else(action_construction_error)?;
+    let value = cf_string(value).ok_or_else(|| PlatformDriverError {
+        code: "invalid_request",
+        message: "computer action value contains unsupported text".to_string(),
+        retryable: false,
+    })?;
+    Ok(unsafe { AXUIElementSetAttributeValue(element, attribute.as_ptr(), value.as_ptr()) })
+}
+
+fn action_construction_error() -> PlatformDriverError {
+    PlatformDriverError {
+        code: "action_unavailable",
+        message: "could not construct the macOS accessibility action".to_string(),
+        retryable: false,
+    }
 }
 
 fn copy_attribute(element: AXUIElementRef, attribute: &str) -> Option<OwnedCf> {
@@ -771,6 +892,16 @@ unsafe extern "C" {
         attribute: CFStringRef,
         value: *mut CFTypeRef,
     ) -> AXError;
+    fn AXUIElementIsAttributeSettable(
+        element: AXUIElementRef,
+        attribute: CFStringRef,
+        settable: *mut Boolean,
+    ) -> AXError;
+    fn AXUIElementSetAttributeValue(
+        element: AXUIElementRef,
+        attribute: CFStringRef,
+        value: CFTypeRef,
+    ) -> AXError;
     fn AXUIElementGetAttributeValueCount(
         element: AXUIElementRef,
         attribute: CFStringRef,
@@ -784,6 +915,7 @@ unsafe extern "C" {
         values: *mut CFTypeRef,
     ) -> AXError;
     fn AXUIElementPerformAction(element: AXUIElementRef, action: CFStringRef) -> AXError;
+    fn AXUIElementCopyActionNames(element: AXUIElementRef, names: *mut CFTypeRef) -> AXError;
     fn AXValueGetTypeID() -> CFTypeId;
     fn AXValueGetType(value: AXValueRef) -> u32;
     fn AXValueGetValue(value: AXValueRef, value_type: u32, value_ptr: *mut c_void) -> Boolean;
@@ -791,6 +923,7 @@ unsafe extern "C" {
 
 #[link(name = "CoreFoundation", kind = "framework")]
 unsafe extern "C" {
+    static kCFBooleanTrue: CFTypeRef;
     fn CFRetain(value: CFTypeRef) -> CFTypeRef;
     fn CFRelease(value: CFTypeRef);
     fn CFGetTypeID(value: CFTypeRef) -> CFTypeId;
@@ -870,5 +1003,28 @@ mod tests {
         let truncated = truncate_text(&text);
         assert!(truncated.ends_with('…'));
         assert!(truncated.len() <= MAX_TEXT_BYTES);
+    }
+
+    #[test]
+    fn native_action_names_map_only_to_supported_semantics() {
+        assert_eq!(
+            semantic_action_for_ax_name("AXPress"),
+            Some(ComputerAction::Press)
+        );
+        assert_eq!(
+            semantic_action_for_ax_name("AXScrollToVisible"),
+            Some(ComputerAction::ScrollToVisible)
+        );
+        assert_eq!(semantic_action_for_ax_name("AXRaise"), None);
+    }
+
+    #[test]
+    fn secure_text_roles_are_classified_before_actions_are_advertised() {
+        assert!(is_sensitive_ax_node("AXSecureTextField", None));
+        assert!(is_sensitive_ax_node(
+            "AXTextField",
+            Some("AXSecureTextField")
+        ));
+        assert!(!is_sensitive_ax_node("AXTextField", None));
     }
 }

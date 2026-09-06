@@ -3,14 +3,15 @@ use std::collections::BTreeSet;
 use medousa_world::{WorldDriverId, WorldResourceId};
 use serde::{Deserialize, Serialize};
 
-pub const COMPUTER_DRIVER_PROTOCOL_VERSION: u16 = 2;
-pub const COMPUTER_OBSERVATION_SCHEMA_VERSION: u16 = 1;
+pub const COMPUTER_DRIVER_PROTOCOL_VERSION: u16 = 3;
+pub const COMPUTER_OBSERVATION_SCHEMA_VERSION: u16 = 2;
 pub const DEFAULT_COMPUTER_OBSERVATION_NODE_LIMIT: u32 = 2_048;
 pub const MAX_COMPUTER_OBSERVATION_NODES: u32 = 4_096;
 pub const MAX_COMPUTER_OBSERVATION_DISPLAYS: usize = 32;
 pub const MAX_COMPUTER_OBSERVATION_APPLICATIONS: usize = 256;
 pub const MAX_COMPUTER_OBSERVATION_WINDOWS: usize = 1_024;
 pub const MAX_COMPUTER_OBSERVATION_TEXT_BYTES: usize = 4_096;
+pub const MAX_COMPUTER_ACTION_VALUE_BYTES: usize = 8 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -149,6 +150,9 @@ pub struct ComputerSemanticNode {
     pub selected: Option<bool>,
     #[serde(default)]
     pub sensitive: bool,
+    /// Semantic operations the driver reported for this exact observation.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<ComputerAction>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -376,6 +380,10 @@ impl ComputerObservation {
             if node.sensitive && node.value.is_some() {
                 return Err("sensitive computer node exposed its value".to_string());
             }
+            let mut actions = BTreeSet::new();
+            if node.actions.iter().any(|action| !actions.insert(*action)) {
+                return Err("computer element contains duplicate semantic actions".to_string());
+            }
             if self.full
                 && !self
                     .windows
@@ -400,10 +408,30 @@ impl ComputerObservation {
 
 /// A semantic desktop action. These actions never carry screen coordinates;
 /// the driver resolves an opaque element reference from an exact observation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ComputerAction {
     Press,
+    Focus,
+    SetValue,
+    ShowMenu,
+    Increment,
+    Decrement,
+    ScrollToVisible,
+}
+
+impl ComputerAction {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Press => "press",
+            Self::Focus => "focus",
+            Self::SetValue => "set_value",
+            Self::ShowMenu => "show_menu",
+            Self::Increment => "increment",
+            Self::Decrement => "decrement",
+            Self::ScrollToVisible => "scroll_to_visible",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -414,6 +442,9 @@ pub struct ComputerActionRequest {
     pub observation_revision: u64,
     pub element_ref: String,
     pub action: ComputerAction,
+    /// Present only for `set_value`. It is never copied into the receipt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
 }
 
 impl ComputerActionRequest {
@@ -424,6 +455,20 @@ impl ComputerActionRequest {
         validate_identifier("computer element reference", &self.element_ref)?;
         if self.observation_revision == 0 {
             return Err("computer action observation revision must be positive".to_string());
+        }
+        match (&self.action, &self.value) {
+            (ComputerAction::SetValue, Some(value)) => {
+                if value.len() > MAX_COMPUTER_ACTION_VALUE_BYTES || value.contains('\0') {
+                    return Err("computer action value is invalid or too large".to_string());
+                }
+            }
+            (ComputerAction::SetValue, None) => {
+                return Err("set_value requires a value".to_string());
+            }
+            (_, Some(_)) => {
+                return Err("only set_value accepts a value".to_string());
+            }
+            (_, None) => {}
         }
         Ok(())
     }
@@ -536,6 +581,7 @@ mod tests {
                 focused: false,
                 selected: None,
                 sensitive: false,
+                actions: vec![ComputerAction::Press],
             }],
             removed_refs: Vec::new(),
             truncated: false,
@@ -608,6 +654,7 @@ mod tests {
             observation_revision: 4,
             element_ref: "ax:button:one".to_string(),
             action: ComputerAction::Press,
+            value: None,
         };
         let mut receipt = ComputerActionReceipt {
             driver_id: WorldDriverId::new("driver:computer:test"),
@@ -628,5 +675,38 @@ mod tests {
                 .validate_for(&WorldDriverId::new("driver:computer:test"), &request)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn set_value_requires_a_bounded_payload_and_other_actions_reject_it() {
+        let mut request = ComputerActionRequest {
+            resource_id: WorldResourceId::new("desktop:session"),
+            session_id: "login-session:test".to_string(),
+            observation_generation: "generation:one".to_string(),
+            observation_revision: 4,
+            element_ref: "ax:text:one".to_string(),
+            action: ComputerAction::SetValue,
+            value: Some("hello\nworld".to_string()),
+        };
+        request.validate().expect("bounded multiline value");
+
+        request.value = None;
+        assert!(request.validate().is_err());
+        request.action = ComputerAction::Press;
+        request.value = Some("not allowed".to_string());
+        assert!(request.validate().is_err());
+    }
+
+    #[test]
+    fn observation_rejects_duplicate_semantic_actions() {
+        let mut observation = observation();
+        observation.nodes[0].actions.push(ComputerAction::Press);
+        let error = observation
+            .validate_for(
+                &WorldDriverId::new("driver:computer:test"),
+                &ComputerObservationRequest::new("desktop:session", "login-session:test"),
+            )
+            .expect_err("duplicate actions must fail");
+        assert!(error.contains("duplicate semantic actions"));
     }
 }

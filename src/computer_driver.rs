@@ -102,6 +102,7 @@ struct ComputerObservedElement {
     name: String,
     enabled: bool,
     sensitive: bool,
+    actions: BTreeSet<ComputerAction>,
 }
 
 impl ComputerDriverBroker {
@@ -252,6 +253,7 @@ impl ComputerDriverBroker {
             observation_revision: intent.observation_revision,
             element_ref: intent.element_ref.clone(),
             action: intent.action,
+            value: intent.value.clone(),
         };
         request.validate()?;
         self.validate_action_fence(&intent).await?;
@@ -262,6 +264,11 @@ impl ComputerDriverBroker {
                 .validate_action_permit(&admission.permit, now_ms())
                 .map_err(|error| error.to_string())
         }) {
+            let _ = self.fail(&admission.permit, &error);
+            return Err(error);
+        }
+
+        if let Err(error) = self.consume_action_fence(&intent).await {
             let _ = self.fail(&admission.permit, &error);
             return Err(error);
         }
@@ -286,7 +293,10 @@ impl ComputerDriverBroker {
             authority
                 .complete_action(
                     &admission.permit,
-                    "native semantic press acknowledged",
+                    format!(
+                        "native semantic {} acknowledged",
+                        intent.action.as_str()
+                    ),
                     now_ms(),
                 )
                 .map_err(|error| error.to_string())
@@ -328,6 +338,7 @@ impl ComputerDriverBroker {
                     name: node.name.clone(),
                     enabled: node.enabled,
                     sensitive: node.sensitive,
+                    actions: node.actions.iter().copied().collect(),
                 },
             );
         }
@@ -364,13 +375,39 @@ impl ComputerDriverBroker {
         if !element.enabled {
             return Err("element_disabled: action target is not enabled".to_string());
         }
+        if !element.actions.contains(&intent.action) {
+            return Err(format!(
+                "action_unavailable: exact observation did not advertise '{}' for this target",
+                intent.action.as_str()
+            ));
+        }
         if !intent.allow_high_risk && observed_element_is_high_risk(element) {
             return Err(
                 "high_risk_target: observed element looks sensitive or effectful; rerun with \
-                 allow_high_risk=true only when the operator explicitly requested this press"
+                 allow_high_risk=true only when the operator explicitly requested this action"
                     .to_string(),
             );
         }
+        Ok(())
+    }
+
+    async fn consume_action_fence(&self, intent: &ComputerActionIntent) -> Result<(), String> {
+        let key = (intent.driver_id.clone(), intent.resource_id.clone());
+        let mut fences = self.observation_fences.write().await;
+        let fence = fences.get(&key).ok_or_else(|| {
+            "observation_required: observe the desktop before requesting an action".to_string()
+        })?;
+        if fence.session_id != intent.desktop_session_id
+            || fence.generation != intent.observation_generation
+            || fence.revision != intent.observation_revision
+            || !fence.elements.contains_key(&intent.element_ref)
+        {
+            return Err(
+                "stale_observation: action must target the daemon's latest exact observation"
+                    .to_string(),
+            );
+        }
+        fences.remove(&key);
         Ok(())
     }
 
@@ -651,6 +688,7 @@ pub struct ComputerActionIntent {
     pub observation_revision: u64,
     pub element_ref: String,
     pub action: ComputerAction,
+    pub value: Option<String>,
     pub allow_high_risk: bool,
 }
 
@@ -666,6 +704,16 @@ impl ComputerActionIntent {
         if self.observation_revision == 0 {
             return Err("computer action observation revision must be positive".to_string());
         }
+        ComputerActionRequest {
+            resource_id: self.resource_id.clone(),
+            session_id: self.desktop_session_id.clone(),
+            observation_generation: self.observation_generation.clone(),
+            observation_revision: self.observation_revision,
+            element_ref: self.element_ref.clone(),
+            action: self.action,
+            value: self.value.clone(),
+        }
+        .validate()?;
         if self.summary.trim().is_empty() || self.summary.len() > 1_024 {
             return Err("computer action summary is invalid".to_string());
         }
@@ -948,6 +996,7 @@ mod tests {
                     focused: false,
                     selected: None,
                     sensitive: false,
+                    actions: vec![ComputerAction::Press],
                 }],
                 removed_refs: Vec::new(),
                 truncated: false,
@@ -1106,6 +1155,7 @@ mod tests {
             observation_revision: 1,
             element_ref: element_ref.to_string(),
             action: ComputerAction::Press,
+            value: None,
             allow_high_risk: false,
         }
     }
@@ -1135,6 +1185,62 @@ mod tests {
         assert_eq!(driver.actions.load(Ordering::SeqCst), 1);
         assert_eq!(result.receipt.action, ComputerAction::Press);
         assert_eq!(result.provenance.outcome.status, WorldActionStatus::Confirmed);
+    }
+
+    #[tokio::test]
+    async fn semantic_action_must_be_advertised_by_the_exact_observation() {
+        let authority = Arc::new(WorldAuthorityService::default());
+        let broker = ComputerDriverBroker::new(authority);
+        let driver = Arc::new(FakeComputerDriver {
+            registration: registration("driver:computer:test"),
+            observations: AtomicUsize::new(0),
+            actions: AtomicUsize::new(0),
+            spoof_driver: false,
+            spoof_action_revision: false,
+        });
+        broker.register(driver.clone()).await.expect("register driver");
+        broker
+            .observe(intent("driver:computer:test"))
+            .await
+            .expect("establish observation");
+        let mut action = action_intent("driver:computer:test", "ax:test:button");
+        action.action = ComputerAction::ShowMenu;
+
+        let error = broker
+            .act(action)
+            .await
+            .expect_err("unadvertised semantic action must fail");
+
+        assert!(error.contains("action_unavailable"));
+        assert_eq!(driver.actions.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn admitted_semantic_action_consumes_its_observation_fence() {
+        let authority = Arc::new(WorldAuthorityService::default());
+        let broker = ComputerDriverBroker::new(authority);
+        let driver = Arc::new(FakeComputerDriver {
+            registration: registration("driver:computer:test"),
+            observations: AtomicUsize::new(0),
+            actions: AtomicUsize::new(0),
+            spoof_driver: false,
+            spoof_action_revision: false,
+        });
+        broker.register(driver.clone()).await.expect("register driver");
+        broker
+            .observe(intent("driver:computer:test"))
+            .await
+            .expect("establish observation");
+        let action = action_intent("driver:computer:test", "ax:test:button");
+
+        broker.act(action.clone()).await.expect("first action");
+        let error = broker
+            .act(action)
+            .await
+            .expect_err("replayed action must require another observation");
+
+        assert!(error.contains("observation_required"));
+        assert_eq!(driver.actions.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
@@ -1186,12 +1292,14 @@ mod tests {
             name: "Display settings".to_string(),
             enabled: true,
             sensitive: false,
+            actions: [ComputerAction::Press].into_iter().collect(),
         }));
         assert!(observed_element_is_high_risk(&ComputerObservedElement {
             role: "button".to_string(),
             name: "Pay now".to_string(),
             enabled: true,
             sensitive: false,
+            actions: [ComputerAction::Press].into_iter().collect(),
         }));
     }
 

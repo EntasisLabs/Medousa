@@ -80,12 +80,38 @@ pub struct ComputerSnapshotInput {
 #[serde(rename_all = "snake_case")]
 pub enum ComputerToolAction {
     Press,
+    Focus,
+    SetValue,
+    ShowMenu,
+    Increment,
+    Decrement,
+    ScrollToVisible,
 }
 
 impl From<ComputerToolAction> for ComputerAction {
     fn from(value: ComputerToolAction) -> Self {
         match value {
             ComputerToolAction::Press => Self::Press,
+            ComputerToolAction::Focus => Self::Focus,
+            ComputerToolAction::SetValue => Self::SetValue,
+            ComputerToolAction::ShowMenu => Self::ShowMenu,
+            ComputerToolAction::Increment => Self::Increment,
+            ComputerToolAction::Decrement => Self::Decrement,
+            ComputerToolAction::ScrollToVisible => Self::ScrollToVisible,
+        }
+    }
+}
+
+impl ComputerToolAction {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Press => "press",
+            Self::Focus => "focus",
+            Self::SetValue => "set_value",
+            Self::ShowMenu => "show_menu",
+            Self::Increment => "increment",
+            Self::Decrement => "decrement",
+            Self::ScrollToVisible => "scroll_to_visible",
         }
     }
 }
@@ -103,8 +129,12 @@ pub struct ComputerActInput {
     observation_revision: u64,
     /// Opaque element reference returned by that exact observation.
     element_ref: String,
-    /// Semantic action to perform. The initial driver supports press.
+    /// Semantic action to perform. Use only an action advertised by the exact snapshot node.
     action: ComputerToolAction,
+    /// Text for set_value. Omit for every other action. This value is not copied into receipts or provenance summaries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(max = 8192))]
+    value: Option<String>,
     /// Permit a sensitive or effectful target only when the operator explicitly requested it.
     #[serde(default)]
     allow_high_risk: bool,
@@ -191,7 +221,7 @@ impl CognitionComputerActTool {
             .event_tx
             .send(TuiEvent::ToolInvoked {
                 tool_name: COGNITION_COMPUTER_ACT.to_string(),
-                input_summary: format!("press {}", input.element_ref),
+                input_summary: format!("{} {}", input.action.as_str(), input.element_ref),
             })
             .await;
         let scope =
@@ -208,11 +238,15 @@ impl CognitionComputerActTool {
                 principal: agent_principal(scope.as_ref()),
                 resource_id: desktop_resource_id(&driver_id, &input.session_id),
                 trace_id: turn_trace_id(scope.as_ref(), "computer-agent:act"),
-                summary: "agent requested a semantic desktop press".to_string(),
+                summary: format!(
+                    "agent requested semantic desktop action {}",
+                    input.action.as_str()
+                ),
                 observation_generation: input.observation_generation,
                 observation_revision: input.observation_revision,
                 element_ref: input.element_ref,
                 action: input.action.into(),
+                value: input.value,
                 allow_high_risk: input.allow_high_risk,
             })
             .await

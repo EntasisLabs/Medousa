@@ -44,14 +44,18 @@ this generic HTTP client rather than a dedicated typed SDK accessor. See the
 [Forge engine guide](../engine/forge.md) and the
 [HTTP route index](../engine/http-api.md#forge-undertakings).
 
-Native computer-driver discovery, observation, and semantic press actions also
+Native computer-driver discovery, observation, and semantic actions also
 use this generic client for now. Call `GET /v1/computer/drivers`, preflight the
 selected driver, then pass the returned `preflight.session_id` to its `observe`
 route. An action must echo the observation generation, revision, and element
-reference from that latest snapshot. Set `allow_high_risk=true` only when the
-operator explicitly asked to press a target classified as sensitive or
-effectful. The daemon derives the governed desktop resource, rejects stale or
-disabled targets, and never retries an ambiguous action.
+reference from that latest snapshot, and the node must advertise that action.
+Supported semantics are press, focus, set value, show menu, increment,
+decrement, and scroll to visible. `set_value` alone takes a bounded `value`.
+Set `allow_high_risk=true` only when the operator explicitly requested an
+action on a target classified as sensitive or effectful. The daemon derives the
+governed desktop resource, rejects stale or disabled targets, consumes the
+snapshot fence before dispatch, and never retries an ambiguous action. Observe
+again before the next mutation.
 See [Native computer drivers](../engine/http-api.md#native-computer-drivers).
 
 Daemon delegation uses the generated native-only operation

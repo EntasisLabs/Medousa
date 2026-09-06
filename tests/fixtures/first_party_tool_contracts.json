@@ -3108,9 +3108,15 @@
       "input_schema": {
         "properties": {
           "action": {
-            "description": "Semantic action to perform. The initial driver supports press.",
+            "description": "Semantic action to perform. Use only an action advertised by the exact snapshot node.",
             "enum": [
-              "press"
+              "decrement",
+              "focus",
+              "increment",
+              "press",
+              "scroll_to_visible",
+              "set_value",
+              "show_menu"
             ],
             "type": "string"
           },
@@ -3139,6 +3145,14 @@
           "session_id": {
             "description": "Exact desktop login session returned by cognition_computer_snapshot.",
             "type": "string"
+          },
+          "value": {
+            "description": "Text for set_value. Omit for every other action. This value is not copied into receipts or provenance summaries.",
+            "maxLength": 8192,
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [

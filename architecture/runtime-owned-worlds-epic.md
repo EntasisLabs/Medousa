@@ -649,16 +649,24 @@ Current macOS observation slice:
 
 Current macOS action slice:
 
-- The first action is a background Accessibility `press`; the native sidecar
-  accepts no coordinates and never moves the physical pointer.
-- Every press is fenced to the latest exact desktop session, observation
-  generation, revision, resource, and opaque element reference. A newer
-  observation invalidates every prior target.
+- Each accessibility node advertises the actions macOS actually supports for
+  that exact observation. The bounded vocabulary is `press`, `focus`,
+  `set_value`, `show_menu`, `increment`, `decrement`, and
+  `scroll_to_visible`; the native sidecar accepts no coordinates and never
+  moves the physical pointer.
+- Every action is fenced to the latest exact desktop session, observation
+  generation, revision, resource, and opaque element reference. The broker
+  rejects actions the node did not advertise and consumes an admitted
+  observation before native dispatch, preventing sequential replay or
+  concurrent reuse against changed UI.
+- Secure text fields never advertise `set_value`; credentials require a future
+  opaque grant path instead of passing secret text through a model tool call.
 - The daemon grants only exact-resource interaction, acquires control, rechecks
   the permit immediately before dispatch, and records the native receipt.
 - Effectful sidecar requests are never automatically retried. A lost or invalid
   acknowledgement is recorded as indeterminate for reconciliation rather than
-  risking a duplicate press.
+  risking a duplicate action. Callers must observe again after every admitted
+  action, including failed or indeterminate dispatch.
 - The main Medousa lane exposes `cognition_computer_snapshot` and
   `cognition_computer_act` directly against the daemon broker. A single native
   driver is selected without ceremony; multiple drivers require an exact id.
@@ -667,11 +675,13 @@ Current macOS action slice:
 - Action risk is resolved from the broker's cached node semantics, not caller
   labels. Disabled nodes fail closed, while sensitive and effectful-looking
   targets require an explicit `allow_high_risk` assertion tied to operator
-  intent.
+  intent. Text supplied to `set_value` stays out of receipts, tool summaries,
+  and provenance.
 - `medousa-computer` ships as the optional `computer-driver` package through
   the same release manifest and `{dataDir}/bin` installer path as other
   workshop sidecars; it is never folded into the daemon or silently installed.
-- Pixel observations, broader actions, and Home controls remain later slices.
+- Pixel observations, foreground event fallbacks, and Home controls remain
+  later slices.
 
 Implementation:
 
