@@ -3,8 +3,9 @@ use std::collections::BTreeSet;
 use medousa_world::{WorldDriverId, WorldResourceId};
 use serde::{Deserialize, Serialize};
 
-pub const COMPUTER_DRIVER_PROTOCOL_VERSION: u16 = 3;
+pub const COMPUTER_DRIVER_PROTOCOL_VERSION: u16 = 4;
 pub const COMPUTER_OBSERVATION_SCHEMA_VERSION: u16 = 2;
+pub const COMPUTER_SCREENSHOT_SCHEMA_VERSION: u16 = 1;
 pub const DEFAULT_COMPUTER_OBSERVATION_NODE_LIMIT: u32 = 2_048;
 pub const MAX_COMPUTER_OBSERVATION_NODES: u32 = 4_096;
 pub const MAX_COMPUTER_OBSERVATION_DISPLAYS: usize = 32;
@@ -12,6 +13,13 @@ pub const MAX_COMPUTER_OBSERVATION_APPLICATIONS: usize = 256;
 pub const MAX_COMPUTER_OBSERVATION_WINDOWS: usize = 1_024;
 pub const MAX_COMPUTER_OBSERVATION_TEXT_BYTES: usize = 4_096;
 pub const MAX_COMPUTER_ACTION_VALUE_BYTES: usize = 8 * 1024;
+pub const DEFAULT_COMPUTER_SCREENSHOT_MAX_WIDTH: u32 = 1_280;
+pub const MIN_COMPUTER_SCREENSHOT_WIDTH: u32 = 320;
+pub const MAX_COMPUTER_SCREENSHOT_WIDTH: u32 = 1_600;
+pub const MAX_COMPUTER_SCREENSHOT_HEIGHT: u32 = 2_400;
+pub const MAX_COMPUTER_SCREENSHOT_PIXELS: u64 = 4_000_000;
+pub const MAX_COMPUTER_SCREENSHOT_BYTES: usize = 5 * 1024 * 1024;
+pub const MAX_COMPUTER_SCREENSHOT_BASE64_BYTES: usize = 7 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -86,6 +94,11 @@ impl ComputerDriverPreflight {
 
     pub fn semantic_observation_ready(&self) -> bool {
         self.permission_status(ComputerPermissionKind::Accessibility)
+            == ComputerPermissionStatus::Granted
+    }
+
+    pub fn pixel_observation_ready(&self) -> bool {
+        self.permission_status(ComputerPermissionKind::ScreenCapture)
             == ComputerPermissionStatus::Granted
     }
 }
@@ -406,6 +419,126 @@ impl ComputerObservation {
     }
 }
 
+/// Request for one bounded screenshot of the exact focused window represented
+/// by a semantic observation. Pixel capture is deliberately a separate
+/// capability from the accessibility tree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ComputerScreenshotRequest {
+    pub resource_id: WorldResourceId,
+    pub session_id: String,
+    pub observation_generation: String,
+    pub observation_revision: u64,
+    pub window_resource_id: WorldResourceId,
+    #[serde(default = "default_screenshot_max_width")]
+    pub max_width: u32,
+}
+
+impl ComputerScreenshotRequest {
+    pub fn validate(&self) -> Result<(), String> {
+        validate_identifier("computer resource", self.resource_id.as_str())?;
+        validate_identifier("computer session", &self.session_id)?;
+        validate_identifier("observation generation", &self.observation_generation)?;
+        validate_identifier(
+            "computer screenshot window resource",
+            self.window_resource_id.as_str(),
+        )?;
+        if self.observation_revision == 0 {
+            return Err("computer screenshot observation revision must be positive".to_string());
+        }
+        if !(MIN_COMPUTER_SCREENSHOT_WIDTH..=MAX_COMPUTER_SCREENSHOT_WIDTH)
+            .contains(&self.max_width)
+        {
+            return Err(format!(
+                "computer screenshot max_width must be between {MIN_COMPUTER_SCREENSHOT_WIDTH} and {MAX_COMPUTER_SCREENSHOT_WIDTH}"
+            ));
+        }
+        Ok(())
+    }
+}
+
+const fn default_screenshot_max_width() -> u32 {
+    DEFAULT_COMPUTER_SCREENSHOT_MAX_WIDTH
+}
+
+/// Bounded, redacted focused-window pixels returned only across the colocated
+/// driver transport. The daemon persists the bytes out of band and exposes a
+/// receipt to model-facing callers.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ComputerScreenshotCapture {
+    pub schema_version: u16,
+    pub driver_id: WorldDriverId,
+    pub resource_id: WorldResourceId,
+    pub session_id: String,
+    pub observation_generation: String,
+    pub observation_revision: u64,
+    pub window_resource_id: WorldResourceId,
+    pub coordinate_frame: String,
+    pub mime: String,
+    pub image_width: u32,
+    pub image_height: u32,
+    pub byte_size: usize,
+    pub sha256: String,
+    pub sensitive_regions_redacted: usize,
+    pub captured_at_ms: u64,
+    /// Desktop pixels are application-provided data, never runtime policy.
+    pub untrusted_content: bool,
+    /// This field is local-transport-only and must never be copied into a
+    /// transcript or provenance summary.
+    pub image_base64: String,
+}
+
+impl ComputerScreenshotCapture {
+    pub fn validate_for(
+        &self,
+        driver_id: &WorldDriverId,
+        request: &ComputerScreenshotRequest,
+    ) -> Result<(), String> {
+        if self.schema_version != COMPUTER_SCREENSHOT_SCHEMA_VERSION {
+            return Err(format!(
+                "unsupported computer screenshot schema {}",
+                self.schema_version
+            ));
+        }
+        if &self.driver_id != driver_id {
+            return Err("computer screenshot came from the wrong driver".to_string());
+        }
+        if self.resource_id != request.resource_id
+            || self.session_id != request.session_id
+            || self.observation_generation != request.observation_generation
+            || self.observation_revision != request.observation_revision
+            || self.window_resource_id != request.window_resource_id
+        {
+            return Err("computer screenshot did not match its exact observation".to_string());
+        }
+        validate_identifier("computer session", &self.session_id)?;
+        validate_identifier("observation generation", &self.observation_generation)?;
+        validate_identifier(
+            "computer screenshot window resource",
+            self.window_resource_id.as_str(),
+        )?;
+        let digest_valid =
+            self.sha256.len() == 64 && self.sha256.bytes().all(|byte| byte.is_ascii_hexdigit());
+        if self.coordinate_frame != "focused_window_pixels"
+            || self.mime != "image/png"
+            || self.image_width == 0
+            || self.image_height == 0
+            || self.image_width > request.max_width
+            || self.image_height > MAX_COMPUTER_SCREENSHOT_HEIGHT
+            || u64::from(self.image_width) * u64::from(self.image_height)
+                > MAX_COMPUTER_SCREENSHOT_PIXELS
+            || self.byte_size == 0
+            || self.byte_size > MAX_COMPUTER_SCREENSHOT_BYTES
+            || self.image_base64.len() > MAX_COMPUTER_SCREENSHOT_BASE64_BYTES
+            || self.captured_at_ms == 0
+            || !self.untrusted_content
+            || !digest_valid
+        {
+            return Err("computer screenshot metadata failed validation".to_string());
+        }
+        Ok(())
+    }
+}
+
 /// A semantic desktop action. These actions never carry screen coordinates;
 /// the driver resolves an opaque element reference from an exact observation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -695,6 +828,89 @@ mod tests {
         request.action = ComputerAction::Press;
         request.value = Some("not allowed".to_string());
         assert!(request.validate().is_err());
+    }
+
+    #[test]
+    fn screenshot_capture_is_bound_to_one_exact_focused_window() {
+        let request = ComputerScreenshotRequest {
+            resource_id: WorldResourceId::new("desktop:session"),
+            session_id: "login-session:test".to_string(),
+            observation_generation: "generation:one".to_string(),
+            observation_revision: 4,
+            window_resource_id: WorldResourceId::new("window:one"),
+            max_width: 1_280,
+        };
+        request.validate().expect("valid screenshot request");
+        let mut capture = ComputerScreenshotCapture {
+            schema_version: COMPUTER_SCREENSHOT_SCHEMA_VERSION,
+            driver_id: WorldDriverId::new("driver:computer:test"),
+            resource_id: request.resource_id.clone(),
+            session_id: request.session_id.clone(),
+            observation_generation: request.observation_generation.clone(),
+            observation_revision: request.observation_revision,
+            window_resource_id: request.window_resource_id.clone(),
+            coordinate_frame: "focused_window_pixels".to_string(),
+            mime: "image/png".to_string(),
+            image_width: 1_280,
+            image_height: 720,
+            byte_size: 1_024,
+            sha256: "a".repeat(64),
+            sensitive_regions_redacted: 1,
+            captured_at_ms: 5,
+            untrusted_content: true,
+            image_base64: "pixels".to_string(),
+        };
+        capture
+            .validate_for(&WorldDriverId::new("driver:computer:test"), &request)
+            .expect("matching capture");
+        capture.window_resource_id = WorldResourceId::new("window:other");
+        assert!(
+            capture
+                .validate_for(&WorldDriverId::new("driver:computer:test"), &request)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn screenshot_request_and_payload_are_bounded() {
+        let mut request = ComputerScreenshotRequest {
+            resource_id: WorldResourceId::new("desktop:session"),
+            session_id: "login-session:test".to_string(),
+            observation_generation: "generation:one".to_string(),
+            observation_revision: 4,
+            window_resource_id: WorldResourceId::new("window:one"),
+            max_width: MIN_COMPUTER_SCREENSHOT_WIDTH - 1,
+        };
+        assert!(request.validate().is_err());
+        request.max_width = MAX_COMPUTER_SCREENSHOT_WIDTH;
+        request.validate().expect("maximum bounded width");
+
+        let capture = ComputerScreenshotCapture {
+            schema_version: COMPUTER_SCREENSHOT_SCHEMA_VERSION,
+            driver_id: WorldDriverId::new("driver:computer:test"),
+            resource_id: request.resource_id.clone(),
+            session_id: request.session_id.clone(),
+            observation_generation: request.observation_generation.clone(),
+            observation_revision: request.observation_revision,
+            window_resource_id: request.window_resource_id.clone(),
+            coordinate_frame: "focused_window_pixels".to_string(),
+            mime: "image/png".to_string(),
+            image_width: MAX_COMPUTER_SCREENSHOT_WIDTH,
+            image_height: (MAX_COMPUTER_SCREENSHOT_PIXELS
+                / u64::from(MAX_COMPUTER_SCREENSHOT_WIDTH)
+                + 1) as u32,
+            byte_size: 1,
+            sha256: "b".repeat(64),
+            sensitive_regions_redacted: 0,
+            captured_at_ms: 5,
+            untrusted_content: true,
+            image_base64: "x".to_string(),
+        };
+        assert!(
+            capture
+                .validate_for(&WorldDriverId::new("driver:computer:test"), &request)
+                .is_err()
+        );
     }
 
     #[test]

@@ -4,10 +4,16 @@
 //! daemon's registered broker, preflight without prompting, and cross the same
 //! world-authority boundary as the authenticated HTTP surface.
 
-use medousa_computer_bridge::{ComputerAction, ComputerPermissionKind};
+use base64::Engine as _;
+use medousa_computer_bridge::{
+    MAX_COMPUTER_SCREENSHOT_BASE64_BYTES, MAX_COMPUTER_SCREENSHOT_BYTES,
+    MAX_COMPUTER_SCREENSHOT_HEIGHT, MAX_COMPUTER_SCREENSHOT_PIXELS,
+    MAX_COMPUTER_SCREENSHOT_WIDTH, ComputerAction, ComputerPermissionKind,
+    ComputerScreenshotCapture,
+};
 use medousa_world::{WorldDriverId, WorldPrincipal, WorldPrincipalId};
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest as _, Sha256};
 use stasis::domain::errors::StasisError;
@@ -15,7 +21,8 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::computer_driver::{
-    ComputerActionIntent, ComputerDriverBroker, ComputerObservationIntent, desktop_resource_id,
+    ComputerActionIntent, ComputerDriverBroker, ComputerObservationIntent,
+    ComputerPixelObservationIntent, desktop_resource_id,
 };
 use crate::events::TuiEvent;
 use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
@@ -74,6 +81,30 @@ pub struct ComputerSnapshotInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(range(min = 1, max = 512))]
     max_nodes: Option<u32>,
+    /// Include a redacted screenshot of the focused window.
+    #[serde(default)]
+    capture_screenshot: bool,
+    /// Screenshot width limit (320-1600 pixels).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 320, max = 1600))]
+    screenshot_max_width: Option<u32>,
+}
+
+#[derive(Debug, Serialize)]
+struct ComputerScreenshotArtifactOutput {
+    artifact_id: String,
+    mime: String,
+    byte_size: usize,
+    sha256: String,
+    observation_generation: String,
+    observation_revision: u64,
+    window_resource_id: medousa_world::WorldResourceId,
+    coordinate_frame: String,
+    image_width: u32,
+    image_height: u32,
+    sensitive_regions_redacted: usize,
+    captured_at_ms: u64,
+    untrusted_content: bool,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
@@ -155,6 +186,9 @@ impl CognitionComputerSnapshotTool {
         )
         .await?;
         let preflight = ready_preflight(&broker, &driver_id, COGNITION_COMPUTER_SNAPSHOT).await?;
+        if input.capture_screenshot {
+            require_pixel_preflight(&preflight, COGNITION_COMPUTER_SNAPSHOT)?;
+        }
         let max_nodes = input.max_nodes.unwrap_or(DEFAULT_AGENT_COMPUTER_NODES);
         if !(1..=MAX_AGENT_COMPUTER_NODES).contains(&max_nodes) {
             return Err(tool_error(
@@ -191,10 +225,57 @@ impl CognitionComputerSnapshotTool {
             .await
             .map_err(|error| tool_error(COGNITION_COMPUTER_SNAPSHOT, error))?;
 
+        let (screenshot, screenshot_provenance) = if input.capture_screenshot {
+            let session_id = scope
+                .as_ref()
+                .map(|scope| scope.session_id.as_str())
+                .filter(|session_id| !session_id.trim().is_empty())
+                .ok_or_else(|| {
+                    tool_error(
+                        COGNITION_COMPUTER_SNAPSHOT,
+                        "screenshot capture requires an admitted turn session",
+                    )
+                })?;
+            let window_resource_id = result
+                .observation
+                .focused_window_resource_id
+                .clone()
+                .ok_or_else(|| {
+                    tool_error(
+                        COGNITION_COMPUTER_SNAPSHOT,
+                        "the semantic observation did not contain a focused window",
+                    )
+                })?;
+            let pixels = broker
+                .capture_pixels(ComputerPixelObservationIntent {
+                    authority_id: crate::workshop_authority::current()
+                        .map_err(|error| tool_error(COGNITION_COMPUTER_SNAPSHOT, error))?
+                        .to_string(),
+                    driver_id: driver_id.clone(),
+                    desktop_session_id: preflight.session_id.clone(),
+                    principal: agent_principal(scope.as_ref()),
+                    resource_id: desktop_resource_id(&driver_id, &preflight.session_id),
+                    trace_id: turn_trace_id(scope.as_ref(), "computer-agent:observe-pixels"),
+                    summary: "agent requested redacted focused-window pixels".to_string(),
+                    observation_generation: result.observation.observation_generation.clone(),
+                    observation_revision: result.observation.revision,
+                    window_resource_id,
+                    max_width: input.screenshot_max_width.unwrap_or(1_280),
+                })
+                .await
+                .map_err(|error| tool_error(COGNITION_COMPUTER_SNAPSHOT, error))?;
+            let receipt = persist_screenshot_artifact(session_id, pixels.capture).await?;
+            (Some(receipt), Some(pixels.provenance))
+        } else {
+            (None, None)
+        };
+
         Ok(ExternalJson::new(json!({
             "ok": true,
             "observation": result.observation,
             "provenance": result.provenance,
+            "screenshot": screenshot,
+            "screenshot_provenance": screenshot_provenance,
         })))
     }
 }
@@ -353,6 +434,129 @@ async fn ready_preflight(
     Err(tool_error(tool, guidance))
 }
 
+fn require_pixel_preflight(
+    preflight: &medousa_computer_bridge::ComputerDriverPreflight,
+    tool: &str,
+) -> stasis::prelude::Result<()> {
+    if preflight.pixel_observation_ready() {
+        return Ok(());
+    }
+    let guidance = preflight
+        .permissions
+        .iter()
+        .find(|permission| permission.permission == ComputerPermissionKind::ScreenCapture)
+        .and_then(|permission| permission.guidance.as_deref())
+        .unwrap_or("Grant the native computer driver Screen Recording permission.");
+    Err(tool_error(tool, guidance))
+}
+
+async fn persist_screenshot_artifact(
+    session_id: &str,
+    capture: ComputerScreenshotCapture,
+) -> stasis::prelude::Result<ComputerScreenshotArtifactOutput> {
+    if capture.image_base64.len() > MAX_COMPUTER_SCREENSHOT_BASE64_BYTES {
+        return Err(tool_error(
+            COGNITION_COMPUTER_SNAPSHOT,
+            "native screenshot exceeded its transport bound",
+        ));
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&capture.image_base64)
+        .map_err(|error| {
+            tool_error(
+                COGNITION_COMPUTER_SNAPSHOT,
+                format!("native screenshot contained invalid base64: {error}"),
+            )
+        })?;
+    if bytes.is_empty()
+        || bytes.len() > MAX_COMPUTER_SCREENSHOT_BYTES
+        || bytes.len() != capture.byte_size
+    {
+        return Err(tool_error(
+            COGNITION_COMPUTER_SNAPSHOT,
+            "native screenshot bytes did not match their receipt",
+        ));
+    }
+    let (width, height) = png_dimensions(&bytes).ok_or_else(|| {
+        tool_error(
+            COGNITION_COMPUTER_SNAPSHOT,
+            "native screenshot was not a bounded PNG",
+        )
+    })?;
+    if width != capture.image_width
+        || height != capture.image_height
+        || width > MAX_COMPUTER_SCREENSHOT_WIDTH
+        || height > MAX_COMPUTER_SCREENSHOT_HEIGHT
+        || u64::from(width) * u64::from(height) > MAX_COMPUTER_SCREENSHOT_PIXELS
+    {
+        return Err(tool_error(
+            COGNITION_COMPUTER_SNAPSHOT,
+            "native screenshot dimensions did not match their receipt",
+        ));
+    }
+    let sha256 = format!("{:x}", Sha256::digest(&bytes));
+    if !sha256.eq_ignore_ascii_case(&capture.sha256) {
+        return Err(tool_error(
+            COGNITION_COMPUTER_SNAPSHOT,
+            "native screenshot digest did not match its pixels",
+        ));
+    }
+
+    let stored_session_id = session_id.to_string();
+    let record = tokio::task::spawn_blocking(move || {
+        crate::artifact_store::persist_binary_artifact(
+            &stored_session_id,
+            COGNITION_COMPUTER_SNAPSHOT,
+            "screenshot",
+            "image/png",
+            Some("Focused desktop window"),
+            &bytes,
+        )
+    })
+    .await
+    .map_err(|error| {
+        tool_error(
+            COGNITION_COMPUTER_SNAPSHOT,
+            format!("native screenshot persistence task failed: {error}"),
+        )
+    })?
+    .map_err(|error| tool_error(COGNITION_COMPUTER_SNAPSHOT, error))?;
+    if record.hash64 != capture.sha256 || record.byte_size != capture.byte_size {
+        return Err(tool_error(
+            COGNITION_COMPUTER_SNAPSHOT,
+            "persisted native screenshot did not match its receipt",
+        ));
+    }
+
+    Ok(ComputerScreenshotArtifactOutput {
+        artifact_id: record.artifact_id,
+        mime: capture.mime,
+        byte_size: capture.byte_size,
+        sha256: capture.sha256,
+        observation_generation: capture.observation_generation,
+        observation_revision: capture.observation_revision,
+        window_resource_id: capture.window_resource_id,
+        coordinate_frame: capture.coordinate_frame,
+        image_width: capture.image_width,
+        image_height: capture.image_height,
+        sensitive_regions_redacted: capture.sensitive_regions_redacted,
+        captured_at_ms: capture.captured_at_ms,
+        untrusted_content: capture.untrusted_content,
+    })
+}
+
+fn png_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    if bytes.len() < 24
+        || !bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+        || bytes.get(12..16) != Some(b"IHDR".as_slice())
+    {
+        return None;
+    }
+    let width = u32::from_be_bytes(bytes.get(16..20)?.try_into().ok()?);
+    let height = u32::from_be_bytes(bytes.get(20..24)?.try_into().ok()?);
+    (width > 0 && height > 0).then_some((width, height))
+}
+
 fn agent_principal(
     scope: Option<&crate::turn_continuation::TurnContinuationScope>,
 ) -> WorldPrincipal {
@@ -441,6 +645,13 @@ mod tests {
             _request: medousa_computer_bridge::ComputerObservationRequest,
         ) -> Result<medousa_computer_bridge::ComputerObservation, String> {
             unreachable!("selection test does not observe")
+        }
+
+        async fn screenshot(
+            &self,
+            _request: medousa_computer_bridge::ComputerScreenshotRequest,
+        ) -> Result<medousa_computer_bridge::ComputerScreenshotCapture, String> {
+            unreachable!("selection test does not capture pixels")
         }
 
         async fn act(

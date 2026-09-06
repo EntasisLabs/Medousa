@@ -4,8 +4,8 @@
     {
       "id": "general",
       "tool_count": 80,
-      "total_chars": 47519,
-      "tokens_estimate": 11880,
+      "total_chars": 47800,
+      "tokens_estimate": 11950,
       "tools_over_1000_chars": 10,
       "largest_tools_share_bps": 0,
       "largest_tools": [
@@ -54,8 +54,8 @@
     {
       "id": "host_bus_home",
       "tool_count": 38,
-      "total_chars": 23116,
-      "tokens_estimate": 5779,
+      "total_chars": 23397,
+      "tokens_estimate": 5850,
       "tools_over_1000_chars": 3,
       "largest_tools_share_bps": 0,
       "largest_tools": [
@@ -73,6 +73,11 @@
           "name": "cognition_computer_act",
           "chars": 1560,
           "tokens_estimate": 390
+        },
+        {
+          "name": "cognition_computer_snapshot",
+          "chars": 991,
+          "tokens_estimate": 248
         },
         {
           "name": "cognition_browser_snapshot",
@@ -93,19 +98,14 @@
           "name": "cognition_shell_run",
           "chars": 774,
           "tokens_estimate": 194
-        },
-        {
-          "name": "cognition_openshell_request_secret",
-          "chars": 751,
-          "tokens_estimate": 188
         }
       ]
     },
     {
       "id": "host_bus_thin",
       "tool_count": 35,
-      "total_chars": 19187,
-      "tokens_estimate": 4797,
+      "total_chars": 19468,
+      "tokens_estimate": 4867,
       "tools_over_1000_chars": 2,
       "largest_tools_share_bps": 0,
       "largest_tools": [
@@ -118,6 +118,11 @@
           "name": "cognition_computer_act",
           "chars": 1560,
           "tokens_estimate": 390
+        },
+        {
+          "name": "cognition_computer_snapshot",
+          "chars": 991,
+          "tokens_estimate": 248
         },
         {
           "name": "cognition_grapheme_request_secret",
@@ -138,11 +143,6 @@
           "name": "cognition_openshell_request_secret",
           "chars": 751,
           "tokens_estimate": 188
-        },
-        {
-          "name": "cognition_computer_snapshot",
-          "chars": 710,
-          "tokens_estimate": 178
         },
         {
           "name": "cognition_chat_history_read",

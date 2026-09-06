@@ -680,8 +680,26 @@ Current macOS action slice:
 - `medousa-computer` ships as the optional `computer-driver` package through
   the same release manifest and `{dataDir}/bin` installer path as other
   workshop sidecars; it is never folded into the daemon or silently installed.
-- Pixel observations, foreground event fallbacks, and Home controls remain
-  later slices.
+
+Current macOS pixel slice:
+
+- `cognition_computer_snapshot` can request a bounded PNG of the exact focused
+  window attached to its semantic observation. Pixel access is a separate
+  capability and the broker holds the observation fence across capture, so an
+  admitted action cannot race the frame.
+- The sidecar uses ScreenCaptureKit's desktop-independent-window filter rather
+  than a display-wide capture. It rechecks application, title, and geometry
+  before and after capture and fails closed when the window identity changes.
+- Secure accessibility regions are collected on both sides of capture and
+  redacted before encoding. Missing secure bounds, truncated traversal, stale
+  focus, permission loss, ambiguous native-window matching, and oversized
+  payloads all reject the capture.
+- Raw image data remains local to the bridge. The daemon verifies the PNG,
+  digest, dimensions, byte bounds, session, generation, revision, and focused
+  window before persisting a content-addressed artifact; model hydration is
+  transient and session-bound, so pixels do not accumulate in transcripts.
+- Foreground event fallbacks and Home permission/control surfaces remain later
+  slices.
 
 Implementation:
 

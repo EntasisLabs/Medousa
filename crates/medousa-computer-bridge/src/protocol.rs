@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     COMPUTER_DRIVER_PROTOCOL_VERSION, ComputerActionReceipt, ComputerActionRequest,
     ComputerDriverPreflight, ComputerObservation, ComputerObservationRequest,
+    ComputerScreenshotCapture, ComputerScreenshotRequest,
 };
 
 /// Hard framing ceiling for one sidecar request or response.
@@ -35,6 +36,7 @@ impl ComputerDriverRequestEnvelope {
 pub enum ComputerDriverRequest {
     Preflight,
     Observe { request: ComputerObservationRequest },
+    Screenshot { request: ComputerScreenshotRequest },
     Act { request: ComputerActionRequest },
 }
 
@@ -93,6 +95,7 @@ pub enum ComputerDriverResponse {
 pub enum ComputerDriverResponseResult {
     Preflight { report: ComputerDriverPreflight },
     Observation { observation: ComputerObservation },
+    Screenshot { capture: ComputerScreenshotCapture },
     Action { receipt: ComputerActionReceipt },
 }
 
@@ -167,5 +170,26 @@ mod tests {
         assert_eq!(value["method"], "act");
         assert_eq!(value["request"]["observation_revision"], 7);
         assert_eq!(value["request"]["action"], "press");
+    }
+
+    #[test]
+    fn screenshot_request_carries_an_exact_window_fence() {
+        let request = ComputerDriverRequestEnvelope::new(
+            "request:pixels",
+            ComputerDriverRequest::Screenshot {
+                request: ComputerScreenshotRequest {
+                    resource_id: WorldResourceId::new("desktop:one"),
+                    session_id: "session:one".to_string(),
+                    observation_generation: "generation:one".to_string(),
+                    observation_revision: 7,
+                    window_resource_id: WorldResourceId::new("window:one"),
+                    max_width: 1_280,
+                },
+            },
+        );
+        let value = serde_json::to_value(request).expect("encode screenshot request");
+        assert_eq!(value["method"], "screenshot");
+        assert_eq!(value["request"]["window_resource_id"], "window:one");
+        assert_eq!(value["request"]["observation_revision"], 7);
     }
 }

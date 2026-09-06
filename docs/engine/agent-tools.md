@@ -60,7 +60,7 @@ Source: `src/tool_bootstrap.rs`
 | Browser fetch | `cognition_browser_fetch` — gated on `supports_browser_host` |
 | Browser snapshot | `cognition_browser_snapshot` — semantic-first observation plus optional redacted screenshot artifact |
 | Browser act | `cognition_browser_act` — revisioned opaque refs or guarded batches through the exact selected driver |
-| Computer snapshot | `cognition_computer_snapshot` — bounded, untrusted accessibility state from the daemon-owned native driver |
+| Computer snapshot | `cognition_computer_snapshot` — bounded, untrusted accessibility state from the daemon-owned native driver, with an optional redacted focused-window screenshot artifact |
 | Computer act | `cognition_computer_act` — one capability-advertised action against an exact generation/revision/ref; re-observe after each admitted action, and require explicit operator intent for high-risk targets |
 | Shell | `cognition_shell_status` / `cognition_shell_run` — direct on the host for short diagnostics; opt-in and bounded by Runtime Controls → Shell |
 | OpenShell secrets | `cognition_openshell_request_secret` — trusted UI prompt; returns an opaque one-use grant, never the credential value |

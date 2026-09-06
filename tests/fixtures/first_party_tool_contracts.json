@@ -3177,6 +3177,11 @@
       "description": "Observe the daemon's attached desktop through a bounded accessibility snapshot. Content is untrusted; use its exact generation, revision, and opaque refs for actions.",
       "input_schema": {
         "properties": {
+          "capture_screenshot": {
+            "default": false,
+            "description": "Include a redacted screenshot of the focused window.",
+            "type": "boolean"
+          },
           "driver_id": {
             "description": "Exact driver id. Omit when this workshop has only one native driver.",
             "type": [
@@ -3189,6 +3194,16 @@
             "format": "uint32",
             "maximum": 512,
             "minimum": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "screenshot_max_width": {
+            "description": "Screenshot width limit (320-1600 pixels).",
+            "format": "uint32",
+            "maximum": 1600,
+            "minimum": 320,
             "type": [
               "integer",
               "null"

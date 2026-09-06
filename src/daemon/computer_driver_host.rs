@@ -13,6 +13,7 @@ use medousa_computer_bridge::{
     ComputerDriverPreflight, ComputerDriverRequest, ComputerDriverRequestEnvelope,
     ComputerDriverResponse, ComputerDriverResponseEnvelope, ComputerDriverResponseResult,
     ComputerObservation, ComputerObservationRequest, MAX_COMPUTER_DRIVER_MESSAGE_BYTES,
+    ComputerScreenshotCapture, ComputerScreenshotRequest,
 };
 use medousa_world::{WorldDriverId, WorldDriverRegistration};
 #[cfg(target_os = "macos")]
@@ -202,6 +203,7 @@ fn native_registration() -> Option<WorldDriverRegistration> {
             transport: WorldDriverTransport::LocalSidecar,
             capabilities: [
                 WorldDriverCapability::SemanticObservation,
+                WorldDriverCapability::PixelObservation,
                 WorldDriverCapability::Interaction,
             ]
                 .into_iter()
@@ -420,8 +422,9 @@ impl ComputerDriver for SidecarComputerDriver {
         match self.request(ComputerDriverRequest::Preflight).await? {
             ComputerDriverResponseResult::Preflight { report } => Ok(report),
             ComputerDriverResponseResult::Observation { .. }
+            | ComputerDriverResponseResult::Screenshot { .. }
             | ComputerDriverResponseResult::Action { .. } => {
-                Err("computer sidecar returned an observation for preflight".to_string())
+                Err("computer sidecar returned the wrong result for preflight".to_string())
             }
         }
     }
@@ -436,8 +439,26 @@ impl ComputerDriver for SidecarComputerDriver {
         {
             ComputerDriverResponseResult::Observation { observation } => Ok(observation),
             ComputerDriverResponseResult::Preflight { .. }
+            | ComputerDriverResponseResult::Screenshot { .. }
             | ComputerDriverResponseResult::Action { .. } => {
-                Err("computer sidecar returned preflight for an observation".to_string())
+                Err("computer sidecar returned the wrong result for an observation".to_string())
+            }
+        }
+    }
+
+    async fn screenshot(
+        &self,
+        request: ComputerScreenshotRequest,
+    ) -> Result<ComputerScreenshotCapture, String> {
+        match self
+            .request(ComputerDriverRequest::Screenshot { request })
+            .await?
+        {
+            ComputerDriverResponseResult::Screenshot { capture } => Ok(capture),
+            ComputerDriverResponseResult::Preflight { .. }
+            | ComputerDriverResponseResult::Observation { .. }
+            | ComputerDriverResponseResult::Action { .. } => {
+                Err("computer sidecar returned the wrong result for a screenshot".to_string())
             }
         }
     }

@@ -5,23 +5,28 @@ use std::ptr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use base64::Engine as _;
 use medousa_computer_bridge::{
-    COMPUTER_DRIVER_PROTOCOL_VERSION, COMPUTER_OBSERVATION_SCHEMA_VERSION, ComputerAction,
-    ComputerActionReceipt, ComputerActionRequest, ComputerApplication, ComputerDisplay,
-    ComputerDriverPreflight, ComputerObservation, ComputerObservationRequest,
-    ComputerPermissionKind, ComputerPermissionReport, ComputerPermissionStatus, ComputerRect,
-    ComputerSemanticNode, ComputerWindow,
+    COMPUTER_DRIVER_PROTOCOL_VERSION, COMPUTER_OBSERVATION_SCHEMA_VERSION,
+    COMPUTER_SCREENSHOT_SCHEMA_VERSION, ComputerAction, ComputerActionReceipt,
+    ComputerActionRequest, ComputerApplication, ComputerDisplay, ComputerDriverPreflight,
+    ComputerObservation, ComputerObservationRequest, ComputerPermissionKind,
+    ComputerPermissionReport, ComputerPermissionStatus, ComputerRect, ComputerScreenshotCapture,
+    ComputerScreenshotRequest, ComputerSemanticNode, ComputerWindow,
 };
 use medousa_world::{WorldDriverId, WorldResourceId};
+use sha2::{Digest as _, Sha256};
 use uuid::Uuid;
 
 use super::PlatformDriverError;
+use super::macos_capture::{FocusedWindowCaptureSpec, capture_focused_window, encode_redacted_png};
 
 const DRIVER_ID: &str = "driver:computer:macos:accessibility";
 const MAX_WINDOWS: usize = 128;
 const MAX_DISPLAYS: usize = 32;
 const MAX_TEXT_BYTES: usize = 512;
 const MAX_AX_DEPTH: usize = 64;
+const MAX_SCREENSHOT_REDACTION_NODES: usize = 4_096;
 const AX_MESSAGE_TIMEOUT_SECONDS: f32 = 0.25;
 
 pub struct NativeComputerDriver {
@@ -36,6 +41,11 @@ struct ObservationCache {
     session_id: String,
     observation_generation: String,
     observation_revision: u64,
+    focused_window: Option<OwnedCf>,
+    focused_window_resource_id: Option<WorldResourceId>,
+    focused_window_title: String,
+    focused_window_frame: ComputerRect,
+    process_id: i32,
     elements: BTreeMap<String, OwnedCf>,
 }
 
@@ -208,6 +218,16 @@ impl NativeComputerDriver {
                 .map(|window| window.resource_id.clone());
         }
 
+        let focused_window_title = windows
+            .iter()
+            .find(|window| window.focused)
+            .map(|window| window.title.clone())
+            .unwrap_or_default();
+        let focused_window_frame = windows
+            .iter()
+            .find(|window| window.focused)
+            .map(|window| window.frame)
+            .unwrap_or_default();
         let revision = self.revision.fetch_add(1, Ordering::Relaxed) + 1;
         let observation = ComputerObservation {
             schema_version: COMPUTER_OBSERVATION_SCHEMA_VERSION,
@@ -235,9 +255,124 @@ impl NativeComputerDriver {
             session_id: self.session_id.clone(),
             observation_generation: self.observation_generation.clone(),
             observation_revision: revision,
+            focused_window: focused_window
+                .as_ref()
+                .and_then(|window| retain_cf(window.as_ptr())),
+            focused_window_resource_id: observation.focused_window_resource_id.clone(),
+            focused_window_title,
+            focused_window_frame,
+            process_id: pid,
             elements,
         }));
         Ok(observation)
+    }
+
+    pub fn screenshot(
+        &self,
+        request: ComputerScreenshotRequest,
+    ) -> Result<ComputerScreenshotCapture, PlatformDriverError> {
+        request.validate().map_err(|message| PlatformDriverError {
+            code: "invalid_request",
+            message,
+            retryable: false,
+        })?;
+        if request.session_id != self.session_id {
+            return Err(PlatformDriverError {
+                code: "desktop_session_changed",
+                message: "the requested macOS login session is not owned by this driver"
+                    .to_string(),
+                retryable: false,
+            });
+        }
+        if unsafe { AXIsProcessTrusted() == 0 } {
+            return Err(PlatformDriverError {
+                code: "accessibility_permission_required",
+                message: "macOS Accessibility permission is required before redacting a screenshot"
+                    .to_string(),
+                retryable: false,
+            });
+        }
+        if !unsafe { CGPreflightScreenCaptureAccess() } {
+            return Err(PlatformDriverError {
+                code: "screen_capture_permission_required",
+                message: "macOS Screen & System Audio Recording permission is required before capturing pixels"
+                    .to_string(),
+                retryable: false,
+            });
+        }
+
+        let cache = self.last_observation.borrow();
+        let cache = cache.as_ref().ok_or_else(|| PlatformDriverError {
+            code: "observation_required",
+            message: "observe the desktop before requesting a screenshot".to_string(),
+            retryable: false,
+        })?;
+        if cache.resource_id != request.resource_id
+            || cache.session_id != request.session_id
+            || cache.observation_generation != request.observation_generation
+            || cache.observation_revision != request.observation_revision
+            || cache.focused_window_resource_id.as_ref() != Some(&request.window_resource_id)
+        {
+            return Err(PlatformDriverError {
+                code: "stale_observation",
+                message: "the screenshot does not target the driver's latest exact focused window"
+                    .to_string(),
+                retryable: false,
+            });
+        }
+
+        let focused_window = verify_cached_focused_window(cache)?;
+        let mut redaction_regions = sensitive_regions(&focused_window)?;
+        let frame = capture_focused_window(&FocusedWindowCaptureSpec {
+            process_id: cache.process_id,
+            title: cache.focused_window_title.clone(),
+            frame: cache.focused_window_frame,
+            max_width: request.max_width,
+        })
+        .map_err(|message| PlatformDriverError {
+            code: "screen_capture_failed",
+            message,
+            retryable: true,
+        })?;
+
+        // Recheck both focus and secure fields after capture. The union hides
+        // a field that appeared or moved while ScreenCaptureKit produced the
+        // frame; a changed focus or frame fails the request closed.
+        let focused_window = verify_cached_focused_window(cache)?;
+        redaction_regions.extend(sensitive_regions(&focused_window)?);
+        redaction_regions.sort_by_key(|rect| (rect.x, rect.y, rect.width, rect.height));
+        redaction_regions.dedup();
+        let image_width = frame.width;
+        let image_height = frame.height;
+        let png = encode_redacted_png(frame, cache.focused_window_frame, &redaction_regions)
+            .map_err(|message| PlatformDriverError {
+                code: "screen_capture_redaction_failed",
+                message,
+                retryable: false,
+            })?;
+        let sha256 = format!("{:x}", Sha256::digest(&png));
+        let byte_size = png.len();
+        let image_base64 = base64::engine::general_purpose::STANDARD.encode(png);
+
+        Ok(ComputerScreenshotCapture {
+            schema_version: COMPUTER_SCREENSHOT_SCHEMA_VERSION,
+            driver_id: driver_id(),
+            resource_id: request.resource_id,
+            session_id: request.session_id,
+            observation_generation: request.observation_generation,
+            observation_revision: request.observation_revision,
+            window_resource_id: request.window_resource_id,
+            coordinate_frame: "focused_window_pixels".to_string(),
+            mime: "image/png".to_string(),
+            image_width,
+            image_height,
+            byte_size,
+            sha256,
+            sensitive_regions_redacted: redaction_regions.len(),
+            captured_at_ms: now_ms(),
+            untrusted_content: true,
+            image_base64,
+        })
     }
 
     pub fn act(
@@ -392,6 +527,165 @@ fn now_ms() -> u64 {
         .as_millis()
         .try_into()
         .unwrap_or(u64::MAX)
+}
+
+fn verify_cached_focused_window(cache: &ObservationCache) -> Result<OwnedCf, PlatformDriverError> {
+    let expected = cache
+        .focused_window
+        .as_ref()
+        .ok_or_else(|| PlatformDriverError {
+            code: "focused_window_unavailable",
+            message: "the exact observation did not contain a focused window".to_string(),
+            retryable: false,
+        })?;
+    let system =
+        unsafe { OwnedCf::from_create(AXUIElementCreateSystemWide()) }.ok_or_else(|| {
+            PlatformDriverError {
+                code: "accessibility_unavailable",
+                message: "macOS did not provide the system accessibility element".to_string(),
+                retryable: true,
+            }
+        })?;
+    let _ = unsafe { AXUIElementSetMessagingTimeout(system.as_ptr(), AX_MESSAGE_TIMEOUT_SECONDS) };
+    let application = copy_attribute(system.as_ptr(), "AXFocusedApplication")
+        .filter(|value| is_ax_element(value.as_ptr()))
+        .ok_or_else(|| PlatformDriverError {
+            code: "stale_observation",
+            message: "the focused application changed before pixel capture".to_string(),
+            retryable: true,
+        })?;
+    let mut process_id = 0_i32;
+    if unsafe { AXUIElementGetPid(application.as_ptr(), &mut process_id) } != AX_ERROR_SUCCESS
+        || process_id != cache.process_id
+    {
+        return Err(PlatformDriverError {
+            code: "stale_observation",
+            message: "the focused application changed before pixel capture".to_string(),
+            retryable: true,
+        });
+    }
+    let window = copy_attribute(application.as_ptr(), "AXFocusedWindow")
+        .filter(|value| is_ax_element(value.as_ptr()))
+        .ok_or_else(|| PlatformDriverError {
+            code: "stale_observation",
+            message: "the focused window changed before pixel capture".to_string(),
+            retryable: true,
+        })?;
+    if !cf_equal(window.as_ptr(), expected.as_ptr())
+        || text_attribute(window.as_ptr(), "AXTitle").unwrap_or_default()
+            != cache.focused_window_title
+        || rect_attribute(window.as_ptr(), "AXFrame").unwrap_or_default()
+            != cache.focused_window_frame
+    {
+        return Err(PlatformDriverError {
+            code: "stale_observation",
+            message: "the focused window identity or frame changed before pixel capture"
+                .to_string(),
+            retryable: true,
+        });
+    }
+    Ok(window)
+}
+
+fn sensitive_regions(window: &OwnedCf) -> Result<Vec<ComputerRect>, PlatformDriverError> {
+    let root = retain_cf(window.as_ptr()).ok_or_else(|| PlatformDriverError {
+        code: "screen_capture_redaction_failed",
+        message: "could not retain the focused window for its redaction scan".to_string(),
+        retryable: false,
+    })?;
+    let mut queue = VecDeque::from([(root, 0_usize)]);
+    let mut visited = 0_usize;
+    let mut regions = Vec::new();
+
+    while let Some((element, depth)) = queue.pop_front() {
+        if visited >= MAX_SCREENSHOT_REDACTION_NODES {
+            return Err(redaction_scan_incomplete());
+        }
+        visited += 1;
+        let role = text_attribute(element.as_ptr(), "AXRole")
+            .filter(|role| !role.trim().is_empty())
+            .ok_or_else(redaction_scan_incomplete)?;
+        let subrole = text_attribute(element.as_ptr(), "AXSubrole");
+        if is_sensitive_ax_node(&role, subrole.as_deref()) {
+            let bounds = rect_attribute(element.as_ptr(), "AXFrame")
+                .filter(|bounds| bounds.width > 0 && bounds.height > 0)
+                .ok_or_else(redaction_scan_incomplete)?;
+            regions.push(bounds);
+        }
+
+        if depth >= MAX_AX_DEPTH {
+            if strict_child_count(element.as_ptr())? > 0 {
+                return Err(redaction_scan_incomplete());
+            }
+            continue;
+        }
+        let available =
+            MAX_SCREENSHOT_REDACTION_NODES.saturating_sub(visited.saturating_add(queue.len()));
+        let children = copy_redaction_children(element.as_ptr(), available)?;
+        queue.extend(children.into_iter().map(|child| (child, depth + 1)));
+    }
+    Ok(regions)
+}
+
+fn strict_child_count(element: AXUIElementRef) -> Result<usize, PlatformDriverError> {
+    let attribute = cf_string("AXChildren").ok_or_else(redaction_scan_incomplete)?;
+    let mut count = 0_isize;
+    let status =
+        unsafe { AXUIElementGetAttributeValueCount(element, attribute.as_ptr(), &mut count) };
+    match status {
+        AX_ERROR_SUCCESS if count >= 0 => {
+            usize::try_from(count).map_err(|_| redaction_scan_incomplete())
+        }
+        AX_ERROR_ATTRIBUTE_UNSUPPORTED | AX_ERROR_NO_VALUE => Ok(0),
+        _ => Err(redaction_scan_incomplete()),
+    }
+}
+
+fn copy_redaction_children(
+    element: AXUIElementRef,
+    limit: usize,
+) -> Result<Vec<OwnedCf>, PlatformDriverError> {
+    let count = strict_child_count(element)?;
+    if count == 0 {
+        return Ok(Vec::new());
+    }
+    if count > limit {
+        return Err(redaction_scan_incomplete());
+    }
+    let attribute = cf_string("AXChildren").ok_or_else(redaction_scan_incomplete)?;
+    let mut array = ptr::null();
+    if unsafe {
+        AXUIElementCopyAttributeValues(element, attribute.as_ptr(), 0, count as isize, &mut array)
+    } != AX_ERROR_SUCCESS
+    {
+        return Err(redaction_scan_incomplete());
+    }
+    let array = unsafe { OwnedCf::from_create(array) }.ok_or_else(redaction_scan_incomplete)?;
+    if unsafe { CFGetTypeID(array.as_ptr()) != CFArrayGetTypeID() } {
+        return Err(redaction_scan_incomplete());
+    }
+    let array_count = unsafe { CFArrayGetCount(array.as_ptr()) };
+    if array_count < 0 || usize::try_from(array_count).ok() != Some(count) {
+        return Err(redaction_scan_incomplete());
+    }
+    let mut children = Vec::with_capacity(count);
+    for index in 0..array_count {
+        let value = unsafe { CFArrayGetValueAtIndex(array.as_ptr(), index) };
+        if !is_ax_element(value) {
+            return Err(redaction_scan_incomplete());
+        }
+        children.push(retain_cf(value).ok_or_else(redaction_scan_incomplete)?);
+    }
+    Ok(children)
+}
+
+fn redaction_scan_incomplete() -> PlatformDriverError {
+    PlatformDriverError {
+        code: "screen_capture_redaction_failed",
+        message: "the focused accessibility tree could not be fully scanned for secure fields"
+            .to_string(),
+        retryable: false,
+    }
 }
 
 fn snapshot_window(
@@ -873,6 +1167,8 @@ type Boolean = u8;
 type AXError = i32;
 
 const AX_ERROR_SUCCESS: AXError = 0;
+const AX_ERROR_ATTRIBUTE_UNSUPPORTED: AXError = -25205;
+const AX_ERROR_NO_VALUE: AXError = -25212;
 const AX_VALUE_TYPE_CG_RECT: u32 = 3;
 const CF_STRING_ENCODING_UTF8: u32 = 0x0800_0100;
 

@@ -116,6 +116,23 @@ fn handle_line(
                 ),
             }
         }
+        ComputerDriverRequest::Screenshot {
+            request: screenshot,
+        } => {
+            let request_id = request.request_id;
+            match driver.screenshot(screenshot) {
+                Ok(capture) => ComputerDriverResponseEnvelope::success(
+                    request_id,
+                    ComputerDriverResponseResult::Screenshot { capture },
+                ),
+                Err(error) => ComputerDriverResponseEnvelope::error(
+                    request_id,
+                    error.code,
+                    error.message,
+                    error.retryable,
+                ),
+            }
+        }
         ComputerDriverRequest::Act { request: action } => {
             let request_id = request.request_id;
             match driver.act(action) {

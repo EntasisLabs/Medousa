@@ -12,7 +12,8 @@ use async_trait::async_trait;
 use medousa_computer_bridge::{
     COMPUTER_DRIVER_PROTOCOL_VERSION, ComputerAction, ComputerActionReceipt,
     ComputerActionRequest, ComputerDriverPreflight, ComputerObservation,
-    ComputerObservationRequest, ComputerPermissionKind,
+    ComputerObservationRequest, ComputerPermissionKind, ComputerScreenshotCapture,
+    ComputerScreenshotRequest,
 };
 use medousa_world::{
     WorldActionIntent, WorldActionOutcome, WorldActionPermit, WorldAdmission, WorldAuthorityError,
@@ -43,6 +44,11 @@ pub trait ComputerDriver: Send + Sync {
         &self,
         request: ComputerObservationRequest,
     ) -> Result<ComputerObservation, String>;
+
+    async fn screenshot(
+        &self,
+        request: ComputerScreenshotRequest,
+    ) -> Result<ComputerScreenshotCapture, String>;
 
     async fn act(
         &self,
@@ -93,6 +99,7 @@ struct ComputerObservationFence {
     session_id: String,
     generation: String,
     revision: u64,
+    focused_window_resource_id: Option<WorldResourceId>,
     elements: BTreeMap<String, ComputerObservedElement>,
 }
 
@@ -103,6 +110,31 @@ struct ComputerObservedElement {
     enabled: bool,
     sensitive: bool,
     actions: BTreeSet<ComputerAction>,
+}
+
+fn validate_pixel_fence(
+    fence: Option<&ComputerObservationFence>,
+    intent: &ComputerPixelObservationIntent,
+) -> Result<(), String> {
+    let fence = fence.ok_or_else(|| {
+        "observation_required: observe the desktop before requesting pixels".to_string()
+    })?;
+    if fence.session_id != intent.desktop_session_id
+        || fence.generation != intent.observation_generation
+        || fence.revision != intent.observation_revision
+    {
+        return Err(
+            "stale_observation: screenshot must target the daemon's latest exact observation"
+                .to_string(),
+        );
+    }
+    if fence.focused_window_resource_id.as_ref() != Some(&intent.window_resource_id) {
+        return Err(
+            "stale_observation: screenshot must target the exact observed focused window"
+                .to_string(),
+        );
+    }
+    Ok(())
 }
 
 impl ComputerDriverBroker {
@@ -307,6 +339,86 @@ impl ComputerDriverBroker {
         })
     }
 
+    pub async fn capture_pixels(
+        &self,
+        intent: ComputerPixelObservationIntent,
+    ) -> Result<GovernedComputerScreenshot, String> {
+        intent.validate()?;
+        let registered = self.driver(&intent.driver_id).await?;
+        if !registered
+            .registration
+            .capabilities
+            .contains(&WorldDriverCapability::PixelObservation)
+        {
+            return Err(format!(
+                "computer driver '{}' does not provide pixel observation",
+                intent.driver_id
+            ));
+        }
+        if intent.desktop_session_id != registered.desktop_session_id {
+            return Err("computer screenshot requested the wrong desktop session".to_string());
+        }
+
+        let request = ComputerScreenshotRequest {
+            resource_id: intent.resource_id.clone(),
+            session_id: intent.desktop_session_id.clone(),
+            observation_generation: intent.observation_generation.clone(),
+            observation_revision: intent.observation_revision,
+            window_resource_id: intent.window_resource_id.clone(),
+            max_width: intent.max_width,
+        };
+        request.validate()?;
+        let admission = self.admit_pixel_observation(&registered.registration, &intent)?;
+
+        if let Err(error) = self.authority.read(|authority| {
+            authority
+                .validate_action_permit(&admission.permit, now_ms())
+                .map_err(|error| error.to_string())
+        }) {
+            let _ = self.fail(&admission.permit, &error);
+            return Err(error);
+        }
+
+        // Hold the read fence until the driver returns so a concurrent
+        // semantic mutation cannot consume this observation mid-capture.
+        let fences = self.observation_fences.read().await;
+        if let Err(error) = validate_pixel_fence(
+            fences.get(&(intent.driver_id.clone(), intent.resource_id.clone())),
+            &intent,
+        ) {
+            drop(fences);
+            let _ = self.fail(&admission.permit, &error);
+            return Err(error);
+        }
+        let capture = registered.driver.screenshot(request.clone()).await;
+        drop(fences);
+        let capture = match capture {
+            Ok(capture) => capture,
+            Err(error) => {
+                let _ = self.fail(&admission.permit, &error);
+                return Err(error);
+            }
+        };
+        if let Err(error) = capture.validate_for(&intent.driver_id, &request) {
+            let _ = self.fail(&admission.permit, &error);
+            return Err(error);
+        }
+
+        let outcome = self.authority.write(|authority| {
+            authority
+                .complete_action(
+                    &admission.permit,
+                    "redacted focused-window pixels recorded",
+                    now_ms(),
+                )
+                .map_err(|error| error.to_string())
+        })?;
+        Ok(GovernedComputerScreenshot {
+            capture,
+            provenance: ComputerWorldProvenance::from_permit(&admission.permit, outcome),
+        })
+    }
+
     async fn remember_observation(&self, observation: &ComputerObservation) {
         let key = (
             observation.driver_id.clone(),
@@ -348,6 +460,7 @@ impl ComputerDriverBroker {
                 session_id: observation.session_id.clone(),
                 generation: observation.observation_generation.clone(),
                 revision: observation.revision,
+                focused_window_resource_id: observation.focused_window_resource_id.clone(),
                 elements,
             },
         );
@@ -634,6 +747,99 @@ impl ComputerDriverBroker {
         })
     }
 
+    fn admit_pixel_observation(
+        &self,
+        registration: &WorldDriverRegistration,
+        request: &ComputerPixelObservationIntent,
+    ) -> Result<ComputerWorldAdmission, String> {
+        let admitted_at_ms = now_ms();
+        let world_id = computer_world_id(
+            &request.authority_id,
+            &request.driver_id,
+            &request.desktop_session_id,
+        );
+        let system = WorldPrincipal::system(WorldPrincipalId::new(format!(
+            "runtime:{}",
+            request.authority_id
+        )));
+        let observer = request.principal.clone();
+        let resource_id = request.resource_id.clone();
+        let driver_id = request.driver_id.clone();
+        let authority_id = request.authority_id.clone();
+        let trace_id = request.trace_id.clone();
+        let summary = request.summary.clone();
+        let desktop_session_id = request.desktop_session_id.clone();
+        let ownership = registration.ownership;
+        let surface = registration.surface;
+
+        self.authority.write(move |authority| {
+            let state = authority
+                .world(&world_id)
+                .map_err(|error| error.to_string())?;
+            if state.authority_id.as_str() != authority_id
+                || state.driver_id != driver_id
+                || state.ownership != ownership
+                || state.surface != surface
+            {
+                return Err(
+                    "computer world identity conflicts with its registered driver".to_string(),
+                );
+            }
+
+            let grant_id = WorldGrantId::new(format!(
+                "grant:computer-observe-pixels:{desktop_session_id}:{}:{}",
+                observer.principal_id, resource_id
+            ));
+            match authority.grant_capabilities(
+                &world_id,
+                WorldGrantRequest {
+                    grant_id,
+                    issued_by: system,
+                    subject: observer.clone(),
+                    capabilities: [WorldCapability::ObservePixels]
+                        .into_iter()
+                        .collect::<BTreeSet<_>>(),
+                    resource_scope: WorldResourceScope::exact([resource_id.clone()]),
+                    expires_at_ms: None,
+                },
+                admitted_at_ms,
+            ) {
+                Ok(_) | Err(WorldAuthorityError::GrantAlreadyExists(_)) => {}
+                Err(error) => return Err(error.to_string()),
+            }
+
+            let state = authority
+                .world(&world_id)
+                .map_err(|error| error.to_string())?;
+            let operation_id = Uuid::new_v4().to_string();
+            let intent = WorldActionIntent {
+                intent_id: medousa_world::WorldIntentId::new(format!(
+                    "intent:computer-observe-pixels:{operation_id}"
+                )),
+                trace_id: WorldTraceId::new(trace_id),
+                principal: observer,
+                resource_id,
+                expected_revision: state.revision,
+                expected_control_generation: None,
+                required_capability: WorldCapability::ObservePixels,
+                effect_class: WorldEffectClass::ObservePixels,
+                idempotency_key: format!("computer-pixel-observation:{operation_id}"),
+                permit_expires_at_ms: admitted_at_ms
+                    .saturating_add(COMPUTER_OBSERVATION_PERMIT_MS),
+                summary,
+            };
+            match authority
+                .admit_action(&world_id, intent, admitted_at_ms)
+                .map_err(|error| error.to_string())?
+            {
+                WorldAdmission::Admitted { permit } => Ok(ComputerWorldAdmission { permit }),
+                WorldAdmission::Replay { .. } => Err(
+                    "new computer pixel observation unexpectedly resolved as a replay".to_string(),
+                ),
+            }
+        })
+    }
+
     fn fail(&self, permit: &WorldActionPermit, message: &str) -> Result<(), String> {
         self.authority.write(|authority| {
             authority
@@ -690,6 +896,44 @@ pub struct ComputerActionIntent {
     pub action: ComputerAction,
     pub value: Option<String>,
     pub allow_high_risk: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct ComputerPixelObservationIntent {
+    pub authority_id: String,
+    pub driver_id: WorldDriverId,
+    pub desktop_session_id: String,
+    pub principal: WorldPrincipal,
+    pub resource_id: WorldResourceId,
+    pub trace_id: String,
+    pub summary: String,
+    pub observation_generation: String,
+    pub observation_revision: u64,
+    pub window_resource_id: WorldResourceId,
+    pub max_width: u32,
+}
+
+impl ComputerPixelObservationIntent {
+    pub fn validate(&self) -> Result<(), String> {
+        validate_identifier("world authority", &self.authority_id)?;
+        validate_identifier("computer driver", self.driver_id.as_str())?;
+        validate_identifier("desktop session", &self.desktop_session_id)?;
+        validate_identifier("computer principal", self.principal.principal_id.as_str())?;
+        validate_identifier("computer trace", &self.trace_id)?;
+        ComputerScreenshotRequest {
+            resource_id: self.resource_id.clone(),
+            session_id: self.desktop_session_id.clone(),
+            observation_generation: self.observation_generation.clone(),
+            observation_revision: self.observation_revision,
+            window_resource_id: self.window_resource_id.clone(),
+            max_width: self.max_width,
+        }
+        .validate()?;
+        if self.summary.trim().is_empty() || self.summary.len() > 1_024 {
+            return Err("computer screenshot summary is invalid".to_string());
+        }
+        Ok(())
+    }
 }
 
 impl ComputerActionIntent {
@@ -769,6 +1013,12 @@ pub struct GovernedComputerObservation {
 #[derive(Debug, Clone, Serialize)]
 pub struct GovernedComputerAction {
     pub receipt: ComputerActionReceipt,
+    pub provenance: ComputerWorldProvenance,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GovernedComputerScreenshot {
+    pub capture: ComputerScreenshotCapture,
     pub provenance: ComputerWorldProvenance,
 }
 
@@ -902,8 +1152,9 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use medousa_computer_bridge::{
-        COMPUTER_OBSERVATION_SCHEMA_VERSION, ComputerApplication, ComputerPermissionReport,
-        ComputerPermissionStatus, ComputerRect, ComputerSemanticNode, ComputerWindow,
+        COMPUTER_OBSERVATION_SCHEMA_VERSION, COMPUTER_SCREENSHOT_SCHEMA_VERSION,
+        ComputerApplication, ComputerPermissionReport, ComputerPermissionStatus, ComputerRect,
+        ComputerSemanticNode, ComputerWindow,
     };
     use medousa_world::{
         WorldActionStatus, WorldEventKind, WorldOwnership, WorldPrincipalKind,
@@ -1005,6 +1256,31 @@ mod tests {
             })
         }
 
+        async fn screenshot(
+            &self,
+            request: ComputerScreenshotRequest,
+        ) -> Result<ComputerScreenshotCapture, String> {
+            Ok(ComputerScreenshotCapture {
+                schema_version: COMPUTER_SCREENSHOT_SCHEMA_VERSION,
+                driver_id: self.registration.driver_id.clone(),
+                resource_id: request.resource_id,
+                session_id: request.session_id,
+                observation_generation: request.observation_generation,
+                observation_revision: request.observation_revision,
+                window_resource_id: request.window_resource_id,
+                coordinate_frame: "focused_window_pixels".to_string(),
+                mime: "image/png".to_string(),
+                image_width: request.max_width,
+                image_height: 720,
+                byte_size: 1,
+                sha256: "a".repeat(64),
+                sensitive_regions_redacted: 0,
+                captured_at_ms: 2,
+                untrusted_content: true,
+                image_base64: "eA==".to_string(),
+            })
+        }
+
         async fn act(
             &self,
             request: ComputerActionRequest,
@@ -1041,6 +1317,7 @@ mod tests {
             transport: WorldDriverTransport::InProcess,
             capabilities: [
                 WorldDriverCapability::SemanticObservation,
+                WorldDriverCapability::PixelObservation,
                 WorldDriverCapability::Interaction,
             ]
                 .into_iter()
@@ -1063,6 +1340,22 @@ mod tests {
             summary: "Observe the attached desktop".to_string(),
             after_revision: None,
             max_nodes: 64,
+        }
+    }
+
+    fn pixel_intent(driver_id: &str, window_resource_id: &str) -> ComputerPixelObservationIntent {
+        ComputerPixelObservationIntent {
+            authority_id: "workshop:test".to_string(),
+            driver_id: WorldDriverId::new(driver_id),
+            desktop_session_id: "login:test".to_string(),
+            principal: WorldPrincipal::new("agent:test", WorldPrincipalKind::Agent),
+            resource_id: WorldResourceId::new("desktop:login"),
+            trace_id: "turn:test:pixels".to_string(),
+            summary: "Capture the exact focused window".to_string(),
+            observation_generation: "generation:test".to_string(),
+            observation_revision: 1,
+            window_resource_id: WorldResourceId::new(window_resource_id),
+            max_width: 1_280,
         }
     }
 
@@ -1097,6 +1390,51 @@ mod tests {
             "world:computer:workshop:test:driver:computer:test:login:test"
         );
         assert_eq!(result.observation.nodes[0].name, "Continue");
+    }
+
+    #[tokio::test]
+    async fn pixels_require_and_preserve_the_exact_focused_window_fence() {
+        let authority = Arc::new(WorldAuthorityService::default());
+        let broker = ComputerDriverBroker::new(authority);
+        broker
+            .register(Arc::new(FakeComputerDriver {
+                registration: registration("driver:computer:pixels"),
+                observations: AtomicUsize::new(0),
+                actions: AtomicUsize::new(0),
+                spoof_driver: false,
+                spoof_action_revision: false,
+            }))
+            .await
+            .expect("register fake driver");
+        broker
+            .observe(intent("driver:computer:pixels"))
+            .await
+            .expect("governed observation");
+
+        let wrong_window = broker
+            .capture_pixels(pixel_intent("driver:computer:pixels", "window:other"))
+            .await
+            .expect_err("wrong focused window must fail");
+        assert!(wrong_window.contains("exact observed focused window"));
+
+        let result = broker
+            .capture_pixels(pixel_intent("driver:computer:pixels", "window:test"))
+            .await
+            .expect("governed pixels");
+        assert_eq!(result.capture.window_resource_id.as_str(), "window:test");
+        assert_eq!(
+            result.provenance.outcome.status,
+            WorldActionStatus::Confirmed
+        );
+
+        // Pixel reads do not consume the semantic action fence.
+        broker
+            .act(action_intent(
+                "driver:computer:pixels",
+                "ax:test:button",
+            ))
+            .await
+            .expect("semantic action after pixels");
     }
 
     #[tokio::test]
