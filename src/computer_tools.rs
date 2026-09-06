@@ -213,6 +213,12 @@ impl CognitionComputerSnapshotTool {
         let authority_id = crate::workshop_authority::current()
             .map_err(|error| tool_error(COGNITION_COMPUTER_SNAPSHOT, error))?
             .to_string();
+        validate_selected_computer_world(
+            COGNITION_COMPUTER_SNAPSHOT,
+            &authority_id,
+            &driver_id,
+            &preflight.session_id,
+        )?;
         let result = broker
             .observe(ComputerObservationIntent {
                 authority_id,
@@ -314,6 +320,12 @@ impl CognitionComputerActTool {
         let authority_id = crate::workshop_authority::current()
             .map_err(|error| tool_error(COGNITION_COMPUTER_ACT, error))?
             .to_string();
+        validate_selected_computer_world(
+            COGNITION_COMPUTER_ACT,
+            &authority_id,
+            &driver_id,
+            &input.session_id,
+        )?;
         let result = broker
             .act(ComputerActionIntent {
                 authority_id,
@@ -563,6 +575,11 @@ fn png_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
 fn agent_principal(
     scope: Option<&crate::turn_continuation::TurnContinuationScope>,
 ) -> WorldPrincipal {
+    if let Some(binding) =
+        crate::world_execution::active_world_for(medousa_world::WorldSurfaceKind::Desktop)
+    {
+        return binding.principal().clone();
+    }
     let identity = scope
         .and_then(|scope| scope.identity_user_id.as_deref())
         .or_else(|| scope.map(|scope| scope.session_id.as_str()))
@@ -571,6 +588,26 @@ fn agent_principal(
     WorldPrincipal::agent(WorldPrincipalId::new(format!(
         "agent:medousa:sha256:{digest:x}"
     )))
+}
+
+fn validate_selected_computer_world(
+    tool: &str,
+    authority_id: &str,
+    driver_id: &WorldDriverId,
+    desktop_session_id: &str,
+) -> stasis::prelude::Result<()> {
+    let Some(binding) =
+        crate::world_execution::active_world_for(medousa_world::WorldSurfaceKind::Desktop)
+    else {
+        return Ok(());
+    };
+    crate::computer_driver::validate_computer_world_binding(
+        binding.world_id().as_str(),
+        authority_id,
+        driver_id,
+        desktop_session_id,
+    )
+    .map_err(|error| tool_error(tool, error))
 }
 
 fn turn_trace_id(

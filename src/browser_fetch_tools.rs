@@ -35,6 +35,11 @@ impl CognitionBrowserFetchTool {
     }
 
     async fn browser_enabled(&self) -> bool {
+        if crate::world_execution::active_world_for(medousa_world::WorldSurfaceKind::Browser)
+            .is_some()
+        {
+            return true;
+        }
         let scope =
             crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
                 .await;
@@ -123,9 +128,15 @@ impl CognitionBrowserFetchTool {
         let scope =
             crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
                 .await;
-        let selected_driver_id = scope
+        let active_world = crate::world_execution::active_world_for(
+            medousa_world::WorldSurfaceKind::Browser,
+        );
+        let selected_driver_id = active_world
             .as_ref()
-            .and_then(|scope| scope.browser_driver_id.as_deref());
+            .map(|binding| binding.driver_id().as_str())
+            .or_else(|| scope
+            .as_ref()
+            .and_then(|scope| scope.browser_driver_id.as_deref()));
 
         let _ = self
             .event_tx
@@ -147,6 +158,22 @@ impl CognitionBrowserFetchTool {
             None => true,
         };
         if shared_driver_matches && browser_host_healthy().await {
+            if let Some(binding) = active_world.as_ref() {
+                let context = browser_host_current_context()
+                    .await
+                    .map_err(StasisError::PortFailure)?;
+                crate::world_authority::validate_browser_world_binding(
+                    binding.world_id().as_str(),
+                    binding.authority_id(),
+                    &context.driver_id,
+                    &context.tab_group_id,
+                )
+                .map_err(|error| {
+                    StasisError::PortFailure(format!(
+                        "{COGNITION_BROWSER_FETCH}: {error}"
+                    ))
+                })?;
+            }
             let fetched = browser_host_fetch(&url, max_chars)
                 .await
                 .map_err(StasisError::PortFailure)?;
@@ -157,6 +184,12 @@ impl CognitionBrowserFetchTool {
                 binding_used: "browser_host".to_string(),
                 decision: "allow".to_string(),
             });
+        }
+
+        if active_world.is_some() {
+            return Err(StasisError::PortFailure(format!(
+                "{COGNITION_BROWSER_FETCH}: selected browser world is not attached to this destination"
+            )));
         }
 
         let fetched = tokio::task::spawn_blocking(move || {

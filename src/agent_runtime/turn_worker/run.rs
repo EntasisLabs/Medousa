@@ -56,6 +56,7 @@ use super::prompts::{
 };
 use super::registry::{
     AllowlistToolRegistry, SessionBootstrapToolRegistry, WorkerSessionToolRegistry,
+    WorldScopedToolRegistry,
 };
 use super::store::{
     TurnWorkDisposition, TurnWorkRecord, TurnWorkStatus, TurnWorkerStore, turn_worker_store,
@@ -1502,7 +1503,12 @@ async fn run_worker_turn_inner(
     } else {
         None
     };
-    let filtered_registry: Arc<dyn ToolRegistry> = if let Some(coder) = &prepared_coder {
+    let world_ids = record
+        .worker_spawn_spec
+        .as_ref()
+        .map(|spec| spec.world_ids.clone())
+        .unwrap_or_default();
+    let lane_registry: Arc<dyn ToolRegistry> = if let Some(coder) = &prepared_coder {
         let coder_registry: Arc<dyn ToolRegistry> = coder.registry.clone();
         if is_delegated {
             Arc::new(AllowlistToolRegistry::delegated(coder_registry, allowlist))
@@ -1529,8 +1535,28 @@ async fn run_worker_turn_inner(
             session_registry,
             record.session_id.clone(),
             allowlist,
+            record.supports_browser_host || !world_ids.is_empty(),
         ))
     };
+    let remote_world_authority = if is_delegated {
+        record.task_execution_grant.clone().map(|grant| {
+            (
+                crate::peer_execution_policy::PeerExecutionPolicyStore::default(),
+                grant,
+            )
+        })
+    } else {
+        None
+    };
+    let filtered_registry: Arc<dyn ToolRegistry> = Arc::new(WorldScopedToolRegistry::new(
+        lane_registry,
+        world_ids,
+        format!(
+            "worker:{}:{}",
+            record.execution_placement.resolved_runtime_id, record.work_id
+        ),
+        remote_world_authority,
+    ));
     // Genai reads env vars; keys live in keyring/file first — inject for the
     // *worker* provider (may differ from the host turn).
     crate::workshop_env::apply_provider_llm_env(&record.provider);

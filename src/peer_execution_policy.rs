@@ -786,6 +786,46 @@ impl PeerExecutionPolicyStore {
                     && network_policy_permits(policy.network_policy, grant.network_policy))))
     }
 
+    /// Revalidate the destination-issued authority for one governed-world
+    /// operation. The signed task grant is immutable provenance; current
+    /// destination policy can still stop the next browser/computer boundary.
+    pub fn world_grant_is_active(&self, grant: &TaskExecutionGrant) -> Result<bool> {
+        if grant.schema_version != TASK_EXECUTION_GRANT_SCHEMA_VERSION
+            || grant.expires_at <= Utc::now()
+            || grant.policy_source != PeerExecutionPolicySource::Stored
+            || grant.effective_world_ids.is_empty()
+            || !grant
+                .effective_tool_domains
+                .iter()
+                .any(|domain| domain == "world")
+            || crate::turn_scope::validate_world_ids(&grant.effective_world_ids).is_err()
+        {
+            return Ok(false);
+        }
+        let view = self.policy_for_peer(&grant.peer_device_id, &grant.peer_pairing_id, false)?;
+        let policy = view.policy;
+        let workload_allowed = if grant.worker_intent.eq_ignore_ascii_case("coder") {
+            policy.coder_work
+                && grant
+                    .project_id
+                    .as_ref()
+                    .is_some_and(|project_id| policy.allowed_project_ids.contains(project_id))
+        } else {
+            policy.assistant_work
+        };
+        Ok(view.source == PeerExecutionPolicySource::Stored
+            && policy.enabled
+            && !policy.is_expired_at(Utc::now())
+            && workload_allowed
+            && policy.allowed_tool_domains.contains("turn")
+            && policy.allowed_tool_domains.contains("world")
+            && grant
+                .effective_tool_names
+                .iter()
+                .filter(|name| execution_tool_domain(name) == "world")
+                .all(|name| grant.requested_tool_names.contains(name)))
+    }
+
     pub fn remove_policy(
         &self,
         peer_device_id: &str,
@@ -1636,6 +1676,22 @@ mod tests {
                 .effective_tool_names
                 .contains(&"cognition_computer_snapshot".to_string())
         );
+        assert!(store.world_grant_is_active(&grant).unwrap());
+
+        store
+            .update_policy(
+                "peer-a",
+                "pairing-1",
+                PeerExecutionPolicyUpdate {
+                    preset: PeerExecutionPolicyPreset::Custom,
+                    assistant_work: Some(true),
+                    allowed_tool_domains: Some(BTreeSet::from(["turn".to_string()])),
+                    ..Default::default()
+                },
+                "local:operator",
+            )
+            .expect("revoke world domain");
+        assert!(!store.world_grant_is_active(&grant).unwrap());
         let _ = std::fs::remove_dir_all(root);
     }
 }

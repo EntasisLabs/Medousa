@@ -64,6 +64,29 @@ pub fn shared_world_authority() -> Arc<WorldAuthorityService> {
     Arc::clone(&AUTHORITY)
 }
 
+/// Resolve an opaque world id against this daemon's live authority. Callers
+/// still have to compare the returned authority with the current workshop;
+/// the id itself is never parsed into routing information.
+pub fn resolve_world_session(world_id: &str) -> Result<medousa_world::WorldSession, String> {
+    if world_id.trim().is_empty() || world_id.trim() != world_id {
+        return Err("selected world id is missing or invalid".to_string());
+    }
+    AUTHORITY
+        .read(|authority| authority.world(&WorldId::new(world_id)).map_err(|error| error.to_string()))
+}
+
+pub fn validate_browser_world_binding(
+    world_id: &str,
+    authority_id: &str,
+    driver_id: &str,
+    tab_group_id: &str,
+) -> Result<(), String> {
+    if browser_world_id(authority_id, driver_id, tab_group_id).as_str() != world_id {
+        return Err("selected browser world does not match the destination driver".to_string());
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone)]
 pub struct BrowserWorldAdmission {
     pub permit: WorldActionPermit,
@@ -112,7 +135,7 @@ pub fn admit_browser_action(
         .kernel
         .lock()
         .map_err(|_| "world authority lock poisoned".to_string())?;
-    let (world_id, agent) = ensure_browser_world(
+    let (world_id, agent, grant_expires_at_ms) = ensure_browser_world(
         &mut authority,
         authority_id,
         driver_id,
@@ -125,7 +148,11 @@ pub fn admit_browser_action(
         .acquire_control(
             &world_id,
             agent.clone(),
-            Some(now_ms.saturating_add(BROWSER_AGENT_LEASE_MS)),
+            Some(
+                grant_expires_at_ms
+                    .map(|expires_at| expires_at.min(now_ms.saturating_add(BROWSER_AGENT_LEASE_MS)))
+                    .unwrap_or_else(|| now_ms.saturating_add(BROWSER_AGENT_LEASE_MS)),
+            ),
             now_ms,
         )
         .map_err(|error| error.to_string())?;
@@ -171,7 +198,7 @@ pub fn admit_browser_observation(
         .kernel
         .lock()
         .map_err(|_| "world authority lock poisoned".to_string())?;
-    let (world_id, agent) = ensure_browser_world(
+    let (world_id, agent, _) = ensure_browser_world(
         &mut authority,
         authority_id,
         driver_id,
@@ -219,7 +246,7 @@ pub fn admit_browser_pixel_observation(
         .kernel
         .lock()
         .map_err(|_| "world authority lock poisoned".to_string())?;
-    let (world_id, agent) = ensure_browser_world(
+    let (world_id, agent, _) = ensure_browser_world(
         &mut authority,
         authority_id,
         driver_id,
@@ -260,12 +287,18 @@ fn ensure_browser_world(
     tab_group_id: &str,
     ownership: WorldOwnership,
     now_ms: u64,
-) -> Result<(WorldId, WorldPrincipal), String> {
+) -> Result<(WorldId, WorldPrincipal, Option<u64>), String> {
     let world_id = browser_world_id(authority_id, driver_id, tab_group_id);
     let system = WorldPrincipal::system(WorldPrincipalId::new(format!(
         "runtime:{authority_id}"
     )));
-    let agent = WorldPrincipal::agent(WorldPrincipalId::new(BROWSER_AGENT_PRINCIPAL));
+    let default_agent = WorldPrincipal::agent(WorldPrincipalId::new(BROWSER_AGENT_PRINCIPAL));
+    let (agent, grant_expires_at_ms) = crate::world_execution::active_world_for(
+        WorldSurfaceKind::Browser,
+    )
+    .filter(|binding| binding.world_id() == &world_id)
+    .map(|binding| (binding.principal().clone(), binding.expires_at_ms()))
+    .unwrap_or((default_agent, None));
     if matches!(
         authority.world(&world_id),
         Err(WorldAuthorityError::WorldNotFound(_))
@@ -292,7 +325,14 @@ fn ensure_browser_world(
             return Err("browser world identity conflicts with its registered authority".to_string());
         }
     }
-    let grant_id = WorldGrantId::new(format!("grant:browser-agent:{tab_group_id}"));
+    let grant_id = if agent.principal_id.as_str() == BROWSER_AGENT_PRINCIPAL {
+        WorldGrantId::new(format!("grant:browser-agent:{tab_group_id}"))
+    } else {
+        WorldGrantId::new(format!(
+            "grant:browser-worker:{tab_group_id}:{}",
+            agent.principal_id
+        ))
+    };
     match authority.grant_capabilities(
         &world_id,
         WorldGrantRequest {
@@ -307,14 +347,14 @@ fn ensure_browser_world(
                 .into_iter()
                 .collect::<BTreeSet<_>>(),
             resource_scope: WorldResourceScope::All,
-            expires_at_ms: None,
+            expires_at_ms: grant_expires_at_ms,
         },
         now_ms,
     ) {
         Ok(_) | Err(WorldAuthorityError::GrantAlreadyExists(_)) => {}
         Err(error) => return Err(error.to_string()),
     }
-    Ok((world_id, agent))
+    Ok((world_id, agent, grant_expires_at_ms))
 }
 
 /// Register a daemon-owned browser world before its Chromium process begins.
@@ -332,7 +372,7 @@ pub fn register_owned_browser_world(
         .kernel
         .lock()
         .map_err(|_| "world authority lock poisoned".to_string())?;
-    let (world_id, _) = ensure_browser_world(
+    let (world_id, _, _) = ensure_browser_world(
         &mut authority,
         authority_id,
         driver_id,

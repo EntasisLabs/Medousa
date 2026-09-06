@@ -267,6 +267,32 @@ pub struct IsolatedBrowserHost {
 }
 
 impl IsolatedBrowserHost {
+    /// Resolve ownership only inside an already-admitted exact world-tool
+    /// boundary. This lets a destination worker operate the selected world
+    /// without pretending to be the human profile that created it.
+    pub(crate) async fn authorized_world(
+        &self,
+        world_id: &str,
+    ) -> Result<IsolatedBrowserWorld, IsolatedBrowserError> {
+        let binding = crate::world_execution::require_active_world(
+            world_id,
+            WorldSurfaceKind::Browser,
+        )
+        .map_err(IsolatedBrowserError::Conflict)?;
+        let state = self.state.lock().await;
+        let world = state.worlds.get(world_id).cloned().ok_or_else(|| {
+            IsolatedBrowserError::NotFound("isolated browser world was not found".to_string())
+        })?;
+        if world.authority_id != binding.authority_id()
+            || world.driver.driver_id != *binding.driver_id()
+        {
+            return Err(IsolatedBrowserError::Conflict(
+                "selected world does not match its isolated browser runtime".to_string(),
+            ));
+        }
+        Ok(world)
+    }
+
     pub async fn open(root: PathBuf) -> Result<Arc<Self>, IsolatedBrowserError> {
         tokio::fs::create_dir_all(root.join("worlds"))
             .await

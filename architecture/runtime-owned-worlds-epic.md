@@ -820,8 +820,24 @@ Current worker/Bot eligibility slice:
   no implicit world inheritance.
 - Delegated worker specifications and destination-issued task grants preserve
   the exact id subset. The destination still intersects the explicit `world`
-  domain, while signed world-intent transport and local execution remain the
-  next slice.
+  domain.
+
+Current signed-intent execution slice:
+
+- The existing signed mesh task is the one remote hop: its canonical worker
+  specification carries exact world ids and the destination mints the task
+  grant. Individual browser/computer actions are not proxied back through
+  Home or wrapped in a second remote authorization ceremony.
+- The destination registry exposes world tools only when the worker has an
+  exact eligible id, adds that opaque id to the tool schema, and resolves the
+  concrete driver locally for the duration of one invocation. Driver and
+  authority mechanics are removed from model-visible requests and results.
+- Remote world calls revalidate the destination's current directional policy
+  at every tool boundary. Revoking the `world` domain stops the next call even
+  though the immutable signed task remains valid provenance.
+- Destination world-kernel grants use the worker principal and cannot outlive
+  the destination-issued task grant. Isolated browser ownership is resolved
+  only inside that exact task-local world boundary.
 
 Implementation:
 

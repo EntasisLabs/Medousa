@@ -149,6 +149,11 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                 &[
                     "cognition_capability",
                     "cognition_web_search",
+                    "cognition_browser_fetch",
+                    "cognition_browser_snapshot",
+                    "cognition_browser_act",
+                    "cognition_computer_snapshot",
+                    "cognition_computer_act",
                     "cognition_openshell_status",
                     "cognition_openshell_sandbox_run",
                     "cognition_shell_status",
@@ -177,6 +182,11 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                 &mut names,
                 &[
                     "cognition_web_search",
+                    "cognition_browser_fetch",
+                    "cognition_browser_snapshot",
+                    "cognition_browser_act",
+                    "cognition_computer_snapshot",
+                    "cognition_computer_act",
                     "cognition_capability",
                     "cognition_shell_status",
                     "cognition_shell_run",
@@ -355,6 +365,8 @@ mod tests {
         assert!(!names.contains("cognition_calendar_list"));
         assert!(!names.contains("cognition_calendar_create"));
         assert!(names.contains("cognition_memory_mutate"));
+        assert!(names.contains("cognition_browser_snapshot"));
+        assert!(names.contains("cognition_computer_snapshot"));
     }
 
     #[test]
@@ -425,6 +437,8 @@ mod tests {
         assert!(names.contains("cognition_component_create"));
         assert!(names.contains("cognition_turn"));
         assert!(names.contains("cognition_tools_discover"));
+        assert!(names.contains("cognition_browser_snapshot"));
+        assert!(names.contains("cognition_computer_act"));
     }
 
     #[test]

@@ -82,6 +82,7 @@ pub mod turn_scope;
 pub mod turn_slice;
 pub mod turn_stream_registry;
 pub mod turn_worker_notify;
+pub mod world_execution;
 pub mod typed_tools;
 pub mod web_search_tool;
 pub mod work_environment_federation;

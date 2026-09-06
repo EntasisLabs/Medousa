@@ -213,6 +213,28 @@ impl ComputerDriverBroker {
             .collect()
     }
 
+    /// Resolve an opaque computer world id against registered local drivers
+    /// without parsing routing data out of the id. The first observation will
+    /// still create the authority session through the normal broker path.
+    pub async fn resolve_world_driver(
+        &self,
+        world_id: &str,
+        authority_id: &str,
+    ) -> Result<Option<WorldDriverId>, String> {
+        validate_identifier("world authority", authority_id)?;
+        let registrations = self.registrations().await;
+        for registration in registrations {
+            let preflight = self.preflight(&registration.driver_id).await?;
+            if computer_world_id(authority_id, &registration.driver_id, &preflight.session_id)
+                .as_str()
+                == world_id
+            {
+                return Ok(Some(registration.driver_id));
+            }
+        }
+        Ok(None)
+    }
+
     pub async fn preflight(
         &self,
         driver_id: &WorldDriverId,
@@ -906,6 +928,7 @@ impl ComputerDriverBroker {
         let ownership = registration.ownership;
         let surface = registration.surface;
         let desktop_session_id = request.desktop_session_id.clone();
+        let grant_expires_at_ms = active_world_grant_expiry(&world_id, &observer);
 
         self.authority.write(move |authority| {
             if matches!(
@@ -954,7 +977,7 @@ impl ComputerDriverBroker {
                         .into_iter()
                         .collect::<BTreeSet<_>>(),
                     resource_scope: WorldResourceScope::exact([resource_id.clone()]),
-                    expires_at_ms: None,
+                    expires_at_ms: grant_expires_at_ms,
                 },
                 observed_at_ms,
             ) {
@@ -1017,6 +1040,7 @@ impl ComputerDriverBroker {
         let desktop_session_id = request.desktop_session_id.clone();
         let ownership = registration.ownership;
         let surface = registration.surface;
+        let grant_expires_at_ms = active_world_grant_expiry(&world_id, &actor);
 
         self.authority.write(move |authority| {
             let state = authority
@@ -1046,7 +1070,7 @@ impl ComputerDriverBroker {
                         .into_iter()
                         .collect::<BTreeSet<_>>(),
                     resource_scope: WorldResourceScope::exact([resource_id.clone()]),
-                    expires_at_ms: None,
+                    expires_at_ms: grant_expires_at_ms,
                 },
                 admitted_at_ms,
             ) {
@@ -1117,6 +1141,7 @@ impl ComputerDriverBroker {
         let desktop_session_id = request.desktop_session_id.clone();
         let ownership = registration.ownership;
         let surface = registration.surface;
+        let grant_expires_at_ms = active_world_grant_expiry(&world_id, &observer);
 
         self.authority.write(move |authority| {
             let state = authority
@@ -1146,7 +1171,7 @@ impl ComputerDriverBroker {
                         .into_iter()
                         .collect::<BTreeSet<_>>(),
                     resource_scope: WorldResourceScope::exact([resource_id.clone()]),
-                    expires_at_ms: None,
+                    expires_at_ms: grant_expires_at_ms,
                 },
                 admitted_at_ms,
             ) {
@@ -1532,6 +1557,24 @@ fn computer_world_id(
     WorldId::new(format!(
         "world:computer:{authority_id}:{driver_id}:{desktop_session_id}"
     ))
+}
+
+pub fn validate_computer_world_binding(
+    world_id: &str,
+    authority_id: &str,
+    driver_id: &WorldDriverId,
+    desktop_session_id: &str,
+) -> Result<(), String> {
+    if computer_world_id(authority_id, driver_id, desktop_session_id).as_str() != world_id {
+        return Err("selected computer world does not match the destination driver".to_string());
+    }
+    Ok(())
+}
+
+fn active_world_grant_expiry(world_id: &WorldId, principal: &WorldPrincipal) -> Option<u64> {
+    crate::world_execution::active_world_for(WorldSurfaceKind::Desktop)
+        .filter(|binding| binding.world_id() == world_id && binding.principal() == principal)
+        .and_then(|binding| binding.expires_at_ms())
 }
 
 fn now_ms() -> u64 {
