@@ -1,7 +1,7 @@
 use medousa_computer_bridge::{
-    COMPUTER_DRIVER_PROTOCOL_VERSION, ComputerDriverPreflight, ComputerObservation,
-    ComputerObservationRequest, ComputerPermissionKind, ComputerPermissionReport,
-    ComputerPermissionStatus,
+    COMPUTER_DRIVER_PROTOCOL_VERSION, ComputerActionReceipt, ComputerActionRequest,
+    ComputerDriverPreflight, ComputerObservation, ComputerObservationRequest,
+    ComputerPermissionKind, ComputerPermissionReport, ComputerPermissionStatus,
 };
 use medousa_world::WorldDriverId;
 
@@ -47,6 +47,17 @@ impl NativeComputerDriver {
         Err(PlatformDriverError {
             code: "platform_unsupported",
             message: "native computer observation is not supported on this platform".to_string(),
+            retryable: false,
+        })
+    }
+
+    pub fn act(
+        &self,
+        _request: ComputerActionRequest,
+    ) -> Result<ComputerActionReceipt, PlatformDriverError> {
+        Err(PlatformDriverError {
+            code: "platform_unsupported",
+            message: "native computer actions are not supported on this platform".to_string(),
             retryable: false,
         })
     }

@@ -116,6 +116,21 @@ fn handle_line(
                 ),
             }
         }
+        ComputerDriverRequest::Act { request: action } => {
+            let request_id = request.request_id;
+            match driver.act(action) {
+                Ok(receipt) => ComputerDriverResponseEnvelope::success(
+                    request_id,
+                    ComputerDriverResponseResult::Action { receipt },
+                ),
+                Err(error) => ComputerDriverResponseEnvelope::error(
+                    request_id,
+                    error.code,
+                    error.message,
+                    error.retryable,
+                ),
+            }
+        }
     }
 }
 

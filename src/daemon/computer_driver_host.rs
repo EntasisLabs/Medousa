@@ -9,10 +9,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use medousa_computer_bridge::{
-    COMPUTER_DRIVER_PROTOCOL_VERSION, ComputerDriverPreflight, ComputerDriverRequest,
-    ComputerDriverRequestEnvelope, ComputerDriverResponse, ComputerDriverResponseEnvelope,
-    ComputerDriverResponseResult, ComputerObservation, ComputerObservationRequest,
-    MAX_COMPUTER_DRIVER_MESSAGE_BYTES,
+    COMPUTER_DRIVER_PROTOCOL_VERSION, ComputerActionReceipt, ComputerActionRequest,
+    ComputerDriverPreflight, ComputerDriverRequest, ComputerDriverRequestEnvelope,
+    ComputerDriverResponse, ComputerDriverResponseEnvelope, ComputerDriverResponseResult,
+    ComputerObservation, ComputerObservationRequest, MAX_COMPUTER_DRIVER_MESSAGE_BYTES,
 };
 use medousa_world::{WorldDriverId, WorldDriverRegistration};
 #[cfg(target_os = "macos")]
@@ -26,7 +26,9 @@ use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::computer_driver::{ComputerDriver, ComputerDriverBroker};
+use crate::computer_driver::{
+    ComputerDriver, ComputerDriverActionError, ComputerDriverBroker,
+};
 use crate::paths::medousa_data_dir;
 
 #[cfg(target_os = "macos")]
@@ -184,7 +186,10 @@ fn native_registration() -> Option<WorldDriverRegistration> {
             surface: WorldSurfaceKind::Desktop,
             ownership: WorldOwnership::Attached,
             transport: WorldDriverTransport::LocalSidecar,
-            capabilities: [WorldDriverCapability::SemanticObservation]
+            capabilities: [
+                WorldDriverCapability::SemanticObservation,
+                WorldDriverCapability::Interaction,
+            ]
                 .into_iter()
                 .collect(),
             display_name: Some("macOS Accessibility".to_string()),
@@ -312,6 +317,83 @@ impl SidecarComputerDriver {
         }
         Err("computer sidecar request exhausted its retry boundary".to_string())
     }
+
+    async fn action_request(
+        &self,
+        request: ComputerActionRequest,
+    ) -> Result<ComputerActionReceipt, ComputerDriverActionError> {
+        let expected = request.clone();
+        let request_id = format!("computer:{}", Uuid::new_v4());
+        let envelope = ComputerDriverRequestEnvelope::new(
+            request_id.clone(),
+            ComputerDriverRequest::Act { request },
+        );
+        let encoded = serde_json::to_vec(&envelope).map_err(|error| {
+            ComputerDriverActionError::failed(format!(
+                "serialize computer sidecar action: {error}"
+            ))
+        })?;
+        if encoded.len() > MAX_COMPUTER_DRIVER_MESSAGE_BYTES {
+            return Err(ComputerDriverActionError::failed(
+                "computer sidecar action exceeded its framing limit",
+            ));
+        }
+
+        let mut process = self.process.lock().await;
+        if process.is_none() {
+            *process = Some(
+                ComputerSidecarProcess::spawn(&self.binary)
+                    .map_err(ComputerDriverActionError::failed)?,
+            );
+        }
+        let exchange = process
+            .as_mut()
+            .expect("computer sidecar process")
+            .exchange(&encoded);
+        let response = match tokio::time::timeout(std::time::Duration::from_secs(10), exchange)
+            .await
+            .map_err(|_| "native computer sidecar action timed out".to_string())
+            .and_then(|response| response)
+        {
+            Ok(response) => response,
+            Err(error) => {
+                stop_process(&mut process);
+                return Err(ComputerDriverActionError::indeterminate(format!(
+                    "{error}; the semantic action was not retried because its outcome is unknown"
+                )));
+            }
+        };
+        if response.protocol_version != COMPUTER_DRIVER_PROTOCOL_VERSION
+            || response.request_id != request_id
+        {
+            stop_process(&mut process);
+            return Err(ComputerDriverActionError::indeterminate(
+                "native computer sidecar returned an incompatible action acknowledgement",
+            ));
+        }
+        match response.response {
+            ComputerDriverResponse::Success { result } => match *result {
+                ComputerDriverResponseResult::Action { receipt } => {
+                    if let Err(error) =
+                        receipt.validate_for(&self.registration.driver_id, &expected)
+                    {
+                        stop_process(&mut process);
+                        return Err(ComputerDriverActionError::indeterminate(error));
+                    }
+                    Ok(receipt)
+                }
+                _ => {
+                    stop_process(&mut process);
+                    Err(ComputerDriverActionError::indeterminate(
+                        "native computer sidecar returned the wrong result for an action",
+                    ))
+                }
+            },
+            ComputerDriverResponse::Error { error } => Err(ComputerDriverActionError::failed(
+                format!("{}: {}", error.code, error.message),
+            )),
+        }
+    }
 }
 
 #[async_trait]
@@ -323,7 +405,8 @@ impl ComputerDriver for SidecarComputerDriver {
     async fn preflight(&self) -> Result<ComputerDriverPreflight, String> {
         match self.request(ComputerDriverRequest::Preflight).await? {
             ComputerDriverResponseResult::Preflight { report } => Ok(report),
-            ComputerDriverResponseResult::Observation { .. } => {
+            ComputerDriverResponseResult::Observation { .. }
+            | ComputerDriverResponseResult::Action { .. } => {
                 Err("computer sidecar returned an observation for preflight".to_string())
             }
         }
@@ -338,10 +421,18 @@ impl ComputerDriver for SidecarComputerDriver {
             .await?
         {
             ComputerDriverResponseResult::Observation { observation } => Ok(observation),
-            ComputerDriverResponseResult::Preflight { .. } => {
+            ComputerDriverResponseResult::Preflight { .. }
+            | ComputerDriverResponseResult::Action { .. } => {
                 Err("computer sidecar returned preflight for an observation".to_string())
             }
         }
+    }
+
+    async fn act(
+        &self,
+        request: ComputerActionRequest,
+    ) -> Result<ComputerActionReceipt, ComputerDriverActionError> {
+        self.action_request(request).await
     }
 }
 

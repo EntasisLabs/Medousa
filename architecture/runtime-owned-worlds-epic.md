@@ -646,8 +646,21 @@ Current macOS observation slice:
   preflight, and operator-only semantic observation. The caller must echo the
   exact preflight session, while the daemon derives the desktop resource and
   records observation provenance through the shared world authority.
-- Pixel observations, actions, package/release shipping, and Home controls
-  remain later slices.
+
+Current macOS action slice:
+
+- The first action is a background Accessibility `press`; the native sidecar
+  accepts no coordinates and never moves the physical pointer.
+- Every press is fenced to the latest exact desktop session, observation
+  generation, revision, resource, and opaque element reference. A newer
+  observation invalidates every prior target.
+- The daemon grants only exact-resource interaction, acquires control, rechecks
+  the permit immediately before dispatch, and records the native receipt.
+- Effectful sidecar requests are never automatically retried. A lost or invalid
+  acknowledgement is recorded as indeterminate for reconciliation rather than
+  risking a duplicate press.
+- Pixel observations, broader actions, package/release shipping, and Home
+  controls remain later slices.
 
 Implementation:
 

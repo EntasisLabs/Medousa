@@ -10,7 +10,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use medousa_computer_bridge::{
-    COMPUTER_DRIVER_PROTOCOL_VERSION, ComputerDriverPreflight, ComputerObservation,
+    COMPUTER_DRIVER_PROTOCOL_VERSION, ComputerAction, ComputerActionReceipt,
+    ComputerActionRequest, ComputerDriverPreflight, ComputerObservation,
     ComputerObservationRequest, ComputerPermissionKind,
 };
 use medousa_world::{
@@ -27,6 +28,7 @@ use uuid::Uuid;
 use crate::world_authority::WorldAuthorityService;
 
 const COMPUTER_OBSERVATION_PERMIT_MS: u64 = 10_000;
+const COMPUTER_ACTION_PERMIT_MS: u64 = 10_000;
 
 #[async_trait]
 pub trait ComputerDriver: Send + Sync {
@@ -40,6 +42,34 @@ pub trait ComputerDriver: Send + Sync {
         &self,
         request: ComputerObservationRequest,
     ) -> Result<ComputerObservation, String>;
+
+    async fn act(
+        &self,
+        request: ComputerActionRequest,
+    ) -> Result<ComputerActionReceipt, ComputerDriverActionError>;
+}
+
+#[derive(Debug, Clone)]
+pub struct ComputerDriverActionError {
+    pub message: String,
+    /// The driver may have acted, but its acknowledgement was lost or invalid.
+    pub indeterminate: bool,
+}
+
+impl ComputerDriverActionError {
+    pub fn failed(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            indeterminate: false,
+        }
+    }
+
+    pub fn indeterminate(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            indeterminate: true,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -53,6 +83,16 @@ struct RegisteredComputerDriver {
 pub struct ComputerDriverBroker {
     authority: Arc<WorldAuthorityService>,
     drivers: Arc<RwLock<BTreeMap<WorldDriverId, RegisteredComputerDriver>>>,
+    observation_fences:
+        Arc<RwLock<BTreeMap<(WorldDriverId, WorldResourceId), ComputerObservationFence>>>,
+}
+
+#[derive(Debug, Clone)]
+struct ComputerObservationFence {
+    session_id: String,
+    generation: String,
+    revision: u64,
+    element_refs: BTreeSet<String>,
 }
 
 impl ComputerDriverBroker {
@@ -60,6 +100,7 @@ impl ComputerDriverBroker {
         Self {
             authority,
             drivers: Arc::new(RwLock::new(BTreeMap::new())),
+            observation_fences: Arc::new(RwLock::new(BTreeMap::new())),
         }
     }
 
@@ -168,10 +209,143 @@ impl ComputerDriverBroker {
                 )
                 .map_err(|error| error.to_string())
         })?;
+        self.remember_observation(&observation).await;
         Ok(GovernedComputerObservation {
             observation,
             provenance: ComputerWorldProvenance::from_permit(&admission.permit, outcome),
         })
+    }
+
+    pub async fn act(
+        &self,
+        intent: ComputerActionIntent,
+    ) -> Result<GovernedComputerAction, String> {
+        intent.validate()?;
+        let registered = self.driver(&intent.driver_id).await?;
+        if !registered
+            .registration
+            .capabilities
+            .contains(&WorldDriverCapability::Interaction)
+        {
+            return Err(format!(
+                "computer driver '{}' does not provide semantic interaction",
+                intent.driver_id
+            ));
+        }
+        if intent.desktop_session_id != registered.desktop_session_id {
+            return Err("computer action requested the wrong desktop session".to_string());
+        }
+
+        let request = ComputerActionRequest {
+            resource_id: intent.resource_id.clone(),
+            session_id: intent.desktop_session_id.clone(),
+            observation_generation: intent.observation_generation.clone(),
+            observation_revision: intent.observation_revision,
+            element_ref: intent.element_ref.clone(),
+            action: intent.action,
+        };
+        request.validate()?;
+        self.validate_action_fence(&intent).await?;
+        let admission = self.admit_action(&registered.registration, &intent)?;
+
+        if let Err(error) = self.authority.read(|authority| {
+            authority
+                .validate_action_permit(&admission.permit, now_ms())
+                .map_err(|error| error.to_string())
+        }) {
+            let _ = self.fail(&admission.permit, &error);
+            return Err(error);
+        }
+
+        let receipt = match registered.driver.act(request.clone()).await {
+            Ok(receipt) => receipt,
+            Err(error) => {
+                if error.indeterminate {
+                    let _ = self.mark_indeterminate(&admission.permit, &error.message);
+                } else {
+                    let _ = self.fail(&admission.permit, &error.message);
+                }
+                return Err(error.message);
+            }
+        };
+        if let Err(error) = receipt.validate_for(&intent.driver_id, &request) {
+            let _ = self.mark_indeterminate(&admission.permit, &error);
+            return Err(error);
+        }
+
+        let outcome = self.authority.write(|authority| {
+            authority
+                .complete_action(
+                    &admission.permit,
+                    "native semantic press acknowledged",
+                    now_ms(),
+                )
+                .map_err(|error| error.to_string())
+        })?;
+        Ok(GovernedComputerAction {
+            receipt,
+            provenance: ComputerWorldProvenance::from_permit(&admission.permit, outcome),
+        })
+    }
+
+    async fn remember_observation(&self, observation: &ComputerObservation) {
+        let key = (
+            observation.driver_id.clone(),
+            observation.resource_id.clone(),
+        );
+        let mut fences = self.observation_fences.write().await;
+        let previous = fences.get(&key);
+        let mut element_refs = if !observation.full
+            && previous.is_some_and(|previous| {
+                previous.session_id == observation.session_id
+                    && previous.generation == observation.observation_generation
+                    && observation.base_revision == Some(previous.revision)
+            })
+        {
+            previous
+                .map(|previous| previous.element_refs.clone())
+                .unwrap_or_default()
+        } else {
+            BTreeSet::new()
+        };
+        for removed in &observation.removed_refs {
+            element_refs.remove(removed);
+        }
+        element_refs.extend(observation.nodes.iter().map(|node| node.element_ref.clone()));
+        fences.insert(
+            key,
+            ComputerObservationFence {
+                session_id: observation.session_id.clone(),
+                generation: observation.observation_generation.clone(),
+                revision: observation.revision,
+                element_refs,
+            },
+        );
+    }
+
+    async fn validate_action_fence(&self, intent: &ComputerActionIntent) -> Result<(), String> {
+        let fences = self.observation_fences.read().await;
+        let fence = fences
+            .get(&(intent.driver_id.clone(), intent.resource_id.clone()))
+            .ok_or_else(|| {
+                "observation_required: observe the desktop before requesting an action".to_string()
+            })?;
+        if fence.session_id != intent.desktop_session_id
+            || fence.generation != intent.observation_generation
+            || fence.revision != intent.observation_revision
+        {
+            return Err(
+                "stale_observation: action must target the daemon's latest exact observation"
+                    .to_string(),
+            );
+        }
+        if !fence.element_refs.contains(&intent.element_ref) {
+            return Err(
+                "element_not_found: action target was not present in the exact observation"
+                    .to_string(),
+            );
+        }
+        Ok(())
     }
 
     async fn driver(
@@ -298,10 +472,122 @@ impl ComputerDriverBroker {
         })
     }
 
+    fn admit_action(
+        &self,
+        registration: &WorldDriverRegistration,
+        request: &ComputerActionIntent,
+    ) -> Result<ComputerWorldAdmission, String> {
+        let admitted_at_ms = now_ms();
+        let world_id = computer_world_id(
+            &request.authority_id,
+            &request.driver_id,
+            &request.desktop_session_id,
+        );
+        let system = WorldPrincipal::system(WorldPrincipalId::new(format!(
+            "runtime:{}",
+            request.authority_id
+        )));
+        let actor = request.principal.clone();
+        let resource_id = request.resource_id.clone();
+        let driver_id = request.driver_id.clone();
+        let authority_id = request.authority_id.clone();
+        let trace_id = request.trace_id.clone();
+        let summary = request.summary.clone();
+        let desktop_session_id = request.desktop_session_id.clone();
+        let ownership = registration.ownership;
+        let surface = registration.surface;
+
+        self.authority.write(move |authority| {
+            let state = authority
+                .world(&world_id)
+                .map_err(|error| error.to_string())?;
+            if state.authority_id.as_str() != authority_id
+                || state.driver_id != driver_id
+                || state.ownership != ownership
+                || state.surface != surface
+            {
+                return Err("computer world identity conflicts with its registered driver".to_string());
+            }
+
+            let grant_id = WorldGrantId::new(format!(
+                "grant:computer-interact:{desktop_session_id}:{}:{}",
+                actor.principal_id, resource_id
+            ));
+            match authority.grant_capabilities(
+                &world_id,
+                WorldGrantRequest {
+                    grant_id,
+                    issued_by: system,
+                    subject: actor.clone(),
+                    capabilities: [WorldCapability::Interact]
+                        .into_iter()
+                        .collect::<BTreeSet<_>>(),
+                    resource_scope: WorldResourceScope::exact([resource_id.clone()]),
+                    expires_at_ms: None,
+                },
+                admitted_at_ms,
+            ) {
+                Ok(_) | Err(WorldAuthorityError::GrantAlreadyExists(_)) => {}
+                Err(error) => return Err(error.to_string()),
+            }
+
+            let lease = authority
+                .acquire_control(
+                    &world_id,
+                    actor.clone(),
+                    Some(admitted_at_ms.saturating_add(COMPUTER_ACTION_PERMIT_MS)),
+                    admitted_at_ms,
+                )
+                .map_err(|error| error.to_string())?;
+            let state = authority
+                .world(&world_id)
+                .map_err(|error| error.to_string())?;
+            let operation_id = Uuid::new_v4().to_string();
+            let intent = WorldActionIntent {
+                intent_id: medousa_world::WorldIntentId::new(format!(
+                    "intent:computer-action:{operation_id}"
+                )),
+                trace_id: WorldTraceId::new(trace_id),
+                principal: actor,
+                resource_id,
+                expected_revision: state.revision,
+                expected_control_generation: Some(lease.generation),
+                required_capability: WorldCapability::Interact,
+                effect_class: WorldEffectClass::LocalReversible,
+                idempotency_key: format!("computer-action:{operation_id}"),
+                permit_expires_at_ms: admitted_at_ms
+                    .saturating_add(COMPUTER_ACTION_PERMIT_MS),
+                summary,
+            };
+            match authority
+                .admit_action(&world_id, intent, admitted_at_ms)
+                .map_err(|error| error.to_string())?
+            {
+                WorldAdmission::Admitted { permit } => Ok(ComputerWorldAdmission { permit }),
+                WorldAdmission::Replay { .. } => {
+                    Err("new computer action unexpectedly resolved as a replay".to_string())
+                }
+            }
+        })
+    }
+
     fn fail(&self, permit: &WorldActionPermit, message: &str) -> Result<(), String> {
         self.authority.write(|authority| {
             authority
                 .fail_action(permit, message, now_ms())
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        })
+    }
+
+    fn mark_indeterminate(
+        &self,
+        permit: &WorldActionPermit,
+        message: &str,
+    ) -> Result<(), String> {
+        self.authority.write(|authority| {
+            authority
+                .mark_action_indeterminate(permit, message, now_ms())
                 .map(|_| ())
                 .map_err(|error| error.to_string())
         })
@@ -324,6 +610,40 @@ pub struct ComputerObservationIntent {
     pub summary: String,
     pub after_revision: Option<u64>,
     pub max_nodes: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct ComputerActionIntent {
+    pub authority_id: String,
+    pub driver_id: WorldDriverId,
+    pub desktop_session_id: String,
+    pub principal: WorldPrincipal,
+    pub resource_id: WorldResourceId,
+    pub trace_id: String,
+    pub summary: String,
+    pub observation_generation: String,
+    pub observation_revision: u64,
+    pub element_ref: String,
+    pub action: ComputerAction,
+}
+
+impl ComputerActionIntent {
+    pub fn validate(&self) -> Result<(), String> {
+        validate_identifier("world authority", &self.authority_id)?;
+        validate_identifier("computer driver", self.driver_id.as_str())?;
+        validate_identifier("desktop session", &self.desktop_session_id)?;
+        validate_identifier("computer principal", self.principal.principal_id.as_str())?;
+        validate_identifier("computer trace", &self.trace_id)?;
+        validate_identifier("observation generation", &self.observation_generation)?;
+        validate_identifier("computer element reference", &self.element_ref)?;
+        if self.observation_revision == 0 {
+            return Err("computer action observation revision must be positive".to_string());
+        }
+        if self.summary.trim().is_empty() || self.summary.len() > 1_024 {
+            return Err("computer action summary is invalid".to_string());
+        }
+        Ok(())
+    }
 }
 
 impl ComputerObservationIntent {
@@ -368,6 +688,12 @@ impl ComputerWorldProvenance {
 #[derive(Debug, Clone, Serialize)]
 pub struct GovernedComputerObservation {
     pub observation: ComputerObservation,
+    pub provenance: ComputerWorldProvenance,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GovernedComputerAction {
+    pub receipt: ComputerActionReceipt,
     pub provenance: ComputerWorldProvenance,
 }
 
@@ -459,14 +785,18 @@ mod tests {
         COMPUTER_OBSERVATION_SCHEMA_VERSION, ComputerApplication, ComputerPermissionReport,
         ComputerPermissionStatus, ComputerRect, ComputerSemanticNode, ComputerWindow,
     };
-    use medousa_world::{WorldActionStatus, WorldOwnership, WorldPrincipalKind};
+    use medousa_world::{
+        WorldActionStatus, WorldEventKind, WorldOwnership, WorldPrincipalKind,
+    };
 
     use super::*;
 
     struct FakeComputerDriver {
         registration: WorldDriverRegistration,
         observations: AtomicUsize,
+        actions: AtomicUsize,
         spoof_driver: bool,
+        spoof_action_revision: bool,
     }
 
     #[async_trait]
@@ -553,6 +883,32 @@ mod tests {
                 untrusted_content: true,
             })
         }
+
+        async fn act(
+            &self,
+            request: ComputerActionRequest,
+        ) -> Result<ComputerActionReceipt, ComputerDriverActionError> {
+            self.actions.fetch_add(1, Ordering::SeqCst);
+            if request.observation_generation != "generation:test"
+                || request.observation_revision != 1
+                || request.element_ref != "ax:test:button"
+            {
+                return Err(ComputerDriverActionError::failed(
+                    "stale or unknown observation target",
+                ));
+            }
+            Ok(ComputerActionReceipt {
+                driver_id: self.registration.driver_id.clone(),
+                resource_id: request.resource_id,
+                session_id: request.session_id,
+                observation_generation: request.observation_generation,
+                observation_revision: request.observation_revision
+                    + u64::from(self.spoof_action_revision),
+                element_ref: request.element_ref,
+                action: request.action,
+                completed_at_ms: 2,
+            })
+        }
     }
 
     fn registration(driver_id: &str) -> WorldDriverRegistration {
@@ -562,7 +918,10 @@ mod tests {
             surface: WorldSurfaceKind::Desktop,
             ownership: WorldOwnership::Attached,
             transport: WorldDriverTransport::InProcess,
-            capabilities: [WorldDriverCapability::SemanticObservation]
+            capabilities: [
+                WorldDriverCapability::SemanticObservation,
+                WorldDriverCapability::Interaction,
+            ]
                 .into_iter()
                 .collect(),
             display_name: Some("Fake computer".to_string()),
@@ -593,7 +952,9 @@ mod tests {
         let driver = Arc::new(FakeComputerDriver {
             registration: registration("driver:computer:test"),
             observations: AtomicUsize::new(0),
+            actions: AtomicUsize::new(0),
             spoof_driver: false,
+            spoof_action_revision: false,
         });
         broker
             .register(driver.clone())
@@ -625,7 +986,9 @@ mod tests {
             .register(Arc::new(FakeComputerDriver {
                 registration: registration("driver:computer:honest"),
                 observations: AtomicUsize::new(0),
+                actions: AtomicUsize::new(0),
                 spoof_driver: true,
+                spoof_action_revision: false,
             }))
             .await
             .expect("register fake driver");
@@ -649,10 +1012,152 @@ mod tests {
             .register(Arc::new(FakeComputerDriver {
                 registration: browser,
                 observations: AtomicUsize::new(0),
+                actions: AtomicUsize::new(0),
                 spoof_driver: false,
+                spoof_action_revision: false,
             }))
             .await
             .expect_err("browser registration must fail");
         assert!(error.contains("native desktop"));
+    }
+
+    fn action_intent(driver_id: &str, element_ref: &str) -> ComputerActionIntent {
+        ComputerActionIntent {
+            authority_id: "workshop:test".to_string(),
+            driver_id: WorldDriverId::new(driver_id),
+            desktop_session_id: "login:test".to_string(),
+            principal: WorldPrincipal::new("agent:test", WorldPrincipalKind::Agent),
+            resource_id: WorldResourceId::new("desktop:login"),
+            trace_id: "turn:action".to_string(),
+            summary: "Press the observed button".to_string(),
+            observation_generation: "generation:test".to_string(),
+            observation_revision: 1,
+            element_ref: element_ref.to_string(),
+            action: ComputerAction::Press,
+        }
+    }
+
+    #[tokio::test]
+    async fn semantic_action_uses_the_exact_observed_element() {
+        let authority = Arc::new(WorldAuthorityService::default());
+        let broker = ComputerDriverBroker::new(authority);
+        let driver = Arc::new(FakeComputerDriver {
+            registration: registration("driver:computer:test"),
+            observations: AtomicUsize::new(0),
+            actions: AtomicUsize::new(0),
+            spoof_driver: false,
+            spoof_action_revision: false,
+        });
+        broker.register(driver.clone()).await.expect("register driver");
+        broker
+            .observe(intent("driver:computer:test"))
+            .await
+            .expect("establish observation");
+
+        let result = broker
+            .act(action_intent("driver:computer:test", "ax:test:button"))
+            .await
+            .expect("governed action");
+
+        assert_eq!(driver.actions.load(Ordering::SeqCst), 1);
+        assert_eq!(result.receipt.action, ComputerAction::Press);
+        assert_eq!(result.provenance.outcome.status, WorldActionStatus::Confirmed);
+    }
+
+    #[tokio::test]
+    async fn semantic_action_rejects_an_unknown_observation_reference() {
+        let authority = Arc::new(WorldAuthorityService::default());
+        let broker = ComputerDriverBroker::new(authority);
+        let driver = Arc::new(FakeComputerDriver {
+            registration: registration("driver:computer:test"),
+            observations: AtomicUsize::new(0),
+            actions: AtomicUsize::new(0),
+            spoof_driver: false,
+            spoof_action_revision: false,
+        });
+        broker
+            .register(driver.clone())
+            .await
+            .expect("register driver");
+        broker
+            .observe(intent("driver:computer:test"))
+            .await
+            .expect("establish observation");
+
+        let error = broker
+            .act(action_intent("driver:computer:test", "ax:test:missing"))
+            .await
+            .expect_err("unknown element must fail");
+        assert!(error.contains("element_not_found"));
+        assert_eq!(driver.actions.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn semantic_action_rejects_a_stale_observation_revision_before_dispatch() {
+        let authority = Arc::new(WorldAuthorityService::default());
+        let broker = ComputerDriverBroker::new(authority);
+        let driver = Arc::new(FakeComputerDriver {
+            registration: registration("driver:computer:test"),
+            observations: AtomicUsize::new(0),
+            actions: AtomicUsize::new(0),
+            spoof_driver: false,
+            spoof_action_revision: false,
+        });
+        broker.register(driver.clone()).await.expect("register driver");
+        broker
+            .observe(intent("driver:computer:test"))
+            .await
+            .expect("establish observation");
+        let mut action = action_intent("driver:computer:test", "ax:test:button");
+        action.observation_revision = 2;
+
+        let error = broker
+            .act(action)
+            .await
+            .expect_err("stale revision must fail");
+        assert!(error.contains("stale_observation"));
+        assert_eq!(driver.actions.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn invalid_action_acknowledgement_is_recorded_as_indeterminate() {
+        let authority = Arc::new(WorldAuthorityService::default());
+        let broker = ComputerDriverBroker::new(authority.clone());
+        let driver = Arc::new(FakeComputerDriver {
+            registration: registration("driver:computer:test"),
+            observations: AtomicUsize::new(0),
+            actions: AtomicUsize::new(0),
+            spoof_driver: false,
+            spoof_action_revision: true,
+        });
+        broker.register(driver).await.expect("register driver");
+        broker
+            .observe(intent("driver:computer:test"))
+            .await
+            .expect("establish observation");
+
+        broker
+            .act(action_intent("driver:computer:test", "ax:test:button"))
+            .await
+            .expect_err("invalid receipt must not be trusted");
+        let world_id = computer_world_id(
+            "workshop:test",
+            &WorldDriverId::new("driver:computer:test"),
+            "login:test",
+        );
+        let events = authority
+            .read(|authority| {
+                authority
+                    .events_after(&world_id, 0, 64)
+                    .map_err(|error| error.to_string())
+            })
+            .expect("world events");
+        assert!(events.iter().any(|event| matches!(
+            &event.event,
+            WorldEventKind::ActionCommitted {
+                status: WorldActionStatus::Indeterminate,
+                ..
+            }
+        )));
     }
 }

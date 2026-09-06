@@ -1567,6 +1567,22 @@
       ],
       "feature_profile": "core",
       "method": "POST",
+      "operation_id": "computer.drivers.by_driver_id.act.post",
+      "path": "/v1/computer/drivers/{driver_id}/act",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 16384,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
       "operation_id": "computer.drivers.by_driver_id.observe.post",
       "path": "/v1/computer/drivers/{driver_id}/observe",
       "rate_limit_class": "read",

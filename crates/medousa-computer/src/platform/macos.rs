@@ -1,12 +1,14 @@
-use std::collections::VecDeque;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, VecDeque};
 use std::ffi::{CString, c_char, c_void};
 use std::ptr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use medousa_computer_bridge::{
-    COMPUTER_DRIVER_PROTOCOL_VERSION, COMPUTER_OBSERVATION_SCHEMA_VERSION, ComputerApplication,
-    ComputerDisplay, ComputerDriverPreflight, ComputerObservation, ComputerObservationRequest,
+    COMPUTER_DRIVER_PROTOCOL_VERSION, COMPUTER_OBSERVATION_SCHEMA_VERSION, ComputerAction,
+    ComputerActionReceipt, ComputerActionRequest, ComputerApplication, ComputerDisplay,
+    ComputerDriverPreflight, ComputerObservation, ComputerObservationRequest,
     ComputerPermissionKind, ComputerPermissionReport, ComputerPermissionStatus, ComputerRect,
     ComputerSemanticNode, ComputerWindow,
 };
@@ -26,6 +28,15 @@ pub struct NativeComputerDriver {
     session_id: String,
     observation_generation: String,
     revision: AtomicU64,
+    last_observation: RefCell<Option<ObservationCache>>,
+}
+
+struct ObservationCache {
+    resource_id: WorldResourceId,
+    session_id: String,
+    observation_generation: String,
+    observation_revision: u64,
+    elements: BTreeMap<String, OwnedCf>,
 }
 
 impl NativeComputerDriver {
@@ -34,6 +45,7 @@ impl NativeComputerDriver {
             session_id: current_session_id(),
             observation_generation: format!("macos:{}", Uuid::new_v4()),
             revision: AtomicU64::new(0),
+            last_observation: RefCell::new(None),
         }
     }
 
@@ -153,6 +165,7 @@ impl NativeComputerDriver {
 
         let mut windows = Vec::with_capacity(native_windows.len());
         let mut nodes = Vec::new();
+        let mut elements = BTreeMap::new();
         let mut focused_window_resource_id = None;
         let mut truncated = omitted_windows;
         for (index, window) in native_windows.iter().enumerate() {
@@ -185,6 +198,7 @@ impl NativeComputerDriver {
                 index,
                 request.max_nodes as usize,
                 &mut nodes,
+                &mut elements,
             );
         }
         if focused_window_resource_id.is_none() {
@@ -194,13 +208,14 @@ impl NativeComputerDriver {
                 .map(|window| window.resource_id.clone());
         }
 
-        Ok(ComputerObservation {
+        let revision = self.revision.fetch_add(1, Ordering::Relaxed) + 1;
+        let observation = ComputerObservation {
             schema_version: COMPUTER_OBSERVATION_SCHEMA_VERSION,
             driver_id: driver_id(),
-            resource_id: request.resource_id,
+            resource_id: request.resource_id.clone(),
             session_id: self.session_id.clone(),
             observation_generation: self.observation_generation.clone(),
-            revision: self.revision.fetch_add(1, Ordering::Relaxed) + 1,
+            revision,
             base_revision: None,
             full: true,
             unchanged: false,
@@ -214,6 +229,107 @@ impl NativeComputerDriver {
             truncated,
             captured_at_ms: now_ms(),
             untrusted_content: true,
+        };
+        self.last_observation.replace(Some(ObservationCache {
+            resource_id: request.resource_id,
+            session_id: self.session_id.clone(),
+            observation_generation: self.observation_generation.clone(),
+            observation_revision: revision,
+            elements,
+        }));
+        Ok(observation)
+    }
+
+    pub fn act(
+        &self,
+        request: ComputerActionRequest,
+    ) -> Result<ComputerActionReceipt, PlatformDriverError> {
+        request.validate().map_err(|message| PlatformDriverError {
+            code: "invalid_request",
+            message,
+            retryable: false,
+        })?;
+        if request.session_id != self.session_id {
+            return Err(PlatformDriverError {
+                code: "desktop_session_changed",
+                message: "the requested macOS login session is not owned by this driver"
+                    .to_string(),
+                retryable: false,
+            });
+        }
+        if unsafe { AXIsProcessTrusted() == 0 } {
+            return Err(PlatformDriverError {
+                code: "accessibility_permission_required",
+                message: "macOS Accessibility permission is required before acting on applications"
+                    .to_string(),
+                retryable: false,
+            });
+        }
+
+        let cache = self.last_observation.borrow();
+        let cache = cache.as_ref().ok_or_else(|| PlatformDriverError {
+            code: "observation_required",
+            message: "observe the desktop before requesting a computer action".to_string(),
+            retryable: false,
+        })?;
+        if cache.resource_id != request.resource_id
+            || cache.session_id != request.session_id
+            || cache.observation_generation != request.observation_generation
+            || cache.observation_revision != request.observation_revision
+        {
+            return Err(PlatformDriverError {
+                code: "stale_observation",
+                message:
+                    "the computer action does not target the driver's latest exact observation"
+                        .to_string(),
+                retryable: false,
+            });
+        }
+        let element =
+            cache
+                .elements
+                .get(&request.element_ref)
+                .ok_or_else(|| PlatformDriverError {
+                    code: "element_not_found",
+                    message: "the requested element reference is not present in that observation"
+                        .to_string(),
+                    retryable: false,
+                })?;
+        if bool_attribute(element.as_ptr(), "AXEnabled") == Some(false) {
+            return Err(PlatformDriverError {
+                code: "element_disabled",
+                message: "the requested accessibility element is disabled".to_string(),
+                retryable: false,
+            });
+        }
+
+        let status = match request.action {
+            ComputerAction::Press => {
+                let action = cf_string("AXPress").ok_or_else(|| PlatformDriverError {
+                    code: "action_unavailable",
+                    message: "could not construct the macOS accessibility action".to_string(),
+                    retryable: false,
+                })?;
+                unsafe { AXUIElementPerformAction(element.as_ptr(), action.as_ptr()) }
+            }
+        };
+        if status != AX_ERROR_SUCCESS {
+            return Err(PlatformDriverError {
+                code: "action_failed",
+                message: format!("macOS rejected the accessibility action with status {status}"),
+                retryable: false,
+            });
+        }
+
+        Ok(ComputerActionReceipt {
+            driver_id: driver_id(),
+            resource_id: request.resource_id,
+            session_id: request.session_id,
+            observation_generation: request.observation_generation,
+            observation_revision: request.observation_revision,
+            element_ref: request.element_ref,
+            action: request.action,
+            completed_at_ms: now_ms(),
         })
     }
 }
@@ -261,6 +377,7 @@ fn snapshot_window(
     window_index: usize,
     max_nodes: usize,
     output: &mut Vec<ComputerSemanticNode>,
+    elements: &mut BTreeMap<String, OwnedCf>,
 ) -> bool {
     let Some(root) = retain_cf(window.as_ptr()) else {
         return false;
@@ -283,6 +400,9 @@ fn snapshot_window(
             "ax:pid:{pid}:window:{window_index}:path:{:016x}",
             stable_path_hash(&path)
         );
+        if let Some(retained) = retain_cf(element.as_ptr()) {
+            elements.insert(element_ref.clone(), retained);
+        }
         let name = text_attribute(element.as_ptr(), "AXTitle")
             .or_else(|| text_attribute(element.as_ptr(), "AXDescription"))
             .or_else(|| text_attribute(element.as_ptr(), "AXHelp"))
@@ -663,6 +783,7 @@ unsafe extern "C" {
         max_values: CFIndex,
         values: *mut CFTypeRef,
     ) -> AXError;
+    fn AXUIElementPerformAction(element: AXUIElementRef, action: CFStringRef) -> AXError;
     fn AXValueGetTypeID() -> CFTypeId;
     fn AXValueGetType(value: AXValueRef) -> u32;
     fn AXValueGetValue(value: AXValueRef, value_type: u32, value_ptr: *mut c_void) -> Boolean;

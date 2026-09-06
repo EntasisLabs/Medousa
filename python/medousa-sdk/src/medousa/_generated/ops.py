@@ -93,6 +93,7 @@ OPERATIONS: dict[str, Operation] = {
     "components.by_component_id.store.get": Operation("components.by_component_id.store.get", "GET", "/v1/components/{component_id}/store", False),
     "components.by_component_id.store.keys.get": Operation("components.by_component_id.store.keys.get", "GET", "/v1/components/{component_id}/store/keys", False),
     "components.by_component_id.store.put": Operation("components.by_component_id.store.put", "PUT", "/v1/components/{component_id}/store", False),
+    "computer.drivers.by_driver_id.act.post": Operation("computer.drivers.by_driver_id.act.post", "POST", "/v1/computer/drivers/{driver_id}/act", False),
     "computer.drivers.by_driver_id.observe.post": Operation("computer.drivers.by_driver_id.observe.post", "POST", "/v1/computer/drivers/{driver_id}/observe", False),
     "computer.drivers.by_driver_id.preflight.get": Operation("computer.drivers.by_driver_id.preflight.get", "GET", "/v1/computer/drivers/{driver_id}/preflight", False),
     "computer.drivers.get": Operation("computer.drivers.get", "GET", "/v1/computer/drivers", False),

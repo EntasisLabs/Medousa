@@ -402,21 +402,30 @@ not stop execution. After daemon restart, previously active worlds recover as
 ## Native computer drivers
 
 Native computer drivers are colocated workshop sidecars. Clients never connect
-to a sidecar directly: discovery, permission preflight, and observation remain
-behind daemon bearer authentication and the exact-origin boundary.
+to a sidecar directly: discovery, permission preflight, observation, and action
+remain behind daemon bearer authentication and the exact-origin boundary.
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/v1/computer/drivers` | List native drivers registered by this workshop |
 | GET | `/v1/computer/drivers/{driver_id}/preflight` | Read permission state and the exact desktop session without prompting |
 | POST | `/v1/computer/drivers/{driver_id}/observe` | Capture a bounded semantic snapshot through world authority |
+| POST | `/v1/computer/drivers/{driver_id}/act` | Press an element from the latest exact semantic snapshot |
 
 The observation body accepts `session_id`, optional `after_revision`, and
 optional `max_nodes` (default 2,048; maximum 4,096). The session must exactly
 match the latest preflight result. The daemon derives the desktop resource;
 clients cannot choose one. Observation requires `admin.execute`, while inventory
-and preflight require `WorkshopRead`. This slice exposes no native input or
-pixel-capture endpoint.
+and preflight require `WorkshopRead`.
+
+The action body accepts `session_id`, `observation_generation`,
+`observation_revision`, `element_ref`, and `action` (currently only `press`).
+All four identity fields must match the driver's latest snapshot. The action is
+admitted through world authority with an exact resource grant and control lease,
+then dispatched as a background accessibility action; it does not move the
+physical pointer or accept coordinates. Action transport is never retried after
+dispatch ambiguity. This slice exposes no foreground input or pixel-capture
+endpoint.
 
 ---
 

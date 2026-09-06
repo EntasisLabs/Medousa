@@ -90,6 +90,7 @@ export const OPERATIONS = {
   "components.by_component_id.store.get": { id: "components.by_component_id.store.get", method: "GET", path: "/v1/components/{component_id}/store", streaming: false },
   "components.by_component_id.store.keys.get": { id: "components.by_component_id.store.keys.get", method: "GET", path: "/v1/components/{component_id}/store/keys", streaming: false },
   "components.by_component_id.store.put": { id: "components.by_component_id.store.put", method: "PUT", path: "/v1/components/{component_id}/store", streaming: false },
+  "computer.drivers.by_driver_id.act.post": { id: "computer.drivers.by_driver_id.act.post", method: "POST", path: "/v1/computer/drivers/{driver_id}/act", streaming: false },
   "computer.drivers.by_driver_id.observe.post": { id: "computer.drivers.by_driver_id.observe.post", method: "POST", path: "/v1/computer/drivers/{driver_id}/observe", streaming: false },
   "computer.drivers.by_driver_id.preflight.get": { id: "computer.drivers.by_driver_id.preflight.get", method: "GET", path: "/v1/computer/drivers/{driver_id}/preflight", streaming: false },
   "computer.drivers.get": { id: "computer.drivers.get", method: "GET", path: "/v1/computer/drivers", streaming: false },

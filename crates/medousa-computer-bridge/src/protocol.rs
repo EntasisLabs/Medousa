@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    COMPUTER_DRIVER_PROTOCOL_VERSION, ComputerDriverPreflight, ComputerObservation,
-    ComputerObservationRequest,
+    COMPUTER_DRIVER_PROTOCOL_VERSION, ComputerActionReceipt, ComputerActionRequest,
+    ComputerDriverPreflight, ComputerObservation, ComputerObservationRequest,
 };
 
 /// Hard framing ceiling for one sidecar request or response.
@@ -35,6 +35,7 @@ impl ComputerDriverRequestEnvelope {
 pub enum ComputerDriverRequest {
     Preflight,
     Observe { request: ComputerObservationRequest },
+    Act { request: ComputerActionRequest },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -92,6 +93,7 @@ pub enum ComputerDriverResponse {
 pub enum ComputerDriverResponseResult {
     Preflight { report: ComputerDriverPreflight },
     Observation { observation: ComputerObservation },
+    Action { receipt: ComputerActionReceipt },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -143,5 +145,26 @@ mod tests {
     fn observation_request_keeps_its_exact_resource_type() {
         let request = ComputerObservationRequest::new("desktop:one", "session:one");
         assert_eq!(request.resource_id, WorldResourceId::new("desktop:one"));
+    }
+
+    #[test]
+    fn action_request_carries_an_exact_observation_fence() {
+        let request = ComputerDriverRequestEnvelope::new(
+            "request:press",
+            ComputerDriverRequest::Act {
+                request: ComputerActionRequest {
+                    resource_id: WorldResourceId::new("desktop:one"),
+                    session_id: "session:one".to_string(),
+                    observation_generation: "generation:one".to_string(),
+                    observation_revision: 7,
+                    element_ref: "ax:button:one".to_string(),
+                    action: crate::ComputerAction::Press,
+                },
+            },
+        );
+        let value = serde_json::to_value(request).expect("encode action request");
+        assert_eq!(value["method"], "act");
+        assert_eq!(value["request"]["observation_revision"], 7);
+        assert_eq!(value["request"]["action"], "press");
     }
 }

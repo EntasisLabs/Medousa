@@ -576,6 +576,13 @@ pub const COMPONENTS_BY_COMPONENT_ID_STORE_PUT: Operation = Operation {
     streaming: false,
 };
 
+pub const COMPUTER_DRIVERS_BY_DRIVER_ID_ACT_POST: Operation = Operation {
+    id: "computer.drivers.by_driver_id.act.post",
+    method: "POST",
+    path: "/v1/computer/drivers/{driver_id}/act",
+    streaming: false,
+};
+
 pub const COMPUTER_DRIVERS_BY_DRIVER_ID_OBSERVE_POST: Operation = Operation {
     id: "computer.drivers.by_driver_id.observe.post",
     method: "POST",
@@ -3143,6 +3150,7 @@ pub static ALL: &[Operation] = &[
     COMPONENTS_BY_COMPONENT_ID_STORE_GET,
     COMPONENTS_BY_COMPONENT_ID_STORE_KEYS_GET,
     COMPONENTS_BY_COMPONENT_ID_STORE_PUT,
+    COMPUTER_DRIVERS_BY_DRIVER_ID_ACT_POST,
     COMPUTER_DRIVERS_BY_DRIVER_ID_OBSERVE_POST,
     COMPUTER_DRIVERS_BY_DRIVER_ID_PREFLIGHT_GET,
     COMPUTER_DRIVERS_GET,

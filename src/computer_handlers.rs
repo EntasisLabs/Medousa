@@ -10,14 +10,15 @@ use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::Json;
 use medousa_computer_bridge::{
-    ComputerObservationRequest, DEFAULT_COMPUTER_OBSERVATION_NODE_LIMIT,
+    ComputerAction, ComputerActionRequest, ComputerObservationRequest,
+    DEFAULT_COMPUTER_OBSERVATION_NODE_LIMIT,
 };
 use medousa_world::{WorldDriverId, WorldPrincipal, WorldPrincipalId, WorldResourceId};
 use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
 use uuid::Uuid;
 
-use crate::computer_driver::ComputerObservationIntent;
+use crate::computer_driver::{ComputerActionIntent, ComputerObservationIntent};
 use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
@@ -25,6 +26,7 @@ use crate::daemon::state::AppState;
 use crate::request_principal::{Capability, RequestPrincipal};
 
 const COMPUTER_OBSERVE_BODY_LIMIT: usize = 16 * 1024;
+const COMPUTER_ACTION_BODY_LIMIT: usize = 16 * 1024;
 
 #[derive(Debug, Deserialize)]
 pub struct ObserveComputerRequest {
@@ -33,6 +35,15 @@ pub struct ObserveComputerRequest {
     pub after_revision: Option<u64>,
     #[serde(default = "default_observation_node_limit")]
     pub max_nodes: u32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ActOnComputerRequest {
+    pub session_id: String,
+    pub observation_generation: String,
+    pub observation_revision: u64,
+    pub element_ref: String,
+    pub action: ComputerAction,
 }
 
 fn default_observation_node_limit() -> u32 {
@@ -139,6 +150,79 @@ pub async fn observe_computer_driver(
     })))
 }
 
+pub async fn act_on_computer_driver(
+    State(state): State<AppState>,
+    Extension(principal): Extension<RequestPrincipal>,
+    Path(driver_id): Path<String>,
+    Json(request): Json<ActOnComputerRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let driver_id = registered_driver(&state, &driver_id).await?;
+    let resource_id = desktop_resource_id(&driver_id, &request.session_id);
+    ComputerActionRequest {
+        resource_id: resource_id.clone(),
+        session_id: request.session_id.clone(),
+        observation_generation: request.observation_generation.clone(),
+        observation_revision: request.observation_revision,
+        element_ref: request.element_ref.clone(),
+        action: request.action,
+    }
+    .validate()
+    .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
+
+    // Permission and login-session state are rechecked immediately before the
+    // governed action is admitted. Native dispatch then enforces the exact
+    // observation generation, revision, and opaque element reference again.
+    let preflight = state
+        .computer_drivers
+        .preflight(&driver_id)
+        .await
+        .map_err(computer_unavailable)?;
+    if preflight.session_id != request.session_id {
+        return Err((
+            StatusCode::CONFLICT,
+            "desktop session changed; preflight and observe the computer again".to_string(),
+        ));
+    }
+    if !preflight.semantic_observation_ready() {
+        return Err((
+            StatusCode::PRECONDITION_FAILED,
+            "macOS Accessibility permission is required before computer actions".to_string(),
+        ));
+    }
+
+    let authority_id = crate::workshop_authority::current()
+        .map_err(|error| (StatusCode::SERVICE_UNAVAILABLE, error))?
+        .to_string();
+    let profile_id = principal
+        .profile_id()
+        .map(str::to_string)
+        .unwrap_or_else(|| state.workshop_identity_user_id());
+    let result = state
+        .computer_drivers
+        .act(ComputerActionIntent {
+            authority_id,
+            driver_id,
+            desktop_session_id: request.session_id,
+            principal: WorldPrincipal::human(WorldPrincipalId::new(format!(
+                "human:{profile_id}"
+            ))),
+            resource_id,
+            trace_id: format!("computer-human:act:{}", Uuid::new_v4()),
+            summary: "human requested a semantic desktop press".to_string(),
+            observation_generation: request.observation_generation,
+            observation_revision: request.observation_revision,
+            element_ref: request.element_ref,
+            action: request.action,
+        })
+        .await
+        .map_err(computer_action_failed)?;
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "receipt": result.receipt,
+        "provenance": result.provenance,
+    })))
+}
+
 async fn registered_driver(
     state: &AppState,
     requested: &str,
@@ -170,6 +254,18 @@ fn computer_unavailable(error: String) -> (StatusCode, String) {
     (StatusCode::SERVICE_UNAVAILABLE, error)
 }
 
+fn computer_action_failed(error: String) -> (StatusCode, String) {
+    let status = if error.contains("stale_observation")
+        || error.contains("element_not_found")
+        || error.contains("observation_required")
+    {
+        StatusCode::CONFLICT
+    } else {
+        StatusCode::BAD_GATEWAY
+    };
+    (status, error)
+}
+
 fn desktop_resource_id(driver_id: &WorldDriverId, session_id: &str) -> WorldResourceId {
     let digest = Sha256::digest(format!("{driver_id}\0{session_id}").as_bytes());
     WorldResourceId::new(format!("desktop:sha256:{digest:x}"))
@@ -183,6 +279,7 @@ pub fn computer_surface() -> DeclaredRouter<AppState> {
                 "/v1/computer/drivers",
                 Capability::WorkshopRead,
                 1024,
+                RateLimitClass::Read,
             ),
             get(list_computer_drivers),
         )
@@ -192,6 +289,7 @@ pub fn computer_surface() -> DeclaredRouter<AppState> {
                 "/v1/computer/drivers/{driver_id}/preflight",
                 Capability::WorkshopRead,
                 1024,
+                RateLimitClass::Read,
             ),
             get(preflight_computer_driver),
         )
@@ -201,8 +299,19 @@ pub fn computer_surface() -> DeclaredRouter<AppState> {
                 "/v1/computer/drivers/{driver_id}/observe",
                 Capability::AdminExecute,
                 COMPUTER_OBSERVE_BODY_LIMIT,
+                RateLimitClass::Read,
             ),
             post(observe_computer_driver),
+        )
+        .route(
+            computer_policy(
+                axum::http::Method::POST,
+                "/v1/computer/drivers/{driver_id}/act",
+                Capability::AdminExecute,
+                COMPUTER_ACTION_BODY_LIMIT,
+                RateLimitClass::Mutation,
+            ),
+            post(act_on_computer_driver),
         )
 }
 
@@ -211,6 +320,7 @@ fn computer_policy(
     path: &'static str,
     required_capability: Capability,
     body_limit: usize,
+    rate_limit_class: RateLimitClass,
 ) -> RoutePolicy {
     RoutePolicy {
         method,
@@ -220,7 +330,7 @@ fn computer_policy(
         bootstrap_public: false,
         browser_policy: BrowserPolicy::ExactOrigin,
         body_limit,
-        rate_limit_class: RateLimitClass::Read,
+        rate_limit_class,
     }
 }
 
@@ -244,7 +354,7 @@ mod tests {
     #[test]
     fn observation_route_is_operator_only_and_exact_origin() {
         let entries = computer_surface().inventory().entries().collect::<Vec<_>>();
-        assert_eq!(entries.len(), 3);
+        assert_eq!(entries.len(), 4);
         let observe = entries
             .iter()
             .find(|entry| entry.path.ends_with("/observe"))
@@ -252,5 +362,12 @@ mod tests {
         assert_eq!(observe.required_capability, Some("admin.execute"));
         assert_eq!(observe.browser_policy, BrowserPolicy::ExactOrigin);
         assert_eq!(observe.rate_limit_class, RateLimitClass::Read);
+        let act = entries
+            .iter()
+            .find(|entry| entry.path.ends_with("/act"))
+            .expect("act route");
+        assert_eq!(act.required_capability, Some("admin.execute"));
+        assert_eq!(act.browser_policy, BrowserPolicy::ExactOrigin);
+        assert_eq!(act.rate_limit_class, RateLimitClass::Mutation);
     }
 }

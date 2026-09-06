@@ -166,6 +166,8 @@ pub enum DaemonOperation {
     ComponentsByComponentIdStoreKeysGet,
     #[serde(rename = "components.by_component_id.store.put")]
     ComponentsByComponentIdStorePut,
+    #[serde(rename = "computer.drivers.by_driver_id.act.post")]
+    ComputerDriversByDriverIdActPost,
     #[serde(rename = "computer.drivers.by_driver_id.observe.post")]
     ComputerDriversByDriverIdObservePost,
     #[serde(rename = "computer.drivers.by_driver_id.preflight.get")]
@@ -962,6 +964,7 @@ impl DaemonOperation {
             Self::ComponentsByComponentIdStoreGet => "components.by_component_id.store.get",
             Self::ComponentsByComponentIdStoreKeysGet => "components.by_component_id.store.keys.get",
             Self::ComponentsByComponentIdStorePut => "components.by_component_id.store.put",
+            Self::ComputerDriversByDriverIdActPost => "computer.drivers.by_driver_id.act.post",
             Self::ComputerDriversByDriverIdObservePost => "computer.drivers.by_driver_id.observe.post",
             Self::ComputerDriversByDriverIdPreflightGet => "computer.drivers.by_driver_id.preflight.get",
             Self::ComputerDriversGet => "computer.drivers.get",

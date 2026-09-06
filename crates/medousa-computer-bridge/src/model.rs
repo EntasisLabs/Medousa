@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use medousa_world::{WorldDriverId, WorldResourceId};
 use serde::{Deserialize, Serialize};
 
-pub const COMPUTER_DRIVER_PROTOCOL_VERSION: u16 = 1;
+pub const COMPUTER_DRIVER_PROTOCOL_VERSION: u16 = 2;
 pub const COMPUTER_OBSERVATION_SCHEMA_VERSION: u16 = 1;
 pub const DEFAULT_COMPUTER_OBSERVATION_NODE_LIMIT: u32 = 2_048;
 pub const MAX_COMPUTER_OBSERVATION_NODES: u32 = 4_096;
@@ -398,6 +398,84 @@ impl ComputerObservation {
     }
 }
 
+/// A semantic desktop action. These actions never carry screen coordinates;
+/// the driver resolves an opaque element reference from an exact observation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ComputerAction {
+    Press,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ComputerActionRequest {
+    pub resource_id: WorldResourceId,
+    pub session_id: String,
+    pub observation_generation: String,
+    pub observation_revision: u64,
+    pub element_ref: String,
+    pub action: ComputerAction,
+}
+
+impl ComputerActionRequest {
+    pub fn validate(&self) -> Result<(), String> {
+        validate_identifier("computer resource", self.resource_id.as_str())?;
+        validate_identifier("computer session", &self.session_id)?;
+        validate_identifier("observation generation", &self.observation_generation)?;
+        validate_identifier("computer element reference", &self.element_ref)?;
+        if self.observation_revision == 0 {
+            return Err("computer action observation revision must be positive".to_string());
+        }
+        Ok(())
+    }
+}
+
+/// Mechanical acknowledgement from the native driver. World authority and
+/// provenance remain daemon-owned and are not minted by this receipt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ComputerActionReceipt {
+    pub driver_id: WorldDriverId,
+    pub resource_id: WorldResourceId,
+    pub session_id: String,
+    pub observation_generation: String,
+    pub observation_revision: u64,
+    pub element_ref: String,
+    pub action: ComputerAction,
+    pub completed_at_ms: u64,
+}
+
+impl ComputerActionReceipt {
+    pub fn validate_for(
+        &self,
+        driver_id: &WorldDriverId,
+        request: &ComputerActionRequest,
+    ) -> Result<(), String> {
+        if &self.driver_id != driver_id {
+            return Err("computer action receipt came from the wrong driver".to_string());
+        }
+        if self.resource_id != request.resource_id
+            || self.session_id != request.session_id
+            || self.observation_generation != request.observation_generation
+            || self.observation_revision != request.observation_revision
+            || self.element_ref != request.element_ref
+            || self.action != request.action
+        {
+            return Err("computer action receipt did not match its exact request".to_string());
+        }
+        self.validate()
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        validate_identifier("computer resource", self.resource_id.as_str())?;
+        validate_identifier("computer session", &self.session_id)?;
+        validate_identifier("observation generation", &self.observation_generation)?;
+        validate_identifier("computer element reference", &self.element_ref)?;
+        if self.observation_revision == 0 || self.completed_at_ms == 0 {
+            return Err("computer action receipt has invalid timing or revision".to_string());
+        }
+        Ok(())
+    }
+}
+
 fn validate_identifier(label: &str, value: &str) -> Result<(), String> {
     let trimmed = value.trim();
     if trimmed.is_empty() || trimmed.len() > 256 || trimmed.chars().any(char::is_control) {
@@ -519,5 +597,36 @@ mod tests {
             )
             .expect_err("desktop session mismatch must fail");
         assert!(error.contains("wrong desktop session"));
+    }
+
+    #[test]
+    fn action_receipt_is_bound_to_the_exact_observation() {
+        let request = ComputerActionRequest {
+            resource_id: WorldResourceId::new("desktop:session"),
+            session_id: "login-session:test".to_string(),
+            observation_generation: "generation:one".to_string(),
+            observation_revision: 4,
+            element_ref: "ax:button:one".to_string(),
+            action: ComputerAction::Press,
+        };
+        let mut receipt = ComputerActionReceipt {
+            driver_id: WorldDriverId::new("driver:computer:test"),
+            resource_id: request.resource_id.clone(),
+            session_id: request.session_id.clone(),
+            observation_generation: request.observation_generation.clone(),
+            observation_revision: request.observation_revision,
+            element_ref: request.element_ref.clone(),
+            action: request.action,
+            completed_at_ms: 5,
+        };
+        receipt
+            .validate_for(&WorldDriverId::new("driver:computer:test"), &request)
+            .expect("matching receipt");
+        receipt.observation_revision += 1;
+        assert!(
+            receipt
+                .validate_for(&WorldDriverId::new("driver:computer:test"), &request)
+                .is_err()
+        );
     }
 }
