@@ -166,6 +166,12 @@ pub enum DaemonOperation {
     ComponentsByComponentIdStoreKeysGet,
     #[serde(rename = "components.by_component_id.store.put")]
     ComponentsByComponentIdStorePut,
+    #[serde(rename = "computer.drivers.by_driver_id.observe.post")]
+    ComputerDriversByDriverIdObservePost,
+    #[serde(rename = "computer.drivers.by_driver_id.preflight.get")]
+    ComputerDriversByDriverIdPreflightGet,
+    #[serde(rename = "computer.drivers.get")]
+    ComputerDriversGet,
     #[serde(rename = "continuations.lineage.by_turn_correlation_id.get")]
     ContinuationsLineageByTurnCorrelationIdGet,
     #[serde(rename = "continuations.status.get")]
@@ -956,6 +962,9 @@ impl DaemonOperation {
             Self::ComponentsByComponentIdStoreGet => "components.by_component_id.store.get",
             Self::ComponentsByComponentIdStoreKeysGet => "components.by_component_id.store.keys.get",
             Self::ComponentsByComponentIdStorePut => "components.by_component_id.store.put",
+            Self::ComputerDriversByDriverIdObservePost => "computer.drivers.by_driver_id.observe.post",
+            Self::ComputerDriversByDriverIdPreflightGet => "computer.drivers.by_driver_id.preflight.get",
+            Self::ComputerDriversGet => "computer.drivers.get",
             Self::ContinuationsLineageByTurnCorrelationIdGet => "continuations.lineage.by_turn_correlation_id.get",
             Self::ContinuationsStatusGet => "continuations.status.get",
             Self::DeliverOutboxPost => "deliver.outbox.post",

@@ -641,8 +641,13 @@ Current macOS observation slice:
   AX calls have a hard messaging timeout, and the daemon kills/restarts a
   wedged sidecar inside a bounded request window.
 - `medousa doctor` reports the installed driver identity, exact login session,
-  and permission guidance. Pixel observations, actions, package/release
-  shipping, and Home controls remain later slices.
+  and permission guidance.
+- Authenticated daemon routes expose static driver inventory, non-prompting
+  preflight, and operator-only semantic observation. The caller must echo the
+  exact preflight session, while the daemon derives the desktop resource and
+  records observation provenance through the shared world authority.
+- Pixel observations, actions, package/release shipping, and Home controls
+  remain later slices.
 
 Implementation:
 

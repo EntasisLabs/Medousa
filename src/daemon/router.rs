@@ -175,6 +175,9 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::browser_handlers::browser_surface().inventory())
         .expect("duplicate browser bridge route policy");
     inventory
+        .extend(crate::computer_handlers::computer_surface().inventory())
+        .expect("duplicate native computer route policy");
+    inventory
 }
 
 pub fn build_identity_surface() -> DeclaredRouter<AppState> {

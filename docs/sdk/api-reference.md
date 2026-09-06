@@ -44,6 +44,12 @@ this generic HTTP client rather than a dedicated typed SDK accessor. See the
 [Forge engine guide](../engine/forge.md) and the
 [HTTP route index](../engine/http-api.md#forge-undertakings).
 
+Native computer-driver discovery and read-only observation also use this
+generic client for now. Call `GET /v1/computer/drivers`, preflight the selected
+driver, then pass the returned `preflight.session_id` to its `observe` route.
+The daemon derives the governed desktop resource and rejects stale sessions.
+See [Native computer drivers](../engine/http-api.md#native-computer-drivers).
+
 Daemon delegation uses the generated native-only operation
 `mesh.tasks.post`. Application clients should not construct it directly: the
 daemon owns Stasis turn identity, bounded context, retries, and provenance,

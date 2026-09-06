@@ -978,6 +978,7 @@ async fn start_daemon() -> Result<()> {
         .merge(medousa::daemon::detamu_host::world_surface())
         .merge(medousa::daemon::forge_api::forge_surface())
         .merge(medousa::browser_handlers::browser_surface())
+        .merge(medousa::computer_handlers::computer_surface())
         .with_state(state.clone());
     declared = declared.merge(medousa::local_credential_handlers::surface().with_state(
         medousa::local_credential_handlers::LocalCredentialApiState {

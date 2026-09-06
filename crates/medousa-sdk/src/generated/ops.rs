@@ -576,6 +576,27 @@ pub const COMPONENTS_BY_COMPONENT_ID_STORE_PUT: Operation = Operation {
     streaming: false,
 };
 
+pub const COMPUTER_DRIVERS_BY_DRIVER_ID_OBSERVE_POST: Operation = Operation {
+    id: "computer.drivers.by_driver_id.observe.post",
+    method: "POST",
+    path: "/v1/computer/drivers/{driver_id}/observe",
+    streaming: false,
+};
+
+pub const COMPUTER_DRIVERS_BY_DRIVER_ID_PREFLIGHT_GET: Operation = Operation {
+    id: "computer.drivers.by_driver_id.preflight.get",
+    method: "GET",
+    path: "/v1/computer/drivers/{driver_id}/preflight",
+    streaming: false,
+};
+
+pub const COMPUTER_DRIVERS_GET: Operation = Operation {
+    id: "computer.drivers.get",
+    method: "GET",
+    path: "/v1/computer/drivers",
+    streaming: false,
+};
+
 pub const CONTINUATIONS_LINEAGE_BY_TURN_CORRELATION_ID_GET: Operation = Operation {
     id: "continuations.lineage.by_turn_correlation_id.get",
     method: "GET",
@@ -3122,6 +3143,9 @@ pub static ALL: &[Operation] = &[
     COMPONENTS_BY_COMPONENT_ID_STORE_GET,
     COMPONENTS_BY_COMPONENT_ID_STORE_KEYS_GET,
     COMPONENTS_BY_COMPONENT_ID_STORE_PUT,
+    COMPUTER_DRIVERS_BY_DRIVER_ID_OBSERVE_POST,
+    COMPUTER_DRIVERS_BY_DRIVER_ID_PREFLIGHT_GET,
+    COMPUTER_DRIVERS_GET,
     CONTINUATIONS_LINEAGE_BY_TURN_CORRELATION_ID_GET,
     CONTINUATIONS_STATUS_GET,
     DELIVER_OUTBOX_POST,
