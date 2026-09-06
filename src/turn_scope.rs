@@ -88,7 +88,9 @@ impl TurnContinuationScope {
         Some(format!(
             "[MEDOUSA_ELIGIBLE_WORLDS]\n\
              These opaque world ids were selected by the operator for this turn. \
-             Never invent an id or infer a driver, URL, host, or transport from it.\n- {}",
+             Never invent an id or infer a driver, URL, host, or transport from it. \
+             Operate a selected world through cognition_workshop_mutate action=workshop.spawn \
+             and pass only the needed ids in world_ids; the runtime pins the owning workshop.\n- {}",
             ids.join("\n- ")
         ))
     }
@@ -154,6 +156,49 @@ pub fn resolve_requested_world_ids(
     }
     ids.sort();
     Ok(ids)
+}
+
+/// Resolve the one execution runtime that owns a model-requested world subset.
+///
+/// Placement is intentionally recovered from immutable admission state rather
+/// than accepted from model-authored input. A worker is single-runtime, so a
+/// request spanning workshops is rejected before any execution target runs.
+pub fn execution_runtime_for_requested_worlds(
+    requested: &[String],
+    selected: &[TurnWorldSelection],
+) -> Result<Option<String>, String> {
+    if requested.is_empty() {
+        return Ok(None);
+    }
+    if requested.len() > MAX_TURN_SELECTED_WORLDS {
+        return Err(format!(
+            "a worker may request at most {MAX_TURN_SELECTED_WORLDS} worlds"
+        ));
+    }
+
+    let mut seen = BTreeSet::new();
+    let mut runtime_id: Option<String> = None;
+    for requested_id in requested {
+        let world_id = normalize_world_id(requested_id)?;
+        if !seen.insert(world_id.clone()) {
+            return Err(format!(
+                "worker requested world '{world_id}' more than once"
+            ));
+        }
+        let selection = selected
+            .iter()
+            .find(|selection| selection.world_id == world_id)
+            .ok_or_else(|| format!("world '{world_id}' is not eligible for this turn"))?;
+        let selected_runtime = normalize_runtime_id(&selection.execution_runtime_id)?;
+        if runtime_id
+            .as_deref()
+            .is_some_and(|current| current != selected_runtime)
+        {
+            return Err("one worker cannot operate worlds owned by multiple workshops".to_string());
+        }
+        runtime_id = Some(selected_runtime);
+    }
+    Ok(runtime_id)
 }
 
 pub fn validate_world_ids(ids: &[String]) -> Result<(), String> {
@@ -257,6 +302,43 @@ mod tests {
     }
 
     #[test]
+    fn requested_worlds_pin_one_owning_runtime() {
+        let selected = vec![
+            selection("world:browser:a", "runtime-a"),
+            selection("world:computer:b", "runtime-b"),
+            selection("world:browser:c", "runtime-a"),
+        ];
+        assert_eq!(
+            execution_runtime_for_requested_worlds(
+                &["world:browser:a".to_string(), "world:browser:c".to_string()],
+                &selected,
+            )
+            .unwrap()
+            .as_deref(),
+            Some("runtime-a")
+        );
+        assert!(
+            execution_runtime_for_requested_worlds(
+                &[
+                    "world:browser:a".to_string(),
+                    "world:computer:b".to_string()
+                ],
+                &selected,
+            )
+            .unwrap_err()
+            .contains("multiple workshops")
+        );
+        assert!(
+            execution_runtime_for_requested_worlds(
+                &["world:browser:unknown".to_string()],
+                &selected,
+            )
+            .unwrap_err()
+            .contains("not eligible")
+        );
+    }
+
+    #[test]
     fn prompt_view_does_not_expose_placement() {
         let scope = TurnContinuationScope {
             turn_correlation_id: "turn-1".to_string(),
@@ -276,6 +358,7 @@ mod tests {
         };
         let prompt = scope.world_prompt_appendix().unwrap();
         assert!(prompt.contains("world:browser:a"));
+        assert!(prompt.contains("workshop.spawn"));
         assert!(!prompt.contains("secret-runtime"));
     }
 }

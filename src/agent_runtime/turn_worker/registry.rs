@@ -319,10 +319,21 @@ impl SessionBootstrapToolRegistry {
             allowed.remove(crate::ui_scene_tools::COGNITION_UI_SCENE);
             allowed.remove(crate::ui_build_tools::COGNITION_UI_BUILD);
         }
-        if !self.supports_browser_host {
+        // Once a user selects a governed world, the foreground model receives
+        // only its opaque id. Keep ambient host browser/computer tools out of
+        // that lane: workshop.spawn recovers the owning runtime from immutable
+        // admission and the destination registry binds the concrete driver.
+        let has_selected_worlds = self.lane == ToolSurfaceLane::Host
+            && crate::agent_runtime::execution_context::active_turn_execution_context()
+                .is_some_and(|context| !context.legacy_scope().selected_worlds.is_empty());
+        if !self.supports_browser_host || has_selected_worlds {
             for name in BROWSER_COGNITION_TOOLS {
                 allowed.remove(*name);
             }
+        }
+        if has_selected_worlds {
+            allowed.remove(crate::computer_tools::COGNITION_COMPUTER_SNAPSHOT);
+            allowed.remove(crate::computer_tools::COGNITION_COMPUTER_ACT);
         }
         allowed
     }
