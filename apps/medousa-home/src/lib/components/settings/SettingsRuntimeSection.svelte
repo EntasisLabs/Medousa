@@ -1,5 +1,6 @@
 <script lang="ts">
   import SettingsCharterSaveBar from "$lib/components/settings/SettingsCharterSaveBar.svelte";
+  import SettingsComputerControl from "$lib/components/settings/SettingsComputerControl.svelte";
   import SettingsVersionsSection from "$lib/components/settings/SettingsVersionsSection.svelte";
   import SettingsWorkerCapacity from "$lib/components/settings/SettingsWorkerCapacity.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
@@ -20,11 +21,8 @@
   interface Props {
     nativeWorkloads?: boolean;
   }
-
   let { nativeWorkloads = true }: Props = $props();
-
   type Picker = "posture" | "specialists" | "search" | "backend" | null;
-
   const BACKEND_LABELS: Record<(typeof BACKEND_OPTIONS)[number], { label: string; hint: string }> = {
     "surreal-mem": {
       label: "Surreal (memory)",
@@ -682,6 +680,8 @@
       </div>
     </details>
     </div>
+
+    <SettingsComputerControl />
   {/if}
 
   <div class="prefs-band">

@@ -85,6 +85,12 @@ Do not paste passwords into chat to “help” — use the human browser surface
 
 **Settings → Runtime Controls** shapes what tools can do on this workshop. Spotlight: **Runtime controls**.
 
+The **Computer** section reports whether the selected workshop can read native
+controls, capture its focused window, and use guarded foreground input. A
+refresh only checks existing operating-system permission state; it never opens
+a system prompt. On a remote workshop, those permissions belong to the remote
+computer.
+
 | Band | What to know |
 |------|----------------|
 | **Reach** | **Tool posture**, **Specialists**, web search provider, **Tool rounds** defaults |

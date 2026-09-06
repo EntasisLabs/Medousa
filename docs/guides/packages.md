@@ -61,6 +61,14 @@ or **Installed**.
 3. When it says **Installed**, the binary is under your Medousa data directory
    (`…/medousa/bin`). Home finds it automatically.
 
+For **Computer control**, restart that workshop's daemon after installing, then
+open **Settings → Runtime Controls → Computer**. Medousa reports Accessibility,
+focused-window pixels, and foreground-input readiness independently. This
+check is safe to refresh: it reports the workshop computer's current operating
+system permissions without opening a permission prompt. When you are viewing a
+remote workshop, the status and guidance belong to that remote computer—not to
+the phone or desktop running the Medousa window.
+
 Need model weights next? Use the link to **Connection → Extras** (private brain
 panel) or **Settings → Models**, then download Gemma.
 

@@ -717,7 +717,20 @@ Current macOS foreground fallback slice:
   human input preempts dispatch and requires another observation. The action is
   intentionally one-shot so the remaining race window is bounded to the final
   local event post rather than an opaque interaction loop.
-- Home permission and visible takeover/control surfaces remain a later slice.
+
+Current Home readiness slice:
+
+- Runtime Controls reads driver inventory and permission preflight through the
+  selected workshop daemon, so local and remote worlds use the same authority
+  path. Opening or refreshing the view never prompts for operating-system
+  access and never talks directly to the viewing device's OS.
+- Home shows semantic observation, focused-window pixels, and guarded
+  foreground-input readiness separately. Missing packages, unavailable
+  sidecars, and denied permissions stay visible instead of collapsing into a
+  generic tool failure.
+- The native desktop remains explicitly `attached`. A visible takeover control
+  is deferred until attached-world lease fencing can make that control true;
+  Home does not present a button that only changes client-side state.
 
 Implementation:
 
