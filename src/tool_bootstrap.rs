@@ -28,7 +28,8 @@ static SESSION_SURFACE_FILES: Lazy<crate::session_storage::SessionFileStore> = L
 });
 
 /// Host console domains unlocked at session start (no `cognition_tools_discover` step).
-pub const DEFAULT_HOST_AUTO_UNLOCK_DOMAINS: &[&str] = &["memory", "vault", "calendar"];
+pub const DEFAULT_HOST_AUTO_UNLOCK_DOMAINS: &[&str] =
+    &["memory", "vault", "calendar", "computer"];
 
 pub const CALENDAR_DOMAIN_TOOLS: &[&str] =
     &["cognition_calendar_query", "cognition_calendar_mutate"];
@@ -260,6 +261,14 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                     "cognition_browser_fetch",
                     "cognition_browser_snapshot",
                     "cognition_browser_act",
+                ],
+            },
+            ToolDomainCatalogEntry {
+                domain: "computer",
+                summary: "Daemon-owned native computer observation and exact-ref actions",
+                tools: &[
+                    "cognition_computer_snapshot",
+                    "cognition_computer_act",
                 ],
             },
             ToolDomainCatalogEntry {
@@ -755,6 +764,19 @@ fn rank_hint_domains(prompt: &str, turns: &[ConversationTurn]) -> Vec<String> {
     ) {
         bump(&mut scores, ENVIRONMENT_HOST_AUTO_UNLOCK_DOMAIN, 4);
     }
+    if contains_any(
+        &prompt_lower,
+        &[
+            "use my computer",
+            "on my screen",
+            "desktop",
+            "open the app",
+            "click",
+            "press the",
+        ],
+    ) {
+        bump(&mut scores, "computer", 4);
+    }
 
     #[cfg(feature = "full-daemon")]
     {
@@ -982,5 +1004,11 @@ mod tests {
     fn disk_diagnostics_rank_host_execution() {
         let ranked = rank_hint_domains("check what is taking so much disk space", &[]);
         assert_eq!(ranked.first().map(String::as_str), Some("execute"));
+    }
+
+    #[test]
+    fn desktop_intent_ranks_native_computer_tools() {
+        let ranked = rank_hint_domains("open the app on my desktop and click Continue", &[]);
+        assert_eq!(ranked.first().map(String::as_str), Some("computer"));
     }
 }

@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
 use medousa_computer_bridge::{
@@ -33,6 +33,8 @@ use crate::paths::medousa_data_dir;
 
 #[cfg(target_os = "macos")]
 const MACOS_DRIVER_ID: &str = "driver:computer:macos:accessibility";
+
+static GLOBAL_COMPUTER_BROKER: OnceLock<Arc<ComputerDriverBroker>> = OnceLock::new();
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ComputerDriverDoctorReport {
@@ -175,6 +177,18 @@ pub async fn register_native_computer_driver(
         .register(Arc::new(SidecarComputerDriver::new(binary, registration)))
         .await?;
     Ok(Some(driver_id))
+}
+
+pub fn register_global_computer_broker(
+    broker: Arc<ComputerDriverBroker>,
+) -> Result<(), String> {
+    GLOBAL_COMPUTER_BROKER
+        .set(broker)
+        .map_err(|_| "native computer broker is already registered".to_string())
+}
+
+pub fn global_computer_broker() -> Option<Arc<ComputerDriverBroker>> {
+    GLOBAL_COMPUTER_BROKER.get().cloned()
 }
 
 fn native_registration() -> Option<WorldDriverRegistration> {

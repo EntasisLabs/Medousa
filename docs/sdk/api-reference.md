@@ -48,8 +48,10 @@ Native computer-driver discovery, observation, and semantic press actions also
 use this generic client for now. Call `GET /v1/computer/drivers`, preflight the
 selected driver, then pass the returned `preflight.session_id` to its `observe`
 route. An action must echo the observation generation, revision, and element
-reference from that latest snapshot. The daemon derives the governed desktop
-resource, rejects stale targets, and never retries an ambiguous action.
+reference from that latest snapshot. Set `allow_high_risk=true` only when the
+operator explicitly asked to press a target classified as sensitive or
+effectful. The daemon derives the governed desktop resource, rejects stale or
+disabled targets, and never retries an ambiguous action.
 See [Native computer drivers](../engine/http-api.md#native-computer-drivers).
 
 Daemon delegation uses the generated native-only operation

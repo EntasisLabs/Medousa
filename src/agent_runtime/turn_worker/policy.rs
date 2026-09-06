@@ -256,6 +256,8 @@ pub fn host_bus_tool_names() -> HashSet<String> {
             "cognition_browser_fetch",
             "cognition_browser_snapshot",
             "cognition_browser_act",
+            "cognition_computer_snapshot",
+            "cognition_computer_act",
         ],
     );
 
@@ -406,6 +408,8 @@ mod tests {
         assert!(names.contains("cognition_tools_discover"));
         assert!(names.contains("cognition_web_search"));
         assert!(names.contains("cognition_browser_fetch"));
+        assert!(names.contains("cognition_computer_snapshot"));
+        assert!(names.contains("cognition_computer_act"));
         assert!(names.contains("cognition_shell_status"));
         assert!(names.contains("cognition_shell_run"));
         assert!(names.contains("cognition_openshell_request_secret"));

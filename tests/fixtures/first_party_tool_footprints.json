@@ -3,10 +3,10 @@
   "surfaces": [
     {
       "id": "general",
-      "tool_count": 78,
-      "total_chars": 45249,
-      "tokens_estimate": 11313,
-      "tools_over_1000_chars": 9,
+      "tool_count": 80,
+      "total_chars": 47239,
+      "tokens_estimate": 11810,
+      "tools_over_1000_chars": 10,
       "largest_tools_share_bps": 0,
       "largest_tools": [
         {
@@ -35,6 +35,11 @@
           "tokens_estimate": 363
         },
         {
+          "name": "cognition_computer_act",
+          "chars": 1280,
+          "tokens_estimate": 320
+        },
+        {
           "name": "cognition_ui_build",
           "chars": 1278,
           "tokens_estimate": 320
@@ -43,20 +48,15 @@
           "name": "cognition_openshell_sandbox_run",
           "chars": 1182,
           "tokens_estimate": 296
-        },
-        {
-          "name": "cognition_shell_session_run",
-          "chars": 1026,
-          "tokens_estimate": 257
         }
       ]
     },
     {
       "id": "host_bus_home",
-      "tool_count": 36,
-      "total_chars": 20846,
-      "tokens_estimate": 5212,
-      "tools_over_1000_chars": 2,
+      "tool_count": 38,
+      "total_chars": 22836,
+      "tokens_estimate": 5709,
+      "tools_over_1000_chars": 3,
       "largest_tools_share_bps": 0,
       "largest_tools": [
         {
@@ -68,6 +68,11 @@
           "name": "cognition_schema",
           "chars": 1676,
           "tokens_estimate": 419
+        },
+        {
+          "name": "cognition_computer_act",
+          "chars": 1280,
+          "tokens_estimate": 320
         },
         {
           "name": "cognition_browser_snapshot",
@@ -93,26 +98,26 @@
           "name": "cognition_openshell_request_secret",
           "chars": 751,
           "tokens_estimate": 188
-        },
-        {
-          "name": "cognition_chat_history_read",
-          "chars": 616,
-          "tokens_estimate": 154
         }
       ]
     },
     {
       "id": "host_bus_thin",
-      "tool_count": 33,
-      "total_chars": 16917,
-      "tokens_estimate": 4230,
-      "tools_over_1000_chars": 1,
+      "tool_count": 35,
+      "total_chars": 18907,
+      "tokens_estimate": 4727,
+      "tools_over_1000_chars": 2,
       "largest_tools_share_bps": 0,
       "largest_tools": [
         {
           "name": "cognition_schema",
           "chars": 1676,
           "tokens_estimate": 419
+        },
+        {
+          "name": "cognition_computer_act",
+          "chars": 1280,
+          "tokens_estimate": 320
         },
         {
           "name": "cognition_grapheme_request_secret",
@@ -135,19 +140,14 @@
           "tokens_estimate": 188
         },
         {
+          "name": "cognition_computer_snapshot",
+          "chars": 710,
+          "tokens_estimate": 178
+        },
+        {
           "name": "cognition_chat_history_read",
           "chars": 616,
           "tokens_estimate": 154
-        },
-        {
-          "name": "cognition_tool_history_summary",
-          "chars": 607,
-          "tokens_estimate": 152
-        },
-        {
-          "name": "cognition_chat_history_search",
-          "chars": 604,
-          "tokens_estimate": 151
         }
       ]
     },

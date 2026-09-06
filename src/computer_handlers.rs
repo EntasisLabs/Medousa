@@ -13,12 +13,13 @@ use medousa_computer_bridge::{
     ComputerAction, ComputerActionRequest, ComputerObservationRequest,
     DEFAULT_COMPUTER_OBSERVATION_NODE_LIMIT,
 };
-use medousa_world::{WorldDriverId, WorldPrincipal, WorldPrincipalId, WorldResourceId};
+use medousa_world::{WorldDriverId, WorldPrincipal, WorldPrincipalId};
 use serde::Deserialize;
-use sha2::{Digest as _, Sha256};
 use uuid::Uuid;
 
-use crate::computer_driver::{ComputerActionIntent, ComputerObservationIntent};
+use crate::computer_driver::{
+    ComputerActionIntent, ComputerObservationIntent, desktop_resource_id,
+};
 use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
@@ -44,6 +45,8 @@ pub struct ActOnComputerRequest {
     pub observation_revision: u64,
     pub element_ref: String,
     pub action: ComputerAction,
+    #[serde(default)]
+    pub allow_high_risk: bool,
 }
 
 fn default_observation_node_limit() -> u32 {
@@ -213,6 +216,7 @@ pub async fn act_on_computer_driver(
             observation_revision: request.observation_revision,
             element_ref: request.element_ref,
             action: request.action,
+            allow_high_risk: request.allow_high_risk,
         })
         .await
         .map_err(computer_action_failed)?;
@@ -260,15 +264,12 @@ fn computer_action_failed(error: String) -> (StatusCode, String) {
         || error.contains("observation_required")
     {
         StatusCode::CONFLICT
+    } else if error.contains("element_disabled") || error.contains("high_risk_target") {
+        StatusCode::PRECONDITION_FAILED
     } else {
         StatusCode::BAD_GATEWAY
     };
     (status, error)
-}
-
-fn desktop_resource_id(driver_id: &WorldDriverId, session_id: &str) -> WorldResourceId {
-    let digest = Sha256::digest(format!("{driver_id}\0{session_id}").as_bytes());
-    WorldResourceId::new(format!("desktop:sha256:{digest:x}"))
 }
 
 pub fn computer_surface() -> DeclaredRouter<AppState> {
@@ -369,5 +370,17 @@ mod tests {
         assert_eq!(act.required_capability, Some("admin.execute"));
         assert_eq!(act.browser_policy, BrowserPolicy::ExactOrigin);
         assert_eq!(act.rate_limit_class, RateLimitClass::Mutation);
+    }
+
+    #[test]
+    fn semantic_action_policy_failures_are_not_reported_as_driver_failures() {
+        assert_eq!(
+            computer_action_failed("high_risk_target: confirm intent".to_string()).0,
+            StatusCode::PRECONDITION_FAILED
+        );
+        assert_eq!(
+            computer_action_failed("element_disabled: unavailable".to_string()).0,
+            StatusCode::PRECONDITION_FAILED
+        );
     }
 }

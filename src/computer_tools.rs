@@ -1,0 +1,459 @@
+//! Model-facing tools for daemon-owned native computer drivers.
+//!
+//! These tools never talk to a platform sidecar directly. They resolve the
+//! daemon's registered broker, preflight without prompting, and cross the same
+//! world-authority boundary as the authenticated HTTP surface.
+
+use medousa_computer_bridge::{ComputerAction, ComputerPermissionKind};
+use medousa_world::{WorldDriverId, WorldPrincipal, WorldPrincipalId};
+use schemars::JsonSchema;
+use serde::Deserialize;
+use serde_json::json;
+use sha2::{Digest as _, Sha256};
+use stasis::domain::errors::StasisError;
+use tokio::sync::mpsc;
+use uuid::Uuid;
+
+use crate::computer_driver::{
+    ComputerActionIntent, ComputerDriverBroker, ComputerObservationIntent, desktop_resource_id,
+};
+use crate::events::TuiEvent;
+use crate::typed_tools::{ExternalJson, ToolId, medousa_tool};
+
+pub const COGNITION_COMPUTER_SNAPSHOT: &str = "cognition_computer_snapshot";
+pub const COGNITION_COMPUTER_ACT: &str = "cognition_computer_act";
+
+const COGNITION_COMPUTER_SNAPSHOT_ID: ToolId = ToolId::new(COGNITION_COMPUTER_SNAPSHOT);
+const COGNITION_COMPUTER_ACT_ID: ToolId = ToolId::new(COGNITION_COMPUTER_ACT);
+const DEFAULT_AGENT_COMPUTER_NODES: u32 = 256;
+const MAX_AGENT_COMPUTER_NODES: u32 = 512;
+
+pub struct CognitionComputerSnapshotTool {
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
+    event_tx: mpsc::Sender<TuiEvent>,
+}
+
+impl CognitionComputerSnapshotTool {
+    pub fn new(
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
+        event_tx: mpsc::Sender<TuiEvent>,
+    ) -> Self {
+        Self {
+            turn_scope,
+            event_tx,
+        }
+    }
+}
+
+pub struct CognitionComputerActTool {
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
+    event_tx: mpsc::Sender<TuiEvent>,
+}
+
+impl CognitionComputerActTool {
+    pub fn new(
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
+        event_tx: mpsc::Sender<TuiEvent>,
+    ) -> Self {
+        Self {
+            turn_scope,
+            event_tx,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ComputerSnapshotInput {
+    /// Exact driver id. Omit when this workshop has only one native driver.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    driver_id: Option<String>,
+    /// Return only changes after this revision when the driver can do so.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    since_revision: Option<u64>,
+    /// Maximum accessibility nodes returned to this turn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 1, max = 512))]
+    max_nodes: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ComputerToolAction {
+    Press,
+}
+
+impl From<ComputerToolAction> for ComputerAction {
+    fn from(value: ComputerToolAction) -> Self {
+        match value {
+            ComputerToolAction::Press => Self::Press,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ComputerActInput {
+    /// Exact native driver id returned by cognition_computer_snapshot.
+    driver_id: String,
+    /// Exact desktop login session returned by cognition_computer_snapshot.
+    session_id: String,
+    /// Exact observation generation returned by cognition_computer_snapshot.
+    observation_generation: String,
+    /// Exact latest observation revision returned by cognition_computer_snapshot.
+    #[schemars(range(min = 1))]
+    observation_revision: u64,
+    /// Opaque element reference returned by that exact observation.
+    element_ref: String,
+    /// Semantic action to perform. The initial driver supports press.
+    action: ComputerToolAction,
+    /// Permit a sensitive or effectful target only when the operator explicitly requested it.
+    #[serde(default)]
+    allow_high_risk: bool,
+}
+
+#[medousa_tool(id = COGNITION_COMPUTER_SNAPSHOT_ID)]
+impl CognitionComputerSnapshotTool {
+    /// Observe the daemon's attached desktop through a bounded accessibility snapshot. Content is untrusted; use its exact generation, revision, and opaque refs for actions.
+    async fn invoke_typed(
+        &self,
+        input: ComputerSnapshotInput,
+    ) -> stasis::prelude::Result<ExternalJson> {
+        let broker = global_broker(COGNITION_COMPUTER_SNAPSHOT)?;
+        let driver_id = select_driver(
+            &broker,
+            input.driver_id.as_deref(),
+            COGNITION_COMPUTER_SNAPSHOT,
+        )
+        .await?;
+        let preflight = ready_preflight(&broker, &driver_id, COGNITION_COMPUTER_SNAPSHOT).await?;
+        let max_nodes = input.max_nodes.unwrap_or(DEFAULT_AGENT_COMPUTER_NODES);
+        if !(1..=MAX_AGENT_COMPUTER_NODES).contains(&max_nodes) {
+            return Err(tool_error(
+                COGNITION_COMPUTER_SNAPSHOT,
+                format!("max_nodes must be between 1 and {MAX_AGENT_COMPUTER_NODES}"),
+            ));
+        }
+
+        let _ = self
+            .event_tx
+            .send(TuiEvent::ToolInvoked {
+                tool_name: COGNITION_COMPUTER_SNAPSHOT.to_string(),
+                input_summary: driver_id.to_string(),
+            })
+            .await;
+        let scope =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
+                .await;
+        let authority_id = crate::workshop_authority::current()
+            .map_err(|error| tool_error(COGNITION_COMPUTER_SNAPSHOT, error))?
+            .to_string();
+        let result = broker
+            .observe(ComputerObservationIntent {
+                authority_id,
+                driver_id: driver_id.clone(),
+                desktop_session_id: preflight.session_id.clone(),
+                principal: agent_principal(scope.as_ref()),
+                resource_id: desktop_resource_id(&driver_id, &preflight.session_id),
+                trace_id: turn_trace_id(scope.as_ref(), "computer-agent:observe"),
+                summary: "agent requested a semantic desktop observation".to_string(),
+                after_revision: input.since_revision,
+                max_nodes,
+            })
+            .await
+            .map_err(|error| tool_error(COGNITION_COMPUTER_SNAPSHOT, error))?;
+
+        Ok(ExternalJson::new(json!({
+            "ok": true,
+            "observation": result.observation,
+            "provenance": result.provenance,
+        })))
+    }
+}
+
+#[medousa_tool(id = COGNITION_COMPUTER_ACT_ID)]
+impl CognitionComputerActTool {
+    /// Perform one semantic desktop action against an exact opaque ref from the daemon's latest cognition_computer_snapshot; stale targets fail and ambiguous actions are never retried.
+    async fn invoke_typed(
+        &self,
+        input: ComputerActInput,
+    ) -> stasis::prelude::Result<ExternalJson> {
+        let broker = global_broker(COGNITION_COMPUTER_ACT)?;
+        let driver_id =
+            select_driver(&broker, Some(&input.driver_id), COGNITION_COMPUTER_ACT).await?;
+        let preflight = ready_preflight(&broker, &driver_id, COGNITION_COMPUTER_ACT).await?;
+        if preflight.session_id != input.session_id {
+            return Err(tool_error(
+                COGNITION_COMPUTER_ACT,
+                "desktop session changed; observe the computer again",
+            ));
+        }
+
+        let _ = self
+            .event_tx
+            .send(TuiEvent::ToolInvoked {
+                tool_name: COGNITION_COMPUTER_ACT.to_string(),
+                input_summary: format!("press {}", input.element_ref),
+            })
+            .await;
+        let scope =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
+                .await;
+        let authority_id = crate::workshop_authority::current()
+            .map_err(|error| tool_error(COGNITION_COMPUTER_ACT, error))?
+            .to_string();
+        let result = broker
+            .act(ComputerActionIntent {
+                authority_id,
+                driver_id: driver_id.clone(),
+                desktop_session_id: input.session_id.clone(),
+                principal: agent_principal(scope.as_ref()),
+                resource_id: desktop_resource_id(&driver_id, &input.session_id),
+                trace_id: turn_trace_id(scope.as_ref(), "computer-agent:act"),
+                summary: "agent requested a semantic desktop press".to_string(),
+                observation_generation: input.observation_generation,
+                observation_revision: input.observation_revision,
+                element_ref: input.element_ref,
+                action: input.action.into(),
+                allow_high_risk: input.allow_high_risk,
+            })
+            .await
+            .map_err(|error| tool_error(COGNITION_COMPUTER_ACT, error))?;
+
+        Ok(ExternalJson::new(json!({
+            "ok": true,
+            "receipt": result.receipt,
+            "provenance": result.provenance,
+        })))
+    }
+}
+
+pub fn register_computer_tools(
+    registry: &mut impl crate::typed_tools::ToolRegistration,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
+    event_tx: mpsc::Sender<TuiEvent>,
+) -> stasis::prelude::Result<()> {
+    registry.register_typed_tool(CognitionComputerSnapshotTool::new(
+        turn_scope.clone(),
+        event_tx.clone(),
+    ))?;
+    registry.register_typed_tool(CognitionComputerActTool::new(turn_scope, event_tx))?;
+    Ok(())
+}
+
+fn global_broker(
+    tool: &str,
+) -> stasis::prelude::Result<std::sync::Arc<ComputerDriverBroker>> {
+    crate::daemon::computer_driver_host::global_computer_broker().ok_or_else(|| {
+        tool_error(
+            tool,
+            "native computer broker is unavailable on this daemon",
+        )
+    })
+}
+
+async fn select_driver(
+    broker: &ComputerDriverBroker,
+    requested: Option<&str>,
+    tool: &str,
+) -> stasis::prelude::Result<WorldDriverId> {
+    let registrations = broker.registrations().await;
+    if let Some(requested) = requested {
+        let requested = requested.trim();
+        if requested.is_empty()
+            || requested.len() > 256
+            || requested.chars().any(char::is_control)
+        {
+            return Err(tool_error(
+                tool,
+                "computer driver id is invalid",
+            ));
+        }
+        return registrations
+            .into_iter()
+            .find(|registration| registration.driver_id.as_str() == requested)
+            .map(|registration| registration.driver_id)
+            .ok_or_else(|| {
+                tool_error(
+                    tool,
+                    format!("computer driver '{requested}' is not registered"),
+                )
+            });
+    }
+    match registrations.as_slice() {
+        [] => Err(tool_error(
+            tool,
+            "no native computer driver is registered; install medousa-computer and restart the daemon",
+        )),
+        [registration] => Ok(registration.driver_id.clone()),
+        _ => Err(tool_error(
+            tool,
+            format!(
+                "multiple native computer drivers are registered; choose driver_id from [{}]",
+                registrations
+                    .iter()
+                    .map(|registration| registration.driver_id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        )),
+    }
+}
+
+async fn ready_preflight(
+    broker: &ComputerDriverBroker,
+    driver_id: &WorldDriverId,
+    tool: &str,
+) -> stasis::prelude::Result<medousa_computer_bridge::ComputerDriverPreflight> {
+    let preflight = broker
+        .preflight(driver_id)
+        .await
+        .map_err(|error| tool_error(tool, error))?;
+    if preflight.semantic_observation_ready() {
+        return Ok(preflight);
+    }
+    let guidance = preflight
+        .permissions
+        .iter()
+        .find(|permission| permission.permission == ComputerPermissionKind::Accessibility)
+        .and_then(|permission| permission.guidance.as_deref())
+        .unwrap_or("Grant the native computer driver Accessibility permission.");
+    Err(tool_error(tool, guidance))
+}
+
+fn agent_principal(
+    scope: Option<&crate::turn_continuation::TurnContinuationScope>,
+) -> WorldPrincipal {
+    let identity = scope
+        .and_then(|scope| scope.identity_user_id.as_deref())
+        .or_else(|| scope.map(|scope| scope.session_id.as_str()))
+        .unwrap_or("workshop-operator");
+    let digest = Sha256::digest(identity.as_bytes());
+    WorldPrincipal::agent(WorldPrincipalId::new(format!(
+        "agent:medousa:sha256:{digest:x}"
+    )))
+}
+
+fn turn_trace_id(
+    scope: Option<&crate::turn_continuation::TurnContinuationScope>,
+    fallback_prefix: &str,
+) -> String {
+    scope
+        .map(|scope| scope.turn_correlation_id.trim())
+        .filter(|value| {
+            !value.is_empty() && value.len() <= 256 && !value.chars().any(char::is_control)
+        })
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("{fallback_prefix}:{}", Uuid::new_v4()))
+}
+
+fn tool_error(tool: &str, error: impl std::fmt::Display) -> StasisError {
+    StasisError::PortFailure(format!("{tool}: {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use medousa_computer_bridge::{
+        COMPUTER_DRIVER_PROTOCOL_VERSION, ComputerDriverPreflight, ComputerPermissionReport,
+        ComputerPermissionStatus,
+    };
+    use medousa_world::{
+        WorldDriverCapability, WorldDriverKind, WorldDriverRegistration, WorldDriverTransport,
+        WorldOwnership, WorldSurfaceKind,
+    };
+
+    use super::*;
+
+    fn registration(driver_id: &str) -> WorldDriverRegistration {
+        WorldDriverRegistration {
+            driver_id: WorldDriverId::new(driver_id),
+            kind: WorldDriverKind::NativeDesktop,
+            surface: WorldSurfaceKind::Desktop,
+            ownership: WorldOwnership::Attached,
+            transport: WorldDriverTransport::InProcess,
+            capabilities: [WorldDriverCapability::SemanticObservation]
+                .into_iter()
+                .collect(),
+            display_name: None,
+        }
+    }
+
+    struct SelectionDriver(WorldDriverRegistration);
+
+    #[async_trait::async_trait]
+    impl crate::computer_driver::ComputerDriver for SelectionDriver {
+        fn registration(&self) -> WorldDriverRegistration {
+            self.0.clone()
+        }
+
+        async fn preflight(&self) -> Result<ComputerDriverPreflight, String> {
+            Ok(ComputerDriverPreflight {
+                protocol_version: COMPUTER_DRIVER_PROTOCOL_VERSION,
+                driver_id: self.0.driver_id.clone(),
+                platform: "test".to_string(),
+                session_id: "login:test".to_string(),
+                permissions: vec![ComputerPermissionReport {
+                    permission: ComputerPermissionKind::Accessibility,
+                    status: ComputerPermissionStatus::Granted,
+                    can_request: false,
+                    guidance: None,
+                }],
+                checked_at_ms: 1,
+            })
+        }
+
+        async fn observe(
+            &self,
+            _request: medousa_computer_bridge::ComputerObservationRequest,
+        ) -> Result<medousa_computer_bridge::ComputerObservation, String> {
+            unreachable!("selection test does not observe")
+        }
+
+        async fn act(
+            &self,
+            _request: medousa_computer_bridge::ComputerActionRequest,
+        ) -> Result<
+            medousa_computer_bridge::ComputerActionReceipt,
+            crate::computer_driver::ComputerDriverActionError,
+        > {
+            unreachable!("selection test does not act")
+        }
+    }
+
+    #[tokio::test]
+    async fn one_registered_driver_is_selected_without_ceremony() {
+        let broker = ComputerDriverBroker::new(Arc::new(
+            crate::world_authority::WorldAuthorityService::default(),
+        ));
+        broker
+            .register(Arc::new(SelectionDriver(registration("driver:one"))))
+            .await
+            .expect("register");
+
+        assert_eq!(
+            select_driver(&broker, None, COGNITION_COMPUTER_SNAPSHOT)
+                .await
+                .expect("automatic selection")
+                .as_str(),
+            "driver:one"
+        );
+    }
+
+    #[tokio::test]
+    async fn multiple_drivers_require_an_exact_selection() {
+        let broker = ComputerDriverBroker::new(Arc::new(
+            crate::world_authority::WorldAuthorityService::default(),
+        ));
+        for driver_id in ["driver:one", "driver:two"] {
+            broker
+                .register(Arc::new(SelectionDriver(registration(driver_id))))
+                .await
+                .expect("register");
+        }
+
+        let error = select_driver(&broker, None, COGNITION_COMPUTER_SNAPSHOT)
+            .await
+            .expect_err("selection must be explicit");
+        assert!(error.to_string().contains("multiple native computer drivers"));
+    }
+}

@@ -22,6 +22,7 @@ use medousa_world::{
     WorldResourceScope, WorldSessionSpec, WorldSurfaceKind, WorldTraceId,
 };
 use serde::Serialize;
+use sha2::{Digest as _, Sha256};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -92,7 +93,15 @@ struct ComputerObservationFence {
     session_id: String,
     generation: String,
     revision: u64,
-    element_refs: BTreeSet<String>,
+    elements: BTreeMap<String, ComputerObservedElement>,
+}
+
+#[derive(Debug, Clone)]
+struct ComputerObservedElement {
+    role: String,
+    name: String,
+    enabled: bool,
+    sensitive: bool,
 }
 
 impl ComputerDriverBroker {
@@ -295,7 +304,7 @@ impl ComputerDriverBroker {
         );
         let mut fences = self.observation_fences.write().await;
         let previous = fences.get(&key);
-        let mut element_refs = if !observation.full
+        let mut elements = if !observation.full
             && previous.is_some_and(|previous| {
                 previous.session_id == observation.session_id
                     && previous.generation == observation.observation_generation
@@ -303,22 +312,32 @@ impl ComputerDriverBroker {
             })
         {
             previous
-                .map(|previous| previous.element_refs.clone())
+                .map(|previous| previous.elements.clone())
                 .unwrap_or_default()
         } else {
-            BTreeSet::new()
+            BTreeMap::new()
         };
         for removed in &observation.removed_refs {
-            element_refs.remove(removed);
+            elements.remove(removed);
         }
-        element_refs.extend(observation.nodes.iter().map(|node| node.element_ref.clone()));
+        for node in &observation.nodes {
+            elements.insert(
+                node.element_ref.clone(),
+                ComputerObservedElement {
+                    role: node.role.clone(),
+                    name: node.name.clone(),
+                    enabled: node.enabled,
+                    sensitive: node.sensitive,
+                },
+            );
+        }
         fences.insert(
             key,
             ComputerObservationFence {
                 session_id: observation.session_id.clone(),
                 generation: observation.observation_generation.clone(),
                 revision: observation.revision,
-                element_refs,
+                elements,
             },
         );
     }
@@ -339,9 +358,16 @@ impl ComputerDriverBroker {
                     .to_string(),
             );
         }
-        if !fence.element_refs.contains(&intent.element_ref) {
+        let element = fence.elements.get(&intent.element_ref).ok_or_else(|| {
+            "element_not_found: action target was not present in the exact observation".to_string()
+        })?;
+        if !element.enabled {
+            return Err("element_disabled: action target is not enabled".to_string());
+        }
+        if !intent.allow_high_risk && observed_element_is_high_risk(element) {
             return Err(
-                "element_not_found: action target was not present in the exact observation"
+                "high_risk_target: observed element looks sensitive or effectful; rerun with \
+                 allow_high_risk=true only when the operator explicitly requested this press"
                     .to_string(),
             );
         }
@@ -553,7 +579,7 @@ impl ComputerDriverBroker {
                 expected_revision: state.revision,
                 expected_control_generation: Some(lease.generation),
                 required_capability: WorldCapability::Interact,
-                effect_class: WorldEffectClass::LocalReversible,
+                effect_class: WorldEffectClass::LocalMutation,
                 idempotency_key: format!("computer-action:{operation_id}"),
                 permit_expires_at_ms: admitted_at_ms
                     .saturating_add(COMPUTER_ACTION_PERMIT_MS),
@@ -625,6 +651,7 @@ pub struct ComputerActionIntent {
     pub observation_revision: u64,
     pub element_ref: String,
     pub action: ComputerAction,
+    pub allow_high_risk: bool,
 }
 
 impl ComputerActionIntent {
@@ -756,6 +783,51 @@ fn validate_identifier(label: &str, value: &str) -> Result<(), String> {
         return Err(format!("{label} identity is invalid"));
     }
     Ok(())
+}
+
+fn observed_element_is_high_risk(element: &ComputerObservedElement) -> bool {
+    if element.sensitive {
+        return true;
+    }
+    let semantic_label = format!("{} {}", element.role, element.name).to_ascii_lowercase();
+    let tokens = semantic_label
+        .split(|character: char| !character.is_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .collect::<BTreeSet<_>>();
+    let risky_token = [
+        "password",
+        "submit",
+        "send",
+        "checkout",
+        "purchase",
+        "pay",
+        "payment",
+        "buy",
+        "delete",
+        "remove",
+        "erase",
+        "confirm",
+        "authorize",
+        "allow",
+        "install",
+        "uninstall",
+        "publish",
+        "transfer",
+    ]
+    .iter()
+    .any(|needle| tokens.contains(needle));
+    risky_token
+        || ["place order", "sign in", "log in"]
+            .iter()
+            .any(|phrase| semantic_label.contains(phrase))
+}
+
+pub fn desktop_resource_id(
+    driver_id: &WorldDriverId,
+    desktop_session_id: &str,
+) -> WorldResourceId {
+    let digest = Sha256::digest(format!("{driver_id}\0{desktop_session_id}").as_bytes());
+    WorldResourceId::new(format!("desktop:sha256:{digest:x}"))
 }
 
 fn computer_world_id(
@@ -1034,6 +1106,7 @@ mod tests {
             observation_revision: 1,
             element_ref: element_ref.to_string(),
             action: ComputerAction::Press,
+            allow_high_risk: false,
         }
     }
 
@@ -1062,6 +1135,64 @@ mod tests {
         assert_eq!(driver.actions.load(Ordering::SeqCst), 1);
         assert_eq!(result.receipt.action, ComputerAction::Press);
         assert_eq!(result.provenance.outcome.status, WorldActionStatus::Confirmed);
+    }
+
+    #[tokio::test]
+    async fn semantic_action_requires_explicit_operator_intent_for_high_risk_target() {
+        let authority = Arc::new(WorldAuthorityService::default());
+        let broker = ComputerDriverBroker::new(authority);
+        let driver_id = WorldDriverId::new("driver:computer:test");
+        let resource_id = WorldResourceId::new("desktop:login");
+        let driver = Arc::new(FakeComputerDriver {
+            registration: registration(driver_id.as_str()),
+            observations: AtomicUsize::new(0),
+            actions: AtomicUsize::new(0),
+            spoof_driver: false,
+            spoof_action_revision: false,
+        });
+        broker.register(driver.clone()).await.expect("register driver");
+        broker
+            .observe(intent(driver_id.as_str()))
+            .await
+            .expect("establish observation");
+        broker
+            .observation_fences
+            .write()
+            .await
+            .get_mut(&(driver_id.clone(), resource_id))
+            .expect("observation fence")
+            .elements
+            .get_mut("ax:test:button")
+            .expect("observed element")
+            .name = "Delete account".to_string();
+
+        let denied = broker
+            .act(action_intent(driver_id.as_str(), "ax:test:button"))
+            .await
+            .expect_err("high-risk action needs explicit intent");
+        assert!(denied.contains("high_risk_target"));
+        assert_eq!(driver.actions.load(Ordering::SeqCst), 0);
+
+        let mut allowed = action_intent(driver_id.as_str(), "ax:test:button");
+        allowed.allow_high_risk = true;
+        broker.act(allowed).await.expect("explicit high-risk action");
+        assert_eq!(driver.actions.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn high_risk_matching_uses_word_boundaries() {
+        assert!(!observed_element_is_high_risk(&ComputerObservedElement {
+            role: "button".to_string(),
+            name: "Display settings".to_string(),
+            enabled: true,
+            sensitive: false,
+        }));
+        assert!(observed_element_is_high_risk(&ComputerObservedElement {
+            role: "button".to_string(),
+            name: "Pay now".to_string(),
+            enabled: true,
+            sensitive: false,
+        }));
     }
 
     #[tokio::test]

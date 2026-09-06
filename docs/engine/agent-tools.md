@@ -32,6 +32,8 @@ See [agent-browser-host.md](../../architecture/agent-browser-host.md) for search
 - **environment** — environment spec + component canvas ([environment-canvas.md](./environment-canvas.md))
 - **browser** — search/fetch plus semantic snapshot and governed actions
   (unlocked only when the turn selects a browser-capable surface)
+- **computer** — bounded native-desktop observation and exact-ref actions on
+  the workshop daemon; one registered driver is selected automatically
 - Standard rings: bootstrap, MCP, finish, etc.
 
 Source: `src/tool_bootstrap.rs`
@@ -57,6 +59,8 @@ Source: `src/tool_bootstrap.rs`
 | Browser fetch | `cognition_browser_fetch` — gated on `supports_browser_host` |
 | Browser snapshot | `cognition_browser_snapshot` — semantic-first observation plus optional redacted screenshot artifact |
 | Browser act | `cognition_browser_act` — revisioned opaque refs or guarded batches through the exact selected driver |
+| Computer snapshot | `cognition_computer_snapshot` — bounded, untrusted accessibility state from the daemon-owned native driver |
+| Computer act | `cognition_computer_act` — exact generation/revision/ref action; high-risk targets require explicit operator intent |
 | Shell | `cognition_shell_status` / `cognition_shell_run` — direct on the host for short diagnostics; opt-in and bounded by Runtime Controls → Shell |
 | OpenShell secrets | `cognition_openshell_request_secret` — trusted UI prompt; returns an opaque one-use grant, never the credential value |
 | Grapheme secrets | `cognition_grapheme_request_secret` — trusted UI prompt; authorizes an ephemeral credential capability for one native run |

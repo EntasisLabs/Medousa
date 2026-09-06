@@ -659,6 +659,15 @@ Current macOS action slice:
 - Effectful sidecar requests are never automatically retried. A lost or invalid
   acknowledgement is recorded as indeterminate for reconciliation rather than
   risking a duplicate press.
+- The main Medousa lane exposes `cognition_computer_snapshot` and
+  `cognition_computer_act` directly against the daemon broker. A single native
+  driver is selected without ceremony; multiple drivers require an exact id.
+  Agent observations are capped below the driver transport maximum, and their
+  large payloads are requeryable instead of retained inline forever.
+- Action risk is resolved from the broker's cached node semantics, not caller
+  labels. Disabled nodes fail closed, while sensitive and effectful-looking
+  targets require an explicit `allow_high_risk` assertion tied to operator
+  intent.
 - Pixel observations, broader actions, package/release shipping, and Home
   controls remain later slices.
 

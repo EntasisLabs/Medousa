@@ -417,6 +417,7 @@ pub fn tool_payload_is_requeryable(tool_name: &str) -> bool {
         || tool_name == crate::public_api::COGNITION_STORE_READ
         || tool_name == crate::coding_tools::COGNITION_SHELL_SESSION_STATUS
         || tool_name == super::coder_tools::COGNITION_CODER_EVIDENCE_READ
+        || tool_name == crate::computer_tools::COGNITION_COMPUTER_SNAPSHOT
 }
 
 pub use crate::ui_tool_output::{scene_ops_from_tool_output, ui_artifact_from_tool_output};
@@ -661,6 +662,9 @@ mod tests {
         ));
         assert!(tool_payload_is_requeryable(
             super::super::coder_tools::COGNITION_CODER_EVIDENCE_READ
+        ));
+        assert!(tool_payload_is_requeryable(
+            crate::computer_tools::COGNITION_COMPUTER_SNAPSHOT
         ));
         assert!(!tool_payload_is_requeryable("cognition_shell_session_run"));
     }

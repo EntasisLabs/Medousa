@@ -135,9 +135,16 @@ fn add_effects_and_capabilities(index: &mut ToolPlacementIndex) {
         crate::public_api::COGNITION_RUNTIME_QUERY,
         crate::public_api::COGNITION_SCHEMA,
         crate::public_api::COGNITION_MEMORY_QUERY,
+        #[cfg(feature = "full-daemon")]
+        crate::computer_tools::COGNITION_COMPUTER_SNAPSHOT,
     ] {
         index.set_effect(ToolId::new(name), ToolEffect::Observe);
     }
+    #[cfg(feature = "full-daemon")]
+    index.set_effect(
+        ToolId::new(crate::computer_tools::COGNITION_COMPUTER_ACT),
+        ToolEffect::Mutate,
+    );
     #[cfg(feature = "full-daemon")]
     index.set_effect(
         ToolId::new(crate::agent_runtime::coder_tools::COGNITION_CODER_TOOLS_DISCOVER),
@@ -252,6 +259,14 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
     (
         "cognition_browser_act",
         "Click/type/scroll on the shared Web tab (agent control required)",
+    ),
+    (
+        "cognition_computer_snapshot",
+        "Observe the daemon-owned desktop as bounded semantic state",
+    ),
+    (
+        "cognition_computer_act",
+        "Act on an exact element ref from the latest desktop observation",
     ),
     (
         "cognition_turn",

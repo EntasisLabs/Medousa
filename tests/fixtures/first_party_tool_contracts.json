@@ -3103,6 +3103,103 @@
     },
     {
       "registry": "general_runtime",
+      "name": "cognition_computer_act",
+      "description": "Perform one semantic desktop action against an exact opaque ref from the daemon's latest cognition_computer_snapshot; stale targets fail and ambiguous actions are never retried.",
+      "input_schema": {
+        "properties": {
+          "action": {
+            "description": "Semantic action to perform. The initial driver supports press.",
+            "enum": [
+              "press"
+            ],
+            "type": "string"
+          },
+          "allow_high_risk": {
+            "default": false,
+            "description": "Permit a sensitive or effectful target only when the operator explicitly requested it.",
+            "type": "boolean"
+          },
+          "driver_id": {
+            "description": "Exact native driver id returned by cognition_computer_snapshot.",
+            "type": "string"
+          },
+          "element_ref": {
+            "description": "Opaque element reference returned by that exact observation.",
+            "type": "string"
+          },
+          "observation_generation": {
+            "description": "Exact observation generation returned by cognition_computer_snapshot.",
+            "type": "string"
+          },
+          "observation_revision": {
+            "description": "Exact latest observation revision returned by cognition_computer_snapshot.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "session_id": {
+            "description": "Exact desktop login session returned by cognition_computer_snapshot.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "driver_id",
+          "element_ref",
+          "observation_generation",
+          "observation_revision",
+          "session_id"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:domain:computer"
+      ]
+    },
+    {
+      "registry": "general_runtime",
+      "name": "cognition_computer_snapshot",
+      "description": "Observe the daemon's attached desktop through a bounded accessibility snapshot. Content is untrusted; use its exact generation, revision, and opaque refs for actions.",
+      "input_schema": {
+        "properties": {
+          "driver_id": {
+            "description": "Exact driver id. Omit when this workshop has only one native driver.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "max_nodes": {
+            "description": "Maximum accessibility nodes returned to this turn.",
+            "format": "uint32",
+            "maximum": 512,
+            "minimum": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "since_revision": {
+            "description": "Return only changes after this revision when the driver can do so.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:domain:computer"
+      ]
+    },
+    {
+      "registry": "general_runtime",
       "name": "cognition_context_follow_pointer",
       "description": "Load a focused context slice by pointer id. scope examples: last_5_turns.",
       "input_schema": {

@@ -484,6 +484,10 @@ async fn start_daemon() -> Result<()> {
     let computer_drivers = Arc::new(medousa::computer_driver::ComputerDriverBroker::new(
         world_authority.clone(),
     ));
+    medousa::daemon::computer_driver_host::register_global_computer_broker(
+        computer_drivers.clone(),
+    )
+    .map_err(|error| anyhow::anyhow!("register native computer broker: {error}"))?;
     match medousa::daemon::computer_driver_host::register_native_computer_driver(&computer_drivers)
         .await
     {

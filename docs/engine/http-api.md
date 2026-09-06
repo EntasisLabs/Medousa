@@ -419,13 +419,15 @@ clients cannot choose one. Observation requires `admin.execute`, while inventory
 and preflight require `WorkshopRead`.
 
 The action body accepts `session_id`, `observation_generation`,
-`observation_revision`, `element_ref`, and `action` (currently only `press`).
-All four identity fields must match the driver's latest snapshot. The action is
-admitted through world authority with an exact resource grant and control lease,
-then dispatched as a background accessibility action; it does not move the
-physical pointer or accept coordinates. Action transport is never retried after
-dispatch ambiguity. This slice exposes no foreground input or pixel-capture
-endpoint.
+`observation_revision`, `element_ref`, `action` (currently only `press`), and
+optional `allow_high_risk` (default `false`). All four identity fields must
+match the driver's latest snapshot. Disabled elements are rejected. Sensitive
+or effectful-looking targets require the caller to set `allow_high_risk=true`
+only after explicit operator intent. The action is admitted through world
+authority with an exact resource grant and control lease, then dispatched as a
+background accessibility action; it does not move the physical pointer or
+accept coordinates. Action transport is never retried after dispatch ambiguity.
+This slice exposes no foreground input or pixel-capture endpoint.
 
 ---
 
