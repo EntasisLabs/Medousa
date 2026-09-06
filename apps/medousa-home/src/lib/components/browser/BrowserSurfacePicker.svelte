@@ -1,7 +1,11 @@
 <script lang="ts">
   import { Check, ChevronDown, Laptop, LoaderCircle, MonitorUp, Plus } from "@lucide/svelte";
   import BrowserPopover from "$lib/components/browser/BrowserPopover.svelte";
-  import { governedBrowser } from "$lib/stores/governedBrowser.svelte";
+  import { executionTargets } from "$lib/stores/executionTargets.svelte";
+  import {
+    governedBrowser,
+    type BrowserExecutionContext,
+  } from "$lib/stores/governedBrowser.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
 
   interface Props {
@@ -15,17 +19,47 @@
 
   const label = $derived(
     governedBrowser.source.kind === "workshop"
-      ? governedBrowser.selectedWorld?.driver.display_name || "Workshop"
+      ? governedBrowser.sourceRuntimeLabel || "Workshop"
       : "Device",
   );
+  const browserTargets = $derived(executionTargets.worldTargets("browser"));
+
+  function browserExecutionContext(runtimeId: string): BrowserExecutionContext {
+    return {
+      runtimeId,
+      parentRuntimeId: executionTargets.inventory?.parent_runtime_id ?? "",
+      runtimeLabels: Object.fromEntries(
+        (executionTargets.inventory?.targets ?? []).map((target) => [
+          target.runtime_id,
+          target.label,
+        ]),
+      ),
+    };
+  }
 
   $effect(() => {
     const scopeId = workshops.activeWorkshopId;
-    void governedBrowser.load(scopeId);
-    const timer = window.setInterval(() => {
-      void governedBrowser.refreshWorlds().catch(() => undefined);
-    }, 2_000);
-    return () => window.clearInterval(timer);
+    let disposed = false;
+    let timer: number | null = null;
+    const load = async () => {
+      executionTargets.activateWorkshopScope(scopeId);
+      await executionTargets.refresh();
+      if (disposed) return;
+      const runtimeId = executionTargets.worldRuntimeId("browser");
+      await governedBrowser.load(
+        scopeId,
+        runtimeId ? browserExecutionContext(runtimeId) : null,
+      );
+      if (disposed) return;
+      timer = window.setInterval(() => {
+        void governedBrowser.refreshWorlds().catch(() => undefined);
+      }, 2_000);
+    };
+    void load().catch(() => undefined);
+    return () => {
+      disposed = true;
+      if (timer) window.clearInterval(timer);
+    };
   });
 
   function toggle(event: MouseEvent) {
@@ -41,6 +75,11 @@
   async function selectWorld(worldId: string) {
     close();
     await governedBrowser.selectWorld(worldId);
+  }
+
+  async function selectTarget(runtimeId: string) {
+    executionTargets.setWorldRuntimeId("browser", runtimeId);
+    await governedBrowser.selectTarget(browserExecutionContext(runtimeId));
   }
 
   function selectDevice() {
@@ -85,7 +124,39 @@
   maxHeight={440}
   hideNativeEmbed={true}
 >
-  <p class="browser-popover-section-label">On this workshop</p>
+  <p class="browser-popover-section-label">Browser workshop</p>
+  {#if browserTargets.length === 0}
+    <div class="px-3 py-2 text-xs leading-relaxed text-content-tertiary">
+      No authorized workshop advertises a browser driver.
+    </div>
+  {:else}
+    {#each browserTargets as target (target.runtime_id)}
+      <button
+        type="button"
+        class="browser-popover-row"
+        onclick={() => void selectTarget(target.runtime_id)}
+      >
+        <MonitorUp size={16} class="shrink-0 text-content-tertiary" />
+        <span class="min-w-0 flex-1">
+          <span class="block truncate text-sm text-surface-50">{target.label}</span>
+          <span class="block truncate text-xs text-content-tertiary">
+            {target.platform || "Authorized workshop"}
+          </span>
+        </span>
+        {#if governedBrowser.targetRuntimeId === target.runtime_id}
+          <Check size={15} class="ml-auto shrink-0 text-primary-300" />
+        {/if}
+      </button>
+    {/each}
+  {/if}
+
+  {#if executionTargets.worldSelectionUnavailable("browser")}
+    <div class="px-3 py-2 text-xs leading-relaxed text-amber-300" role="status">
+      The selected workshop is no longer authorized. Choose another workshop; Medousa will not silently move an active browser.
+    </div>
+  {/if}
+
+  <p class="browser-popover-section-label">On {governedBrowser.targetRuntimeLabel}</p>
   {#if governedBrowser.loadingWorlds}
     <div class="flex items-center gap-2 px-3 py-4 text-sm text-content-tertiary">
       <LoaderCircle class="animate-spin" size={16} />
@@ -97,7 +168,7 @@
         {governedBrowser.error}
       </div>
     {/if}
-    {#each governedBrowser.worlds as world (world.world_id)}
+    {#each governedBrowser.targetWorlds as world (world.world_id)}
       <button
         type="button"
         class="browser-popover-row"
@@ -112,7 +183,7 @@
             {world.run_state} · {world.profile.kind === "persistent" ? "saved profile" : "private profile"}
           </span>
         </span>
-        {#if governedBrowser.source.kind === "workshop" && governedBrowser.source.worldId === world.world_id}
+        {#if governedBrowser.source.kind === "workshop" && governedBrowser.source.worldId === world.world_id && governedBrowser.source.runtimeId === world.execution_runtime_id}
           <Check size={15} class="ml-auto shrink-0 text-primary-300" />
         {/if}
       </button>
@@ -122,7 +193,7 @@
   <button
     type="button"
     class="browser-popover-row"
-    disabled={governedBrowser.creating}
+    disabled={governedBrowser.creating || !governedBrowser.targetRuntimeId}
     onclick={() => void createWorld(false)}
   >
     <Plus size={16} class="shrink-0 text-content-tertiary" />
@@ -134,7 +205,7 @@
   <button
     type="button"
     class="browser-popover-row"
-    disabled={governedBrowser.creating}
+    disabled={governedBrowser.creating || !governedBrowser.targetRuntimeId}
     onclick={() => void createWorld(true)}
   >
     <Plus size={16} class="shrink-0 text-content-tertiary" />

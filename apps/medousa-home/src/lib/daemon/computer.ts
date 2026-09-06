@@ -92,15 +92,21 @@ export interface ComputerDriverReadiness {
   error?: string;
 }
 
-export async function listComputerDrivers(): Promise<ComputerDriverRegistration[]> {
+export async function listComputerDrivers(
+  executionRuntimeId?: string | null,
+): Promise<ComputerDriverRegistration[]> {
   const response = await daemonUnary<{ ok: boolean; drivers: ComputerDriverRegistration[] }>(
     "computer.drivers.get",
+    {},
+    undefined,
+    executionRuntimeId,
   );
   return response.drivers ?? [];
 }
 
 export async function preflightComputerDriver(
   driverId: string,
+  executionRuntimeId?: string | null,
 ): Promise<{
   resourceId: string;
   preflight: ComputerDriverPreflight;
@@ -111,7 +117,12 @@ export async function preflightComputerDriver(
     resource_id: string;
     preflight: ComputerDriverPreflight;
     control: ComputerWorldControlState;
-  }>("computer.drivers.by_driver_id.preflight.get", { driver_id: driverId });
+  }>(
+    "computer.drivers.by_driver_id.preflight.get",
+    { driver_id: driverId },
+    undefined,
+    executionRuntimeId,
+  );
   return {
     resourceId: response.resource_id,
     preflight: response.preflight,
@@ -123,11 +134,13 @@ export async function watchComputerDriver(
   driverId: string,
   sessionId: string,
   maxWidth = 960,
+  executionRuntimeId?: string | null,
 ): Promise<ComputerWatchFrame> {
   return daemonUnary<ComputerWatchFrame>(
     "computer.drivers.by_driver_id.watch.post",
     { driver_id: driverId },
     { session_id: sessionId, max_width: maxWidth },
+    executionRuntimeId,
   );
 }
 
@@ -135,11 +148,13 @@ export async function controlComputerDriver(
   driverId: string,
   sessionId: string,
   action: "take_control" | "return_to_medousa",
+  executionRuntimeId?: string | null,
 ): Promise<ComputerWorldControlState> {
   const response = await daemonUnary<{ ok: boolean; control: ComputerWorldControlState }>(
     "computer.drivers.by_driver_id.control.post",
     { driver_id: driverId },
     { session_id: sessionId, action },
+    executionRuntimeId,
   );
   return response.control;
 }
@@ -148,12 +163,14 @@ export async function controlComputerDriver(
  * Readiness is intentionally observational. Opening Runtime Controls never
  * asks the operating system for permission or starts a computer action.
  */
-export async function loadComputerDriverReadiness(): Promise<ComputerDriverReadiness[]> {
-  const drivers = await listComputerDrivers();
+export async function loadComputerDriverReadiness(
+  executionRuntimeId?: string | null,
+): Promise<ComputerDriverReadiness[]> {
+  const drivers = await listComputerDrivers(executionRuntimeId);
   return Promise.all(
     drivers.map(async (driver) => {
       try {
-        const result = await preflightComputerDriver(driver.driver_id);
+        const result = await preflightComputerDriver(driver.driver_id, executionRuntimeId);
         return {
           driver,
           resourceId: result.resourceId,

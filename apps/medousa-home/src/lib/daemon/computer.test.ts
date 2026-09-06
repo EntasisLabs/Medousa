@@ -74,8 +74,13 @@ describe("computer driver client", () => {
       control: { holder: "available" },
     });
     expect(mocks.unary.mock.calls).toEqual([
-      ["computer.drivers.get"],
-      ["computer.drivers.by_driver_id.preflight.get", { driver_id: driver.driver_id }],
+      ["computer.drivers.get", {}, undefined, undefined],
+      [
+        "computer.drivers.by_driver_id.preflight.get",
+        { driver_id: driver.driver_id },
+        undefined,
+        undefined,
+      ],
     ]);
   });
 
@@ -137,11 +142,55 @@ describe("computer driver client", () => {
         "computer.drivers.by_driver_id.watch.post",
         { driver_id: driver.driver_id },
         { session_id: "session:one", max_width: 960 },
+        undefined,
       ],
       [
         "computer.drivers.by_driver_id.control.post",
         { driver_id: driver.driver_id },
         { session_id: "session:one", action: "take_control" },
+        undefined,
+      ],
+    ]);
+  });
+
+  it("pins every readiness and watch request to an exact remote runtime", async () => {
+    mocks.unary
+      .mockResolvedValueOnce({ ok: true, drivers: [driver] })
+      .mockResolvedValueOnce({
+        ok: true,
+        resource_id: "desktop:one",
+        preflight: {
+          protocol_version: 5,
+          driver_id: driver.driver_id,
+          platform: "macos",
+          session_id: "session:one",
+          permissions: [],
+          checked_at_ms: 1,
+        },
+        control,
+      })
+      .mockResolvedValueOnce({
+        observation: {},
+        capture: { mime: "image/png", image_base64: "eA==" },
+        control,
+      });
+
+    await loadComputerDriverReadiness("runtime-mac-mini");
+    await watchComputerDriver(driver.driver_id, "session:one", 960, "runtime-mac-mini");
+
+    expect(mocks.unary.mock.calls).toEqual([
+      ["computer.drivers.get", {}, undefined, "runtime-mac-mini"],
+      [
+        "computer.drivers.by_driver_id.preflight.get",
+        { driver_id: driver.driver_id },
+        undefined,
+        "runtime-mac-mini",
+      ],
+      [
+        "computer.drivers.by_driver_id.watch.post",
+        { driver_id: driver.driver_id },
+        { session_id: "session:one", max_width: 960 },
+        "runtime-mac-mini",
       ],
     ]);
   });

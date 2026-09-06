@@ -14,11 +14,20 @@
   interface Props {
     open: boolean;
     readiness: ComputerDriverReadiness | null;
+    executionRuntimeId?: string | null;
+    workshopLabel?: string;
     onClose: () => void;
     onControlChange?: (control: ComputerWorldControlState) => void;
   }
 
-  let { open, readiness, onClose, onControlChange }: Props = $props();
+  let {
+    open,
+    readiness,
+    executionRuntimeId = null,
+    workshopLabel = "Workshop",
+    onClose,
+    onControlChange,
+  }: Props = $props();
   let sheetEl = $state<HTMLElement | null>(null);
   let headerEl = $state<HTMLElement | null>(null);
   let frame = $state<ComputerWatchFrame | null>(null);
@@ -72,6 +81,7 @@
         driverId,
         sessionId,
         control?.requester_has_control ? "return_to_medousa" : "take_control",
+        executionRuntimeId,
       );
       control = next;
       if (frame) frame = { ...frame, control: next };
@@ -107,7 +117,12 @@
       }
       if (!hasFrame) loading = true;
       try {
-        const next = await watchComputerDriver(driverId, sessionId, 960);
+        const next = await watchComputerDriver(
+          driverId,
+          sessionId,
+          960,
+          executionRuntimeId,
+        );
         if (disposed || generation !== refreshGeneration) return;
         const binary = atob(next.capture.image_base64);
         const bytes = new Uint8Array(binary.length);
@@ -202,7 +217,7 @@
             </span>
             <div class="min-w-0 flex-1">
               <h2>{driverName}</h2>
-              <p>Live focused window · {readiness?.driver.ownership ?? "attached"} desktop</p>
+              <p>{workshopLabel} · live focused window · {readiness?.driver.ownership ?? "attached"} desktop</p>
             </div>
             <button type="button" class="computer-watch-close" aria-label="Close computer view" onclick={close}>
               <X size={18} strokeWidth={2} />

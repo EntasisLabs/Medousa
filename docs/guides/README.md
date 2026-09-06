@@ -18,7 +18,7 @@ Integrator / self-host cookbooks: [../cookbook/README.md](../cookbook/README.md)
 | [VS Code](vscode.md) | Use Medousa chat beside your editor |
 | [Neovim](neovim.md) | Use the keyboard-first Medousa coding room |
 | [Obsidian](obsidian.md) | Use the vault-native Medousa companion |
-| [Browser](browser.md) | Use the page-aware Medousa companion in Chrome or Edge |
+| [Browser](browser.md) | Choose governed workshop worlds or use the Chromium companion |
 | [Web in Medousa](web-in-medousa.md) | Use workshop and device browsers with bounded agent control |
 | [Secure credential handoff](secure-credential-handoff.md) | Give OpenShell or Grapheme an API key without putting it in chat |
 | [Desktop companion](desktop-companion.md) | Keep chat, approvals, notes, and views in a floating pet |

@@ -7,12 +7,18 @@ export async function daemonUnary<T>(
   id: OperationId,
   pathParams: Record<string, string> = {},
   body?: unknown,
+  executionRuntimeId?: string | null,
 ): Promise<T> {
   const operation = OPERATIONS[id];
   if (operation.streaming) {
     throw new Error(`use daemonStreamStart for ${id}`);
   }
-  return invoke<T>("daemon_unary", { operation: id, pathParams, body });
+  return invoke<T>("daemon_unary", {
+    operation: id,
+    pathParams,
+    body,
+    executionRuntimeId: executionRuntimeId?.trim() || null,
+  });
 }
 
 export async function daemonStreamStart(

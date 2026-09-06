@@ -793,6 +793,20 @@ Current federation inventory slice:
   strings without learning a URL, host path, driver transport, credential, or
   ambient principal identity.
 
+Current user-placement slice:
+
+- Home resolves Browser and Computer choices from that authorized capability
+  inventory and stores an exact runtime id per world family. A stale explicit
+  choice stays visible and fails closed instead of falling back.
+- The unary daemon bridge can route a generated operation through the existing
+  authenticated transport for an exact paired runtime. URLs and credentials
+  remain below the client-facing selection boundary.
+- Browser worlds persist their owning runtime beside the opaque world id. Every
+  lifecycle, navigation, observation, screenshot, and human-input request uses
+  that binding; changing the creation target does not retarget an active world.
+- Computer readiness follows the selected runtime, while an open live view
+  captures the exact runtime, driver, and desktop session it began with.
+
 Implementation:
 
 - Extend authorized execution inventory with world-driver capabilities.

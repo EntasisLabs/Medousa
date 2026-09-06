@@ -7,6 +7,7 @@
     type ComputerPermissionReport,
     type ComputerWorldControlState,
   } from "$lib/daemon";
+  import { executionTargets } from "$lib/stores/executionTargets.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { isTauri } from "$lib/window";
   import { Eye, RefreshCw } from "@lucide/svelte";
@@ -36,21 +37,42 @@
   let readiness = $state<ComputerDriverReadiness[]>([]);
   let loading = $state(false);
   let error = $state<string | null>(null);
-  let watchingDriverId = $state<string | null>(null);
+  let targetRuntimeId = $state<string | null>(null);
+  let watching = $state<{
+    runtimeId: string;
+    runtimeLabel: string;
+    readiness: ComputerDriverReadiness;
+  } | null>(null);
   let requestGeneration = 0;
 
-  const workshopLabel = $derived(workshops.activeLabel);
-  const localWorkshop = $derived(workshops.activeWorkshop?.kind === "local");
-  const watching = $derived(
-    readiness.find((row) => row.driver.driver_id === watchingDriverId) ?? null,
+  const computerTargets = $derived(executionTargets.worldTargets("computer"));
+  const workshopLabel = $derived(
+    executionTargets.runtimeLabel(targetRuntimeId) ?? "Unavailable workshop",
+  );
+  const targetIsLocalWorkshop = $derived(
+    targetRuntimeId === executionTargets.inventory?.parent_runtime_id &&
+      workshops.activeWorkshop?.kind === "local",
   );
 
-  async function refresh(workshopId = workshops.activeWorkshopId) {
+  async function refresh(
+    workshopId = workshops.activeWorkshopId,
+    options: { forceInventory?: boolean } = {},
+  ) {
     const generation = ++requestGeneration;
     loading = true;
     error = null;
     try {
-      const next = await loadComputerDriverReadiness();
+      await executionTargets.refresh({ force: options.forceInventory });
+      if (generation !== requestGeneration || workshopId !== workshops.activeWorkshopId) return;
+      const runtimeId = executionTargets.worldRuntimeId("computer");
+      targetRuntimeId = runtimeId;
+      if (!runtimeId) {
+        readiness = [];
+        return;
+      }
+      const next = await loadComputerDriverReadiness(
+        executionTargets.transportRuntimeId(runtimeId),
+      );
       if (generation !== requestGeneration || workshopId !== workshops.activeWorkshopId) return;
       readiness = next;
     } catch (cause) {
@@ -66,16 +88,26 @@
 
   $effect(() => {
     const workshopId = workshops.activeWorkshopId;
-    watchingDriverId = null;
+    watching = null;
+    targetRuntimeId = null;
     if (!isTauri()) {
       loading = false;
       return;
     }
-    void refresh(workshopId);
+    executionTargets.activateWorkshopScope(workshopId);
+    void refresh(workshopId, { forceInventory: true });
     return () => {
       requestGeneration += 1;
     };
   });
+
+  function selectTarget(runtimeId: string) {
+    const id = runtimeId.trim();
+    if (!id || id === targetRuntimeId) return;
+    executionTargets.setWorldRuntimeId("computer", id);
+    targetRuntimeId = id;
+    void refresh();
+  }
 
   function permissionFor(
     row: ComputerDriverReadiness,
@@ -135,6 +167,7 @@
   }
 
   function updateControl(control: ComputerWorldControlState) {
+    if (!watching || watching.runtimeId !== targetRuntimeId) return;
     readiness = readiness.map((row) =>
       row.driver.driver_id === control.driver_id ? { ...row, control } : row,
     );
@@ -146,7 +179,7 @@
     <div>
       <h3 id="computer-control-title" class="settings-subsection-heading">Computer</h3>
       <p class="settings-subsection-lead">
-        Readiness on {workshopLabel}. Checking never opens a system permission prompt.
+        Choose which workshop owns the desktop. Checking never opens a system permission prompt.
       </p>
     </div>
     {#if isTauri()}
@@ -156,12 +189,34 @@
         aria-label="Refresh computer readiness"
         title="Refresh computer readiness"
         disabled={loading}
-        onclick={() => void refresh()}
+        onclick={() => void refresh(workshops.activeWorkshopId, { forceInventory: true })}
       >
         <RefreshCw size={14} strokeWidth={1.8} class={loading ? "animate-spin" : ""} aria-hidden="true" />
       </button>
     {/if}
   </div>
+
+  {#if isTauri()}
+    <label class="computer-target-row">
+      <span>
+        <span class="computer-permission-title">Computer workshop</span>
+        <span class="computer-permission-hint">New desktop views and actions stay on this runtime</span>
+      </span>
+      <select
+        aria-label="Computer workshop"
+        value={targetRuntimeId ?? ""}
+        disabled={loading && computerTargets.length === 0}
+        onchange={(event) => selectTarget(event.currentTarget.value)}
+      >
+        {#if targetRuntimeId && executionTargets.worldSelectionUnavailable("computer")}
+          <option value={targetRuntimeId}>{workshopLabel} · unavailable</option>
+        {/if}
+        {#each computerTargets as target (target.runtime_id)}
+          <option value={target.runtime_id}>{target.label}</option>
+        {/each}
+      </select>
+    </label>
+  {/if}
 
   {#if !isTauri()}
     <p class="workshop-faint text-xs">Connect through Medousa to inspect this workshop.</p>
@@ -171,9 +226,13 @@
     <p class="settings-danger-callout text-xs leading-relaxed" role="status">{error}</p>
   {:else if readiness.length === 0}
     <div class="computer-empty">
-      <span class="text-sm font-medium text-surface-100">Computer control isn’t running</span>
+      <span class="text-sm font-medium text-surface-100">
+        {targetRuntimeId ? `Computer control isn’t running on ${workshopLabel}` : "No authorized computer workshop"}
+      </span>
       <span class="workshop-faint mt-0.5 block text-xs">
-        {#if localWorkshop}
+        {#if !targetRuntimeId}
+          Grant Browser & computer worlds to a paired workshop, or install Computer control locally.
+        {:else if targetIsLocalWorkshop}
           Install Computer control in Settings → Packages, then restart the workshop.
         {:else}
           Install Computer control on {workshopLabel}, then restart its daemon.
@@ -233,7 +292,14 @@
                   title={canWatch(row)
                     ? `Watch ${row.driver.display_name || "this computer"}`
                     : "Controls & text and Focused-window pixels must both be ready"}
-                  onclick={() => (watchingDriverId = row.driver.driver_id)}
+                  onclick={() => {
+                    if (!targetRuntimeId) return;
+                    watching = {
+                      runtimeId: targetRuntimeId,
+                      runtimeLabel: workshopLabel,
+                      readiness: row,
+                    };
+                  }}
                 >
                   <Eye size={13} strokeWidth={1.9} aria-hidden="true" />
                   Watch
@@ -249,8 +315,12 @@
 
 <ComputerWatchSheet
   open={Boolean(watching)}
-  readiness={watching}
-  onClose={() => (watchingDriverId = null)}
+  readiness={watching?.readiness ?? null}
+  executionRuntimeId={watching
+    ? executionTargets.transportRuntimeId(watching.runtimeId)
+    : null}
+  workshopLabel={watching?.runtimeLabel ?? "Workshop"}
+  onClose={() => (watching = null)}
   onControlChange={updateControl}
 />
 
@@ -261,11 +331,46 @@
 
   .computer-heading,
   .computer-driver-heading,
-  .computer-permission {
+  .computer-permission,
+  .computer-target-row {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 0.75rem;
+  }
+
+  .computer-target-row {
+    margin: 0.7rem 0 0.6rem;
+    align-items: center;
+    border: 1px solid rgb(var(--color-surface-500) / 0.26);
+    border-radius: 0.65rem;
+    padding: 0.65rem 0.75rem;
+    background: rgb(var(--color-surface-900) / 0.2);
+  }
+
+  .computer-target-row > span {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 0.12rem;
+  }
+
+  .computer-target-row select {
+    max-width: min(46%, 14rem);
+    min-height: 1.9rem;
+    flex: 0 1 auto;
+    border: 1px solid rgb(var(--color-surface-500) / 0.28);
+    border-radius: 0.5rem;
+    padding: 0.3rem 1.65rem 0.3rem 0.5rem;
+    background-color: rgb(var(--color-surface-800) / 0.5);
+    color: rgb(var(--theme-text-secondary));
+    font-size: 0.72rem;
+  }
+
+  .computer-target-row select:focus-visible {
+    outline: 2px solid rgb(var(--color-primary-400) / 0.58);
+    outline-offset: 2px;
   }
 
   .computer-refresh {
@@ -351,6 +456,18 @@
 
   .computer-permission + .computer-permission {
     border-top: 1px solid rgb(var(--color-surface-500) / 0.18);
+  }
+
+  @media (max-width: 520px) {
+    .computer-target-row {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .computer-target-row select {
+      width: 100%;
+      max-width: none;
+    }
   }
 
   .computer-watch-row {

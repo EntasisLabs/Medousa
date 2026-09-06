@@ -5,7 +5,7 @@ import type {
 
 export type BrowserSurfaceSource =
   | { kind: "device" }
-  | { kind: "workshop"; worldId: string };
+  | { kind: "workshop"; worldId: string; runtimeId: string };
 
 export interface BrowserSourcePreference {
   source: BrowserSurfaceSource;
@@ -16,14 +16,21 @@ export interface BrowserSourcePreference {
 export function chooseBrowserSurfaceSource(
   worlds: IsolatedBrowserWorld[],
   preference: BrowserSourcePreference | null,
+  runtimeId: string,
 ): BrowserSurfaceSource {
   const preferredSource = preference?.source;
+  const preferredRuntimeId =
+    preferredSource?.kind === "workshop" ? preferredSource.runtimeId : null;
   const preferredWorld =
     preferredSource?.kind === "workshop"
       ? worlds.find((world) => world.world_id === preferredSource.worldId)
       : null;
-  if (preferredWorld) {
-    return { kind: "workshop", worldId: preferredWorld.world_id };
+  if (preferredWorld && preferredRuntimeId) {
+    return {
+      kind: "workshop",
+      worldId: preferredWorld.world_id,
+      runtimeId: preferredRuntimeId,
+    };
   }
 
   const newlyAttached = [...worlds]
@@ -35,7 +42,7 @@ export function chooseBrowserSurfaceSource(
     )
     .sort((left, right) => right.updated_at_ms - left.updated_at_ms)[0];
   if (newlyAttached) {
-    return { kind: "workshop", worldId: newlyAttached.world_id };
+    return { kind: "workshop", worldId: newlyAttached.world_id, runtimeId };
   }
 
   return { kind: "device" };

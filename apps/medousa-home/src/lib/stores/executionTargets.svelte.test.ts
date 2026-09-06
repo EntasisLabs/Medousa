@@ -103,4 +103,21 @@ describe("ExecutionTargetStore", () => {
       store.worldTargets("computer", { agentOnly: true }).map((target) => target.runtime_id),
     ).toEqual(["runtime-mac-mini"]);
   });
+
+  it("pins an exact world workshop and never replaces a stale choice", async () => {
+    const store = new ExecutionTargetStore(async () => inventory());
+    store.activateWorkshopScope("personal-world-test");
+    await store.refresh();
+
+    expect(store.worldRuntimeId("browser")).toBe("runtime-mac-mini");
+    expect(store.worldRuntimeLabel("browser")).toBe("Mac mini");
+
+    store.setWorldRuntimeId("browser", "runtime-offline");
+    expect(store.worldRuntimeId("browser")).toBe("runtime-offline");
+    expect(store.worldRuntimeLabel("browser")).toBe("runtime-offline");
+    expect(store.worldSelectionUnavailable("browser")).toBe(true);
+    expect(store.transportRuntimeId(store.worldRuntimeId("browser"))).toBe(
+      "runtime-offline",
+    );
+  });
 });

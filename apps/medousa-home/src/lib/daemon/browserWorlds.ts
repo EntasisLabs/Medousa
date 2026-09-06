@@ -84,9 +84,14 @@ export type BrowserHumanInput =
 
 type WorldResponse = { ok: boolean; world: IsolatedBrowserWorld };
 
-export async function listIsolatedBrowserWorlds(): Promise<IsolatedBrowserWorld[]> {
+export async function listIsolatedBrowserWorlds(
+  executionRuntimeId?: string | null,
+): Promise<IsolatedBrowserWorld[]> {
   const response = await daemonUnary<{ ok: boolean; worlds: IsolatedBrowserWorld[] }>(
     "browser.worlds.isolated.get",
+    {},
+    undefined,
+    executionRuntimeId,
   );
   return response.worlds ?? [];
 }
@@ -95,7 +100,7 @@ export async function createIsolatedBrowserWorld(input?: {
   displayName?: string;
   profile?: BrowserWorldProfile;
   initialUrl?: string;
-}): Promise<IsolatedBrowserWorld> {
+}, executionRuntimeId?: string | null): Promise<IsolatedBrowserWorld> {
   const response = await daemonUnary<WorldResponse>(
     "browser.worlds.isolated.post",
     {},
@@ -105,14 +110,20 @@ export async function createIsolatedBrowserWorld(input?: {
       initial_url: input?.initialUrl ?? "about:blank",
       headless: true,
     },
+    executionRuntimeId,
   );
   return response.world;
 }
 
-export async function getIsolatedBrowserWorld(worldId: string): Promise<IsolatedBrowserWorld> {
+export async function getIsolatedBrowserWorld(
+  worldId: string,
+  executionRuntimeId?: string | null,
+): Promise<IsolatedBrowserWorld> {
   const response = await daemonUnary<WorldResponse>(
     "browser.worlds.isolated.by_world_id.get",
     { world_id: worldId },
+    undefined,
+    executionRuntimeId,
   );
   return response.world;
 }
@@ -127,11 +138,13 @@ export async function setIsolatedBrowserWorldLifecycle(
     | "attach_view"
     | "detach_view"
     | "stop",
+  executionRuntimeId?: string | null,
 ): Promise<IsolatedBrowserWorld> {
   const response = await daemonUnary<WorldResponse>(
     "browser.worlds.isolated.by_world_id.lifecycle.post",
     { world_id: worldId },
     { action },
+    executionRuntimeId,
   );
   return response.world;
 }
@@ -139,11 +152,13 @@ export async function setIsolatedBrowserWorldLifecycle(
 export async function navigateIsolatedBrowserWorld(
   worldId: string,
   url: string,
+  executionRuntimeId?: string | null,
 ): Promise<IsolatedBrowserWorld> {
   const response = await daemonUnary<WorldResponse>(
     "browser.worlds.isolated.by_world_id.navigate.post",
     { world_id: worldId },
     { url },
+    executionRuntimeId,
   );
   return response.world;
 }
@@ -151,11 +166,13 @@ export async function navigateIsolatedBrowserWorld(
 export async function observeIsolatedBrowserWorld(
   worldId: string,
   sinceRevision?: number,
+  executionRuntimeId?: string | null,
 ): Promise<BrowserObservation> {
   const response = await daemonUnary<{ ok: boolean; observation: BrowserObservation }>(
     "browser.worlds.isolated.by_world_id.observe.post",
     { world_id: worldId },
     { since_revision: sinceRevision ?? null, max_nodes: 64 },
+    executionRuntimeId,
   );
   return response.observation;
 }
@@ -164,6 +181,7 @@ export async function screenshotIsolatedBrowserWorld(
   worldId: string,
   observation: BrowserObservation,
   maxWidth: number,
+  executionRuntimeId?: string | null,
 ): Promise<BrowserScreenshot> {
   const response = await daemonUnary<{ ok: boolean; screenshot: BrowserScreenshot }>(
     "browser.worlds.isolated.by_world_id.screenshot.post",
@@ -173,6 +191,7 @@ export async function screenshotIsolatedBrowserWorld(
       expected_observation_revision: observation.revision,
       max_width: maxWidth,
     },
+    executionRuntimeId,
   );
   return response.screenshot;
 }
@@ -181,6 +200,7 @@ export async function inputIsolatedBrowserWorld(
   worldId: string,
   observation: BrowserObservation,
   input: BrowserHumanInput,
+  executionRuntimeId?: string | null,
 ): Promise<IsolatedBrowserWorld> {
   const response = await daemonUnary<WorldResponse>(
     "browser.worlds.isolated.by_world_id.input.post",
@@ -190,6 +210,7 @@ export async function inputIsolatedBrowserWorld(
       expected_observation_revision: observation.revision,
       ...input,
     },
+    executionRuntimeId,
   );
   return response.world;
 }
