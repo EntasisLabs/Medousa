@@ -27,8 +27,11 @@ pub fn execution_tool_domain(tool_name: &str) -> &'static str {
     match tool_name {
         "cognition_turn" => "turn",
         name if name.starts_with("cognition_utility_") => "utility",
-        name if name.starts_with("cognition_web_") || name.starts_with("cognition_browser_") => {
-            "web"
+        name if name.starts_with("cognition_web_") => "web",
+        name if name.starts_with("cognition_browser_")
+            || name.starts_with("cognition_computer_") =>
+        {
+            "world"
         }
         name if name.starts_with("cognition_coder_shell_")
             || name.starts_with("cognition_shell_session_") =>
@@ -1556,5 +1559,58 @@ mod tests {
 
         policy.enabled = false;
         assert!(policy.advertised_execution_capabilities(now).is_empty());
+    }
+
+    #[test]
+    fn governed_world_tools_require_the_explicit_world_domain() {
+        assert_eq!(execution_tool_domain("cognition_web_search"), "web");
+        assert_eq!(execution_tool_domain("cognition_browser_snapshot"), "world");
+        assert_eq!(execution_tool_domain("cognition_computer_act"), "world");
+
+        let (store, root) = test_store();
+        store
+            .update_policy(
+                "peer-a",
+                "pairing-1",
+                PeerExecutionPolicyUpdate {
+                    preset: PeerExecutionPolicyPreset::Custom,
+                    assistant_work: Some(true),
+                    allowed_tool_domains: Some(BTreeSet::from([
+                        "turn".to_string(),
+                        "world".to_string(),
+                    ])),
+                    ..Default::default()
+                },
+                "local:operator",
+            )
+            .expect("save world policy");
+        let requested_domains = ["turn", "world"];
+        let requested_tools = ["cognition_turn", "cognition_computer_snapshot"];
+        let grant = store
+            .admit_assistant_work(AssistantWorkAdmission {
+                peer_device_id: "peer-a",
+                peer_pairing_id: "pairing-1",
+                origin_runtime_id: "runtime-peer",
+                destination_runtime_id: "runtime-local",
+                parent_session_id: "session-1",
+                bot_id: None,
+                work_id: "work-world",
+                correlation_id: "correlation-world",
+                worker_intent: "research",
+                project_id: None,
+                requested_tool_domains: &requested_domains,
+                requested_tool_names: &requested_tools,
+                request_expires_at: Utc::now() + chrono::Duration::minutes(5),
+                legacy_task_request_granted: false,
+            })
+            .expect("evaluate world policy")
+            .expect("admit world tools");
+        assert!(grant.effective_tool_domains.contains(&"world".to_string()));
+        assert!(
+            grant
+                .effective_tool_names
+                .contains(&"cognition_computer_snapshot".to_string())
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 }

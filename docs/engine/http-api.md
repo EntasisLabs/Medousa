@@ -882,7 +882,22 @@ particular lane. Reducing or revoking a scope cancels active remote workers that
 require the removed authority; completed results retain the grant and policy
 revision under which they ran.
 
+The `custom` policy keeps governed browser/computer tools in an explicit
+`world` tool domain. Ordinary web search remains in `web`; granting Assistant
+work or web access does not silently grant browser identity or desktop
+control.
+
 ## Explicit daemon delegation
+
+`GET /v1/execution-targets` returns the local authorized execution inventory.
+The signed `POST /v1/mesh/execution-target` probe supplies the same sanitized
+target entry for a paired destination. In addition to worker capabilities,
+entries may advertise mechanical world-driver capability strings under
+`world.browser.*` and `world.computer.*`. Those values describe colocated
+drivers and never constitute authority. A destination includes them in a peer
+probe only when its current directional policy admits Assistant or Coder work
+and the explicit `world` tool domain; disabled, expired, legacy, and ordinary
+Assistant-work policies expose none.
 
 `POST /v1/mesh/tasks` is a native-only daemon-to-daemon route. It requires all
 of the following: an authenticated pairing bearer, an explicit `task.request`

@@ -18,7 +18,12 @@ function inventory(): ExecutionTargetInventory {
       {
         runtime_id: "runtime-mac-mini",
         label: "Mac mini",
-        capabilities: ["assistant.work", "shell.execute"],
+        capabilities: [
+          "assistant.work",
+          "shell.execute",
+          "world.browser",
+          "world.computer",
+        ],
         user_selectable: true,
         agent_selectable: true,
       },
@@ -84,5 +89,18 @@ describe("ExecutionTargetStore", () => {
     expect(store.transportRuntimeId("runtime-phone")).toBeNull();
     expect(store.transportRuntimeId("runtime-mac-mini")).toBe("runtime-mac-mini");
     expect(store.transportRuntimeId("runtime-offline")).toBe("runtime-offline");
+  });
+
+  it("filters world placement by mechanical capability and agent authority", async () => {
+    const store = new ExecutionTargetStore(async () => inventory());
+    store.activateWorkshopScope("personal-test");
+    await store.refresh();
+
+    expect(store.worldTargets("browser").map((target) => target.runtime_id)).toEqual([
+      "runtime-mac-mini",
+    ]);
+    expect(
+      store.worldTargets("computer", { agentOnly: true }).map((target) => target.runtime_id),
+    ).toEqual(["runtime-mac-mini"]);
   });
 });

@@ -1022,6 +1022,8 @@ async fn start_daemon() -> Result<()> {
                 10,
             ),
         )),
+        computer_drivers: state.computer_drivers.clone(),
+        isolated_browser_available: true,
     };
     declared = declared
         .merge(medousa::workspace_handlers::workspace_surface().with_state(

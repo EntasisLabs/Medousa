@@ -1,8 +1,13 @@
 //! Location-neutral workshop worker request contract.
 
+use std::collections::BTreeSet;
 use std::fmt;
 
 use chrono::{DateTime, Utc};
+use medousa_world::{
+    WorldDriverCapability, WorldDriverKind, WorldDriverRegistration, WorldOwnership,
+    WorldSurfaceKind,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
@@ -18,6 +23,120 @@ pub use crate::daemon_api::{ExecutionTargetRequirements, ExecutionTargetSelectio
 
 pub const UNKNOWN_EXECUTION_RUNTIME_ID: &str = "unknown";
 pub const EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION: u32 = 1;
+
+/// Mechanical world-driver capabilities carried by the existing authorized
+/// execution-target inventory. These strings describe what is colocated with
+/// a workshop; they never grant a caller authority to use it.
+pub fn world_driver_execution_capabilities(
+    registrations: &[WorldDriverRegistration],
+    isolated_browser_available: bool,
+) -> BTreeSet<String> {
+    let mut capabilities = BTreeSet::new();
+    if isolated_browser_available {
+        extend_world_driver_capabilities(
+            &mut capabilities,
+            WorldDriverKind::IsolatedBrowser,
+            WorldSurfaceKind::Browser,
+            WorldOwnership::Owned,
+            &[
+                WorldDriverCapability::SemanticObservation,
+                WorldDriverCapability::PixelObservation,
+                WorldDriverCapability::Navigation,
+                WorldDriverCapability::Interaction,
+                WorldDriverCapability::GuardedBatch,
+                WorldDriverCapability::HumanTakeover,
+                WorldDriverCapability::PersistentProfile,
+            ]
+            .into_iter()
+            .collect(),
+        );
+    }
+    for registration in registrations {
+        extend_world_driver_capabilities(
+            &mut capabilities,
+            registration.kind,
+            registration.surface,
+            registration.ownership,
+            &registration.capabilities,
+        );
+    }
+    capabilities
+}
+
+fn extend_world_driver_capabilities(
+    output: &mut BTreeSet<String>,
+    kind: WorldDriverKind,
+    surface: WorldSurfaceKind,
+    ownership: WorldOwnership,
+    capabilities: &BTreeSet<WorldDriverCapability>,
+) {
+    let family = match surface {
+        WorldSurfaceKind::Browser => "browser",
+        WorldSurfaceKind::Desktop
+        | WorldSurfaceKind::Application
+        | WorldSurfaceKind::Terminal
+        | WorldSurfaceKind::Composite => "computer",
+    };
+    output.insert(format!("world.{family}"));
+    output.insert(format!(
+        "world.{family}.surface.{}",
+        world_surface_name(surface)
+    ));
+    output.insert(format!(
+        "world.{family}.ownership.{}",
+        world_ownership_name(ownership)
+    ));
+    output.insert(format!(
+        "world.{family}.driver.{}",
+        world_driver_kind_name(kind)
+    ));
+    for capability in capabilities {
+        output.insert(format!(
+            "world.{family}.capability.{}",
+            world_driver_capability_name(*capability)
+        ));
+    }
+}
+
+const fn world_surface_name(surface: WorldSurfaceKind) -> &'static str {
+    match surface {
+        WorldSurfaceKind::Browser => "browser",
+        WorldSurfaceKind::Desktop => "desktop",
+        WorldSurfaceKind::Application => "application",
+        WorldSurfaceKind::Terminal => "terminal",
+        WorldSurfaceKind::Composite => "composite",
+    }
+}
+
+const fn world_ownership_name(ownership: WorldOwnership) -> &'static str {
+    match ownership {
+        WorldOwnership::Owned => "owned",
+        WorldOwnership::Managed => "managed",
+        WorldOwnership::Attached => "attached",
+    }
+}
+
+const fn world_driver_kind_name(kind: WorldDriverKind) -> &'static str {
+    match kind {
+        WorldDriverKind::EmbeddedBrowser => "embedded_browser",
+        WorldDriverKind::BrowserExtension => "browser_extension",
+        WorldDriverKind::MobileBrowser => "mobile_browser",
+        WorldDriverKind::IsolatedBrowser => "isolated_browser",
+        WorldDriverKind::NativeDesktop => "native_desktop",
+    }
+}
+
+const fn world_driver_capability_name(capability: WorldDriverCapability) -> &'static str {
+    match capability {
+        WorldDriverCapability::SemanticObservation => "semantic_observation",
+        WorldDriverCapability::PixelObservation => "pixel_observation",
+        WorldDriverCapability::Navigation => "navigation",
+        WorldDriverCapability::Interaction => "interaction",
+        WorldDriverCapability::GuardedBatch => "guarded_batch",
+        WorldDriverCapability::HumanTakeover => "human_takeover",
+        WorldDriverCapability::PersistentProfile => "persistent_profile",
+    }
+}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -397,6 +516,37 @@ mod tests {
         }))
         .expect("spawn");
         assert!(spawn.execution_target.is_none());
+    }
+
+    #[test]
+    fn world_driver_capabilities_are_scoped_to_surface_and_mechanics() {
+        let native = WorldDriverRegistration {
+            driver_id: medousa_world::WorldDriverId::new("driver:computer:test"),
+            kind: WorldDriverKind::NativeDesktop,
+            surface: WorldSurfaceKind::Desktop,
+            ownership: WorldOwnership::Attached,
+            transport: medousa_world::WorldDriverTransport::LocalSidecar,
+            capabilities: [
+                WorldDriverCapability::SemanticObservation,
+                WorldDriverCapability::Interaction,
+                WorldDriverCapability::HumanTakeover,
+            ]
+            .into_iter()
+            .collect(),
+            display_name: Some("Test desktop".to_string()),
+        };
+
+        let capabilities = world_driver_execution_capabilities(&[native], true);
+
+        assert!(capabilities.contains("world.browser"));
+        assert!(capabilities.contains("world.browser.driver.isolated_browser"));
+        assert!(capabilities.contains("world.browser.capability.persistent_profile"));
+        assert!(capabilities.contains("world.computer"));
+        assert!(capabilities.contains("world.computer.surface.desktop"));
+        assert!(capabilities.contains("world.computer.ownership.attached"));
+        assert!(capabilities.contains("world.computer.driver.native_desktop"));
+        assert!(capabilities.contains("world.computer.capability.human_takeover"));
+        assert!(!capabilities.contains("world.computer.capability.navigation"));
     }
 
     #[test]

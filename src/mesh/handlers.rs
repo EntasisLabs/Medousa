@@ -46,6 +46,10 @@ pub struct MeshApiState {
     pub local_device_id: String,
     pub execution_policies: Arc<PeerExecutionPolicyStore>,
     pub delegated_task_executor: Option<Arc<dyn super::task::DelegatedTaskExecutor>>,
+    /// Mechanical world drivers colocated with this destination. The signed
+    /// target probe exposes them only through the caller's directional policy.
+    pub computer_drivers: Arc<crate::computer_driver::ComputerDriverBroker>,
+    pub isolated_browser_available: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -739,8 +743,16 @@ async fn describe_execution_target(
         .map_err(internal)?
         .policy;
     let now = chrono::Utc::now();
-    let capabilities = policy.advertised_execution_capabilities(now);
-    let user_selectable = capabilities.contains("assistant.work");
+    let mut capabilities = policy.advertised_execution_capabilities(now);
+    let user_selectable =
+        capabilities.contains("assistant.work") || capabilities.contains("coder.work");
+    if user_selectable && policy.allowed_tool_domains.contains("world") {
+        let computer_drivers = state.computer_drivers.registrations().await;
+        capabilities.extend(crate::workshop_contract::world_driver_execution_capabilities(
+            &computer_drivers,
+            state.isolated_browser_available,
+        ));
+    }
     let response = ExecutionTargetProbeResponse {
         schema_version: EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION,
         target: ExecutionTargetInventoryEntry {

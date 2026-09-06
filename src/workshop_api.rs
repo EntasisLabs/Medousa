@@ -464,14 +464,25 @@ struct LocalWorkshopExecution {
 impl WorkshopExecutionTarget for LocalWorkshopExecution {
     async fn candidates(&self) -> stasis::prelude::Result<Vec<ExecutionTargetCandidate>> {
         let runtime_id = self.scheduler.execution_runtime_id();
+        let computer_drivers = match crate::daemon::computer_driver_host::global_computer_broker() {
+            Some(broker) => broker.registrations().await,
+            None => Vec::new(),
+        };
+        let mut capabilities = stasis::domain::runtime::placement::WorkerCapabilities::any()
+            .node_id(&runtime_id)
+            .platform(std::env::consts::OS)
+            .architecture(std::env::consts::ARCH)
+            .with_capability("assistant.work")
+            .with_capability("coder.work");
+        capabilities.capabilities.extend(
+            crate::workshop_contract::world_driver_execution_capabilities(
+                &computer_drivers,
+                crate::daemon::isolated_browser_host::global_host().is_some(),
+            ),
+        );
         Ok(vec![ExecutionTargetCandidate::local(
             runtime_id.clone(),
-            stasis::domain::runtime::placement::WorkerCapabilities::any()
-                .node_id(&runtime_id)
-                .platform(std::env::consts::OS)
-                .architecture(std::env::consts::ARCH)
-                .with_capability("assistant.work")
-                .with_capability("coder.work"),
+            capabilities,
         )])
     }
 

@@ -458,7 +458,7 @@ mod tests {
     #[test]
     fn destination_grant_compiles_only_exact_named_tools() {
         let now = chrono::Utc::now();
-        let grant = TaskExecutionGrant {
+        let mut grant = TaskExecutionGrant {
             schema_version: crate::peer_execution_policy::TASK_EXECUTION_GRANT_SCHEMA_VERSION,
             grant_id: "grant-1".to_string(),
             peer_device_id: "peer-1".to_string(),
@@ -498,5 +498,12 @@ mod tests {
         assert!(!names.contains("cognition_utility_time_now"));
         assert!(!names.contains("cognition_web_search"));
         assert!(!names.contains("cognition_shell_run"));
+
+        grant.effective_tool_names.clear();
+        grant.effective_tool_domains = vec!["turn".to_string(), "world".to_string()];
+        let names = remote_delegated_tool_ceiling_for_grant(Some(&grant));
+        assert!(!names.contains("cognition_browser_snapshot"));
+        assert!(!names.contains("cognition_computer_snapshot"));
+        assert!(!names.contains("cognition_computer_act"));
     }
 }

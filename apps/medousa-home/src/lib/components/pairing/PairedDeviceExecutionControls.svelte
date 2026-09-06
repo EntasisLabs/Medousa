@@ -26,6 +26,7 @@
   let hostShell = $state(initial.hostShell);
   let coderWork = $state(initial.coderWork);
   let workEnvironmentMaterialization = $state(initial.workEnvironmentMaterialization);
+  let worldAccess = $state(initial.allowedToolDomains?.includes("world") ?? false);
   let allowAgentTargeting = $state(initial.allowAgentTargeting);
   let networkPolicy = $state<PeerNetworkPolicy>(initial.networkPolicy);
   let projectIds = $state(joinValues(initial.allowedProjectIds));
@@ -47,6 +48,12 @@
 
   function parseValues(value: string): string[] {
     return [...new Set(value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean))];
+  }
+
+  function customToolDomains(): string[] {
+    const values = parseValues(toolDomains).filter((domain) => domain !== "world");
+    if (worldAccess) values.push("world");
+    return values;
   }
 
   function dateInputValue(value: string | null | undefined): string {
@@ -112,7 +119,7 @@
               networkPolicy,
               allowedProjectIds,
               allowedRootRefs: parseValues(rootRefs),
-              allowedToolDomains: parseValues(toolDomains),
+              allowedToolDomains: customToolDomains(),
               allowedMcpServerIds: parseValues(mcpServerIds),
               allowedSecretRefs: parseValues(secretRefs),
             }
@@ -188,6 +195,7 @@
             <label><input type="checkbox" bind:checked={sandboxExecution} /> Sandbox execution</label>
             <label><input type="checkbox" bind:checked={hostShell} /> Host shell</label>
             <label><input type="checkbox" bind:checked={coderWork} /> Coder work</label>
+            <label><input type="checkbox" bind:checked={worldAccess} /> Browser & computer worlds</label>
             <label>
               <input type="checkbox" bind:checked={workEnvironmentMaterialization} /> Work environments
             </label>
@@ -213,7 +221,11 @@
           </label>
           <label class="peer-execution-field">
             <span>Tool domains</span>
-            <input class="input text-sm" placeholder="turn, utility, web" bind:value={toolDomains} />
+            <input
+              class="input text-sm"
+              placeholder="turn, utility, web, world"
+              bind:value={toolDomains}
+            />
           </label>
           <label class="peer-execution-field">
             <span>MCP server ids</span>

@@ -90,7 +90,10 @@ Delegation is separate from pairing and portal selection:
    the paired device, and choose its **Allowed on this workshop** permission.
    **Connected only** grants no execution; **Assistant work** grants the bounded
    assistant lane. Sandboxed, approved-project, and custom scopes remain
-   independently selectable and never imply host shell or secrets.
+   independently selectable and never imply host shell, governed browser or
+   computer access, or secrets. To let explicitly delegated work use a browser
+   or desktop owned by this workshop, choose **Custom**, enable **Browser &
+   computer worlds**, and keep only the other scopes you intend to grant.
 2. On the phone, keep Personal selected. Open the paired workshop's edit
    actions under **Settings → Connection**, then choose **Use for delegated
    work**.

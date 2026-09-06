@@ -1,6 +1,6 @@
 # Runtime-owned worlds
 
-> **Status:** Active — architecture locked; Phases 1–5 core outcomes implemented; Phase 6 is next
+> **Status:** Active — architecture locked; Phases 1–5 core outcomes implemented; Phase 6 in progress
 >
 > **Date:** 2026-09-04
 >
@@ -774,6 +774,24 @@ Suggested commit boundary:
 
 **Outcome:** Worlds run on an explicitly selected workshop and survive client,
 agent, and network lifecycle changes.
+
+Current federation inventory slice:
+
+- The existing execution-target inventory now carries normalized
+  `world.browser.*` and `world.computer.*` capabilities derived from the
+  concrete drivers colocated with each workshop. Isolated-browser
+  provisioning and registered native drivers use the same vocabulary.
+- Signed peer target probes include those mechanics only when the destination's
+  current directional policy admits Assistant or Coder work plus the explicit
+  `world` tool domain. Pairing, legacy task grants, ordinary web access, expired
+  policy, and disabled policy expose no world authority.
+- Browser/computer cognition tools now compile into the distinct `world`
+  domain rather than inheriting the safe `web` domain. Exact destination grants
+  remain the final tool ceiling, while Home exposes one calm advanced toggle
+  for granting that domain.
+- Local and remote candidate matching can require the normalized capability
+  strings without learning a URL, host path, driver transport, credential, or
+  ambient principal identity.
 
 Implementation:
 

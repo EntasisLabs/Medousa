@@ -328,6 +328,12 @@ not persist the returned user code or attempt to obtain daemon token material.
 
 ## `runtime()`
 
+The generated `execution_targets.get` operation returns the sanitized target
+inventory. Capability values beginning with `world.browser.` or
+`world.computer.` describe destination-local driver mechanics; callers must
+not treat them as grants. Signed peer inventory is already filtered by the
+destination's current execution policy.
+
 | Method | HTTP | Types |
 |--------|------|-------|
 | `agent_modes()` | `GET /v1/agent-modes` | `AgentModeListResponse` |

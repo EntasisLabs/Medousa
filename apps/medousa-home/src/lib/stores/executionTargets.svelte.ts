@@ -13,6 +13,7 @@ const STORAGE_PREFIX = "medousa-home-worker-targets-v1";
 const MAX_REMEMBERED_SESSIONS = 100;
 
 type SelectionMap = Record<string, ExecutionTargetSelection>;
+export type WorldExecutionFamily = "browser" | "computer";
 
 function normalizedSelection(value: unknown): ExecutionTargetSelection | null {
   if (!value || typeof value !== "object") return null;
@@ -144,6 +145,16 @@ export class ExecutionTargetStore {
 
   agentTargets(): ExecutionTargetInventoryEntry[] {
     return (this.inventory?.targets ?? []).filter((target) => target.agent_selectable);
+  }
+
+  worldTargets(
+    family: WorldExecutionFamily,
+    options: { agentOnly?: boolean } = {},
+  ): ExecutionTargetInventoryEntry[] {
+    const required = `world.${family}`;
+    return (options.agentOnly ? this.agentTargets() : this.userTargets()).filter((target) =>
+      target.capabilities.includes(required),
+    );
   }
 
   defaultRuntimeId(): string | null {
