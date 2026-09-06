@@ -67,7 +67,11 @@ focused-window pixels, and foreground-input readiness independently. This
 check is safe to refresh: it reports the workshop computer's current operating
 system permissions without opening a permission prompt. When you are viewing a
 remote workshop, the status and guidance belong to that remote computer—not to
-the phone or desktop running the Medousa window.
+the phone or desktop running the Medousa window. Choose **Watch** for a bounded
+live view of that workshop's focused window. **Take control** immediately fences
+queued Medousa actions; use the target computer directly, then choose **Return
+to Medousa** when it may resume. Closing the view does not silently change who
+has control.
 
 Need model weights next? Use the link to **Connection → Extras** (private brain
 panel) or **Settings → Models**, then download Gemma.

@@ -1,13 +1,15 @@
 <script lang="ts">
+  import ComputerWatchSheet from "$lib/components/settings/ComputerWatchSheet.svelte";
   import {
     loadComputerDriverReadiness,
     type ComputerDriverReadiness,
     type ComputerPermissionKind,
     type ComputerPermissionReport,
+    type ComputerWorldControlState,
   } from "$lib/daemon";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { isTauri } from "$lib/window";
-  import { RefreshCw } from "@lucide/svelte";
+  import { Eye, RefreshCw } from "@lucide/svelte";
 
   const permissions: Array<{
     id: ComputerPermissionKind;
@@ -34,10 +36,14 @@
   let readiness = $state<ComputerDriverReadiness[]>([]);
   let loading = $state(false);
   let error = $state<string | null>(null);
+  let watchingDriverId = $state<string | null>(null);
   let requestGeneration = 0;
 
   const workshopLabel = $derived(workshops.activeLabel);
   const localWorkshop = $derived(workshops.activeWorkshop?.kind === "local");
+  const watching = $derived(
+    readiness.find((row) => row.driver.driver_id === watchingDriverId) ?? null,
+  );
 
   async function refresh(workshopId = workshops.activeWorkshopId) {
     const generation = ++requestGeneration;
@@ -60,6 +66,7 @@
 
   $effect(() => {
     const workshopId = workshops.activeWorkshopId;
+    watchingDriverId = null;
     if (!isTauri()) {
       loading = false;
       return;
@@ -111,6 +118,26 @@
       default:
         return platform?.trim() || "Native desktop";
     }
+  }
+
+  function canWatch(row: ComputerDriverReadiness): boolean {
+    return (
+      permissionFor(row, "accessibility")?.status === "granted" &&
+      permissionFor(row, "screen_capture")?.status === "granted"
+    );
+  }
+
+  function controlLabel(row: ComputerDriverReadiness): string {
+    if (row.control?.requester_has_control) return "You have control";
+    if (row.control?.holder === "human") return "Another person has control";
+    if (row.control && row.control.holder !== "available") return "Medousa is operating";
+    return "Ready to watch";
+  }
+
+  function updateControl(control: ComputerWorldControlState) {
+    readiness = readiness.map((row) =>
+      row.driver.driver_id === control.driver_id ? { ...row, control } : row,
+    );
   }
 </script>
 
@@ -194,12 +221,38 @@
                 </div>
               {/each}
             </div>
+            {#if row.preflight}
+              <div class="computer-watch-row">
+                <span>
+                  <span class="computer-permission-title">Live view</span>
+                  <span class="computer-permission-hint">{controlLabel(row)}</span>
+                </span>
+                <button
+                  type="button"
+                  disabled={!canWatch(row)}
+                  title={canWatch(row)
+                    ? `Watch ${row.driver.display_name || "this computer"}`
+                    : "Controls & text and Focused-window pixels must both be ready"}
+                  onclick={() => (watchingDriverId = row.driver.driver_id)}
+                >
+                  <Eye size={13} strokeWidth={1.9} aria-hidden="true" />
+                  Watch
+                </button>
+              </div>
+            {/if}
           {/if}
         </article>
       {/each}
     </div>
   {/if}
 </section>
+
+<ComputerWatchSheet
+  open={Boolean(watching)}
+  readiness={watching}
+  onClose={() => (watchingDriverId = null)}
+  onControlChange={updateControl}
+/>
 
 <style>
   .computer-band {
@@ -298,6 +351,46 @@
 
   .computer-permission + .computer-permission {
     border-top: 1px solid rgb(var(--color-surface-500) / 0.18);
+  }
+
+  .computer-watch-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    border-top: 1px solid rgb(var(--color-surface-500) / 0.22);
+    padding: 0.65rem 0.85rem;
+  }
+
+  .computer-watch-row > span {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.12rem;
+  }
+
+  .computer-watch-row button {
+    display: inline-flex;
+    min-height: 1.9rem;
+    flex: none;
+    align-items: center;
+    gap: 0.3rem;
+    border-radius: 0.5rem;
+    background: rgb(var(--color-surface-700) / 0.55);
+    padding: 0.35rem 0.55rem;
+    font-size: 0.68rem;
+    font-weight: 580;
+    color: rgb(var(--color-surface-100));
+  }
+
+  .computer-watch-row button:hover:not(:disabled) {
+    background: rgb(var(--color-primary-500) / 0.16);
+    color: rgb(var(--color-primary-200));
+  }
+
+  .computer-watch-row button:disabled {
+    cursor: not-allowed;
+    opacity: 0.42;
   }
 
   .computer-permission-copy {

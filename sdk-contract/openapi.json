@@ -13504,6 +13504,66 @@
         }
       }
     },
+    "/v1/computer/drivers/{driver_id}/control": {
+      "post": {
+        "operationId": "computer.drivers.by_driver_id.control.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "driver_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "COMPUTER_DRIVERS_BY_DRIVER_ID_CONTROL_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "computer.drivers.by_driver_id.control.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "computer.drivers.by_driver_id.control.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "computer.drivers.by_driver_id.control.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
     "/v1/computer/drivers/{driver_id}/observe": {
       "post": {
         "operationId": "computer.drivers.by_driver_id.observe.post",
@@ -13616,6 +13676,66 @@
           "browser_policy": "exact_origin",
           "capabilities": [
             "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/computer/drivers/{driver_id}/watch": {
+      "post": {
+        "operationId": "computer.drivers.by_driver_id.watch.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "driver_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "COMPUTER_DRIVERS_BY_DRIVER_ID_WATCH_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "computer.drivers.by_driver_id.watch.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "computer.drivers.by_driver_id.watch.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "computer.drivers.by_driver_id.watch.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "admin.execute"
           ],
           "credential_scheme": "bearer",
           "feature_profile": "core",

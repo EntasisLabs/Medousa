@@ -12,24 +12,21 @@ use medousa_computer_bridge::{
     COMPUTER_DRIVER_PROTOCOL_VERSION, ComputerActionReceipt, ComputerActionRequest,
     ComputerDriverPreflight, ComputerDriverRequest, ComputerDriverRequestEnvelope,
     ComputerDriverResponse, ComputerDriverResponseEnvelope, ComputerDriverResponseResult,
-    ComputerObservation, ComputerObservationRequest, MAX_COMPUTER_DRIVER_MESSAGE_BYTES,
-    ComputerScreenshotCapture, ComputerScreenshotRequest,
+    ComputerObservation, ComputerObservationRequest, ComputerScreenshotCapture,
+    ComputerScreenshotRequest, MAX_COMPUTER_DRIVER_MESSAGE_BYTES,
 };
-use medousa_world::{WorldDriverId, WorldDriverRegistration};
 #[cfg(target_os = "macos")]
 use medousa_world::{
-    WorldDriverCapability, WorldDriverKind, WorldDriverTransport, WorldOwnership,
-    WorldSurfaceKind,
+    WorldDriverCapability, WorldDriverKind, WorldDriverTransport, WorldOwnership, WorldSurfaceKind,
 };
+use medousa_world::{WorldDriverId, WorldDriverRegistration};
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::computer_driver::{
-    ComputerDriver, ComputerDriverActionError, ComputerDriverBroker,
-};
+use crate::computer_driver::{ComputerDriver, ComputerDriverActionError, ComputerDriverBroker};
 use crate::paths::medousa_data_dir;
 
 #[cfg(target_os = "macos")]
@@ -180,9 +177,7 @@ pub async fn register_native_computer_driver(
     Ok(Some(driver_id))
 }
 
-pub fn register_global_computer_broker(
-    broker: Arc<ComputerDriverBroker>,
-) -> Result<(), String> {
+pub fn register_global_computer_broker(broker: Arc<ComputerDriverBroker>) -> Result<(), String> {
     GLOBAL_COMPUTER_BROKER
         .set(broker)
         .map_err(|_| "native computer broker is already registered".to_string())
@@ -205,9 +200,10 @@ fn native_registration() -> Option<WorldDriverRegistration> {
                 WorldDriverCapability::SemanticObservation,
                 WorldDriverCapability::PixelObservation,
                 WorldDriverCapability::Interaction,
+                WorldDriverCapability::HumanTakeover,
             ]
-                .into_iter()
-                .collect(),
+            .into_iter()
+            .collect(),
             display_name: Some("macOS Accessibility".to_string()),
         })
     }
@@ -294,13 +290,10 @@ impl SidecarComputerDriver {
                 .as_mut()
                 .expect("computer sidecar process")
                 .exchange(&encoded);
-            let response = match tokio::time::timeout(
-                std::time::Duration::from_secs(10),
-                exchange,
-            )
-            .await
-            .map_err(|_| "native computer sidecar request timed out".to_string())
-            .and_then(|response| response)
+            let response = match tokio::time::timeout(std::time::Duration::from_secs(10), exchange)
+                .await
+                .map_err(|_| "native computer sidecar request timed out".to_string())
+                .and_then(|response| response)
             {
                 Ok(response) => response,
                 Err(error) if attempt == 0 => {
@@ -345,9 +338,7 @@ impl SidecarComputerDriver {
             ComputerDriverRequest::Act { request },
         );
         let encoded = serde_json::to_vec(&envelope).map_err(|error| {
-            ComputerDriverActionError::failed(format!(
-                "serialize computer sidecar action: {error}"
-            ))
+            ComputerDriverActionError::failed(format!("serialize computer sidecar action: {error}"))
         })?;
         if encoded.len() > MAX_COMPUTER_DRIVER_MESSAGE_BYTES {
             return Err(ComputerDriverActionError::failed(
@@ -514,10 +505,7 @@ impl ComputerSidecarProcess {
         })
     }
 
-    async fn exchange(
-        &mut self,
-        encoded: &[u8],
-    ) -> Result<ComputerDriverResponseEnvelope, String> {
+    async fn exchange(&mut self, encoded: &[u8]) -> Result<ComputerDriverResponseEnvelope, String> {
         if let Some(status) = self
             .child
             .try_wait()
@@ -583,6 +571,11 @@ mod tests {
             assert_eq!(registration.driver_id.as_str(), MACOS_DRIVER_ID);
             assert_eq!(registration.transport, WorldDriverTransport::LocalSidecar);
             assert_eq!(registration.kind, WorldDriverKind::NativeDesktop);
+            assert!(
+                registration
+                    .capabilities
+                    .contains(&WorldDriverCapability::HumanTakeover)
+            );
         }
         #[cfg(not(target_os = "macos"))]
         assert!(registration.is_none());

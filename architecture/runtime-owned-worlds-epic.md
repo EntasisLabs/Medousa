@@ -1,6 +1,6 @@
 # Runtime-owned worlds
 
-> **Status:** Active — architecture locked; Phases 1–4 implemented; Phase 5 macOS observation driver in progress
+> **Status:** Active — architecture locked; Phases 1–5 core outcomes implemented; Phase 6 is next
 >
 > **Date:** 2026-09-04
 >
@@ -505,9 +505,10 @@ Current local slice:
   pixel attachment so long turns stay memory-bounded.
 - Windows/Linux/mobile screenshot drivers, client hydration of binary
   artifacts, pushed console/network deltas, hardened isolated-world DOM
-  inspection, and the latency/pixel harness remain open before Phase 3 is
-  considered complete. Mobile and extension action transports remain
-  intentionally deferred to Phase 4.
+  inspection, and the latency/pixel harness remain cross-platform and
+  production-hardening follow-ups tracked with Phase 7. The core Phase 3
+  outcome is complete; mobile and extension action transport landed through
+  the instance-addressed Phase 4 path.
 
 Implementation:
 
@@ -718,7 +719,7 @@ Current macOS foreground fallback slice:
   intentionally one-shot so the remaining race window is bounded to the final
   local event post rather than an opaque interaction loop.
 
-Current Home readiness slice:
+Current Home control slice:
 
 - Runtime Controls reads driver inventory and permission preflight through the
   selected workshop daemon, so local and remote worlds use the same authority
@@ -728,9 +729,20 @@ Current Home readiness slice:
   foreground-input readiness separately. Missing packages, unavailable
   sidecars, and denied permissions stay visible instead of collapsing into a
   generic tool failure.
-- The native desktop remains explicitly `attached`. A visible takeover control
-  is deferred until attached-world lease fencing can make that control true;
-  Home does not present a button that only changes client-side state.
+- The native desktop remains explicitly `attached`. Home can open a bounded
+  focused-window view through the selected workshop, including from mobile or
+  another desktop. It keeps one replaceable frame and stops polling when the
+  view closes, so pixels do not accumulate in client state or transcripts.
+- Watch reuses the broker's latest exact semantic observation whenever possible
+  and backs off while an agent is between observations. Merely watching does not
+  overwrite the action fence that the agent is about to use.
+- **Take control** acquires a real human world lease, increments the canonical
+  generation, clears stale observations, and revalidates queued native actions
+  after their final async fence acquisition. **Return to Medousa** increments
+  the generation again, requiring a fresh agent observation and lease.
+- The control holder response is client-safe: Home can distinguish itself,
+  another human, Medousa, and availability without receiving another
+  principal's identity. Closing Home never silently releases human control.
 
 Implementation:
 
@@ -748,7 +760,7 @@ Implementation:
 
 Acceptance:
 
-- The user can watch and interrupt a daemon-owned desktop operation.
+- The user can watch and interrupt a daemon-governed attached desktop operation.
 - A supported accessibility action does not move the user's physical cursor.
 - Permission failure is diagnosed before a turn enters an action loop.
 - Browser-only work continues to use the browser adapter.

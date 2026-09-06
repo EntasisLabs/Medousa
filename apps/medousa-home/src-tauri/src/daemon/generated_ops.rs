@@ -168,10 +168,14 @@ pub enum DaemonOperation {
     ComponentsByComponentIdStorePut,
     #[serde(rename = "computer.drivers.by_driver_id.act.post")]
     ComputerDriversByDriverIdActPost,
+    #[serde(rename = "computer.drivers.by_driver_id.control.post")]
+    ComputerDriversByDriverIdControlPost,
     #[serde(rename = "computer.drivers.by_driver_id.observe.post")]
     ComputerDriversByDriverIdObservePost,
     #[serde(rename = "computer.drivers.by_driver_id.preflight.get")]
     ComputerDriversByDriverIdPreflightGet,
+    #[serde(rename = "computer.drivers.by_driver_id.watch.post")]
+    ComputerDriversByDriverIdWatchPost,
     #[serde(rename = "computer.drivers.get")]
     ComputerDriversGet,
     #[serde(rename = "continuations.lineage.by_turn_correlation_id.get")]
@@ -965,8 +969,10 @@ impl DaemonOperation {
             Self::ComponentsByComponentIdStoreKeysGet => "components.by_component_id.store.keys.get",
             Self::ComponentsByComponentIdStorePut => "components.by_component_id.store.put",
             Self::ComputerDriversByDriverIdActPost => "computer.drivers.by_driver_id.act.post",
+            Self::ComputerDriversByDriverIdControlPost => "computer.drivers.by_driver_id.control.post",
             Self::ComputerDriversByDriverIdObservePost => "computer.drivers.by_driver_id.observe.post",
             Self::ComputerDriversByDriverIdPreflightGet => "computer.drivers.by_driver_id.preflight.get",
+            Self::ComputerDriversByDriverIdWatchPost => "computer.drivers.by_driver_id.watch.post",
             Self::ComputerDriversGet => "computer.drivers.get",
             Self::ContinuationsLineageByTurnCorrelationIdGet => "continuations.lineage.by_turn_correlation_id.get",
             Self::ContinuationsStatusGet => "continuations.status.get",

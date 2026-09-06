@@ -402,21 +402,43 @@ not stop execution. After daemon restart, previously active worlds recover as
 ## Native computer drivers
 
 Native computer drivers are colocated workshop sidecars. Clients never connect
-to a sidecar directly: discovery, permission preflight, observation, and action
-remain behind daemon bearer authentication and the exact-origin boundary.
+to a sidecar directly: discovery, permission preflight, observation, viewing,
+control handoff, and action remain behind daemon bearer authentication and the
+exact-origin boundary.
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/v1/computer/drivers` | List native drivers registered by this workshop |
 | GET | `/v1/computer/drivers/{driver_id}/preflight` | Read permission state and the exact desktop session without prompting |
 | POST | `/v1/computer/drivers/{driver_id}/observe` | Capture a bounded semantic snapshot through world authority |
+| POST | `/v1/computer/drivers/{driver_id}/watch` | Return one bounded, redacted frame of the exact focused window |
 | POST | `/v1/computer/drivers/{driver_id}/act` | Perform one advertised action from the latest exact semantic snapshot |
+| POST | `/v1/computer/drivers/{driver_id}/control` | Take human control or return the desktop to Medousa |
 
 The observation body accepts `session_id`, optional `after_revision`, and
 optional `max_nodes` (default 2,048; maximum 4,096). The session must exactly
 match the latest preflight result. The daemon derives the desktop resource;
 clients cannot choose one. Observation requires `admin.execute`, while inventory
-and preflight require `WorkshopRead`.
+and preflight require `WorkshopRead`. Preflight also returns the daemon's
+current control generation and a client-safe holder state; it never returns a
+different principal's identity.
+
+The watch body accepts `session_id` and optional `max_width` (default 1,280;
+minimum 320; maximum 1,600). The daemon reuses the latest exact semantic fence
+when one exists, so watching does not replace an agent's observation. If no
+fence exists and a non-human operation is between observations, the route
+returns `409` and the client should retain its last bounded frame and retry.
+Raw PNG data is returned only to the authenticated native client, which keeps a
+single replaceable frame; it is not copied into the turn transcript or durable
+world provenance.
+
+The control body accepts the exact `session_id` plus `action` set to
+`take_control` or `return_to_medousa`. Taking control acquires an indefinite
+human lease, increments the canonical control generation, and clears the old
+observation fence. Queued non-human work therefore fails at its next governed
+action boundary. Returning control increments the generation again; Medousa
+must observe and acquire a fresh lease before acting. Both watch and control
+require `admin.execute`.
 
 The action body accepts `session_id`, `observation_generation`,
 `observation_revision`, `element_ref`, `action`, optional `value`, and optional
@@ -447,7 +469,8 @@ crosses world authority with an exact resource grant and control lease, then is
 dispatched as a background accessibility operation unless the exact node only
 advertised `foreground_click`. Action transport is never retried after dispatch
 ambiguity. `set_value` text is not copied into receipts or provenance. This
-slice exposes no arbitrary pointer coordinates or pixel-capture endpoint.
+slice exposes no arbitrary pointer coordinates. The watch endpoint only emits
+the redacted focused-window capture and does not accept interaction coordinates.
 
 ---
 

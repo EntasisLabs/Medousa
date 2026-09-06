@@ -55,7 +55,9 @@ Set `allow_high_risk=true` only when the operator explicitly requested an
 action on a target classified as sensitive or effectful. The daemon derives the
 governed desktop resource, rejects stale or disabled targets, consumes the
 snapshot fence before dispatch, and never retries an ambiguous action. Observe
-again before the next mutation.
+again before the next mutation. Native clients may use `watch` for one bounded,
+redacted focused-window frame and `control` to take or return a generation-fenced
+human lease; neither route talks to the sidecar directly.
 See [Native computer drivers](../engine/http-api.md#native-computer-drivers).
 
 Daemon delegation uses the generated native-only operation
