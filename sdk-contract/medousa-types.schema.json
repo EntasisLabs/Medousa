@@ -2713,6 +2713,494 @@
       "persistent_browser"
     ]
   },
+  "BrowserPresentationFrame": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "BrowserPresentationFrame",
+    "description": "Atomic presentation update. Keeping the semantic fence and pixels in one event prevents Home from pairing an observation with a different frame.",
+    "type": "object",
+    "required": [
+      "observation",
+      "schema_version",
+      "screenshot",
+      "world_id"
+    ],
+    "properties": {
+      "observation": {
+        "$ref": "#/definitions/BrowserPresentationObservation"
+      },
+      "schema_version": {
+        "type": "integer",
+        "format": "uint16",
+        "minimum": 0.0
+      },
+      "screenshot": {
+        "$ref": "#/definitions/BrowserPresentationScreenshot"
+      },
+      "world_id": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "BrowserPresentationObservation": {
+        "description": "The action fence Home needs from the daemon's semantic mirror. Raw DOM and accessibility nodes remain on the owning workshop.",
+        "type": "object",
+        "required": [
+          "captured_at_ms",
+          "document_id",
+          "full",
+          "revision",
+          "schema_version",
+          "tab_id",
+          "title",
+          "truncated",
+          "untrusted_content",
+          "url",
+          "viewport"
+        ],
+        "properties": {
+          "base_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "captured_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "document_id": {
+            "type": "string"
+          },
+          "full": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "tab_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "untrusted_content": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport": {
+            "$ref": "#/definitions/BrowserPresentationViewport"
+          }
+        }
+      },
+      "BrowserPresentationScreenshot": {
+        "description": "One redacted, size-capped viewport artifact paired to its observation.",
+        "type": "object",
+        "required": [
+          "byte_size",
+          "captured_at_ms",
+          "coordinate_frame",
+          "document_id",
+          "image_base64",
+          "image_height",
+          "image_width",
+          "mime",
+          "observation_revision",
+          "schema_version",
+          "sensitive_regions_redacted",
+          "sha256",
+          "tab_id",
+          "title",
+          "untrusted_content",
+          "url",
+          "viewport"
+        ],
+        "properties": {
+          "byte_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "captured_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "coordinate_frame": {
+            "type": "string"
+          },
+          "document_id": {
+            "type": "string"
+          },
+          "image_base64": {
+            "type": "string"
+          },
+          "image_height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "image_width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "mime": {
+            "type": "string"
+          },
+          "observation_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "sensitive_regions_redacted": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "tab_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "untrusted_content": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport": {
+            "$ref": "#/definitions/BrowserPresentationViewport"
+          }
+        }
+      },
+      "BrowserPresentationViewport": {
+        "type": "object",
+        "required": [
+          "device_scale_factor",
+          "height",
+          "scroll_x",
+          "scroll_y",
+          "width"
+        ],
+        "properties": {
+          "device_scale_factor": {
+            "type": "number",
+            "format": "double"
+          },
+          "height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "scroll_x": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "scroll_y": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      }
+    }
+  },
+  "BrowserPresentationObservation": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "BrowserPresentationObservation",
+    "description": "The action fence Home needs from the daemon's semantic mirror. Raw DOM and accessibility nodes remain on the owning workshop.",
+    "type": "object",
+    "required": [
+      "captured_at_ms",
+      "document_id",
+      "full",
+      "revision",
+      "schema_version",
+      "tab_id",
+      "title",
+      "truncated",
+      "untrusted_content",
+      "url",
+      "viewport"
+    ],
+    "properties": {
+      "base_revision": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "captured_at_ms": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "document_id": {
+        "type": "string"
+      },
+      "full": {
+        "type": "boolean"
+      },
+      "revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "schema_version": {
+        "type": "integer",
+        "format": "uint16",
+        "minimum": 0.0
+      },
+      "tab_id": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "truncated": {
+        "type": "boolean"
+      },
+      "untrusted_content": {
+        "type": "boolean"
+      },
+      "url": {
+        "type": "string"
+      },
+      "viewport": {
+        "$ref": "#/definitions/BrowserPresentationViewport"
+      }
+    },
+    "definitions": {
+      "BrowserPresentationViewport": {
+        "type": "object",
+        "required": [
+          "device_scale_factor",
+          "height",
+          "scroll_x",
+          "scroll_y",
+          "width"
+        ],
+        "properties": {
+          "device_scale_factor": {
+            "type": "number",
+            "format": "double"
+          },
+          "height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "scroll_x": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "scroll_y": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      }
+    }
+  },
+  "BrowserPresentationScreenshot": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "BrowserPresentationScreenshot",
+    "description": "One redacted, size-capped viewport artifact paired to its observation.",
+    "type": "object",
+    "required": [
+      "byte_size",
+      "captured_at_ms",
+      "coordinate_frame",
+      "document_id",
+      "image_base64",
+      "image_height",
+      "image_width",
+      "mime",
+      "observation_revision",
+      "schema_version",
+      "sensitive_regions_redacted",
+      "sha256",
+      "tab_id",
+      "title",
+      "untrusted_content",
+      "url",
+      "viewport"
+    ],
+    "properties": {
+      "byte_size": {
+        "type": "integer",
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "captured_at_ms": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "coordinate_frame": {
+        "type": "string"
+      },
+      "document_id": {
+        "type": "string"
+      },
+      "image_base64": {
+        "type": "string"
+      },
+      "image_height": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "image_width": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "mime": {
+        "type": "string"
+      },
+      "observation_revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "schema_version": {
+        "type": "integer",
+        "format": "uint16",
+        "minimum": 0.0
+      },
+      "sensitive_regions_redacted": {
+        "type": "integer",
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "sha256": {
+        "type": "string"
+      },
+      "tab_id": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "untrusted_content": {
+        "type": "boolean"
+      },
+      "url": {
+        "type": "string"
+      },
+      "viewport": {
+        "$ref": "#/definitions/BrowserPresentationViewport"
+      }
+    },
+    "definitions": {
+      "BrowserPresentationViewport": {
+        "type": "object",
+        "required": [
+          "device_scale_factor",
+          "height",
+          "scroll_x",
+          "scroll_y",
+          "width"
+        ],
+        "properties": {
+          "device_scale_factor": {
+            "type": "number",
+            "format": "double"
+          },
+          "height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "scroll_x": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "scroll_y": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      }
+    }
+  },
+  "BrowserPresentationViewport": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "BrowserPresentationViewport",
+    "type": "object",
+    "required": [
+      "device_scale_factor",
+      "height",
+      "scroll_x",
+      "scroll_y",
+      "width"
+    ],
+    "properties": {
+      "device_scale_factor": {
+        "type": "number",
+        "format": "double"
+      },
+      "height": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "scroll_x": {
+        "type": "integer",
+        "format": "int64"
+      },
+      "scroll_y": {
+        "type": "integer",
+        "format": "int64"
+      },
+      "width": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      }
+    }
+  },
   "CalendarDeleteResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "CalendarDeleteResponse",

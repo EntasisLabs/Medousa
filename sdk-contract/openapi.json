@@ -554,6 +554,16 @@
           "updated_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "world_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BotWorldBinding"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -606,6 +616,250 @@
           "secondary"
         ],
         "type": "string"
+      },
+      "BotWorldBinding": {
+        "description": "Explicit durable world selected by the Bot owner.",
+        "properties": {
+          "execution_runtime_id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/BotWorldBindingKind"
+          },
+          "world_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "execution_runtime_id",
+          "kind",
+          "world_id"
+        ],
+        "type": "object"
+      },
+      "BotWorldBindingKind": {
+        "description": "Durable world shape currently supported by Bot continuity.\n\nThis deliberately excludes attached human browser and desktop worlds. A Bot may retain only a daemon-owned isolated browser profile whose runtime can re-establish authority after a restart.",
+        "enum": [
+          "persistent_browser"
+        ],
+        "type": "string"
+      },
+      "BrowserPresentationFrame": {
+        "description": "Atomic presentation update. Keeping the semantic fence and pixels in one event prevents Home from pairing an observation with a different frame.",
+        "properties": {
+          "observation": {
+            "$ref": "#/components/schemas/BrowserPresentationObservation"
+          },
+          "schema_version": {
+            "format": "uint16",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "screenshot": {
+            "$ref": "#/components/schemas/BrowserPresentationScreenshot"
+          },
+          "world_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "observation",
+          "schema_version",
+          "screenshot",
+          "world_id"
+        ],
+        "title": "BrowserPresentationFrame",
+        "type": "object"
+      },
+      "BrowserPresentationObservation": {
+        "description": "The action fence Home needs from the daemon's semantic mirror. Raw DOM and accessibility nodes remain on the owning workshop.",
+        "properties": {
+          "base_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "captured_at_ms": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "document_id": {
+            "type": "string"
+          },
+          "full": {
+            "type": "boolean"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "schema_version": {
+            "format": "uint16",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "tab_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "untrusted_content": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport": {
+            "$ref": "#/components/schemas/BrowserPresentationViewport"
+          }
+        },
+        "required": [
+          "captured_at_ms",
+          "document_id",
+          "full",
+          "revision",
+          "schema_version",
+          "tab_id",
+          "title",
+          "truncated",
+          "untrusted_content",
+          "url",
+          "viewport"
+        ],
+        "type": "object"
+      },
+      "BrowserPresentationScreenshot": {
+        "description": "One redacted, size-capped viewport artifact paired to its observation.",
+        "properties": {
+          "byte_size": {
+            "format": "uint",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "captured_at_ms": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "coordinate_frame": {
+            "type": "string"
+          },
+          "document_id": {
+            "type": "string"
+          },
+          "image_base64": {
+            "type": "string"
+          },
+          "image_height": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "image_width": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "observation_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "schema_version": {
+            "format": "uint16",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "sensitive_regions_redacted": {
+            "format": "uint",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "tab_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "untrusted_content": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport": {
+            "$ref": "#/components/schemas/BrowserPresentationViewport"
+          }
+        },
+        "required": [
+          "byte_size",
+          "captured_at_ms",
+          "coordinate_frame",
+          "document_id",
+          "image_base64",
+          "image_height",
+          "image_width",
+          "mime",
+          "observation_revision",
+          "schema_version",
+          "sensitive_regions_redacted",
+          "sha256",
+          "tab_id",
+          "title",
+          "untrusted_content",
+          "url",
+          "viewport"
+        ],
+        "type": "object"
+      },
+      "BrowserPresentationViewport": {
+        "properties": {
+          "device_scale_factor": {
+            "format": "double",
+            "type": "number"
+          },
+          "height": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "scroll_x": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "scroll_y": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "width": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "device_scale_factor",
+          "height",
+          "scroll_x",
+          "scroll_y",
+          "width"
+        ],
+        "type": "object"
       },
       "CalendarAlarm": {
         "description": "Display alarm relative to event start (VALARM projection).",
@@ -1899,6 +2153,17 @@
               "string",
               "null"
             ]
+          },
+          "world_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BotWorldBinding"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Opt-in durable world continuity. Omission grants no world."
           }
         },
         "required": [
@@ -7185,6 +7450,10 @@
               "null"
             ]
           },
+          "clear_world_binding": {
+            "description": "Explicitly clear durable continuity. This cannot be combined with `world_binding`.",
+            "type": "boolean"
+          },
           "default_mode": {
             "anyOf": [
               {
@@ -7211,6 +7480,17 @@
               "string",
               "null"
             ]
+          },
+          "world_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BotWorldBinding"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set or replace durable world continuity. Omission preserves the current binding for compatibility with clients predating schema v2."
           }
         },
         "required": [
@@ -11297,6 +11577,77 @@
           "feature_profile": "core",
           "rate_limit_class": "read",
           "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/browser/worlds/isolated/{world_id}/presentation": {
+      "get": {
+        "operationId": "browser.worlds.isolated.by_world_id.presentation.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "world_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "itemSchema": {
+                  "$ref": "#/components/schemas/BrowserPresentationFrame"
+                },
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.presentation.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.presentation.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.presentation.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "stream",
+          "trust_group": "portal"
+        },
+        "x-medousa-stream": {
+          "heartbeatComments": true,
+          "itemSchema": {
+            "$ref": "#/components/schemas/BrowserPresentationFrame"
+          },
+          "lastEventId": false,
+          "replay": false,
+          "transport": "sse"
         }
       }
     },

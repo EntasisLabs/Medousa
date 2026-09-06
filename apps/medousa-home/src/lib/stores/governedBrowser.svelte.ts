@@ -5,6 +5,7 @@ import {
   inputIsolatedBrowserWorld,
   listIsolatedBrowserWorlds,
   navigateIsolatedBrowserWorld,
+  openIsolatedBrowserPresentation,
   observeIsolatedBrowserWorld,
   screenshotIsolatedBrowserWorld,
   setIsolatedBrowserWorldLifecycle,
@@ -13,6 +14,8 @@ import {
   type BrowserScreenshot,
   type IsolatedBrowserWorld,
 } from "$lib/daemon/browserWorlds";
+import type { DaemonEventConnection } from "$lib/daemon/daemonEventStream";
+import type { BrowserPresentationFrame } from "$lib/types/generated/daemon_api";
 import {
   chooseBrowserSurfaceSource,
   type BrowserSourcePreference,
@@ -24,8 +27,8 @@ import { activeWorkshopId, workshopScopedStorageKey } from "$lib/utils/workshopL
 const SOURCE_KEY = "medousa-browser-surface-v1";
 const IDLE_FRAME_MS = 850;
 const ACTIVE_FRAME_MS = 180;
-const HIDDEN_FRAME_MS = 2_500;
 const ACTIVE_WINDOW_MS = 2_000;
+const PRESENTATION_RETRY_MS = 5_000;
 const INITIAL_SCOPE_ID = activeWorkshopId();
 const INITIAL_PREFERENCE = readPreference(INITIAL_SCOPE_ID);
 
@@ -471,25 +474,94 @@ export class GovernedBrowserStore {
     if (source.kind !== "workshop" || source.worldId !== worldId) return () => {};
     const runtimeId = source.runtimeId;
     let active = true;
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let stream: DaemonEventConnection | null = null;
+    let connecting = false;
 
-    const loop = async () => {
-      if (
-        !active ||
-        this.source.kind !== "workshop" ||
-        this.source.worldId !== worldId ||
-        this.source.runtimeId !== runtimeId
-      ) return;
-      await this.refreshFrame(maxWidth());
-      if (!active) return;
-      const hidden = typeof document !== "undefined" && document.hidden;
-      const delay = hidden
-        ? HIDDEN_FRAME_MS
-        : Date.now() < this.fastUntil
-          ? ACTIVE_FRAME_MS
-          : IDLE_FRAME_MS;
-      timer = setTimeout(loop, delay);
+    const current = () =>
+      active &&
+      this.source.kind === "workshop" &&
+      this.source.worldId === worldId &&
+      this.source.runtimeId === runtimeId;
+    const hidden = () => typeof document !== "undefined" && document.hidden;
+    const stopFallback = () => {
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+      fallbackTimer = null;
     };
+    const startFallback = () => {
+      if (fallbackTimer || !current() || hidden()) return;
+      const loop = async () => {
+        fallbackTimer = null;
+        if (!current() || hidden() || stream) return;
+        await this.refreshFrame(maxWidth());
+        if (!current() || hidden() || stream) return;
+        const delay = Date.now() < this.fastUntil ? ACTIVE_FRAME_MS : IDLE_FRAME_MS;
+        fallbackTimer = setTimeout(loop, delay);
+      };
+      void loop();
+    };
+    const scheduleReconnect = () => {
+      if (reconnectTimer || !current() || hidden()) return;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        void connectStream();
+      }, PRESENTATION_RETRY_MS);
+    };
+    const connectStream = async () => {
+      if (connecting || stream || !current() || hidden()) return;
+      connecting = true;
+      this.frameLoading = !this.screenshot;
+      try {
+        const next = await openIsolatedBrowserPresentation({
+          worldId,
+          sinceRevision: this.observation?.revision,
+          maxWidth: maxWidth(),
+          executionRuntimeId: this.transportRuntimeId(runtimeId),
+          onOpen: stopFallback,
+          onFrame: (frame) => {
+            if (current()) this.applyPresentationFrame(frame, runtimeId, worldId);
+          },
+          onError: () => {
+            stream = null;
+            if (!current() || hidden()) return;
+            startFallback();
+            scheduleReconnect();
+          },
+        });
+        if (!current() || hidden() || next.closed) {
+          next.close();
+          if (current() && !hidden()) {
+            startFallback();
+            scheduleReconnect();
+          }
+        } else {
+          stream = next;
+        }
+      } catch {
+        if (current() && !hidden()) {
+          startFallback();
+          scheduleReconnect();
+        }
+      } finally {
+        connecting = false;
+        if (!stream && !this.screenshot) this.frameLoading = false;
+      }
+    };
+    const onVisibilityChange = () => {
+      if (hidden()) {
+        stream?.close();
+        stream = null;
+        stopFallback();
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+        return;
+      }
+      void connectStream();
+    };
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onVisibilityChange);
+    }
 
     void setIsolatedBrowserWorldLifecycle(
       worldId,
@@ -500,11 +572,17 @@ export class GovernedBrowserStore {
       .catch((error) => {
         this.error = `Could not attach browser view: ${messageFrom(error)}`;
       })
-      .finally(() => void loop());
+      .then(() => void connectStream());
 
     return () => {
       active = false;
-      if (timer) clearTimeout(timer);
+      stream?.close();
+      stream = null;
+      stopFallback();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+      }
       void setIsolatedBrowserWorldLifecycle(
         worldId,
         "detach_view",
@@ -517,6 +595,24 @@ export class GovernedBrowserStore {
 
   markInteractive() {
     this.fastUntil = Date.now() + ACTIVE_WINDOW_MS;
+  }
+
+  private applyPresentationFrame(
+    frame: BrowserPresentationFrame,
+    runtimeId: string,
+    worldId: string,
+  ) {
+    this.observation = frame.observation;
+    this.screenshot = frame.screenshot;
+    this.urlDraft = frame.observation.url === "about:blank" ? "" : frame.observation.url;
+    this.patchWorldIdentity(
+      runtimeId,
+      worldId,
+      frame.observation.url,
+      frame.observation.title,
+    );
+    this.frameLoading = false;
+    this.error = null;
   }
 
   private async refreshFrame(maxWidth: number): Promise<void> {

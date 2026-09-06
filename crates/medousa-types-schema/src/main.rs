@@ -187,6 +187,28 @@ fn main() {
     export_type!(schemas, BotSessionKind, "BotSessionKind");
     export_type!(schemas, BotWorldBindingKind, "BotWorldBindingKind");
     export_type!(schemas, BotWorldBinding, "BotWorldBinding");
+
+    // Governed browser presentation
+    export_type!(
+        schemas,
+        BrowserPresentationViewport,
+        "BrowserPresentationViewport"
+    );
+    export_type!(
+        schemas,
+        BrowserPresentationObservation,
+        "BrowserPresentationObservation"
+    );
+    export_type!(
+        schemas,
+        BrowserPresentationScreenshot,
+        "BrowserPresentationScreenshot"
+    );
+    export_type!(
+        schemas,
+        BrowserPresentationFrame,
+        "BrowserPresentationFrame"
+    );
     export_type!(schemas, BotProfile, "BotProfile");
     export_type!(schemas, BotSessionBinding, "BotSessionBinding");
     export_type!(schemas, CreateBotRequest, "CreateBotRequest");

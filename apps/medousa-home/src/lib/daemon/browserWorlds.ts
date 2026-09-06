@@ -1,4 +1,12 @@
 import { daemonUnary } from "./contractClient";
+import { getDaemonUrl } from "./client";
+import {
+  openDaemonEventStream,
+  type DaemonEventConnection,
+  type DaemonStreamFailure,
+} from "./daemonEventStream";
+import { operationPath } from "./opPath";
+import type { BrowserPresentationFrame } from "$lib/types/generated/daemon_api";
 
 export type BrowserWorldRunState = "starting" | "running" | "paused" | "stopped" | "failed";
 export type BrowserWorldControl = "agent" | "user" | "awaiting_operator";
@@ -194,6 +202,74 @@ export async function screenshotIsolatedBrowserWorld(
     executionRuntimeId,
   );
   return response.screenshot;
+}
+
+export interface BrowserPresentationStreamOptions {
+  worldId: string;
+  sinceRevision?: number;
+  maxWidth: number;
+  intervalMs?: number;
+  executionRuntimeId?: string | null;
+  onFrame(frame: BrowserPresentationFrame): void;
+  onOpen?(): void;
+  onError(error: DaemonStreamFailure): void;
+}
+
+/**
+ * Watch an isolated browser through one destination-owned stream. Every event
+ * pairs a semantic action fence with the exact redacted pixel artifact.
+ */
+export async function openIsolatedBrowserPresentation(
+  options: BrowserPresentationStreamOptions,
+): Promise<DaemonEventConnection> {
+  const pathParams = { world_id: options.worldId };
+  const query = {
+    ...(options.sinceRevision !== undefined
+      ? { since_revision: String(options.sinceRevision) }
+      : {}),
+    max_width: String(Math.max(320, Math.min(1280, Math.round(options.maxWidth || 960)))),
+    interval_ms: String(Math.max(100, Math.min(2500, Math.round(options.intervalMs ?? 250)))),
+  };
+  let connection: DaemonEventConnection | null = null;
+  let invalidFrame = false;
+  const opened = await openDaemonEventStream<BrowserPresentationFrame>({
+    operation: "browser.worlds.isolated.by_world_id.presentation.get",
+    pathParams,
+    query,
+    executionRuntimeId: options.executionRuntimeId,
+    browserEvent: "browser-frame",
+    browserUrl: async () => {
+      const base = (await getDaemonUrl()).replace(/\/$/, "");
+      const path = operationPath(
+        "browser.worlds.isolated.by_world_id.presentation.get",
+        pathParams,
+      );
+      return `${base}${path}?${new URLSearchParams(query).toString()}`;
+    },
+    onOpen: options.onOpen,
+    onError: options.onError,
+    onEvent: (frame) => {
+      const sameFence =
+        frame.world_id === options.worldId &&
+        frame.observation.document_id === frame.screenshot.document_id &&
+        frame.observation.revision === frame.screenshot.observation_revision;
+      if (!sameFence) {
+        invalidFrame = true;
+        connection?.close();
+        options.onError({
+          message: "Browser presentation returned a mismatched observation fence",
+          recoverable: false,
+          transport: "presentation",
+          stage: "validate",
+        });
+        return;
+      }
+      options.onFrame(frame);
+    },
+  });
+  connection = opened;
+  if (invalidFrame) opened.close();
+  return opened;
 }
 
 export async function inputIsolatedBrowserWorld(

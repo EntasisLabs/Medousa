@@ -4,15 +4,19 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   lifecycle: vi.fn(),
   navigate: vi.fn(),
+  observe: vi.fn(),
+  screenshot: vi.fn(),
+  presentation: vi.fn(),
 }));
 
 vi.mock("$lib/daemon/browserWorlds", () => ({
   listIsolatedBrowserWorlds: (...args: unknown[]) => mocks.list(...args),
   setIsolatedBrowserWorldLifecycle: (...args: unknown[]) => mocks.lifecycle(...args),
   navigateIsolatedBrowserWorld: (...args: unknown[]) => mocks.navigate(...args),
+  openIsolatedBrowserPresentation: (...args: unknown[]) => mocks.presentation(...args),
   createIsolatedBrowserWorld: vi.fn(),
-  observeIsolatedBrowserWorld: vi.fn(),
-  screenshotIsolatedBrowserWorld: vi.fn(),
+  observeIsolatedBrowserWorld: (...args: unknown[]) => mocks.observe(...args),
+  screenshotIsolatedBrowserWorld: (...args: unknown[]) => mocks.screenshot(...args),
   inputIsolatedBrowserWorld: vi.fn(),
 }));
 
@@ -21,6 +25,8 @@ vi.mock("$lib/utils/resolveBrowserDestination", () => ({
 }));
 
 import { GovernedBrowserStore } from "$lib/stores/governedBrowser.svelte";
+import type { BrowserPresentationStreamOptions } from "$lib/daemon/browserWorlds";
+import type { BrowserPresentationFrame } from "$lib/types/generated/daemon_api";
 
 function world(worldId: string) {
   return {
@@ -52,6 +58,9 @@ describe("GovernedBrowserStore runtime binding", () => {
     mocks.list.mockReset();
     mocks.lifecycle.mockReset();
     mocks.navigate.mockReset();
+    mocks.observe.mockReset();
+    mocks.screenshot.mockReset();
+    mocks.presentation.mockReset();
   });
 
   it("keeps an active world on its owning runtime when the creation target changes", async () => {
@@ -104,5 +113,81 @@ describe("GovernedBrowserStore runtime binding", () => {
 
     expect(store.selectedWorld).toBeNull();
     expect(store.turnWorldSelection).toBeNull();
+  });
+
+  it("renders one atomically paired destination stream instead of polling two endpoints", async () => {
+    const selected = world("world:remote");
+    const close = vi.fn();
+    let options: BrowserPresentationStreamOptions | undefined;
+    mocks.list.mockResolvedValue([selected]);
+    mocks.lifecycle.mockResolvedValue(selected);
+    mocks.presentation.mockImplementation(async (next: BrowserPresentationStreamOptions) => {
+      options = next;
+      next.onOpen?.();
+      return { close, closed: false };
+    });
+    const store = new GovernedBrowserStore();
+    await store.load("scope-test", {
+      runtimeId: "runtime-remote",
+      parentRuntimeId: "runtime-local",
+      runtimeLabels: { "runtime-remote": "Mac mini" },
+    });
+    await store.selectWorld(selected.world_id, "runtime-remote");
+
+    const stop = store.startPresentation(selected.world_id, () => 900);
+    await vi.waitFor(() => expect(mocks.presentation).toHaveBeenCalledOnce());
+
+    const viewport = {
+      width: 1280,
+      height: 900,
+      scroll_x: 0,
+      scroll_y: 0,
+      device_scale_factor: 1,
+    };
+    const frame: BrowserPresentationFrame = {
+      schema_version: 1,
+      world_id: selected.world_id,
+      observation: {
+        schema_version: 1,
+        tab_id: selected.tab_id!,
+        url: "https://example.com/",
+        title: "Example",
+        document_id: "doc-1",
+        revision: 4,
+        full: false,
+        viewport,
+        truncated: false,
+        captured_at_ms: 10,
+        untrusted_content: true,
+      },
+      screenshot: {
+        schema_version: 1,
+        tab_id: selected.tab_id!,
+        url: "https://example.com/",
+        title: "Example",
+        document_id: "doc-1",
+        observation_revision: 4,
+        viewport,
+        coordinate_frame: "css_viewport",
+        mime: "image/jpeg",
+        image_width: 900,
+        image_height: 633,
+        byte_size: 1234,
+        sha256: "abc",
+        sensitive_regions_redacted: 0,
+        captured_at_ms: 11,
+        untrusted_content: true,
+        image_base64: "frame",
+      },
+    };
+    options?.onFrame(frame);
+
+    expect(store.observation?.revision).toBe(4);
+    expect(store.screenshot?.image_base64).toBe("frame");
+    expect(store.activeTitle).toBe("Example");
+    expect(mocks.observe).not.toHaveBeenCalled();
+    expect(mocks.screenshot).not.toHaveBeenCalled();
+    stop();
+    expect(close).toHaveBeenCalledOnce();
   });
 });

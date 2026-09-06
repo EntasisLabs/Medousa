@@ -50,6 +50,7 @@ export const OPERATIONS = {
   "browser.worlds.isolated.by_world_id.lifecycle.post": { id: "browser.worlds.isolated.by_world_id.lifecycle.post", method: "POST", path: "/v1/browser/worlds/isolated/{world_id}/lifecycle", streaming: false },
   "browser.worlds.isolated.by_world_id.navigate.post": { id: "browser.worlds.isolated.by_world_id.navigate.post", method: "POST", path: "/v1/browser/worlds/isolated/{world_id}/navigate", streaming: false },
   "browser.worlds.isolated.by_world_id.observe.post": { id: "browser.worlds.isolated.by_world_id.observe.post", method: "POST", path: "/v1/browser/worlds/isolated/{world_id}/observe", streaming: false },
+  "browser.worlds.isolated.by_world_id.presentation.get": { id: "browser.worlds.isolated.by_world_id.presentation.get", method: "GET", path: "/v1/browser/worlds/isolated/{world_id}/presentation", streaming: true },
   "browser.worlds.isolated.by_world_id.screenshot.post": { id: "browser.worlds.isolated.by_world_id.screenshot.post", method: "POST", path: "/v1/browser/worlds/isolated/{world_id}/screenshot", streaming: false },
   "browser.worlds.isolated.get": { id: "browser.worlds.isolated.get", method: "GET", path: "/v1/browser/worlds/isolated", streaming: false },
   "browser.worlds.isolated.post": { id: "browser.worlds.isolated.post", method: "POST", path: "/v1/browser/worlds/isolated", streaming: false },

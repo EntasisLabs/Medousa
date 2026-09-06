@@ -935,6 +935,22 @@
       "trust_group": "portal"
     },
     {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "browser.worlds.isolated.by_world_id.presentation.get",
+      "path": "/v1/browser/worlds/isolated/{world_id}/presentation",
+      "rate_limit_class": "stream",
+      "stream_transport": "sse",
+      "streaming": true,
+      "trust_group": "portal"
+    },
+    {
       "body_limit": 8192,
       "bootstrap_public": false,
       "browser_policy": "exact_origin",

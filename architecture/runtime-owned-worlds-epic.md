@@ -1,6 +1,6 @@
 # Runtime-owned worlds
 
-> **Status:** Active — architecture locked; Phases 1–5 core outcomes implemented; Phase 6 in progress
+> **Status:** Active — architecture locked; Phases 1–6 core outcomes implemented; Phase 7 planned
 >
 > **Date:** 2026-09-04
 >
@@ -838,6 +838,20 @@ Current signed-intent execution slice:
 - Destination world-kernel grants use the worker principal and cannot outlive
   the destination-issued task grant. Isolated browser ownership is resolved
   only inside that exact task-local world boundary.
+
+Current durable closeout slice:
+
+- Bot profile schema v2 stores one explicit persistent-browser world/runtime
+  binding. Old profiles migrate with no world authority, duplicated Bots do
+  not inherit it, and an explicit per-turn selection always wins.
+- The owning destination may rehydrate only a persistent, agent-controlled
+  world whose stopped state was caused by workshop restart. Human takeover,
+  manual stop, pause, ordinary failure, and ephemeral worlds still require an
+  operator decision.
+- Home watches a remote isolated browser through one destination-owned SSE
+  projection. Each changed semantic revision is paired atomically with a
+  redacted, size-capped JPEG; hidden views close the stream and older or
+  interrupted daemons retain the bounded unary fallback.
 
 Implementation:
 

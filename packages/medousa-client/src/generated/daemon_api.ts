@@ -641,6 +641,56 @@ export interface SessionBotResponse {
   session_id: string;
 }
 
+export interface BrowserPresentationViewport {
+  device_scale_factor: number;
+  height: number;
+  scroll_x: number;
+  scroll_y: number;
+  width: number;
+}
+
+export interface BrowserPresentationObservation {
+  base_revision?: number | null;
+  captured_at_ms: number;
+  document_id: string;
+  full: boolean;
+  revision: number;
+  schema_version: number;
+  tab_id: string;
+  title: string;
+  truncated: boolean;
+  untrusted_content: boolean;
+  url: string;
+  viewport: BrowserPresentationViewport;
+}
+
+export interface BrowserPresentationScreenshot {
+  byte_size: number;
+  captured_at_ms: number;
+  coordinate_frame: string;
+  document_id: string;
+  image_base64: string;
+  image_height: number;
+  image_width: number;
+  mime: string;
+  observation_revision: number;
+  schema_version: number;
+  sensitive_regions_redacted: number;
+  sha256: string;
+  tab_id: string;
+  title: string;
+  untrusted_content: boolean;
+  url: string;
+  viewport: BrowserPresentationViewport;
+}
+
+export interface BrowserPresentationFrame {
+  observation: BrowserPresentationObservation;
+  schema_version: number;
+  screenshot: BrowserPresentationScreenshot;
+  world_id: string;
+}
+
 export type CodeProjectSource = "blank" | "repository";
 
 export interface StartSessionCodeProjectRequest {

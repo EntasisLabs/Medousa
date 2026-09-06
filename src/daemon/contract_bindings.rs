@@ -20,6 +20,9 @@ pub(crate) fn stream_binding(operation_id: &str) -> Option<(StreamTransport, &'s
         | "agents.sessions.by_agent_session_id.stream.get"
         | "ingest.by_stream_id.stream.get" => Some((StreamTransport::Sse, "TurnStreamEnvelopeV2")),
         "feeds.stream.get" => Some((StreamTransport::Sse, "FeedStreamEvent")),
+        "browser.worlds.isolated.by_world_id.presentation.get" => {
+            Some((StreamTransport::Sse, "BrowserPresentationFrame"))
+        }
         "environment.spec.stream.get" => Some((StreamTransport::Sse, "EnvironmentStreamEvent")),
         "workspace.stream.get" => Some((StreamTransport::Sse, "WorkspaceStreamEvent")),
         "local.models.download.by_job_id.events.get" => {

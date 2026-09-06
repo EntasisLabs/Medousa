@@ -385,6 +385,7 @@ agent-driven operations.
 | POST | `/v1/browser/worlds/isolated/{world_id}/lifecycle` | `pause`, `resume`, `takeover`, `return_to_agent`, `attach_view`, `detach_view`, or `stop` |
 | POST | `/v1/browser/worlds/isolated/{world_id}/navigate` | Navigate under human control to `http`, `https`, or `about:blank` |
 | POST | `/v1/browser/worlds/isolated/{world_id}/observe` | Capture a bounded semantic observation, optionally after a known revision |
+| GET | `/v1/browser/worlds/isolated/{world_id}/presentation` | Stream changed semantic fences paired with size-capped redacted viewport artifacts |
 | POST | `/v1/browser/worlds/isolated/{world_id}/screenshot` | Capture redacted pixels bound to an exact document and observation revision |
 | DELETE | `/v1/browser/worlds/isolated/{world_id}?delete_profile=false` | Stop and remove the world; ephemeral data is always deleted |
 
@@ -395,14 +396,23 @@ profile ids are explicit safe identifiers, not filesystem paths. The response's
 `InteractiveTurnRequest.surface.browser_driver_id`; the daemon does not fall
 back to a shared browser if that instance is unavailable. A detached view does
 not stop execution. After daemon restart, previously active worlds recover as
-`stopped` and require `resume`.
+`stopped`. Human views require an explicit `resume`; a Bot with an explicitly
+saved persistent-world binding may rehydrate that exact world at its next
+authorized action boundary.
+
+The presentation stream accepts optional `since_revision`, `max_width`, and
+`interval_ms` query parameters. It emits only when the semantic revision
+changes. Each event contains one observation and its matching redacted JPEG;
+the daemon reduces dimensions until the encoded artifact fits the stream's
+bounded frame budget.
 
 To make a resolved world eligible for a Bot or worker, an authenticated client
 may also include it in `InteractiveTurnRequest.surface.selected_worlds` as an
 exact `{ world_id, execution_runtime_id }` binding. Admission bounds,
 normalizes, and freezes the list. Models see and request only opaque world ids;
 the daemon keeps placement and rejects ids outside the admitted set or assigned
-to another runtime.
+to another runtime. A durable Bot binding remains opt-in and never propagates
+when the Bot is duplicated.
 
 ---
 

@@ -42,6 +42,8 @@ const MAX_URL_BYTES: usize = 8 * 1024;
 const MAX_ACTION_STEPS: usize = 16;
 const MAX_HUMAN_INPUT_TEXT_BYTES: usize = 32 * 1024;
 const MAX_SCREENSHOT_BYTES: usize = 12 * 1024 * 1024;
+/// Keeps the base64 JSON event below Home's 1 MiB native SSE frame ceiling.
+const MAX_PRESENTATION_SCREENSHOT_BYTES: usize = 700 * 1024;
 const MAX_WORLDS_PER_PROFILE: usize = 32;
 const MAX_CATALOG_WORLDS: usize = 256;
 const MAX_RUNNING_WORLDS: usize = 8;
@@ -918,8 +920,56 @@ impl IsolatedBrowserHost {
             tab_id,
             &observation,
             max_width.clamp(320, 1600),
+            ScreenshotEncoding::Png,
         )
         .await
+    }
+
+    /// Produce one atomic, bounded presentation frame only when the semantic
+    /// mirror advanced. The daemon owns both captures; Home never has to pair
+    /// two independently routed responses.
+    pub async fn presentation_frame(
+        &self,
+        owner_profile_id: &str,
+        world_id: &str,
+        since_revision: Option<u64>,
+        max_width: u32,
+    ) -> Result<Option<(BrowserObservation, BrowserScreenshotCapture)>, IsolatedBrowserError> {
+        let observation = self
+            .observe(owner_profile_id, world_id, since_revision, 64)
+            .await?;
+        if since_revision == Some(observation.revision) {
+            return Ok(None);
+        }
+
+        let (world, websocket_url, target_id) = self
+            .runtime_binding(owner_profile_id, world_id, false)
+            .await?;
+        let tab_id = world.tab_id.as_deref().ok_or_else(|| {
+            IsolatedBrowserError::Unavailable("isolated browser has no active page".to_string())
+        })?;
+        let mut width = max_width.clamp(320, 1280);
+        loop {
+            let screenshot = capture_screenshot(
+                &websocket_url,
+                &target_id,
+                tab_id,
+                &observation,
+                width,
+                ScreenshotEncoding::Jpeg { quality: 70 },
+            )
+            .await?;
+            if screenshot.byte_size <= MAX_PRESENTATION_SCREENSHOT_BYTES {
+                return Ok(Some((observation, screenshot)));
+            }
+            if width == 320 {
+                return Err(IsolatedBrowserError::Driver(format!(
+                    "browser presentation frame exceeds {} bytes at minimum width",
+                    MAX_PRESENTATION_SCREENSHOT_BYTES
+                )));
+            }
+            width = (width.saturating_mul(3) / 4).max(320);
+        }
     }
 
     pub async fn screenshot_for_driver(
@@ -2228,12 +2278,19 @@ fn observation_script(max_nodes: usize) -> String {
     )
 }
 
+#[derive(Clone, Copy)]
+enum ScreenshotEncoding {
+    Png,
+    Jpeg { quality: u8 },
+}
+
 async fn capture_screenshot(
     websocket_url: &str,
     target_id: &str,
     tab_id: &str,
     observation: &BrowserObservation,
     max_width: u32,
+    encoding: ScreenshotEncoding,
 ) -> Result<BrowserScreenshotCapture, IsolatedBrowserError> {
     let (mut connection, session_id) = connect_page(websocket_url, target_id).await?;
     let context_id = isolated_execution_context(&mut connection, &session_id).await?;
@@ -2249,22 +2306,30 @@ async fn capture_screenshot(
     let width = observation.viewport.width.max(1);
     let height = observation.viewport.height.max(1);
     let scale = (max_width as f64 / width as f64).min(1.0);
+    let (format, mime, quality) = match encoding {
+        ScreenshotEncoding::Png => ("png", "image/png", None),
+        ScreenshotEncoding::Jpeg { quality } => ("jpeg", "image/jpeg", Some(quality)),
+    };
+    let mut parameters = json!({
+        "format": format,
+        "fromSurface": true,
+        "captureBeyondViewport": false,
+        "clip": {
+            "x": observation.viewport.scroll_x.max(0),
+            "y": observation.viewport.scroll_y.max(0),
+            "width": width,
+            "height": height,
+            "scale": scale,
+        },
+    });
+    if let Some(quality) = quality {
+        parameters["quality"] = json!(quality);
+    }
     let captured = connection
         .call(
             Some(&session_id),
             "Page.captureScreenshot",
-            json!({
-                "format": "png",
-                "fromSurface": true,
-                "captureBeyondViewport": false,
-                "clip": {
-                    "x": observation.viewport.scroll_x.max(0),
-                    "y": observation.viewport.scroll_y.max(0),
-                    "width": width,
-                    "height": height,
-                    "scale": scale,
-                },
-            }),
+            parameters,
         )
         .await;
     let _ = evaluate(
@@ -2307,7 +2372,7 @@ async fn capture_screenshot(
         observation_revision: observation.revision,
         viewport: observation.viewport.clone(),
         coordinate_frame: "css_viewport".to_string(),
-        mime: "image/png".to_string(),
+        mime: mime.to_string(),
         image_width,
         image_height,
         byte_size: bytes.len(),

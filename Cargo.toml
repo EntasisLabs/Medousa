@@ -117,7 +117,7 @@ uuid = { version = "1", features = ["v4"] }
 dirs = { version = "5", optional = true }
 ratatui = { version = "0.30.0", optional = true }
 ratatui-image = { version = "11.0.2", default-features = false, features = ["crossterm"], optional = true }
-image = { version = "0.25.6", default-features = false, features = ["png"], optional = true }
+image = { version = "0.25.6", default-features = false, features = ["jpeg", "png"], optional = true }
 crossterm = { version = "0.28", features = ["event-stream"], optional = true }
 futures-util = { version = "0.3", optional = true }
 stasis-rs = { version = "0.10.0", default-features = false }

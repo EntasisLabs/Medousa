@@ -4,11 +4,18 @@ use std::time::Duration;
 
 use axum::extract::{Extension, Path, Query, State};
 use axum::http::StatusCode;
+use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
+use futures_util::Stream;
 use medousa_browser_lite::SearchResponse;
+use medousa_types::{
+    BROWSER_PRESENTATION_SCHEMA_VERSION, BrowserPresentationFrame,
+    BrowserPresentationObservation, BrowserPresentationScreenshot, BrowserPresentationViewport,
+};
 use medousa_world::WorldEffectClass;
 use serde::Deserialize;
+use std::convert::Infallible;
 use uuid::Uuid;
 
 use crate::browser_host_client::browser_host_healthy;
@@ -268,6 +275,170 @@ pub async fn observe_isolated_browser_world(
         "ok": true,
         "observation": observation,
     })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct IsolatedBrowserPresentationQuery {
+    #[serde(default)]
+    since_revision: Option<u64>,
+    #[serde(default = "default_presentation_width")]
+    max_width: u32,
+    #[serde(default = "default_presentation_interval_ms")]
+    interval_ms: u64,
+}
+
+fn default_presentation_width() -> u32 {
+    960
+}
+
+fn default_presentation_interval_ms() -> u64 {
+    250
+}
+
+/// Live projection of a daemon-owned browser. The destination captures the
+/// semantic action fence and redacted pixels atomically; Home only renders the
+/// bounded result and never becomes the world's authority.
+pub async fn stream_isolated_browser_world_presentation(
+    State(state): State<AppState>,
+    Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
+    Path(world_id): Path<String>,
+    Query(query): Query<IsolatedBrowserPresentationQuery>,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>> + use<>>, (StatusCode, String)> {
+    let profile_id = principal_profile_id(&principal);
+    let world = state
+        .isolated_browser
+        .get(&profile_id, &world_id)
+        .await
+        .map_err(isolated_browser_error)?;
+    if world.run_state
+        != crate::daemon::isolated_browser_host::IsolatedBrowserRunState::Running
+    {
+        return Err(isolated_browser_error(IsolatedBrowserError::Conflict(
+            "resume the isolated browser before watching it".to_string(),
+        )));
+    }
+
+    struct PresentationState {
+        host: std::sync::Arc<crate::daemon::isolated_browser_host::IsolatedBrowserHost>,
+        profile_id: String,
+        world_id: String,
+        since_revision: Option<u64>,
+        max_width: u32,
+        interval: Duration,
+        initial: bool,
+    }
+
+    let initial = PresentationState {
+        host: state.isolated_browser.clone(),
+        profile_id,
+        world_id,
+        since_revision: query.since_revision,
+        max_width: query.max_width.clamp(320, 1280),
+        interval: Duration::from_millis(query.interval_ms.clamp(100, 2_500)),
+        initial: true,
+    };
+    let stream = futures_util::stream::unfold(initial, |mut state| async move {
+        loop {
+            if state.initial {
+                state.initial = false;
+            } else {
+                tokio::time::sleep(state.interval).await;
+            }
+            match state
+                .host
+                .presentation_frame(
+                    &state.profile_id,
+                    &state.world_id,
+                    state.since_revision,
+                    state.max_width,
+                )
+                .await
+            {
+                Ok(Some((observation, screenshot))) => {
+                    state.since_revision = Some(observation.revision);
+                    let revision = observation.revision;
+                    let payload = serde_json::to_string(&presentation_frame(
+                        &state.world_id,
+                        observation,
+                        screenshot,
+                    ))
+                    .unwrap_or_else(|_| "{}".to_string());
+                    let event = Event::default()
+                        .event("browser-frame")
+                        .id(revision.to_string())
+                        .data(payload);
+                    return Some((Ok(event), state));
+                }
+                Ok(None) => continue,
+                Err(error) => {
+                    tracing::debug!(
+                        world_id = %state.world_id,
+                        error = %error,
+                        "isolated browser presentation stream ended"
+                    );
+                    return None;
+                }
+            }
+        }
+    });
+
+    Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
+}
+
+fn presentation_viewport(
+    viewport: &medousa_browser_bridge::BrowserObservationViewport,
+) -> BrowserPresentationViewport {
+    BrowserPresentationViewport {
+        width: viewport.width,
+        height: viewport.height,
+        scroll_x: viewport.scroll_x,
+        scroll_y: viewport.scroll_y,
+        device_scale_factor: viewport.device_scale_factor,
+    }
+}
+
+fn presentation_frame(
+    world_id: &str,
+    observation: medousa_browser_bridge::BrowserObservation,
+    screenshot: medousa_browser_bridge::BrowserScreenshotCapture,
+) -> BrowserPresentationFrame {
+    BrowserPresentationFrame {
+        schema_version: BROWSER_PRESENTATION_SCHEMA_VERSION,
+        world_id: world_id.to_string(),
+        observation: BrowserPresentationObservation {
+            schema_version: observation.schema_version,
+            tab_id: observation.tab_id,
+            url: observation.url,
+            title: observation.title,
+            document_id: observation.document_id,
+            revision: observation.revision,
+            base_revision: observation.base_revision,
+            full: observation.full,
+            viewport: presentation_viewport(&observation.viewport),
+            truncated: observation.truncated,
+            captured_at_ms: observation.captured_at_ms,
+            untrusted_content: observation.untrusted_content,
+        },
+        screenshot: BrowserPresentationScreenshot {
+            schema_version: screenshot.schema_version,
+            tab_id: screenshot.tab_id,
+            url: screenshot.url,
+            title: screenshot.title,
+            document_id: screenshot.document_id,
+            observation_revision: screenshot.observation_revision,
+            viewport: presentation_viewport(&screenshot.viewport),
+            coordinate_frame: screenshot.coordinate_frame,
+            mime: screenshot.mime,
+            image_width: screenshot.image_width,
+            image_height: screenshot.image_height,
+            byte_size: screenshot.byte_size,
+            sha256: screenshot.sha256,
+            sensitive_regions_redacted: screenshot.sensitive_regions_redacted,
+            captured_at_ms: screenshot.captured_at_ms,
+            untrusted_content: screenshot.untrusted_content,
+            image_base64: screenshot.image_base64,
+        },
+    }
 }
 
 pub async fn screenshot_isolated_browser_world(
@@ -770,6 +941,16 @@ pub fn browser_surface() -> DeclaredRouter<AppState> {
                 RateLimitClass::Read,
             ),
             post(observe_isolated_browser_world),
+        )
+        .route(
+            browser_policy(
+                axum::http::Method::GET,
+                "/v1/browser/worlds/isolated/{world_id}/presentation",
+                Capability::WorkshopRead,
+                1024,
+                RateLimitClass::Stream,
+            ),
+            get(stream_isolated_browser_world_presentation),
         )
         .route(
             browser_policy(

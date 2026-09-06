@@ -5,6 +5,7 @@
 pub mod api_error;
 pub mod authority_id;
 pub mod bot;
+pub mod browser;
 pub mod capability;
 pub mod component_runtime;
 pub mod component_store;
@@ -38,6 +39,7 @@ pub mod workflow_plan;
 pub use api_error::*;
 pub use authority_id::*;
 pub use bot::*;
+pub use browser::*;
 pub use capability::*;
 pub use component_runtime::*;
 pub use component_store::*;
