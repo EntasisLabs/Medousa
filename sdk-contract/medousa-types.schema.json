@@ -26425,6 +26425,511 @@
       }
     }
   },
+  "WorldRecipe": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipe",
+    "description": "A recipe is reviewable guidance, never a reusable action permit.",
+    "type": "object",
+    "required": [
+      "automatic_dispatch_allowed",
+      "carries_authority",
+      "execution_model",
+      "recipe_id",
+      "schema_version",
+      "source_end_sequence",
+      "source_start_sequence",
+      "source_trace_id",
+      "steps"
+    ],
+    "properties": {
+      "automatic_dispatch_allowed": {
+        "type": "boolean"
+      },
+      "carries_authority": {
+        "type": "boolean"
+      },
+      "execution_model": {
+        "type": "string"
+      },
+      "recipe_id": {
+        "type": "string"
+      },
+      "schema_version": {
+        "type": "integer",
+        "format": "uint16",
+        "minimum": 0.0
+      },
+      "source_end_sequence": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "source_start_sequence": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "source_trace_id": {
+        "type": "string"
+      },
+      "steps": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/WorldRecipeStep"
+        }
+      }
+    },
+    "definitions": {
+      "WorldRecipeInputKind": {
+        "type": "string",
+        "enum": [
+          "text",
+          "selection",
+          "key",
+          "scroll_delta",
+          "wait_duration"
+        ]
+      },
+      "WorldRecipeOperation": {
+        "description": "A semantic operation template. Values, selectors, coordinates, handles, permits, and grants are deliberately absent and must be resolved afresh.",
+        "type": "object",
+        "required": [
+          "requires_operator_confirmation",
+          "verb"
+        ],
+        "properties": {
+          "input_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorldRecipeInputKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requires_operator_confirmation": {
+            "type": "boolean"
+          },
+          "target_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verb": {
+            "type": "string"
+          }
+        }
+      },
+      "WorldRecipeStep": {
+        "type": "object",
+        "required": [
+          "effect_class",
+          "operations",
+          "ordinal",
+          "requires_fresh_admission",
+          "requires_fresh_observation",
+          "requires_operator_confirmation",
+          "source_admission_sequence",
+          "source_completion_sequence",
+          "source_intent_id",
+          "surface"
+        ],
+        "properties": {
+          "effect_class": {
+            "type": "string"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/WorldRecipeOperation"
+            }
+          },
+          "ordinal": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "requires_fresh_admission": {
+            "type": "boolean"
+          },
+          "requires_fresh_observation": {
+            "type": "boolean"
+          },
+          "requires_operator_confirmation": {
+            "type": "boolean"
+          },
+          "source_admission_sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "source_completion_sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "source_intent_id": {
+            "type": "string"
+          },
+          "surface": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "WorldRecipeDeriveResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeDeriveResponse",
+    "type": "object",
+    "required": [
+      "recipe"
+    ],
+    "properties": {
+      "recipe": {
+        "$ref": "#/definitions/WorldRecipe"
+      }
+    },
+    "definitions": {
+      "WorldRecipe": {
+        "description": "A recipe is reviewable guidance, never a reusable action permit.",
+        "type": "object",
+        "required": [
+          "automatic_dispatch_allowed",
+          "carries_authority",
+          "execution_model",
+          "recipe_id",
+          "schema_version",
+          "source_end_sequence",
+          "source_start_sequence",
+          "source_trace_id",
+          "steps"
+        ],
+        "properties": {
+          "automatic_dispatch_allowed": {
+            "type": "boolean"
+          },
+          "carries_authority": {
+            "type": "boolean"
+          },
+          "execution_model": {
+            "type": "string"
+          },
+          "recipe_id": {
+            "type": "string"
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "source_end_sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "source_start_sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "source_trace_id": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/WorldRecipeStep"
+            }
+          }
+        }
+      },
+      "WorldRecipeInputKind": {
+        "type": "string",
+        "enum": [
+          "text",
+          "selection",
+          "key",
+          "scroll_delta",
+          "wait_duration"
+        ]
+      },
+      "WorldRecipeOperation": {
+        "description": "A semantic operation template. Values, selectors, coordinates, handles, permits, and grants are deliberately absent and must be resolved afresh.",
+        "type": "object",
+        "required": [
+          "requires_operator_confirmation",
+          "verb"
+        ],
+        "properties": {
+          "input_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorldRecipeInputKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requires_operator_confirmation": {
+            "type": "boolean"
+          },
+          "target_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verb": {
+            "type": "string"
+          }
+        }
+      },
+      "WorldRecipeStep": {
+        "type": "object",
+        "required": [
+          "effect_class",
+          "operations",
+          "ordinal",
+          "requires_fresh_admission",
+          "requires_fresh_observation",
+          "requires_operator_confirmation",
+          "source_admission_sequence",
+          "source_completion_sequence",
+          "source_intent_id",
+          "surface"
+        ],
+        "properties": {
+          "effect_class": {
+            "type": "string"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/WorldRecipeOperation"
+            }
+          },
+          "ordinal": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "requires_fresh_admission": {
+            "type": "boolean"
+          },
+          "requires_fresh_observation": {
+            "type": "boolean"
+          },
+          "requires_operator_confirmation": {
+            "type": "boolean"
+          },
+          "source_admission_sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "source_completion_sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "source_intent_id": {
+            "type": "string"
+          },
+          "surface": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "WorldRecipeInputKind": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeInputKind",
+    "type": "string",
+    "enum": [
+      "text",
+      "selection",
+      "key",
+      "scroll_delta",
+      "wait_duration"
+    ]
+  },
+  "WorldRecipeOperation": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeOperation",
+    "description": "A semantic operation template. Values, selectors, coordinates, handles, permits, and grants are deliberately absent and must be resolved afresh.",
+    "type": "object",
+    "required": [
+      "requires_operator_confirmation",
+      "verb"
+    ],
+    "properties": {
+      "input_kind": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/WorldRecipeInputKind"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "requires_operator_confirmation": {
+        "type": "boolean"
+      },
+      "target_name": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "target_role": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "verb": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "WorldRecipeInputKind": {
+        "type": "string",
+        "enum": [
+          "text",
+          "selection",
+          "key",
+          "scroll_delta",
+          "wait_duration"
+        ]
+      }
+    }
+  },
+  "WorldRecipeStep": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeStep",
+    "type": "object",
+    "required": [
+      "effect_class",
+      "operations",
+      "ordinal",
+      "requires_fresh_admission",
+      "requires_fresh_observation",
+      "requires_operator_confirmation",
+      "source_admission_sequence",
+      "source_completion_sequence",
+      "source_intent_id",
+      "surface"
+    ],
+    "properties": {
+      "effect_class": {
+        "type": "string"
+      },
+      "operations": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/WorldRecipeOperation"
+        }
+      },
+      "ordinal": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "requires_fresh_admission": {
+        "type": "boolean"
+      },
+      "requires_fresh_observation": {
+        "type": "boolean"
+      },
+      "requires_operator_confirmation": {
+        "type": "boolean"
+      },
+      "source_admission_sequence": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "source_completion_sequence": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "source_intent_id": {
+        "type": "string"
+      },
+      "surface": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "WorldRecipeInputKind": {
+        "type": "string",
+        "enum": [
+          "text",
+          "selection",
+          "key",
+          "scroll_delta",
+          "wait_duration"
+        ]
+      },
+      "WorldRecipeOperation": {
+        "description": "A semantic operation template. Values, selectors, coordinates, handles, permits, and grants are deliberately absent and must be resolved afresh.",
+        "type": "object",
+        "required": [
+          "requires_operator_confirmation",
+          "verb"
+        ],
+        "properties": {
+          "input_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorldRecipeInputKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requires_operator_confirmation": {
+            "type": "boolean"
+          },
+          "target_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verb": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
   "WorldTimelineCheckpoint": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "WorldTimelineCheckpoint",

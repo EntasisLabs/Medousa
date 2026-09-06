@@ -35,6 +35,7 @@ pub mod turn_stream;
 pub mod turn_ticket;
 pub mod workflow;
 pub mod workflow_plan;
+pub mod world_recipe;
 pub mod world_timeline;
 
 pub use api_error::*;
@@ -59,4 +60,5 @@ pub use stage_routing::*;
 pub use turn::*;
 pub use turn_stream::*;
 pub use turn_ticket::*;
+pub use world_recipe::*;
 pub use world_timeline::*;

@@ -3154,13 +3154,16 @@ mod tests {
         )
         .unwrap();
         let action_admission = crate::world_authority::admit_browser_action(
-            &authority,
-            world.driver.driver_id.as_str(),
-            &world.tab_group_id,
-            world.tab_id.as_deref().unwrap(),
-            "isolated-smoke-action",
-            "type a name and save",
-            medousa_world::WorldEffectClass::LocalMutation,
+            crate::world_authority::BrowserWorldActionRequest {
+                authority_id: &authority,
+                driver_id: world.driver.driver_id.as_str(),
+                tab_group_id: &world.tab_group_id,
+                tab_id: world.tab_id.as_deref().unwrap(),
+                trace_id: "isolated-smoke-action",
+                summary: "type a name and save",
+                effect_class: medousa_world::WorldEffectClass::LocalMutation,
+                recipe_hint: None,
+            },
         )
         .unwrap();
         let action = host

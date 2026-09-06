@@ -210,9 +210,6 @@ fn device_ids_match(left: &str, right: &str) -> bool {
 mod tests {
     use super::*;
     use crate::pairing::PairingRole;
-    use std::sync::Mutex;
-
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     fn sample_pairing(phone_id: &str) -> PairedDeviceRecord {
         PairedDeviceRecord {
@@ -240,12 +237,11 @@ mod tests {
 
     #[test]
     fn upsert_and_allocate_seq() {
-        let _guard = TEST_LOCK.lock().unwrap();
         let suffix = uuid::Uuid::new_v4().simple().to_string();
         let phone_id = format!("peer-{suffix}");
         let tmp = std::env::temp_dir().join(format!("medousa-mesh-reg-{suffix}"));
         std::fs::create_dir_all(&tmp).unwrap();
-        let _env = crate::test_env::set_var("XDG_DATA_HOME", &tmp);
+        let _data_dir = crate::paths::scoped_test_data_dir(&tmp);
 
         let peer = upsert_from_pairing(&sample_pairing(&phone_id)).expect("upsert");
         assert!(peer.mesh_enabled);

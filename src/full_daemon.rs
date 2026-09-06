@@ -85,6 +85,7 @@ pub mod turn_worker_notify;
 pub mod world_execution;
 pub mod world_trace_store;
 pub mod world_handlers;
+pub mod world_recipes;
 pub mod typed_tools;
 pub mod web_search_tool;
 pub mod work_environment_federation;

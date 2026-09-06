@@ -884,6 +884,8 @@ pub enum DaemonOperation {
     WorldResetStorePost,
     #[serde(rename = "world.status.get")]
     WorldStatusGet,
+    #[serde(rename = "worlds.recipes.derive.get")]
+    WorldsRecipesDeriveGet,
     #[serde(rename = "worlds.timeline.get")]
     WorldsTimelineGet,
 }
@@ -1331,6 +1333,7 @@ impl DaemonOperation {
             Self::WorldIndexPost => "world.index.post",
             Self::WorldResetStorePost => "world.reset_store.post",
             Self::WorldStatusGet => "world.status.get",
+            Self::WorldsRecipesDeriveGet => "worlds.recipes.derive.get",
             Self::WorldsTimelineGet => "worlds.timeline.get",
         }
     }

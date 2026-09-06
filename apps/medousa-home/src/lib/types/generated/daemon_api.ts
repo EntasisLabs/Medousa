@@ -734,6 +734,45 @@ export interface WorldTimelineResponse {
   next_sequence: number;
 }
 
+export type WorldRecipeInputKind = "text" | "selection" | "key" | "scroll_delta" | "wait_duration";
+
+export interface WorldRecipeOperation {
+  input_kind?: WorldRecipeInputKind | null;
+  requires_operator_confirmation: boolean;
+  target_name?: string | null;
+  target_role?: string | null;
+  verb: string;
+}
+
+export interface WorldRecipeStep {
+  effect_class: string;
+  operations: WorldRecipeOperation[];
+  ordinal: number;
+  requires_fresh_admission: boolean;
+  requires_fresh_observation: boolean;
+  requires_operator_confirmation: boolean;
+  source_admission_sequence: number;
+  source_completion_sequence: number;
+  source_intent_id: string;
+  surface: string;
+}
+
+export interface WorldRecipe {
+  automatic_dispatch_allowed: boolean;
+  carries_authority: boolean;
+  execution_model: string;
+  recipe_id: string;
+  schema_version: number;
+  source_end_sequence: number;
+  source_start_sequence: number;
+  source_trace_id: string;
+  steps: WorldRecipeStep[];
+}
+
+export interface WorldRecipeDeriveResponse {
+  recipe: WorldRecipe;
+}
+
 export type CodeProjectSource = "blank" | "repository";
 
 export interface StartSessionCodeProjectRequest {

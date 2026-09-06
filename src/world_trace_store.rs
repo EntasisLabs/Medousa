@@ -154,6 +154,21 @@ impl WorldTraceStore {
             .collect()
     }
 
+    pub fn events_for_trace(&self, trace_id: &str) -> Vec<DurableWorldEvent> {
+        self.events
+            .iter()
+            .filter(|record| {
+                record
+                    .envelope
+                    .event
+                    .trace_id
+                    .as_ref()
+                    .is_some_and(|candidate| candidate.as_str() == trace_id)
+            })
+            .cloned()
+            .collect()
+    }
+
     pub fn append_envelopes(
         &mut self,
         envelopes: Vec<WorldEventEnvelope>,
@@ -381,6 +396,7 @@ mod tests {
                         strategy: effect_class.recovery_strategy(),
                         requires_fresh_admission: true,
                     },
+                    recipe_hint: None,
                 },
             },
         }

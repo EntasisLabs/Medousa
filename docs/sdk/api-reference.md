@@ -75,6 +75,19 @@ synthesis events, not through an application-client polling contract.
 
 ---
 
+## Governed-world review
+
+Generated operation ids `worlds.timeline.get` and
+`worlds.recipes.derive.get` expose the authenticated causal review surface.
+Until a dedicated accessor lands, use `http().get_query(...)` with the
+generated path template. Recipe derivation returns
+`WorldRecipeDeriveResponse` only for a fully confirmed trace. Its operations
+are semantic templates and carry neither action values nor reusable world
+authority; a future execution must resolve fresh state and obtain fresh
+admission.
+
+---
+
 ## `ingest()`
 
 | Method | HTTP | Types |

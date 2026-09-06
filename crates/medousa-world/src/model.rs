@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 pub const WORLD_SCHEMA_VERSION: u16 = 1;
 pub const WORLD_ACTION_CHECKPOINT_SCHEMA_VERSION: u16 = 1;
+pub const WORLD_ACTION_RECIPE_HINT_SCHEMA_VERSION: u16 = 1;
 pub const WORLD_EVENT_ENVELOPE_SCHEMA_VERSION: u16 = 1;
 
 macro_rules! string_id {
@@ -272,6 +273,42 @@ pub struct WorldRecoveryPlan {
     pub requires_fresh_admission: bool,
 }
 
+/// The kind of value a semantic replay must obtain again. Values themselves
+/// are deliberately excluded from durable world history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorldRecipeInputKind {
+    Text,
+    Selection,
+    Key,
+    ScrollDelta,
+    WaitDuration,
+}
+
+/// Secret-free semantic shape of one admitted driver operation.
+///
+/// Opaque element refs, CSS selectors, coordinates, and action values are not
+/// represented. A future run resolves a fresh target from role/name semantics
+/// and supplies any input again before requesting a new admission.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorldRecipeOperationHint {
+    pub verb: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_kind: Option<WorldRecipeInputKind>,
+    #[serde(default)]
+    pub requires_operator_confirmation: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorldActionRecipeHint {
+    pub schema_version: u16,
+    pub operations: Vec<WorldRecipeOperationHint>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorldSessionSpec {
     pub world_id: WorldId,
@@ -392,6 +429,8 @@ pub struct WorldActionPermit {
     pub summary: String,
     pub checkpoint: WorldActionCheckpoint,
     pub recovery: WorldRecoveryPlan,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipe_hint: Option<WorldActionRecipeHint>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -455,6 +494,8 @@ pub enum WorldEventKind {
         summary: String,
         checkpoint: WorldActionCheckpoint,
         recovery: WorldRecoveryPlan,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        recipe_hint: Option<WorldActionRecipeHint>,
     },
     ActionCommitted {
         effect_class: WorldEffectClass,

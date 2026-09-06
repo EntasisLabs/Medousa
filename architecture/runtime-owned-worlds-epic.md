@@ -900,6 +900,22 @@ Current durable causal-ledger slice:
   ledger at `GET /v1/worlds/timeline`. This is the contract foundation for the
   unified review UI and evidence promotion that remain in Phase 7.
 
+Current semantic-recipe slice:
+
+- Browser and native-computer admission may persist a bounded semantic action
+  hint: verb, observed role/name, fresh-input kind, and whether operator
+  confirmation remains required. Actual values, selectors, coordinates,
+  opaque target refs, native handles, and reusable authority are excluded.
+- `GET /v1/worlds/recipes/derive?trace_id=…` derives an inert, deterministic
+  recipe only when every effectful action has a confirmed terminal receipt.
+  Missing admissions, legacy or selector-based actions, failures,
+  interruptions, and uncertain outcomes fail closed instead of yielding a
+  partial workflow.
+- Every derived step declares that replay needs a fresh observation and fresh
+  admission. The response cannot execute itself, carries no authority, and
+  does not permit automatic dispatch; an eventual runner remains a separate
+  governed slice.
+
 Implementation:
 
 - Add domain-specific checkpoints and compensation plans.

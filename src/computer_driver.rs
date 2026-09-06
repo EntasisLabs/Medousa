@@ -15,12 +15,13 @@ use medousa_computer_bridge::{
     ComputerPermissionKind, ComputerScreenshotCapture, ComputerScreenshotRequest,
 };
 use medousa_world::{
-    WorldActionIntent, WorldActionOutcome, WorldActionPermit, WorldAdmission, WorldAuthorityError,
+    WORLD_ACTION_RECIPE_HINT_SCHEMA_VERSION, WorldActionIntent, WorldActionOutcome,
+    WorldActionPermit, WorldActionRecipeHint, WorldAdmission, WorldAuthorityError,
     WorldAuthorityId, WorldCapability, WorldDriverCapability, WorldDriverId, WorldDriverKind,
     WorldDriverRegistration, WorldDriverTransport, WorldEffectClass, WorldGrantId,
     WorldGrantRequest, WorldId, WorldOwnership, WorldPrincipal, WorldPrincipalId,
-    WorldPrincipalKind, WorldResourceId, WorldResourceScope, WorldSession, WorldSessionSpec,
-    WorldSurfaceKind, WorldTraceId,
+    WorldPrincipalKind, WorldRecipeInputKind, WorldRecipeOperationHint, WorldResourceId,
+    WorldResourceScope, WorldSession, WorldSessionSpec, WorldSurfaceKind, WorldTraceId,
 };
 use serde::Serialize;
 use sha2::{Digest as _, Sha256};
@@ -572,8 +573,9 @@ impl ComputerDriverBroker {
             value: intent.value.clone(),
         };
         request.validate()?;
-        self.validate_action_fence(&intent).await?;
-        let admission = self.admit_action(&registered.registration, &intent)?;
+        let observed_element = self.validate_action_fence(&intent).await?;
+        let recipe_hint = computer_recipe_hint(&intent, &observed_element);
+        let admission = self.admit_action(&registered.registration, &intent, Some(recipe_hint))?;
 
         if let Err(error) = self.authority.read(|authority| {
             authority
@@ -763,7 +765,10 @@ impl ComputerDriverBroker {
         );
     }
 
-    async fn validate_action_fence(&self, intent: &ComputerActionIntent) -> Result<(), String> {
+    async fn validate_action_fence(
+        &self,
+        intent: &ComputerActionIntent,
+    ) -> Result<ComputerObservedElement, String> {
         let fences = self.observation_fences.read().await;
         let fence = fences
             .get(&(intent.driver_id.clone(), intent.resource_id.clone()))
@@ -802,7 +807,7 @@ impl ComputerDriverBroker {
                     .to_string(),
             );
         }
-        Ok(())
+        Ok(element.clone())
     }
 
     async fn consume_action_fence(&self, intent: &ComputerActionIntent) -> Result<(), String> {
@@ -1020,6 +1025,7 @@ impl ComputerDriverBroker {
         &self,
         registration: &WorldDriverRegistration,
         request: &ComputerActionIntent,
+        recipe_hint: Option<WorldActionRecipeHint>,
     ) -> Result<ComputerWorldAdmission, String> {
         let admitted_at_ms = now_ms();
         let world_id = computer_world_id(
@@ -1106,7 +1112,7 @@ impl ComputerDriverBroker {
                 summary,
             };
             match authority
-                .admit_action(&world_id, intent, admitted_at_ms)
+                .admit_action_with_recipe_hint(&world_id, intent, recipe_hint, admitted_at_ms)
                 .map_err(|error| error.to_string())?
             {
                 WorldAdmission::Admitted { permit } => Ok(ComputerWorldAdmission { permit }),
@@ -1544,6 +1550,40 @@ fn observed_element_is_high_risk(element: &ComputerObservedElement) -> bool {
             .any(|phrase| semantic_label.contains(phrase))
 }
 
+fn computer_recipe_hint(
+    intent: &ComputerActionIntent,
+    element: &ComputerObservedElement,
+) -> WorldActionRecipeHint {
+    WorldActionRecipeHint {
+        schema_version: WORLD_ACTION_RECIPE_HINT_SCHEMA_VERSION,
+        operations: vec![WorldRecipeOperationHint {
+            verb: intent.action.as_str().to_string(),
+            target_role: bounded_recipe_text(&element.role),
+            target_name: bounded_recipe_text(&element.name),
+            input_kind: (intent.action == ComputerAction::SetValue)
+                .then_some(WorldRecipeInputKind::Text),
+            requires_operator_confirmation: intent.action == ComputerAction::ForegroundClick
+                || observed_element_is_high_risk(element),
+        }],
+    }
+}
+
+fn bounded_recipe_text(value: &str) -> Option<String> {
+    const MAX_BYTES: usize = 512;
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    let mut bounded = String::with_capacity(value.len().min(MAX_BYTES));
+    for character in value.chars() {
+        if bounded.len().saturating_add(character.len_utf8()) > MAX_BYTES {
+            break;
+        }
+        bounded.push(character);
+    }
+    (!bounded.is_empty()).then_some(bounded)
+}
+
 pub fn desktop_resource_id(driver_id: &WorldDriverId, desktop_session_id: &str) -> WorldResourceId {
     let digest = Sha256::digest(format!("{driver_id}\0{desktop_session_id}").as_bytes());
     WorldResourceId::new(format!("desktop:sha256:{digest:x}"))
@@ -1921,7 +1961,7 @@ mod tests {
 
         let action = action_intent("driver:computer:agent-control", "ax:test:button");
         broker
-            .admit_action(&driver.registration, &action)
+            .admit_action(&driver.registration, &action, None)
             .expect("agent acquires control");
 
         let state = broker
@@ -2258,6 +2298,32 @@ mod tests {
             sensitive: false,
             actions: [ComputerAction::Press].into_iter().collect(),
         }));
+    }
+
+    #[test]
+    fn computer_recipe_keeps_semantics_but_not_target_refs_or_values() {
+        let mut action = action_intent("driver:computer:test", "ax:opaque:secret");
+        action.action = ComputerAction::SetValue;
+        action.value = Some("must-not-survive".to_string());
+        let hint = computer_recipe_hint(
+            &action,
+            &ComputerObservedElement {
+                role: "textbox".to_string(),
+                name: "Display name".to_string(),
+                enabled: true,
+                sensitive: false,
+                actions: [ComputerAction::SetValue].into_iter().collect(),
+            },
+        );
+
+        assert_eq!(hint.operations[0].verb, "set_value");
+        assert_eq!(
+            hint.operations[0].input_kind,
+            Some(WorldRecipeInputKind::Text)
+        );
+        let encoded = serde_json::to_string(&hint).expect("serialize hint");
+        assert!(!encoded.contains("ax:opaque:secret"));
+        assert!(!encoded.contains("must-not-survive"));
     }
 
     #[tokio::test]

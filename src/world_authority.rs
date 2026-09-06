@@ -10,10 +10,11 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use medousa_world::{
-    WorldActionIntent, WorldActionOutcome, WorldActionPermit, WorldAdmission, WorldAuthority,
-    WorldAuthorityError, WorldAuthorityId, WorldCapability, WorldDriverId, WorldEffectClass,
-    WorldGrantId, WorldGrantRequest, WorldId, WorldOwnership, WorldPrincipal, WorldPrincipalId,
-    WorldResourceId, WorldResourceScope, WorldSessionSpec, WorldSurfaceKind, WorldTraceId,
+    WorldActionIntent, WorldActionOutcome, WorldActionPermit, WorldActionRecipeHint,
+    WorldAdmission, WorldAuthority, WorldAuthorityError, WorldAuthorityId, WorldCapability,
+    WorldDriverId, WorldEffectClass, WorldGrantId, WorldGrantRequest, WorldId, WorldOwnership,
+    WorldPrincipal, WorldPrincipalId, WorldResourceId, WorldResourceScope, WorldSessionSpec,
+    WorldSurfaceKind, WorldTraceId,
 };
 use medousa_browser_bridge::BrowserObservation;
 use serde::Serialize;
@@ -141,6 +142,22 @@ impl WorldAuthorityService {
             }
         }
     }
+
+    pub fn durable_events_for_trace(
+        &self,
+        trace_id: &str,
+    ) -> Result<Vec<DurableWorldEvent>, String> {
+        let timeline = self
+            .timeline
+            .lock()
+            .map_err(|_| "world causal timeline lock poisoned".to_string())?;
+        match &*timeline {
+            WorldTimelineState::Disabled => Ok(Vec::new()),
+            WorldTimelineState::Active(store) | WorldTimelineState::Failed { store, .. } => {
+                Ok(store.events_for_trace(trace_id))
+            }
+        }
+    }
 }
 
 static AUTHORITY: LazyLock<Arc<WorldAuthorityService>> =
@@ -218,15 +235,30 @@ impl BrowserWorldAdmission {
     }
 }
 
+pub struct BrowserWorldActionRequest<'a> {
+    pub authority_id: &'a str,
+    pub driver_id: &'a str,
+    pub tab_group_id: &'a str,
+    pub tab_id: &'a str,
+    pub trace_id: &'a str,
+    pub summary: &'a str,
+    pub effect_class: WorldEffectClass,
+    pub recipe_hint: Option<WorldActionRecipeHint>,
+}
+
 pub fn admit_browser_action(
-    authority_id: &str,
-    driver_id: &str,
-    tab_group_id: &str,
-    tab_id: &str,
-    trace_id: &str,
-    summary: &str,
-    effect_class: WorldEffectClass,
+    request: BrowserWorldActionRequest<'_>,
 ) -> Result<BrowserWorldAdmission, String> {
+    let BrowserWorldActionRequest {
+        authority_id,
+        driver_id,
+        tab_group_id,
+        tab_id,
+        trace_id,
+        summary,
+        effect_class,
+        recipe_hint,
+    } = request;
     let now_ms = now_ms();
     let resource_id = WorldResourceId::new(format!("browser-tab:{tab_id}"));
     AUTHORITY.write(|authority| {
@@ -271,7 +303,7 @@ pub fn admit_browser_action(
         };
 
         match authority
-            .admit_action(&world_id, intent, now_ms)
+            .admit_action_with_recipe_hint(&world_id, intent, recipe_hint, now_ms)
             .map_err(|error| error.to_string())?
         {
             WorldAdmission::Admitted { permit } => Ok(BrowserWorldAdmission { permit }),
@@ -741,7 +773,17 @@ pub struct BrowserElementRefFence<'a> {
     pub allow_high_risk: bool,
 }
 
-pub fn validate_browser_element_refs(fence: BrowserElementRefFence<'_>) -> Result<(), String> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedBrowserRecipeTarget {
+    pub element_ref: String,
+    pub role: Option<String>,
+    pub name: Option<String>,
+    pub requires_operator_confirmation: bool,
+}
+
+pub fn validate_browser_element_refs(
+    fence: BrowserElementRefFence<'_>,
+) -> Result<Vec<ResolvedBrowserRecipeTarget>, String> {
     let world_id = browser_world_id(fence.authority_id, fence.driver_id, fence.tab_group_id);
     let mirrors = AUTHORITY
         .browser_observations
@@ -757,6 +799,7 @@ pub fn validate_browser_element_refs(fence: BrowserElementRefFence<'_>) -> Resul
     {
         return Err("semantic target belongs to stale browser state".to_string());
     }
+    let mut resolved = Vec::with_capacity(fence.targets.len());
     for (action, element_ref) in fence.targets {
         let node = observation
             .nodes
@@ -771,13 +814,36 @@ pub fn validate_browser_element_refs(fence: BrowserElementRefFence<'_>) -> Resul
         if node.sensitive {
             return Err("credential, payment, and file inputs remain operator-only".to_string());
         }
-        if !fence.allow_high_risk && semantic_action_is_high_risk(action, node) {
+        let requires_operator_confirmation = semantic_action_is_high_risk(action, node);
+        if !fence.allow_high_risk && requires_operator_confirmation {
             return Err(
                 "resolved target semantics require explicit high-risk authorization".to_string(),
             );
         }
+        resolved.push(ResolvedBrowserRecipeTarget {
+            element_ref: element_ref.clone(),
+            role: bounded_recipe_label(&node.role),
+            name: bounded_recipe_label(&node.name),
+            requires_operator_confirmation,
+        });
     }
-    Ok(())
+    Ok(resolved)
+}
+
+fn bounded_recipe_label(value: &str) -> Option<String> {
+    const MAX_BYTES: usize = 512;
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    let mut bounded = String::with_capacity(value.len().min(MAX_BYTES));
+    for character in value.chars() {
+        if bounded.len().saturating_add(character.len_utf8()) > MAX_BYTES {
+            break;
+        }
+        bounded.push(character);
+    }
+    (!bounded.is_empty()).then_some(bounded)
 }
 
 fn semantic_action_is_high_risk(
@@ -1017,7 +1083,7 @@ mod tests {
                 observed,
             );
 
-        validate_browser_element_refs(BrowserElementRefFence {
+        let _ = validate_browser_element_refs(BrowserElementRefFence {
             authority_id,
             driver_id,
             tab_group_id,
@@ -1079,7 +1145,7 @@ mod tests {
         })
         .expect_err("high-risk target must fail");
         assert!(error.contains("high-risk authorization"));
-        validate_browser_element_refs(BrowserElementRefFence {
+        let _ = validate_browser_element_refs(BrowserElementRefFence {
             authority_id,
             driver_id,
             tab_group_id,

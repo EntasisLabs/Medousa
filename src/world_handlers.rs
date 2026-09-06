@@ -4,8 +4,8 @@ use axum::extract::{Query, State};
 use axum::routing::get;
 use axum::Json;
 use medousa_types::{
-    WORLD_TIMELINE_EVENT_SCHEMA_VERSION, WorldTimelineCheckpoint, WorldTimelineEvent,
-    WorldTimelineRecovery, WorldTimelineResponse,
+    WORLD_TIMELINE_EVENT_SCHEMA_VERSION, WorldRecipeDeriveResponse, WorldTimelineCheckpoint,
+    WorldTimelineEvent, WorldTimelineRecovery, WorldTimelineResponse,
 };
 use medousa_world::{
     WorldActionCheckpoint, WorldActionStatus, WorldEffectClass, WorldEventKind, WorldOwnership,
@@ -18,6 +18,7 @@ use crate::daemon::route_policy::{
 };
 use crate::daemon::state::AppState;
 use crate::request_principal::Capability;
+use crate::world_recipes::{WorldRecipeDerivationError, derive_world_recipe};
 use crate::world_trace_store::DurableWorldEvent;
 
 const DEFAULT_PAGE_SIZE: usize = 100;
@@ -29,6 +30,11 @@ pub struct WorldTimelineQuery {
     after_sequence: u64,
     #[serde(default = "default_page_size")]
     limit: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WorldRecipeDeriveQuery {
+    trace_id: String,
 }
 
 fn default_page_size() -> usize {
@@ -57,20 +63,63 @@ pub async fn list_world_timeline(
     }))
 }
 
+pub async fn derive_world_recipe_from_trace(
+    State(state): State<AppState>,
+    Query(query): Query<WorldRecipeDeriveQuery>,
+) -> Result<Json<WorldRecipeDeriveResponse>, (axum::http::StatusCode, String)> {
+    if query.trace_id.is_empty()
+        || query.trace_id.trim() != query.trace_id
+        || query.trace_id.len() > 512
+        || query.trace_id.contains('\0')
+    {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            "trace_id is missing or malformed".to_string(),
+        ));
+    }
+    let records = state
+        .world_authority
+        .durable_events_for_trace(&query.trace_id)
+        .map_err(|error| (axum::http::StatusCode::SERVICE_UNAVAILABLE, error))?;
+    let recipe = derive_world_recipe(&query.trace_id, &records).map_err(|error| match error {
+        WorldRecipeDerivationError::TraceNotFound => {
+            (axum::http::StatusCode::NOT_FOUND, error.to_string())
+        }
+        WorldRecipeDerivationError::NotReplayable(_) => {
+            (axum::http::StatusCode::CONFLICT, error.to_string())
+        }
+    })?;
+    Ok(Json(WorldRecipeDeriveResponse { recipe }))
+}
+
 pub fn world_timeline_surface() -> DeclaredRouter<AppState> {
-    DeclaredRouter::default().route(
-        RoutePolicy {
-            method: axum::http::Method::GET,
-            path: "/v1/worlds/timeline",
-            group: RouteGroup::Portal,
-            required_capability: Some(Capability::WorkshopRead),
-            bootstrap_public: false,
-            browser_policy: BrowserPolicy::ExactOrigin,
-            body_limit: 1024,
-            rate_limit_class: RateLimitClass::Read,
-        },
-        get(list_world_timeline),
-    )
+    DeclaredRouter::default()
+        .route(
+            RoutePolicy {
+                method: axum::http::Method::GET,
+                path: "/v1/worlds/timeline",
+                group: RouteGroup::Portal,
+                required_capability: Some(Capability::WorkshopRead),
+                bootstrap_public: false,
+                browser_policy: BrowserPolicy::ExactOrigin,
+                body_limit: 1024,
+                rate_limit_class: RateLimitClass::Read,
+            },
+            get(list_world_timeline),
+        )
+        .route(
+            RoutePolicy {
+                method: axum::http::Method::GET,
+                path: "/v1/worlds/recipes/derive",
+                group: RouteGroup::Portal,
+                required_capability: Some(Capability::WorkshopRead),
+                bootstrap_public: false,
+                browser_policy: BrowserPolicy::ExactOrigin,
+                body_limit: 1024,
+                rate_limit_class: RateLimitClass::Read,
+            },
+            get(derive_world_recipe_from_trace),
+        )
 }
 
 fn public_event(record: DurableWorldEvent) -> WorldTimelineEvent {
@@ -286,6 +335,21 @@ mod tests {
         WorldId, WorldOwnership, WorldPrincipal, WorldRecoveryPlan, WorldResourceId,
         WorldTraceId,
     };
+
+    #[test]
+    fn recipe_derivation_is_an_authenticated_exact_origin_read() {
+        let surface = world_timeline_surface();
+        let route = surface
+            .inventory()
+            .entries()
+            .find(|entry| entry.path == "/v1/worlds/recipes/derive")
+            .expect("recipe derivation route");
+        assert_eq!(route.method, "GET");
+        assert_eq!(route.group, RouteGroup::Portal);
+        assert_eq!(route.required_capability, Some("workshop.read"));
+        assert_eq!(route.browser_policy, BrowserPolicy::ExactOrigin);
+        assert!(!route.bootstrap_public);
+    }
 
     #[test]
     fn public_interruption_keeps_causality_without_driver_secrets() {

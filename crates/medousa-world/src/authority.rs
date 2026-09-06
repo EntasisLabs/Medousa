@@ -3,15 +3,19 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use thiserror::Error;
 
 use crate::model::{
-    WORLD_ACTION_CHECKPOINT_SCHEMA_VERSION, WORLD_EVENT_ENVELOPE_SCHEMA_VERSION,
-    WORLD_SCHEMA_VERSION, WorldActionCheckpoint, WorldActionIntent, WorldActionOutcome,
-    WorldActionPermit, WorldActionStatus, WorldAdmission, WorldCapability, WorldCapabilityGrant,
-    WorldControlLease, WorldEvent, WorldEventEnvelope, WorldEventKind, WorldGrantId,
-    WorldGrantRequest, WorldId, WorldIntentId, WorldPrincipal, WorldPrincipalKind,
-    WorldRecoveryPlan, WorldResourceId, WorldResourceScope, WorldSession, WorldSessionSpec,
+    WORLD_ACTION_CHECKPOINT_SCHEMA_VERSION, WORLD_ACTION_RECIPE_HINT_SCHEMA_VERSION,
+    WORLD_EVENT_ENVELOPE_SCHEMA_VERSION, WORLD_SCHEMA_VERSION, WorldActionCheckpoint,
+    WorldActionIntent, WorldActionOutcome, WorldActionPermit, WorldActionRecipeHint,
+    WorldActionStatus, WorldAdmission, WorldCapability, WorldCapabilityGrant, WorldControlLease,
+    WorldEvent, WorldEventEnvelope, WorldEventKind, WorldGrantId, WorldGrantRequest, WorldId,
+    WorldIntentId, WorldPrincipal, WorldPrincipalKind, WorldRecoveryPlan, WorldResourceId,
+    WorldResourceScope, WorldSession, WorldSessionSpec,
 };
 
 const DEFAULT_EVENT_CAPACITY: usize = 4_096;
+const MAX_RECIPE_OPERATIONS: usize = 16;
+const MAX_RECIPE_VERB_BYTES: usize = 64;
+const MAX_RECIPE_SEMANTIC_TEXT_BYTES: usize = 512;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum WorldAuthorityError {
@@ -80,6 +84,8 @@ pub enum WorldAuthorityError {
     PermitMismatch,
     #[error("action permit has expired")]
     PermitExpired,
+    #[error("world action recipe hint is invalid: {0}")]
+    InvalidRecipeHint(String),
 }
 
 #[derive(Debug)]
@@ -505,7 +511,20 @@ impl WorldAuthority {
         intent: WorldActionIntent,
         now_ms: u64,
     ) -> Result<WorldAdmission, WorldAuthorityError> {
+        self.admit_action_with_recipe_hint(world_id, intent, None, now_ms)
+    }
+
+    pub fn admit_action_with_recipe_hint(
+        &mut self,
+        world_id: &WorldId,
+        intent: WorldActionIntent,
+        recipe_hint: Option<WorldActionRecipeHint>,
+        now_ms: u64,
+    ) -> Result<WorldAdmission, WorldAuthorityError> {
         validate_principal(&intent.principal)?;
+        if let Some(recipe_hint) = recipe_hint.as_ref() {
+            validate_recipe_hint(recipe_hint)?;
+        }
         if intent.intent_id.is_empty() {
             return Err(WorldAuthorityError::EmptyIntentId);
         }
@@ -639,6 +658,7 @@ impl WorldAuthority {
             summary: intent.summary.clone(),
             checkpoint: checkpoint.clone(),
             recovery: recovery.clone(),
+            recipe_hint: recipe_hint.clone(),
         };
         push_event(
             record,
@@ -654,6 +674,7 @@ impl WorldAuthority {
                 summary: intent.summary,
                 checkpoint,
                 recovery,
+                recipe_hint,
             },
         );
         record
@@ -970,6 +991,50 @@ fn validate_principal(principal: &WorldPrincipal) -> Result<(), WorldAuthorityEr
     }
 }
 
+fn validate_recipe_hint(hint: &WorldActionRecipeHint) -> Result<(), WorldAuthorityError> {
+    if hint.schema_version != WORLD_ACTION_RECIPE_HINT_SCHEMA_VERSION {
+        return Err(WorldAuthorityError::InvalidRecipeHint(format!(
+            "unsupported schema {}",
+            hint.schema_version
+        )));
+    }
+    if hint.operations.is_empty() || hint.operations.len() > MAX_RECIPE_OPERATIONS {
+        return Err(WorldAuthorityError::InvalidRecipeHint(format!(
+            "operations must contain 1 to {MAX_RECIPE_OPERATIONS} entries"
+        )));
+    }
+    for operation in &hint.operations {
+        let verb = operation.verb.trim();
+        if verb.is_empty()
+            || verb != operation.verb
+            || verb.len() > MAX_RECIPE_VERB_BYTES
+            || verb.contains('\0')
+        {
+            return Err(WorldAuthorityError::InvalidRecipeHint(
+                "operation verb is missing or malformed".to_string(),
+            ));
+        }
+        for (label, value) in [
+            ("target role", operation.target_role.as_deref()),
+            ("target name", operation.target_name.as_deref()),
+        ] {
+            let Some(value) = value else {
+                continue;
+            };
+            if value.is_empty()
+                || value.trim() != value
+                || value.len() > MAX_RECIPE_SEMANTIC_TEXT_BYTES
+                || value.contains('\0')
+            {
+                return Err(WorldAuthorityError::InvalidRecipeHint(format!(
+                    "operation {label} is malformed"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn bump_revision(record: &mut WorldRecord, now_ms: u64) {
     record.state.revision = record.state.revision.saturating_add(1);
     record.state.updated_at_ms = now_ms;
@@ -1176,6 +1241,76 @@ mod tests {
             &envelopes[0].event.event,
             WorldEventKind::ActionAdmitted { checkpoint, recovery, .. }
                 if checkpoint == &permit.checkpoint && recovery == &permit.recovery
+        ));
+    }
+
+    #[test]
+    fn admission_validates_and_preserves_an_inert_recipe_hint() {
+        let mut authority = WorldAuthority::default();
+        create_world(&mut authority);
+        grant_agent(&mut authority, &[WorldCapability::Interact]);
+        authority
+            .acquire_control(&world_id(), agent(), Some(NOW + 5_000), NOW + 1)
+            .unwrap();
+        let state = authority.world(&world_id()).unwrap();
+        let lease = state.active_control_lease.unwrap();
+        let intent = WorldActionIntent {
+            intent_id: WorldIntentId::new("intent:recipe"),
+            trace_id: WorldTraceId::new("trace:recipe"),
+            principal: agent(),
+            resource_id: WorldResourceId::new("tab:one"),
+            expected_revision: state.revision,
+            expected_control_generation: Some(lease.generation),
+            required_capability: WorldCapability::Interact,
+            effect_class: WorldEffectClass::LocalMutation,
+            idempotency_key: "recipe-click".to_string(),
+            permit_expires_at_ms: NOW + 1_000,
+            summary: "click opaque ref".to_string(),
+        };
+        let hint = WorldActionRecipeHint {
+            schema_version: WORLD_ACTION_RECIPE_HINT_SCHEMA_VERSION,
+            operations: vec![crate::model::WorldRecipeOperationHint {
+                verb: "click".to_string(),
+                target_role: Some("button".to_string()),
+                target_name: Some("Continue".to_string()),
+                input_kind: None,
+                requires_operator_confirmation: false,
+            }],
+        };
+
+        let admission = authority
+            .admit_action_with_recipe_hint(&world_id(), intent.clone(), Some(hint.clone()), NOW + 2)
+            .expect("semantic hint is admitted");
+        let WorldAdmission::Admitted { permit } = admission else {
+            panic!("unexpected replay")
+        };
+        assert_eq!(permit.recipe_hint.as_ref(), Some(&hint));
+        assert!(matches!(
+            authority.events_after(&world_id(), 0, 20).unwrap().last(),
+            Some(WorldEvent {
+                event: WorldEventKind::ActionAdmitted {
+                    recipe_hint: Some(event_hint),
+                    ..
+                },
+                ..
+            }) if event_hint == &hint
+        ));
+
+        let invalid = WorldActionRecipeHint {
+            schema_version: WORLD_ACTION_RECIPE_HINT_SCHEMA_VERSION,
+            operations: Vec::new(),
+        };
+        let mut invalid_intent = intent;
+        invalid_intent.intent_id = WorldIntentId::new("intent:invalid-recipe");
+        invalid_intent.idempotency_key = "invalid-recipe".to_string();
+        assert!(matches!(
+            authority.admit_action_with_recipe_hint(
+                &world_id(),
+                invalid_intent,
+                Some(invalid),
+                NOW + 3,
+            ),
+            Err(WorldAuthorityError::InvalidRecipeHint(_))
         ));
     }
 

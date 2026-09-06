@@ -8375,6 +8375,175 @@
         "title": "WorkspaceStreamEvent",
         "type": "object"
       },
+      "WorldRecipe": {
+        "description": "A recipe is reviewable guidance, never a reusable action permit.",
+        "properties": {
+          "automatic_dispatch_allowed": {
+            "type": "boolean"
+          },
+          "carries_authority": {
+            "type": "boolean"
+          },
+          "execution_model": {
+            "type": "string"
+          },
+          "recipe_id": {
+            "type": "string"
+          },
+          "schema_version": {
+            "format": "uint16",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "source_end_sequence": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "source_start_sequence": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "source_trace_id": {
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/WorldRecipeStep"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "automatic_dispatch_allowed",
+          "carries_authority",
+          "execution_model",
+          "recipe_id",
+          "schema_version",
+          "source_end_sequence",
+          "source_start_sequence",
+          "source_trace_id",
+          "steps"
+        ],
+        "type": "object"
+      },
+      "WorldRecipeDeriveResponse": {
+        "properties": {
+          "recipe": {
+            "$ref": "#/components/schemas/WorldRecipe"
+          }
+        },
+        "required": [
+          "recipe"
+        ],
+        "title": "WorldRecipeDeriveResponse",
+        "type": "object"
+      },
+      "WorldRecipeInputKind": {
+        "enum": [
+          "text",
+          "selection",
+          "key",
+          "scroll_delta",
+          "wait_duration"
+        ],
+        "type": "string"
+      },
+      "WorldRecipeOperation": {
+        "description": "A semantic operation template. Values, selectors, coordinates, handles, permits, and grants are deliberately absent and must be resolved afresh.",
+        "properties": {
+          "input_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorldRecipeInputKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requires_operator_confirmation": {
+            "type": "boolean"
+          },
+          "target_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verb": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "requires_operator_confirmation",
+          "verb"
+        ],
+        "type": "object"
+      },
+      "WorldRecipeStep": {
+        "properties": {
+          "effect_class": {
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/WorldRecipeOperation"
+            },
+            "type": "array"
+          },
+          "ordinal": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "requires_fresh_admission": {
+            "type": "boolean"
+          },
+          "requires_fresh_observation": {
+            "type": "boolean"
+          },
+          "requires_operator_confirmation": {
+            "type": "boolean"
+          },
+          "source_admission_sequence": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "source_completion_sequence": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "source_intent_id": {
+            "type": "string"
+          },
+          "surface": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "effect_class",
+          "operations",
+          "ordinal",
+          "requires_fresh_admission",
+          "requires_fresh_observation",
+          "requires_operator_confirmation",
+          "source_admission_sequence",
+          "source_completion_sequence",
+          "source_intent_id",
+          "surface"
+        ],
+        "type": "object"
+      },
       "WorldTimelineCheckpoint": {
         "properties": {
           "admitted_at_ms": {
@@ -33182,6 +33351,56 @@
           "body_limit": 1024,
           "bootstrap_public": false,
           "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/worlds/recipes/derive": {
+      "get": {
+        "operationId": "worlds.recipes.derive.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorldRecipeDeriveResponse"
+                }
+              }
+            },
+            "description": "worlds.recipes.derive.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "worlds.recipes.derive.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "worlds.recipes.derive.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
           "capabilities": [
             "workshop.read"
           ],

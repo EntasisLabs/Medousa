@@ -59,6 +59,10 @@ pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
             request: None,
             response: "WorldTimelineResponse",
         },
+        "worlds.recipes.derive.get" => WireBinding {
+            request: None,
+            response: "WorldRecipeDeriveResponse",
+        },
         "ingest.post" => WireBinding {
             request: Some("IngestRequest"),
             response: "IngestResponse",

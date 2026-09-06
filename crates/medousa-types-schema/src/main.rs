@@ -641,6 +641,15 @@ fn main() {
     export_type!(schemas, WorldTimelineRecovery, "WorldTimelineRecovery");
     export_type!(schemas, WorldTimelineEvent, "WorldTimelineEvent");
     export_type!(schemas, WorldTimelineResponse, "WorldTimelineResponse");
+    export_type!(schemas, WorldRecipeInputKind, "WorldRecipeInputKind");
+    export_type!(schemas, WorldRecipeOperation, "WorldRecipeOperation");
+    export_type!(schemas, WorldRecipeStep, "WorldRecipeStep");
+    export_type!(schemas, WorldRecipe, "WorldRecipe");
+    export_type!(
+        schemas,
+        WorldRecipeDeriveResponse,
+        "WorldRecipeDeriveResponse"
+    );
 
     let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sdk-contract");
     fs::create_dir_all(&out_dir).expect("create sdk-contract dir");

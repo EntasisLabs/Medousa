@@ -496,6 +496,7 @@ the redacted focused-window capture and does not accept interaction coordinates.
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/v1/worlds/timeline?after_sequence=…&limit=…` | Page through the workshop's bounded browser/computer causal ledger |
+| GET | `/v1/worlds/recipes/derive?trace_id=…` | Derive an inert semantic recipe from one fully confirmed trace |
 
 `after_sequence` is an exclusive daemon-wide cursor. `limit` defaults to 100
 and is capped at 200; the response returns `events`, `next_sequence`, and
@@ -510,6 +511,20 @@ restart, an admission without a terminal receipt is recorded as
 require fresh-state reconciliation, and external or irreversible effects
 require operator review. Recovery always requires a fresh admission; timeline
 records are evidence and never executable authority.
+
+Recipe derivation is deliberately stricter than timeline review. Every
+effectful admission in the selected trace must have a matching `confirmed`
+receipt and daemon-authored semantic recipe metadata. Failed, interrupted,
+indeterminate, truncated, legacy, or selector-based traces return `409` rather
+than producing a partial recipe. A missing trace returns `404`.
+
+The response contains semantic verbs, optional target role/name hints, and the
+kind of value that a future run must ask for. It never copies typed or selected
+values, selectors, coordinates, element/native handles, idempotency keys,
+grants, control leases, or permits. Recipe steps explicitly require a fresh
+observation and fresh world admission; sensitive-looking targets retain an
+operator-confirmation requirement. This endpoint derives reviewable guidance
+only and cannot dispatch it.
 
 ---
 
