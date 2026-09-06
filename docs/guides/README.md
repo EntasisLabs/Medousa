@@ -9,7 +9,7 @@ Integrator / self-host cookbooks: [../cookbook/README.md](../cookbook/README.md)
 | [Getting started](getting-started.md) | Download → welcome → first chat |
 | [Models and agent sources](models-and-agent-sources.md) | Choose runtimes, models, modes, and reply narration in chat |
 | [Bots](bots.md) | Create durable named teammates with their own memory and conversation |
-| [Packages](packages.md) | Add offline brain, adapters, CLI, MCP from Settings |
+| [Packages](packages.md) | Add optional computer, coding, model, channel, and MCP capabilities |
 | [Workshop & Automations](workshop-and-automations.md) | Flows, schedules, specialists, background work |
 | [Phone pairing](phone-pairing.md) | Add another computer as an optional portal |
 | [Peers & Nearby](peers-and-nearby.md) | LAN / tunnel workshops (deep dive linked) |

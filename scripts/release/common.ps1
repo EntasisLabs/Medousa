@@ -29,7 +29,8 @@ $script:MedousaComponentIds = @(
     "adapter-whatsapp",
     "mcp-gateway",
     "coding-engine",
-    "shell-session"
+    "shell-session",
+    "computer-driver"
 )
 
 function Get-MedousaRepoRoot {
@@ -106,6 +107,7 @@ function Get-MedousaComponentBinaries([string]$PackageId) {
         "mcp-gateway" { return @("medousa_mcp_gateway") }
         "coding-engine" { return @("medousa-code") }
         "shell-session" { return @("medousa-session") }
+        "computer-driver" { return @("medousa-computer") }
         default { throw "unknown component package: $PackageId" }
     }
 }

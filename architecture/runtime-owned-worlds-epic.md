@@ -668,8 +668,10 @@ Current macOS action slice:
   labels. Disabled nodes fail closed, while sensitive and effectful-looking
   targets require an explicit `allow_high_risk` assertion tied to operator
   intent.
-- Pixel observations, broader actions, package/release shipping, and Home
-  controls remain later slices.
+- `medousa-computer` ships as the optional `computer-driver` package through
+  the same release manifest and `{dataDir}/bin` installer path as other
+  workshop sidecars; it is never folded into the daemon or silently installed.
+- Pixel observations, broader actions, and Home controls remain later slices.
 
 Implementation:
 

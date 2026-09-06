@@ -109,7 +109,7 @@ Run on each platform, then merge artifacts into one `dist/` folder on the machin
 | Step | Command |
 |------|---------|
 | Bump stamps | Edit `scripts/release/package-versions.toml` (only packages you ship) |
-| Build selected bins | `./scripts/release/build.sh --components engine,adapters,mcp,coding-engine,shell-session` |
+| Build selected bins | `./scripts/release/build.sh --components engine,adapters,mcp,coding-engine,shell-session,computer-driver` |
 | Package selected | `./scripts/release/package-all-components.sh --packages engine,…` |
 | Package companions | `./scripts/release/package-integrations.sh` (independent versions) |
 | Build desktop | `cd apps/medousa-home && npm run tauri build` |

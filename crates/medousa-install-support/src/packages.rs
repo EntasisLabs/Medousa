@@ -284,6 +284,18 @@ pub fn package_catalog() -> Vec<PackageCatalogEntry> {
             true,
             false,
         ),
+        entry(
+            "computer-driver",
+            "Computer control",
+            &["engine"],
+            &["medousa-computer"],
+            PackageCategory::Expansion,
+            "Monitor",
+            &[],
+            8 * 1024 * 1024,
+            true,
+            true,
+        ),
     ]
 }
 
@@ -408,6 +420,7 @@ pub fn is_home_packages_package(package_id: &str) -> bool {
             | "coding-engine"
             | "langservers"
             | "shell-session"
+            | "computer-driver"
     )
 }
 
@@ -442,6 +455,9 @@ pub fn package_short_hint(package_id: &str) -> &'static str {
         "shell-session" => {
             "Workshop shell session host (medousa-session) — shared PTY for Terminal tabs and coding agents."
         }
+        "computer-driver" => {
+            "Governed native computer control (medousa-computer; macOS platform proof)."
+        }
         _ => "Optional Medousa component.",
     }
 }
@@ -458,6 +474,9 @@ pub fn resolve_package_alias(name: &str) -> Option<&'static str> {
         "coding-engine" | "medousa-code" | "code" | "lsp" => Some("coding-engine"),
         "langservers" | "pyright" | "tsserver" | "svelte" | "svelteserver" => Some("langservers"),
         "shell-session" | "medousa-session" | "session" | "terminal" => Some("shell-session"),
+        "computer-driver" | "medousa-computer" | "computer" | "computer-control" => {
+            Some("computer-driver")
+        }
         "local-brain" | "brain" | "local_brain" => Some("local-brain"),
         "desktop" => Some("desktop"),
         other => catalog_entry(other).map(|entry| entry.id),
@@ -586,6 +605,13 @@ pub fn package_composition() -> Vec<PackageComposition> {
             in_default_engine_link: false,
         },
         PackageComposition {
+            package_id: "computer-driver",
+            workspace_crates: &["medousa-computer"],
+            cargo_features: &[],
+            binaries: &["medousa-computer"],
+            in_default_engine_link: false,
+        },
+        PackageComposition {
             package_id: "skill-hub",
             workspace_crates: &[],
             cargo_features: &[],
@@ -642,6 +668,7 @@ mod tests {
         assert_eq!(resolve_package_alias("mcp"), Some("mcp-gateway"));
         assert_eq!(resolve_package_alias("telegram"), Some("adapter-telegram"));
         assert_eq!(resolve_package_alias("brain"), Some("local-brain"));
+        assert_eq!(resolve_package_alias("computer"), Some("computer-driver"));
     }
 
     #[test]
@@ -656,6 +683,23 @@ mod tests {
     fn home_packages_excludes_cli() {
         assert!(!is_home_packages_package("cli"));
         assert!(is_home_packages_package("mcp-gateway"));
+        assert!(is_home_packages_package("computer-driver"));
+    }
+
+    #[test]
+    fn computer_driver_stays_hidden_until_its_platform_artifact_exists() {
+        let computer = catalog_entry("computer-driver").expect("computer driver catalog entry");
+        assert!(computer.remote_only);
+        assert!(
+            !visible_catalog(&[])
+                .iter()
+                .any(|entry| entry.id == computer.id)
+        );
+        assert!(
+            visible_catalog(&[computer.id.to_string()])
+                .iter()
+                .any(|entry| entry.id == computer.id)
+        );
     }
 
     #[test]
