@@ -6,16 +6,20 @@
 //! every tool boundary and Stasis persists the result before checkpointing.
 
 use std::collections::BTreeSet;
+#[cfg(feature = "full-daemon")]
 use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use medousa_forge::model::{ChangeStatus, ChangedFile, WorkPolicy};
 use medousa_runtime::{
     WorkEnvironmentBinding, WorkEnvironmentError, WorkEnvironmentNetworkPolicy, WorkEnvironmentSpec,
 };
+#[cfg(any(feature = "full-daemon", test))]
+use medousa_types::forge::ChangeStatus;
+use medousa_types::forge::{ChangedFile, WorkPolicy};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "full-daemon")]
 use sha2::{Digest as _, Sha256};
 use tokio_util::sync::CancellationToken;
 
@@ -28,9 +32,34 @@ pub const PORTABLE_CODER_RESULT_SCHEMA_VERSION: u32 = 1;
 const MAX_PORTABLE_PROMPT_BYTES: usize = 256 * 1024;
 const MAX_PORTABLE_TOOL_ROUNDS: usize = 100;
 const MAX_PORTABLE_CHANGED_FILES: usize = 2_048;
+#[cfg(feature = "full-daemon")]
 const MAX_PORTABLE_SCANNED_FILE_BYTES: u64 = 1024 * 1024;
+#[cfg(feature = "full-daemon")]
 const MAX_PORTABLE_SCANNED_TOTAL_BYTES: u64 = 64 * 1024 * 1024;
+#[cfg(feature = "full-daemon")]
 const MAX_ENVIRONMENT_COMMAND_OUTPUT_BYTES: u64 = 1024 * 1024;
+
+/// Exact semantic ceiling that can cross the portable Coder boundary. Keep
+/// this wire-level list independent of the full daemon's Forge registry so an
+/// embedded client can validate a signed task without linking host tooling.
+pub const PORTABLE_CODER_TOOL_NAMES: &[&str] = &[
+    "cognition_turn",
+    "cognition_store_read",
+    "cognition_store_write",
+    "cognition_coder_shell_run",
+    "cognition_coder_shell_status",
+    "cognition_code_hover",
+    "cognition_code_definition",
+    "cognition_code_diagnostics",
+    "cognition_code_symbols",
+];
+
+pub fn portable_coder_tool_names() -> BTreeSet<String> {
+    PORTABLE_CODER_TOOL_NAMES
+        .iter()
+        .map(|name| (*name).to_string())
+        .collect()
+}
 
 fn default_response_depth_mode() -> String {
     "standard".to_string()
@@ -139,7 +168,7 @@ impl PortableCoderTask {
             return invalid("portable Coder requires an immutable input checkpoint");
         }
         let requested = validated_unique_tools(&self.requested_tool_names)?;
-        let ceiling = crate::agent_runtime::coder_tools::portable_coder_tool_names();
+        let ceiling = portable_coder_tool_names();
         if let Some(denied) = requested.iter().find(|name| !ceiling.contains(*name)) {
             return invalid(format!(
                 "tool is outside the portable Coder contract: {denied}"
@@ -220,7 +249,7 @@ impl PortableCoderResult {
         validate_sha256("workspace_state_digest", &self.workspace_state_digest)?;
         validate_sha256("evidence_digest", &self.evidence_digest)?;
         let tools = validated_unique_tools(&self.tool_names)?;
-        let ceiling = crate::agent_runtime::coder_tools::portable_coder_tool_names();
+        let ceiling = portable_coder_tool_names();
         if let Some(denied) = tools.iter().find(|name| !ceiling.contains(*name)) {
             return invalid(format!(
                 "portable Coder result reports a tool outside its contract: {denied}"
@@ -462,6 +491,7 @@ mod daemon_runner {
                 supports_ui_artifacts: false,
                 supports_liquid_markdown: false,
                 supports_browser_host: false,
+                browser_driver_id: None,
                 channel_surface: Some("portable_coder".to_string()),
             };
             let session_id = SessionId::parse(&task.parent_session_id).map_err(|error| {

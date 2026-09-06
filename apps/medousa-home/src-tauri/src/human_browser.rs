@@ -11,6 +11,10 @@ use std::sync::{LazyLock, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+use medousa_browser_bridge::{
+    BrowserObservationBounds, BrowserObservationCapture, BrowserObservationViewport,
+    BrowserSemanticNode,
+};
 use medousa_browser_lite::{
     FetchResult, SearchResponse, markdown_from_html, search_response_from_ddg_html,
 };
@@ -483,17 +487,43 @@ pub struct SnapshotMarkdownDto {
     pub truncated: bool,
 }
 
+#[derive(Debug, Clone)]
+struct SemanticObservationReport {
+    url: String,
+    document_id: String,
+    title: String,
+    viewport: BrowserObservationViewport,
+    nodes: Vec<BrowserSemanticNode>,
+    truncated: bool,
+    unchanged: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SensitiveBoundsReport {
+    bounds: Vec<BrowserObservationBounds>,
+    truncated: bool,
+}
+
 const MAX_BROWSER_PENDING_REQUESTS: usize = 64;
 const MAX_BROWSER_PENDING_PER_SURFACE: usize = 8;
 const MAX_SNAPSHOT_CAPTURE_CHARS: usize = 128 * 1024;
 const MAX_SNAPSHOT_REPORT_BYTES: usize = 512 * 1024;
 const MAX_BROWSER_CONTROL_REPORT_BYTES: usize = 64 * 1024;
+const MAX_BROWSER_OBSERVATION_REPORT_BYTES: usize = 512 * 1024;
+const MAX_BROWSER_OBSERVATION_NODES: usize = 512;
+const MAX_BROWSER_SENSITIVE_REGIONS: usize = 256;
+const MAX_BROWSER_SCREENSHOT_BYTES: usize = 8 * 1024 * 1024;
+const MAX_BROWSER_SCREENSHOT_PIXELS: u64 = 16 * 1024 * 1024;
+pub const DEFAULT_BROWSER_SCREENSHOT_WIDTH: u32 = 1280;
+pub const MAX_BROWSER_SCREENSHOT_WIDTH: u32 = 1600;
 const MAX_SNAPSHOT_MARKDOWN_CHARS: usize = 64 * 1024;
 const MAX_SNAPSHOT_SEARCH_RESULTS: usize = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BrowserRequestKind {
     Snapshot,
+    Observation,
+    SensitiveBounds,
     Act,
     Navigation,
     Find,
@@ -501,6 +531,8 @@ enum BrowserRequestKind {
 
 enum BrowserPendingReply {
     Snapshot(oneshot::Sender<SnapshotReport>),
+    Observation(oneshot::Sender<Result<SemanticObservationReport, String>>),
+    SensitiveBounds(oneshot::Sender<Result<SensitiveBoundsReport, String>>),
     Act(oneshot::Sender<BrowserActReport>),
     Navigation(oneshot::Sender<HumanBrowserNavStatePayload>),
     Find(oneshot::Sender<FindInPageResult>),
@@ -510,6 +542,8 @@ impl BrowserPendingReply {
     fn kind(&self) -> BrowserRequestKind {
         match self {
             Self::Snapshot(_) => BrowserRequestKind::Snapshot,
+            Self::Observation(_) => BrowserRequestKind::Observation,
+            Self::SensitiveBounds(_) => BrowserRequestKind::SensitiveBounds,
             Self::Act(_) => BrowserRequestKind::Act,
             Self::Navigation(_) => BrowserRequestKind::Navigation,
             Self::Find(_) => BrowserRequestKind::Find,
@@ -563,6 +597,24 @@ pub(crate) enum BrowserPageReportV1 {
         request_id: String,
         html: String,
         truncated: bool,
+    },
+    Observation {
+        request_id: String,
+        document_id: String,
+        title: String,
+        viewport: BrowserObservationViewport,
+        nodes: Vec<BrowserSemanticNode>,
+        truncated: bool,
+        unchanged: bool,
+        #[serde(default)]
+        error: Option<String>,
+    },
+    SensitiveBounds {
+        request_id: String,
+        bounds: Vec<BrowserObservationBounds>,
+        truncated: bool,
+        #[serde(default)]
+        error: Option<String>,
     },
     Action {
         request_id: String,
@@ -826,6 +878,82 @@ pub(crate) fn accept_browser_page_report<R: tauri::Runtime>(
                     html,
                     truncated,
                 });
+            }
+        }
+        BrowserPageReportV1::Observation {
+            request_id,
+            document_id,
+            title,
+            viewport,
+            nodes,
+            truncated,
+            unchanged,
+            error,
+        } => {
+            let validated_request_id = validate_request_id(&request_id)?;
+            let report_bytes = serde_json::to_vec(&(
+                &document_id,
+                &title,
+                &viewport,
+                &nodes,
+                truncated,
+                unchanged,
+                &error,
+            ))
+            .map_err(|err| err.to_string())?
+            .len();
+            if report_bytes > MAX_BROWSER_OBSERVATION_REPORT_BYTES
+                || nodes.len() > MAX_BROWSER_OBSERVATION_NODES
+            {
+                BROWSER_HOST_STATE.cancel_request(validated_request_id);
+                BROWSER_HOST_STATE.record_oversize();
+                return Err("browser semantic observation exceeds its bounded report limit"
+                    .to_string());
+            }
+            if let Some(BrowserPendingReply::Observation(tx)) = BROWSER_HOST_STATE.take(
+                validated_request_id,
+                &identity,
+                BrowserRequestKind::Observation,
+            ) {
+                let result = if let Some(error) = error {
+                    Err(error)
+                } else {
+                    Ok(SemanticObservationReport {
+                        url: native_url,
+                        document_id,
+                        title: bounded_browser_title(&title).unwrap_or_default(),
+                        viewport,
+                        nodes,
+                        truncated,
+                        unchanged,
+                    })
+                };
+                let _ = tx.send(result);
+            }
+        }
+        BrowserPageReportV1::SensitiveBounds {
+            request_id,
+            bounds,
+            truncated,
+            error,
+        } => {
+            let validated_request_id = validate_request_id(&request_id)?;
+            if bounds.len() > MAX_BROWSER_SENSITIVE_REGIONS {
+                BROWSER_HOST_STATE.cancel_request(validated_request_id);
+                BROWSER_HOST_STATE.record_oversize();
+                return Err("sensitive browser bounds exceed their bounded report limit".to_string());
+            }
+            if let Some(BrowserPendingReply::SensitiveBounds(tx)) = BROWSER_HOST_STATE.take(
+                validated_request_id,
+                &identity,
+                BrowserRequestKind::SensitiveBounds,
+            ) {
+                let result = if let Some(error) = error {
+                    Err(error)
+                } else {
+                    Ok(SensitiveBoundsReport { bounds, truncated })
+                };
+                let _ = tx.send(result);
             }
         }
         BrowserPageReportV1::Action {
@@ -3128,6 +3256,119 @@ try{{
 }})();"#))
 }
 
+fn semantic_observation_capture_js(request_id: &str, force_full: bool) -> Result<String, String> {
+    let request_id = serde_json::to_string(request_id).map_err(|err| err.to_string())?;
+    const SCRIPT: &str = r#"(function(){
+var requestId=__REQUEST_ID__,forceFull=__FORCE_FULL__,maxNodes=__MAX_NODES__;
+function send(payload){
+  try{
+    var i=window.__TAURI_INTERNALS__||window.__TAURI__;
+    if(i&&i.invoke)i.invoke("plugin:browser-bridge|report",{report:payload});
+  }catch(_err){}
+}
+function viewport(){
+  return {width:Math.max(0,Math.round(window.innerWidth||0)),height:Math.max(0,Math.round(window.innerHeight||0)),scroll_x:Math.round(window.scrollX||0),scroll_y:Math.round(window.scrollY||0),device_scale_factor:Number(window.devicePixelRatio||1)};
+}
+try{
+  var key="__medousaWorldObservationV1",state=window[key];
+  if(!state||state.document!==document){
+    var random=(self.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));
+    state={document:document,documentId:"doc-"+random,refs:new WeakMap(),elements:new Map(),nextRef:1,dirty:true,cached:false};
+    var dirty=function(){state.dirty=true;};
+    if(self.MutationObserver)new MutationObserver(dirty).observe(document,{subtree:true,childList:true,attributes:true,characterData:true});
+    addEventListener("scroll",dirty,{capture:true,passive:true});
+    addEventListener("resize",dirty,{passive:true});
+    document.addEventListener("focusin",dirty,true);
+    document.addEventListener("input",dirty,true);
+    window[key]=state;
+  }
+  if(!forceFull&&!state.dirty&&state.cached){
+    send({version:1,kind:"observation",requestId:requestId,documentId:state.documentId,title:String(document.title||"").slice(0,512),viewport:viewport(),nodes:[],truncated:false,unchanged:true,error:null});
+    return;
+  }
+  function bounded(value,limit){return String(value==null?"":value).replace(/\s+/g," ").trim().slice(0,limit);}
+  function sensitive(el){
+    var type=bounded(el.getAttribute&&el.getAttribute("type"),64).toLowerCase();
+    var ac=bounded(el.getAttribute&&el.getAttribute("autocomplete"),128).toLowerCase();
+    return type==="password"||type==="file"||ac==="current-password"||ac==="new-password"||ac==="one-time-code"||ac.indexOf("cc-")===0||ac.indexOf("webauthn")>=0;
+  }
+  function roleFor(el){
+    var explicit=bounded(el.getAttribute&&el.getAttribute("role"),64).toLowerCase();
+    if(explicit)return explicit;
+    var tag=String(el.localName||"").toLowerCase(),type=bounded(el.getAttribute&&el.getAttribute("type"),32).toLowerCase();
+    if(tag==="a"&&el.hasAttribute("href"))return "link";
+    if(tag==="button"||tag==="summary")return "button";
+    if(tag==="textarea")return "textbox";
+    if(tag==="select")return "combobox";
+    if(tag==="option")return "option";
+    if(tag==="img")return "image";
+    if(/^h[1-6]$/.test(tag))return "heading";
+    if(tag==="p")return "paragraph";
+    if(tag==="li")return "listitem";
+    if(tag==="nav")return "navigation";
+    if(tag==="main")return "main";
+    if(tag==="form")return "form";
+    if(tag==="table")return "table";
+    if(tag==="tr")return "row";
+    if(tag==="th")return "columnheader";
+    if(tag==="td")return "cell";
+    if(tag==="input"){
+      if(type==="checkbox")return "checkbox";
+      if(type==="radio")return "radio";
+      if(type==="button"||type==="submit"||type==="reset")return "button";
+      if(type==="range")return "slider";
+      return "textbox";
+    }
+    if(el.isContentEditable)return "textbox";
+    return "";
+  }
+  function refFor(el){
+    var existing=state.refs.get(el);
+    if(existing)return existing;
+    var next="el-"+state.documentId.slice(4,16)+"-"+(state.nextRef++).toString(36);
+    state.refs.set(el,next);return next;
+  }
+  function safeHref(el){
+    var raw=el.getAttribute&&el.getAttribute("href");
+    if(!raw)return null;
+    try{var u=new URL(raw,document.baseURI);return (u.protocol==="http:"||u.protocol==="https:")?u.origin+u.pathname:null;}catch(_err){return null;}
+  }
+  var nodes=[],included=new WeakMap(),walker=document.createTreeWalker(document.documentElement||document,NodeFilter.SHOW_ELEMENT),el=walker.currentNode,truncated=false,visited=0,started=Date.now();
+  state.elements=new Map();
+  while(el){
+    visited++;
+    if(visited>20000||((visited&127)===0&&Date.now()-started>32)){truncated=true;break;}
+    var tag=String(el.localName||"").toLowerCase();
+    if(tag!=="script"&&tag!=="style"&&tag!=="template"&&tag!=="noscript"){
+      var role=roleFor(el),aria=bounded(el.getAttribute&&el.getAttribute("aria-label"),240),meaningful=!!role||!!aria;
+      if(meaningful){
+        var style=getComputedStyle(el),rect=el.getBoundingClientRect();
+        if(style.display!=="none"&&style.visibility!=="hidden"&&rect.width>0&&rect.height>0){
+          if(nodes.length>=maxNodes){truncated=true;break;}
+          var elementRef=refFor(el),parentRef=null,parent=el.parentElement;
+          while(parent){if(included.has(parent)){parentRef=included.get(parent);break;}parent=parent.parentElement;}
+          var isSensitive=sensitive(el),name=aria||bounded(el.getAttribute&&el.getAttribute("alt"),240)||bounded(el.getAttribute&&el.getAttribute("title"),240)||bounded(el.getAttribute&&el.getAttribute("placeholder"),240)||bounded(el.innerText||el.textContent,240);
+          var value=null;
+          if(!isSensitive&&(tag==="input"||tag==="textarea"||tag==="select"||el.isContentEditable))value=bounded(("value" in el?el.value:el.textContent),240)||null;
+          var node={element_ref:elementRef,parent_ref:parentRef,role:role||"generic",name:name,tag:tag.slice(0,64),value:value,href:safeHref(el),disabled:!!el.disabled||el.getAttribute("aria-disabled")==="true",checked:("checked" in el)?!!el.checked:null,selected:("selected" in el)?!!el.selected:null,bounds:{x:Math.round(rect.x),y:Math.round(rect.y),width:Math.max(0,Math.round(rect.width)),height:Math.max(0,Math.round(rect.height))},sensitive:isSensitive};
+          nodes.push(node);included.set(el,elementRef);state.elements.set(elementRef,el);
+        }
+      }
+    }
+    el=walker.nextNode();
+  }
+  state.dirty=false;state.cached=true;
+  send({version:1,kind:"observation",requestId:requestId,documentId:state.documentId,title:String(document.title||"").slice(0,512),viewport:viewport(),nodes:nodes,truncated:truncated,unchanged:false,error:null});
+}catch(e){
+  send({version:1,kind:"observation",requestId:requestId,documentId:"error",title:"",viewport:viewport(),nodes:[],truncated:false,unchanged:false,error:String(e)});
+}
+})();"#;
+    Ok(SCRIPT
+        .replace("__REQUEST_ID__", &request_id)
+        .replace("__FORCE_FULL__", if force_full { "true" } else { "false" })
+        .replace("__MAX_NODES__", &MAX_BROWSER_OBSERVATION_NODES.to_string()))
+}
+
 const ACT_REPORT_TIMEOUT: Duration = Duration::from_secs(8);
 
 #[derive(Debug, Clone, Deserialize)]
@@ -3153,6 +3394,7 @@ try{{
   var req={payload};
   var requestId={request_id};
   function done(ok,error){{
+    if(ok&&window.__medousaWorldObservationV1)window.__medousaWorldObservationV1.dirty=true;
     var i=window.__TAURI_INTERNALS__||window.__TAURI__;
     if(!i||!i.invoke)return;
     i.invoke("plugin:browser-bridge|report",{{report:{{version:1,kind:"action",requestId:requestId,ok:ok,error:error||null}}}});
@@ -3177,11 +3419,42 @@ try{{
     }}
     return null;
   }}
-  var el=req.selector?document.querySelector(req.selector):null;
-  if(req.selector&&!el){{done(false,"no element matches selector");return;}}
-  if(req.selector&&!visible(el)){{done(false,"target element is not visible");return;}}
+  function highRisk(el,action){{
+    if(!el||!(action==="click"||action==="press"||action==="select"))return false;
+    var role=String(el.getAttribute&&el.getAttribute("role")||"").toLowerCase();
+    var type=String(el.getAttribute&&el.getAttribute("type")||"").toLowerCase();
+    var name=String(el.getAttribute&&el.getAttribute("aria-label")||el.getAttribute&&el.getAttribute("title")||el.innerText||el.textContent||"").replace(/\s+/g," ").trim().toLowerCase().slice(0,512);
+    var semantics=role+" "+type+" "+name;
+    return /(^|\s)(submit|checkout|purchase|delete|pay now|confirm order|remove account)(\s|$)/.test(semantics);
+  }}
+  function resolveTarget(){{
+    if(req.target_ref){{
+      var state=window.__medousaWorldObservationV1;
+      var target=state&&state.elements&&state.elements.get(req.target_ref);
+      return target&&target.isConnected?target:null;
+    }}
+    return req.selector?document.querySelector(req.selector):null;
+  }}
+  var el=resolveTarget();
+  if(req.action==="wait"&&(req.selector||req.target_ref)){{
+    var until=Date.now()+Math.min(Math.max(req.ms||1000,0),5000);
+    (function poll(){{el=resolveTarget();if(el&&visible(el)){{done(true);return;}}if(Date.now()>=until){{done(false,"wait target did not become visible");return;}}setTimeout(poll,50);}})();
+    return;
+  }}
+  if((req.selector||req.target_ref)&&!el){{done(false,req.target_ref?"stale or unknown element ref":"no element matches selector");return;}}
+  if((req.selector||req.target_ref)&&!visible(el)){{done(false,"target element is not visible");return;}}
+  if(req.guard&&el){{
+    var actualRole=String(el.getAttribute&&el.getAttribute("role")||"").toLowerCase();
+    if(!actualRole){{var guardTag=String(el.localName||"").toLowerCase(),guardType=String(el.getAttribute&&el.getAttribute("type")||"").toLowerCase();if(guardTag==="a")actualRole="link";else if(guardTag==="button"||guardTag==="summary"||guardType==="submit"||guardType==="button")actualRole="button";else if(guardTag==="textarea"||guardTag==="input"||el.isContentEditable)actualRole="textbox";else if(guardTag==="select")actualRole="combobox";else if(guardTag==="option")actualRole="option";}}
+    var actualName=String(el.getAttribute&&el.getAttribute("aria-label")||el.getAttribute&&el.getAttribute("alt")||el.getAttribute&&el.getAttribute("title")||el.getAttribute&&el.getAttribute("placeholder")||el.innerText||el.textContent||"").replace(/\s+/g," ").trim().slice(0,240);
+    var actualValue=("value" in el)?String(el.value||"").replace(/\s+/g," ").trim().slice(0,240):"";
+    if(req.guard.role&&actualRole!==String(req.guard.role).toLowerCase()){{done(false,"target role precondition failed");return;}}
+    if(req.guard.name&&actualName!==String(req.guard.name)){{done(false,"target name precondition failed");return;}}
+    if(req.guard.value&&actualValue!==String(req.guard.value)){{done(false,"target value precondition failed");return;}}
+  }}
   var forbiddenReason=forbidden(el,req.action);
   if(forbiddenReason){{done(false,forbiddenReason);return;}}
+  if(highRisk(el,req.action)&&!req.allow_high_risk){{done(false,"resolved target requires explicit high-risk authorization");return;}}
   switch(req.action){{
     case "click": el.click(); done(true); return;
     case "type":
@@ -3218,6 +3491,8 @@ try{{
 pub struct BrowserActRequest {
     pub action: String,
     #[serde(default)]
+    pub target_ref: Option<String>,
+    #[serde(default)]
     pub selector: Option<String>,
     #[serde(default)]
     pub text: Option<String>,
@@ -3229,10 +3504,25 @@ pub struct BrowserActRequest {
     pub delta_y: Option<i64>,
     #[serde(default)]
     pub ms: Option<u64>,
+    #[serde(default)]
+    pub guard: Option<BrowserActGuard>,
+    #[serde(default)]
+    pub allow_high_risk: bool,
 }
 
-fn validate_browser_act_request(request: &BrowserActRequest) -> Result<(), String> {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrowserActGuard {
+    #[serde(default)]
+    pub role: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub value: Option<String>,
+}
+
+pub(crate) fn validate_browser_act_request(request: &BrowserActRequest) -> Result<(), String> {
     const MAX_SELECTOR_BYTES: usize = 2 * 1024;
+    const MAX_ELEMENT_REF_BYTES: usize = 256;
     const MAX_TEXT_BYTES: usize = 16 * 1024;
     const MAX_KEY_BYTES: usize = 64;
     const MAX_WAIT_MS: u64 = 5_000;
@@ -3250,6 +3540,18 @@ fn validate_browser_act_request(request: &BrowserActRequest) -> Result<(), Strin
         .is_some_and(|value| value.is_empty() || value.len() > MAX_SELECTOR_BYTES)
     {
         return Err(format!("browser selector exceeds {MAX_SELECTOR_BYTES} byte limit"));
+    }
+    if request
+        .target_ref
+        .as_deref()
+        .is_some_and(|value| value.is_empty() || value.len() > MAX_ELEMENT_REF_BYTES)
+    {
+        return Err(format!(
+            "browser element ref exceeds {MAX_ELEMENT_REF_BYTES} byte limit"
+        ));
+    }
+    if request.selector.is_some() && request.target_ref.is_some() {
+        return Err("browser action must use either target_ref or selector, not both".to_string());
     }
     for value in [request.text.as_deref(), request.value.as_deref()].into_iter().flatten() {
         if value.len() > MAX_TEXT_BYTES {
@@ -3276,8 +3578,9 @@ fn validate_browser_act_request(request: &BrowserActRequest) -> Result<(), Strin
     }
     if matches!(request.action.as_str(), "click" | "type" | "press" | "select")
         && request.selector.is_none()
+        && request.target_ref.is_none()
     {
-        return Err("browser action requires a selector".to_string());
+        return Err("browser action requires a target_ref or selector".to_string());
     }
     Ok(())
 }
@@ -3322,6 +3625,270 @@ async fn capture_html(app: &AppHandle) -> Result<SnapshotReport, String> {
         .await
         .map_err(|_| "snapshot timed out waiting for page content".to_string())?
         .map_err(|_| "snapshot channel closed".to_string())
+}
+
+pub async fn capture_semantic_observation(
+    app: &AppHandle,
+    force_full: bool,
+) -> Result<BrowserObservationCapture, String> {
+    let content = embedded_content_webview(app)
+        .ok_or_else(|| "browser content webview not ready".to_string())?;
+    let identity = request_identity(&content, BrowserSurface::Embed)?;
+    let tab_id = identity
+        .tab_id
+        .clone()
+        .ok_or_else(|| "browser webview is not bound to a tab".to_string())?;
+    let (tx, rx) = oneshot::channel();
+    let request_id = BROWSER_HOST_STATE.register(
+        &identity,
+        BrowserPendingReply::Observation(tx),
+    )?;
+    let _guard = BrowserPendingGuard::new(&BROWSER_HOST_STATE, request_id.clone());
+    content
+        .eval(&semantic_observation_capture_js(&request_id, force_full)?)
+        .map_err(|err| err.to_string())?;
+    let report = tokio::time::timeout(Duration::from_secs(8), rx)
+        .await
+        .map_err(|_| "semantic observation timed out waiting for page".to_string())?
+        .map_err(|_| "semantic observation channel closed".to_string())??;
+    Ok(BrowserObservationCapture {
+        tab_id,
+        url: report.url,
+        title: report.title,
+        document_id: report.document_id,
+        viewport: report.viewport,
+        nodes: report.nodes,
+        truncated: report.truncated,
+        unchanged: report.unchanged,
+        captured_at_ms: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+            .try_into()
+            .unwrap_or(u64::MAX),
+    })
+}
+
+#[derive(Debug)]
+pub struct BrowserViewportScreenshot {
+    pub png: Vec<u8>,
+    pub image_width: u32,
+    pub image_height: u32,
+    pub sensitive_regions_redacted: usize,
+}
+
+pub async fn capture_viewport_screenshot(
+    app: &AppHandle,
+    viewport: &BrowserObservationViewport,
+    max_width: u32,
+) -> Result<BrowserViewportScreenshot, String> {
+    let content = embedded_content_webview(app)
+        .ok_or_else(|| "browser content webview not ready".to_string())?;
+    let before = capture_sensitive_bounds(&content).await?;
+    if before.truncated {
+        return Err("sensitive browser regions exceed the redaction budget".to_string());
+    }
+    let raw = capture_native_viewport_png(content.clone()).await?;
+    let after = capture_sensitive_bounds(&content).await?;
+    if after.truncated || before.bounds != after.bounds {
+        return Err("sensitive browser regions moved while pixels were captured".to_string());
+    }
+    process_viewport_screenshot(raw, viewport, &after.bounds, max_width)
+}
+
+fn process_viewport_screenshot(
+    raw: Vec<u8>,
+    viewport: &BrowserObservationViewport,
+    sensitive_bounds: &[BrowserObservationBounds],
+    max_width: u32,
+) -> Result<BrowserViewportScreenshot, String> {
+    use image::{DynamicImage, ImageFormat, Rgba, imageops::FilterType};
+    use std::io::Cursor;
+
+    if raw.is_empty() || raw.len() > MAX_BROWSER_SCREENSHOT_BYTES {
+        return Err("native browser screenshot is empty or exceeds the 8 MB cap".to_string());
+    }
+    if viewport.width == 0 || viewport.height == 0 {
+        return Err("browser screenshot requires a non-empty semantic viewport".to_string());
+    }
+    let decoded = image::load_from_memory_with_format(&raw, ImageFormat::Png)
+        .map_err(|error| format!("could not decode native browser screenshot: {error}"))?;
+    let mut pixels = decoded.to_rgba8();
+    let (original_width, original_height) = pixels.dimensions();
+    if original_width == 0
+        || original_height == 0
+        || u64::from(original_width) * u64::from(original_height) > MAX_BROWSER_SCREENSHOT_PIXELS
+    {
+        return Err("native browser screenshot dimensions exceed the pixel budget".to_string());
+    }
+    let scale_x = f64::from(original_width) / f64::from(viewport.width);
+    let scale_y = f64::from(original_height) / f64::from(viewport.height);
+    let mut sensitive_regions_redacted = 0usize;
+    for bounds in sensitive_bounds {
+        let Some((x_start, x_end)) = scaled_redaction_axis(
+            bounds.x.saturating_sub(2),
+            bounds.width.saturating_add(4),
+            scale_x,
+            original_width,
+        ) else {
+            continue;
+        };
+        let Some((y_start, y_end)) = scaled_redaction_axis(
+            bounds.y.saturating_sub(2),
+            bounds.height.saturating_add(4),
+            scale_y,
+            original_height,
+        ) else {
+            continue;
+        };
+        for y in y_start..y_end {
+            for x in x_start..x_end {
+                pixels.put_pixel(x, y, Rgba([20, 18, 28, 255]));
+            }
+        }
+        sensitive_regions_redacted = sensitive_regions_redacted.saturating_add(1);
+    }
+
+    // Redact at native resolution before resizing so resampling cannot bleed
+    // secret-field pixels outside the covered rectangle.
+    let max_width = max_width.clamp(320, MAX_BROWSER_SCREENSHOT_WIDTH);
+    if original_width > max_width {
+        let resized_height = ((u64::from(original_height) * u64::from(max_width))
+            / u64::from(original_width))
+        .max(1)
+        .try_into()
+        .unwrap_or(u32::MAX);
+        pixels = image::imageops::resize(&pixels, max_width, resized_height, FilterType::Triangle);
+    }
+    let (image_width, image_height) = pixels.dimensions();
+
+    let mut encoded = Cursor::new(Vec::new());
+    DynamicImage::ImageRgba8(pixels)
+        .write_to(&mut encoded, ImageFormat::Png)
+        .map_err(|error| format!("could not encode redacted browser screenshot: {error}"))?;
+    let png = encoded.into_inner();
+    if png.len() > MAX_BROWSER_SCREENSHOT_BYTES {
+        return Err("redacted browser screenshot exceeds the 8 MB cap".to_string());
+    }
+    Ok(BrowserViewportScreenshot {
+        png,
+        image_width,
+        image_height,
+        sensitive_regions_redacted,
+    })
+}
+
+async fn capture_sensitive_bounds(
+    content: &tauri::Webview,
+) -> Result<SensitiveBoundsReport, String> {
+    let identity = request_identity(content, BrowserSurface::Embed)?;
+    let (tx, rx) = oneshot::channel();
+    let request_id = BROWSER_HOST_STATE.register(
+        &identity,
+        BrowserPendingReply::SensitiveBounds(tx),
+    )?;
+    let _guard = BrowserPendingGuard::new(&BROWSER_HOST_STATE, request_id.clone());
+    content
+        .eval(&sensitive_bounds_capture_js(&request_id)?)
+        .map_err(|error| error.to_string())?;
+    tokio::time::timeout(Duration::from_secs(4), rx)
+        .await
+        .map_err(|_| "sensitive browser bounds capture timed out".to_string())?
+        .map_err(|_| "sensitive browser bounds channel closed".to_string())?
+}
+
+fn sensitive_bounds_capture_js(request_id: &str) -> Result<String, String> {
+    let request_id = serde_json::to_string(request_id).map_err(|error| error.to_string())?;
+    Ok(format!(
+        r#"(function(){{
+try{{
+  var max={MAX_BROWSER_SENSITIVE_REGIONS};
+  var selector='input[type="password"],input[type="file"],[autocomplete="current-password"],[autocomplete="new-password"],[autocomplete="one-time-code"],[autocomplete^="cc-"],[autocomplete*="webauthn"],[data-medousa-sensitive="true"]';
+  var candidates=Array.prototype.slice.call(document.querySelectorAll(selector));
+  var bounds=[],truncated=candidates.length>max;
+  for(var index=0;index<candidates.length&&bounds.length<max;index++){{
+    var el=candidates[index],style=getComputedStyle(el),rect=el.getBoundingClientRect();
+    if(style.display==="none"||style.visibility==="hidden"||rect.width<=0||rect.height<=0)continue;
+    bounds.push({{x:Math.round(rect.x),y:Math.round(rect.y),width:Math.max(0,Math.round(rect.width)),height:Math.max(0,Math.round(rect.height))}});
+  }}
+  var i=window.__TAURI_INTERNALS__||window.__TAURI__;
+  if(i&&i.invoke)i.invoke("plugin:browser-bridge|report",{{report:{{version:1,kind:"sensitiveBounds",requestId:{request_id},bounds:bounds,truncated:truncated,error:null}}}});
+}}catch(e){{
+  var i=window.__TAURI_INTERNALS__||window.__TAURI__;
+  if(i&&i.invoke)i.invoke("plugin:browser-bridge|report",{{report:{{version:1,kind:"sensitiveBounds",requestId:{request_id},bounds:[],truncated:true,error:String(e)}}}});
+}}
+}})();"#
+    ))
+}
+
+fn scaled_redaction_axis(origin: i32, size: u32, scale: f64, limit: u32) -> Option<(u32, u32)> {
+    if size == 0 || !scale.is_finite() || scale <= 0.0 || limit == 0 {
+        return None;
+    }
+    let start = (f64::from(origin) * scale).floor().max(0.0);
+    let end = ((f64::from(origin) + f64::from(size)) * scale)
+        .ceil()
+        .min(f64::from(limit));
+    if end <= start {
+        return None;
+    }
+    Some((start as u32, end as u32))
+}
+
+#[cfg(target_os = "macos")]
+async fn capture_native_viewport_png(content: tauri::Webview) -> Result<Vec<u8>, String> {
+    let (tx, rx) = oneshot::channel();
+    content
+        .with_webview(move |platform| unsafe {
+            use block2::RcBlock;
+            use objc2::runtime::AnyObject;
+            use objc2_app_kit::{
+                NSBitmapImageFileType, NSBitmapImageRep, NSBitmapImageRepPropertyKey, NSImage,
+            };
+            use objc2_foundation::NSDictionary;
+            use objc2_web_kit::WKWebView;
+            use std::cell::RefCell;
+
+            let webview: &WKWebView = &*platform.inner().cast();
+            let sender = RefCell::new(Some(tx));
+            let completion = RcBlock::new(
+                move |image: *mut NSImage, _error: *mut objc2_foundation::NSError| {
+                let result = (|| {
+                    let image = image
+                        .as_ref()
+                        .ok_or_else(|| "WKWebView returned no screenshot".to_string())?;
+                    let tiff = image
+                        .TIFFRepresentation()
+                        .ok_or_else(|| "WKWebView screenshot has no bitmap data".to_string())?;
+                    let bitmap = NSBitmapImageRep::imageRepWithData(&tiff)
+                        .ok_or_else(|| "could not decode WKWebView screenshot".to_string())?;
+                    let properties =
+                        NSDictionary::<NSBitmapImageRepPropertyKey, AnyObject>::new();
+                    let png = bitmap
+                        .representationUsingType_properties(
+                            NSBitmapImageFileType::PNG,
+                            &properties,
+                        )
+                        .ok_or_else(|| "could not encode WKWebView screenshot as PNG".to_string())?;
+                    Ok(png.to_vec())
+                })();
+                if let Some(sender) = sender.borrow_mut().take() {
+                    let _ = sender.send(result);
+                }
+                },
+            );
+            webview.takeSnapshotWithConfiguration_completionHandler(None, &completion);
+        })
+        .map_err(|error| error.to_string())?;
+    tokio::time::timeout(Duration::from_secs(8), rx)
+        .await
+        .map_err(|_| "native browser screenshot timed out".to_string())?
+        .map_err(|_| "native browser screenshot channel closed".to_string())?
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn capture_native_viewport_png(_content: tauri::Webview) -> Result<Vec<u8>, String> {
+    Err("viewport screenshots are not supported by this desktop browser driver yet".to_string())
 }
 
 #[tauri::command]
@@ -3533,6 +4100,52 @@ mod request_broker_tests {
     use super::*;
 
     #[test]
+    fn viewport_screenshot_redacts_sensitive_semantic_bounds() {
+        use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
+        use std::io::Cursor;
+
+        let source = RgbaImage::from_pixel(100, 50, Rgba([240, 240, 240, 255]));
+        let mut encoded = Cursor::new(Vec::new());
+        DynamicImage::ImageRgba8(source)
+            .write_to(&mut encoded, ImageFormat::Png)
+            .unwrap();
+        let viewport = BrowserObservationViewport {
+            width: 50,
+            height: 25,
+            scroll_x: 0,
+            scroll_y: 0,
+            device_scale_factor: 2.0,
+        };
+        let bounds = BrowserObservationBounds {
+            x: 10,
+            y: 5,
+            width: 10,
+            height: 5,
+        };
+
+        let captured = process_viewport_screenshot(
+            encoded.into_inner(),
+            &viewport,
+            &[bounds],
+            DEFAULT_BROWSER_SCREENSHOT_WIDTH,
+        )
+        .unwrap();
+        assert_eq!(captured.sensitive_regions_redacted, 1);
+        let output = image::load_from_memory_with_format(&captured.png, ImageFormat::Png)
+            .unwrap()
+            .to_rgba8();
+        assert_eq!(*output.get_pixel(25, 15), Rgba([20, 18, 28, 255]));
+        assert_eq!(*output.get_pixel(5, 5), Rgba([240, 240, 240, 255]));
+    }
+
+    #[test]
+    fn redaction_axis_clips_offscreen_bounds() {
+        assert_eq!(scaled_redaction_axis(-10, 20, 2.0, 100), Some((0, 20)));
+        assert_eq!(scaled_redaction_axis(60, 10, 2.0, 100), None);
+        assert_eq!(scaled_redaction_axis(10, 0, 2.0, 100), None);
+    }
+
+    #[test]
     fn remote_navigation_policy_is_http_only_with_bounded_blank_bootstrap() {
         for allowed in [
             "about:blank",
@@ -3659,12 +4272,15 @@ mod request_broker_tests {
     fn action_inputs_are_bounded_before_script_generation() {
         let valid = BrowserActRequest {
             action: "type".to_string(),
+            target_ref: None,
             selector: Some("#query".to_string()),
             text: Some("hello".to_string()),
             key: None,
             value: None,
             delta_y: None,
             ms: None,
+            guard: None,
+            allow_high_risk: false,
         };
         assert!(validate_browser_act_request(&valid).is_ok());
 
@@ -3679,6 +4295,39 @@ mod request_broker_tests {
         let mut unknown = valid;
         unknown.action = "executeScript".to_string();
         assert!(validate_browser_act_request(&unknown).is_err());
+    }
+
+    #[test]
+    fn semantic_capture_and_actions_keep_work_inside_bounded_driver_code() {
+        let observation = semantic_observation_capture_js("browser-42", false).unwrap();
+        assert!(observation.contains("visited>20000"));
+        assert!(observation.contains("Date.now()-started>32"));
+        assert!(observation.contains("unchanged:true"));
+        assert!(!observation.contains("outerHTML"));
+
+        let action = browser_act_js(
+            &BrowserActRequest {
+                action: "click".to_string(),
+                target_ref: Some("el-doc-1".to_string()),
+                selector: None,
+                text: None,
+                key: None,
+                value: None,
+                delta_y: None,
+                ms: None,
+                guard: Some(BrowserActGuard {
+                    role: Some("button".to_string()),
+                    name: Some("Continue".to_string()),
+                    value: None,
+                }),
+                allow_high_risk: false,
+            },
+            "browser-43",
+        )
+        .unwrap();
+        assert!(action.contains("state.elements.get(req.target_ref)"));
+        assert!(action.contains("target role precondition failed"));
+        assert!(action.contains("explicit high-risk authorization"));
     }
 
     #[test]

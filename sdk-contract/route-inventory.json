@@ -809,6 +809,150 @@
     {
       "body_limit": 1024,
       "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "browser.worlds.isolated.get",
+      "path": "/v1/browser/worlds/isolated",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 32768,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "browser.worlds.isolated.post",
+      "path": "/v1/browser/worlds/isolated",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "DELETE",
+      "operation_id": "browser.worlds.isolated.by_world_id.delete",
+      "path": "/v1/browser/worlds/isolated/{world_id}",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "browser.worlds.isolated.by_world_id.get",
+      "path": "/v1/browser/worlds/isolated/{world_id}",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 49152,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "browser.worlds.isolated.by_world_id.input.post",
+      "path": "/v1/browser/worlds/isolated/{world_id}/input",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 8192,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "browser.worlds.isolated.by_world_id.lifecycle.post",
+      "path": "/v1/browser/worlds/isolated/{world_id}/lifecycle",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 16384,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "browser.worlds.isolated.by_world_id.navigate.post",
+      "path": "/v1/browser/worlds/isolated/{world_id}/navigate",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 8192,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "browser.worlds.isolated.by_world_id.observe.post",
+      "path": "/v1/browser/worlds/isolated/{world_id}/observe",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 8192,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "browser.worlds.isolated.by_world_id.screenshot.post",
+      "path": "/v1/browser/worlds/isolated/{world_id}/screenshot",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
       "browser_policy": "native_only",
       "capabilities": [
         "content.read"

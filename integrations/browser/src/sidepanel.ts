@@ -97,6 +97,10 @@ let toastTimer: number | undefined;
 const workshopWatchers = new Map<string, AbortController>();
 let toolPumpAbort: AbortController | null = null;
 
+function browserDriverId(): string {
+  return `driver:browser-extension:${clientId}`;
+}
+
 const CLIENT_TOOL_DEFINITIONS: ClientToolDefinition[] = [
   {
     name: "browser_page_snapshot",
@@ -459,6 +463,17 @@ async function connectAndRestore(): Promise<void> {
       channel_surface: "browser",
       supports_browser_host: false,
       tools: CLIENT_TOOL_DEFINITIONS,
+      world_drivers: [
+        {
+          driver_id: browserDriverId(),
+          kind: "browser_extension",
+          surface: "browser",
+          ownership: "attached",
+          transport: "client_queue",
+          capabilities: ["semantic_observation"],
+          display_name: "Current browser profile",
+        },
+      ],
     });
     const persisted = await loadSession();
     if (persisted.sessionId) {
@@ -558,6 +573,7 @@ async function sendPrompt(value?: string): Promise<void> {
       stage_routing: defaults.stage_routing as unknown as InteractiveTurnRequest["stage_routing"],
       media_refs: [],
       surface: {
+        browser_driver_id: browserDriverId(),
         channel_surface: "browser",
         supports_browser_host: false,
         supports_liquid_markdown: false,

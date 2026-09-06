@@ -135,25 +135,35 @@ pub fn search_response_to_tool_json(
 
 pub async fn resolve_browser_host_enabled(
     turn_scope: &crate::agent_runtime::execution_context::TurnScopeAccess,
-) -> (bool, Option<String>) {
+) -> (bool, Option<String>, Option<String>) {
     let scope = crate::agent_runtime::execution_context::turn_continuation_scope(turn_scope).await;
     let Some(scope) = scope else {
-        return (false, None);
+        return (false, None, None);
     };
+    if scope
+        .browser_driver_id
+        .as_deref()
+        .is_some_and(crate::browser_tools::is_isolated_browser_driver_id)
+    {
+        // Search results are provider data, not a reason to silently move the
+        // turn onto Home's shared browser identity. Isolated worlds navigate
+        // only through their explicitly addressed driver.
+        return (false, scope.channel_surface, scope.browser_driver_id);
+    }
     if !scope.supports_browser_host {
-        return (false, scope.channel_surface);
+        return (false, scope.channel_surface, scope.browser_driver_id);
     }
     let client_executed = scope
         .channel_surface
         .as_deref()
         .is_some_and(|label| label.starts_with("home-ios") || label.starts_with("home-android"));
     if client_executed {
-        return (true, scope.channel_surface);
+        return (true, scope.channel_surface, scope.browser_driver_id);
     }
     if browser_host_healthy().await {
-        return (true, scope.channel_surface);
+        return (true, scope.channel_surface, scope.browser_driver_id);
     }
-    (false, scope.channel_surface)
+    (false, scope.channel_surface, scope.browser_driver_id)
 }
 
 pub async fn run_browser_backed_search(
@@ -165,7 +175,7 @@ pub async fn run_browser_backed_search(
     sink: Option<SharedAgentStreamSink>,
 ) -> Result<SearchResponse, String> {
     let delivery = resolve_browser_tool_delivery(&sink).await;
-    let (enabled, channel) = resolve_browser_host_enabled(turn_scope).await;
+    let (enabled, channel, world_driver_id) = resolve_browser_host_enabled(turn_scope).await;
     if !enabled {
         return search_ddg_html_cached_async(query, max_results).await;
     }
@@ -180,6 +190,7 @@ pub async fn run_browser_backed_search(
             max_results,
             turn_correlation_id,
             chat_session_id,
+            world_driver_id,
             sink,
         )
         .await;
@@ -192,6 +203,7 @@ pub async fn run_browser_backed_search(
             max_results,
             turn_correlation_id,
             chat_session_id,
+            world_driver_id,
             &response,
             delivery.as_ref(),
         )
@@ -214,6 +226,7 @@ async fn wait_for_challenge_resolution(
     max_results: usize,
     turn_correlation_id: &str,
     chat_session_id: &str,
+    world_driver_id: Option<String>,
     initial: &SearchResponse,
     delivery: Option<&BrowserToolDelivery>,
 ) -> Result<SearchResponse, String> {
@@ -226,6 +239,7 @@ async fn wait_for_challenge_resolution(
     let session = create_browser_session(BrowserSessionCreateRequest {
         turn_id: turn_correlation_id.to_string(),
         chat_session_id: chat_session_id.to_string(),
+        world_driver_id,
         query: query.to_string(),
         max_results,
         client_executed: false,
@@ -277,11 +291,13 @@ async fn run_client_executed_search(
     max_results: usize,
     turn_correlation_id: &str,
     chat_session_id: &str,
+    world_driver_id: Option<String>,
     sink: Option<SharedAgentStreamSink>,
 ) -> Result<SearchResponse, String> {
     let session = create_browser_session(BrowserSessionCreateRequest {
         turn_id: turn_correlation_id.to_string(),
         chat_session_id: chat_session_id.to_string(),
+        world_driver_id,
         query: query.to_string(),
         max_results,
         client_executed: true,
@@ -392,6 +408,7 @@ pub fn surface_from_scope(
         supports_ui_artifacts: scope.supports_ui_artifacts,
         supports_liquid_markdown: scope.supports_liquid_markdown,
         supports_browser_host: scope.supports_browser_host,
+        browser_driver_id: scope.browser_driver_id.clone(),
     })
 }
 

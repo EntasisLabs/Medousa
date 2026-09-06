@@ -1297,6 +1297,7 @@ async fn spawn_continuation_agent_turn(
         supports_ui_artifacts: false,
         supports_liquid_markdown: false,
         supports_browser_host: false,
+        browser_driver_id: None,
         channel_surface: interactive_request
             .surface
             .as_ref()
@@ -1435,6 +1436,7 @@ pub async fn spawn_daemon_api_agent_turn(
         supports_ui_artifacts: false,
         supports_liquid_markdown: false,
         supports_browser_host: false,
+        browser_driver_id: None,
         channel_surface: Some("api".to_string()),
     };
     let execution = match crate::agent_runtime::execution_context::TurnExecutionContext::from_scope(
@@ -2265,6 +2267,10 @@ async fn start_ingest_ask_stream(
         supports_browser_host: crate::browser_tools::surface_supports_browser_host(
             interactive_request.surface.as_ref(),
         ),
+        browser_driver_id: interactive_request
+            .surface
+            .as_ref()
+            .and_then(|surface| surface.browser_driver_id.clone()),
         channel_surface: interactive_request
             .surface
             .as_ref()

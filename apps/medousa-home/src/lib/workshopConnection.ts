@@ -86,6 +86,7 @@ let resumeWorkshopInFlight = false;
 let lastResumeWorkshopAt = 0;
 const RESUME_DEBOUNCE_MS = 3_000;
 const TRUST_HEARTBEAT_INTERVAL_MS = 6 * 60 * 60 * 1_000;
+const BROWSER_CLIENT_HEARTBEAT_INTERVAL_MS = 45_000;
 
 function cancelScheduledStreamRecovery() {
   workspaceReconnect.cancel();
@@ -558,6 +559,13 @@ export function connectWorkshop(options: {
           void sendPairingHeartbeat().catch(() => {});
         }, TRUST_HEARTBEAT_INTERVAL_MS)
       : null;
+  const browserClientHeartbeatTimer =
+    mode === "full"
+      ? setInterval(() => {
+          const health = connection.health;
+          if (health?.ok) void registerBrowserHostClient(health);
+        }, BROWSER_CLIENT_HEARTBEAT_INTERVAL_MS)
+      : null;
 
   void (async () => {
     let health: DaemonHealth;
@@ -615,6 +623,9 @@ export function connectWorkshop(options: {
     detachForeground();
     if (trustHeartbeatTimer !== null) {
       clearInterval(trustHeartbeatTimer);
+    }
+    if (browserClientHeartbeatTimer !== null) {
+      clearInterval(browserClientHeartbeatTimer);
     }
     Promise.all(unlisteners).then((fns) => fns.forEach((fn) => fn()));
     if (mode === "full") {

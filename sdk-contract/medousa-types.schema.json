@@ -4076,6 +4076,13 @@
       "TurnSurfaceContext": {
         "type": "object",
         "properties": {
+          "browser_driver_id": {
+            "description": "Exact registered browser driver instance selected for this turn.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "channel_id": {
             "default": null,
             "type": [
@@ -12367,6 +12374,13 @@
       "TurnSurfaceContext": {
         "type": "object",
         "properties": {
+          "browser_driver_id": {
+            "description": "Exact registered browser driver instance selected for this turn.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "channel_id": {
             "default": null,
             "type": [
@@ -17422,6 +17436,20 @@
       "session_id"
     ],
     "properties": {
+      "execution_runtime_id": {
+        "description": "Stable daemon identity that owns this Forge undertaking. Missing means the session's current workshop for records written before remote Coder.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "repo_id": {
+        "description": "Destination-authored repository identity. This is provenance and a policy selector; it is never interpreted as a client filesystem path.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "session_id": {
         "type": "string"
       },
@@ -19000,6 +19028,18 @@
       "work_id"
     ],
     "properties": {
+      "execution_runtime_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "repo_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "work_id": {
         "type": "string"
       }

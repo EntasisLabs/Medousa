@@ -271,6 +271,7 @@ async fn run_host_resume_turn(
         supports_ui_artifacts: primary.supports_ui_artifacts,
         supports_liquid_markdown: primary.supports_liquid_markdown,
         supports_browser_host: primary.supports_browser_host,
+        browser_driver_id: None,
         channel_surface: Some("host-resume".to_string()),
     };
     let execution = match crate::agent_runtime::execution_context::TurnExecutionContext::from_scope(

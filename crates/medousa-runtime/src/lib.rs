@@ -54,9 +54,10 @@ pub use loop_gate::{
     collect_tool_names,
 };
 pub use ports::{
-    DelegationControlPort, HostHandoffPort, ModelResponseCompleted, ModelResponseEventPort,
-    PendingTurnBudgetApproval, PerceptionEvidencePort, PerceptionEvidenceRequest,
-    PersistedPerceptionEvidence, RuntimePortFuture, RuntimePorts, ToolRunEventPort, ToolRunFinish,
+    DelegationControlPort, HostHandoffPort, HydratedToolObservation, ModelResponseCompleted,
+    ModelResponseEventPort, PendingTurnBudgetApproval, PerceptionEvidencePort,
+    PerceptionEvidenceRequest, PersistedPerceptionEvidence, RuntimePortFuture, RuntimePorts,
+    ToolObservationHydrationPort, ToolObservationHydrationRequest, ToolRunEventPort, ToolRunFinish,
     ToolRunStart, TurnBudgetApprovalPort, TurnBudgetApprovalRequest, TurnBudgetApprovalResolution,
     TurnLedgerSink, TurnPresentationPort, TurnSteerMessage,
 };

@@ -1,5 +1,6 @@
 import type { InteractiveTurnOptions } from "$lib/daemon";
 import { homeChannelSurface, isTauriMobilePlatform } from "$lib/platform";
+import { governedBrowser } from "$lib/stores/governedBrowser.svelte";
 import { runtime } from "$lib/stores/runtime.svelte";
 import { userProfiles } from "$lib/stores/userProfiles.svelte";
 
@@ -10,6 +11,7 @@ export function buildInteractiveTurnOptions(): InteractiveTurnOptions {
     responseDepthMode: runtime.depthMode,
     reasoningEffort: runtime.reasoningEffort,
     channelSurface,
+    browserDriverId: governedBrowser.turnBrowserDriverId ?? undefined,
     identityUserId: userProfiles.turnIdentityUserId(),
   };
 

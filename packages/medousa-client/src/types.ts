@@ -229,23 +229,58 @@ export interface ClientToolDefinition {
   effect_class?: "external_read" | "external_write" | "external_side_effect" | string;
 }
 
+export type WorldDriverKind =
+  | "embedded_browser"
+  | "browser_extension"
+  | "mobile_browser"
+  | "isolated_browser"
+  | "native_desktop";
+
+export type WorldDriverTransport =
+  | "in_process"
+  | "loopback_http"
+  | "client_queue"
+  | "local_sidecar";
+
+export type WorldDriverCapability =
+  | "semantic_observation"
+  | "pixel_observation"
+  | "navigation"
+  | "interaction"
+  | "guarded_batch"
+  | "human_takeover"
+  | "persistent_profile";
+
+export interface WorldDriverRegistration {
+  driver_id: string;
+  kind: WorldDriverKind;
+  surface: "browser" | "desktop" | "application" | "terminal" | "composite";
+  ownership: "owned" | "managed" | "attached";
+  transport: WorldDriverTransport;
+  capabilities: WorldDriverCapability[];
+  display_name?: string;
+}
+
 export interface ClientRegistrationRequest {
   client_id: string;
   channel_surface: string;
   supports_browser_host: boolean;
   browser_host_url?: string | null;
   tools?: ClientToolDefinition[];
+  world_drivers?: WorldDriverRegistration[];
 }
 
 export interface ClientRegistrationResponse {
   ok: boolean;
   browser_host_reachable: boolean;
   registered_tools: string[];
+  registered_world_drivers: string[];
 }
 
 export interface ClientToolRequest {
   request_id: string;
   client_id: string;
+  world_driver_id?: string;
   tool_name: string;
   input: Record<string, unknown>;
   turn_id: string;

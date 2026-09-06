@@ -109,12 +109,15 @@ export function handleBrowserChallenge(host: ChatStoreHost, event: InteractiveTu
 }
 
 async function executeClientBrowserAct(sessionId: string) {
+  let worldDriverId: string | null | undefined;
   try {
     const { fetchBrowserSession, completeBrowserActSession } = await import("$lib/daemon");
     const session = await fetchBrowserSession(sessionId);
+    worldDriverId = session.world_driver_id;
     const request = session.act_request;
     if (!request) {
       await completeBrowserActSession(sessionId, {
+        worldDriverId,
         ok: false,
         error: "act session missing request payload",
       });
@@ -133,6 +136,7 @@ async function executeClientBrowserAct(sessionId: string) {
       ),
     );
     await completeBrowserActSession(sessionId, {
+      worldDriverId,
       ok: report.ok,
       url: report.url,
       error: report.error ?? null,
@@ -141,6 +145,7 @@ async function executeClientBrowserAct(sessionId: string) {
     try {
       const { completeBrowserActSession } = await import("$lib/daemon");
       await completeBrowserActSession(sessionId, {
+        worldDriverId,
         ok: false,
         error: err instanceof Error ? err.message : String(err),
       });

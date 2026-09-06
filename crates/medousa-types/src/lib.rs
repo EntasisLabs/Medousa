@@ -15,6 +15,7 @@ pub mod environment_icons;
 pub mod environment_themes;
 pub mod environment_validate;
 pub mod feed;
+pub mod forge;
 pub mod grapheme_extras;
 pub mod inference;
 pub mod layout;

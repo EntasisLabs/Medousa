@@ -155,6 +155,37 @@ pub trait PerceptionEvidencePort: Send + Sync {
     ) -> Result<PersistedPerceptionEvidence, String>;
 }
 
+#[derive(Debug, Clone)]
+pub struct ToolObservationHydrationRequest {
+    pub tool_name: String,
+    pub source_call_id: String,
+    pub tool_output: Value,
+}
+
+#[derive(Debug, Clone)]
+pub struct HydratedToolObservation {
+    pub tool_name: String,
+    pub source_call_id: String,
+    pub artifact_id: String,
+    pub content_type: String,
+    pub bytes: Vec<u8>,
+    pub sha256: String,
+    pub untrusted_content: bool,
+}
+
+/// Optional bridge from an opaque tool artifact receipt to bounded binary
+/// model input. Hosts remain responsible for session scoping, receipt
+/// verification, and artifact authorization before returning any bytes.
+pub trait ToolObservationHydrationPort: Send + Sync {
+    /// Cheap preflight used to avoid cloning arbitrary tool outputs.
+    fn accepts(&self, tool_name: &str) -> bool;
+
+    fn hydrate(
+        &self,
+        request: ToolObservationHydrationRequest,
+    ) -> RuntimePortFuture<Result<Option<HydratedToolObservation>, String>>;
+}
+
 /// Cloneable per-turn adapter composition.
 ///
 /// Stasis capabilities and queue ownership decide which work a daemon accepts.
@@ -170,6 +201,7 @@ pub struct RuntimePorts {
     budget_approval: Option<Arc<dyn TurnBudgetApprovalPort>>,
     host_handoff: Option<Arc<dyn HostHandoffPort>>,
     perception_evidence: Option<Arc<dyn PerceptionEvidencePort>>,
+    tool_observation_hydration: Option<Arc<dyn ToolObservationHydrationPort>>,
 }
 
 impl RuntimePorts {
@@ -254,6 +286,22 @@ impl RuntimePorts {
         self
     }
 
+    pub fn with_tool_observation_hydration(
+        mut self,
+        hydration: Arc<dyn ToolObservationHydrationPort>,
+    ) -> Self {
+        self.tool_observation_hydration = Some(hydration);
+        self
+    }
+
+    pub fn with_optional_tool_observation_hydration(
+        mut self,
+        hydration: Option<Arc<dyn ToolObservationHydrationPort>>,
+    ) -> Self {
+        self.tool_observation_hydration = hydration;
+        self
+    }
+
     pub fn ledger_sink(&self) -> Option<&dyn TurnLedgerSink> {
         self.ledger_sink.as_deref()
     }
@@ -284,6 +332,10 @@ impl RuntimePorts {
 
     pub fn perception_evidence(&self) -> Option<Arc<dyn PerceptionEvidencePort>> {
         self.perception_evidence.clone()
+    }
+
+    pub fn tool_observation_hydration(&self) -> Option<Arc<dyn ToolObservationHydrationPort>> {
+        self.tool_observation_hydration.clone()
     }
 }
 
@@ -370,12 +422,28 @@ mod tests {
         }
     }
 
+    struct NoopHydration;
+
+    impl ToolObservationHydrationPort for NoopHydration {
+        fn accepts(&self, _tool_name: &str) -> bool {
+            true
+        }
+
+        fn hydrate(
+            &self,
+            _request: ToolObservationHydrationRequest,
+        ) -> RuntimePortFuture<Result<Option<HydratedToolObservation>, String>> {
+            Box::pin(async { Ok(None) })
+        }
+    }
+
     #[test]
     fn empty_composition_has_no_daemon_only_ports() {
         let ports = RuntimePorts::new();
         assert!(ports.delegation_control().is_none());
         assert!(ports.host_handoff().is_none());
         assert!(ports.perception_evidence().is_none());
+        assert!(ports.tool_observation_hydration().is_none());
         assert!(ports.model_response_events().is_none());
     }
 
@@ -412,5 +480,11 @@ mod tests {
     fn composition_accepts_coder_evidence_storage() {
         let ports = RuntimePorts::new().with_perception_evidence(Arc::new(NoopEvidence));
         assert!(ports.perception_evidence().is_some());
+    }
+
+    #[test]
+    fn composition_accepts_tool_observation_hydration() {
+        let ports = RuntimePorts::new().with_tool_observation_hydration(Arc::new(NoopHydration));
+        assert!(ports.tool_observation_hydration().is_some());
     }
 }

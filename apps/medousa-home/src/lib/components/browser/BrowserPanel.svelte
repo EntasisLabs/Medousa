@@ -10,6 +10,8 @@
   import BrowserCompositorDebug from "$lib/components/browser/BrowserCompositorDebug.svelte";
   import MobileToast from "$lib/components/mobile/MobileToast.svelte";
   import BrowserWebView from "$lib/components/browser/BrowserWebView.svelte";
+  import BrowserSurfacePicker from "$lib/components/browser/BrowserSurfacePicker.svelte";
+  import GovernedBrowserPanel from "$lib/components/browser/GovernedBrowserPanel.svelte";
   import { canUseNativeBrowserWebview } from "$lib/browserWebview";
   import { humanBrowserSetMobileShellActive } from "$lib/humanBrowser";
   import {
@@ -20,6 +22,7 @@
     type BrowserCompositorState,
   } from "$lib/utils/browserCompositor";
   import { humanBrowser } from "$lib/stores/humanBrowser.svelte";
+  import { governedBrowser } from "$lib/stores/governedBrowser.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { isMobileBrowserUrlFocused } from "$lib/utils/mobileKeyboardViewport";
 
@@ -82,7 +85,7 @@
   let compositor = $state<BrowserCompositor | null>(null);
 
   async function refreshEmbedAfterUrlBlur() {
-    if (!useNative || !visible || !compositor) return;
+    if (!useNative || !visible || governedBrowser.usesWorkshopWorld || !compositor) return;
     await waitForKeyboardSettled();
     await waitForLayoutFrame();
     compositor.scheduleLayout();
@@ -93,7 +96,7 @@
       void humanBrowserSetMobileShellActive(true);
       compositor = createBrowserCompositor({
         mode: "mobile",
-        getActive: () => useNative && visible,
+        getActive: () => useNative && visible && !governedBrowser.usesWorkshopWorld,
         getShowStartPage: () => humanBrowser.showStartPage,
         getUrlBarFocused: () => isMobileBrowserUrlFocused(),
         getActiveUrl: () => humanBrowser.activeUrl,
@@ -137,6 +140,11 @@
   });
 
   $effect(() => {
+    const workshopWorld = governedBrowser.usesWorkshopWorld;
+    if (workshopWorld) {
+      compositor?.detach();
+      return;
+    }
     if (!useNative || !visible || !panelEl || !embedHostEl || !compositor) return;
     humanBrowser.showStartPage;
     layout.viewportWidth;
@@ -180,6 +188,9 @@
 </script>
 
 {#if visible}
+  {#if governedBrowser.usesWorkshopWorld}
+    <GovernedBrowserPanel mobile {visible} />
+  {:else}
   <div
     bind:this={panelEl}
     data-browser-panel
@@ -220,6 +231,10 @@
       data-browser-bottom-chrome
       class="mobile-browser-bottom-chrome"
     >
+      <div class="mobile-browser-source-strip">
+        <BrowserSurfacePicker mobile />
+        <span>Device browser · local identity</span>
+      </div>
       <BrowserCaptchaBanner compact={true} />
       <BrowserControlHandoff />
       <BrowserFindBar />
@@ -247,4 +262,24 @@
       onDismiss={dismissMobileToast}
     />
   </div>
+  {/if}
 {/if}
+
+<style>
+  .mobile-browser-source-strip {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0 0.15rem 0.4rem;
+    color: rgb(var(--theme-text-tertiary));
+    font-size: 0.68rem;
+  }
+
+  .mobile-browser-source-strip span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+</style>

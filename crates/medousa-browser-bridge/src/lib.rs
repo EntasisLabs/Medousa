@@ -5,5 +5,8 @@ mod model;
 
 pub use manager::TabGroupManager;
 pub use model::{
-    BrowserControl, BrowserSnapshot, BrowserTab, TabGroup, TabGroupState, TabOpenedBy,
+    BrowserControl, BrowserObservation, BrowserObservationBounds, BrowserObservationCapture,
+    BrowserObservationState, BrowserObservationViewport, BrowserScreenshotCapture,
+    BrowserSemanticNode, BrowserSnapshot, BrowserTab, TabGroup, TabGroupState, TabOpenedBy,
+    BROWSER_OBSERVATION_SCHEMA_VERSION, BROWSER_SCREENSHOT_SCHEMA_VERSION,
 };

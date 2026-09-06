@@ -244,6 +244,7 @@ impl JobHandler for RecurringAgentTurnJobHandler {
             supports_ui_artifacts: false,
             supports_liquid_markdown: false,
             supports_browser_host: false,
+            browser_driver_id: None,
             channel_surface: Some("scheduled".to_string()),
         };
         let execution =

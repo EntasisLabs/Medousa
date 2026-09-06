@@ -57,7 +57,7 @@ use medousa_types::daemon_api::{
     RecurringRunsResponse, RegisterRecurringPromptRequest, RegisterRecurringResponse,
     SessionAgentModeResponse, SessionCodeBindingResponse, SessionDeleteResponse,
     SessionHistoryListResponse, SessionSetDisplayNameResponse, SetActiveUserProfileResponse,
-    SetSessionAgentModeRequest, ToolHistoryListQuery, ToolHistoryListResponse,
+    SetSessionAgentModeRequest, ToolHistoryListQuery, ToolHistoryListResponse, TurnSurfaceContext,
     UpdateArtifactRetentionRequest, UpdateArtifactRetentionResponse, UpdateManuscriptRequest,
     UpdateRecurringRequest, UpdateRecurringResponse, VaultBacklinksResponse, VaultChangesQuery,
     VaultChangesResponse, VaultDeleteResponse, VaultFileContentResponse, VaultNoteContentResponse,
@@ -2565,6 +2565,33 @@ enum ForegroundOutcome {
     },
     Cancelled,
     Failed(String),
+}
+
+fn normalize_embedded_turn_surface(mut surface: TurnSurfaceContext) -> Result<TurnSurfaceContext> {
+    surface.channel_surface = surface
+        .channel_surface
+        .take()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .or_else(|| Some("mobile".to_string()));
+    surface.supports_ui_artifacts = true;
+    surface.supports_liquid_markdown = true;
+    surface.browser_driver_id = surface
+        .browser_driver_id
+        .take()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    if surface
+        .browser_driver_id
+        .as_deref()
+        .is_some_and(|driver_id| driver_id.len() > 256 || driver_id.chars().any(char::is_control))
+    {
+        bail!("browser driver identity is invalid");
+    }
+    if surface.browser_driver_id.is_some() {
+        surface.supports_browser_host = true;
+    }
+    Ok(surface)
 }
 
 /// Trusted client handle issued only by the co-located daemon bridge.
@@ -5149,11 +5176,17 @@ impl EmbeddedDaemonClient {
         voice_preset_id: Option<String>,
         voice_appendix: Option<String>,
     ) -> Result<InteractiveTurnResponse> {
+        let surface = TurnSurfaceContext {
+            channel_surface,
+            supports_ui_artifacts: true,
+            supports_liquid_markdown: true,
+            ..TurnSurfaceContext::default()
+        };
         self.start_turn_with_options(
             session_id,
             prompt,
             identity_user_id,
-            channel_surface,
+            surface,
             voice_preset_id,
             voice_appendix,
             "standard".to_string(),
@@ -5170,7 +5203,7 @@ impl EmbeddedDaemonClient {
         session_id: &str,
         prompt: impl Into<String>,
         identity_user_id: Option<String>,
-        channel_surface: Option<String>,
+        surface: TurnSurfaceContext,
         voice_preset_id: Option<String>,
         voice_appendix: Option<String>,
         response_depth_mode: String,
@@ -5183,6 +5216,7 @@ impl EmbeddedDaemonClient {
             bail!("embedded daemon is backgrounded");
         }
         let session_id = SessionId::parse(session_id).map_err(|error| anyhow!(error))?;
+        let surface = normalize_embedded_turn_surface(surface)?;
         let prompt = prompt.into();
         if prompt.trim().is_empty() && media_refs.is_empty() {
             bail!("turn prompt cannot be empty");
@@ -5300,10 +5334,11 @@ impl EmbeddedDaemonClient {
             provider: provider.clone(),
             model: model.clone(),
             response_depth_mode: response_depth_mode.clone(),
-            supports_ui_artifacts: true,
-            supports_liquid_markdown: true,
-            supports_browser_host: false,
-            channel_surface: channel_surface.or_else(|| Some("mobile".to_string())),
+            supports_ui_artifacts: surface.supports_ui_artifacts,
+            supports_liquid_markdown: surface.supports_liquid_markdown,
+            supports_browser_host: surface.supports_browser_host,
+            browser_driver_id: surface.browser_driver_id.clone(),
+            channel_surface: surface.channel_surface.clone(),
         };
         let mut context = TurnExecutionContext::new(
             turn_id.clone(),
@@ -5312,9 +5347,9 @@ impl EmbeddedDaemonClient {
             self.principal.clone(),
             ProviderRoute::new(provider, model),
             SurfaceCapabilities {
-                ui_artifacts: true,
-                liquid_markdown: true,
-                browser_host: false,
+                ui_artifacts: surface.supports_ui_artifacts,
+                liquid_markdown: surface.supports_liquid_markdown,
+                browser_host: surface.supports_browser_host,
             },
             cancellation,
             Instant::now() + self.daemon.foreground_turn_timeout,
@@ -5393,6 +5428,44 @@ impl EmbeddedDaemonClient {
                 "turn was no longer executing".to_string()
             },
         })
+    }
+
+    pub fn browser_session(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<crate::browser_sessions::BrowserSession>> {
+        self.require(Capability::WorkshopRead)?;
+        Ok(crate::browser_sessions::get_browser_session(session_id))
+    }
+
+    pub fn complete_browser_session(
+        &self,
+        session_id: &str,
+        world_driver_id: Option<&str>,
+        request: crate::browser_sessions::BrowserSessionCompleteRequest,
+    ) -> Result<Option<crate::browser_sessions::BrowserSession>> {
+        self.require(Capability::WorkshopInteract)?;
+        crate::browser_sessions::complete_browser_session_for_driver(
+            session_id,
+            world_driver_id,
+            request,
+        )
+        .map_err(anyhow::Error::msg)
+    }
+
+    pub fn complete_browser_act_session(
+        &self,
+        session_id: &str,
+        world_driver_id: Option<&str>,
+        outcome: crate::browser_sessions::BrowserActOutcome,
+    ) -> Result<Option<crate::browser_sessions::BrowserSession>> {
+        self.require(Capability::WorkshopInteract)?;
+        crate::browser_sessions::complete_browser_act_session_for_driver(
+            session_id,
+            world_driver_id,
+            outcome,
+        )
+        .map_err(anyhow::Error::msg)
     }
 
     /// Subscribe before taking the replay fence; monotonic sequence filtering
@@ -5824,6 +5897,41 @@ query MobileProbe {
 "#;
 
     struct DiscardTurnOutput;
+
+    #[test]
+    fn embedded_home_surface_preserves_its_browser_driver() {
+        let surface = normalize_embedded_turn_surface(TurnSurfaceContext {
+            channel_surface: Some(" home-ios ".to_string()),
+            supports_browser_host: false,
+            browser_driver_id: Some(" driver:home-ios:test ".to_string()),
+            ..TurnSurfaceContext::default()
+        })
+        .expect("normalize Home surface");
+
+        assert_eq!(surface.channel_surface.as_deref(), Some("home-ios"));
+        assert_eq!(
+            surface.browser_driver_id.as_deref(),
+            Some("driver:home-ios:test")
+        );
+        assert!(surface.supports_browser_host);
+        assert!(surface.supports_ui_artifacts);
+        assert!(surface.supports_liquid_markdown);
+    }
+
+    #[test]
+    fn embedded_home_surface_rejects_an_invalid_browser_driver() {
+        let error = normalize_embedded_turn_surface(TurnSurfaceContext {
+            browser_driver_id: Some("driver:home-ios:\nspoofed".to_string()),
+            ..TurnSurfaceContext::default()
+        })
+        .expect_err("control characters must be rejected");
+
+        assert!(
+            error
+                .to_string()
+                .contains("browser driver identity is invalid")
+        );
+    }
 
     impl TurnPipelineOutput for DiscardTurnOutput {
         async fn publish(

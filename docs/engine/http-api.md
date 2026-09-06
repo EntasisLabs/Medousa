@@ -367,6 +367,38 @@ limited to 16 operations.
 
 ---
 
+## Isolated browser worlds
+
+These routes manage Chromium worlds owned by the workshop daemon. They use the
+same bearer authentication and exact-origin boundary as other portal routes,
+and every result is scoped to the authenticated profile. `WorkshopRead` can
+list, inspect, observe, and capture; `WorkshopInteract` is required to create,
+navigate, change lifecycle state, or clean up a world. Direct human navigate,
+observe, and screenshot requests enter the same world-permit and audit path as
+agent-driven operations.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/v1/browser/worlds/isolated` | List this profile's isolated worlds |
+| POST | `/v1/browser/worlds/isolated` | Create and start an ephemeral or persistent-profile world |
+| GET | `/v1/browser/worlds/isolated/{world_id}` | Read state, driver identity, profile, URL, and control owner |
+| POST | `/v1/browser/worlds/isolated/{world_id}/lifecycle` | `pause`, `resume`, `takeover`, `return_to_agent`, `attach_view`, `detach_view`, or `stop` |
+| POST | `/v1/browser/worlds/isolated/{world_id}/navigate` | Navigate under human control to `http`, `https`, or `about:blank` |
+| POST | `/v1/browser/worlds/isolated/{world_id}/observe` | Capture a bounded semantic observation, optionally after a known revision |
+| POST | `/v1/browser/worlds/isolated/{world_id}/screenshot` | Capture redacted pixels bound to an exact document and observation revision |
+| DELETE | `/v1/browser/worlds/isolated/{world_id}?delete_profile=false` | Stop and remove the world; ephemeral data is always deleted |
+
+Create with `profile: { "kind": "ephemeral" }` or
+`profile: { "kind": "persistent", "profile_id": "work" }`. Persistent
+profile ids are explicit safe identifiers, not filesystem paths. The response's
+`world.driver.driver_id` selects this exact browser in a subsequent
+`InteractiveTurnRequest.surface.browser_driver_id`; the daemon does not fall
+back to a shared browser if that instance is unavailable. A detached view does
+not stop execution. After daemon restart, previously active worlds recover as
+`stopped` and require `resume`.
+
+---
+
 ## Vault
 
 | Method | Path | Purpose |

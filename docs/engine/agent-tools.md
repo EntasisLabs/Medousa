@@ -30,7 +30,8 @@ See [agent-browser-host.md](../../architecture/agent-browser-host.md) for search
 - **execute** — short local diagnostics through the operator-configured OS shell sandbox
 - **presentation** — artifact presentation tools
 - **environment** — environment spec + component canvas ([environment-canvas.md](./environment-canvas.md))
-- **browser** — `cognition_browser_fetch` (auto-unlocked on browser-capable clients)
+- **browser** — search/fetch plus semantic snapshot and governed actions
+  (unlocked only when the turn selects a browser-capable surface)
 - Standard rings: bootstrap, MCP, finish, etc.
 
 Source: `src/tool_bootstrap.rs`
@@ -54,6 +55,8 @@ Source: `src/tool_bootstrap.rs`
 | UI present | `cognition_ui_present` — emits `ui_artifact` on stream |
 | Web | `cognition_web_search` — all surfaces; BrowserHost → lite → Grapheme chain |
 | Browser fetch | `cognition_browser_fetch` — gated on `supports_browser_host` |
+| Browser snapshot | `cognition_browser_snapshot` — semantic-first observation plus optional redacted screenshot artifact |
+| Browser act | `cognition_browser_act` — revisioned opaque refs or guarded batches through the exact selected driver |
 | Shell | `cognition_shell_status` / `cognition_shell_run` — direct on the host for short diagnostics; opt-in and bounded by Runtime Controls → Shell |
 | OpenShell secrets | `cognition_openshell_request_secret` — trusted UI prompt; returns an opaque one-use grant, never the credential value |
 | Grapheme secrets | `cognition_grapheme_request_secret` — trusted UI prompt; authorizes an ephemeral credential capability for one native run |
@@ -87,6 +90,12 @@ with unknown provenance remains unconstrained so upgrade recovery still works.
 MCP tools are proxied through the gateway (`http://127.0.0.1:7420` default). Policy evaluation: `POST /v1/mcp/policy/evaluate`.
 
 Capabilities catalog: `GET /v1/capabilities` — SDK `capabilities().list()`.
+
+Browser-capable turns carry an exact `surface.browser_driver_id`. A shared Home
+driver and a daemon-owned isolated driver implement the same model-facing
+snapshot/action contract, but their identity and cookies never fall back into
+one another. See [Agent Browser Host](../../architecture/agent-browser-host.md)
+and the [isolated browser HTTP routes](http-api.md#isolated-browser-worlds).
 
 ---
 

@@ -254,6 +254,69 @@ pub const BROWSER_SESSIONS_BY_SESSION_ID_RESUME_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_DELETE: Operation = Operation {
+    id: "browser.worlds.isolated.by_world_id.delete",
+    method: "DELETE",
+    path: "/v1/browser/worlds/isolated/{world_id}",
+    streaming: false,
+};
+
+pub const BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_GET: Operation = Operation {
+    id: "browser.worlds.isolated.by_world_id.get",
+    method: "GET",
+    path: "/v1/browser/worlds/isolated/{world_id}",
+    streaming: false,
+};
+
+pub const BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_INPUT_POST: Operation = Operation {
+    id: "browser.worlds.isolated.by_world_id.input.post",
+    method: "POST",
+    path: "/v1/browser/worlds/isolated/{world_id}/input",
+    streaming: false,
+};
+
+pub const BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_LIFECYCLE_POST: Operation = Operation {
+    id: "browser.worlds.isolated.by_world_id.lifecycle.post",
+    method: "POST",
+    path: "/v1/browser/worlds/isolated/{world_id}/lifecycle",
+    streaming: false,
+};
+
+pub const BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_NAVIGATE_POST: Operation = Operation {
+    id: "browser.worlds.isolated.by_world_id.navigate.post",
+    method: "POST",
+    path: "/v1/browser/worlds/isolated/{world_id}/navigate",
+    streaming: false,
+};
+
+pub const BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_OBSERVE_POST: Operation = Operation {
+    id: "browser.worlds.isolated.by_world_id.observe.post",
+    method: "POST",
+    path: "/v1/browser/worlds/isolated/{world_id}/observe",
+    streaming: false,
+};
+
+pub const BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_SCREENSHOT_POST: Operation = Operation {
+    id: "browser.worlds.isolated.by_world_id.screenshot.post",
+    method: "POST",
+    path: "/v1/browser/worlds/isolated/{world_id}/screenshot",
+    streaming: false,
+};
+
+pub const BROWSER_WORLDS_ISOLATED_GET: Operation = Operation {
+    id: "browser.worlds.isolated.get",
+    method: "GET",
+    path: "/v1/browser/worlds/isolated",
+    streaming: false,
+};
+
+pub const BROWSER_WORLDS_ISOLATED_POST: Operation = Operation {
+    id: "browser.worlds.isolated.post",
+    method: "POST",
+    path: "/v1/browser/worlds/isolated",
+    streaming: false,
+};
+
 pub const CALENDAR_EVENTS_BY_UID_DELETE: Operation = Operation {
     id: "calendar.events.by_uid.delete",
     method: "DELETE",
@@ -3013,6 +3076,15 @@ pub static ALL: &[Operation] = &[
     BROWSER_SESSIONS_BY_SESSION_ID_COMPLETE_ACT_POST,
     BROWSER_SESSIONS_BY_SESSION_ID_GET,
     BROWSER_SESSIONS_BY_SESSION_ID_RESUME_POST,
+    BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_DELETE,
+    BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_GET,
+    BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_INPUT_POST,
+    BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_LIFECYCLE_POST,
+    BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_NAVIGATE_POST,
+    BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_OBSERVE_POST,
+    BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_SCREENSHOT_POST,
+    BROWSER_WORLDS_ISOLATED_GET,
+    BROWSER_WORLDS_ISOLATED_POST,
     CALENDAR_EVENTS_BY_UID_DELETE,
     CALENDAR_EVENTS_BY_UID_PUT,
     CALENDAR_EVENTS_GET,

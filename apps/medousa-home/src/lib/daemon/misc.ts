@@ -5,6 +5,7 @@ import type {
   LocusTagsListResponse,
 } from "$lib/types/locus";
 import { getDaemonUrl } from "./client";
+import { daemonUnary } from "./contractClient";
 import { operationPath } from "./opPath";
 
 export async function resumeBrowserHostSession(
@@ -64,27 +65,20 @@ export async function registerBrowserClient(
 export async function completeBrowserSession(
   sessionId: string,
   payload: {
+    worldDriverId?: string | null;
     searchResponse?: unknown;
     error?: string | null;
   },
 ): Promise<Record<string, unknown>> {
-  const base = (await getDaemonUrl()).replace(/\/$/, "");
-  const response = await fetch(
-    `${base}${operationPath("browser.sessions.by_session_id.complete.post", { session_id: sessionId })}`,
+  return daemonUnary<Record<string, unknown>>(
+    "browser.sessions.by_session_id.complete.post",
+    { session_id: sessionId },
     {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        search_response: payload.searchResponse ?? null,
-        error: payload.error ?? null,
-      }),
+      world_driver_id: payload.worldDriverId ?? null,
+      search_response: payload.searchResponse ?? null,
+      error: payload.error ?? null,
     },
   );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(text || `HTTP ${response.status}`);
-  }
-  return response.json() as Promise<Record<string, unknown>>;
 }
 
 export interface BrowserActRequestPayload {
@@ -99,6 +93,7 @@ export interface BrowserActRequestPayload {
 
 export interface BrowserSessionRecord {
   session_id: string;
+  world_driver_id?: string | null;
   query: string;
   max_results: number;
   status: string;
@@ -107,44 +102,33 @@ export interface BrowserSessionRecord {
 
 export async function completeBrowserActSession(
   sessionId: string,
-  outcome: { ok: boolean; url?: string; error?: string | null },
+  outcome: {
+    worldDriverId?: string | null;
+    ok: boolean;
+    url?: string;
+    error?: string | null;
+  },
 ): Promise<Record<string, unknown>> {
-  const base = (await getDaemonUrl()).replace(/\/$/, "");
-  const response = await fetch(
-    `${base}${operationPath("browser.sessions.by_session_id.complete_act.post", { session_id: sessionId })}`,
+  return daemonUnary<Record<string, unknown>>(
+    "browser.sessions.by_session_id.complete_act.post",
+    { session_id: sessionId },
     {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ok: outcome.ok,
-        url: outcome.url ?? "",
-        error: outcome.error ?? null,
-      }),
+      world_driver_id: outcome.worldDriverId ?? null,
+      ok: outcome.ok,
+      url: outcome.url ?? "",
+      error: outcome.error ?? null,
     },
   );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(text || `HTTP ${response.status}`);
-  }
-  return response.json() as Promise<Record<string, unknown>>;
 }
 
 export async function fetchBrowserSession(
   sessionId: string,
 ): Promise<BrowserSessionRecord> {
-  const base = (await getDaemonUrl()).replace(/\/$/, "");
-  const response = await fetch(
-    `${base}${operationPath("browser.sessions.by_session_id.get", { session_id: sessionId })}`,
-  );
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(text || `HTTP ${response.status}`);
-  }
-  const body = (await response.json()) as {
+  const body = await daemonUnary<{
     ok?: boolean;
     session?: BrowserSessionRecord;
     error?: string;
-  };
+  }>("browser.sessions.by_session_id.get", { session_id: sessionId });
   if (!body.ok || !body.session) {
     throw new Error(body.error || "browser session not found");
   }

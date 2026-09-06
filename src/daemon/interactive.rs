@@ -167,6 +167,10 @@ pub async fn spawn_turn_ticket(
         supports_browser_host: crate::browser_tools::surface_supports_browser_host(
             interactive_request.surface.as_ref(),
         ),
+        browser_driver_id: interactive_request
+            .surface
+            .as_ref()
+            .and_then(|surface| surface.browser_driver_id.clone()),
         channel_surface: interactive_request
             .surface
             .as_ref()

@@ -19,12 +19,14 @@ use crate::schema_api::{
 };
 use crate::turn_control_tools::{
     CognitionTurnCheckpointTool, CognitionTurnFinishTool, CognitionTurnRequestMoreRoundsTool,
-    CognitionTurnUpdateUserTool,
-    TurnBeginWorkInput, TurnCheckpointInput, TurnFinishInput, TurnModeInput, TurnModeScopeInput,
-    TurnProposeModeInput, TurnRequestMoreRoundsInput, TurnUpdateUserInput,
+    CognitionTurnUpdateUserTool, TurnCheckpointInput, TurnFinishInput, TurnModeInput,
+    TurnModeScopeInput, TurnRequestMoreRoundsInput, TurnUpdateUserInput,
 };
 #[cfg(feature = "full-daemon")]
-use crate::turn_control_tools::{CognitionTurnBeginWorkTool, CognitionTurnProposeModeTool};
+use crate::turn_control_tools::{
+    CognitionTurnBeginWorkTool, CognitionTurnProposeModeTool, TurnBeginWorkInput,
+    TurnProposeModeInput,
+};
 use crate::typed_tools::{ExternalJson, ToolId, TypedTool, medousa_tool, serialize_output};
 
 const TURN_ID: ToolId = ToolId::new(COGNITION_TURN);

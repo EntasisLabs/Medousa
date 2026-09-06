@@ -94,6 +94,10 @@ pub struct AppState {
     /// Latest turn-start context budget per session (from `context_usage` stream events).
     pub last_context_usage_by_session: Arc<RwLock<HashMap<String, ContextUsageReport>>>,
     pub client_registry: ClientRegistry,
+    /// Daemon-owned isolated Chromium worlds. These outlive any Home
+    /// connection and are scoped to the authenticated profile that created
+    /// them.
+    pub isolated_browser: Arc<crate::daemon::isolated_browser_host::IsolatedBrowserHost>,
     /// Forge — durable version-controlled work custody (undertakings).
     pub forge: Arc<medousa_forge::forge::Forge>,
     /// Bounded Forge/Git admission (H06.1).

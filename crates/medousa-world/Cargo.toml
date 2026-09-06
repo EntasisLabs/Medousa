@@ -1,0 +1,15 @@
+[package]
+name = "medousa-world"
+version = "0.10.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Provider-neutral world authority kernel for governed Medousa interaction"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+
+[[bench]]
+name = "hot_path"
+harness = false
+

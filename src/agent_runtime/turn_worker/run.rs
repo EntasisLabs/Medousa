@@ -360,6 +360,7 @@ fn worker_turn_scope(record: &TurnWorkRecord) -> TurnContinuationScope {
         supports_ui_artifacts: canvas_lane,
         supports_liquid_markdown: record.supports_liquid_markdown,
         supports_browser_host: record.supports_browser_host,
+        browser_driver_id: None,
         channel_surface: Some(match record.disposition {
             TurnWorkDisposition::Bound => "workshop-canvas".to_string(),
             TurnWorkDisposition::Delegated => "delegated-worker".to_string(),

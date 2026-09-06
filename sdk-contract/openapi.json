@@ -4695,6 +4695,20 @@
       },
       "SessionCodeBindingResponse": {
         "properties": {
+          "execution_runtime_id": {
+            "description": "Stable daemon identity that owns this Forge undertaking. Missing means the session's current workshop for records written before remote Coder.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo_id": {
+            "description": "Destination-authored repository identity. This is provenance and a policy selector; it is never interpreted as a client filesystem path.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "session_id": {
             "type": "string"
           },
@@ -5192,6 +5206,18 @@
       },
       "SetSessionCodeBindingRequest": {
         "properties": {
+          "execution_runtime_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "work_id": {
             "type": "string"
           }
@@ -7067,6 +7093,13 @@
       },
       "TurnSurfaceContext": {
         "properties": {
+          "browser_driver_id": {
+            "description": "Exact registered browser driver instance selected for this turn.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "channel_id": {
             "default": null,
             "type": [
@@ -10782,6 +10815,524 @@
           "credential_scheme": "bearer",
           "feature_profile": "core",
           "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/browser/worlds/isolated": {
+      "get": {
+        "operationId": "browser.worlds.isolated.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "BROWSER_WORLDS_ISOLATED_GETResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      },
+      "post": {
+        "operationId": "browser.worlds.isolated.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "BROWSER_WORLDS_ISOLATED_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 32768,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/browser/worlds/isolated/{world_id}": {
+      "delete": {
+        "operationId": "browser.worlds.isolated.by_world_id.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "world_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_DELETEResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.delete"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.delete"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.delete"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      },
+      "get": {
+        "operationId": "browser.worlds.isolated.by_world_id.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "world_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_GETResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/browser/worlds/isolated/{world_id}/input": {
+      "post": {
+        "operationId": "browser.worlds.isolated.by_world_id.input.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "world_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_INPUT_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.input.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.input.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.input.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 49152,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/browser/worlds/isolated/{world_id}/lifecycle": {
+      "post": {
+        "operationId": "browser.worlds.isolated.by_world_id.lifecycle.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "world_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_LIFECYCLE_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.lifecycle.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.lifecycle.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.lifecycle.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 8192,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/browser/worlds/isolated/{world_id}/navigate": {
+      "post": {
+        "operationId": "browser.worlds.isolated.by_world_id.navigate.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "world_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_NAVIGATE_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.navigate.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.navigate.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.navigate.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/browser/worlds/isolated/{world_id}/observe": {
+      "post": {
+        "operationId": "browser.worlds.isolated.by_world_id.observe.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "world_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_OBSERVE_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.observe.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.observe.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.observe.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 8192,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/browser/worlds/isolated/{world_id}/screenshot": {
+      "post": {
+        "operationId": "browser.worlds.isolated.by_world_id.screenshot.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "world_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_SCREENSHOT_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.screenshot.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.screenshot.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.screenshot.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 8192,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
           "trust_group": "portal"
         }
       }

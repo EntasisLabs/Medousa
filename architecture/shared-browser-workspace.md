@@ -1,6 +1,36 @@
 # Shared Browser Workspace
 
-Medousa Home exposes a **human-first browser** embedded in the Web surface (desktop + mobile native webview). Agent integration reattaches on top of the human webview without reversing the human-first rendering model.
+Medousa exposes one Browser surface with two explicit identity lanes:
+
+| Source | Owner and identity | Default use |
+|---|---|---|
+| **Workshop** | Selected daemon; ephemeral or named persistent profile | Primary lane for agent-created browser work and remote execution |
+| **Device** | Home's native WebView; this device's cookies and passkeys | Direct human browsing and compatibility fallback |
+
+The source control is visible on desktop and mobile. Medousa never silently
+moves a URL, action, cookie jar, or authenticated session between these lanes.
+The sections below describe the Device implementation; the Workshop attachment
+uses the same product surface but remains governed and executed by the daemon.
+
+## Workshop source (daemon-owned + attached)
+
+`GovernedBrowserStore` discovers isolated worlds on the active workshop and
+keeps source preference workshop-scoped. A newly attached agent world can
+surface in Browser; a deliberate source choice remains explicit. Home polls a
+bounded redacted frame, retaining only the latest image, and slows the cadence
+when the view is idle or hidden.
+
+The attached frame is interactive on desktop and mobile. Home maps pointer,
+wheel, touch, and keyboard input into the observation's CSS viewport and sends
+the document id plus observation revision. The daemon admits that request as
+human intent, takes control to fence pending agent work, revalidates the permit
+beside CDP, and then dispatches input. Detaching Home does not stop the world.
+
+## Device source (human-first + agent metadata)
+
+The Device source is a **human-first browser** embedded in the Web surface
+(desktop + mobile native webview). Agent integration reattaches on top of the
+human webview without reversing the human-first rendering model.
 
 ## Desktop (human-first + agent metadata)
 

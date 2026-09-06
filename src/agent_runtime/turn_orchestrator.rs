@@ -1264,6 +1264,17 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
         )),
         None => runtime_ports,
     };
+    let tool_observation_hydration_port: Arc<dyn medousa_runtime::ToolObservationHydrationPort> =
+        Arc::new(
+            super::tool_observation_hydration::DaemonToolObservationHydrationPort::new(
+                session_id.clone(),
+            ),
+        );
+    let runtime_ports = runtime_ports.with_optional_tool_observation_hydration(
+        (supports_browser_host
+            && crate::model_capability_registry::registry().supports_vision(&provider, &model))
+        .then(|| tool_observation_hydration_port.clone()),
+    );
     let completion_gate_config = ToolLoopCompletionGateConfig {
         stream_turn_id: turn_id,
         runtime_ports,
@@ -1339,12 +1350,22 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
                 .and_then(|scope| scope.channel_surface.as_deref()),
             client_registry.clone(),
         );
+        let mut target_completion_gate_config = completion_gate_config.clone();
+        target_completion_gate_config.runtime_ports = target_completion_gate_config
+            .runtime_ports
+            .clone()
+            .with_optional_tool_observation_hydration(
+                (supports_browser_host
+                    && crate::model_capability_registry::registry()
+                        .supports_vision(&target.provider, &target.model))
+                .then(|| tool_observation_hydration_port.clone()),
+            );
 
         let mut same_target_retries = 0u8;
         loop {
             let initial_worker_scratch =
                 scratch_seed_for_tool_loop(&session_scratch_seed, last_tool_scratch.as_ref());
-            let mut completion_gate = completion_gate_config.bind(
+            let mut completion_gate = target_completion_gate_config.bind(
                 &mut orchestration_state,
                 &turn_budget,
                 &mut last_tool_scratch,

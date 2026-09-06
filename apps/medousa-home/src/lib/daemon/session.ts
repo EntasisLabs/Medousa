@@ -305,6 +305,7 @@ export async function createTurnTicket(
     reasoningEffort: request.reasoningEffort ?? null,
     stageRouting: invokePlain(request.stageRouting ?? null),
     channelSurface: request.channelSurface ?? null,
+    browserDriverId: request.browserDriverId ?? null,
     mediaRefs: invokePlain(request.mediaRefs ?? null),
     voicePresetId: request.voicePresetId ?? null,
     voiceAppendix: request.voiceAppendix ?? null,
@@ -500,6 +501,7 @@ export interface InteractiveTurnOptions {
   reasoningEffort?: string;
   stageRouting?: StageRoutingMatrix;
   channelSurface?: string;
+  browserDriverId?: string;
   identityUserId?: string;
 }
 
@@ -519,6 +521,7 @@ export async function sendInteractiveTurn(
     reasoningEffort: options?.reasoningEffort,
     stageRouting: options?.stageRouting,
     channelSurface: options?.channelSurface,
+    browserDriverId: options?.browserDriverId,
   });
 }
 

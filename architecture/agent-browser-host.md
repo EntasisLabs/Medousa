@@ -1,6 +1,6 @@
 # Agent Browser Host
 
-**Status:** Accepted (v1 in-process)
+**Status:** Accepted (shared v1, daemon-owned isolated driver, and attached Home viewport)
 
 ## Problem
 
@@ -36,6 +36,49 @@ flowchart LR
 2. **Client-executed** — `home-ios`: daemon session + SSE navigate/challenge → WebView → `POST /v1/browser/sessions/{id}/complete`
 3. **Lite fallback** — `medousa-browser-lite` DDG HTML parse + 30m cache (daemon, always available)
 4. **Grapheme** — existing capability bindings (discovery ops filtered from fallback chain)
+
+## Daemon-owned isolated worlds
+
+An authorized profile may create an isolated Chromium world on the selected
+workshop through `/v1/browser/worlds/isolated`. The daemon owns the browser
+process and its profile directory; Home is only an optional view attachment.
+An ephemeral profile is removed with the world, while a named persistent
+profile is retained unless cleanup explicitly requests its deletion. One
+persistent profile may be attached to only one world at a time.
+
+The returned `driver.driver_id` is the exact selection token. A caller places
+that id in `TurnSurfaceContext.browser_driver_id`; browser snapshot and act
+tools then dispatch to the daemon-local driver instead of Home's shared
+BrowserHost. No fallback silently moves a turn between shared and isolated
+browser identities.
+
+The isolated driver uses Chromium's loopback CDP endpoint, but CDP is only a
+mechanical adapter beneath world authority. The daemon admits and revalidates
+short-lived permits, keeps stable opaque DOM references within a document,
+redacts sensitive inputs from semantics and pixels, and checks control plus
+state at every batch boundary. Human takeover permanently fences older agent
+permits. A detached Home client does not stop the world.
+
+Catalog records recover across daemon restart. Processes themselves are not
+assumed to survive a daemon crash: a previously active world recovers as
+`stopped` and must be resumed explicitly against the same profile.
+
+## One Browser surface, explicit identity
+
+Home exposes shared and isolated implementations through one Browser surface,
+not as competing product destinations. **Workshop** attaches to the selected
+daemon-owned world and is the primary lane for agent-created browser work.
+**Device** retains the native WebView and its local cookies, passkeys, and
+human-owned session. The source control names that identity boundary directly;
+an error in one source never falls back to the other.
+
+The Workshop view is a bounded sequence of redacted screenshot observations,
+not a second client-owned browser process. Home retains one frame, adapts its
+refresh cadence around input and visibility, and maps click, scroll, keyboard,
+and mobile text input back into the observation's CSS coordinate frame. Human
+input is admitted by world authority and fences queued agent action before the
+daemon dispatches it through CDP. Closing or switching the view detaches it but
+does not stop the daemon-owned browser.
 
 ## Session model
 
@@ -86,7 +129,8 @@ Safety:
 ## Out of scope (v1)
 
 - Separate browser sidecar binary
-- Playwright/CDP, SearXNG, Google-first SERP, full form-recording macros
+- Playwright/BiDi parity, SearXNG, Google-first SERP, full form-recording macros
+- Continuous video transport and full isolated multi-tab chrome
 
 ## References
 

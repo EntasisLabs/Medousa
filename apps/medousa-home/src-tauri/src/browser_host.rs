@@ -6,11 +6,14 @@ use std::sync::{Arc, Mutex};
 use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use base64::Engine as _;
 use medousa_browser_bridge::{
-    BrowserControl, BrowserSnapshot, TabGroup, TabGroupManager, TabOpenedBy,
+    BROWSER_SCREENSHOT_SCHEMA_VERSION, BrowserControl, BrowserObservation,
+    BrowserScreenshotCapture, BrowserSnapshot, TabGroup, TabGroupManager, TabOpenedBy,
 };
 use medousa_browser_lite::{SearchResponse, fetch_url_markdown, search_ddg_html_cached};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest as _, Sha256};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::oneshot;
 
@@ -32,6 +35,7 @@ struct BrowserSessionRecord {
 struct HealthResponse {
     ok: bool,
     version: &'static str,
+    driver_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,6 +89,7 @@ async fn health() -> Json<HealthResponse> {
     Json(HealthResponse {
         ok: true,
         version: env!("CARGO_PKG_VERSION"),
+        driver_id: crate::browser_driver::id().to_string(),
     })
 }
 
@@ -191,6 +196,32 @@ struct TabSnapshotRequest {
     max_chars: usize,
 }
 
+#[derive(Debug, Deserialize)]
+struct TabObservationRequest {
+    #[serde(default)]
+    since_revision: Option<u64>,
+    #[serde(default = "default_observation_nodes")]
+    max_nodes: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct TabScreenshotRequest {
+    expected_document_id: String,
+    expected_observation_revision: u64,
+    #[serde(default = "default_screenshot_width")]
+    max_width: u32,
+    world_permit: BrowserWorldPermitWire,
+    world_expected_url: String,
+}
+
+fn default_observation_nodes() -> usize {
+    256
+}
+
+fn default_screenshot_width() -> u32 {
+    crate::human_browser::DEFAULT_BROWSER_SCREENSHOT_WIDTH
+}
+
 fn parse_opened_by(value: Option<&str>) -> TabOpenedBy {
     match value.unwrap_or("user").trim().to_lowercase().as_str() {
         "agent" => TabOpenedBy::Agent,
@@ -208,6 +239,7 @@ fn parse_control(value: &str) -> BrowserControl {
 
 async fn create_tab_group(Json(request): Json<TabGroupCreateRequest>) -> Json<TabGroup> {
     Json(TabGroupManager::create_group(
+        crate::browser_driver::id().as_str(),
         request.chat_session_id,
         request.work_card_id,
     ))
@@ -245,7 +277,7 @@ async fn navigate_tab(
     Path(tab_group_id): Path<String>,
     Json(request): Json<TabNavigateRequest>,
 ) -> Json<serde_json::Value> {
-    TabGroupManager::ensure_group(&tab_group_id);
+    TabGroupManager::ensure_group(&tab_group_id, crate::browser_driver::id().as_str());
     match TabGroupManager::navigate_active_tab(
         &tab_group_id,
         &request.url,
@@ -299,7 +331,12 @@ struct LinkWorkCardRequest {
 
 #[derive(Debug, Deserialize)]
 struct TabActRequest {
-    action: String,
+    #[serde(default)]
+    action: Option<String>,
+    #[serde(default)]
+    actions: Option<Vec<TabActStepRequest>>,
+    #[serde(default)]
+    target_ref: Option<String>,
     #[serde(default)]
     selector: Option<String>,
     #[serde(default)]
@@ -312,6 +349,143 @@ struct TabActRequest {
     delta_y: Option<i64>,
     #[serde(default)]
     ms: Option<u64>,
+    #[serde(default)]
+    guard: Option<crate::human_browser::BrowserActGuard>,
+    #[serde(default)]
+    allow_high_risk: bool,
+    /// Daemon-minted world permit. Optional only while legacy clients migrate;
+    /// when present the driver binds it to the concrete active tab.
+    #[serde(default)]
+    world_permit: Option<BrowserWorldPermitWire>,
+    /// URL observed by the daemon when it admitted the world action. A tab id
+    /// survives navigation, so the driver also fences the page state.
+    #[serde(default)]
+    world_expected_url: Option<String>,
+    /// Semantic mirror revision and document that minted `target_ref`.
+    #[serde(default)]
+    expected_observation_revision: Option<u64>,
+    #[serde(default)]
+    expected_document_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TabActStepRequest {
+    action: String,
+    #[serde(default)]
+    target_ref: Option<String>,
+    #[serde(default)]
+    selector: Option<String>,
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
+    key: Option<String>,
+    #[serde(default)]
+    value: Option<String>,
+    #[serde(default)]
+    delta_y: Option<i64>,
+    #[serde(default)]
+    ms: Option<u64>,
+    #[serde(default)]
+    guard: Option<crate::human_browser::BrowserActGuard>,
+}
+
+impl TabActStepRequest {
+    fn into_browser_request(self) -> crate::human_browser::BrowserActRequest {
+        crate::human_browser::BrowserActRequest {
+            action: self.action,
+            target_ref: self.target_ref,
+            selector: self.selector,
+            text: self.text,
+            key: self.key,
+            value: self.value,
+            delta_y: self.delta_y,
+            ms: self.ms,
+            guard: self.guard,
+            allow_high_risk: false,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct BrowserWorldPermitWire {
+    driver_id: String,
+    resource_id: String,
+    expires_at_ms: u64,
+    #[serde(default)]
+    effect_class: Option<String>,
+}
+
+fn normalized_tab_act_steps(
+    request: &TabActRequest,
+) -> Result<(Vec<crate::human_browser::BrowserActRequest>, bool), String> {
+    const MAX_BATCH_STEPS: usize = 16;
+    const MAX_BATCH_WAIT_MS: u64 = 5_000;
+
+    let (steps, is_batch) = if let Some(steps) = request.actions.clone() {
+        if request.action.is_some()
+            || request.target_ref.is_some()
+            || request.selector.is_some()
+            || request.text.is_some()
+            || request.key.is_some()
+            || request.value.is_some()
+            || request.delta_y.is_some()
+            || request.ms.is_some()
+            || request.guard.is_some()
+        {
+            return Err(
+                "actions cannot be combined with fields for a singular browser action".to_string(),
+            );
+        }
+        if steps.is_empty() || steps.len() > MAX_BATCH_STEPS {
+            return Err(format!(
+                "browser action batches must contain 1 to {MAX_BATCH_STEPS} steps"
+            ));
+        }
+        (
+            steps
+                .into_iter()
+                .map(TabActStepRequest::into_browser_request)
+                .collect::<Vec<_>>(),
+            true,
+        )
+    } else {
+        let action = request
+            .action
+            .clone()
+            .ok_or_else(|| "browser action is required".to_string())?;
+        (
+            vec![crate::human_browser::BrowserActRequest {
+                action,
+                target_ref: request.target_ref.clone(),
+                selector: request.selector.clone(),
+                text: request.text.clone(),
+                key: request.key.clone(),
+                value: request.value.clone(),
+                delta_y: request.delta_y,
+                ms: request.ms,
+                guard: request.guard.clone(),
+                allow_high_risk: request.allow_high_risk,
+            }],
+            false,
+        )
+    };
+
+    let total_wait_ms = steps
+        .iter()
+        .filter(|step| step.action == "wait")
+        .map(|step| step.ms.unwrap_or(1_000))
+        .fold(0_u64, u64::saturating_add);
+    if total_wait_ms > MAX_BATCH_WAIT_MS {
+        return Err(format!(
+            "browser action batch waits exceed {MAX_BATCH_WAIT_MS} ms"
+        ));
+    }
+    let mut steps = steps;
+    for step in &mut steps {
+        step.allow_high_risk = request.allow_high_risk;
+        crate::human_browser::validate_browser_act_request(step)?;
+    }
+    Ok((steps, is_batch))
 }
 
 fn act_blocked_json(control: BrowserControl) -> serde_json::Value {
@@ -333,10 +507,202 @@ fn act_blocked_json(control: BrowserControl) -> serde_json::Value {
     })
 }
 
+fn semantic_target_is_high_risk(node: &medousa_browser_bridge::BrowserSemanticNode) -> bool {
+    if node.sensitive {
+        return true;
+    }
+    let semantics = format!("{} {} {}", node.role, node.name, node.tag).to_lowercase();
+    [
+        "submit", "checkout", "purchase", "delete", "remove account", "pay now", "confirm order",
+    ]
+    .iter()
+    .any(|marker| semantics.contains(marker))
+}
+
+fn validate_live_act_fence(
+    tab_group_id: &str,
+    tab_id: &str,
+    expected_url: &str,
+    request: &TabActRequest,
+    check_expiry: bool,
+) -> Result<(), (String, String)> {
+    let Some(group) = TabGroupManager::get_group(tab_group_id) else {
+        return Err((
+            "no_tab_group".to_string(),
+            format!("tab group not found: {tab_group_id}"),
+        ));
+    };
+    if group.control != BrowserControl::Agent {
+        let (code, error) = match group.control {
+            BrowserControl::AwaitingOperator => (
+                "awaiting_operator",
+                "tab is awaiting operator verification (CAPTCHA/login)",
+            ),
+            _ => (
+                "control_required",
+                "agent no longer controls this browser tab",
+            ),
+        };
+        return Err((code.to_string(), error.to_string()));
+    }
+    let Some(active_tab) = group.tabs.iter().find(|tab| tab.active) else {
+        return Err((
+            "no_active_tab".to_string(),
+            "tab group has no active tab".to_string(),
+        ));
+    };
+    if active_tab.id != tab_id
+        || !crate::human_browser::urls_match_for_snapshot(&active_tab.url, expected_url)
+    {
+        return Err((
+            "stale_surface_lease".to_string(),
+            "active browser tab changed during the action batch".to_string(),
+        ));
+    }
+    if let Some(expected_revision) = request.expected_observation_revision {
+        let Some(observation) = TabGroupManager::observation_state(tab_group_id, tab_id) else {
+            return Err((
+                "stale_element_ref".to_string(),
+                "browser semantic mirror is no longer available".to_string(),
+            ));
+        };
+        if observation.revision != expected_revision
+            || request.expected_document_id.as_deref()
+                != Some(observation.document_id.as_str())
+            || !crate::human_browser::urls_match_for_snapshot(&observation.url, expected_url)
+        {
+            return Err((
+                "stale_element_ref".to_string(),
+                "browser observation changed during the action batch".to_string(),
+            ));
+        }
+    }
+    if let Some(permit) = request.world_permit.as_ref() {
+        if permit.driver_id != group.driver_id
+            || permit.driver_id != crate::browser_driver::id().as_str()
+        {
+            return Err((
+                "world_permit_driver_mismatch".to_string(),
+                "world permit is not bound to this browser driver".to_string(),
+            ));
+        }
+        if permit
+            .effect_class
+            .as_deref()
+            .is_some_and(|effect| {
+                !matches!(
+                    effect,
+                    "local_reversible" | "local_mutation" | "external_effect" | "irreversible"
+                )
+            })
+        {
+            return Err((
+                "world_permit_effect_mismatch".to_string(),
+                "observation-only world permit cannot execute browser mutations".to_string(),
+            ));
+        }
+        if permit.resource_id != format!("browser-tab:{tab_id}") {
+            return Err((
+                "world_permit_resource_mismatch".to_string(),
+                "world permit is not bound to the active browser tab".to_string(),
+            ));
+        }
+        if request.world_expected_url.as_deref() != Some(expected_url) {
+            return Err((
+                "world_permit_state_mismatch".to_string(),
+                "browser tab does not match the state admitted by the daemon".to_string(),
+            ));
+        }
+        if check_expiry {
+            let now_ms: u64 = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis()
+                .try_into()
+                .unwrap_or(u64::MAX);
+            if permit.expires_at_ms <= now_ms {
+                return Err((
+                    "world_permit_expired".to_string(),
+                    "world permit expired before the next browser action".to_string(),
+                ));
+            }
+        }
+    }
+    if !crate::human_browser::urls_match_for_snapshot(
+        &crate::human_browser::human_browser_active_url(),
+        expected_url,
+    ) {
+        return Err((
+            "stale_surface_lease".to_string(),
+            "active native webview no longer matches the admitted tab".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+async fn failed_tab_act_response(
+    tab_group_id: &str,
+    tab_id: &str,
+    expected_url: &str,
+    request: &TabActRequest,
+    is_batch: bool,
+    failed_step: usize,
+    results: Vec<serde_json::Value>,
+    cause_code: &str,
+    error: String,
+    pre_observation_revision: Option<u64>,
+) -> Json<serde_json::Value> {
+    let executed_steps = results.len();
+    let code = if is_batch && executed_steps > 0 {
+        "batch_partial"
+    } else {
+        cause_code
+    };
+    let observation = if executed_steps > 0 {
+        capture_tab_observation(
+            tab_group_id,
+            tab_id,
+            expected_url,
+            pre_observation_revision,
+            256,
+        )
+        .await
+        .ok()
+    } else {
+        None
+    };
+    Json(serde_json::json!({
+        "ok": false,
+        "code": code,
+        "cause_code": cause_code,
+        "error": error,
+        "batch": is_batch,
+        "failed_step": failed_step,
+        "executed_steps": executed_steps,
+        "results": results,
+        "binding_used": "human_webview",
+        "world_permit_bound": request.world_permit.is_some(),
+        "world_state_bound": request.world_permit.is_some()
+            && request.world_expected_url.is_some(),
+        "observation": observation,
+    }))
+}
+
 async fn act_tab_group(
     Path(tab_group_id): Path<String>,
     Json(request): Json<TabActRequest>,
 ) -> Json<serde_json::Value> {
+    let (steps, is_batch) = match normalized_tab_act_steps(&request) {
+        Ok(normalized) => normalized,
+        Err(error) => {
+            return Json(serde_json::json!({
+                "ok": false,
+                "code": "invalid_request",
+                "error": error,
+                "binding_used": "human_webview",
+            }));
+        }
+    };
     let Some(group) = TabGroupManager::get_group(&tab_group_id) else {
         return Json(serde_json::json!({
             "ok": false,
@@ -354,14 +720,92 @@ async fn act_tab_group(
             "error": "tab group has no active tab",
         }));
     };
-    if !crate::human_browser::urls_match_for_snapshot(
-        &crate::human_browser::human_browser_active_url(),
+    let has_element_refs = steps.iter().any(|step| step.target_ref.is_some());
+    if has_element_refs
+        && (request.expected_observation_revision.is_none()
+            || request.expected_document_id.is_none())
+    {
+        return Json(serde_json::json!({
+            "ok": false,
+            "code": "observation_binding_required",
+            "error": "opaque element refs require their observation revision and document id",
+            "binding_used": "human_webview",
+        }));
+    }
+    if request.expected_observation_revision.is_some() || request.expected_document_id.is_some() {
+        let Some(observation) =
+            TabGroupManager::observation_state(&tab_group_id, &active_tab.id)
+        else {
+            return Json(serde_json::json!({
+                "ok": false,
+                "code": "stale_element_ref",
+                "error": "browser semantic mirror is not available for this tab",
+                "binding_used": "human_webview",
+            }));
+        };
+        if request.expected_observation_revision != Some(observation.revision)
+            || request.expected_document_id.as_deref() != Some(observation.document_id.as_str())
+            || !crate::human_browser::urls_match_for_snapshot(&observation.url, &active_tab.url)
+        {
+            return Json(serde_json::json!({
+                "ok": false,
+                "code": "stale_element_ref",
+                "error": "browser observation changed before the semantic action was dispatched",
+                "binding_used": "human_webview",
+                "current_observation_revision": observation.revision,
+                "current_document_id": observation.document_id,
+            }));
+        }
+    }
+    for step in &steps {
+        let Some(target_ref) = step.target_ref.as_deref() else {
+            continue;
+        };
+        let Some(node) = TabGroupManager::observation_node(
+            &tab_group_id,
+            &active_tab.id,
+            request.expected_document_id.as_deref().unwrap_or_default(),
+            request.expected_observation_revision.unwrap_or_default(),
+            target_ref,
+        ) else {
+            return Json(serde_json::json!({
+                "ok": false,
+                "code": "stale_element_ref",
+                "error": "opaque element ref is no longer present in the current observation",
+                "binding_used": "human_webview",
+            }));
+        };
+        if node.sensitive {
+            return Json(serde_json::json!({
+                "ok": false,
+                "code": "operator_required",
+                "error": "credential, payment, and file inputs remain operator-only",
+                "binding_used": "human_webview",
+            }));
+        }
+        if semantic_target_is_high_risk(&node) && !request.allow_high_risk {
+            return Json(serde_json::json!({
+                "ok": false,
+                "code": "high_risk_confirmation_required",
+                "error": "resolved target semantics require explicit high-risk authorization",
+                "binding_used": "human_webview",
+                "target_role": node.role,
+                "target_name": node.name,
+            }));
+        }
+    }
+    if let Err((code, error)) = validate_live_act_fence(
+        &tab_group_id,
+        &active_tab.id,
         &active_tab.url,
+        &request,
+        true,
     ) {
         return Json(serde_json::json!({
             "ok": false,
-            "code": "stale_surface_lease",
-            "error": "active native webview no longer matches the admitted tab",
+            "code": code,
+            "error": error,
+            "binding_used": "human_webview",
         }));
     }
     let Some(app) = crate::human_browser::app_handle() else {
@@ -371,50 +815,144 @@ async fn act_tab_group(
             "error": "human browser webview is not available",
         }));
     };
-    let act_request = crate::human_browser::BrowserActRequest {
-        action: request.action.clone(),
-        selector: request.selector.clone(),
-        text: request.text.clone(),
-        key: request.key.clone(),
-        value: request.value.clone(),
-        delta_y: request.delta_y,
-        ms: request.ms,
-    };
-    match crate::human_browser::browser_act_embed(&app, &act_request).await {
-        Ok(report)
-            if report.ok
-                && TabGroupManager::get_group(&group.id).is_some_and(|current| {
-                    current.control == BrowserControl::Agent
-                        && current
-                            .tabs
-                            .iter()
-                            .any(|tab| tab.active && tab.id == active_tab.id)
-                })
-                && crate::human_browser::urls_match_for_snapshot(&report.url, &active_tab.url) => Json(serde_json::json!({
+    let pre_observation_revision =
+        TabGroupManager::observation_state(&tab_group_id, &active_tab.id)
+            .map(|observation| observation.revision);
+    let mut results = Vec::with_capacity(steps.len());
+    for (step_index, step) in steps.iter().enumerate() {
+        if let Err((code, error)) = validate_live_act_fence(
+            &tab_group_id,
+            &active_tab.id,
+            &active_tab.url,
+            &request,
+            true,
+        ) {
+            return failed_tab_act_response(
+                &tab_group_id,
+                &active_tab.id,
+                &active_tab.url,
+                &request,
+                is_batch,
+                step_index,
+                results,
+                &code,
+                error,
+                pre_observation_revision,
+            )
+            .await;
+        }
+        let report = match crate::human_browser::browser_act_embed(&app, step).await {
+            Ok(report) => report,
+            Err(error) => {
+                return failed_tab_act_response(
+                    &tab_group_id,
+                    &active_tab.id,
+                    &active_tab.url,
+                    &request,
+                    is_batch,
+                    step_index,
+                    results,
+                    "act_failed",
+                    error,
+                    pre_observation_revision,
+                )
+                .await;
+            }
+        };
+        if !report.ok {
+            return failed_tab_act_response(
+                &tab_group_id,
+                &active_tab.id,
+                &active_tab.url,
+                &request,
+                is_batch,
+                step_index,
+                results,
+                "act_failed",
+                report
+                    .error
+                    .unwrap_or_else(|| "browser act failed".to_string()),
+                pre_observation_revision,
+            )
+            .await;
+        }
+        results.push(serde_json::json!({
+            "step": step_index,
             "ok": true,
-            "action": request.action,
-            "selector": request.selector,
+            "action": step.action,
+            "target_ref": step.target_ref,
+            "selector": step.selector,
             "url": report.url,
-            "binding_used": "human_webview",
-            "decision": "allow",
-        })),
-        Ok(report) => Json(serde_json::json!({
-            "ok": false,
-            "code": if report.ok { "stale_surface_lease" } else { "act_failed" },
-            "error": report.error.unwrap_or_else(|| if report.ok {
-                "browser control, tab, or navigation changed before action completion".to_string()
-            } else {
-                "browser act failed".to_string()
-            }),
-            "binding_used": "human_webview",
-        })),
-        Err(err) => Json(serde_json::json!({
-            "ok": false,
-            "code": "act_failed",
-            "error": err,
-            "binding_used": "human_webview",
-        })),
+        }));
+        if !crate::human_browser::urls_match_for_snapshot(&report.url, &active_tab.url) {
+            return failed_tab_act_response(
+                &tab_group_id,
+                &active_tab.id,
+                &active_tab.url,
+                &request,
+                is_batch,
+                step_index.saturating_add(1),
+                results,
+                "stale_surface_lease",
+                "browser navigated while the action batch was executing".to_string(),
+                pre_observation_revision,
+            )
+            .await;
+        }
+        if let Err((code, error)) = validate_live_act_fence(
+            &tab_group_id,
+            &active_tab.id,
+            &active_tab.url,
+            &request,
+            false,
+        ) {
+            return failed_tab_act_response(
+                &tab_group_id,
+                &active_tab.id,
+                &active_tab.url,
+                &request,
+                is_batch,
+                step_index.saturating_add(1),
+                results,
+                &code,
+                error,
+                pre_observation_revision,
+            )
+            .await;
+        }
     }
+
+    let observation = capture_tab_observation(
+        &tab_group_id,
+        &active_tab.id,
+        &active_tab.url,
+        pre_observation_revision,
+        256,
+    )
+    .await
+    .ok();
+    let first_step = &steps[0];
+    let url = results
+        .last()
+        .and_then(|result| result.get("url"))
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!(active_tab.url));
+    Json(serde_json::json!({
+        "ok": true,
+        "batch": is_batch,
+        "action": (!is_batch).then_some(first_step.action.as_str()),
+        "target_ref": (!is_batch).then_some(first_step.target_ref.as_deref()).flatten(),
+        "selector": (!is_batch).then_some(first_step.selector.as_deref()).flatten(),
+        "url": url,
+        "executed_steps": results.len(),
+        "results": results,
+        "binding_used": "human_webview",
+        "world_permit_bound": request.world_permit.is_some(),
+        "world_state_bound": request.world_permit.is_some()
+            && request.world_expected_url.is_some(),
+        "decision": "allow",
+        "observation": observation,
+    }))
 }
 
 async fn link_work_card_handler(
@@ -461,6 +999,161 @@ async fn snapshot_tab_group(
     Ok(Json(snapshot))
 }
 
+async fn observe_tab_group(
+    Path(tab_group_id): Path<String>,
+    Json(request): Json<TabObservationRequest>,
+) -> Result<Json<BrowserObservation>, String> {
+    let group = TabGroupManager::get_group(&tab_group_id)
+        .ok_or_else(|| format!("tab group not found: {tab_group_id}"))?;
+    let tab = group
+        .tabs
+        .iter()
+        .find(|tab| tab.active)
+        .ok_or_else(|| "tab group has no active tab".to_string())?;
+    capture_tab_observation(
+        &tab_group_id,
+        &tab.id,
+        &tab.url,
+        request.since_revision,
+        request.max_nodes.clamp(1, 512),
+    )
+    .await
+    .map(Json)
+}
+
+async fn capture_tab_observation(
+    tab_group_id: &str,
+    tab_id: &str,
+    expected_url: &str,
+    since_revision: Option<u64>,
+    max_nodes: usize,
+) -> Result<BrowserObservation, String> {
+    if !crate::human_browser::urls_match_for_snapshot(
+        &crate::human_browser::human_browser_active_url(),
+        expected_url,
+    ) {
+        return Err("active native webview no longer matches the observed tab".to_string());
+    }
+    let app = crate::human_browser::app_handle()
+        .ok_or_else(|| "human browser webview is not available".to_string())?;
+    let force_full = TabGroupManager::observation_state(tab_group_id, tab_id).is_none();
+    let capture = crate::human_browser::capture_semantic_observation(&app, force_full).await?;
+    if !crate::human_browser::urls_match_for_snapshot(&capture.url, expected_url) {
+        return Err("browser navigated while its semantic observation was captured".to_string());
+    }
+    TabGroupManager::record_observation(
+        tab_group_id,
+        capture,
+        since_revision,
+        max_nodes.clamp(1, 512),
+    )
+}
+
+async fn screenshot_tab_group(
+    Path(tab_group_id): Path<String>,
+    Json(request): Json<TabScreenshotRequest>,
+) -> Result<Json<BrowserScreenshotCapture>, String> {
+    let group = TabGroupManager::get_group(&tab_group_id)
+        .ok_or_else(|| format!("tab group not found: {tab_group_id}"))?;
+    if group.control == BrowserControl::AwaitingOperator {
+        return Err("operator-only browser state cannot be captured".to_string());
+    }
+    let tab = group
+        .tabs
+        .iter()
+        .find(|tab| tab.active)
+        .ok_or_else(|| "tab group has no active tab".to_string())?;
+    if request.world_permit.resource_id != format!("browser-tab:{}", tab.id) {
+        return Err("world permit is not bound to the active browser tab".to_string());
+    }
+    if request.world_permit.driver_id != group.driver_id
+        || request.world_permit.driver_id != crate::browser_driver::id().as_str()
+    {
+        return Err("world permit is not bound to this browser driver".to_string());
+    }
+    if request.world_permit.effect_class.as_deref() != Some("observe_pixels") {
+        return Err("world permit does not authorize pixel observation".to_string());
+    }
+    if request.world_permit.expires_at_ms <= host_now_ms() {
+        return Err("world permit expired before pixel capture".to_string());
+    }
+    if !crate::human_browser::urls_match_for_snapshot(&request.world_expected_url, &tab.url)
+        || !crate::human_browser::urls_match_for_snapshot(
+            &crate::human_browser::human_browser_active_url(),
+            &tab.url,
+        )
+    {
+        return Err("active browser tab changed before pixel capture".to_string());
+    }
+    let observation = TabGroupManager::current_observation(&tab_group_id, &tab.id)
+        .ok_or_else(|| "browser semantic mirror is unavailable for pixel capture".to_string())?;
+    if observation.document_id != request.expected_document_id
+        || observation.revision != request.expected_observation_revision
+        || !crate::human_browser::urls_match_for_snapshot(&observation.url, &tab.url)
+    {
+        return Err("pixel capture requested for a stale browser observation".to_string());
+    }
+
+    let app = crate::human_browser::app_handle()
+        .ok_or_else(|| "human browser webview is not available".to_string())?;
+    let captured = crate::human_browser::capture_viewport_screenshot(
+        &app,
+        &observation.viewport,
+        request.max_width,
+    )
+    .await?;
+
+    // Re-observe after the native frame is captured. If DOM, navigation, or
+    // viewport state moved, the pixels cannot honestly carry the old refs.
+    let post_observation = capture_tab_observation(
+        &tab_group_id,
+        &tab.id,
+        &tab.url,
+        Some(request.expected_observation_revision),
+        512,
+    )
+    .await?;
+    let post_state = TabGroupManager::observation_state(&tab_group_id, &tab.id)
+        .ok_or_else(|| "browser semantic mirror disappeared after pixel capture".to_string())?;
+    if post_state.document_id != request.expected_document_id
+        || post_state.revision != request.expected_observation_revision
+        || post_observation.viewport != observation.viewport
+    {
+        return Err("browser state changed while its pixels were captured; observe again".to_string());
+    }
+
+    let sha256 = format!("{:x}", Sha256::digest(&captured.png));
+    let byte_size = captured.png.len();
+    Ok(Json(BrowserScreenshotCapture {
+        schema_version: BROWSER_SCREENSHOT_SCHEMA_VERSION,
+        tab_id: tab.id.clone(),
+        url: tab.url.clone(),
+        title: observation.title,
+        document_id: request.expected_document_id,
+        observation_revision: request.expected_observation_revision,
+        viewport: observation.viewport,
+        coordinate_frame: "css_viewport".to_string(),
+        mime: "image/png".to_string(),
+        image_width: captured.image_width,
+        image_height: captured.image_height,
+        byte_size,
+        sha256,
+        sensitive_regions_redacted: captured.sensitive_regions_redacted,
+        captured_at_ms: host_now_ms(),
+        untrusted_content: true,
+        image_base64: base64::engine::general_purpose::STANDARD.encode(captured.png),
+    }))
+}
+
+fn host_now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .try_into()
+        .unwrap_or(u64::MAX)
+}
+
 fn build_router(state: BrowserHostState) -> Router {
     Router::new()
         .route("/health", get(health))
@@ -490,6 +1183,14 @@ fn build_router(state: BrowserHostState) -> Router {
         .route(
             "/v1/tab-groups/{tab_group_id}/snapshot",
             post(snapshot_tab_group),
+        )
+        .route(
+            "/v1/tab-groups/{tab_group_id}/observe",
+            post(observe_tab_group),
+        )
+        .route(
+            "/v1/tab-groups/{tab_group_id}/screenshot",
+            post(screenshot_tab_group),
         )
         .route("/v1/tab-groups/{tab_group_id}/act", post(act_tab_group))
         .with_state(state)
@@ -566,6 +1267,7 @@ pub struct BrowserHostStatusDto {
     pub running: bool,
     pub healthy: bool,
     pub base_url: String,
+    pub driver_id: String,
 }
 
 #[tauri::command]
@@ -590,6 +1292,7 @@ pub async fn browser_host_status() -> Result<BrowserHostStatusDto, String> {
         running: RUNNING.load(Ordering::SeqCst) || healthy,
         healthy,
         base_url: browser_host_base_url(),
+        driver_id: crate::browser_driver::id().to_string(),
     })
 }
 
@@ -709,14 +1412,17 @@ fn resolve_daemon_url(daemon_url: Option<&str>) -> Result<String, String> {
         .map_err(|_| "MEDOUSA_DAEMON_URL not set".to_string())
 }
 
-pub async fn register_browser_client_with_daemon(daemon_url: &str, channel_surface: &str) {
+pub async fn register_browser_client_with_workshop(
+    state: &tauri::State<'_, crate::daemon::DaemonState>,
+    channel_surface: &str,
+) -> Result<(), String> {
     let supports =
         if channel_surface.starts_with("home-ios") || channel_surface.starts_with("home-android") {
             true
         } else {
             browser_host_http_healthy().await
         };
-    let client_id = format!("home-{channel_surface}");
+    let client_id = crate::browser_driver::client_id(channel_surface);
     let body = serde_json::json!({
         "client_id": client_id,
         "channel_surface": channel_surface,
@@ -726,24 +1432,29 @@ pub async fn register_browser_client_with_daemon(daemon_url: &str, channel_surfa
         } else {
             None::<String>
         },
+        "world_drivers": if supports {
+            vec![crate::browser_driver::registration()]
+        } else {
+            Vec::new()
+        },
     });
-    let url = format!("{}/v1/clients/register", daemon_url.trim_end_matches('/'));
-    let Ok(client) = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-    else {
-        return;
-    };
-    let _ = client.post(url).json(&body).send().await;
+    let _: serde_json::Value = crate::daemon::workshop_http::post_json(
+        state,
+        medousa_sdk::generated::ops::CLIENTS_REGISTER_POST.path,
+        &body,
+    )
+    .await?;
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn browser_host_register_client(
+    state: tauri::State<'_, crate::daemon::DaemonState>,
     daemon_url: String,
     channel_surface: String,
 ) -> Result<(), String> {
-    register_browser_client_with_daemon(&daemon_url, &channel_surface).await;
-    Ok(())
+    let _ = daemon_url;
+    register_browser_client_with_workshop(&state, &channel_surface).await
 }
 
 // ── Browser bridge (in-process; avoids CORS from Vite dev → :7422) ───────────
@@ -758,7 +1469,11 @@ pub fn browser_bridge_create_tab_group(
     chat_session_id: Option<String>,
     work_card_id: Option<String>,
 ) -> Result<TabGroup, String> {
-    let group = TabGroupManager::create_group(chat_session_id, work_card_id);
+    let group = TabGroupManager::create_group(
+        crate::browser_driver::id().as_str(),
+        chat_session_id,
+        work_card_id,
+    );
     emit_browser_context_updated(&app, &group.id);
     Ok(group)
 }
@@ -797,7 +1512,7 @@ pub fn browser_bridge_navigate_tab(
     opened_by: Option<String>,
     title: Option<String>,
 ) -> Result<TabGroup, String> {
-    TabGroupManager::ensure_group(&tab_group_id);
+    TabGroupManager::ensure_group(&tab_group_id, crate::browser_driver::id().as_str());
     TabGroupManager::navigate_active_tab(
         &tab_group_id,
         &url,
@@ -895,4 +1610,98 @@ pub async fn browser_bridge_snapshot(
     })
     .await
     .map_err(|err| err.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn act_request(action: Option<&str>) -> TabActRequest {
+        TabActRequest {
+            action: action.map(str::to_string),
+            actions: None,
+            target_ref: None,
+            selector: None,
+            text: None,
+            key: None,
+            value: None,
+            delta_y: None,
+            ms: None,
+            guard: None,
+            allow_high_risk: false,
+            world_permit: None,
+            world_expected_url: None,
+            expected_observation_revision: None,
+            expected_document_id: None,
+        }
+    }
+
+    #[test]
+    fn browser_batch_normalization_preflights_every_step() {
+        let mut request = act_request(None);
+        request.actions = Some(vec![
+            TabActStepRequest {
+                action: "wait".to_string(),
+                target_ref: None,
+                selector: None,
+                text: None,
+                key: None,
+                value: None,
+                delta_y: None,
+                ms: Some(50),
+                guard: None,
+            },
+            TabActStepRequest {
+                action: "click".to_string(),
+                target_ref: None,
+                selector: None,
+                text: None,
+                key: None,
+                value: None,
+                delta_y: None,
+                ms: None,
+                guard: None,
+            },
+        ]);
+
+        let error = normalized_tab_act_steps(&request)
+            .expect_err("invalid later step must fail before dispatch");
+        assert!(error.contains("requires a target_ref or selector"));
+    }
+
+    #[test]
+    fn browser_batch_normalization_enforces_total_wait_budget() {
+        let mut request = act_request(None);
+        request.actions = Some(
+            [3_000_u64, 3_000_u64]
+                .into_iter()
+                .map(|ms| TabActStepRequest {
+                    action: "wait".to_string(),
+                    target_ref: None,
+                    selector: None,
+                    text: None,
+                    key: None,
+                    value: None,
+                    delta_y: None,
+                    ms: Some(ms),
+                    guard: None,
+                })
+                .collect(),
+        );
+
+        let error = normalized_tab_act_steps(&request).expect_err("wait budget must fail");
+        assert!(error.contains("waits exceed 5000 ms"));
+    }
+
+    #[test]
+    fn legacy_singular_browser_action_remains_supported() {
+        let mut request = act_request(Some("click"));
+        request.selector = Some("#continue".to_string());
+        let (steps, is_batch) = normalized_tab_act_steps(&request).expect("singular action");
+
+        assert!(!is_batch);
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].action, "click");
+        assert_eq!(steps[0].selector.as_deref(), Some("#continue"));
+    }
 }

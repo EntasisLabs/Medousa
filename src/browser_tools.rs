@@ -7,12 +7,22 @@ use crate::semantic_values::TrimmedText;
 pub const COGNITION_BROWSER_FETCH: &str = "cognition_browser_fetch";
 pub const COGNITION_BROWSER_SNAPSHOT: &str = "cognition_browser_snapshot";
 pub const COGNITION_BROWSER_ACT: &str = "cognition_browser_act";
+pub const ISOLATED_BROWSER_DRIVER_PREFIX: &str = "driver:isolated-browser:";
 
 pub const BROWSER_COGNITION_TOOLS: &[&str] = &[
     COGNITION_BROWSER_FETCH,
     COGNITION_BROWSER_SNAPSHOT,
     COGNITION_BROWSER_ACT,
 ];
+
+/// Identify a daemon-owned browser world without importing its host adapter.
+/// Embedded clients need this to fail closed instead of redirecting an exact
+/// Workshop-world request into the device WebView.
+pub fn is_isolated_browser_driver_id(driver_id: &str) -> bool {
+    driver_id
+        .trim()
+        .starts_with(ISOLATED_BROWSER_DRIVER_PREFIX)
+}
 
 #[derive(Debug)]
 pub(crate) struct BrowserUrlCommand {

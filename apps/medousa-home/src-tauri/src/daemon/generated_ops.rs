@@ -74,6 +74,24 @@ pub enum DaemonOperation {
     BrowserSessionsBySessionIdGet,
     #[serde(rename = "browser.sessions.by_session_id.resume.post")]
     BrowserSessionsBySessionIdResumePost,
+    #[serde(rename = "browser.worlds.isolated.by_world_id.delete")]
+    BrowserWorldsIsolatedByWorldIdDelete,
+    #[serde(rename = "browser.worlds.isolated.by_world_id.get")]
+    BrowserWorldsIsolatedByWorldIdGet,
+    #[serde(rename = "browser.worlds.isolated.by_world_id.input.post")]
+    BrowserWorldsIsolatedByWorldIdInputPost,
+    #[serde(rename = "browser.worlds.isolated.by_world_id.lifecycle.post")]
+    BrowserWorldsIsolatedByWorldIdLifecyclePost,
+    #[serde(rename = "browser.worlds.isolated.by_world_id.navigate.post")]
+    BrowserWorldsIsolatedByWorldIdNavigatePost,
+    #[serde(rename = "browser.worlds.isolated.by_world_id.observe.post")]
+    BrowserWorldsIsolatedByWorldIdObservePost,
+    #[serde(rename = "browser.worlds.isolated.by_world_id.screenshot.post")]
+    BrowserWorldsIsolatedByWorldIdScreenshotPost,
+    #[serde(rename = "browser.worlds.isolated.get")]
+    BrowserWorldsIsolatedGet,
+    #[serde(rename = "browser.worlds.isolated.post")]
+    BrowserWorldsIsolatedPost,
     #[serde(rename = "calendar.events.by_uid.delete")]
     CalendarEventsByUidDelete,
     #[serde(rename = "calendar.events.by_uid.put")]
@@ -892,6 +910,15 @@ impl DaemonOperation {
             Self::BrowserSessionsBySessionIdCompleteActPost => "browser.sessions.by_session_id.complete_act.post",
             Self::BrowserSessionsBySessionIdGet => "browser.sessions.by_session_id.get",
             Self::BrowserSessionsBySessionIdResumePost => "browser.sessions.by_session_id.resume.post",
+            Self::BrowserWorldsIsolatedByWorldIdDelete => "browser.worlds.isolated.by_world_id.delete",
+            Self::BrowserWorldsIsolatedByWorldIdGet => "browser.worlds.isolated.by_world_id.get",
+            Self::BrowserWorldsIsolatedByWorldIdInputPost => "browser.worlds.isolated.by_world_id.input.post",
+            Self::BrowserWorldsIsolatedByWorldIdLifecyclePost => "browser.worlds.isolated.by_world_id.lifecycle.post",
+            Self::BrowserWorldsIsolatedByWorldIdNavigatePost => "browser.worlds.isolated.by_world_id.navigate.post",
+            Self::BrowserWorldsIsolatedByWorldIdObservePost => "browser.worlds.isolated.by_world_id.observe.post",
+            Self::BrowserWorldsIsolatedByWorldIdScreenshotPost => "browser.worlds.isolated.by_world_id.screenshot.post",
+            Self::BrowserWorldsIsolatedGet => "browser.worlds.isolated.get",
+            Self::BrowserWorldsIsolatedPost => "browser.worlds.isolated.post",
             Self::CalendarEventsByUidDelete => "calendar.events.by_uid.delete",
             Self::CalendarEventsByUidPut => "calendar.events.by_uid.put",
             Self::CalendarEventsGet => "calendar.events.get",

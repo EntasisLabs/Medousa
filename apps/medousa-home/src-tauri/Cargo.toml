@@ -42,6 +42,7 @@ url = "2"
 medousa-types = { path = "../../../crates/medousa-types" }
 medousa-runtime = { path = "../../../crates/medousa-runtime" }
 medousa-secrets = { path = "../../../crates/medousa-secrets" }
+medousa-world = { path = "../../../crates/medousa-world" }
 medousa-sdk = { path = "../../../crates/medousa-sdk", default-features = false, features = ["async", "sse"] }
 medousa-sdk-iroh = { path = "../../../crates/medousa-sdk-iroh", default-features = false, features = ["async", "sse"] }
 medousa-iroh-http = { path = "../../../crates/medousa-iroh-http" }
@@ -55,6 +56,7 @@ tokio-tungstenite = { version = "0.29", default-features = false, features = ["c
 medousa-host = { path = "../../../crates/medousa-host" }
 medousa-local-inference = { path = "../../../crates/medousa-local-inference", features = ["telemetry-metal"] }
 axum = "0.8"
+image = { version = "0.25.6", default-features = false, features = ["png"] }
 medousa-browser-bridge = { path = "../../../crates/medousa-browser-bridge" }
 tauri-plugin-window-state = "2"
 
@@ -116,6 +118,8 @@ zbus = { version = "3.15.2", default-features = false, features = ["tokio"] }
 objc2 = "0.6"
 block2 = "0.6"
 objc2-foundation = { version = "0.3", features = [
+  "NSData",
+  "NSDictionary",
   "NSGeometry",
   "NSNotification",
   "NSObject",
@@ -125,6 +129,9 @@ objc2-foundation = { version = "0.3", features = [
   "block2",
 ] }
 objc2-app-kit = { version = "0.3", features = [
+  "NSBitmapImageRep",
+  "NSImage",
+  "NSImageRep",
   "NSView",
   "NSWindow",
   "NSColor",
@@ -135,6 +142,11 @@ objc2-app-kit = { version = "0.3", features = [
   "NSApplication",
   "NSResponder",
   "NSWorkspace",
+  "block2",
+] }
+objc2-web-kit = { version = "0.3", default-features = false, features = [
+  "WKSnapshotConfiguration",
+  "WKWebView",
   "block2",
 ] }
 

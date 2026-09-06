@@ -273,6 +273,7 @@
         reasoningEffort: opts.reasoningEffort,
         stageRouting: opts.stageRouting,
         channelSurface: opts.channelSurface,
+        browserDriverId: opts.browserDriverId,
         voicePresetId: voice.voicePresetId,
         voiceAppendix: voice.voiceAppendix,
         identityUserId: opts.identityUserId,

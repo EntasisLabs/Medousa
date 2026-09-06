@@ -7579,6 +7579,7 @@ dependencies = [
  "medousa-acp-client",
  "medousa-adapter-common",
  "medousa-api-contract",
+ "medousa-browser-bridge",
  "medousa-browser-lite",
  "medousa-engine",
  "medousa-forge",
@@ -7595,6 +7596,7 @@ dependencies = [
  "medousa-store",
  "medousa-tool-macros",
  "medousa-types",
+ "medousa-world",
  "notify",
  "once_cell",
  "opentelemetry 0.27.1",
@@ -7761,6 +7763,7 @@ dependencies = [
  "globset",
  "medousa-host",
  "medousa-store",
+ "medousa-types",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -7922,6 +7925,7 @@ name = "medousa-runtime"
 version = "0.10.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "chrono",
  "futures-util",
  "genai 0.6.5",
@@ -8083,6 +8087,14 @@ dependencies = [
  "medousa-types",
  "schemars 0.8.22",
  "serde_json",
+]
+
+[[package]]
+name = "medousa-world"
+version = "0.10.0"
+dependencies = [
+ "serde",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
