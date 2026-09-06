@@ -504,10 +504,12 @@ impl ToolRegistry for WorldScopedToolRegistry {
         if expected_surface == medousa_world::WorldSurfaceKind::Desktop {
             bind_computer_driver(tool_name, &mut input, binding.driver_id().as_str())?;
         }
-        let mut output = crate::world_execution::with_world_execution(
-            binding,
-            self.inner.invoke_tool(tool_name, input),
-        )
+        let mut output = crate::world_execution::with_world_execution(binding, async {
+            crate::world_execution::prepare_active_world_for_action()
+                .await
+                .map_err(StasisError::PortFailure)?;
+            self.inner.invoke_tool(tool_name, input).await
+        })
         .await?;
         redact_world_mechanics(&mut output);
         Ok(output)

@@ -143,6 +143,23 @@ pub fn require_active_world(
     Ok(binding)
 }
 
+/// Reconcile destination-owned runtime state immediately before a governed
+/// action. Only the isolated-browser adapter currently has restart state to
+/// rebuild; all other worlds are already live registrations.
+pub async fn prepare_active_world_for_action() -> Result<(), String> {
+    #[cfg(feature = "full-daemon")]
+    if let Some(binding) = active_world_for(WorldSurfaceKind::Browser)
+        && crate::browser_tools::is_isolated_browser_driver_id(binding.driver_id().as_str())
+    {
+        let host = crate::daemon::isolated_browser_host::global_host()
+            .ok_or_else(|| "isolated browser host is unavailable".to_string())?;
+        host.prepare_authorized_persistent_world(binding.world_id().as_str())
+            .await
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

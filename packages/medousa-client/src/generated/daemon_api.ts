@@ -328,10 +328,16 @@ export interface StageRoutingMatrix {
   verifier: StageRoute;
 }
 
+export interface TurnWorldSelection {
+  execution_runtime_id: string;
+  world_id: string;
+}
+
 export interface TurnSurfaceContext {
   browser_driver_id?: string | null;
   channel_id?: string | null;
   channel_surface?: string | null;
+  selected_worlds?: TurnWorldSelection[];
   supports_browser_host?: boolean;
   supports_liquid_markdown?: boolean;
   supports_ui_artifacts?: boolean;
@@ -549,6 +555,14 @@ export type BotId = string;
 
 export type BotSessionKind = "primary" | "secondary";
 
+export type BotWorldBindingKind = "persistent_browser";
+
+export interface BotWorldBinding {
+  execution_runtime_id: string;
+  kind: BotWorldBindingKind;
+  world_id: string;
+}
+
 export interface BotProfile {
   additional_manuscript_ids?: string[];
   archived?: boolean;
@@ -565,6 +579,7 @@ export interface BotProfile {
   role_description?: string | null;
   schema_version: number;
   updated_at: string;
+  world_binding?: BotWorldBinding | null;
 }
 
 export interface BotSessionBinding {
@@ -582,16 +597,19 @@ export interface CreateBotRequest {
   display_name: string;
   primary_manuscript_id: string;
   role_description?: string | null;
+  world_binding?: BotWorldBinding | null;
 }
 
 export interface UpdateBotRequest {
   additional_manuscript_ids?: string[];
   avatar_ref?: string | null;
+  clear_world_binding?: boolean;
   default_mode?: AgentModeId | null;
   display_name: string;
   expected_revision: number;
   primary_manuscript_id: string;
   role_description?: string | null;
+  world_binding?: BotWorldBinding | null;
 }
 
 export interface DuplicateBotRequest {

@@ -185,6 +185,8 @@ fn main() {
     // Bots
     export_type!(schemas, BotId, "BotId");
     export_type!(schemas, BotSessionKind, "BotSessionKind");
+    export_type!(schemas, BotWorldBindingKind, "BotWorldBindingKind");
+    export_type!(schemas, BotWorldBinding, "BotWorldBinding");
     export_type!(schemas, BotProfile, "BotProfile");
     export_type!(schemas, BotSessionBinding, "BotSessionBinding");
     export_type!(schemas, CreateBotRequest, "CreateBotRequest");

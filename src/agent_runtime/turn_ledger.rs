@@ -157,6 +157,7 @@ mod tests {
             memory_scope_id: "bot_0123456789abcdef0123456789abcdef".to_string(),
             default_mode: None,
             primary_session_id: Some(session.to_string()),
+            world_binding: None,
             archived: false,
             revision: 4,
             created_at: chrono::Utc::now(),

@@ -45,6 +45,8 @@ const MAX_SCREENSHOT_BYTES: usize = 12 * 1024 * 1024;
 const MAX_WORLDS_PER_PROFILE: usize = 32;
 const MAX_CATALOG_WORLDS: usize = 256;
 const MAX_RUNNING_WORLDS: usize = 8;
+const RESTART_RECOVERY_FAILURE: &str =
+    "workshop restarted; resume this world to reopen its isolated profile";
 
 static GLOBAL_HOST: OnceLock<Arc<IsolatedBrowserHost>> = OnceLock::new();
 
@@ -293,6 +295,69 @@ impl IsolatedBrowserHost {
         Ok(world)
     }
 
+    /// Rehydrate an explicitly selected persistent world after a workshop
+    /// restart. This runs only inside an exact worker world boundary and never
+    /// borrows the human owner's principal. Paused, manually stopped, failed,
+    /// ephemeral, or human-controlled worlds remain operator decisions.
+    pub(crate) async fn prepare_authorized_persistent_world(
+        &self,
+        world_id: &str,
+    ) -> Result<(), IsolatedBrowserError> {
+        let binding = crate::world_execution::require_active_world(
+            world_id,
+            WorldSurfaceKind::Browser,
+        )
+        .map_err(IsolatedBrowserError::Conflict)?;
+        let _mutation = self.mutation.lock().await;
+        self.refresh_exited_processes().await;
+        let snapshot = {
+            let state = self.state.lock().await;
+            let world = state.worlds.get(world_id).cloned().ok_or_else(|| {
+                IsolatedBrowserError::NotFound(
+                    "isolated browser world was not found".to_string(),
+                )
+            })?;
+            if world.authority_id != binding.authority_id()
+                || world.driver.driver_id != *binding.driver_id()
+            {
+                return Err(IsolatedBrowserError::Conflict(
+                    "selected world does not match its isolated browser runtime".to_string(),
+                ));
+            }
+            world
+        };
+        if snapshot.run_state == IsolatedBrowserRunState::Running {
+            return Ok(());
+        }
+        if !restart_recoverable(&snapshot) {
+            return Err(IsolatedBrowserError::Conflict(
+                "persistent browser requires operator resume before this worker can act"
+                    .to_string(),
+            ));
+        }
+
+        ensure_authoritative_world(&snapshot)?;
+        {
+            let mut state = self.state.lock().await;
+            let world = state.worlds.get_mut(world_id).ok_or_else(|| {
+                IsolatedBrowserError::NotFound(
+                    "isolated browser world was not found".to_string(),
+                )
+            })?;
+            world.run_state = IsolatedBrowserRunState::Starting;
+            world.control_epoch = world.control_epoch.saturating_add(1);
+            world.failure = None;
+            world.updated_at_ms = now_ms();
+        }
+        self.persist().await?;
+        if let Err(error) = self.launch_world(world_id).await {
+            self.mark_failed(world_id, error.to_string()).await;
+            self.persist().await?;
+            return Err(error);
+        }
+        Ok(())
+    }
+
     pub async fn open(root: PathBuf) -> Result<Arc<Self>, IsolatedBrowserError> {
         tokio::fs::create_dir_all(root.join("worlds"))
             .await
@@ -348,10 +413,7 @@ impl IsolatedBrowserHost {
                     | IsolatedBrowserRunState::Paused
             ) {
                 world.run_state = IsolatedBrowserRunState::Stopped;
-                world.failure = Some(
-                    "workshop restarted; resume this world to reopen its isolated profile"
-                        .to_string(),
-                );
+                world.failure = Some(RESTART_RECOVERY_FAILURE.to_string());
                 world.tab_id = None;
                 world.updated_at_ms = now;
                 recovered = true;
@@ -587,6 +649,7 @@ impl IsolatedBrowserHost {
                 world.run_state = IsolatedBrowserRunState::Stopped;
                 world.control_epoch = world.control_epoch.saturating_add(1);
                 world.tab_id = None;
+                world.failure = None;
                 world.updated_at_ms = now_ms();
                 drop(state);
                 self.persist().await?;
@@ -1381,6 +1444,13 @@ fn ensure_authoritative_world(world: &IsolatedBrowserWorld) -> Result<(), Isolat
         ));
     }
     Ok(())
+}
+
+fn restart_recoverable(world: &IsolatedBrowserWorld) -> bool {
+    matches!(world.profile, IsolatedBrowserProfile::Persistent { .. })
+        && world.run_state == IsolatedBrowserRunState::Stopped
+        && world.control == BrowserControl::Agent
+        && world.failure.as_deref() == Some(RESTART_RECOVERY_FAILURE)
 }
 
 fn isolated_driver_registration(
@@ -2935,6 +3005,14 @@ mod tests {
         assert_eq!(recovered.control_epoch, 1);
         assert!(recovered.tab_id.is_none());
         assert!(recovered.failure.as_deref().unwrap().contains("restarted"));
+        assert!(restart_recoverable(&recovered));
+
+        let mut manually_stopped = recovered.clone();
+        manually_stopped.failure = None;
+        assert!(!restart_recoverable(&manually_stopped));
+        let mut ephemeral = recovered;
+        ephemeral.profile = IsolatedBrowserProfile::Ephemeral;
+        assert!(!restart_recoverable(&ephemeral));
 
         let _ = tokio::fs::remove_dir_all(root).await;
     }

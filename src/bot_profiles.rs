@@ -7,8 +7,8 @@ use std::sync::{LazyLock, Mutex};
 use chrono::Utc;
 use medousa_types::{
     BOT_PROFILE_SCHEMA_VERSION, BotId, BotOpenResponse, BotProfile, BotSessionBinding,
-    BotSessionKind, CreateBotRequest, DuplicateBotRequest, SessionBotResponse,
-    SetBotArchivedRequest, SetSessionBotRequest, UpdateBotRequest,
+    BotSessionKind, BotWorldBinding, BotWorldBindingKind, CreateBotRequest, DuplicateBotRequest,
+    SessionBotResponse, SetBotArchivedRequest, SetSessionBotRequest, UpdateBotRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +18,8 @@ const MAX_ROLE_DESCRIPTION_CHARS: usize = 500;
 const MAX_AVATAR_REF_CHARS: usize = 1_024;
 const MAX_MANUSCRIPT_ID_CHARS: usize = 160;
 const MAX_ADDITIONAL_MANUSCRIPTS: usize = 8;
+const MAX_WORLD_ID_BYTES: usize = 1_024;
+const MAX_RUNTIME_ID_BYTES: usize = 256;
 
 static BOT_PROFILE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
@@ -60,7 +62,7 @@ impl BotProfileStore {
     }
 
     fn load(&self) -> Result<BotProfileFile, String> {
-        let file = match fs::read(&self.path) {
+        let mut file = match fs::read(&self.path) {
             Ok(raw) => serde_json::from_slice::<BotProfileFile>(&raw)
                 .map_err(|error| format!("decode Bot profiles: {error}"))?,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -68,7 +70,12 @@ impl BotProfileStore {
             }
             Err(error) => return Err(format!("read Bot profiles: {error}")),
         };
-        if file.schema_version != BOT_PROFILE_SCHEMA_VERSION {
+        if file.schema_version == 1 {
+            file.schema_version = BOT_PROFILE_SCHEMA_VERSION;
+            for bot in &mut file.bots {
+                bot.schema_version = BOT_PROFILE_SCHEMA_VERSION;
+            }
+        } else if file.schema_version != BOT_PROFILE_SCHEMA_VERSION {
             return Err(format!(
                 "unsupported Bot profile schema version {}",
                 file.schema_version
@@ -140,6 +147,7 @@ impl BotProfileStore {
             additional_manuscript_ids: request.additional_manuscript_ids,
             default_mode: request.default_mode,
             primary_session_id: Some(primary_session_id.clone()),
+            world_binding: request.world_binding,
             archived: false,
             revision: 1,
             created_at: now,
@@ -176,6 +184,11 @@ impl BotProfileStore {
         bot.primary_manuscript_id = request.primary_manuscript_id;
         bot.additional_manuscript_ids = request.additional_manuscript_ids;
         bot.default_mode = request.default_mode;
+        if request.clear_world_binding {
+            bot.world_binding = None;
+        } else if request.world_binding.is_some() {
+            bot.world_binding = request.world_binding;
+        }
         bot.revision = bot.revision.saturating_add(1);
         bot.updated_at = Utc::now();
         let updated = bot.clone();
@@ -238,6 +251,9 @@ impl BotProfileStore {
             memory_scope_id: bot_id.to_string(),
             default_mode: source.default_mode,
             primary_session_id: Some(primary_session_id.clone()),
+            // A duplicate gets a fresh identity and never silently inherits a
+            // durable world authority decision from the source Bot.
+            world_binding: None,
             archived: false,
             revision: 1,
             created_at: now,
@@ -546,10 +562,14 @@ fn validate_create_request(request: &mut CreateBotRequest) -> Result<(), String>
     normalize_manuscripts(
         &mut request.primary_manuscript_id,
         &mut request.additional_manuscript_ids,
-    )
+    )?;
+    normalize_world_binding(&mut request.world_binding)
 }
 
 fn validate_update_request(request: &mut UpdateBotRequest) -> Result<(), String> {
+    if request.world_binding.is_some() && request.clear_world_binding {
+        return Err("world_binding cannot be set and cleared together".to_string());
+    }
     request.display_name = normalize_required(
         std::mem::take(&mut request.display_name),
         MAX_DISPLAY_NAME_CHARS,
@@ -568,7 +588,42 @@ fn validate_update_request(request: &mut UpdateBotRequest) -> Result<(), String>
     normalize_manuscripts(
         &mut request.primary_manuscript_id,
         &mut request.additional_manuscript_ids,
-    )
+    )?;
+    normalize_world_binding(&mut request.world_binding)
+}
+
+fn normalize_world_binding(binding: &mut Option<BotWorldBinding>) -> Result<(), String> {
+    let Some(binding) = binding.as_mut() else {
+        return Ok(());
+    };
+    if binding.kind != BotWorldBindingKind::PersistentBrowser {
+        return Err("unsupported Bot world binding kind".to_string());
+    }
+    binding.world_id = normalize_opaque(
+        std::mem::take(&mut binding.world_id),
+        MAX_WORLD_ID_BYTES,
+        "world_id",
+    )?;
+    if !binding.world_id.starts_with("world:browser:") {
+        return Err("Bot continuity currently requires an isolated browser world".to_string());
+    }
+    binding.execution_runtime_id = normalize_opaque(
+        std::mem::take(&mut binding.execution_runtime_id),
+        MAX_RUNTIME_ID_BYTES,
+        "execution_runtime_id",
+    )?;
+    Ok(())
+}
+
+fn normalize_opaque(value: String, max_bytes: usize, field: &str) -> Result<String, String> {
+    let value = value.trim().to_string();
+    if value.is_empty()
+        || value.len() > max_bytes
+        || !value.bytes().all(|byte| matches!(byte, 0x21..=0x7e))
+    {
+        return Err(format!("{field} is invalid"));
+    }
+    Ok(value)
 }
 
 fn normalize_manuscripts(primary: &mut String, additional: &mut Vec<String>) -> Result<(), String> {
@@ -639,6 +694,29 @@ mod tests {
             primary_manuscript_id: "specialist-mentor".to_string(),
             additional_manuscript_ids: vec!["specialist-rust".to_string()],
             default_mode: Some(medousa_types::AgentModeId::Teacher),
+            world_binding: None,
+        }
+    }
+
+    fn world_binding() -> BotWorldBinding {
+        BotWorldBinding {
+            kind: BotWorldBindingKind::PersistentBrowser,
+            world_id: "world:browser:workshop:driver:group".to_string(),
+            execution_runtime_id: "runtime-remote".to_string(),
+        }
+    }
+
+    fn update_request(revision: u64) -> UpdateBotRequest {
+        UpdateBotRequest {
+            expected_revision: revision,
+            display_name: "Ada".to_string(),
+            role_description: Some("Explains systems clearly".to_string()),
+            avatar_ref: None,
+            primary_manuscript_id: "specialist-mentor".to_string(),
+            additional_manuscript_ids: vec!["specialist-rust".to_string()],
+            default_mode: Some(medousa_types::AgentModeId::Teacher),
+            world_binding: None,
+            clear_world_binding: false,
         }
     }
 
@@ -667,25 +745,74 @@ mod tests {
         let original = bots
             .create("user:alice", "session-original", create_request("Ada"))
             .unwrap();
+        let mut request = update_request(original.bot.revision);
+        request.world_binding = Some(world_binding());
+        let original = bots
+            .update("user:alice", &original.bot.bot_id, request)
+            .unwrap();
         let duplicate = bots
             .duplicate(
                 "user:alice",
-                &original.bot.bot_id,
+                &original.bot_id,
                 "session-duplicate",
                 DuplicateBotRequest::default(),
             )
             .unwrap();
 
-        assert_ne!(duplicate.bot.bot_id, original.bot.bot_id);
-        assert_ne!(duplicate.bot.memory_scope_id, original.bot.memory_scope_id);
-        assert_ne!(
-            duplicate.bot.primary_session_id,
-            original.bot.primary_session_id
-        );
+        assert_ne!(duplicate.bot.bot_id, original.bot_id);
+        assert_ne!(duplicate.bot.memory_scope_id, original.memory_scope_id);
+        assert_ne!(duplicate.bot.primary_session_id, original.primary_session_id);
         assert_eq!(
             duplicate.bot.primary_manuscript_id,
-            original.bot.primary_manuscript_id
+            original.primary_manuscript_id
         );
+        assert!(original.world_binding.is_some());
+        assert!(duplicate.bot.world_binding.is_none());
+    }
+
+    #[test]
+    fn durable_world_binding_is_explicit_revisioned_and_clearable() {
+        let temp = tempfile::tempdir().unwrap();
+        let bots = store(temp.path());
+        let created = bots
+            .create("user:alice", "session-original", create_request("Ada"))
+            .unwrap();
+
+        let mut set = update_request(created.bot.revision);
+        set.world_binding = Some(world_binding());
+        let bound = bots
+            .update("user:alice", &created.bot.bot_id, set)
+            .unwrap();
+        assert_eq!(bound.world_binding, Some(world_binding()));
+
+        let mut clear = update_request(bound.revision);
+        clear.clear_world_binding = true;
+        let cleared = bots
+            .update("user:alice", &created.bot.bot_id, clear)
+            .unwrap();
+        assert!(cleared.world_binding.is_none());
+        assert_eq!(cleared.revision, bound.revision + 1);
+    }
+
+    #[test]
+    fn v1_profiles_migrate_without_implicit_world_authority() {
+        let temp = tempfile::tempdir().unwrap();
+        let bots = store(temp.path());
+        bots.create("user:alice", "session-original", create_request("Ada"))
+            .unwrap();
+        let mut raw: serde_json::Value =
+            serde_json::from_slice(&fs::read(&bots.path).unwrap()).unwrap();
+        raw["schema_version"] = serde_json::json!(1);
+        raw["bots"][0]["schema_version"] = serde_json::json!(1);
+        raw["bots"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("world_binding");
+        fs::write(&bots.path, serde_json::to_vec_pretty(&raw).unwrap()).unwrap();
+
+        let migrated = bots.list("user:alice").unwrap();
+        assert_eq!(migrated[0].schema_version, BOT_PROFILE_SCHEMA_VERSION);
+        assert!(migrated[0].world_binding.is_none());
     }
 
     #[test]
@@ -695,15 +822,8 @@ mod tests {
         let created = bots
             .create("user:alice", "session-original", create_request("Ada"))
             .unwrap();
-        let request = UpdateBotRequest {
-            expected_revision: 0,
-            display_name: "Grace".to_string(),
-            role_description: None,
-            avatar_ref: None,
-            primary_manuscript_id: "specialist-mentor".to_string(),
-            additional_manuscript_ids: vec![],
-            default_mode: None,
-        };
+        let mut request = update_request(0);
+        request.display_name = "Grace".to_string();
         assert!(
             bots.update("user:alice", &created.bot.bot_id, request)
                 .unwrap_err()

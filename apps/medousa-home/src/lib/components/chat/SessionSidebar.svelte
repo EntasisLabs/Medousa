@@ -2,6 +2,7 @@
   import "$lib/styles/chat.postcss";
   import { onMount, untrack } from "svelte";
   import { ChevronDown, ChevronRight, Plus, Search, Sparkles, Users, X } from "@lucide/svelte";
+  import BotBrowserContinuity from "$lib/components/chat/BotBrowserContinuity.svelte";
   import BotRow from "$lib/components/chat/BotRow.svelte";
   import SessionRow from "$lib/components/chat/SessionRow.svelte";
   import { haptic } from "$lib/haptics";
@@ -15,7 +16,7 @@
   import { sharedMode } from "$lib/stores/sharedMode.svelte";
   import { userProfiles } from "$lib/stores/userProfiles.svelte";
   import type { SessionSummary } from "$lib/types/session";
-  import type { BotProfile } from "$lib/types/generated/daemon_api";
+  import type { BotProfile, BotWorldBinding } from "$lib/types/generated/daemon_api";
   import { formatSessionLabel } from "$lib/utils/formatSession";
   import { groupSessionsByRecency } from "$lib/utils/sessionHistoryGroups";
   import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
@@ -54,6 +55,7 @@
   let botRole = $state("");
   let botAvatar = $state("✨");
   let botSpecialistId = $state("");
+  let botWorldBinding = $state<BotWorldBinding | null>(null);
   let botSaving = $state(false);
   let botError = $state<string | null>(null);
   let botActionId = $state<string | null>(null);
@@ -229,6 +231,7 @@
     botAvatar = "✨";
     botSpecialistId =
       activeAgent.selectedManuscriptId ?? catalog.manuscripts[0]?.id ?? "";
+    botWorldBinding = null;
     botError = null;
     botEditorOpen = true;
   }
@@ -239,6 +242,7 @@
     botRole = bot.role_description ?? "";
     botAvatar = bot.avatar_ref?.trim() || "✨";
     botSpecialistId = bot.primary_manuscript_id;
+    botWorldBinding = bot.world_binding ? { ...bot.world_binding } : null;
     botError = null;
     botEditorOpen = true;
   }
@@ -247,6 +251,7 @@
     if (botSaving) return;
     botEditorOpen = false;
     editingBot = null;
+    botWorldBinding = null;
     botError = null;
   }
 
@@ -264,6 +269,8 @@
           primary_manuscript_id: botSpecialistId,
           additional_manuscript_ids: editingBot.additional_manuscript_ids ?? [],
           default_mode: editingBot.default_mode ?? null,
+          world_binding: botWorldBinding ?? undefined,
+          clear_world_binding: Boolean(editingBot.world_binding && !botWorldBinding),
         });
         await chat.refreshSessions({ force: true });
         botEditorOpen = false;
@@ -276,6 +283,7 @@
           primary_manuscript_id: botSpecialistId,
           additional_manuscript_ids: [],
           default_mode: null,
+          world_binding: botWorldBinding ?? undefined,
         });
         await chat.refreshSessions({ force: true });
         botEditorOpen = false;
@@ -924,6 +932,8 @@
               Expertise stays reusable; this Bot keeps the relationship and memory.
             </span>
           </label>
+
+          <BotBrowserContinuity bind:binding={botWorldBinding} disabled={botSaving} />
 
           {#if catalog.error}
             <p class="text-xs text-content-error">{catalog.error}</p>

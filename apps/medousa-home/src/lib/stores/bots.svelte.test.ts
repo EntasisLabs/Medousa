@@ -4,6 +4,7 @@ import { BotStore, type BotStoreApi } from "$lib/stores/bots.svelte";
 import type {
   BotOpenResponse,
   BotProfile,
+  BotWorldBinding,
 } from "$lib/types/generated/daemon_api";
 
 function profile(overrides: Partial<BotProfile> = {}): BotProfile {
@@ -98,5 +99,33 @@ describe("BotStore", () => {
       expect.objectContaining({ expected_revision: 3, display_name: "Grace" }),
     );
     expect(store.bots[0]?.display_name).toBe("Grace");
+  });
+
+  it("forwards an explicit durable browser binding without granting one implicitly", async () => {
+    const worldBinding: BotWorldBinding = {
+      kind: "persistent_browser",
+      world_id: "world:browser:remote:persistent",
+      execution_runtime_id: "runtime-remote",
+    };
+    const updated = profile({ world_binding: worldBinding, revision: 2 });
+    const update = vi.fn(async () => updated);
+    const store = new BotStore(api({ update }));
+    const current = profile();
+
+    await store.update(current, {
+      display_name: current.display_name,
+      role_description: current.role_description,
+      avatar_ref: current.avatar_ref,
+      primary_manuscript_id: current.primary_manuscript_id,
+      additional_manuscript_ids: [],
+      default_mode: null,
+      world_binding: worldBinding,
+    });
+
+    expect(update).toHaveBeenCalledWith(
+      current.bot_id,
+      expect.objectContaining({ expected_revision: 1, world_binding: worldBinding }),
+    );
+    expect(store.bots[0]?.world_binding).toEqual(worldBinding);
   });
 });
