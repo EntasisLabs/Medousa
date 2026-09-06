@@ -277,6 +277,27 @@ impl ComputerDriverBroker {
         if intent.desktop_session_id != registered.desktop_session_id {
             return Err("computer action requested the wrong desktop session".to_string());
         }
+        if intent.action == ComputerAction::ForegroundClick {
+            let preflight = registered.driver.preflight().await?;
+            validate_preflight(&registered.registration, &preflight)?;
+            if preflight.session_id != registered.desktop_session_id {
+                return Err(
+                    "computer driver desktop session changed; register the driver again"
+                        .to_string(),
+                );
+            }
+            if !preflight.foreground_input_ready() {
+                let guidance = preflight
+                    .permissions
+                    .iter()
+                    .find(|permission| {
+                        permission.permission == ComputerPermissionKind::InputControl
+                    })
+                    .and_then(|permission| permission.guidance.as_deref())
+                    .unwrap_or("Grant the native computer driver input-control permission.");
+                return Err(format!("input_control_required: {guidance}"));
+            }
+        }
 
         let request = ComputerActionRequest {
             resource_id: intent.resource_id.clone(),
@@ -326,7 +347,7 @@ impl ComputerDriverBroker {
                 .complete_action(
                     &admission.permit,
                     format!(
-                        "native semantic {} acknowledged",
+                        "native {} acknowledged",
                         intent.action.as_str()
                     ),
                     now_ms(),
@@ -494,10 +515,14 @@ impl ComputerDriverBroker {
                 intent.action.as_str()
             ));
         }
-        if !intent.allow_high_risk && observed_element_is_high_risk(element) {
+        if !intent.allow_high_risk
+            && (intent.action == ComputerAction::ForegroundClick
+                || observed_element_is_high_risk(element))
+        {
             return Err(
-                "high_risk_target: observed element looks sensitive or effectful; rerun with \
-                 allow_high_risk=true only when the operator explicitly requested this action"
+                "high_risk_target: observed element is effectful or requires foreground pointer \
+                 input; rerun with allow_high_risk=true only when the operator explicitly \
+                 requested this action"
                     .to_string(),
             );
         }
@@ -1182,12 +1207,18 @@ mod tests {
                 driver_id: self.registration.driver_id.clone(),
                 platform: "test-os".to_string(),
                 session_id: "login:test".to_string(),
-                permissions: vec![ComputerPermissionReport {
-                    permission: ComputerPermissionKind::Accessibility,
+                permissions: [
+                    ComputerPermissionKind::Accessibility,
+                    ComputerPermissionKind::InputControl,
+                ]
+                .into_iter()
+                .map(|permission| ComputerPermissionReport {
+                    permission,
                     status: ComputerPermissionStatus::Granted,
                     can_request: false,
                     guidance: None,
-                }],
+                })
+                .collect(),
                 checked_at_ms: 1,
             })
         }
@@ -1620,6 +1651,50 @@ mod tests {
         let mut allowed = action_intent(driver_id.as_str(), "ax:test:button");
         allowed.allow_high_risk = true;
         broker.act(allowed).await.expect("explicit high-risk action");
+        assert_eq!(driver.actions.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn foreground_click_always_requires_explicit_operator_intent() {
+        let authority = Arc::new(WorldAuthorityService::default());
+        let broker = ComputerDriverBroker::new(authority);
+        let driver_id = WorldDriverId::new("driver:computer:test");
+        let resource_id = WorldResourceId::new("desktop:login");
+        let driver = Arc::new(FakeComputerDriver {
+            registration: registration(driver_id.as_str()),
+            observations: AtomicUsize::new(0),
+            actions: AtomicUsize::new(0),
+            spoof_driver: false,
+            spoof_action_revision: false,
+        });
+        broker.register(driver.clone()).await.expect("register driver");
+        broker
+            .observe(intent(driver_id.as_str()))
+            .await
+            .expect("establish observation");
+        let mut fences = broker.observation_fences.write().await;
+        let actions = &mut fences
+            .get_mut(&(driver_id.clone(), resource_id))
+            .expect("observation fence")
+            .elements
+            .get_mut("ax:test:button")
+            .expect("observed element")
+            .actions;
+        actions.clear();
+        actions.insert(ComputerAction::ForegroundClick);
+        drop(fences);
+
+        let mut action = action_intent(driver_id.as_str(), "ax:test:button");
+        action.action = ComputerAction::ForegroundClick;
+        let denied = broker
+            .act(action.clone())
+            .await
+            .expect_err("foreground input needs explicit intent");
+        assert!(denied.contains("high_risk_target"));
+        assert_eq!(driver.actions.load(Ordering::SeqCst), 0);
+
+        action.allow_high_risk = true;
+        broker.act(action).await.expect("explicit foreground click");
         assert_eq!(driver.actions.load(Ordering::SeqCst), 1);
     }
 

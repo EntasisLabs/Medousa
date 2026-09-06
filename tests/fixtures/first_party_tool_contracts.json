@@ -3104,14 +3104,15 @@
     {
       "registry": "general_runtime",
       "name": "cognition_computer_act",
-      "description": "Perform one semantic desktop action against an exact opaque ref from the daemon's latest cognition_computer_snapshot; stale targets fail and ambiguous actions are never retried.",
+      "description": "Perform one desktop action against an exact opaque ref from the daemon's latest cognition_computer_snapshot; semantic actions stay preferred, foreground_click requires explicit operator intent, stale targets fail, and ambiguous actions are never retried.",
       "input_schema": {
         "properties": {
           "action": {
-            "description": "Semantic action to perform. Use only an action advertised by the exact snapshot node.",
+            "description": "Action to perform. Use only an action advertised by the exact snapshot node. foreground_click is a last-resort pointer fallback and requires explicit operator intent.",
             "enum": [
               "decrement",
               "focus",
+              "foreground_click",
               "increment",
               "press",
               "scroll_to_visible",
@@ -3122,7 +3123,7 @@
           },
           "allow_high_risk": {
             "default": false,
-            "description": "Permit a sensitive or effectful target only when the operator explicitly requested it.",
+            "description": "Permit a sensitive or effectful target, or a foreground pointer fallback, only when the operator explicitly requested it.",
             "type": "boolean"
           },
           "driver_id": {

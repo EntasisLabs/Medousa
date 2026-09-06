@@ -375,7 +375,7 @@ impl SidecarComputerDriver {
             Err(error) => {
                 stop_process(&mut process);
                 return Err(ComputerDriverActionError::indeterminate(format!(
-                    "{error}; the semantic action was not retried because its outcome is unknown"
+                    "{error}; the native action was not retried because its outcome is unknown"
                 )));
             }
         };

@@ -117,6 +117,7 @@ pub enum ComputerToolAction {
     Increment,
     Decrement,
     ScrollToVisible,
+    ForegroundClick,
 }
 
 impl From<ComputerToolAction> for ComputerAction {
@@ -129,6 +130,7 @@ impl From<ComputerToolAction> for ComputerAction {
             ComputerToolAction::Increment => Self::Increment,
             ComputerToolAction::Decrement => Self::Decrement,
             ComputerToolAction::ScrollToVisible => Self::ScrollToVisible,
+            ComputerToolAction::ForegroundClick => Self::ForegroundClick,
         }
     }
 }
@@ -143,6 +145,7 @@ impl ComputerToolAction {
             Self::Increment => "increment",
             Self::Decrement => "decrement",
             Self::ScrollToVisible => "scroll_to_visible",
+            Self::ForegroundClick => "foreground_click",
         }
     }
 }
@@ -160,13 +163,13 @@ pub struct ComputerActInput {
     observation_revision: u64,
     /// Opaque element reference returned by that exact observation.
     element_ref: String,
-    /// Semantic action to perform. Use only an action advertised by the exact snapshot node.
+    /// Action to perform. Use only an action advertised by the exact snapshot node. foreground_click is a last-resort pointer fallback and requires explicit operator intent.
     action: ComputerToolAction,
     /// Text for set_value. Omit for every other action. This value is not copied into receipts or provenance summaries.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(length(max = 8192))]
     value: Option<String>,
-    /// Permit a sensitive or effectful target only when the operator explicitly requested it.
+    /// Permit a sensitive or effectful target, or a foreground pointer fallback, only when the operator explicitly requested it.
     #[serde(default)]
     allow_high_risk: bool,
 }
@@ -282,7 +285,7 @@ impl CognitionComputerSnapshotTool {
 
 #[medousa_tool(id = COGNITION_COMPUTER_ACT_ID)]
 impl CognitionComputerActTool {
-    /// Perform one semantic desktop action against an exact opaque ref from the daemon's latest cognition_computer_snapshot; stale targets fail and ambiguous actions are never retried.
+    /// Perform one desktop action against an exact opaque ref from the daemon's latest cognition_computer_snapshot; semantic actions stay preferred, foreground_click requires explicit operator intent, stale targets fail, and ambiguous actions are never retried.
     async fn invoke_typed(
         &self,
         input: ComputerActInput,

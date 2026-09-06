@@ -698,8 +698,26 @@ Current macOS pixel slice:
   digest, dimensions, byte bounds, session, generation, revision, and focused
   window before persisting a content-addressed artifact; model hydration is
   transient and session-bound, so pixels do not accumulate in transcripts.
-- Foreground event fallbacks and Home permission/control surfaces remain later
-  slices.
+
+Current macOS foreground fallback slice:
+
+- Accessibility remains the default action path. The driver advertises
+  `foreground_click` only for a conservative set of bounded, enabled,
+  non-sensitive controls in the exact focused window and only when macOS did
+  not advertise `AXPress`.
+- The caller still supplies only an opaque element reference. The sidecar
+  re-resolves its center from cached and current AX geometry, revalidates the
+  exact focused app/window/frame and semantic identity, and requires the center
+  hit test to resolve to the element or one of its descendants.
+- Input-control permission is preflighted before the daemon consumes the
+  observation fence and checked again in the sidecar. A foreground click always
+  requires explicit high-risk operator intent, emits one mouse down/up pair,
+  and is never retried.
+- Hardware-input counters and mouse-button state fence target resolution; new
+  human input preempts dispatch and requires another observation. The action is
+  intentionally one-shot so the remaining race window is bounded to the final
+  local event post rather than an opaque interaction loop.
+- Home permission and visible takeover/control surfaces remain a later slice.
 
 Implementation:
 

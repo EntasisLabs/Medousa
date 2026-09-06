@@ -421,23 +421,33 @@ and preflight require `WorkshopRead`.
 The action body accepts `session_id`, `observation_generation`,
 `observation_revision`, `element_ref`, `action`, optional `value`, and optional
 `allow_high_risk` (default `false`). Actions are `press`, `focus`, `set_value`,
-`show_menu`, `increment`, `decrement`, and `scroll_to_visible`; `value` is
-required only for `set_value` and capped at 8 KiB. All four identity fields must
-match the driver's latest snapshot, and the target node must advertise the
-requested action in that exact snapshot. Disabled elements are rejected.
+`show_menu`, `increment`, `decrement`, `scroll_to_visible`, and the guarded
+`foreground_click` fallback; `value` is required only for `set_value` and capped
+at 8 KiB. All four identity fields must match the driver's latest snapshot, and
+the target node must advertise the requested action in that exact snapshot.
+Disabled elements are rejected.
 Secure text fields never advertise `set_value` because secret injection needs
 an opaque credential path rather than model-visible text.
 Sensitive or effectful-looking targets require the caller to set
 `allow_high_risk=true` only after explicit operator intent.
 
+`foreground_click` is only advertised for a bounded, enabled, non-sensitive
+element in the exact focused window when macOS exposes no semantic `press`.
+It never accepts caller coordinates. The sidecar recomputes the element center,
+revalidates the focused app, window, frame, element identity, geometry, and hit
+test, and requires input-control permission immediately before posting one
+mouse down/up pair. Any HID activity during target resolution preempts the
+action. Because this fallback moves the physical pointer, it always requires
+`allow_high_risk=true` backed by explicit operator intent.
+
 An admitted mutation consumes its observation fence before native dispatch, so
 the same snapshot cannot be replayed for a second action; observe again after
 every admitted action, including a failed or indeterminate dispatch. The action
 crosses world authority with an exact resource grant and control lease, then is
-dispatched as a background accessibility operation. It does not move the
-physical pointer or accept coordinates. Action transport is never retried after
-dispatch ambiguity. `set_value` text is not copied into receipts or provenance.
-This slice exposes no foreground input or pixel-capture endpoint.
+dispatched as a background accessibility operation unless the exact node only
+advertised `foreground_click`. Action transport is never retried after dispatch
+ambiguity. `set_value` text is not copied into receipts or provenance. This
+slice exposes no arbitrary pointer coordinates or pixel-capture endpoint.
 
 ---
 

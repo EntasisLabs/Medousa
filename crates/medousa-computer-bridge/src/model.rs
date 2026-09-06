@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use medousa_world::{WorldDriverId, WorldResourceId};
 use serde::{Deserialize, Serialize};
 
-pub const COMPUTER_DRIVER_PROTOCOL_VERSION: u16 = 4;
+pub const COMPUTER_DRIVER_PROTOCOL_VERSION: u16 = 5;
 pub const COMPUTER_OBSERVATION_SCHEMA_VERSION: u16 = 2;
 pub const COMPUTER_SCREENSHOT_SCHEMA_VERSION: u16 = 1;
 pub const DEFAULT_COMPUTER_OBSERVATION_NODE_LIMIT: u32 = 2_048;
@@ -99,6 +99,11 @@ impl ComputerDriverPreflight {
 
     pub fn pixel_observation_ready(&self) -> bool {
         self.permission_status(ComputerPermissionKind::ScreenCapture)
+            == ComputerPermissionStatus::Granted
+    }
+
+    pub fn foreground_input_ready(&self) -> bool {
+        self.permission_status(ComputerPermissionKind::InputControl)
             == ComputerPermissionStatus::Granted
     }
 }
@@ -397,6 +402,30 @@ impl ComputerObservation {
             if node.actions.iter().any(|action| !actions.insert(*action)) {
                 return Err("computer element contains duplicate semantic actions".to_string());
             }
+            if actions.contains(&ComputerAction::ForegroundClick) {
+                if node.sensitive || !node.enabled {
+                    return Err(
+                        "foreground click cannot target a sensitive or disabled element"
+                            .to_string(),
+                    );
+                }
+                if actions.contains(&ComputerAction::Press) {
+                    return Err(
+                        "foreground click cannot replace an advertised semantic press".to_string(),
+                    );
+                }
+                if !node
+                    .bounds
+                    .is_some_and(|bounds| bounds.width > 0 && bounds.height > 0)
+                {
+                    return Err("foreground click requires bounded element geometry".to_string());
+                }
+                if self.full
+                    && self.focused_window_resource_id.as_ref() != Some(&node.window_resource_id)
+                {
+                    return Err("foreground click must target the exact focused window".to_string());
+                }
+            }
             if self.full
                 && !self
                     .windows
@@ -539,8 +568,10 @@ impl ComputerScreenshotCapture {
     }
 }
 
-/// A semantic desktop action. These actions never carry screen coordinates;
+/// A bounded desktop action. These actions never carry screen coordinates;
 /// the driver resolves an opaque element reference from an exact observation.
+/// `ForegroundClick` is an explicitly advertised fallback when no semantic
+/// press exists and may move the physical pointer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ComputerAction {
@@ -551,6 +582,7 @@ pub enum ComputerAction {
     Increment,
     Decrement,
     ScrollToVisible,
+    ForegroundClick,
 }
 
 impl ComputerAction {
@@ -563,6 +595,7 @@ impl ComputerAction {
             Self::Increment => "increment",
             Self::Decrement => "decrement",
             Self::ScrollToVisible => "scroll_to_visible",
+            Self::ForegroundClick => "foreground_click",
         }
     }
 }
@@ -924,5 +957,54 @@ mod tests {
             )
             .expect_err("duplicate actions must fail");
         assert!(error.contains("duplicate semantic actions"));
+    }
+
+    #[test]
+    fn foreground_click_requires_safe_fallback_geometry() {
+        let mut observation = observation();
+        observation.focused_window_resource_id = Some(WorldResourceId::new("window:one"));
+        observation.windows[0].focused = true;
+        observation.nodes[0].actions = vec![ComputerAction::ForegroundClick];
+        observation.nodes[0].bounds = Some(ComputerRect {
+            x: 10,
+            y: 10,
+            width: 100,
+            height: 40,
+        });
+        observation
+            .validate_for(
+                &WorldDriverId::new("driver:computer:test"),
+                &ComputerObservationRequest::new("desktop:session", "login-session:test"),
+            )
+            .expect("bounded focused fallback");
+
+        observation.nodes[0].actions.push(ComputerAction::Press);
+        let error = observation
+            .validate_for(
+                &WorldDriverId::new("driver:computer:test"),
+                &ComputerObservationRequest::new("desktop:session", "login-session:test"),
+            )
+            .expect_err("semantic press must suppress pointer fallback");
+        assert!(error.contains("semantic press"));
+    }
+
+    #[test]
+    fn foreground_input_readiness_is_permission_specific() {
+        let mut preflight = ComputerDriverPreflight {
+            protocol_version: COMPUTER_DRIVER_PROTOCOL_VERSION,
+            driver_id: WorldDriverId::new("driver:computer:test"),
+            platform: "test".to_string(),
+            session_id: "login-session:test".to_string(),
+            permissions: vec![ComputerPermissionReport {
+                permission: ComputerPermissionKind::InputControl,
+                status: ComputerPermissionStatus::Denied,
+                can_request: true,
+                guidance: None,
+            }],
+            checked_at_ms: 1,
+        };
+        assert!(!preflight.foreground_input_ready());
+        preflight.permissions[0].status = ComputerPermissionStatus::Granted;
+        assert!(preflight.foreground_input_ready());
     }
 }

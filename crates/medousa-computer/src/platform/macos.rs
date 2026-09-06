@@ -26,8 +26,15 @@ const MAX_WINDOWS: usize = 128;
 const MAX_DISPLAYS: usize = 32;
 const MAX_TEXT_BYTES: usize = 512;
 const MAX_AX_DEPTH: usize = 64;
+const MAX_HIT_TEST_ANCESTORS: usize = 32;
 const MAX_SCREENSHOT_REDACTION_NODES: usize = 4_096;
 const AX_MESSAGE_TIMEOUT_SECONDS: f32 = 0.25;
+const CG_HID_EVENT_TAP: u32 = 0;
+const CG_EVENT_LEFT_MOUSE_DOWN: u32 = 1;
+const CG_EVENT_LEFT_MOUSE_UP: u32 = 2;
+const CG_MOUSE_BUTTON_LEFT: u32 = 0;
+const CG_EVENT_SOURCE_STATE_HID_SYSTEM: i32 = 1;
+const CG_ANY_INPUT_EVENT_TYPE: u32 = u32::MAX;
 
 pub struct NativeComputerDriver {
     session_id: String,
@@ -46,7 +53,18 @@ struct ObservationCache {
     focused_window_title: String,
     focused_window_frame: ComputerRect,
     process_id: i32,
-    elements: BTreeMap<String, OwnedCf>,
+    elements: BTreeMap<String, ObservedElement>,
+}
+
+struct ObservedElement {
+    element: OwnedCf,
+    window_resource_id: WorldResourceId,
+    role: String,
+    name: String,
+    enabled: bool,
+    sensitive: bool,
+    bounds: Option<ComputerRect>,
+    actions: Vec<ComputerAction>,
 }
 
 impl NativeComputerDriver {
@@ -206,6 +224,7 @@ impl NativeComputerDriver {
                 &window_resource_id,
                 pid,
                 index,
+                focused,
                 request.max_nodes as usize,
                 &mut nodes,
                 &mut elements,
@@ -420,7 +439,7 @@ impl NativeComputerDriver {
                 retryable: false,
             });
         }
-        let element =
+        let observed_element =
             cache
                 .elements
                 .get(&request.element_ref)
@@ -430,18 +449,21 @@ impl NativeComputerDriver {
                         .to_string(),
                     retryable: false,
                 })?;
-        if bool_attribute(element.as_ptr(), "AXEnabled") == Some(false) {
+        let element = &observed_element.element;
+        let (role, sensitive) = verify_observed_element_identity(observed_element)?;
+        if !observed_element.actions.contains(&request.action) {
             return Err(PlatformDriverError {
-                code: "element_disabled",
-                message: "the requested accessibility element is disabled".to_string(),
+                code: "action_unavailable",
+                message: format!(
+                    "the target did not advertise action '{}' in the exact observation",
+                    request.action.as_str()
+                ),
                 retryable: false,
             });
         }
-        let role =
-            text_attribute(element.as_ptr(), "AXRole").unwrap_or_else(|| "AXUnknown".to_string());
-        let subrole = text_attribute(element.as_ptr(), "AXSubrole");
-        let sensitive = is_sensitive_ax_node(&role, subrole.as_deref());
-        if !semantic_actions(element.as_ptr(), &role, sensitive).contains(&request.action) {
+        if request.action != ComputerAction::ForegroundClick
+            && !semantic_actions(element.as_ptr(), &role, sensitive).contains(&request.action)
+        {
             return Err(PlatformDriverError {
                 code: "action_unavailable",
                 message: format!(
@@ -467,6 +489,9 @@ impl NativeComputerDriver {
             ComputerAction::Decrement => perform_ax_action(element.as_ptr(), "AXDecrement")?,
             ComputerAction::ScrollToVisible => {
                 perform_ax_action(element.as_ptr(), "AXScrollToVisible")?
+            }
+            ComputerAction::ForegroundClick => {
+                perform_foreground_click(cache, observed_element, &role, sensitive)?
             }
         };
         if status != AX_ERROR_SUCCESS {
@@ -551,7 +576,7 @@ fn verify_cached_focused_window(cache: &ObservationCache) -> Result<OwnedCf, Pla
         .filter(|value| is_ax_element(value.as_ptr()))
         .ok_or_else(|| PlatformDriverError {
             code: "stale_observation",
-            message: "the focused application changed before pixel capture".to_string(),
+            message: "the focused application changed after the exact observation".to_string(),
             retryable: true,
         })?;
     let mut process_id = 0_i32;
@@ -560,7 +585,7 @@ fn verify_cached_focused_window(cache: &ObservationCache) -> Result<OwnedCf, Pla
     {
         return Err(PlatformDriverError {
             code: "stale_observation",
-            message: "the focused application changed before pixel capture".to_string(),
+            message: "the focused application changed after the exact observation".to_string(),
             retryable: true,
         });
     }
@@ -568,7 +593,7 @@ fn verify_cached_focused_window(cache: &ObservationCache) -> Result<OwnedCf, Pla
         .filter(|value| is_ax_element(value.as_ptr()))
         .ok_or_else(|| PlatformDriverError {
             code: "stale_observation",
-            message: "the focused window changed before pixel capture".to_string(),
+            message: "the focused window changed after the exact observation".to_string(),
             retryable: true,
         })?;
     if !cf_equal(window.as_ptr(), expected.as_ptr())
@@ -579,7 +604,7 @@ fn verify_cached_focused_window(cache: &ObservationCache) -> Result<OwnedCf, Pla
     {
         return Err(PlatformDriverError {
             code: "stale_observation",
-            message: "the focused window identity or frame changed before pixel capture"
+            message: "the focused window identity or frame changed after the exact observation"
                 .to_string(),
             retryable: true,
         });
@@ -693,9 +718,10 @@ fn snapshot_window(
     window_resource_id: &WorldResourceId,
     pid: i32,
     window_index: usize,
+    focused_window: bool,
     max_nodes: usize,
     output: &mut Vec<ComputerSemanticNode>,
-    elements: &mut BTreeMap<String, OwnedCf>,
+    elements: &mut BTreeMap<String, ObservedElement>,
 ) -> bool {
     let Some(root) = retain_cf(window.as_ptr()) else {
         return false;
@@ -715,9 +741,6 @@ fn snapshot_window(
             "ax:pid:{pid}:window:{window_index}:path:{:016x}",
             stable_path_hash(&path)
         );
-        if let Some(retained) = retain_cf(element.as_ptr()) {
-            elements.insert(element_ref.clone(), retained);
-        }
         let name = text_attribute(element.as_ptr(), "AXTitle")
             .or_else(|| text_attribute(element.as_ptr(), "AXDescription"))
             .or_else(|| text_attribute(element.as_ptr(), "AXHelp"))
@@ -727,7 +750,28 @@ fn snapshot_window(
         } else {
             text_attribute(element.as_ptr(), "AXValue")
         };
-        let actions = semantic_actions(element.as_ptr(), &role, sensitive);
+        let bounds = rect_attribute(element.as_ptr(), "AXFrame");
+        let enabled = bool_attribute(element.as_ptr(), "AXEnabled").unwrap_or(true);
+        let mut actions = semantic_actions(element.as_ptr(), &role, sensitive);
+        if foreground_click_candidate(&role, sensitive, enabled, bounds, focused_window, &actions) {
+            actions.push(ComputerAction::ForegroundClick);
+            actions.sort_unstable();
+        }
+        if let Some(retained) = retain_cf(element.as_ptr()) {
+            elements.insert(
+                element_ref.clone(),
+                ObservedElement {
+                    element: retained,
+                    window_resource_id: window_resource_id.clone(),
+                    role: role.clone(),
+                    name: name.clone(),
+                    enabled,
+                    sensitive,
+                    bounds,
+                    actions: actions.clone(),
+                },
+            );
+        }
         output.push(ComputerSemanticNode {
             element_ref: element_ref.clone(),
             parent_ref,
@@ -735,8 +779,8 @@ fn snapshot_window(
             role,
             name,
             value,
-            bounds: rect_attribute(element.as_ptr(), "AXFrame"),
-            enabled: bool_attribute(element.as_ptr(), "AXEnabled").unwrap_or(true),
+            bounds,
+            enabled,
             focused: bool_attribute(element.as_ptr(), "AXFocused").unwrap_or(false),
             selected: bool_attribute(element.as_ptr(), "AXSelected"),
             sensitive,
@@ -815,6 +859,34 @@ fn semantic_actions(element: AXUIElementRef, role: &str, sensitive: bool) -> Vec
     actions.into_iter().collect()
 }
 
+fn foreground_click_candidate(
+    role: &str,
+    sensitive: bool,
+    enabled: bool,
+    bounds: Option<ComputerRect>,
+    focused_window: bool,
+    semantic_actions: &[ComputerAction],
+) -> bool {
+    focused_window
+        && enabled
+        && !sensitive
+        && bounds.is_some_and(|bounds| bounds.width > 0 && bounds.height > 0)
+        && !semantic_actions.contains(&ComputerAction::Press)
+        && matches!(
+            role,
+            "AXButton"
+                | "AXCheckBox"
+                | "AXDisclosureTriangle"
+                | "AXImage"
+                | "AXLink"
+                | "AXMenuButton"
+                | "AXMenuItem"
+                | "AXPopUpButton"
+                | "AXRadioButton"
+                | "AXTab"
+        )
+}
+
 fn is_sensitive_ax_node(role: &str, subrole: Option<&str>) -> bool {
     role == "AXSecureTextField" || subrole.is_some_and(|value| value.contains("Secure"))
 }
@@ -883,6 +955,251 @@ fn set_text_value(element: AXUIElementRef, value: &str) -> Result<AXError, Platf
         retryable: false,
     })?;
     Ok(unsafe { AXUIElementSetAttributeValue(element, attribute.as_ptr(), value.as_ptr()) })
+}
+
+fn verify_observed_element_identity(
+    target: &ObservedElement,
+) -> Result<(String, bool), PlatformDriverError> {
+    let enabled = bool_attribute(target.element.as_ptr(), "AXEnabled").unwrap_or(true);
+    if !enabled {
+        return Err(PlatformDriverError {
+            code: "element_disabled",
+            message: "the requested accessibility element is disabled".to_string(),
+            retryable: false,
+        });
+    }
+    let role = text_attribute(target.element.as_ptr(), "AXRole")
+        .unwrap_or_else(|| "AXUnknown".to_string());
+    let subrole = text_attribute(target.element.as_ptr(), "AXSubrole");
+    let sensitive = is_sensitive_ax_node(&role, subrole.as_deref());
+    let name = text_attribute(target.element.as_ptr(), "AXTitle")
+        .or_else(|| text_attribute(target.element.as_ptr(), "AXDescription"))
+        .or_else(|| text_attribute(target.element.as_ptr(), "AXHelp"))
+        .unwrap_or_default();
+    if role != target.role
+        || name != target.name
+        || enabled != target.enabled
+        || sensitive != target.sensitive
+    {
+        return Err(PlatformDriverError {
+            code: "stale_observation",
+            message: "the target's semantic identity changed after the exact observation"
+                .to_string(),
+            retryable: true,
+        });
+    }
+    Ok((role, sensitive))
+}
+
+fn perform_foreground_click(
+    cache: &ObservationCache,
+    target: &ObservedElement,
+    role: &str,
+    sensitive: bool,
+) -> Result<AXError, PlatformDriverError> {
+    if !unsafe { CGPreflightPostEventAccess() } {
+        return Err(PlatformDriverError {
+            code: "input_control_permission_required",
+            message: "macOS input-control permission is required for foreground click fallback"
+                .to_string(),
+            retryable: false,
+        });
+    }
+    if cache.focused_window_resource_id.as_ref() != Some(&target.window_resource_id) {
+        return Err(PlatformDriverError {
+            code: "foreground_target_required",
+            message: "foreground click fallback is limited to the exact focused window".to_string(),
+            retryable: false,
+        });
+    }
+
+    let input_counter = unsafe {
+        CGEventSourceCounterForEventType(CG_EVENT_SOURCE_STATE_HID_SYSTEM, CG_ANY_INPUT_EVENT_TYPE)
+    };
+    if unsafe { CGEventSourceButtonState(CG_EVENT_SOURCE_STATE_HID_SYSTEM, CG_MOUSE_BUTTON_LEFT) } {
+        return Err(human_input_preempted());
+    }
+
+    let focused_window = verify_cached_focused_window(cache)?;
+    let current_bounds =
+        rect_attribute(target.element.as_ptr(), "AXFrame").ok_or_else(|| PlatformDriverError {
+            code: "stale_observation",
+            message: "the foreground click target no longer exposes bounded geometry".to_string(),
+            retryable: true,
+        })?;
+    if Some(current_bounds) != target.bounds {
+        return Err(PlatformDriverError {
+            code: "stale_observation",
+            message: "the foreground click target moved after the exact observation".to_string(),
+            retryable: true,
+        });
+    }
+    let current_semantic_actions = semantic_actions(target.element.as_ptr(), role, sensitive);
+    if !foreground_click_candidate(
+        role,
+        sensitive,
+        true,
+        Some(current_bounds),
+        true,
+        &current_semantic_actions,
+    ) {
+        return Err(PlatformDriverError {
+            code: "action_unavailable",
+            message: "the target no longer qualifies for foreground click fallback".to_string(),
+            retryable: true,
+        });
+    }
+    let click_point =
+        click_center(current_bounds, cache.focused_window_frame).ok_or_else(|| {
+            PlatformDriverError {
+                code: "coordinate_uncertain",
+                message: "the observed element is not fully contained by the focused window"
+                    .to_string(),
+                retryable: false,
+            }
+        })?;
+    if !hit_test_matches_target(click_point, &target.element)? {
+        return Err(PlatformDriverError {
+            code: "coordinate_uncertain",
+            message: "the element center no longer resolves to the observed target".to_string(),
+            retryable: true,
+        });
+    }
+
+    let down = unsafe {
+        OwnedCf::from_create(CGEventCreateMouseEvent(
+            ptr::null(),
+            CG_EVENT_LEFT_MOUSE_DOWN,
+            click_point,
+            CG_MOUSE_BUTTON_LEFT,
+        ))
+    }
+    .ok_or_else(foreground_event_construction_error)?;
+    let up = unsafe {
+        OwnedCf::from_create(CGEventCreateMouseEvent(
+            ptr::null(),
+            CG_EVENT_LEFT_MOUSE_UP,
+            click_point,
+            CG_MOUSE_BUTTON_LEFT,
+        ))
+    }
+    .ok_or_else(foreground_event_construction_error)?;
+
+    // Revalidate immediately before the first irreversible boundary. HID
+    // input observed during resolution belongs to the human and preempts this
+    // action. Each call posts exactly one down/up pair and is never retried.
+    drop(focused_window);
+    let _focused_window = verify_cached_focused_window(cache)?;
+    let (current_role, current_sensitive) = verify_observed_element_identity(target)?;
+    let current_bounds =
+        rect_attribute(target.element.as_ptr(), "AXFrame").ok_or_else(|| PlatformDriverError {
+            code: "stale_observation",
+            message: "the foreground click target no longer exposes bounded geometry".to_string(),
+            retryable: true,
+        })?;
+    if Some(current_bounds) != target.bounds
+        || !foreground_click_candidate(
+            &current_role,
+            current_sensitive,
+            true,
+            Some(current_bounds),
+            true,
+            &semantic_actions(target.element.as_ptr(), &current_role, current_sensitive),
+        )
+    {
+        return Err(PlatformDriverError {
+            code: "stale_observation",
+            message: "the foreground click target changed before dispatch".to_string(),
+            retryable: true,
+        });
+    }
+    let current_input_counter = unsafe {
+        CGEventSourceCounterForEventType(CG_EVENT_SOURCE_STATE_HID_SYSTEM, CG_ANY_INPUT_EVENT_TYPE)
+    };
+    if current_input_counter != input_counter
+        || unsafe {
+            CGEventSourceButtonState(CG_EVENT_SOURCE_STATE_HID_SYSTEM, CG_MOUSE_BUTTON_LEFT)
+        }
+    {
+        return Err(human_input_preempted());
+    }
+    unsafe {
+        CGEventPost(CG_HID_EVENT_TAP, down.as_ptr());
+        CGEventPost(CG_HID_EVENT_TAP, up.as_ptr());
+    }
+    Ok(AX_ERROR_SUCCESS)
+}
+
+fn click_center(bounds: ComputerRect, window: ComputerRect) -> Option<CGPoint> {
+    if bounds.width == 0 || bounds.height == 0 || window.width == 0 || window.height == 0 {
+        return None;
+    }
+    let left = i64::from(bounds.x);
+    let top = i64::from(bounds.y);
+    let right = left.checked_add(i64::from(bounds.width))?;
+    let bottom = top.checked_add(i64::from(bounds.height))?;
+    let window_left = i64::from(window.x);
+    let window_top = i64::from(window.y);
+    let window_right = window_left.checked_add(i64::from(window.width))?;
+    let window_bottom = window_top.checked_add(i64::from(window.height))?;
+    if left < window_left || top < window_top || right > window_right || bottom > window_bottom {
+        return None;
+    }
+    Some(CGPoint {
+        x: (left + i64::from(bounds.width) / 2) as f64,
+        y: (top + i64::from(bounds.height) / 2) as f64,
+    })
+}
+
+fn hit_test_matches_target(point: CGPoint, target: &OwnedCf) -> Result<bool, PlatformDriverError> {
+    let system =
+        unsafe { OwnedCf::from_create(AXUIElementCreateSystemWide()) }.ok_or_else(|| {
+            PlatformDriverError {
+                code: "accessibility_unavailable",
+                message: "macOS did not provide the system accessibility element".to_string(),
+                retryable: true,
+            }
+        })?;
+    let _ = unsafe { AXUIElementSetMessagingTimeout(system.as_ptr(), AX_MESSAGE_TIMEOUT_SECONDS) };
+    let mut hit = ptr::null();
+    if unsafe {
+        AXUIElementCopyElementAtPosition(system.as_ptr(), point.x as f32, point.y as f32, &mut hit)
+    } != AX_ERROR_SUCCESS
+    {
+        return Ok(false);
+    }
+    let Some(mut current) = (unsafe { OwnedCf::from_create(hit) }) else {
+        return Ok(false);
+    };
+    for _ in 0..=MAX_HIT_TEST_ANCESTORS {
+        if cf_equal(current.as_ptr(), target.as_ptr()) {
+            return Ok(true);
+        }
+        let Some(parent) = copy_attribute(current.as_ptr(), "AXParent")
+            .filter(|value| is_ax_element(value.as_ptr()))
+        else {
+            return Ok(false);
+        };
+        current = parent;
+    }
+    Ok(false)
+}
+
+fn foreground_event_construction_error() -> PlatformDriverError {
+    PlatformDriverError {
+        code: "foreground_event_unavailable",
+        message: "macOS could not construct the bounded foreground click".to_string(),
+        retryable: false,
+    }
+}
+
+fn human_input_preempted() -> PlatformDriverError {
+    PlatformDriverError {
+        code: "human_input_preempted",
+        message: "human input changed while resolving the target; observe again before acting"
+            .to_string(),
+        retryable: true,
+    }
 }
 
 fn action_construction_error() -> PlatformDriverError {
@@ -1103,7 +1420,7 @@ impl Drop for OwnedCf {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 struct CGPoint {
     x: f64,
     y: f64,
@@ -1182,6 +1499,12 @@ unsafe extern "C" {
     fn AXUIElementCreateSystemWide() -> AXUIElementRef;
     fn AXUIElementGetTypeID() -> CFTypeId;
     fn AXUIElementGetPid(element: AXUIElementRef, pid: *mut i32) -> AXError;
+    fn AXUIElementCopyElementAtPosition(
+        application: AXUIElementRef,
+        x: f32,
+        y: f32,
+        element: *mut AXUIElementRef,
+    ) -> AXError;
     fn AXUIElementSetMessagingTimeout(element: AXUIElementRef, timeout: f32) -> AXError;
     fn AXUIElementCopyAttributeValue(
         element: AXUIElementRef,
@@ -1252,6 +1575,15 @@ unsafe extern "C" {
 unsafe extern "C" {
     fn CGPreflightScreenCaptureAccess() -> bool;
     fn CGPreflightPostEventAccess() -> bool;
+    fn CGEventCreateMouseEvent(
+        source: CFTypeRef,
+        mouse_type: u32,
+        mouse_cursor_position: CGPoint,
+        mouse_button: u32,
+    ) -> CFTypeRef;
+    fn CGEventPost(tap: u32, event: CFTypeRef);
+    fn CGEventSourceButtonState(state_id: i32, button: u32) -> bool;
+    fn CGEventSourceCounterForEventType(state_id: i32, event_type: u32) -> u32;
     fn CGGetActiveDisplayList(
         max_displays: u32,
         displays: *mut u32,
@@ -1322,5 +1654,81 @@ mod tests {
             Some("AXSecureTextField")
         ));
         assert!(!is_sensitive_ax_node("AXTextField", None));
+    }
+
+    #[test]
+    fn foreground_click_is_only_an_exact_focused_fallback() {
+        let bounds = Some(ComputerRect {
+            x: 40,
+            y: 80,
+            width: 120,
+            height: 44,
+        });
+        assert!(foreground_click_candidate(
+            "AXButton",
+            false,
+            true,
+            bounds,
+            true,
+            &[],
+        ));
+        assert!(!foreground_click_candidate(
+            "AXButton",
+            false,
+            true,
+            bounds,
+            true,
+            &[ComputerAction::Press],
+        ));
+        assert!(!foreground_click_candidate(
+            "AXGroup",
+            false,
+            true,
+            bounds,
+            true,
+            &[],
+        ));
+        assert!(!foreground_click_candidate(
+            "AXButton",
+            false,
+            true,
+            bounds,
+            false,
+            &[],
+        ));
+    }
+
+    #[test]
+    fn foreground_click_center_must_be_inside_the_focused_window() {
+        let window = ComputerRect {
+            x: -100,
+            y: 20,
+            width: 800,
+            height: 600,
+        };
+        assert_eq!(
+            click_center(
+                ComputerRect {
+                    x: 100,
+                    y: 120,
+                    width: 80,
+                    height: 40,
+                },
+                window,
+            ),
+            Some(CGPoint { x: 140.0, y: 140.0 })
+        );
+        assert_eq!(
+            click_center(
+                ComputerRect {
+                    x: 650,
+                    y: 120,
+                    width: 80,
+                    height: 40,
+                },
+                window,
+            ),
+            None
+        );
     }
 }
