@@ -56,7 +56,7 @@ desktop-only **Codex runtime** card and can be disconnected independently.
 
 While connected, the picker refreshes from the ChatGPT account's Codex model
 catalog. The list therefore follows that account's current entitlements; if the
-catalog cannot be reached, Medousa keeps its curated fallback choice available.
+catalog cannot be reached, Medousa keeps its curated fallback choices available.
 Compatible account models can accept both text and image input through
 Medousa's native loop, while continuing to use Medousa modes and tools. The
 Codex account transport currently produces text responses; dedicated image
@@ -64,6 +64,15 @@ generation, speech generation, and transcription routes remain separate rather
 than being falsely advertised as account-model capabilities.
 The adapter carries a separately versioned Codex-backend compatibility identity;
 Medousa's own app version is never sent as the Codex protocol version.
+
+Choose **GPT-6 Astra** under **OpenAI · ChatGPT account** when your account has
+access. Astra supports text and image input, streamed replies, and Medousa's
+tools. Its reasoning levels are **Low**, **Medium**, **High**, **Extra high**, and
+**Max**; **Default** lets the model decide. A saved **Minimal** setting uses
+**Low** for Astra. Medousa omits temperature and top-p sampling settings for
+Astra, as required by the [OpenAI model guide](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra).
+Selecting Astra does not change your other model assignments or grant account
+access; availability follows [OpenAI's account and rollout settings](https://learn.chatgpt.com/docs/models#gpt-6-astra).
 
 Completed Medousa replies show a small model receipt below the answer. This is
 the successful provider/model route observed by the daemon after fallback, so

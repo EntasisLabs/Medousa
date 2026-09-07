@@ -1211,6 +1211,23 @@ pub async fn run_daemon_interactive_turn(
     .await;
 }
 
+fn coder_binding_targets_remote(
+    binding: &crate::daemon_api::SessionCodeBindingResponse,
+    local_runtime_id: &str,
+) -> bool {
+    // Coder bindings carry execution-target identity; paired daemons may have
+    // a different durable workshop-authority identity.
+    binding
+        .execution_runtime_id
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|runtime_id| {
+            !runtime_id.is_empty()
+                && runtime_id != local_runtime_id
+                && runtime_id != crate::workshop_contract::UNKNOWN_EXECUTION_RUNTIME_ID
+        })
+}
+
 /// Run a full agent turn, streaming events through the provided sink.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_agent_turn(
@@ -1385,23 +1402,11 @@ async fn run_agent_turn_inner(
     {
         resolved_code_context.work_id = binding.work_id.clone();
     }
-    let local_runtime_id = crate::workshop_authority::current()
-        .map(|authority| authority.as_str().to_string())
-        .unwrap_or_else(|_| crate::workshop_contract::default_unknown_runtime_id());
+    let local_runtime_id = agent_rt.worker_scheduler.execution_runtime_id();
     let remote_coder_binding = (agent_mode.id == crate::daemon_api::AgentModeId::Coder)
         .then(|| session_code_binding.clone())
         .flatten()
-        .filter(|binding| {
-            binding
-                .execution_runtime_id
-                .as_deref()
-                .map(str::trim)
-                .is_some_and(|runtime_id| {
-                    !runtime_id.is_empty()
-                        && runtime_id != local_runtime_id
-                        && runtime_id != crate::workshop_contract::UNKNOWN_EXECUTION_RUNTIME_ID
-                })
-        });
+        .filter(|binding| coder_binding_targets_remote(binding, &local_runtime_id));
     let forge = project_state.as_ref().map(|state| state.forge.clone());
     let checkpoint_store = super::coder_turn_checkpoint::coder_turn_checkpoint_store();
     let (
@@ -1584,9 +1589,6 @@ async fn run_agent_turn_inner(
                     return;
                 }
             };
-            let local_runtime_id = crate::workshop_authority::current()
-                .map(|authority| authority.as_str().to_string())
-                .unwrap_or_else(|_| crate::workshop_contract::default_unknown_runtime_id());
             if let Err(err) = crate::agent_mode_state::set_session_code_binding_authority(
                 &session_id,
                 &entry.work_id,
@@ -2414,6 +2416,45 @@ impl AgentStreamSink for TurnOutcomeTrackingSink {
 
     async fn reset_streamed_markdown(&self) {
         self.inner.reset_streamed_markdown().await;
+    }
+}
+
+#[cfg(test)]
+mod coder_admission_tests {
+    use super::*;
+
+    fn binding(runtime_id: Option<&str>) -> crate::daemon_api::SessionCodeBindingResponse {
+        crate::daemon_api::SessionCodeBindingResponse {
+            session_id: "session-1".to_string(),
+            work_id: Some("work-1".to_string()),
+            execution_runtime_id: runtime_id.map(str::to_string),
+            repo_id: Some("repo-1".to_string()),
+            updated_at_utc: None,
+        }
+    }
+
+    #[test]
+    fn paired_daemon_runtime_is_not_misclassified_as_remote() {
+        assert!(!coder_binding_targets_remote(
+            &binding(Some("paired-mac-device")),
+            "paired-mac-device",
+        ));
+    }
+
+    #[test]
+    fn different_runtime_remains_remote() {
+        assert!(coder_binding_targets_remote(
+            &binding(Some("other-workshop")),
+            "paired-mac-device",
+        ));
+    }
+
+    #[test]
+    fn unknown_runtime_does_not_enter_remote_admission() {
+        assert!(!coder_binding_targets_remote(
+            &binding(Some(crate::workshop_contract::UNKNOWN_EXECUTION_RUNTIME_ID)),
+            "paired-mac-device",
+        ));
     }
 }
 

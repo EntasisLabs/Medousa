@@ -20,7 +20,7 @@ export const REASONING_EFFORT_OPTIONS: ReasoningEffortOption[] = [
   { id: "medium", label: "Medium", hint: "Balanced reasoning" },
   { id: "high", label: "High", hint: "Deeper reasoning" },
   { id: "xhigh", label: "Extra high", hint: "OpenAI-class extra depth" },
-  { id: "max", label: "Max", hint: "Anthropic-class maximum depth" },
+  { id: "max", label: "Max", hint: "Maximum supported reasoning depth" },
 ];
 
 export function normalizeReasoningEffort(value: string | null | undefined): ReasoningEffortMode {

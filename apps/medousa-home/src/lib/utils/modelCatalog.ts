@@ -48,6 +48,12 @@ export const PROVIDER_DEFAULT_MODELS: Record<string, string> = {
 export const CURATED_MODEL_PICKS: ModelPick[] = [
   {
     provider: "openai-codex",
+    model: "gpt-6-astra",
+    label: "GPT-6 Astra",
+    hint: "ChatGPT account",
+  },
+  {
+    provider: "openai-codex",
     model: "gpt-5.6-sol",
     label: "GPT-5.6 Sol",
     hint: "ChatGPT account",

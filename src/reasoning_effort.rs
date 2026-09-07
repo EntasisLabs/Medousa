@@ -23,7 +23,7 @@ pub fn reasoning_effort_hint(mode: &str) -> &'static str {
         "medium" => "balanced reasoning depth",
         "high" => "deeper reasoning",
         "xhigh" => "extra-high reasoning (OpenAI-class)",
-        "max" => "maximum reasoning (Anthropic-class)",
+        "max" => "maximum supported reasoning depth",
         REASONING_EFFORT_DEFAULT | "auto" | "none" | "" => "provider default reasoning",
         other if other.starts_with("budget:") => "custom thinking token budget",
         _ => "provider-native reasoning intensity",
