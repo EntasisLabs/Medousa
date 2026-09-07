@@ -451,10 +451,13 @@ pub async fn set_session_code_binding(
     if work_id.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "work_id is required".to_string()));
     }
-    let local_runtime_id = crate::workshop_authority::current()
-        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err))?
-        .as_str()
-        .to_string();
+    // Match the runtime identity advertised by the worker scheduler and
+    // /v1/execution-targets, not the durable workshop-authority identity.
+    let local_runtime_id = state
+        .platform
+        .agent()
+        .worker_scheduler
+        .execution_runtime_id();
     let requested_runtime_id = request
         .execution_runtime_id
         .as_deref()
