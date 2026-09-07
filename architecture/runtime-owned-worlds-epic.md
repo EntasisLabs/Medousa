@@ -940,6 +940,21 @@ Current governed-runner slice:
   response. Runs stop on their first failed step and are bounded to 32 total
   operations.
 
+Current production-proof slice:
+
+- A dedicated world-authority adversarial suite treats prompt-injection text,
+  stale observations, human takeover races, uncertain irreversible effects,
+  and acknowledged external-effect retries as attacks on one common boundary.
+  The cases run inside the existing workspace library lane rather than adding
+  another duplicate release build.
+- The existing micro-CI job now measures the pure admission/completion hot
+  path, immediate human takeover, and a worst-case 1,024-node cached semantic
+  observation. Checked-in ceilings enforce the 1 ms admission target, one
+  60 Hz frame for takeover, and 10 ms cached-observation target.
+- Bench outputs are machine-readable but remain separate from application and
+  network response time. Raising a ceiling requires changing the reviewed
+  budget file rather than silently accepting a slower sample.
+
 Implementation:
 
 - Add domain-specific checkpoints and compensation plans.

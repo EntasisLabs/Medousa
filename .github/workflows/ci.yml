@@ -109,7 +109,7 @@ jobs:
             . -> .cache/cargo-target
           cache-workspace-crates: true
           cache-on-failure: true
-      - name: P01/P03 micro-CI budgets
+      - name: Runtime and governed-world micro-CI budgets
         run: ./scripts/ci/check-perf-budgets.sh
 
   filesystem-authority:

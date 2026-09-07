@@ -14,3 +14,7 @@ once_cell = "1"
 
 [package.metadata.cargo-machete]
 ignored = ["serde_json"]
+
+[[bench]]
+name = "cached_observation"
+harness = false
