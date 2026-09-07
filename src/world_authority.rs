@@ -158,6 +158,26 @@ impl WorldAuthorityService {
             }
         }
     }
+
+    /// Recipe execution requires a durable idempotency boundary. Ordinary
+    /// compatibility paths may run before the timeline is configured, but a
+    /// replay runner must never dispatch when it cannot first prove that the
+    /// run id has not already crossed an action boundary.
+    pub fn ensure_durable_timeline_writable(&self) -> Result<(), String> {
+        let timeline = self
+            .timeline
+            .lock()
+            .map_err(|_| "world causal timeline lock poisoned".to_string())?;
+        match &*timeline {
+            WorldTimelineState::Active(_) => Ok(()),
+            WorldTimelineState::Disabled => {
+                Err("world causal timeline is not configured".to_string())
+            }
+            WorldTimelineState::Failed { error, .. } => Err(format!(
+                "world causal timeline is unavailable for mutation: {error}"
+            )),
+        }
+    }
 }
 
 static AUTHORITY: LazyLock<Arc<WorldAuthorityService>> =

@@ -1,11 +1,12 @@
 //! Authenticated review surface for the daemon's governed-world causal ledger.
 
-use axum::extract::{Query, State};
-use axum::routing::get;
+use axum::extract::{Extension, Query, State};
+use axum::routing::{get, post};
 use axum::Json;
 use medousa_types::{
-    WORLD_TIMELINE_EVENT_SCHEMA_VERSION, WorldRecipeDeriveResponse, WorldTimelineCheckpoint,
-    WorldTimelineEvent, WorldTimelineRecovery, WorldTimelineResponse,
+    WORLD_TIMELINE_EVENT_SCHEMA_VERSION, WorldRecipeDeriveResponse, WorldRecipeRunRequest,
+    WorldRecipeRunResponse, WorldTimelineCheckpoint, WorldTimelineEvent, WorldTimelineRecovery,
+    WorldTimelineResponse,
 };
 use medousa_world::{
     WorldActionCheckpoint, WorldActionStatus, WorldEffectClass, WorldEventKind, WorldOwnership,
@@ -18,6 +19,8 @@ use crate::daemon::route_policy::{
 };
 use crate::daemon::state::AppState;
 use crate::request_principal::Capability;
+use crate::request_principal::RequestPrincipal;
+use crate::world_recipe_runner::{WorldRecipeRunError, run_world_recipe};
 use crate::world_recipes::{WorldRecipeDerivationError, derive_world_recipe};
 use crate::world_trace_store::DurableWorldEvent;
 
@@ -92,6 +95,28 @@ pub async fn derive_world_recipe_from_trace(
     Ok(Json(WorldRecipeDeriveResponse { recipe }))
 }
 
+pub async fn run_world_recipe_from_trace(
+    State(state): State<AppState>,
+    Extension(principal): Extension<RequestPrincipal>,
+    Json(request): Json<WorldRecipeRunRequest>,
+) -> Result<Json<WorldRecipeRunResponse>, (axum::http::StatusCode, String)> {
+    let owner_profile_id = principal
+        .profile_id()
+        .map(str::to_string)
+        .unwrap_or_else(crate::user_profiles::resolve_workshop_identity_user_id);
+    run_world_recipe(&state, owner_profile_id, request)
+        .await
+        .map(Json)
+        .map_err(|error| match error {
+            WorldRecipeRunError::Invalid(message) => (axum::http::StatusCode::BAD_REQUEST, message),
+            WorldRecipeRunError::NotFound(message) => (axum::http::StatusCode::NOT_FOUND, message),
+            WorldRecipeRunError::Conflict(message) => (axum::http::StatusCode::CONFLICT, message),
+            WorldRecipeRunError::Unavailable(message) => {
+                (axum::http::StatusCode::SERVICE_UNAVAILABLE, message)
+            }
+        })
+}
+
 pub fn world_timeline_surface() -> DeclaredRouter<AppState> {
     DeclaredRouter::default()
         .route(
@@ -119,6 +144,19 @@ pub fn world_timeline_surface() -> DeclaredRouter<AppState> {
                 rate_limit_class: RateLimitClass::Read,
             },
             get(derive_world_recipe_from_trace),
+        )
+        .route(
+            RoutePolicy {
+                method: axum::http::Method::POST,
+                path: "/v1/worlds/recipes/run",
+                group: RouteGroup::Portal,
+                required_capability: Some(Capability::AdminExecute),
+                bootstrap_public: false,
+                browser_policy: BrowserPolicy::ExactOrigin,
+                body_limit: 256 * 1024,
+                rate_limit_class: RateLimitClass::Mutation,
+            },
+            post(run_world_recipe_from_trace),
         )
 }
 
@@ -348,6 +386,22 @@ mod tests {
         assert_eq!(route.group, RouteGroup::Portal);
         assert_eq!(route.required_capability, Some("workshop.read"));
         assert_eq!(route.browser_policy, BrowserPolicy::ExactOrigin);
+        assert!(!route.bootstrap_public);
+    }
+
+    #[test]
+    fn recipe_run_is_an_operator_only_exact_origin_mutation() {
+        let surface = world_timeline_surface();
+        let route = surface
+            .inventory()
+            .entries()
+            .find(|entry| entry.path == "/v1/worlds/recipes/run")
+            .expect("recipe run route");
+        assert_eq!(route.method, "POST");
+        assert_eq!(route.group, RouteGroup::Portal);
+        assert_eq!(route.required_capability, Some("admin.execute"));
+        assert_eq!(route.browser_policy, BrowserPolicy::ExactOrigin);
+        assert_eq!(route.rate_limit_class, RateLimitClass::Mutation);
         assert!(!route.bootstrap_public);
     }
 

@@ -650,6 +650,27 @@ fn main() {
         WorldRecipeDeriveResponse,
         "WorldRecipeDeriveResponse"
     );
+    export_type!(schemas, WorldRecipeRunTarget, "WorldRecipeRunTarget");
+    export_type!(
+        schemas,
+        WorldRecipeRunInputValue,
+        "WorldRecipeRunInputValue"
+    );
+    export_type!(schemas, WorldRecipeRunInput, "WorldRecipeRunInput");
+    export_type!(
+        schemas,
+        WorldRecipeRunConfirmation,
+        "WorldRecipeRunConfirmation"
+    );
+    export_type!(schemas, WorldRecipeRunRequest, "WorldRecipeRunRequest");
+    export_type!(schemas, WorldRecipeRunStatus, "WorldRecipeRunStatus");
+    export_type!(
+        schemas,
+        WorldRecipeRunStepResult,
+        "WorldRecipeRunStepResult"
+    );
+    export_type!(schemas, WorldRecipeRunStop, "WorldRecipeRunStop");
+    export_type!(schemas, WorldRecipeRunResponse, "WorldRecipeRunResponse");
 
     let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sdk-contract");
     fs::create_dir_all(&out_dir).expect("create sdk-contract dir");

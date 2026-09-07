@@ -773,6 +773,64 @@ export interface WorldRecipeDeriveResponse {
   recipe: WorldRecipe;
 }
 
+export interface WorldRecipeRunConfirmation {
+  operation_index: number;
+  step_ordinal: number;
+}
+
+export type WorldRecipeRunInputValue = { kind: "text"; text: string } | { kind: "selection"; value: string } | { key: string; kind: "key" } | { delta_y: number; kind: "scroll_delta" } | { kind: "wait_duration"; milliseconds: number };
+
+export interface WorldRecipeRunInput {
+  input: WorldRecipeRunInputValue;
+  operation_index: number;
+  step_ordinal: number;
+}
+
+export interface WorldRecipeRunTarget {
+  step_ordinal: number;
+  world_id: string;
+}
+
+export interface WorldRecipeRunRequest {
+  confirmations?: WorldRecipeRunConfirmation[];
+  inputs?: WorldRecipeRunInput[];
+  operator_approved: boolean;
+  recipe_id: string;
+  run_id: string;
+  source_trace_id: string;
+  targets: WorldRecipeRunTarget[];
+}
+
+export type WorldRecipeRunStatus = "completed" | "stopped";
+
+export interface WorldRecipeRunStepResult {
+  committed_revision: number;
+  completion_sequence: number;
+  intent_id: string;
+  operation_count: number;
+  step_ordinal: number;
+  surface: string;
+  world_id: string;
+}
+
+export interface WorldRecipeRunStop {
+  code: string;
+  effect_may_have_applied: boolean;
+  reason: string;
+  step_ordinal: number;
+}
+
+export interface WorldRecipeRunResponse {
+  completed_steps: number;
+  recipe_id: string;
+  run_id: string;
+  schema_version: number;
+  status: WorldRecipeRunStatus;
+  steps: WorldRecipeRunStepResult[];
+  stop?: WorldRecipeRunStop | null;
+  trace_id: string;
+}
+
 export type CodeProjectSource = "blank" | "repository";
 
 export interface StartSessionCodeProjectRequest {

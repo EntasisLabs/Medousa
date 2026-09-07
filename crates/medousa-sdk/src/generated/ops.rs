@@ -3096,6 +3096,13 @@ pub const WORLDS_RECIPES_DERIVE_GET: Operation = Operation {
     streaming: false,
 };
 
+pub const WORLDS_RECIPES_RUN_POST: Operation = Operation {
+    id: "worlds.recipes.run.post",
+    method: "POST",
+    path: "/v1/worlds/recipes/run",
+    streaming: false,
+};
+
 pub const WORLDS_TIMELINE_GET: Operation = Operation {
     id: "worlds.timeline.get",
     method: "GET",
@@ -3545,6 +3552,7 @@ pub static ALL: &[Operation] = &[
     WORLD_RESET_STORE_POST,
     WORLD_STATUS_GET,
     WORLDS_RECIPES_DERIVE_GET,
+    WORLDS_RECIPES_RUN_POST,
     WORLDS_TIMELINE_GET,
 ];
 

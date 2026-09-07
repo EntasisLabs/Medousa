@@ -7019,6 +7019,22 @@
       "trust_group": "portal"
     },
     {
+      "body_limit": 262144,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "worlds.recipes.run.post",
+      "path": "/v1/worlds/recipes/run",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
       "body_limit": 1024,
       "bootstrap_public": false,
       "browser_policy": "exact_origin",

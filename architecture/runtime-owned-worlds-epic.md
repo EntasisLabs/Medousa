@@ -913,8 +913,32 @@ Current semantic-recipe slice:
   partial workflow.
 - Every derived step declares that replay needs a fresh observation and fresh
   admission. The response cannot execute itself, carries no authority, and
-  does not permit automatic dispatch; an eventual runner remains a separate
-  governed slice.
+  does not permit automatic dispatch.
+
+Current governed-runner slice:
+
+- `POST /v1/worlds/recipes/run` accepts only a source trace plus its
+  server-derived recipe id, a durable run id, an exact destination world for
+  every step, and fresh values supplied separately per operation. The daemon
+  re-derives the recipe; callers cannot submit or modify action templates.
+- Execution requires authenticated `admin.execute` authority and explicit
+  operator approval. Source-marked and freshly detected high-risk targets also
+  require per-operation confirmation. External and irreversible effects remain
+  non-executable in this slice.
+- Every step takes a new bounded full semantic observation, requires an exact
+  unique role/name match, resolves a new opaque target, and crosses the normal
+  browser or native-computer admission path. Fuzzy matches, sensitive fields,
+  truncated observations, changed worlds, stale refs, or lost control stop the
+  run before the next action.
+- A run trace named from the caller's bounded `run_id` is checked before any
+  mutation. Once that trace crosses a durable world boundary, the same id is
+  refused rather than risking a duplicate effect. Uncertain post-dispatch
+  results stop with `effect_may_have_applied=true` and must be inspected in the
+  causal timeline.
+- Fresh values and driver-native refs exist only at the live adapter boundary;
+  neither appears in recipe metadata, timeline summaries, receipts, or the run
+  response. Runs stop on their first failed step and are bounded to 32 total
+  operations.
 
 Implementation:
 

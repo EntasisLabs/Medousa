@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use async_trait::async_trait;
 use medousa_computer_bridge::{
     COMPUTER_DRIVER_PROTOCOL_VERSION, ComputerAction, ComputerActionReceipt, ComputerActionRequest,
-    ComputerDriverPreflight, ComputerObservation, ComputerObservationRequest,
+    ComputerDriverPreflight, ComputerObservation, ComputerObservationRequest, ComputerSemanticNode,
     ComputerPermissionKind, ComputerScreenshotCapture, ComputerScreenshotRequest,
 };
 use medousa_world::{
@@ -1514,10 +1514,22 @@ fn computer_control_state(
 }
 
 fn observed_element_is_high_risk(element: &ComputerObservedElement) -> bool {
-    if element.sensitive {
+    semantic_target_is_high_risk(&element.role, &element.name, element.sensitive)
+}
+
+pub(crate) fn computer_semantic_action_requires_operator_confirmation(
+    action: ComputerAction,
+    element: &ComputerSemanticNode,
+) -> bool {
+    action == ComputerAction::ForegroundClick
+        || semantic_target_is_high_risk(&element.role, &element.name, element.sensitive)
+}
+
+fn semantic_target_is_high_risk(role: &str, name: &str, sensitive: bool) -> bool {
+    if sensitive {
         return true;
     }
-    let semantic_label = format!("{} {}", element.role, element.name).to_ascii_lowercase();
+    let semantic_label = format!("{role} {name}").to_ascii_lowercase();
     let tokens = semantic_label
         .split(|character: char| !character.is_alphanumeric())
         .filter(|token| !token.is_empty())

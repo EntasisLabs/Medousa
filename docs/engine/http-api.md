@@ -497,6 +497,7 @@ the redacted focused-window capture and does not accept interaction coordinates.
 |--------|------|---------|
 | GET | `/v1/worlds/timeline?after_sequence=…&limit=…` | Page through the workshop's bounded browser/computer causal ledger |
 | GET | `/v1/worlds/recipes/derive?trace_id=…` | Derive an inert semantic recipe from one fully confirmed trace |
+| POST | `/v1/worlds/recipes/run` | Run a server-derived recipe through fresh governed world boundaries |
 
 `after_sequence` is an exclusive daemon-wide cursor. `limit` defaults to 100
 and is capped at 200; the response returns `events`, `next_sequence`, and
@@ -518,13 +519,36 @@ receipt and daemon-authored semantic recipe metadata. Failed, interrupted,
 indeterminate, truncated, legacy, or selector-based traces return `409` rather
 than producing a partial recipe. A missing trace returns `404`.
 
-The response contains semantic verbs, optional target role/name hints, and the
-kind of value that a future run must ask for. It never copies typed or selected
-values, selectors, coordinates, element/native handles, idempotency keys,
-grants, control leases, or permits. Recipe steps explicitly require a fresh
-observation and fresh world admission; sensitive-looking targets retain an
-operator-confirmation requirement. This endpoint derives reviewable guidance
+The derive response contains semantic verbs, optional target role/name hints,
+and the kind of value that a future run must ask for. It never copies typed or
+selected values, selectors, coordinates, element/native handles, idempotency
+keys, grants, control leases, or permits. Recipe steps explicitly require a
+fresh observation and fresh world admission; sensitive-looking targets retain
+an operator-confirmation requirement. Derivation produces reviewable guidance
 only and cannot dispatch it.
+
+Recipe execution requires `admin.execute` plus exact-origin browser policy. The
+request names `source_trace_id`, the matching `recipe_id`, a bounded unique
+`run_id`, `operator_approved: true`, and one exact `world_id` target for every
+step. Values are supplied separately as operation-indexed `inputs`; operations
+flagged by the source or by the freshly observed destination also require an
+operation-indexed confirmation. The daemon re-derives the recipe from its own
+ledger, so the request cannot add or alter verbs, semantic targets, effects, or
+authority.
+
+The runner supports local reversible and local mutation steps only. Before
+each step it obtains a new bounded full observation and requires an exact,
+unique role/name match on the selected world. Truncated state, ambiguity,
+sensitive nodes, changed control, stale bindings, and missing fresh input stop
+the run without guessing. Browser steps cross the existing shared or isolated
+browser admission path; desktop/application/composite steps cross the native
+computer broker. No source ref, revision, permit, grant, or value is reused.
+
+The response is `completed` or `stopped`, includes only confirmed step
+provenance, and reports whether a stopped step may have applied. It contains no
+fresh values or native refs. A run is bounded to 32 operations and stops on the
+first failure. Once `world-recipe-run:{run_id}` has any durable boundary, reuse
+returns `409`; inspect that trace instead of retrying an uncertain effect.
 
 ---
 

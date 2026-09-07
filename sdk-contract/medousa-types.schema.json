@@ -26822,6 +26822,697 @@
       }
     }
   },
+  "WorldRecipeRunConfirmation": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeRunConfirmation",
+    "description": "Explicit confirmation for one operation whose source or freshly resolved target requires operator review.",
+    "type": "object",
+    "required": [
+      "operation_index",
+      "step_ordinal"
+    ],
+    "properties": {
+      "operation_index": {
+        "description": "Zero-based operation index within the recipe step.",
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "step_ordinal": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      }
+    }
+  },
+  "WorldRecipeRunInput": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeRunInput",
+    "type": "object",
+    "required": [
+      "input",
+      "operation_index",
+      "step_ordinal"
+    ],
+    "properties": {
+      "input": {
+        "$ref": "#/definitions/WorldRecipeRunInputValue"
+      },
+      "operation_index": {
+        "description": "Zero-based operation index within the recipe step.",
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "step_ordinal": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      }
+    },
+    "definitions": {
+      "WorldRecipeRunInputValue": {
+        "description": "Fresh operator-provided material for one semantic operation. These values are never copied into a recipe, receipt, timeline summary, or run response.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "value"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "selection"
+                ]
+              },
+              "value": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "key",
+              "kind"
+            ],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "key"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "delta_y",
+              "kind"
+            ],
+            "properties": {
+              "delta_y": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "scroll_delta"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "milliseconds"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "wait_duration"
+                ]
+              },
+              "milliseconds": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "WorldRecipeRunInputValue": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeRunInputValue",
+    "description": "Fresh operator-provided material for one semantic operation. These values are never copied into a recipe, receipt, timeline summary, or run response.",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "kind",
+          "text"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "kind",
+          "value"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "selection"
+            ]
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "key",
+          "kind"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "key"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "delta_y",
+          "kind"
+        ],
+        "properties": {
+          "delta_y": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "scroll_delta"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "kind",
+          "milliseconds"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "wait_duration"
+            ]
+          },
+          "milliseconds": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      }
+    ]
+  },
+  "WorldRecipeRunRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeRunRequest",
+    "description": "Execute a server-derived recipe as a new governed run. The daemon re-derives `recipe_id` from `source_trace_id`; callers cannot submit an arbitrary action template. `run_id` is a durable idempotency boundary.",
+    "type": "object",
+    "required": [
+      "operator_approved",
+      "recipe_id",
+      "run_id",
+      "source_trace_id",
+      "targets"
+    ],
+    "properties": {
+      "confirmations": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/WorldRecipeRunConfirmation"
+        }
+      },
+      "inputs": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/WorldRecipeRunInput"
+        }
+      },
+      "operator_approved": {
+        "type": "boolean"
+      },
+      "recipe_id": {
+        "type": "string"
+      },
+      "run_id": {
+        "type": "string"
+      },
+      "source_trace_id": {
+        "type": "string"
+      },
+      "targets": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/WorldRecipeRunTarget"
+        }
+      }
+    },
+    "definitions": {
+      "WorldRecipeRunConfirmation": {
+        "description": "Explicit confirmation for one operation whose source or freshly resolved target requires operator review.",
+        "type": "object",
+        "required": [
+          "operation_index",
+          "step_ordinal"
+        ],
+        "properties": {
+          "operation_index": {
+            "description": "Zero-based operation index within the recipe step.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "step_ordinal": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "WorldRecipeRunInput": {
+        "type": "object",
+        "required": [
+          "input",
+          "operation_index",
+          "step_ordinal"
+        ],
+        "properties": {
+          "input": {
+            "$ref": "#/definitions/WorldRecipeRunInputValue"
+          },
+          "operation_index": {
+            "description": "Zero-based operation index within the recipe step.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "step_ordinal": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "WorldRecipeRunInputValue": {
+        "description": "Fresh operator-provided material for one semantic operation. These values are never copied into a recipe, receipt, timeline summary, or run response.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "value"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "selection"
+                ]
+              },
+              "value": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "key",
+              "kind"
+            ],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "key"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "delta_y",
+              "kind"
+            ],
+            "properties": {
+              "delta_y": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "scroll_delta"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "milliseconds"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "wait_duration"
+                ]
+              },
+              "milliseconds": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            }
+          }
+        ]
+      },
+      "WorldRecipeRunTarget": {
+        "description": "Bind one source recipe step to an exact live world. World ids remain opaque; the destination daemon resolves them against its own registered drivers.",
+        "type": "object",
+        "required": [
+          "step_ordinal",
+          "world_id"
+        ],
+        "properties": {
+          "step_ordinal": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "world_id": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "WorldRecipeRunResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeRunResponse",
+    "type": "object",
+    "required": [
+      "completed_steps",
+      "recipe_id",
+      "run_id",
+      "schema_version",
+      "status",
+      "steps",
+      "trace_id"
+    ],
+    "properties": {
+      "completed_steps": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "recipe_id": {
+        "type": "string"
+      },
+      "run_id": {
+        "type": "string"
+      },
+      "schema_version": {
+        "type": "integer",
+        "format": "uint16",
+        "minimum": 0.0
+      },
+      "status": {
+        "$ref": "#/definitions/WorldRecipeRunStatus"
+      },
+      "steps": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/WorldRecipeRunStepResult"
+        }
+      },
+      "stop": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/WorldRecipeRunStop"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "trace_id": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "WorldRecipeRunStatus": {
+        "type": "string",
+        "enum": [
+          "completed",
+          "stopped"
+        ]
+      },
+      "WorldRecipeRunStepResult": {
+        "description": "One successfully acknowledged replay step. This intentionally contains no fresh input values or driver-native target handles.",
+        "type": "object",
+        "required": [
+          "committed_revision",
+          "completion_sequence",
+          "intent_id",
+          "operation_count",
+          "step_ordinal",
+          "surface",
+          "world_id"
+        ],
+        "properties": {
+          "committed_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "completion_sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "intent_id": {
+            "type": "string"
+          },
+          "operation_count": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "step_ordinal": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "surface": {
+            "type": "string"
+          },
+          "world_id": {
+            "type": "string"
+          }
+        }
+      },
+      "WorldRecipeRunStop": {
+        "type": "object",
+        "required": [
+          "code",
+          "effect_may_have_applied",
+          "reason",
+          "step_ordinal"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "effect_may_have_applied": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "step_ordinal": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      }
+    }
+  },
+  "WorldRecipeRunStatus": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeRunStatus",
+    "type": "string",
+    "enum": [
+      "completed",
+      "stopped"
+    ]
+  },
+  "WorldRecipeRunStepResult": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeRunStepResult",
+    "description": "One successfully acknowledged replay step. This intentionally contains no fresh input values or driver-native target handles.",
+    "type": "object",
+    "required": [
+      "committed_revision",
+      "completion_sequence",
+      "intent_id",
+      "operation_count",
+      "step_ordinal",
+      "surface",
+      "world_id"
+    ],
+    "properties": {
+      "committed_revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "completion_sequence": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "intent_id": {
+        "type": "string"
+      },
+      "operation_count": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "step_ordinal": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "surface": {
+        "type": "string"
+      },
+      "world_id": {
+        "type": "string"
+      }
+    }
+  },
+  "WorldRecipeRunStop": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeRunStop",
+    "type": "object",
+    "required": [
+      "code",
+      "effect_may_have_applied",
+      "reason",
+      "step_ordinal"
+    ],
+    "properties": {
+      "code": {
+        "type": "string"
+      },
+      "effect_may_have_applied": {
+        "type": "boolean"
+      },
+      "reason": {
+        "type": "string"
+      },
+      "step_ordinal": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      }
+    }
+  },
+  "WorldRecipeRunTarget": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeRunTarget",
+    "description": "Bind one source recipe step to an exact live world. World ids remain opaque; the destination daemon resolves them against its own registered drivers.",
+    "type": "object",
+    "required": [
+      "step_ordinal",
+      "world_id"
+    ],
+    "properties": {
+      "step_ordinal": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "world_id": {
+        "type": "string"
+      }
+    }
+  },
   "WorldRecipeStep": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "WorldRecipeStep",

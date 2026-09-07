@@ -8488,6 +8488,340 @@
         ],
         "type": "object"
       },
+      "WorldRecipeRunConfirmation": {
+        "description": "Explicit confirmation for one operation whose source or freshly resolved target requires operator review.",
+        "properties": {
+          "operation_index": {
+            "description": "Zero-based operation index within the recipe step.",
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "step_ordinal": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "operation_index",
+          "step_ordinal"
+        ],
+        "type": "object"
+      },
+      "WorldRecipeRunInput": {
+        "properties": {
+          "input": {
+            "$ref": "#/components/schemas/WorldRecipeRunInputValue"
+          },
+          "operation_index": {
+            "description": "Zero-based operation index within the recipe step.",
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "step_ordinal": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "input",
+          "operation_index",
+          "step_ordinal"
+        ],
+        "type": "object"
+      },
+      "WorldRecipeRunInputValue": {
+        "description": "Fresh operator-provided material for one semantic operation. These values are never copied into a recipe, receipt, timeline summary, or run response.",
+        "oneOf": [
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "text"
+                ],
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "text"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "selection"
+                ],
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "value"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "key"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "delta_y": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "kind": {
+                "enum": [
+                  "scroll_delta"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "delta_y",
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "wait_duration"
+                ],
+                "type": "string"
+              },
+              "milliseconds": {
+                "format": "uint64",
+                "minimum": 0.0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "milliseconds"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "WorldRecipeRunRequest": {
+        "description": "Execute a server-derived recipe as a new governed run. The daemon re-derives `recipe_id` from `source_trace_id`; callers cannot submit an arbitrary action template. `run_id` is a durable idempotency boundary.",
+        "properties": {
+          "confirmations": {
+            "items": {
+              "$ref": "#/components/schemas/WorldRecipeRunConfirmation"
+            },
+            "type": "array"
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/WorldRecipeRunInput"
+            },
+            "type": "array"
+          },
+          "operator_approved": {
+            "type": "boolean"
+          },
+          "recipe_id": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "source_trace_id": {
+            "type": "string"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/WorldRecipeRunTarget"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "operator_approved",
+          "recipe_id",
+          "run_id",
+          "source_trace_id",
+          "targets"
+        ],
+        "title": "WorldRecipeRunRequest",
+        "type": "object"
+      },
+      "WorldRecipeRunResponse": {
+        "properties": {
+          "completed_steps": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "recipe_id": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "schema_version": {
+            "format": "uint16",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WorldRecipeRunStatus"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/WorldRecipeRunStepResult"
+            },
+            "type": "array"
+          },
+          "stop": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorldRecipeRunStop"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "completed_steps",
+          "recipe_id",
+          "run_id",
+          "schema_version",
+          "status",
+          "steps",
+          "trace_id"
+        ],
+        "title": "WorldRecipeRunResponse",
+        "type": "object"
+      },
+      "WorldRecipeRunStatus": {
+        "enum": [
+          "completed",
+          "stopped"
+        ],
+        "type": "string"
+      },
+      "WorldRecipeRunStepResult": {
+        "description": "One successfully acknowledged replay step. This intentionally contains no fresh input values or driver-native target handles.",
+        "properties": {
+          "committed_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "completion_sequence": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "intent_id": {
+            "type": "string"
+          },
+          "operation_count": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "step_ordinal": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "surface": {
+            "type": "string"
+          },
+          "world_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "committed_revision",
+          "completion_sequence",
+          "intent_id",
+          "operation_count",
+          "step_ordinal",
+          "surface",
+          "world_id"
+        ],
+        "type": "object"
+      },
+      "WorldRecipeRunStop": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "effect_may_have_applied": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "step_ordinal": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "effect_may_have_applied",
+          "reason",
+          "step_ordinal"
+        ],
+        "type": "object"
+      },
+      "WorldRecipeRunTarget": {
+        "description": "Bind one source recipe step to an exact live world. World ids remain opaque; the destination daemon resolves them against its own registered drivers.",
+        "properties": {
+          "step_ordinal": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "world_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "step_ordinal",
+          "world_id"
+        ],
+        "type": "object"
+      },
       "WorldRecipeStep": {
         "properties": {
           "effect_class": {
@@ -33407,6 +33741,66 @@
           "credential_scheme": "bearer",
           "feature_profile": "core",
           "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/worlds/recipes/run": {
+      "post": {
+        "operationId": "worlds.recipes.run.post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorldRecipeRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorldRecipeRunResponse"
+                }
+              }
+            },
+            "description": "worlds.recipes.run.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "worlds.recipes.run.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "worlds.recipes.run.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 262144,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
           "trust_group": "portal"
         }
       }

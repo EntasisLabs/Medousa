@@ -56,6 +56,8 @@ EXPORTED_TYPES = [
     "BrowserPresentationFrame",
     "WorldTimelineResponse",
     "WorldRecipeDeriveResponse",
+    "WorldRecipeRunRequest",
+    "WorldRecipeRunResponse",
     "StartSessionCodeProjectRequest",
     "SessionCodeProjectResponse",
     "TurnTicketRecord",

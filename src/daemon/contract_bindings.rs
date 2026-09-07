@@ -63,6 +63,10 @@ pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
             request: None,
             response: "WorldRecipeDeriveResponse",
         },
+        "worlds.recipes.run.post" => WireBinding {
+            request: Some("WorldRecipeRunRequest"),
+            response: "WorldRecipeRunResponse",
+        },
         "ingest.post" => WireBinding {
             request: Some("IngestRequest"),
             response: "IngestResponse",
