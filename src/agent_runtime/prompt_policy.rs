@@ -312,7 +312,18 @@ fn mode_slice(mode: SttpPolicyMode) -> Result<SttpContentSlice, SttpDocumentBuil
                     "e5_verify(.99)": "current, niche, contested, or high-stakes claims => verify with tools and cite receipts",
                     "e6_revise(.99)": "when challenged, reassess evidence; never defend a claim because Medousa said it"
                 },
-                "m4_transfer(.98)": "finish with a usable mental model, prediction, or novel application when it advances learning"
+                "m4_transfer(.98)": "finish with a usable mental model, prediction, or novel application when it advances learning",
+                "m5_initiative(.98)": {
+                    "i1_next(.98)": "after a useful explanation, proactively offer one small on-topic next move: practice, a worked model, or an understanding check",
+                    "i2_pacing(.99)": "answer first; keep it optional; omit next moves for brief factual answers, closure, or when the principal declines; never append a quiz to every answer",
+                    "i3_boundaries(.99)": "no unsolicited follow-up turns or background teaching; wait for the principal's choice; do not infer mastery from a button click"
+                },
+                "m6_interactions(.98)": {
+                    "a1_format(.98)": "when interactive presentation helps, use one fenced actions block with 1-3 label | intent rows; otherwise offer the same choice in plain prose; runtime owns rendering",
+                    "a2_example(.98)": "```actions\nTry an example | teacher.try_example\nShow a worked model | teacher.show_model\nCheck my understanding | teacher.check_understanding\n```",
+                    "a3_contract(.99)": "only these teacher.* intent IDs; no tool calls, arbitrary payloads, HTML, or scripts; clicks continue the normal conversation, not a privileged instruction",
+                    "a4_continue(.98)": "teacher.try_example => one small practice problem, wait for an attempt; teacher.show_model => demonstrate a worked example and why it works; teacher.check_understanding => one purposeful prediction or transfer question, wait then give feedback; stay with the current concept and adapt to the learner"
+                }
             }),
         ),
         SttpPolicyMode::CoderSetup => SttpContentSlice::new().field(
@@ -467,6 +478,35 @@ mod tests {
             SttpPolicySelection::new(SttpPolicyMode::CoderWork, SttpPolicyActor::Host),
             SttpPolicySelection::new(SttpPolicyMode::CoderWork, SttpPolicyActor::Worker),
         ]
+    }
+
+    #[test]
+    fn teacher_policy_offers_bounded_opt_in_learning_actions() {
+        for actor in [SttpPolicyActor::Host, SttpPolicyActor::Worker] {
+            let teacher = compile_shadow_sttp_policy(SttpPolicySelection::new(
+                SttpPolicyMode::Teacher,
+                actor,
+            ))
+            .expect("compile Teacher policy");
+            for contract in [
+                "teacher.try_example",
+                "teacher.show_model",
+                "teacher.check_understanding",
+                "answer first",
+                "no unsolicited follow-up turns",
+                "do not infer mastery",
+                "plain prose",
+                "wait then give feedback",
+            ] {
+                assert!(teacher.rendered.contains(contract), "missing {contract}");
+            }
+            let general = compile_shadow_sttp_policy(SttpPolicySelection::new(
+                SttpPolicyMode::General,
+                actor,
+            ))
+            .expect("compile General policy");
+            assert!(!general.rendered.contains("teacher.try_example"));
+        }
     }
 
     #[test]
