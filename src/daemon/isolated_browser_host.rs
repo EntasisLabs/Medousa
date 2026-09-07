@@ -42,9 +42,13 @@ const MAX_URL_BYTES: usize = 8 * 1024;
 const MAX_ACTION_STEPS: usize = 16;
 const MAX_HUMAN_INPUT_TEXT_BYTES: usize = 32 * 1024;
 const MAX_SCREENSHOT_BYTES: usize = 12 * 1024 * 1024;
+/// Keeps the base64 JSON event below Home's 1 MiB native SSE frame ceiling.
+const MAX_PRESENTATION_SCREENSHOT_BYTES: usize = 700 * 1024;
 const MAX_WORLDS_PER_PROFILE: usize = 32;
 const MAX_CATALOG_WORLDS: usize = 256;
 const MAX_RUNNING_WORLDS: usize = 8;
+const RESTART_RECOVERY_FAILURE: &str =
+    "workshop restarted; resume this world to reopen its isolated profile";
 
 static GLOBAL_HOST: OnceLock<Arc<IsolatedBrowserHost>> = OnceLock::new();
 
@@ -267,6 +271,95 @@ pub struct IsolatedBrowserHost {
 }
 
 impl IsolatedBrowserHost {
+    /// Resolve ownership only inside an already-admitted exact world-tool
+    /// boundary. This lets a destination worker operate the selected world
+    /// without pretending to be the human profile that created it.
+    pub(crate) async fn authorized_world(
+        &self,
+        world_id: &str,
+    ) -> Result<IsolatedBrowserWorld, IsolatedBrowserError> {
+        let binding = crate::world_execution::require_active_world(
+            world_id,
+            WorldSurfaceKind::Browser,
+        )
+        .map_err(IsolatedBrowserError::Conflict)?;
+        let state = self.state.lock().await;
+        let world = state.worlds.get(world_id).cloned().ok_or_else(|| {
+            IsolatedBrowserError::NotFound("isolated browser world was not found".to_string())
+        })?;
+        if world.authority_id != binding.authority_id()
+            || world.driver.driver_id != *binding.driver_id()
+        {
+            return Err(IsolatedBrowserError::Conflict(
+                "selected world does not match its isolated browser runtime".to_string(),
+            ));
+        }
+        Ok(world)
+    }
+
+    /// Rehydrate an explicitly selected persistent world after a workshop
+    /// restart. This runs only inside an exact worker world boundary and never
+    /// borrows the human owner's principal. Paused, manually stopped, failed,
+    /// ephemeral, or human-controlled worlds remain operator decisions.
+    pub(crate) async fn prepare_authorized_persistent_world(
+        &self,
+        world_id: &str,
+    ) -> Result<(), IsolatedBrowserError> {
+        let binding = crate::world_execution::require_active_world(
+            world_id,
+            WorldSurfaceKind::Browser,
+        )
+        .map_err(IsolatedBrowserError::Conflict)?;
+        let _mutation = self.mutation.lock().await;
+        self.refresh_exited_processes().await;
+        let snapshot = {
+            let state = self.state.lock().await;
+            let world = state.worlds.get(world_id).cloned().ok_or_else(|| {
+                IsolatedBrowserError::NotFound(
+                    "isolated browser world was not found".to_string(),
+                )
+            })?;
+            if world.authority_id != binding.authority_id()
+                || world.driver.driver_id != *binding.driver_id()
+            {
+                return Err(IsolatedBrowserError::Conflict(
+                    "selected world does not match its isolated browser runtime".to_string(),
+                ));
+            }
+            world
+        };
+        if snapshot.run_state == IsolatedBrowserRunState::Running {
+            return Ok(());
+        }
+        if !restart_recoverable(&snapshot) {
+            return Err(IsolatedBrowserError::Conflict(
+                "persistent browser requires operator resume before this worker can act"
+                    .to_string(),
+            ));
+        }
+
+        ensure_authoritative_world(&snapshot)?;
+        {
+            let mut state = self.state.lock().await;
+            let world = state.worlds.get_mut(world_id).ok_or_else(|| {
+                IsolatedBrowserError::NotFound(
+                    "isolated browser world was not found".to_string(),
+                )
+            })?;
+            world.run_state = IsolatedBrowserRunState::Starting;
+            world.control_epoch = world.control_epoch.saturating_add(1);
+            world.failure = None;
+            world.updated_at_ms = now_ms();
+        }
+        self.persist().await?;
+        if let Err(error) = self.launch_world(world_id).await {
+            self.mark_failed(world_id, error.to_string()).await;
+            self.persist().await?;
+            return Err(error);
+        }
+        Ok(())
+    }
+
     pub async fn open(root: PathBuf) -> Result<Arc<Self>, IsolatedBrowserError> {
         tokio::fs::create_dir_all(root.join("worlds"))
             .await
@@ -322,10 +415,7 @@ impl IsolatedBrowserHost {
                     | IsolatedBrowserRunState::Paused
             ) {
                 world.run_state = IsolatedBrowserRunState::Stopped;
-                world.failure = Some(
-                    "workshop restarted; resume this world to reopen its isolated profile"
-                        .to_string(),
-                );
+                world.failure = Some(RESTART_RECOVERY_FAILURE.to_string());
                 world.tab_id = None;
                 world.updated_at_ms = now;
                 recovered = true;
@@ -561,6 +651,7 @@ impl IsolatedBrowserHost {
                 world.run_state = IsolatedBrowserRunState::Stopped;
                 world.control_epoch = world.control_epoch.saturating_add(1);
                 world.tab_id = None;
+                world.failure = None;
                 world.updated_at_ms = now_ms();
                 drop(state);
                 self.persist().await?;
@@ -829,8 +920,56 @@ impl IsolatedBrowserHost {
             tab_id,
             &observation,
             max_width.clamp(320, 1600),
+            ScreenshotEncoding::Png,
         )
         .await
+    }
+
+    /// Produce one atomic, bounded presentation frame only when the semantic
+    /// mirror advanced. The daemon owns both captures; Home never has to pair
+    /// two independently routed responses.
+    pub async fn presentation_frame(
+        &self,
+        owner_profile_id: &str,
+        world_id: &str,
+        since_revision: Option<u64>,
+        max_width: u32,
+    ) -> Result<Option<(BrowserObservation, BrowserScreenshotCapture)>, IsolatedBrowserError> {
+        let observation = self
+            .observe(owner_profile_id, world_id, since_revision, 64)
+            .await?;
+        if since_revision == Some(observation.revision) {
+            return Ok(None);
+        }
+
+        let (world, websocket_url, target_id) = self
+            .runtime_binding(owner_profile_id, world_id, false)
+            .await?;
+        let tab_id = world.tab_id.as_deref().ok_or_else(|| {
+            IsolatedBrowserError::Unavailable("isolated browser has no active page".to_string())
+        })?;
+        let mut width = max_width.clamp(320, 1280);
+        loop {
+            let screenshot = capture_screenshot(
+                &websocket_url,
+                &target_id,
+                tab_id,
+                &observation,
+                width,
+                ScreenshotEncoding::Jpeg { quality: 70 },
+            )
+            .await?;
+            if screenshot.byte_size <= MAX_PRESENTATION_SCREENSHOT_BYTES {
+                return Ok(Some((observation, screenshot)));
+            }
+            if width == 320 {
+                return Err(IsolatedBrowserError::Driver(format!(
+                    "browser presentation frame exceeds {} bytes at minimum width",
+                    MAX_PRESENTATION_SCREENSHOT_BYTES
+                )));
+            }
+            width = (width.saturating_mul(3) / 4).max(320);
+        }
     }
 
     pub async fn screenshot_for_driver(
@@ -1355,6 +1494,13 @@ fn ensure_authoritative_world(world: &IsolatedBrowserWorld) -> Result<(), Isolat
         ));
     }
     Ok(())
+}
+
+fn restart_recoverable(world: &IsolatedBrowserWorld) -> bool {
+    matches!(world.profile, IsolatedBrowserProfile::Persistent { .. })
+        && world.run_state == IsolatedBrowserRunState::Stopped
+        && world.control == BrowserControl::Agent
+        && world.failure.as_deref() == Some(RESTART_RECOVERY_FAILURE)
 }
 
 fn isolated_driver_registration(
@@ -2132,12 +2278,19 @@ fn observation_script(max_nodes: usize) -> String {
     )
 }
 
+#[derive(Clone, Copy)]
+enum ScreenshotEncoding {
+    Png,
+    Jpeg { quality: u8 },
+}
+
 async fn capture_screenshot(
     websocket_url: &str,
     target_id: &str,
     tab_id: &str,
     observation: &BrowserObservation,
     max_width: u32,
+    encoding: ScreenshotEncoding,
 ) -> Result<BrowserScreenshotCapture, IsolatedBrowserError> {
     let (mut connection, session_id) = connect_page(websocket_url, target_id).await?;
     let context_id = isolated_execution_context(&mut connection, &session_id).await?;
@@ -2153,22 +2306,30 @@ async fn capture_screenshot(
     let width = observation.viewport.width.max(1);
     let height = observation.viewport.height.max(1);
     let scale = (max_width as f64 / width as f64).min(1.0);
+    let (format, mime, quality) = match encoding {
+        ScreenshotEncoding::Png => ("png", "image/png", None),
+        ScreenshotEncoding::Jpeg { quality } => ("jpeg", "image/jpeg", Some(quality)),
+    };
+    let mut parameters = json!({
+        "format": format,
+        "fromSurface": true,
+        "captureBeyondViewport": false,
+        "clip": {
+            "x": observation.viewport.scroll_x.max(0),
+            "y": observation.viewport.scroll_y.max(0),
+            "width": width,
+            "height": height,
+            "scale": scale,
+        },
+    });
+    if let Some(quality) = quality {
+        parameters["quality"] = json!(quality);
+    }
     let captured = connection
         .call(
             Some(&session_id),
             "Page.captureScreenshot",
-            json!({
-                "format": "png",
-                "fromSurface": true,
-                "captureBeyondViewport": false,
-                "clip": {
-                    "x": observation.viewport.scroll_x.max(0),
-                    "y": observation.viewport.scroll_y.max(0),
-                    "width": width,
-                    "height": height,
-                    "scale": scale,
-                },
-            }),
+            parameters,
         )
         .await;
     let _ = evaluate(
@@ -2211,7 +2372,7 @@ async fn capture_screenshot(
         observation_revision: observation.revision,
         viewport: observation.viewport.clone(),
         coordinate_frame: "css_viewport".to_string(),
-        mime: "image/png".to_string(),
+        mime: mime.to_string(),
         image_width,
         image_height,
         byte_size: bytes.len(),
@@ -2909,6 +3070,14 @@ mod tests {
         assert_eq!(recovered.control_epoch, 1);
         assert!(recovered.tab_id.is_none());
         assert!(recovered.failure.as_deref().unwrap().contains("restarted"));
+        assert!(restart_recoverable(&recovered));
+
+        let mut manually_stopped = recovered.clone();
+        manually_stopped.failure = None;
+        assert!(!restart_recoverable(&manually_stopped));
+        let mut ephemeral = recovered;
+        ephemeral.profile = IsolatedBrowserProfile::Ephemeral;
+        assert!(!restart_recoverable(&ephemeral));
 
         let _ = tokio::fs::remove_dir_all(root).await;
     }
@@ -2985,13 +3154,16 @@ mod tests {
         )
         .unwrap();
         let action_admission = crate::world_authority::admit_browser_action(
-            &authority,
-            world.driver.driver_id.as_str(),
-            &world.tab_group_id,
-            world.tab_id.as_deref().unwrap(),
-            "isolated-smoke-action",
-            "type a name and save",
-            medousa_world::WorldEffectClass::LocalMutation,
+            crate::world_authority::BrowserWorldActionRequest {
+                authority_id: &authority,
+                driver_id: world.driver.driver_id.as_str(),
+                tab_group_id: &world.tab_group_id,
+                tab_id: world.tab_id.as_deref().unwrap(),
+                trace_id: "isolated-smoke-action",
+                summary: "type a name and save",
+                effect_class: medousa_world::WorldEffectClass::LocalMutation,
+                recipe_hint: None,
+            },
         )
         .unwrap();
         let action = host

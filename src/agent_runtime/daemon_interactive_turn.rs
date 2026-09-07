@@ -1360,6 +1360,9 @@ async fn run_agent_turn_inner(
         .as_deref()
         .and_then(super::execution_context::TurnExecutionContext::bot_identity)
         .map(super::execution_context::BotTurnIdentity::prompt_appendix);
+    let world_prompt_appendix = active_execution
+        .as_deref()
+        .and_then(|execution| execution.legacy_scope().world_prompt_appendix());
     let mode_selection = crate::agent_mode_state::resolve_for_turn_with_fallback(
         &session_id,
         request.agent_mode,
@@ -2050,6 +2053,7 @@ async fn run_agent_turn_inner(
         manuscript_id,
         additional_manuscript_ids,
         bot_profile_appendix: bot_profile_appendix.as_deref(),
+        world_prompt_appendix: world_prompt_appendix.as_deref(),
         suggested_capability_ids,
         voice_preset_id: request
             .voice_preset_id

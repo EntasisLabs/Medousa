@@ -554,6 +554,16 @@
           "updated_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "world_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BotWorldBinding"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -606,6 +616,250 @@
           "secondary"
         ],
         "type": "string"
+      },
+      "BotWorldBinding": {
+        "description": "Explicit durable world selected by the Bot owner.",
+        "properties": {
+          "execution_runtime_id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/BotWorldBindingKind"
+          },
+          "world_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "execution_runtime_id",
+          "kind",
+          "world_id"
+        ],
+        "type": "object"
+      },
+      "BotWorldBindingKind": {
+        "description": "Durable world shape currently supported by Bot continuity.\n\nThis deliberately excludes attached human browser and desktop worlds. A Bot may retain only a daemon-owned isolated browser profile whose runtime can re-establish authority after a restart.",
+        "enum": [
+          "persistent_browser"
+        ],
+        "type": "string"
+      },
+      "BrowserPresentationFrame": {
+        "description": "Atomic presentation update. Keeping the semantic fence and pixels in one event prevents Home from pairing an observation with a different frame.",
+        "properties": {
+          "observation": {
+            "$ref": "#/components/schemas/BrowserPresentationObservation"
+          },
+          "schema_version": {
+            "format": "uint16",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "screenshot": {
+            "$ref": "#/components/schemas/BrowserPresentationScreenshot"
+          },
+          "world_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "observation",
+          "schema_version",
+          "screenshot",
+          "world_id"
+        ],
+        "title": "BrowserPresentationFrame",
+        "type": "object"
+      },
+      "BrowserPresentationObservation": {
+        "description": "The action fence Home needs from the daemon's semantic mirror. Raw DOM and accessibility nodes remain on the owning workshop.",
+        "properties": {
+          "base_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "captured_at_ms": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "document_id": {
+            "type": "string"
+          },
+          "full": {
+            "type": "boolean"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "schema_version": {
+            "format": "uint16",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "tab_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "untrusted_content": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport": {
+            "$ref": "#/components/schemas/BrowserPresentationViewport"
+          }
+        },
+        "required": [
+          "captured_at_ms",
+          "document_id",
+          "full",
+          "revision",
+          "schema_version",
+          "tab_id",
+          "title",
+          "truncated",
+          "untrusted_content",
+          "url",
+          "viewport"
+        ],
+        "type": "object"
+      },
+      "BrowserPresentationScreenshot": {
+        "description": "One redacted, size-capped viewport artifact paired to its observation.",
+        "properties": {
+          "byte_size": {
+            "format": "uint",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "captured_at_ms": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "coordinate_frame": {
+            "type": "string"
+          },
+          "document_id": {
+            "type": "string"
+          },
+          "image_base64": {
+            "type": "string"
+          },
+          "image_height": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "image_width": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "observation_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "schema_version": {
+            "format": "uint16",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "sensitive_regions_redacted": {
+            "format": "uint",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "tab_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "untrusted_content": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport": {
+            "$ref": "#/components/schemas/BrowserPresentationViewport"
+          }
+        },
+        "required": [
+          "byte_size",
+          "captured_at_ms",
+          "coordinate_frame",
+          "document_id",
+          "image_base64",
+          "image_height",
+          "image_width",
+          "mime",
+          "observation_revision",
+          "schema_version",
+          "sensitive_regions_redacted",
+          "sha256",
+          "tab_id",
+          "title",
+          "untrusted_content",
+          "url",
+          "viewport"
+        ],
+        "type": "object"
+      },
+      "BrowserPresentationViewport": {
+        "properties": {
+          "device_scale_factor": {
+            "format": "double",
+            "type": "number"
+          },
+          "height": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "scroll_x": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "scroll_y": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "width": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "device_scale_factor",
+          "height",
+          "scroll_x",
+          "scroll_y",
+          "width"
+        ],
+        "type": "object"
       },
       "CalendarAlarm": {
         "description": "Display alarm relative to event start (VALARM projection).",
@@ -1899,6 +2153,17 @@
               "string",
               "null"
             ]
+          },
+          "world_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BotWorldBinding"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Opt-in durable world continuity. Omission grants no world."
           }
         },
         "required": [
@@ -7115,6 +7380,13 @@
               "null"
             ]
           },
+          "selected_worlds": {
+            "description": "Exact worlds selected by the user for this turn. The daemon validates, bounds, and freezes these bindings before any model or worker runs.",
+            "items": {
+              "$ref": "#/components/schemas/TurnWorldSelection"
+            },
+            "type": "array"
+          },
           "supports_browser_host": {
             "default": false,
             "description": "When true, the connected client can run Agent Browser (local BrowserHost or client WebView). Telegram/TUI/ingest leave this false; Home desktop/iOS set true when browser is available.",
@@ -7140,6 +7412,22 @@
         },
         "type": "object"
       },
+      "TurnWorldSelection": {
+        "description": "One user-selected world and the workshop that currently owns it.\n\nClients carry placement only to the daemon admission boundary. Agent and worker prompts receive the opaque `world_id` alone; driver and transport details never enter model-authored requests.",
+        "properties": {
+          "execution_runtime_id": {
+            "type": "string"
+          },
+          "world_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "execution_runtime_id",
+          "world_id"
+        ],
+        "type": "object"
+      },
       "UiPresentation": {
         "enum": [
           "inline",
@@ -7161,6 +7449,10 @@
               "string",
               "null"
             ]
+          },
+          "clear_world_binding": {
+            "description": "Explicitly clear durable continuity. This cannot be combined with `world_binding`.",
+            "type": "boolean"
           },
           "default_mode": {
             "anyOf": [
@@ -7188,6 +7480,17 @@
               "string",
               "null"
             ]
+          },
+          "world_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BotWorldBinding"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set or replace durable world continuity. Omission preserves the current binding for compatibility with clients predating schema v2."
           }
         },
         "required": [
@@ -8070,6 +8373,910 @@
           "workspace_revision"
         ],
         "title": "WorkspaceStreamEvent",
+        "type": "object"
+      },
+      "WorldEvidenceRecord": {
+        "description": "Durable, payload-free evidence promoted from a high-value world event.\n\nRaw page text, action values, selectors, coordinates, screenshots, driver errors, and reusable authority are deliberately absent. The causal ledger remains the source of the human-readable summary for the referenced event.",
+        "properties": {
+          "action_elapsed_ms": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "authority_id": {
+            "type": "string"
+          },
+          "checkpoint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorldTimelineCheckpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "driver_id": {
+            "type": "string"
+          },
+          "durability_latency_us": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "effect_class": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "evidence_id": {
+            "type": "string"
+          },
+          "intent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ledger_sequence": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "ownership": {
+            "type": "string"
+          },
+          "principal_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "principal_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "promoted_at_ms": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "recovery": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorldTimelineRecovery"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resource_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schema_version": {
+            "format": "uint16",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "surface": {
+            "type": "string"
+          },
+          "trace_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "world_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "authority_id",
+          "driver_id",
+          "event_type",
+          "evidence_id",
+          "ledger_sequence",
+          "ownership",
+          "promoted_at_ms",
+          "reasons",
+          "schema_version",
+          "surface",
+          "world_id"
+        ],
+        "type": "object"
+      },
+      "WorldEvidenceResponse": {
+        "properties": {
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/WorldEvidenceRecord"
+            },
+            "type": "array"
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "next_sequence": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "evidence",
+          "has_more",
+          "next_sequence"
+        ],
+        "title": "WorldEvidenceResponse",
+        "type": "object"
+      },
+      "WorldRecipe": {
+        "description": "A recipe is reviewable guidance, never a reusable action permit.",
+        "properties": {
+          "automatic_dispatch_allowed": {
+            "type": "boolean"
+          },
+          "carries_authority": {
+            "type": "boolean"
+          },
+          "execution_model": {
+            "type": "string"
+          },
+          "recipe_id": {
+            "type": "string"
+          },
+          "schema_version": {
+            "format": "uint16",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "source_end_sequence": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "source_start_sequence": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "source_trace_id": {
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/WorldRecipeStep"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "automatic_dispatch_allowed",
+          "carries_authority",
+          "execution_model",
+          "recipe_id",
+          "schema_version",
+          "source_end_sequence",
+          "source_start_sequence",
+          "source_trace_id",
+          "steps"
+        ],
+        "type": "object"
+      },
+      "WorldRecipeDeriveResponse": {
+        "properties": {
+          "recipe": {
+            "$ref": "#/components/schemas/WorldRecipe"
+          }
+        },
+        "required": [
+          "recipe"
+        ],
+        "title": "WorldRecipeDeriveResponse",
+        "type": "object"
+      },
+      "WorldRecipeInputKind": {
+        "enum": [
+          "text",
+          "selection",
+          "key",
+          "scroll_delta",
+          "wait_duration"
+        ],
+        "type": "string"
+      },
+      "WorldRecipeOperation": {
+        "description": "A semantic operation template. Values, selectors, coordinates, handles, permits, and grants are deliberately absent and must be resolved afresh.",
+        "properties": {
+          "input_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorldRecipeInputKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requires_operator_confirmation": {
+            "type": "boolean"
+          },
+          "target_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verb": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "requires_operator_confirmation",
+          "verb"
+        ],
+        "type": "object"
+      },
+      "WorldRecipeRunConfirmation": {
+        "description": "Explicit confirmation for one operation whose source or freshly resolved target requires operator review.",
+        "properties": {
+          "operation_index": {
+            "description": "Zero-based operation index within the recipe step.",
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "step_ordinal": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "operation_index",
+          "step_ordinal"
+        ],
+        "type": "object"
+      },
+      "WorldRecipeRunInput": {
+        "properties": {
+          "input": {
+            "$ref": "#/components/schemas/WorldRecipeRunInputValue"
+          },
+          "operation_index": {
+            "description": "Zero-based operation index within the recipe step.",
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "step_ordinal": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "input",
+          "operation_index",
+          "step_ordinal"
+        ],
+        "type": "object"
+      },
+      "WorldRecipeRunInputValue": {
+        "description": "Fresh operator-provided material for one semantic operation. These values are never copied into a recipe, receipt, timeline summary, or run response.",
+        "oneOf": [
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "text"
+                ],
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "text"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "selection"
+                ],
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "value"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "key"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "delta_y": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "kind": {
+                "enum": [
+                  "scroll_delta"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "delta_y",
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "wait_duration"
+                ],
+                "type": "string"
+              },
+              "milliseconds": {
+                "format": "uint64",
+                "minimum": 0.0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "milliseconds"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "WorldRecipeRunRequest": {
+        "description": "Execute a server-derived recipe as a new governed run. The daemon re-derives `recipe_id` from `source_trace_id`; callers cannot submit an arbitrary action template. `run_id` is a durable idempotency boundary.",
+        "properties": {
+          "confirmations": {
+            "items": {
+              "$ref": "#/components/schemas/WorldRecipeRunConfirmation"
+            },
+            "type": "array"
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/WorldRecipeRunInput"
+            },
+            "type": "array"
+          },
+          "operator_approved": {
+            "type": "boolean"
+          },
+          "recipe_id": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "source_trace_id": {
+            "type": "string"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/WorldRecipeRunTarget"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "operator_approved",
+          "recipe_id",
+          "run_id",
+          "source_trace_id",
+          "targets"
+        ],
+        "title": "WorldRecipeRunRequest",
+        "type": "object"
+      },
+      "WorldRecipeRunResponse": {
+        "properties": {
+          "completed_steps": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "recipe_id": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "schema_version": {
+            "format": "uint16",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WorldRecipeRunStatus"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/WorldRecipeRunStepResult"
+            },
+            "type": "array"
+          },
+          "stop": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorldRecipeRunStop"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "completed_steps",
+          "recipe_id",
+          "run_id",
+          "schema_version",
+          "status",
+          "steps",
+          "trace_id"
+        ],
+        "title": "WorldRecipeRunResponse",
+        "type": "object"
+      },
+      "WorldRecipeRunStatus": {
+        "enum": [
+          "completed",
+          "stopped"
+        ],
+        "type": "string"
+      },
+      "WorldRecipeRunStepResult": {
+        "description": "One successfully acknowledged replay step. This intentionally contains no fresh input values or driver-native target handles.",
+        "properties": {
+          "committed_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "completion_sequence": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "intent_id": {
+            "type": "string"
+          },
+          "operation_count": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "step_ordinal": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "surface": {
+            "type": "string"
+          },
+          "world_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "committed_revision",
+          "completion_sequence",
+          "intent_id",
+          "operation_count",
+          "step_ordinal",
+          "surface",
+          "world_id"
+        ],
+        "type": "object"
+      },
+      "WorldRecipeRunStop": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "effect_may_have_applied": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "step_ordinal": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "effect_may_have_applied",
+          "reason",
+          "step_ordinal"
+        ],
+        "type": "object"
+      },
+      "WorldRecipeRunTarget": {
+        "description": "Bind one source recipe step to an exact live world. World ids remain opaque; the destination daemon resolves them against its own registered drivers.",
+        "properties": {
+          "step_ordinal": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "world_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "step_ordinal",
+          "world_id"
+        ],
+        "type": "object"
+      },
+      "WorldRecipeStep": {
+        "properties": {
+          "effect_class": {
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/WorldRecipeOperation"
+            },
+            "type": "array"
+          },
+          "ordinal": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "requires_fresh_admission": {
+            "type": "boolean"
+          },
+          "requires_fresh_observation": {
+            "type": "boolean"
+          },
+          "requires_operator_confirmation": {
+            "type": "boolean"
+          },
+          "source_admission_sequence": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "source_completion_sequence": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "source_intent_id": {
+            "type": "string"
+          },
+          "surface": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "effect_class",
+          "operations",
+          "ordinal",
+          "requires_fresh_admission",
+          "requires_fresh_observation",
+          "requires_operator_confirmation",
+          "source_admission_sequence",
+          "source_completion_sequence",
+          "source_intent_id",
+          "surface"
+        ],
+        "type": "object"
+      },
+      "WorldTimelineCheckpoint": {
+        "properties": {
+          "admitted_at_ms": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "control_generation": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "permit_expires_at_ms": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "surface": {
+            "type": "string"
+          },
+          "world_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "admitted_at_ms",
+          "permit_expires_at_ms",
+          "surface",
+          "world_revision"
+        ],
+        "type": "object"
+      },
+      "WorldTimelineCompensation": {
+        "properties": {
+          "automatic_dispatch_allowed": {
+            "type": "boolean"
+          },
+          "requires_new_intent": {
+            "type": "boolean"
+          },
+          "strategy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "automatic_dispatch_allowed",
+          "requires_new_intent",
+          "strategy"
+        ],
+        "type": "object"
+      },
+      "WorldTimelineEvent": {
+        "description": "One bounded, secret-free event in the workshop daemon's cross-world ledger.",
+        "properties": {
+          "authority_id": {
+            "type": "string"
+          },
+          "checkpoint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorldTimelineCheckpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "driver_id": {
+            "type": "string"
+          },
+          "effect_class": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "intent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "occurred_at_ms": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "ownership": {
+            "type": "string"
+          },
+          "principal_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "principal_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recorded_at_ms": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "recovery": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorldTimelineRecovery"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resource_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schema_version": {
+            "format": "uint16",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "sequence": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "surface": {
+            "type": "string"
+          },
+          "trace_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "world_id": {
+            "type": "string"
+          },
+          "world_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "authority_id",
+          "driver_id",
+          "event_type",
+          "occurred_at_ms",
+          "ownership",
+          "recorded_at_ms",
+          "schema_version",
+          "sequence",
+          "surface",
+          "world_id",
+          "world_revision"
+        ],
+        "type": "object"
+      },
+      "WorldTimelineRecovery": {
+        "properties": {
+          "compensation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorldTimelineCompensation"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Absent only when reading a legacy durable record that predated an explicit compensation boundary."
+          },
+          "requires_fresh_admission": {
+            "type": "boolean"
+          },
+          "strategy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "requires_fresh_admission",
+          "strategy"
+        ],
+        "type": "object"
+      },
+      "WorldTimelineResponse": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/WorldTimelineEvent"
+            },
+            "type": "array"
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "next_sequence": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "events",
+          "has_more",
+          "next_sequence"
+        ],
+        "title": "WorldTimelineResponse",
         "type": "object"
       }
     }
@@ -11277,6 +12484,77 @@
         }
       }
     },
+    "/v1/browser/worlds/isolated/{world_id}/presentation": {
+      "get": {
+        "operationId": "browser.worlds.isolated.by_world_id.presentation.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "world_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "itemSchema": {
+                  "$ref": "#/components/schemas/BrowserPresentationFrame"
+                },
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.presentation.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.presentation.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "browser.worlds.isolated.by_world_id.presentation.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "stream",
+          "trust_group": "portal"
+        },
+        "x-medousa-stream": {
+          "heartbeatComments": true,
+          "itemSchema": {
+            "$ref": "#/components/schemas/BrowserPresentationFrame"
+          },
+          "lastEventId": false,
+          "replay": false,
+          "transport": "sse"
+        }
+      }
+    },
     "/v1/browser/worlds/isolated/{world_id}/screenshot": {
       "post": {
         "operationId": "browser.worlds.isolated.by_world_id.screenshot.post",
@@ -13389,6 +14667,357 @@
           "credential_scheme": "bearer",
           "feature_profile": "core",
           "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/computer/drivers": {
+      "get": {
+        "operationId": "computer.drivers.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "COMPUTER_DRIVERS_GETResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "computer.drivers.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "computer.drivers.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "computer.drivers.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/computer/drivers/{driver_id}/act": {
+      "post": {
+        "operationId": "computer.drivers.by_driver_id.act.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "driver_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "COMPUTER_DRIVERS_BY_DRIVER_ID_ACT_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "computer.drivers.by_driver_id.act.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "computer.drivers.by_driver_id.act.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "computer.drivers.by_driver_id.act.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/computer/drivers/{driver_id}/control": {
+      "post": {
+        "operationId": "computer.drivers.by_driver_id.control.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "driver_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "COMPUTER_DRIVERS_BY_DRIVER_ID_CONTROL_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "computer.drivers.by_driver_id.control.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "computer.drivers.by_driver_id.control.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "computer.drivers.by_driver_id.control.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/computer/drivers/{driver_id}/observe": {
+      "post": {
+        "operationId": "computer.drivers.by_driver_id.observe.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "driver_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "COMPUTER_DRIVERS_BY_DRIVER_ID_OBSERVE_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "computer.drivers.by_driver_id.observe.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "computer.drivers.by_driver_id.observe.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "computer.drivers.by_driver_id.observe.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/computer/drivers/{driver_id}/preflight": {
+      "get": {
+        "operationId": "computer.drivers.by_driver_id.preflight.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "driver_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "COMPUTER_DRIVERS_BY_DRIVER_ID_PREFLIGHT_GETResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "computer.drivers.by_driver_id.preflight.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "computer.drivers.by_driver_id.preflight.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "computer.drivers.by_driver_id.preflight.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/computer/drivers/{driver_id}/watch": {
+      "post": {
+        "operationId": "computer.drivers.by_driver_id.watch.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "driver_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "COMPUTER_DRIVERS_BY_DRIVER_ID_WATCH_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "computer.drivers.by_driver_id.watch.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "computer.drivers.by_driver_id.watch.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "computer.drivers.by_driver_id.watch.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
           "trust_group": "portal"
         }
       }
@@ -32250,6 +33879,216 @@
           "body_limit": 1024,
           "bootstrap_public": false,
           "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/worlds/evidence": {
+      "get": {
+        "operationId": "worlds.evidence.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorldEvidenceResponse"
+                }
+              }
+            },
+            "description": "worlds.evidence.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "worlds.evidence.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "worlds.evidence.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/worlds/recipes/derive": {
+      "get": {
+        "operationId": "worlds.recipes.derive.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorldRecipeDeriveResponse"
+                }
+              }
+            },
+            "description": "worlds.recipes.derive.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "worlds.recipes.derive.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "worlds.recipes.derive.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/worlds/recipes/run": {
+      "post": {
+        "operationId": "worlds.recipes.run.post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorldRecipeRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorldRecipeRunResponse"
+                }
+              }
+            },
+            "description": "worlds.recipes.run.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "worlds.recipes.run.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "worlds.recipes.run.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 262144,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/worlds/timeline": {
+      "get": {
+        "operationId": "worlds.timeline.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorldTimelineResponse"
+                }
+              }
+            },
+            "description": "worlds.timeline.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "worlds.timeline.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "worlds.timeline.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "exact_origin",
           "capabilities": [
             "workshop.read"
           ],

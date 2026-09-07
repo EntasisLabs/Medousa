@@ -41,6 +41,11 @@ impl CognitionBrowserSnapshotTool {
     }
 
     async fn browser_enabled(&self) -> bool {
+        if crate::world_execution::active_world_for(medousa_world::WorldSurfaceKind::Browser)
+            .is_some()
+        {
+            return true;
+        }
         let scope =
             crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
                 .await;
@@ -564,6 +569,17 @@ impl CognitionBrowserSnapshotTool {
         let scope =
             crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
                 .await;
+        let active_world = crate::world_execution::active_world_for(
+            medousa_world::WorldSurfaceKind::Browser,
+        );
+        let selected_driver_id = active_world
+            .as_ref()
+            .map(|binding| binding.driver_id().as_str().to_string())
+            .or_else(|| {
+                scope
+                    .as_ref()
+                    .and_then(|scope| scope.browser_driver_id.clone())
+            });
         let trace_id = scope
             .as_ref()
             .map(|scope| scope.turn_correlation_id.as_str())
@@ -575,21 +591,31 @@ impl CognitionBrowserSnapshotTool {
             .filter(|session_id| !session_id.trim().is_empty());
 
         #[cfg(feature = "full-daemon")]
-        if let Some(driver_id) = scope
-            .as_ref()
-            .and_then(|scope| scope.browser_driver_id.as_deref())
+        if let Some(driver_id) = selected_driver_id
+            .as_deref()
             .filter(|driver_id| crate::browser_tools::is_isolated_browser_driver_id(driver_id))
         {
-            let owner_profile_id = scope
-                .as_ref()
-                .and_then(|scope| scope.identity_user_id.as_deref())
-                .map(str::to_string)
-                .unwrap_or_else(crate::user_profiles::resolve_workshop_identity_user_id);
             let host = crate::daemon::isolated_browser_host::global_host().ok_or_else(|| {
                 StasisError::PortFailure(format!(
                     "{COGNITION_BROWSER_SNAPSHOT}: isolated browser host is unavailable"
                 ))
             })?;
+            let owner_profile_id = if let Some(binding) = active_world.as_ref() {
+                host.authorized_world(binding.world_id().as_str())
+                    .await
+                    .map_err(|error| {
+                        StasisError::PortFailure(format!(
+                            "{COGNITION_BROWSER_SNAPSHOT}: {error}"
+                        ))
+                    })?
+                    .owner_profile_id
+            } else {
+                scope
+                    .as_ref()
+                    .and_then(|scope| scope.identity_user_id.as_deref())
+                    .map(str::to_string)
+                    .unwrap_or_else(crate::user_profiles::resolve_workshop_identity_user_id)
+            };
             let isolated_context = host
                 .observation_context_for_driver(&owner_profile_id, driver_id)
                 .await
@@ -598,6 +624,19 @@ impl CognitionBrowserSnapshotTool {
                         "{COGNITION_BROWSER_SNAPSHOT}: {error}"
                     ))
                 })?;
+            if let Some(binding) = active_world.as_ref() {
+                crate::world_authority::validate_browser_world_binding(
+                    binding.world_id().as_str(),
+                    binding.authority_id(),
+                    &isolated_context.driver_id,
+                    &isolated_context.tab_group_id,
+                )
+                .map_err(|error| {
+                    StasisError::PortFailure(format!(
+                        "{COGNITION_BROWSER_SNAPSHOT}: {error}"
+                    ))
+                })?;
+            }
             if !same_browser_url(&isolated_context.url, &url) {
                 return Err(StasisError::PortFailure(format!(
                     "{COGNITION_BROWSER_SNAPSHOT}: selected isolated browser is at {}; navigate that world explicitly before observing {}",
@@ -730,9 +769,8 @@ impl CognitionBrowserSnapshotTool {
             });
         }
         #[cfg(not(feature = "full-daemon"))]
-        if scope
-            .as_ref()
-            .and_then(|scope| scope.browser_driver_id.as_deref())
+        if selected_driver_id
+            .as_deref()
             .is_some_and(crate::browser_tools::is_isolated_browser_driver_id)
         {
             return Err(StasisError::PortFailure(format!(
@@ -744,14 +782,25 @@ impl CognitionBrowserSnapshotTool {
             if let Ok(context) = browser_host_current_context().await
                 && same_browser_url(&context.url, &url)
             {
-                if let Some(selected_driver_id) = scope
-                    .as_ref()
-                    .and_then(|scope| scope.browser_driver_id.as_deref())
+                if let Some(selected_driver_id) = selected_driver_id.as_deref()
                     && selected_driver_id != context.driver_id
                 {
                     return Err(StasisError::PortFailure(format!(
                         "{COGNITION_BROWSER_SNAPSHOT}: selected browser driver is no longer attached"
                     )));
+                }
+                if let Some(binding) = active_world.as_ref() {
+                    crate::world_authority::validate_browser_world_binding(
+                        binding.world_id().as_str(),
+                        binding.authority_id(),
+                        &context.driver_id,
+                        &context.tab_group_id,
+                    )
+                    .map_err(|error| {
+                        StasisError::PortFailure(format!(
+                            "{COGNITION_BROWSER_SNAPSHOT}: {error}"
+                        ))
+                    })?;
                 }
                 let authority_id = crate::workshop_authority::current()
                     .map_err(StasisError::PortFailure)?
@@ -870,6 +919,22 @@ impl CognitionBrowserSnapshotTool {
                     "{COGNITION_BROWSER_SNAPSHOT}: screenshot capture is limited to the current shared browser tab"
                 )));
             }
+            if let Some(binding) = active_world.as_ref() {
+                let context = browser_host_current_context()
+                    .await
+                    .map_err(StasisError::PortFailure)?;
+                crate::world_authority::validate_browser_world_binding(
+                    binding.world_id().as_str(),
+                    binding.authority_id(),
+                    &context.driver_id,
+                    &context.tab_group_id,
+                )
+                .map_err(|error| {
+                    StasisError::PortFailure(format!(
+                        "{COGNITION_BROWSER_SNAPSHOT}: {error}"
+                    ))
+                })?;
+            }
             let fetched = browser_host_fetch(&url, max_chars)
                 .await
                 .map_err(StasisError::PortFailure)?;
@@ -887,6 +952,12 @@ impl CognitionBrowserSnapshotTool {
         if capture_screenshot {
             return Err(StasisError::PortFailure(format!(
                 "{COGNITION_BROWSER_SNAPSHOT}: screenshot capture requires a healthy shared BrowserHost"
+            )));
+        }
+
+        if active_world.is_some() {
+            return Err(StasisError::PortFailure(format!(
+                "{COGNITION_BROWSER_SNAPSHOT}: selected browser world is not attached to this destination"
             )));
         }
 

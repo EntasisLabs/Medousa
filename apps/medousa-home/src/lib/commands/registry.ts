@@ -688,6 +688,7 @@ export function buildAskCommands(): WorkshopCommand[] {
           stageRouting: opts.stageRouting,
           channelSurface: opts.channelSurface,
           browserDriverId: opts.browserDriverId,
+          selectedWorlds: opts.selectedWorlds,
           identityUserId: opts.identityUserId,
         });
         ctx.chat.beginTurn(text, accepted, [], opts.identityUserId);

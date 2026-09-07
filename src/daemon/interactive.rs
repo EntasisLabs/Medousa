@@ -27,6 +27,28 @@ use axum::response::Response;
 
 use crate::daemon::state::AppState;
 
+fn apply_bot_world_continuity(
+    surface: &mut Option<medousa_types::TurnSurfaceContext>,
+    binding: Option<&medousa_types::BotWorldBinding>,
+) -> Result<(), String> {
+    let Some(binding) = binding else {
+        return Ok(());
+    };
+    let surface = surface.get_or_insert_with(medousa_types::TurnSurfaceContext::default);
+    // An explicit per-turn user selection wins without mutating the durable
+    // Bot preference. Omission is the only path that inherits continuity.
+    if !surface.selected_worlds.is_empty() {
+        return Ok(());
+    }
+    surface.selected_worlds = crate::turn_scope::normalize_turn_world_selections(vec![
+        medousa_types::TurnWorldSelection {
+            world_id: binding.world_id.clone(),
+            execution_runtime_id: binding.execution_runtime_id.clone(),
+        },
+    ])?;
+    Ok(())
+}
+
 fn ticket_record_from_ticket(ticket: &crate::turn_ticket::TurnTicket) -> TurnTicketRecord {
     TurnTicketRecord {
         turn_id: ticket.turn_id.clone(),
@@ -86,6 +108,12 @@ pub async fn spawn_turn_ticket(
 ) -> Result<TurnTicketResponse, (StatusCode, String)> {
     let session_id = crate::session_storage::SessionId::parse(&interactive_request.session_id)
         .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    if let Some(surface) = interactive_request.surface.as_mut() {
+        surface.selected_worlds = crate::turn_scope::normalize_turn_world_selections(
+            std::mem::take(&mut surface.selected_worlds),
+        )
+        .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
+    }
     let principal_profile_id = principal
         .profile_id()
         .map(str::to_string)
@@ -132,6 +160,16 @@ pub async fn spawn_turn_ticket(
         interactive_request.additional_manuscript_ids =
             (!bot.additional_manuscript_ids.is_empty())
                 .then(|| bot.additional_manuscript_ids.clone());
+        apply_bot_world_continuity(
+            &mut interactive_request.surface,
+            bot.world_binding.as_ref(),
+        )
+        .map_err(|error| {
+            (
+                StatusCode::CONFLICT,
+                format!("Bot '{}' has invalid world continuity: {error}", bot.display_name),
+            )
+        })?;
         Some(
             crate::agent_runtime::execution_context::BotTurnIdentity::from_profile(bot),
         )
@@ -171,6 +209,11 @@ pub async fn spawn_turn_ticket(
             .surface
             .as_ref()
             .and_then(|surface| surface.browser_driver_id.clone()),
+        selected_worlds: interactive_request
+            .surface
+            .as_ref()
+            .map(|surface| surface.selected_worlds.clone())
+            .unwrap_or_default(),
         channel_surface: interactive_request
             .surface
             .as_ref()
@@ -685,4 +728,44 @@ pub async fn interactive_turn_stream(
         &headers,
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use medousa_types::{
+        BotWorldBinding, BotWorldBindingKind, TurnSurfaceContext, TurnWorldSelection,
+    };
+
+    fn binding() -> BotWorldBinding {
+        BotWorldBinding {
+            kind: BotWorldBindingKind::PersistentBrowser,
+            world_id: "world:browser:remote:persistent".to_string(),
+            execution_runtime_id: "runtime-remote".to_string(),
+        }
+    }
+
+    #[test]
+    fn bot_world_continuity_fills_only_an_omitted_turn_selection() {
+        let mut surface = None;
+        apply_bot_world_continuity(&mut surface, Some(&binding())).unwrap();
+        assert_eq!(
+            surface.unwrap().selected_worlds,
+            vec![TurnWorldSelection {
+                world_id: "world:browser:remote:persistent".to_string(),
+                execution_runtime_id: "runtime-remote".to_string(),
+            }]
+        );
+
+        let explicit = TurnWorldSelection {
+            world_id: "world:browser:local:one-turn".to_string(),
+            execution_runtime_id: "runtime-local".to_string(),
+        };
+        let mut surface = Some(TurnSurfaceContext {
+            selected_worlds: vec![explicit.clone()],
+            ..TurnSurfaceContext::default()
+        });
+        apply_bot_world_continuity(&mut surface, Some(&binding())).unwrap();
+        assert_eq!(surface.unwrap().selected_worlds, vec![explicit]);
+    }
 }

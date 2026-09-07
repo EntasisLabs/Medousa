@@ -27,8 +27,11 @@ pub fn execution_tool_domain(tool_name: &str) -> &'static str {
     match tool_name {
         "cognition_turn" => "turn",
         name if name.starts_with("cognition_utility_") => "utility",
-        name if name.starts_with("cognition_web_") || name.starts_with("cognition_browser_") => {
-            "web"
+        name if name.starts_with("cognition_web_") => "web",
+        name if name.starts_with("cognition_browser_")
+            || name.starts_with("cognition_computer_") =>
+        {
+            "world"
         }
         name if name.starts_with("cognition_coder_shell_")
             || name.starts_with("cognition_shell_session_") =>
@@ -314,6 +317,10 @@ pub struct TaskExecutionGrant {
     pub requested_tool_names: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub effective_tool_names: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requested_world_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effective_world_ids: Vec<String>,
     pub network_policy: PeerNetworkPolicy,
     pub issued_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
@@ -373,6 +380,7 @@ pub struct AssistantWorkAdmission<'a> {
     pub project_id: Option<&'a str>,
     pub requested_tool_domains: &'a [&'a str],
     pub requested_tool_names: &'a [&'a str],
+    pub requested_world_ids: &'a [&'a str],
     pub request_expires_at: DateTime<Utc>,
     pub legacy_task_request_granted: bool,
 }
@@ -708,6 +716,8 @@ impl PeerExecutionPolicyStore {
                     .iter()
                     .map(|value| (*value).to_string())
                     .collect(),
+                requested_world_ids: Vec::new(),
+                effective_world_ids: Vec::new(),
                 network_policy: admission.requested_network_policy,
                 issued_at: admission.request_issued_at,
                 expires_at,
@@ -774,6 +784,46 @@ impl PeerExecutionPolicyStore {
                         .iter()
                         .all(|secret_ref| policy.allowed_secret_refs.contains(secret_ref))
                     && network_policy_permits(policy.network_policy, grant.network_policy))))
+    }
+
+    /// Revalidate the destination-issued authority for one governed-world
+    /// operation. The signed task grant is immutable provenance; current
+    /// destination policy can still stop the next browser/computer boundary.
+    pub fn world_grant_is_active(&self, grant: &TaskExecutionGrant) -> Result<bool> {
+        if grant.schema_version != TASK_EXECUTION_GRANT_SCHEMA_VERSION
+            || grant.expires_at <= Utc::now()
+            || grant.policy_source != PeerExecutionPolicySource::Stored
+            || grant.effective_world_ids.is_empty()
+            || !grant
+                .effective_tool_domains
+                .iter()
+                .any(|domain| domain == "world")
+            || crate::turn_scope::validate_world_ids(&grant.effective_world_ids).is_err()
+        {
+            return Ok(false);
+        }
+        let view = self.policy_for_peer(&grant.peer_device_id, &grant.peer_pairing_id, false)?;
+        let policy = view.policy;
+        let workload_allowed = if grant.worker_intent.eq_ignore_ascii_case("coder") {
+            policy.coder_work
+                && grant
+                    .project_id
+                    .as_ref()
+                    .is_some_and(|project_id| policy.allowed_project_ids.contains(project_id))
+        } else {
+            policy.assistant_work
+        };
+        Ok(view.source == PeerExecutionPolicySource::Stored
+            && policy.enabled
+            && !policy.is_expired_at(Utc::now())
+            && workload_allowed
+            && policy.allowed_tool_domains.contains("turn")
+            && policy.allowed_tool_domains.contains("world")
+            && grant
+                .effective_tool_names
+                .iter()
+                .filter(|name| execution_tool_domain(name) == "world")
+                .all(|name| grant.requested_tool_names.contains(name)))
     }
 
     pub fn remove_policy(
@@ -1044,6 +1094,17 @@ fn evaluate_assistant_work(
         .filter(|name| effective.contains(execution_tool_domain(name.as_str())))
         .cloned()
         .collect::<Vec<_>>();
+    let requested_world_ids = admission
+        .requested_world_ids
+        .iter()
+        .map(|world_id| (*world_id).to_string())
+        .collect::<Vec<_>>();
+    if crate::turn_scope::validate_world_ids(&requested_world_ids).is_err()
+        || (!requested_world_ids.is_empty() && !effective.contains("world"))
+    {
+        return Err(PeerExecutionDenialReason::ToolDomainDenied);
+    }
+    let effective_world_ids = requested_world_ids.clone();
     let expires_at = policy
         .expires_at
         .map(|policy_expiry| policy_expiry.min(admission.request_expires_at))
@@ -1071,6 +1132,8 @@ fn evaluate_assistant_work(
         effective_tool_domains: effective.into_iter().collect(),
         requested_tool_names: requested_tool_names.into_iter().collect(),
         effective_tool_names,
+        requested_world_ids,
+        effective_world_ids,
         network_policy: policy.network_policy,
         issued_at: now,
         expires_at,
@@ -1206,6 +1269,7 @@ mod tests {
             project_id: None,
             requested_tool_domains: &SAFE_ASSISTANT_TOOL_DOMAINS,
             requested_tool_names: &TEST_ASSISTANT_TOOL_NAMES,
+            requested_world_ids: &[],
             request_expires_at: Utc::now() + chrono::Duration::minutes(5),
             legacy_task_request_granted: false,
         }
@@ -1229,6 +1293,7 @@ mod tests {
             project_id: Some(project),
             requested_tool_domains: &TEST_CODER_TOOL_DOMAINS,
             requested_tool_names: &TEST_CODER_TOOL_NAMES,
+            requested_world_ids: &[],
             request_expires_at: Utc::now() + chrono::Duration::minutes(5),
             legacy_task_request_granted: false,
         }
@@ -1556,5 +1621,77 @@ mod tests {
 
         policy.enabled = false;
         assert!(policy.advertised_execution_capabilities(now).is_empty());
+    }
+
+    #[test]
+    fn governed_world_tools_require_the_explicit_world_domain() {
+        assert_eq!(execution_tool_domain("cognition_web_search"), "web");
+        assert_eq!(execution_tool_domain("cognition_browser_snapshot"), "world");
+        assert_eq!(execution_tool_domain("cognition_computer_act"), "world");
+
+        let (store, root) = test_store();
+        store
+            .update_policy(
+                "peer-a",
+                "pairing-1",
+                PeerExecutionPolicyUpdate {
+                    preset: PeerExecutionPolicyPreset::Custom,
+                    assistant_work: Some(true),
+                    allowed_tool_domains: Some(BTreeSet::from([
+                        "turn".to_string(),
+                        "world".to_string(),
+                    ])),
+                    ..Default::default()
+                },
+                "local:operator",
+            )
+            .expect("save world policy");
+        let requested_domains = ["turn", "world"];
+        let requested_tools = ["cognition_turn", "cognition_computer_snapshot"];
+        let requested_world_ids = ["world:computer:test"];
+        let grant = store
+            .admit_assistant_work(AssistantWorkAdmission {
+                peer_device_id: "peer-a",
+                peer_pairing_id: "pairing-1",
+                origin_runtime_id: "runtime-peer",
+                destination_runtime_id: "runtime-local",
+                parent_session_id: "session-1",
+                bot_id: None,
+                work_id: "work-world",
+                correlation_id: "correlation-world",
+                worker_intent: "research",
+                project_id: None,
+                requested_tool_domains: &requested_domains,
+                requested_tool_names: &requested_tools,
+                requested_world_ids: &requested_world_ids,
+                request_expires_at: Utc::now() + chrono::Duration::minutes(5),
+                legacy_task_request_granted: false,
+            })
+            .expect("evaluate world policy")
+            .expect("admit world tools");
+        assert!(grant.effective_tool_domains.contains(&"world".to_string()));
+        assert_eq!(grant.effective_world_ids, ["world:computer:test"]);
+        assert!(
+            grant
+                .effective_tool_names
+                .contains(&"cognition_computer_snapshot".to_string())
+        );
+        assert!(store.world_grant_is_active(&grant).unwrap());
+
+        store
+            .update_policy(
+                "peer-a",
+                "pairing-1",
+                PeerExecutionPolicyUpdate {
+                    preset: PeerExecutionPolicyPreset::Custom,
+                    assistant_work: Some(true),
+                    allowed_tool_domains: Some(BTreeSet::from(["turn".to_string()])),
+                    ..Default::default()
+                },
+                "local:operator",
+            )
+            .expect("revoke world domain");
+        assert!(!store.world_grant_is_active(&grant).unwrap());
+        let _ = std::fs::remove_dir_all(root);
     }
 }

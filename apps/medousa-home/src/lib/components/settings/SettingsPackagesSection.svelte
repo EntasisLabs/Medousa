@@ -116,8 +116,8 @@
   <div>
     <h2 class="text-sm font-semibold text-surface-100">Packages</h2>
     <p class="workshop-faint mt-1 text-xs">
-      Home already has the engine. Add what you need here — offline brain and channel adapters.
-      MCP lives under Settings → MCP.
+      Medousa already has the engine. Add optional workshop capabilities here — computer control,
+      coding, offline brain, and channels. MCP lives under Settings → MCP.
     </p>
 
     {#if loading}

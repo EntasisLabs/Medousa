@@ -20,6 +20,7 @@ pub mod browser_sessions;
 pub mod browser_snapshot_tools;
 pub mod browser_tools;
 pub mod world_authority;
+pub mod world_execution;
 pub mod bot_profiles;
 pub mod calendar;
 pub mod calendar_api;

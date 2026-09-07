@@ -46,6 +46,10 @@ pub struct MeshApiState {
     pub local_device_id: String,
     pub execution_policies: Arc<PeerExecutionPolicyStore>,
     pub delegated_task_executor: Option<Arc<dyn super::task::DelegatedTaskExecutor>>,
+    /// Mechanical world drivers colocated with this destination. The signed
+    /// target probe exposes them only through the caller's directional policy.
+    pub computer_drivers: Arc<crate::computer_driver::ComputerDriverBroker>,
+    pub isolated_browser_available: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -739,8 +743,16 @@ async fn describe_execution_target(
         .map_err(internal)?
         .policy;
     let now = chrono::Utc::now();
-    let capabilities = policy.advertised_execution_capabilities(now);
-    let user_selectable = capabilities.contains("assistant.work");
+    let mut capabilities = policy.advertised_execution_capabilities(now);
+    let user_selectable =
+        capabilities.contains("assistant.work") || capabilities.contains("coder.work");
+    if user_selectable && policy.allowed_tool_domains.contains("world") {
+        let computer_drivers = state.computer_drivers.registrations().await;
+        capabilities.extend(crate::workshop_contract::world_driver_execution_capabilities(
+            &computer_drivers,
+            state.isolated_browser_available,
+        ));
+    }
     let response = ExecutionTargetProbeResponse {
         schema_version: EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION,
         target: ExecutionTargetInventoryEntry {
@@ -1037,7 +1049,7 @@ fn resolve_task_execution_grant(
         })
         .map(|deadline| deadline.min(envelope_expires_at))
         .unwrap_or(envelope_expires_at);
-    let (worker_intent, bot_id, project_id, requested_tool_names) =
+    let (worker_intent, bot_id, project_id, requested_tool_names, requested_world_ids) =
         request.worker.as_ref().map_or_else(
             || {
                 (
@@ -1048,6 +1060,7 @@ fn resolve_task_execution_grant(
                         .iter()
                         .map(|name| (*name).to_string())
                         .collect::<Vec<_>>(),
+                    Vec::new(),
                 )
             },
             |worker| {
@@ -1059,20 +1072,28 @@ fn resolve_task_execution_grant(
                         .as_ref()
                         .map(|project| project.repo_id.as_str()),
                     worker.tools.names.clone(),
+                    worker.world_ids.clone(),
                 )
             },
         );
-    let requested_tool_domain_values = requested_tool_names
+    let mut requested_tool_domain_values = requested_tool_names
         .iter()
         .map(|name| execution_tool_domain(name).to_string())
-        .collect::<std::collections::BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
+        .collect::<std::collections::BTreeSet<_>>();
+    if !requested_world_ids.is_empty() {
+        requested_tool_domain_values.insert("world".to_string());
+    }
+    let requested_tool_domain_values =
+        requested_tool_domain_values.into_iter().collect::<Vec<_>>();
     let requested_tool_domains = requested_tool_domain_values
         .iter()
         .map(String::as_str)
         .collect::<Vec<_>>();
     let requested_tool_name_refs = requested_tool_names
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    let requested_world_id_refs = requested_world_ids
         .iter()
         .map(String::as_str)
         .collect::<Vec<_>>();
@@ -1091,6 +1112,7 @@ fn resolve_task_execution_grant(
             project_id,
             requested_tool_domains: &requested_tool_domains,
             requested_tool_names: &requested_tool_name_refs,
+            requested_world_ids: &requested_world_id_refs,
             request_expires_at,
             legacy_task_request_granted,
         })

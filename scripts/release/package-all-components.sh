@@ -26,7 +26,8 @@ Options:
   -h, --help            Show this help
 
 Packages engine (launcher+daemon+cli+tui), each adapter, mcp-gateway,
-coding-engine (medousa-code), and shell-session (medousa-session).
+coding-engine (medousa-code), shell-session (medousa-session), and
+computer-driver (medousa-computer).
 There is no medousa-v* / engine-suite archive.
 EOF
 }

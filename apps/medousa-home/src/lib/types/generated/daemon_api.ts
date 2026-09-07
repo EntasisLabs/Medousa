@@ -328,10 +328,16 @@ export interface StageRoutingMatrix {
   verifier: StageRoute;
 }
 
+export interface TurnWorldSelection {
+  execution_runtime_id: string;
+  world_id: string;
+}
+
 export interface TurnSurfaceContext {
   browser_driver_id?: string | null;
   channel_id?: string | null;
   channel_surface?: string | null;
+  selected_worlds?: TurnWorldSelection[];
   supports_browser_host?: boolean;
   supports_liquid_markdown?: boolean;
   supports_ui_artifacts?: boolean;
@@ -549,6 +555,14 @@ export type BotId = string;
 
 export type BotSessionKind = "primary" | "secondary";
 
+export type BotWorldBindingKind = "persistent_browser";
+
+export interface BotWorldBinding {
+  execution_runtime_id: string;
+  kind: BotWorldBindingKind;
+  world_id: string;
+}
+
 export interface BotProfile {
   additional_manuscript_ids?: string[];
   archived?: boolean;
@@ -565,6 +579,7 @@ export interface BotProfile {
   role_description?: string | null;
   schema_version: number;
   updated_at: string;
+  world_binding?: BotWorldBinding | null;
 }
 
 export interface BotSessionBinding {
@@ -582,16 +597,19 @@ export interface CreateBotRequest {
   display_name: string;
   primary_manuscript_id: string;
   role_description?: string | null;
+  world_binding?: BotWorldBinding | null;
 }
 
 export interface UpdateBotRequest {
   additional_manuscript_ids?: string[];
   avatar_ref?: string | null;
+  clear_world_binding?: boolean;
   default_mode?: AgentModeId | null;
   display_name: string;
   expected_revision: number;
   primary_manuscript_id: string;
   role_description?: string | null;
+  world_binding?: BotWorldBinding | null;
 }
 
 export interface DuplicateBotRequest {
@@ -621,6 +639,234 @@ export interface SessionBotResponse {
   binding?: BotSessionBinding | null;
   bot?: BotProfile | null;
   session_id: string;
+}
+
+export interface BrowserPresentationViewport {
+  device_scale_factor: number;
+  height: number;
+  scroll_x: number;
+  scroll_y: number;
+  width: number;
+}
+
+export interface BrowserPresentationObservation {
+  base_revision?: number | null;
+  captured_at_ms: number;
+  document_id: string;
+  full: boolean;
+  revision: number;
+  schema_version: number;
+  tab_id: string;
+  title: string;
+  truncated: boolean;
+  untrusted_content: boolean;
+  url: string;
+  viewport: BrowserPresentationViewport;
+}
+
+export interface BrowserPresentationScreenshot {
+  byte_size: number;
+  captured_at_ms: number;
+  coordinate_frame: string;
+  document_id: string;
+  image_base64: string;
+  image_height: number;
+  image_width: number;
+  mime: string;
+  observation_revision: number;
+  schema_version: number;
+  sensitive_regions_redacted: number;
+  sha256: string;
+  tab_id: string;
+  title: string;
+  untrusted_content: boolean;
+  url: string;
+  viewport: BrowserPresentationViewport;
+}
+
+export interface BrowserPresentationFrame {
+  observation: BrowserPresentationObservation;
+  schema_version: number;
+  screenshot: BrowserPresentationScreenshot;
+  world_id: string;
+}
+
+export interface WorldTimelineCheckpoint {
+  admitted_at_ms: number;
+  control_generation?: number | null;
+  permit_expires_at_ms: number;
+  surface: string;
+  world_revision: number;
+}
+
+export interface WorldTimelineCompensation {
+  automatic_dispatch_allowed: boolean;
+  requires_new_intent: boolean;
+  strategy: string;
+}
+
+export interface WorldTimelineRecovery {
+  compensation?: WorldTimelineCompensation | null;
+  requires_fresh_admission: boolean;
+  strategy: string;
+}
+
+export interface WorldTimelineEvent {
+  authority_id: string;
+  checkpoint?: WorldTimelineCheckpoint | null;
+  driver_id: string;
+  effect_class?: string | null;
+  event_type: string;
+  intent_id?: string | null;
+  occurred_at_ms: number;
+  ownership: string;
+  principal_id?: string | null;
+  principal_kind?: string | null;
+  recorded_at_ms: number;
+  recovery?: WorldTimelineRecovery | null;
+  resource_id?: string | null;
+  schema_version: number;
+  sequence: number;
+  status?: string | null;
+  summary?: string | null;
+  surface: string;
+  trace_id?: string | null;
+  world_id: string;
+  world_revision: number;
+}
+
+export interface WorldTimelineResponse {
+  events: WorldTimelineEvent[];
+  has_more: boolean;
+  next_sequence: number;
+}
+
+export interface WorldEvidenceRecord {
+  action_elapsed_ms?: number | null;
+  authority_id: string;
+  checkpoint?: WorldTimelineCheckpoint | null;
+  driver_id: string;
+  durability_latency_us?: number | null;
+  effect_class?: string | null;
+  event_type: string;
+  evidence_id: string;
+  intent_id?: string | null;
+  ledger_sequence: number;
+  ownership: string;
+  principal_id?: string | null;
+  principal_kind?: string | null;
+  promoted_at_ms: number;
+  reasons: string[];
+  recovery?: WorldTimelineRecovery | null;
+  resource_id?: string | null;
+  schema_version: number;
+  status?: string | null;
+  surface: string;
+  trace_id?: string | null;
+  world_id: string;
+}
+
+export interface WorldEvidenceResponse {
+  evidence: WorldEvidenceRecord[];
+  has_more: boolean;
+  next_sequence: number;
+}
+
+export type WorldRecipeInputKind = "text" | "selection" | "key" | "scroll_delta" | "wait_duration";
+
+export interface WorldRecipeOperation {
+  input_kind?: WorldRecipeInputKind | null;
+  requires_operator_confirmation: boolean;
+  target_name?: string | null;
+  target_role?: string | null;
+  verb: string;
+}
+
+export interface WorldRecipeStep {
+  effect_class: string;
+  operations: WorldRecipeOperation[];
+  ordinal: number;
+  requires_fresh_admission: boolean;
+  requires_fresh_observation: boolean;
+  requires_operator_confirmation: boolean;
+  source_admission_sequence: number;
+  source_completion_sequence: number;
+  source_intent_id: string;
+  surface: string;
+}
+
+export interface WorldRecipe {
+  automatic_dispatch_allowed: boolean;
+  carries_authority: boolean;
+  execution_model: string;
+  recipe_id: string;
+  schema_version: number;
+  source_end_sequence: number;
+  source_start_sequence: number;
+  source_trace_id: string;
+  steps: WorldRecipeStep[];
+}
+
+export interface WorldRecipeDeriveResponse {
+  recipe: WorldRecipe;
+}
+
+export interface WorldRecipeRunConfirmation {
+  operation_index: number;
+  step_ordinal: number;
+}
+
+export type WorldRecipeRunInputValue = { kind: "text"; text: string } | { kind: "selection"; value: string } | { key: string; kind: "key" } | { delta_y: number; kind: "scroll_delta" } | { kind: "wait_duration"; milliseconds: number };
+
+export interface WorldRecipeRunInput {
+  input: WorldRecipeRunInputValue;
+  operation_index: number;
+  step_ordinal: number;
+}
+
+export interface WorldRecipeRunTarget {
+  step_ordinal: number;
+  world_id: string;
+}
+
+export interface WorldRecipeRunRequest {
+  confirmations?: WorldRecipeRunConfirmation[];
+  inputs?: WorldRecipeRunInput[];
+  operator_approved: boolean;
+  recipe_id: string;
+  run_id: string;
+  source_trace_id: string;
+  targets: WorldRecipeRunTarget[];
+}
+
+export type WorldRecipeRunStatus = "completed" | "stopped";
+
+export interface WorldRecipeRunStepResult {
+  committed_revision: number;
+  completion_sequence: number;
+  intent_id: string;
+  operation_count: number;
+  step_ordinal: number;
+  surface: string;
+  world_id: string;
+}
+
+export interface WorldRecipeRunStop {
+  code: string;
+  effect_may_have_applied: boolean;
+  reason: string;
+  step_ordinal: number;
+}
+
+export interface WorldRecipeRunResponse {
+  completed_steps: number;
+  recipe_id: string;
+  run_id: string;
+  schema_version: number;
+  status: WorldRecipeRunStatus;
+  steps: WorldRecipeRunStepResult[];
+  stop?: WorldRecipeRunStop | null;
+  trace_id: string;
 }
 
 export type CodeProjectSource = "blank" | "repository";

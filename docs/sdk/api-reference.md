@@ -44,6 +44,22 @@ this generic HTTP client rather than a dedicated typed SDK accessor. See the
 [Forge engine guide](../engine/forge.md) and the
 [HTTP route index](../engine/http-api.md#forge-undertakings).
 
+Native computer-driver discovery, observation, and semantic actions also
+use this generic client for now. Call `GET /v1/computer/drivers`, preflight the
+selected driver, then pass the returned `preflight.session_id` to its `observe`
+route. An action must echo the observation generation, revision, and element
+reference from that latest snapshot, and the node must advertise that action.
+Supported semantics are press, focus, set value, show menu, increment,
+decrement, and scroll to visible. `set_value` alone takes a bounded `value`.
+Set `allow_high_risk=true` only when the operator explicitly requested an
+action on a target classified as sensitive or effectful. The daemon derives the
+governed desktop resource, rejects stale or disabled targets, consumes the
+snapshot fence before dispatch, and never retries an ambiguous action. Observe
+again before the next mutation. Native clients may use `watch` for one bounded,
+redacted focused-window frame and `control` to take or return a generation-fenced
+human lease; neither route talks to the sidecar directly.
+See [Native computer drivers](../engine/http-api.md#native-computer-drivers).
+
 Daemon delegation uses the generated native-only operation
 `mesh.tasks.post`. Application clients should not construct it directly: the
 daemon owns Stasis turn identity, bounded context, retries, and provenance,
@@ -56,6 +72,28 @@ The model-facing workshop tools return a source-owned `work_id` immediately;
 status and cancellation address that same durable ticket. Completion rejoins
 the initiating session through the daemon's chronological worker handoff and
 synthesis events, not through an application-client polling contract.
+
+---
+
+## Governed-world review
+
+Generated operation ids `worlds.timeline.get`, `worlds.evidence.get`,
+`worlds.recipes.derive.get`, and `worlds.recipes.run.post` expose the
+authenticated causal review and governed execution surface. Until dedicated
+accessors land, use `http().get_query(...)` or `http().post(...)` with the
+generated path template. `WorldEvidenceResponse` is a bounded metadata-only
+projection of failures and sensitive effects; consult the timeline sequence it
+references for the separately redacted summary. Recipe derivation returns
+`WorldRecipeDeriveResponse` only for a fully confirmed trace. Its operations
+are semantic templates and carry neither action values nor reusable world
+authority.
+
+`WorldRecipeRunRequest` binds that server-derived identity to exact destination
+worlds, a durable run id, explicit operator approval, fresh per-operation
+inputs, and any required confirmations. `WorldRecipeRunResponse` returns only
+confirmed step provenance or a typed stop; it never returns supplied values or
+resolved driver refs. Every step re-observes, resolves exact semantics, and
+obtains fresh admission at the destination.
 
 ---
 
@@ -311,6 +349,12 @@ not persist the returned user code or attempt to obtain daemon token material.
 ---
 
 ## `runtime()`
+
+The generated `execution_targets.get` operation returns the sanitized target
+inventory. Capability values beginning with `world.browser.` or
+`world.computer.` describe destination-local driver mechanics; callers must
+not treat them as grants. Signed peer inventory is already filtered by the
+destination's current execution policy.
 
 | Method | HTTP | Types |
 |--------|------|-------|

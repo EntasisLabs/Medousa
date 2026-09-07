@@ -7,7 +7,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::authority_id::IdentifierError;
 use crate::daemon_api::AgentModeId;
 
-pub const BOT_PROFILE_SCHEMA_VERSION: u32 = 1;
+pub const BOT_PROFILE_SCHEMA_VERSION: u32 = 2;
 
 /// Stable daemon-issued identity for one durable Bot profile.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -90,6 +90,27 @@ pub enum BotSessionKind {
     Secondary,
 }
 
+/// Durable world shape currently supported by Bot continuity.
+///
+/// This deliberately excludes attached human browser and desktop worlds. A
+/// Bot may retain only a daemon-owned isolated browser profile whose runtime
+/// can re-establish authority after a restart.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum BotWorldBindingKind {
+    PersistentBrowser,
+}
+
+/// Explicit durable world selected by the Bot owner.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct BotWorldBinding {
+    pub kind: BotWorldBindingKind,
+    pub world_id: String,
+    pub execution_runtime_id: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct BotProfile {
@@ -109,6 +130,8 @@ pub struct BotProfile {
     pub default_mode: Option<AgentModeId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub primary_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub world_binding: Option<BotWorldBinding>,
     #[serde(default)]
     pub archived: bool,
     pub revision: u64,
@@ -139,6 +162,9 @@ pub struct CreateBotRequest {
     pub additional_manuscript_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_mode: Option<AgentModeId>,
+    /// Opt-in durable world continuity. Omission grants no world.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub world_binding: Option<BotWorldBinding>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -155,6 +181,14 @@ pub struct UpdateBotRequest {
     pub additional_manuscript_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_mode: Option<AgentModeId>,
+    /// Set or replace durable world continuity. Omission preserves the current
+    /// binding for compatibility with clients predating schema v2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub world_binding: Option<BotWorldBinding>,
+    /// Explicitly clear durable continuity. This cannot be combined with
+    /// `world_binding`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub clear_world_binding: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]

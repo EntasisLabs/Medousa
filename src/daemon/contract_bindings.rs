@@ -20,6 +20,9 @@ pub(crate) fn stream_binding(operation_id: &str) -> Option<(StreamTransport, &'s
         | "agents.sessions.by_agent_session_id.stream.get"
         | "ingest.by_stream_id.stream.get" => Some((StreamTransport::Sse, "TurnStreamEnvelopeV2")),
         "feeds.stream.get" => Some((StreamTransport::Sse, "FeedStreamEvent")),
+        "browser.worlds.isolated.by_world_id.presentation.get" => {
+            Some((StreamTransport::Sse, "BrowserPresentationFrame"))
+        }
         "environment.spec.stream.get" => Some((StreamTransport::Sse, "EnvironmentStreamEvent")),
         "workspace.stream.get" => Some((StreamTransport::Sse, "WorkspaceStreamEvent")),
         "local.models.download.by_job_id.events.get" => {
@@ -51,6 +54,22 @@ pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
         "health.get" => WireBinding {
             request: None,
             response: "HealthResponse",
+        },
+        "worlds.timeline.get" => WireBinding {
+            request: None,
+            response: "WorldTimelineResponse",
+        },
+        "worlds.evidence.get" => WireBinding {
+            request: None,
+            response: "WorldEvidenceResponse",
+        },
+        "worlds.recipes.derive.get" => WireBinding {
+            request: None,
+            response: "WorldRecipeDeriveResponse",
+        },
+        "worlds.recipes.run.post" => WireBinding {
+            request: Some("WorldRecipeRunRequest"),
+            response: "WorldRecipeRunResponse",
         },
         "ingest.post" => WireBinding {
             request: Some("IngestRequest"),

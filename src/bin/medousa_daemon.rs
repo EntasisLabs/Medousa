@@ -474,12 +474,35 @@ async fn start_daemon() -> Result<()> {
     let default_runtime_config = session_mapping::IngestSessionRuntimeConfig::from_saved_defaults();
     let retention_config = medousa::session_retention::SessionRetentionConfig::from_env();
 
+    let (world_authority, recovered_world_actions) =
+        medousa::world_authority::enable_shared_world_timeline()
+            .map_err(|error| anyhow::anyhow!("open world causal timeline: {error}"))?;
+    if recovered_world_actions > 0 {
+        tracing::warn!(
+            recovered_world_actions,
+            "marked interrupted world actions for reconciliation"
+        );
+    }
     let isolated_browser =
         medousa::daemon::isolated_browser_host::IsolatedBrowserHost::open_default()
             .await
             .context("open daemon-owned isolated browser host")?;
     medousa::daemon::isolated_browser_host::register_global_host(isolated_browser.clone())
         .map_err(|error| anyhow::anyhow!("register daemon-owned isolated browser host: {error}"))?;
+    let computer_drivers = Arc::new(medousa::computer_driver::ComputerDriverBroker::new(
+        world_authority.clone(),
+    ));
+    medousa::daemon::computer_driver_host::register_global_computer_broker(
+        computer_drivers.clone(),
+    )
+    .map_err(|error| anyhow::anyhow!("register native computer broker: {error}"))?;
+    match medousa::daemon::computer_driver_host::register_native_computer_driver(&computer_drivers)
+        .await
+    {
+        Ok(Some(driver_id)) => tracing::info!(%driver_id, "registered native computer driver"),
+        Ok(None) => tracing::debug!("native computer driver is not installed for this workshop"),
+        Err(error) => tracing::warn!(%error, "native computer driver is unavailable"),
+    }
 
     let forge_execution = Arc::new(medousa_forge::execution::ForgeExecutionService::new());
     let mut forge = medousa::daemon::forge_host::open_forge()?;
@@ -629,6 +652,8 @@ async fn start_daemon() -> Result<()> {
         last_storage_maintenance_at: Arc::new(RwLock::new(None)),
         last_context_usage_by_session: Arc::new(RwLock::new(HashMap::new())),
         client_registry: platform.client_registry(),
+        world_authority,
+        computer_drivers,
         isolated_browser,
         forge,
         forge_execution,
@@ -965,6 +990,8 @@ async fn start_daemon() -> Result<()> {
         .merge(medousa::daemon::detamu_host::world_surface())
         .merge(medousa::daemon::forge_api::forge_surface())
         .merge(medousa::browser_handlers::browser_surface())
+        .merge(medousa::computer_handlers::computer_surface())
+        .merge(medousa::world_handlers::world_timeline_surface())
         .with_state(state.clone());
     declared = declared.merge(medousa::local_credential_handlers::surface().with_state(
         medousa::local_credential_handlers::LocalCredentialApiState {
@@ -1004,6 +1031,8 @@ async fn start_daemon() -> Result<()> {
                 10,
             ),
         )),
+        computer_drivers: state.computer_drivers.clone(),
+        isolated_browser_available: true,
     };
     declared = declared
         .merge(medousa::workspace_handlers::workspace_surface().with_state(

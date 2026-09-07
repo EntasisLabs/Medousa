@@ -139,6 +139,7 @@ mod tests {
             supports_liquid_markdown: false,
             supports_browser_host: false,
             browser_driver_id: None,
+            selected_worlds: Vec::new(),
             channel_surface: None,
         };
         let profile = medousa_types::BotProfile {
@@ -156,6 +157,7 @@ mod tests {
             memory_scope_id: "bot_0123456789abcdef0123456789abcdef".to_string(),
             default_mode: None,
             primary_session_id: Some(session.to_string()),
+            world_binding: None,
             archived: false,
             revision: 4,
             created_at: chrono::Utc::now(),

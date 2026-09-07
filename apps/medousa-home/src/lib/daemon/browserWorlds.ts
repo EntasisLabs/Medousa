@@ -1,4 +1,12 @@
 import { daemonUnary } from "./contractClient";
+import { getDaemonUrl } from "./client";
+import {
+  openDaemonEventStream,
+  type DaemonEventConnection,
+  type DaemonStreamFailure,
+} from "./daemonEventStream";
+import { operationPath } from "./opPath";
+import type { BrowserPresentationFrame } from "$lib/types/generated/daemon_api";
 
 export type BrowserWorldRunState = "starting" | "running" | "paused" | "stopped" | "failed";
 export type BrowserWorldControl = "agent" | "user" | "awaiting_operator";
@@ -84,9 +92,14 @@ export type BrowserHumanInput =
 
 type WorldResponse = { ok: boolean; world: IsolatedBrowserWorld };
 
-export async function listIsolatedBrowserWorlds(): Promise<IsolatedBrowserWorld[]> {
+export async function listIsolatedBrowserWorlds(
+  executionRuntimeId?: string | null,
+): Promise<IsolatedBrowserWorld[]> {
   const response = await daemonUnary<{ ok: boolean; worlds: IsolatedBrowserWorld[] }>(
     "browser.worlds.isolated.get",
+    {},
+    undefined,
+    executionRuntimeId,
   );
   return response.worlds ?? [];
 }
@@ -95,7 +108,7 @@ export async function createIsolatedBrowserWorld(input?: {
   displayName?: string;
   profile?: BrowserWorldProfile;
   initialUrl?: string;
-}): Promise<IsolatedBrowserWorld> {
+}, executionRuntimeId?: string | null): Promise<IsolatedBrowserWorld> {
   const response = await daemonUnary<WorldResponse>(
     "browser.worlds.isolated.post",
     {},
@@ -105,14 +118,20 @@ export async function createIsolatedBrowserWorld(input?: {
       initial_url: input?.initialUrl ?? "about:blank",
       headless: true,
     },
+    executionRuntimeId,
   );
   return response.world;
 }
 
-export async function getIsolatedBrowserWorld(worldId: string): Promise<IsolatedBrowserWorld> {
+export async function getIsolatedBrowserWorld(
+  worldId: string,
+  executionRuntimeId?: string | null,
+): Promise<IsolatedBrowserWorld> {
   const response = await daemonUnary<WorldResponse>(
     "browser.worlds.isolated.by_world_id.get",
     { world_id: worldId },
+    undefined,
+    executionRuntimeId,
   );
   return response.world;
 }
@@ -127,11 +146,13 @@ export async function setIsolatedBrowserWorldLifecycle(
     | "attach_view"
     | "detach_view"
     | "stop",
+  executionRuntimeId?: string | null,
 ): Promise<IsolatedBrowserWorld> {
   const response = await daemonUnary<WorldResponse>(
     "browser.worlds.isolated.by_world_id.lifecycle.post",
     { world_id: worldId },
     { action },
+    executionRuntimeId,
   );
   return response.world;
 }
@@ -139,11 +160,13 @@ export async function setIsolatedBrowserWorldLifecycle(
 export async function navigateIsolatedBrowserWorld(
   worldId: string,
   url: string,
+  executionRuntimeId?: string | null,
 ): Promise<IsolatedBrowserWorld> {
   const response = await daemonUnary<WorldResponse>(
     "browser.worlds.isolated.by_world_id.navigate.post",
     { world_id: worldId },
     { url },
+    executionRuntimeId,
   );
   return response.world;
 }
@@ -151,11 +174,13 @@ export async function navigateIsolatedBrowserWorld(
 export async function observeIsolatedBrowserWorld(
   worldId: string,
   sinceRevision?: number,
+  executionRuntimeId?: string | null,
 ): Promise<BrowserObservation> {
   const response = await daemonUnary<{ ok: boolean; observation: BrowserObservation }>(
     "browser.worlds.isolated.by_world_id.observe.post",
     { world_id: worldId },
     { since_revision: sinceRevision ?? null, max_nodes: 64 },
+    executionRuntimeId,
   );
   return response.observation;
 }
@@ -164,6 +189,7 @@ export async function screenshotIsolatedBrowserWorld(
   worldId: string,
   observation: BrowserObservation,
   maxWidth: number,
+  executionRuntimeId?: string | null,
 ): Promise<BrowserScreenshot> {
   const response = await daemonUnary<{ ok: boolean; screenshot: BrowserScreenshot }>(
     "browser.worlds.isolated.by_world_id.screenshot.post",
@@ -173,14 +199,84 @@ export async function screenshotIsolatedBrowserWorld(
       expected_observation_revision: observation.revision,
       max_width: maxWidth,
     },
+    executionRuntimeId,
   );
   return response.screenshot;
+}
+
+export interface BrowserPresentationStreamOptions {
+  worldId: string;
+  sinceRevision?: number;
+  maxWidth: number;
+  intervalMs?: number;
+  executionRuntimeId?: string | null;
+  onFrame(frame: BrowserPresentationFrame): void;
+  onOpen?(): void;
+  onError(error: DaemonStreamFailure): void;
+}
+
+/**
+ * Watch an isolated browser through one destination-owned stream. Every event
+ * pairs a semantic action fence with the exact redacted pixel artifact.
+ */
+export async function openIsolatedBrowserPresentation(
+  options: BrowserPresentationStreamOptions,
+): Promise<DaemonEventConnection> {
+  const pathParams = { world_id: options.worldId };
+  const query = {
+    ...(options.sinceRevision !== undefined
+      ? { since_revision: String(options.sinceRevision) }
+      : {}),
+    max_width: String(Math.max(320, Math.min(1280, Math.round(options.maxWidth || 960)))),
+    interval_ms: String(Math.max(100, Math.min(2500, Math.round(options.intervalMs ?? 250)))),
+  };
+  let connection: DaemonEventConnection | null = null;
+  let invalidFrame = false;
+  const opened = await openDaemonEventStream<BrowserPresentationFrame>({
+    operation: "browser.worlds.isolated.by_world_id.presentation.get",
+    pathParams,
+    query,
+    executionRuntimeId: options.executionRuntimeId,
+    browserEvent: "browser-frame",
+    browserUrl: async () => {
+      const base = (await getDaemonUrl()).replace(/\/$/, "");
+      const path = operationPath(
+        "browser.worlds.isolated.by_world_id.presentation.get",
+        pathParams,
+      );
+      return `${base}${path}?${new URLSearchParams(query).toString()}`;
+    },
+    onOpen: options.onOpen,
+    onError: options.onError,
+    onEvent: (frame) => {
+      const sameFence =
+        frame.world_id === options.worldId &&
+        frame.observation.document_id === frame.screenshot.document_id &&
+        frame.observation.revision === frame.screenshot.observation_revision;
+      if (!sameFence) {
+        invalidFrame = true;
+        connection?.close();
+        options.onError({
+          message: "Browser presentation returned a mismatched observation fence",
+          recoverable: false,
+          transport: "presentation",
+          stage: "validate",
+        });
+        return;
+      }
+      options.onFrame(frame);
+    },
+  });
+  connection = opened;
+  if (invalidFrame) opened.close();
+  return opened;
 }
 
 export async function inputIsolatedBrowserWorld(
   worldId: string,
   observation: BrowserObservation,
   input: BrowserHumanInput,
+  executionRuntimeId?: string | null,
 ): Promise<IsolatedBrowserWorld> {
   const response = await daemonUnary<WorldResponse>(
     "browser.worlds.isolated.by_world_id.input.post",
@@ -190,6 +286,7 @@ export async function inputIsolatedBrowserWorld(
       expected_observation_revision: observation.revision,
       ...input,
     },
+    executionRuntimeId,
   );
   return response.world;
 }

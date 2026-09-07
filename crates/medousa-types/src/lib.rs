@@ -5,6 +5,7 @@
 pub mod api_error;
 pub mod authority_id;
 pub mod bot;
+pub mod browser;
 pub mod capability;
 pub mod component_runtime;
 pub mod component_store;
@@ -34,10 +35,13 @@ pub mod turn_stream;
 pub mod turn_ticket;
 pub mod workflow;
 pub mod workflow_plan;
+pub mod world_recipe;
+pub mod world_timeline;
 
 pub use api_error::*;
 pub use authority_id::*;
 pub use bot::*;
+pub use browser::*;
 pub use capability::*;
 pub use component_runtime::*;
 pub use component_store::*;
@@ -56,3 +60,5 @@ pub use stage_routing::*;
 pub use turn::*;
 pub use turn_stream::*;
 pub use turn_ticket::*;
+pub use world_recipe::*;
+pub use world_timeline::*;

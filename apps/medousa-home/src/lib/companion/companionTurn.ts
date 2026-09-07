@@ -42,6 +42,7 @@ export async function sendCompanionPrompt(
     stageRouting: options.stageRouting,
     channelSurface: options.channelSurface,
     browserDriverId: options.browserDriverId,
+    selectedWorlds: options.selectedWorlds,
     voicePresetId: voice.voicePresetId,
     voiceAppendix: voice.voiceAppendix,
     identityUserId: options.identityUserId,

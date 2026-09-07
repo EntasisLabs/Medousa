@@ -4,6 +4,9 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 pub const WORLD_SCHEMA_VERSION: u16 = 1;
+pub const WORLD_ACTION_CHECKPOINT_SCHEMA_VERSION: u16 = 1;
+pub const WORLD_ACTION_RECIPE_HINT_SCHEMA_VERSION: u16 = 1;
+pub const WORLD_EVENT_ENVELOPE_SCHEMA_VERSION: u16 = 1;
 
 macro_rules! string_id {
     ($name:ident) => {
@@ -224,6 +227,158 @@ impl WorldEffectClass {
     pub fn requires_control(self) -> bool {
         !matches!(self, Self::Observe | Self::ObservePixels)
     }
+
+    pub fn recovery_strategy(self) -> WorldRecoveryStrategy {
+        match self {
+            Self::Observe | Self::ObservePixels => WorldRecoveryStrategy::Reobserve,
+            Self::LocalReversible | Self::LocalMutation => {
+                WorldRecoveryStrategy::ReconcileFromFreshObservation
+            }
+            Self::ExternalEffect | Self::Irreversible => WorldRecoveryStrategy::OperatorReview,
+        }
+    }
+
+    pub fn recovery_plan(self) -> WorldRecoveryPlan {
+        let compensation = match self {
+            Self::Observe | Self::ObservePixels => WorldCompensationPlan {
+                strategy: WorldCompensationStrategy::NotApplicable,
+                automatic_dispatch_allowed: false,
+                requires_new_intent: false,
+            },
+            Self::LocalReversible => WorldCompensationPlan {
+                strategy: WorldCompensationStrategy::ReconcileThenDomainAction,
+                automatic_dispatch_allowed: false,
+                requires_new_intent: true,
+            },
+            Self::LocalMutation | Self::ExternalEffect => WorldCompensationPlan {
+                strategy: WorldCompensationStrategy::OperatorDirected,
+                automatic_dispatch_allowed: false,
+                requires_new_intent: true,
+            },
+            Self::Irreversible => WorldCompensationPlan {
+                strategy: WorldCompensationStrategy::Unavailable,
+                automatic_dispatch_allowed: false,
+                requires_new_intent: false,
+            },
+        };
+        WorldRecoveryPlan {
+            strategy: self.recovery_strategy(),
+            requires_fresh_admission: true,
+            compensation,
+        }
+    }
+}
+
+/// State fence captured before a driver receives an admitted action.
+///
+/// This is deliberately authority-free: recovering from it always requires a
+/// fresh admission. It records enough state to explain what must be reconciled
+/// without storing page content, credentials, or native handles.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorldActionCheckpoint {
+    pub schema_version: u16,
+    pub surface: WorldSurfaceKind,
+    pub world_revision: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control_generation: Option<u64>,
+    pub admitted_at_ms: u64,
+    pub permit_expires_at_ms: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorldRecoveryStrategy {
+    /// The interrupted operation had no mutation; acquire a new observation.
+    Reobserve,
+    /// Observe the resource again and compare it with the admission fence.
+    ReconcileFromFreshObservation,
+    /// Do not infer or retry an external/irreversible effect automatically.
+    OperatorReview,
+}
+
+/// Whether a separate, attributable action may compensate for an uncertain
+/// or completed effect. This never represents an inverse action itself.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorldCompensationStrategy {
+    /// A legacy record did not declare a compensation boundary. Fail closed.
+    #[default]
+    Unspecified,
+    /// Observation-only work did not create an effect to compensate for.
+    NotApplicable,
+    /// Reobserve first, then admit a domain-specific corrective action.
+    ReconcileThenDomainAction,
+    /// A human must decide whether a distinct corrective action is appropriate.
+    OperatorDirected,
+    /// The runtime makes no claim that the effect can be compensated.
+    Unavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WorldCompensationPlan {
+    pub strategy: WorldCompensationStrategy,
+    /// No current compensation path may dispatch as a recovery side effect.
+    pub automatic_dispatch_allowed: bool,
+    /// Any corrective action must enter the timeline as a new intent and pass
+    /// fresh policy, state, and control admission.
+    pub requires_new_intent: bool,
+}
+
+impl Default for WorldCompensationPlan {
+    fn default() -> Self {
+        Self {
+            strategy: WorldCompensationStrategy::Unspecified,
+            automatic_dispatch_allowed: false,
+            requires_new_intent: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorldRecoveryPlan {
+    pub strategy: WorldRecoveryStrategy,
+    /// Recovery never carries the old permit or grant into a new process.
+    pub requires_fresh_admission: bool,
+    /// Compensation never reuses the interrupted action or its authority.
+    #[serde(default)]
+    pub compensation: WorldCompensationPlan,
+}
+
+/// The kind of value a semantic replay must obtain again. Values themselves
+/// are deliberately excluded from durable world history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorldRecipeInputKind {
+    Text,
+    Selection,
+    Key,
+    ScrollDelta,
+    WaitDuration,
+}
+
+/// Secret-free semantic shape of one admitted driver operation.
+///
+/// Opaque element refs, CSS selectors, coordinates, and action values are not
+/// represented. A future run resolves a fresh target from role/name semantics
+/// and supplies any input again before requesting a new admission.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorldRecipeOperationHint {
+    pub verb: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_kind: Option<WorldRecipeInputKind>,
+    #[serde(default)]
+    pub requires_operator_confirmation: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorldActionRecipeHint {
+    pub schema_version: u16,
+    pub operations: Vec<WorldRecipeOperationHint>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -343,6 +498,11 @@ pub struct WorldActionPermit {
     pub idempotency_key: String,
     pub expires_at_ms: u64,
     pub admitted_event_sequence: u64,
+    pub summary: String,
+    pub checkpoint: WorldActionCheckpoint,
+    pub recovery: WorldRecoveryPlan,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipe_hint: Option<WorldActionRecipeHint>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -366,6 +526,8 @@ pub struct WorldActionOutcome {
     pub committed_revision: u64,
     pub event_sequence: u64,
     pub summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery: Option<WorldRecoveryPlan>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -401,11 +563,18 @@ pub enum WorldEventKind {
     ActionAdmitted {
         grant_id: WorldGrantId,
         effect_class: WorldEffectClass,
+        summary: String,
+        checkpoint: WorldActionCheckpoint,
+        recovery: WorldRecoveryPlan,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        recipe_hint: Option<WorldActionRecipeHint>,
     },
     ActionCommitted {
         effect_class: WorldEffectClass,
         status: WorldActionStatus,
         summary: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        recovery: Option<WorldRecoveryPlan>,
     },
     ActionFailed {
         effect_class: WorldEffectClass,
@@ -413,6 +582,15 @@ pub enum WorldEventKind {
     },
     ExternalMutationObserved {
         summary: String,
+    },
+    /// The daemon restarted after admission but before a terminal driver
+    /// receipt was durably recorded. This never authorizes an automatic replay.
+    ActionInterrupted {
+        effect_class: WorldEffectClass,
+        status: WorldActionStatus,
+        summary: String,
+        checkpoint: WorldActionCheckpoint,
+        recovery: WorldRecoveryPlan,
     },
 }
 
@@ -431,4 +609,66 @@ pub struct WorldEvent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trace_id: Option<WorldTraceId>,
     pub event: WorldEventKind,
+}
+
+/// Event plus stable world identity at the moment it left the pure kernel.
+/// The daemon assigns its own monotonic ledger sequence when persisting this
+/// envelope so events from multiple worlds form one causal timeline.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorldEventEnvelope {
+    pub schema_version: u16,
+    pub authority_id: WorldAuthorityId,
+    pub driver_id: WorldDriverId,
+    pub ownership: WorldOwnership,
+    pub surface: WorldSurfaceKind,
+    pub event: WorldEvent,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn effect_classes_declare_truthful_compensation_boundaries() {
+        let cases = [
+            (
+                WorldEffectClass::Observe,
+                WorldCompensationStrategy::NotApplicable,
+                false,
+            ),
+            (
+                WorldEffectClass::ObservePixels,
+                WorldCompensationStrategy::NotApplicable,
+                false,
+            ),
+            (
+                WorldEffectClass::LocalReversible,
+                WorldCompensationStrategy::ReconcileThenDomainAction,
+                true,
+            ),
+            (
+                WorldEffectClass::LocalMutation,
+                WorldCompensationStrategy::OperatorDirected,
+                true,
+            ),
+            (
+                WorldEffectClass::ExternalEffect,
+                WorldCompensationStrategy::OperatorDirected,
+                true,
+            ),
+            (
+                WorldEffectClass::Irreversible,
+                WorldCompensationStrategy::Unavailable,
+                false,
+            ),
+        ];
+
+        for (effect, strategy, requires_new_intent) in cases {
+            let plan = effect.recovery_plan();
+            assert_eq!(plan.compensation.strategy, strategy);
+            assert!(!plan.compensation.automatic_dispatch_allowed);
+            assert_eq!(plan.compensation.requires_new_intent, requires_new_intent);
+            assert!(plan.requires_fresh_admission);
+        }
+    }
 }

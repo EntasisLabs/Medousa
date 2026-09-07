@@ -2241,8 +2241,45 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "world_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/BotWorldBinding"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
+      },
+      "BotWorldBinding": {
+        "description": "Explicit durable world selected by the Bot owner.",
+        "type": "object",
+        "required": [
+          "execution_runtime_id",
+          "kind",
+          "world_id"
+        ],
+        "properties": {
+          "execution_runtime_id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/definitions/BotWorldBindingKind"
+          },
+          "world_id": {
+            "type": "string"
+          }
+        }
+      },
+      "BotWorldBindingKind": {
+        "description": "Durable world shape currently supported by Bot continuity.\n\nThis deliberately excludes attached human browser and desktop worlds. A Bot may retain only a daemon-owned isolated browser profile whose runtime can re-establish authority after a restart.",
+        "type": "string",
+        "enum": [
+          "persistent_browser"
+        ]
       }
     }
   },
@@ -2361,6 +2398,16 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "world_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/BotWorldBinding"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -2399,6 +2446,33 @@
         "enum": [
           "primary",
           "secondary"
+        ]
+      },
+      "BotWorldBinding": {
+        "description": "Explicit durable world selected by the Bot owner.",
+        "type": "object",
+        "required": [
+          "execution_runtime_id",
+          "kind",
+          "world_id"
+        ],
+        "properties": {
+          "execution_runtime_id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/definitions/BotWorldBindingKind"
+          },
+          "world_id": {
+            "type": "string"
+          }
+        }
+      },
+      "BotWorldBindingKind": {
+        "description": "Durable world shape currently supported by Bot continuity.\n\nThis deliberately excludes attached human browser and desktop worlds. A Bot may retain only a daemon-owned isolated browser profile whose runtime can re-establish authority after a restart.",
+        "type": "string",
+        "enum": [
+          "persistent_browser"
         ]
       }
     }
@@ -2489,6 +2563,16 @@
       "updated_at": {
         "type": "string",
         "format": "date-time"
+      },
+      "world_binding": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/BotWorldBinding"
+          },
+          {
+            "type": "null"
+          }
+        ]
       }
     },
     "definitions": {
@@ -2505,6 +2589,33 @@
       "BotId": {
         "description": "Stable daemon-issued identity for one durable Bot profile.",
         "type": "string"
+      },
+      "BotWorldBinding": {
+        "description": "Explicit durable world selected by the Bot owner.",
+        "type": "object",
+        "required": [
+          "execution_runtime_id",
+          "kind",
+          "world_id"
+        ],
+        "properties": {
+          "execution_runtime_id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/definitions/BotWorldBindingKind"
+          },
+          "world_id": {
+            "type": "string"
+          }
+        }
+      },
+      "BotWorldBindingKind": {
+        "description": "Durable world shape currently supported by Bot continuity.\n\nThis deliberately excludes attached human browser and desktop worlds. A Bot may retain only a daemon-owned isolated browser profile whose runtime can re-establish authority after a restart.",
+        "type": "string",
+        "enum": [
+          "persistent_browser"
+        ]
       }
     }
   },
@@ -2561,6 +2672,534 @@
       "primary",
       "secondary"
     ]
+  },
+  "BotWorldBinding": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "BotWorldBinding",
+    "description": "Explicit durable world selected by the Bot owner.",
+    "type": "object",
+    "required": [
+      "execution_runtime_id",
+      "kind",
+      "world_id"
+    ],
+    "properties": {
+      "execution_runtime_id": {
+        "type": "string"
+      },
+      "kind": {
+        "$ref": "#/definitions/BotWorldBindingKind"
+      },
+      "world_id": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "BotWorldBindingKind": {
+        "description": "Durable world shape currently supported by Bot continuity.\n\nThis deliberately excludes attached human browser and desktop worlds. A Bot may retain only a daemon-owned isolated browser profile whose runtime can re-establish authority after a restart.",
+        "type": "string",
+        "enum": [
+          "persistent_browser"
+        ]
+      }
+    }
+  },
+  "BotWorldBindingKind": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "BotWorldBindingKind",
+    "description": "Durable world shape currently supported by Bot continuity.\n\nThis deliberately excludes attached human browser and desktop worlds. A Bot may retain only a daemon-owned isolated browser profile whose runtime can re-establish authority after a restart.",
+    "type": "string",
+    "enum": [
+      "persistent_browser"
+    ]
+  },
+  "BrowserPresentationFrame": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "BrowserPresentationFrame",
+    "description": "Atomic presentation update. Keeping the semantic fence and pixels in one event prevents Home from pairing an observation with a different frame.",
+    "type": "object",
+    "required": [
+      "observation",
+      "schema_version",
+      "screenshot",
+      "world_id"
+    ],
+    "properties": {
+      "observation": {
+        "$ref": "#/definitions/BrowserPresentationObservation"
+      },
+      "schema_version": {
+        "type": "integer",
+        "format": "uint16",
+        "minimum": 0.0
+      },
+      "screenshot": {
+        "$ref": "#/definitions/BrowserPresentationScreenshot"
+      },
+      "world_id": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "BrowserPresentationObservation": {
+        "description": "The action fence Home needs from the daemon's semantic mirror. Raw DOM and accessibility nodes remain on the owning workshop.",
+        "type": "object",
+        "required": [
+          "captured_at_ms",
+          "document_id",
+          "full",
+          "revision",
+          "schema_version",
+          "tab_id",
+          "title",
+          "truncated",
+          "untrusted_content",
+          "url",
+          "viewport"
+        ],
+        "properties": {
+          "base_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "captured_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "document_id": {
+            "type": "string"
+          },
+          "full": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "tab_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "untrusted_content": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport": {
+            "$ref": "#/definitions/BrowserPresentationViewport"
+          }
+        }
+      },
+      "BrowserPresentationScreenshot": {
+        "description": "One redacted, size-capped viewport artifact paired to its observation.",
+        "type": "object",
+        "required": [
+          "byte_size",
+          "captured_at_ms",
+          "coordinate_frame",
+          "document_id",
+          "image_base64",
+          "image_height",
+          "image_width",
+          "mime",
+          "observation_revision",
+          "schema_version",
+          "sensitive_regions_redacted",
+          "sha256",
+          "tab_id",
+          "title",
+          "untrusted_content",
+          "url",
+          "viewport"
+        ],
+        "properties": {
+          "byte_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "captured_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "coordinate_frame": {
+            "type": "string"
+          },
+          "document_id": {
+            "type": "string"
+          },
+          "image_base64": {
+            "type": "string"
+          },
+          "image_height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "image_width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "mime": {
+            "type": "string"
+          },
+          "observation_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "sensitive_regions_redacted": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "tab_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "untrusted_content": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string"
+          },
+          "viewport": {
+            "$ref": "#/definitions/BrowserPresentationViewport"
+          }
+        }
+      },
+      "BrowserPresentationViewport": {
+        "type": "object",
+        "required": [
+          "device_scale_factor",
+          "height",
+          "scroll_x",
+          "scroll_y",
+          "width"
+        ],
+        "properties": {
+          "device_scale_factor": {
+            "type": "number",
+            "format": "double"
+          },
+          "height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "scroll_x": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "scroll_y": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      }
+    }
+  },
+  "BrowserPresentationObservation": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "BrowserPresentationObservation",
+    "description": "The action fence Home needs from the daemon's semantic mirror. Raw DOM and accessibility nodes remain on the owning workshop.",
+    "type": "object",
+    "required": [
+      "captured_at_ms",
+      "document_id",
+      "full",
+      "revision",
+      "schema_version",
+      "tab_id",
+      "title",
+      "truncated",
+      "untrusted_content",
+      "url",
+      "viewport"
+    ],
+    "properties": {
+      "base_revision": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "captured_at_ms": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "document_id": {
+        "type": "string"
+      },
+      "full": {
+        "type": "boolean"
+      },
+      "revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "schema_version": {
+        "type": "integer",
+        "format": "uint16",
+        "minimum": 0.0
+      },
+      "tab_id": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "truncated": {
+        "type": "boolean"
+      },
+      "untrusted_content": {
+        "type": "boolean"
+      },
+      "url": {
+        "type": "string"
+      },
+      "viewport": {
+        "$ref": "#/definitions/BrowserPresentationViewport"
+      }
+    },
+    "definitions": {
+      "BrowserPresentationViewport": {
+        "type": "object",
+        "required": [
+          "device_scale_factor",
+          "height",
+          "scroll_x",
+          "scroll_y",
+          "width"
+        ],
+        "properties": {
+          "device_scale_factor": {
+            "type": "number",
+            "format": "double"
+          },
+          "height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "scroll_x": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "scroll_y": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      }
+    }
+  },
+  "BrowserPresentationScreenshot": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "BrowserPresentationScreenshot",
+    "description": "One redacted, size-capped viewport artifact paired to its observation.",
+    "type": "object",
+    "required": [
+      "byte_size",
+      "captured_at_ms",
+      "coordinate_frame",
+      "document_id",
+      "image_base64",
+      "image_height",
+      "image_width",
+      "mime",
+      "observation_revision",
+      "schema_version",
+      "sensitive_regions_redacted",
+      "sha256",
+      "tab_id",
+      "title",
+      "untrusted_content",
+      "url",
+      "viewport"
+    ],
+    "properties": {
+      "byte_size": {
+        "type": "integer",
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "captured_at_ms": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "coordinate_frame": {
+        "type": "string"
+      },
+      "document_id": {
+        "type": "string"
+      },
+      "image_base64": {
+        "type": "string"
+      },
+      "image_height": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "image_width": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "mime": {
+        "type": "string"
+      },
+      "observation_revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "schema_version": {
+        "type": "integer",
+        "format": "uint16",
+        "minimum": 0.0
+      },
+      "sensitive_regions_redacted": {
+        "type": "integer",
+        "format": "uint",
+        "minimum": 0.0
+      },
+      "sha256": {
+        "type": "string"
+      },
+      "tab_id": {
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "untrusted_content": {
+        "type": "boolean"
+      },
+      "url": {
+        "type": "string"
+      },
+      "viewport": {
+        "$ref": "#/definitions/BrowserPresentationViewport"
+      }
+    },
+    "definitions": {
+      "BrowserPresentationViewport": {
+        "type": "object",
+        "required": [
+          "device_scale_factor",
+          "height",
+          "scroll_x",
+          "scroll_y",
+          "width"
+        ],
+        "properties": {
+          "device_scale_factor": {
+            "type": "number",
+            "format": "double"
+          },
+          "height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "scroll_x": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "scroll_y": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      }
+    }
+  },
+  "BrowserPresentationViewport": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "BrowserPresentationViewport",
+    "type": "object",
+    "required": [
+      "device_scale_factor",
+      "height",
+      "scroll_x",
+      "scroll_y",
+      "width"
+    ],
+    "properties": {
+      "device_scale_factor": {
+        "type": "number",
+        "format": "double"
+      },
+      "height": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "scroll_x": {
+        "type": "integer",
+        "format": "int64"
+      },
+      "scroll_y": {
+        "type": "integer",
+        "format": "int64"
+      },
+      "width": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      }
+    }
   },
   "CalendarDeleteResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -4098,6 +4737,13 @@
               "null"
             ]
           },
+          "selected_worlds": {
+            "description": "Exact worlds selected by the user for this turn. The daemon validates, bounds, and freezes these bindings before any model or worker runs.",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/TurnWorldSelection"
+            }
+          },
           "supports_browser_host": {
             "description": "When true, the connected client can run Agent Browser (local BrowserHost or client WebView). Telegram/TUI/ingest leave this false; Home desktop/iOS set true when browser is available.",
             "default": false,
@@ -4119,6 +4765,22 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "TurnWorldSelection": {
+        "description": "One user-selected world and the workshop that currently owns it.\n\nClients carry placement only to the daemon admission boundary. Agent and worker prompts receive the opaque `world_id` alone; driver and transport details never enter model-authored requests.",
+        "type": "object",
+        "required": [
+          "execution_runtime_id",
+          "world_id"
+        ],
+        "properties": {
+          "execution_runtime_id": {
+            "type": "string"
+          },
+          "world_id": {
+            "type": "string"
           }
         }
       }
@@ -4284,6 +4946,17 @@
           "string",
           "null"
         ]
+      },
+      "world_binding": {
+        "description": "Opt-in durable world continuity. Omission grants no world.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/BotWorldBinding"
+          },
+          {
+            "type": "null"
+          }
+        ]
       }
     },
     "definitions": {
@@ -4295,6 +4968,33 @@
           "teacher",
           "instant",
           "coder"
+        ]
+      },
+      "BotWorldBinding": {
+        "description": "Explicit durable world selected by the Bot owner.",
+        "type": "object",
+        "required": [
+          "execution_runtime_id",
+          "kind",
+          "world_id"
+        ],
+        "properties": {
+          "execution_runtime_id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/definitions/BotWorldBindingKind"
+          },
+          "world_id": {
+            "type": "string"
+          }
+        }
+      },
+      "BotWorldBindingKind": {
+        "description": "Durable world shape currently supported by Bot continuity.\n\nThis deliberately excludes attached human browser and desktop worlds. A Bot may retain only a daemon-owned isolated browser profile whose runtime can re-establish authority after a restart.",
+        "type": "string",
+        "enum": [
+          "persistent_browser"
         ]
       }
     }
@@ -12396,6 +13096,13 @@
               "null"
             ]
           },
+          "selected_worlds": {
+            "description": "Exact worlds selected by the user for this turn. The daemon validates, bounds, and freezes these bindings before any model or worker runs.",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/TurnWorldSelection"
+            }
+          },
           "supports_browser_host": {
             "description": "When true, the connected client can run Agent Browser (local BrowserHost or client WebView). Telegram/TUI/ingest leave this false; Home desktop/iOS set true when browser is available.",
             "default": false,
@@ -12417,6 +13124,22 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "TurnWorldSelection": {
+        "description": "One user-selected world and the workshop that currently owns it.\n\nClients carry placement only to the daemon admission boundary. Agent and worker prompts receive the opaque `world_id` alone; driver and transport details never enter model-authored requests.",
+        "type": "object",
+        "required": [
+          "execution_runtime_id",
+          "world_id"
+        ],
+        "properties": {
+          "execution_runtime_id": {
+            "type": "string"
+          },
+          "world_id": {
+            "type": "string"
           }
         }
       }
@@ -17386,6 +18109,16 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "world_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/BotWorldBinding"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -17424,6 +18157,33 @@
         "enum": [
           "primary",
           "secondary"
+        ]
+      },
+      "BotWorldBinding": {
+        "description": "Explicit durable world selected by the Bot owner.",
+        "type": "object",
+        "required": [
+          "execution_runtime_id",
+          "kind",
+          "world_id"
+        ],
+        "properties": {
+          "execution_runtime_id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/definitions/BotWorldBindingKind"
+          },
+          "world_id": {
+            "type": "string"
+          }
+        }
+      },
+      "BotWorldBindingKind": {
+        "description": "Durable world shape currently supported by Bot continuity.\n\nThis deliberately excludes attached human browser and desktop worlds. A Bot may retain only a daemon-owned isolated browser profile whose runtime can re-establish authority after a restart.",
+        "type": "string",
+        "enum": [
+          "persistent_browser"
         ]
       }
     }
@@ -24351,6 +25111,10 @@
           "null"
         ]
       },
+      "clear_world_binding": {
+        "description": "Explicitly clear durable continuity. This cannot be combined with `world_binding`.",
+        "type": "boolean"
+      },
       "default_mode": {
         "anyOf": [
           {
@@ -24377,6 +25141,17 @@
           "string",
           "null"
         ]
+      },
+      "world_binding": {
+        "description": "Set or replace durable world continuity. Omission preserves the current binding for compatibility with clients predating schema v2.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/BotWorldBinding"
+          },
+          {
+            "type": "null"
+          }
+        ]
       }
     },
     "definitions": {
@@ -24388,6 +25163,33 @@
           "teacher",
           "instant",
           "coder"
+        ]
+      },
+      "BotWorldBinding": {
+        "description": "Explicit durable world selected by the Bot owner.",
+        "type": "object",
+        "required": [
+          "execution_runtime_id",
+          "kind",
+          "world_id"
+        ],
+        "properties": {
+          "execution_runtime_id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/definitions/BotWorldBindingKind"
+          },
+          "world_id": {
+            "type": "string"
+          }
+        }
+      },
+      "BotWorldBindingKind": {
+        "description": "Durable world shape currently supported by Bot continuity.\n\nThis deliberately excludes attached human browser and desktop worlds. A Bot may retain only a daemon-owned isolated browser profile whose runtime can re-establish authority after a restart.",
+        "type": "string",
+        "enum": [
+          "persistent_browser"
         ]
       }
     }
@@ -25618,6 +26420,2241 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0.0
+          }
+        }
+      }
+    }
+  },
+  "WorldEvidenceRecord": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldEvidenceRecord",
+    "description": "Durable, payload-free evidence promoted from a high-value world event.\n\nRaw page text, action values, selectors, coordinates, screenshots, driver errors, and reusable authority are deliberately absent. The causal ledger remains the source of the human-readable summary for the referenced event.",
+    "type": "object",
+    "required": [
+      "authority_id",
+      "driver_id",
+      "event_type",
+      "evidence_id",
+      "ledger_sequence",
+      "ownership",
+      "promoted_at_ms",
+      "reasons",
+      "schema_version",
+      "surface",
+      "world_id"
+    ],
+    "properties": {
+      "action_elapsed_ms": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "authority_id": {
+        "type": "string"
+      },
+      "checkpoint": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/WorldTimelineCheckpoint"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "driver_id": {
+        "type": "string"
+      },
+      "durability_latency_us": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "effect_class": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "event_type": {
+        "type": "string"
+      },
+      "evidence_id": {
+        "type": "string"
+      },
+      "intent_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "ledger_sequence": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "ownership": {
+        "type": "string"
+      },
+      "principal_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "principal_kind": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "promoted_at_ms": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "reasons": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "recovery": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/WorldTimelineRecovery"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "resource_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "schema_version": {
+        "type": "integer",
+        "format": "uint16",
+        "minimum": 0.0
+      },
+      "status": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "surface": {
+        "type": "string"
+      },
+      "trace_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "world_id": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "WorldTimelineCheckpoint": {
+        "type": "object",
+        "required": [
+          "admitted_at_ms",
+          "permit_expires_at_ms",
+          "surface",
+          "world_revision"
+        ],
+        "properties": {
+          "admitted_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "control_generation": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "permit_expires_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "surface": {
+            "type": "string"
+          },
+          "world_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      },
+      "WorldTimelineCompensation": {
+        "type": "object",
+        "required": [
+          "automatic_dispatch_allowed",
+          "requires_new_intent",
+          "strategy"
+        ],
+        "properties": {
+          "automatic_dispatch_allowed": {
+            "type": "boolean"
+          },
+          "requires_new_intent": {
+            "type": "boolean"
+          },
+          "strategy": {
+            "type": "string"
+          }
+        }
+      },
+      "WorldTimelineRecovery": {
+        "type": "object",
+        "required": [
+          "requires_fresh_admission",
+          "strategy"
+        ],
+        "properties": {
+          "compensation": {
+            "description": "Absent only when reading a legacy durable record that predated an explicit compensation boundary.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorldTimelineCompensation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requires_fresh_admission": {
+            "type": "boolean"
+          },
+          "strategy": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "WorldEvidenceResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldEvidenceResponse",
+    "type": "object",
+    "required": [
+      "evidence",
+      "has_more",
+      "next_sequence"
+    ],
+    "properties": {
+      "evidence": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/WorldEvidenceRecord"
+        }
+      },
+      "has_more": {
+        "type": "boolean"
+      },
+      "next_sequence": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    },
+    "definitions": {
+      "WorldEvidenceRecord": {
+        "description": "Durable, payload-free evidence promoted from a high-value world event.\n\nRaw page text, action values, selectors, coordinates, screenshots, driver errors, and reusable authority are deliberately absent. The causal ledger remains the source of the human-readable summary for the referenced event.",
+        "type": "object",
+        "required": [
+          "authority_id",
+          "driver_id",
+          "event_type",
+          "evidence_id",
+          "ledger_sequence",
+          "ownership",
+          "promoted_at_ms",
+          "reasons",
+          "schema_version",
+          "surface",
+          "world_id"
+        ],
+        "properties": {
+          "action_elapsed_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "authority_id": {
+            "type": "string"
+          },
+          "checkpoint": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorldTimelineCheckpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "driver_id": {
+            "type": "string"
+          },
+          "durability_latency_us": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "effect_class": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "evidence_id": {
+            "type": "string"
+          },
+          "intent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ledger_sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "ownership": {
+            "type": "string"
+          },
+          "principal_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "principal_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "promoted_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recovery": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorldTimelineRecovery"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resource_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "surface": {
+            "type": "string"
+          },
+          "trace_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "world_id": {
+            "type": "string"
+          }
+        }
+      },
+      "WorldTimelineCheckpoint": {
+        "type": "object",
+        "required": [
+          "admitted_at_ms",
+          "permit_expires_at_ms",
+          "surface",
+          "world_revision"
+        ],
+        "properties": {
+          "admitted_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "control_generation": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "permit_expires_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "surface": {
+            "type": "string"
+          },
+          "world_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      },
+      "WorldTimelineCompensation": {
+        "type": "object",
+        "required": [
+          "automatic_dispatch_allowed",
+          "requires_new_intent",
+          "strategy"
+        ],
+        "properties": {
+          "automatic_dispatch_allowed": {
+            "type": "boolean"
+          },
+          "requires_new_intent": {
+            "type": "boolean"
+          },
+          "strategy": {
+            "type": "string"
+          }
+        }
+      },
+      "WorldTimelineRecovery": {
+        "type": "object",
+        "required": [
+          "requires_fresh_admission",
+          "strategy"
+        ],
+        "properties": {
+          "compensation": {
+            "description": "Absent only when reading a legacy durable record that predated an explicit compensation boundary.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorldTimelineCompensation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requires_fresh_admission": {
+            "type": "boolean"
+          },
+          "strategy": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "WorldRecipe": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipe",
+    "description": "A recipe is reviewable guidance, never a reusable action permit.",
+    "type": "object",
+    "required": [
+      "automatic_dispatch_allowed",
+      "carries_authority",
+      "execution_model",
+      "recipe_id",
+      "schema_version",
+      "source_end_sequence",
+      "source_start_sequence",
+      "source_trace_id",
+      "steps"
+    ],
+    "properties": {
+      "automatic_dispatch_allowed": {
+        "type": "boolean"
+      },
+      "carries_authority": {
+        "type": "boolean"
+      },
+      "execution_model": {
+        "type": "string"
+      },
+      "recipe_id": {
+        "type": "string"
+      },
+      "schema_version": {
+        "type": "integer",
+        "format": "uint16",
+        "minimum": 0.0
+      },
+      "source_end_sequence": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "source_start_sequence": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "source_trace_id": {
+        "type": "string"
+      },
+      "steps": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/WorldRecipeStep"
+        }
+      }
+    },
+    "definitions": {
+      "WorldRecipeInputKind": {
+        "type": "string",
+        "enum": [
+          "text",
+          "selection",
+          "key",
+          "scroll_delta",
+          "wait_duration"
+        ]
+      },
+      "WorldRecipeOperation": {
+        "description": "A semantic operation template. Values, selectors, coordinates, handles, permits, and grants are deliberately absent and must be resolved afresh.",
+        "type": "object",
+        "required": [
+          "requires_operator_confirmation",
+          "verb"
+        ],
+        "properties": {
+          "input_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorldRecipeInputKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requires_operator_confirmation": {
+            "type": "boolean"
+          },
+          "target_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verb": {
+            "type": "string"
+          }
+        }
+      },
+      "WorldRecipeStep": {
+        "type": "object",
+        "required": [
+          "effect_class",
+          "operations",
+          "ordinal",
+          "requires_fresh_admission",
+          "requires_fresh_observation",
+          "requires_operator_confirmation",
+          "source_admission_sequence",
+          "source_completion_sequence",
+          "source_intent_id",
+          "surface"
+        ],
+        "properties": {
+          "effect_class": {
+            "type": "string"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/WorldRecipeOperation"
+            }
+          },
+          "ordinal": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "requires_fresh_admission": {
+            "type": "boolean"
+          },
+          "requires_fresh_observation": {
+            "type": "boolean"
+          },
+          "requires_operator_confirmation": {
+            "type": "boolean"
+          },
+          "source_admission_sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "source_completion_sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "source_intent_id": {
+            "type": "string"
+          },
+          "surface": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "WorldRecipeDeriveResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeDeriveResponse",
+    "type": "object",
+    "required": [
+      "recipe"
+    ],
+    "properties": {
+      "recipe": {
+        "$ref": "#/definitions/WorldRecipe"
+      }
+    },
+    "definitions": {
+      "WorldRecipe": {
+        "description": "A recipe is reviewable guidance, never a reusable action permit.",
+        "type": "object",
+        "required": [
+          "automatic_dispatch_allowed",
+          "carries_authority",
+          "execution_model",
+          "recipe_id",
+          "schema_version",
+          "source_end_sequence",
+          "source_start_sequence",
+          "source_trace_id",
+          "steps"
+        ],
+        "properties": {
+          "automatic_dispatch_allowed": {
+            "type": "boolean"
+          },
+          "carries_authority": {
+            "type": "boolean"
+          },
+          "execution_model": {
+            "type": "string"
+          },
+          "recipe_id": {
+            "type": "string"
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "source_end_sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "source_start_sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "source_trace_id": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/WorldRecipeStep"
+            }
+          }
+        }
+      },
+      "WorldRecipeInputKind": {
+        "type": "string",
+        "enum": [
+          "text",
+          "selection",
+          "key",
+          "scroll_delta",
+          "wait_duration"
+        ]
+      },
+      "WorldRecipeOperation": {
+        "description": "A semantic operation template. Values, selectors, coordinates, handles, permits, and grants are deliberately absent and must be resolved afresh.",
+        "type": "object",
+        "required": [
+          "requires_operator_confirmation",
+          "verb"
+        ],
+        "properties": {
+          "input_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorldRecipeInputKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requires_operator_confirmation": {
+            "type": "boolean"
+          },
+          "target_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verb": {
+            "type": "string"
+          }
+        }
+      },
+      "WorldRecipeStep": {
+        "type": "object",
+        "required": [
+          "effect_class",
+          "operations",
+          "ordinal",
+          "requires_fresh_admission",
+          "requires_fresh_observation",
+          "requires_operator_confirmation",
+          "source_admission_sequence",
+          "source_completion_sequence",
+          "source_intent_id",
+          "surface"
+        ],
+        "properties": {
+          "effect_class": {
+            "type": "string"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/WorldRecipeOperation"
+            }
+          },
+          "ordinal": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "requires_fresh_admission": {
+            "type": "boolean"
+          },
+          "requires_fresh_observation": {
+            "type": "boolean"
+          },
+          "requires_operator_confirmation": {
+            "type": "boolean"
+          },
+          "source_admission_sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "source_completion_sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "source_intent_id": {
+            "type": "string"
+          },
+          "surface": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "WorldRecipeInputKind": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeInputKind",
+    "type": "string",
+    "enum": [
+      "text",
+      "selection",
+      "key",
+      "scroll_delta",
+      "wait_duration"
+    ]
+  },
+  "WorldRecipeOperation": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeOperation",
+    "description": "A semantic operation template. Values, selectors, coordinates, handles, permits, and grants are deliberately absent and must be resolved afresh.",
+    "type": "object",
+    "required": [
+      "requires_operator_confirmation",
+      "verb"
+    ],
+    "properties": {
+      "input_kind": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/WorldRecipeInputKind"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "requires_operator_confirmation": {
+        "type": "boolean"
+      },
+      "target_name": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "target_role": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "verb": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "WorldRecipeInputKind": {
+        "type": "string",
+        "enum": [
+          "text",
+          "selection",
+          "key",
+          "scroll_delta",
+          "wait_duration"
+        ]
+      }
+    }
+  },
+  "WorldRecipeRunConfirmation": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeRunConfirmation",
+    "description": "Explicit confirmation for one operation whose source or freshly resolved target requires operator review.",
+    "type": "object",
+    "required": [
+      "operation_index",
+      "step_ordinal"
+    ],
+    "properties": {
+      "operation_index": {
+        "description": "Zero-based operation index within the recipe step.",
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "step_ordinal": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      }
+    }
+  },
+  "WorldRecipeRunInput": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeRunInput",
+    "type": "object",
+    "required": [
+      "input",
+      "operation_index",
+      "step_ordinal"
+    ],
+    "properties": {
+      "input": {
+        "$ref": "#/definitions/WorldRecipeRunInputValue"
+      },
+      "operation_index": {
+        "description": "Zero-based operation index within the recipe step.",
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "step_ordinal": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      }
+    },
+    "definitions": {
+      "WorldRecipeRunInputValue": {
+        "description": "Fresh operator-provided material for one semantic operation. These values are never copied into a recipe, receipt, timeline summary, or run response.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "value"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "selection"
+                ]
+              },
+              "value": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "key",
+              "kind"
+            ],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "key"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "delta_y",
+              "kind"
+            ],
+            "properties": {
+              "delta_y": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "scroll_delta"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "milliseconds"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "wait_duration"
+                ]
+              },
+              "milliseconds": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "WorldRecipeRunInputValue": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeRunInputValue",
+    "description": "Fresh operator-provided material for one semantic operation. These values are never copied into a recipe, receipt, timeline summary, or run response.",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "kind",
+          "text"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "kind",
+          "value"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "selection"
+            ]
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "key",
+          "kind"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "key"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "delta_y",
+          "kind"
+        ],
+        "properties": {
+          "delta_y": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "scroll_delta"
+            ]
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "kind",
+          "milliseconds"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "wait_duration"
+            ]
+          },
+          "milliseconds": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      }
+    ]
+  },
+  "WorldRecipeRunRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeRunRequest",
+    "description": "Execute a server-derived recipe as a new governed run. The daemon re-derives `recipe_id` from `source_trace_id`; callers cannot submit an arbitrary action template. `run_id` is a durable idempotency boundary.",
+    "type": "object",
+    "required": [
+      "operator_approved",
+      "recipe_id",
+      "run_id",
+      "source_trace_id",
+      "targets"
+    ],
+    "properties": {
+      "confirmations": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/WorldRecipeRunConfirmation"
+        }
+      },
+      "inputs": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/WorldRecipeRunInput"
+        }
+      },
+      "operator_approved": {
+        "type": "boolean"
+      },
+      "recipe_id": {
+        "type": "string"
+      },
+      "run_id": {
+        "type": "string"
+      },
+      "source_trace_id": {
+        "type": "string"
+      },
+      "targets": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/WorldRecipeRunTarget"
+        }
+      }
+    },
+    "definitions": {
+      "WorldRecipeRunConfirmation": {
+        "description": "Explicit confirmation for one operation whose source or freshly resolved target requires operator review.",
+        "type": "object",
+        "required": [
+          "operation_index",
+          "step_ordinal"
+        ],
+        "properties": {
+          "operation_index": {
+            "description": "Zero-based operation index within the recipe step.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "step_ordinal": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "WorldRecipeRunInput": {
+        "type": "object",
+        "required": [
+          "input",
+          "operation_index",
+          "step_ordinal"
+        ],
+        "properties": {
+          "input": {
+            "$ref": "#/definitions/WorldRecipeRunInputValue"
+          },
+          "operation_index": {
+            "description": "Zero-based operation index within the recipe step.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "step_ordinal": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "WorldRecipeRunInputValue": {
+        "description": "Fresh operator-provided material for one semantic operation. These values are never copied into a recipe, receipt, timeline summary, or run response.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "value"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "selection"
+                ]
+              },
+              "value": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "key",
+              "kind"
+            ],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "key"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "delta_y",
+              "kind"
+            ],
+            "properties": {
+              "delta_y": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "scroll_delta"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "milliseconds"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "wait_duration"
+                ]
+              },
+              "milliseconds": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            }
+          }
+        ]
+      },
+      "WorldRecipeRunTarget": {
+        "description": "Bind one source recipe step to an exact live world. World ids remain opaque; the destination daemon resolves them against its own registered drivers.",
+        "type": "object",
+        "required": [
+          "step_ordinal",
+          "world_id"
+        ],
+        "properties": {
+          "step_ordinal": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "world_id": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "WorldRecipeRunResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeRunResponse",
+    "type": "object",
+    "required": [
+      "completed_steps",
+      "recipe_id",
+      "run_id",
+      "schema_version",
+      "status",
+      "steps",
+      "trace_id"
+    ],
+    "properties": {
+      "completed_steps": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "recipe_id": {
+        "type": "string"
+      },
+      "run_id": {
+        "type": "string"
+      },
+      "schema_version": {
+        "type": "integer",
+        "format": "uint16",
+        "minimum": 0.0
+      },
+      "status": {
+        "$ref": "#/definitions/WorldRecipeRunStatus"
+      },
+      "steps": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/WorldRecipeRunStepResult"
+        }
+      },
+      "stop": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/WorldRecipeRunStop"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "trace_id": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "WorldRecipeRunStatus": {
+        "type": "string",
+        "enum": [
+          "completed",
+          "stopped"
+        ]
+      },
+      "WorldRecipeRunStepResult": {
+        "description": "One successfully acknowledged replay step. This intentionally contains no fresh input values or driver-native target handles.",
+        "type": "object",
+        "required": [
+          "committed_revision",
+          "completion_sequence",
+          "intent_id",
+          "operation_count",
+          "step_ordinal",
+          "surface",
+          "world_id"
+        ],
+        "properties": {
+          "committed_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "completion_sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "intent_id": {
+            "type": "string"
+          },
+          "operation_count": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "step_ordinal": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "surface": {
+            "type": "string"
+          },
+          "world_id": {
+            "type": "string"
+          }
+        }
+      },
+      "WorldRecipeRunStop": {
+        "type": "object",
+        "required": [
+          "code",
+          "effect_may_have_applied",
+          "reason",
+          "step_ordinal"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "effect_may_have_applied": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "step_ordinal": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      }
+    }
+  },
+  "WorldRecipeRunStatus": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeRunStatus",
+    "type": "string",
+    "enum": [
+      "completed",
+      "stopped"
+    ]
+  },
+  "WorldRecipeRunStepResult": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeRunStepResult",
+    "description": "One successfully acknowledged replay step. This intentionally contains no fresh input values or driver-native target handles.",
+    "type": "object",
+    "required": [
+      "committed_revision",
+      "completion_sequence",
+      "intent_id",
+      "operation_count",
+      "step_ordinal",
+      "surface",
+      "world_id"
+    ],
+    "properties": {
+      "committed_revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "completion_sequence": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "intent_id": {
+        "type": "string"
+      },
+      "operation_count": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "step_ordinal": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "surface": {
+        "type": "string"
+      },
+      "world_id": {
+        "type": "string"
+      }
+    }
+  },
+  "WorldRecipeRunStop": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeRunStop",
+    "type": "object",
+    "required": [
+      "code",
+      "effect_may_have_applied",
+      "reason",
+      "step_ordinal"
+    ],
+    "properties": {
+      "code": {
+        "type": "string"
+      },
+      "effect_may_have_applied": {
+        "type": "boolean"
+      },
+      "reason": {
+        "type": "string"
+      },
+      "step_ordinal": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      }
+    }
+  },
+  "WorldRecipeRunTarget": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeRunTarget",
+    "description": "Bind one source recipe step to an exact live world. World ids remain opaque; the destination daemon resolves them against its own registered drivers.",
+    "type": "object",
+    "required": [
+      "step_ordinal",
+      "world_id"
+    ],
+    "properties": {
+      "step_ordinal": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "world_id": {
+        "type": "string"
+      }
+    }
+  },
+  "WorldRecipeStep": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldRecipeStep",
+    "type": "object",
+    "required": [
+      "effect_class",
+      "operations",
+      "ordinal",
+      "requires_fresh_admission",
+      "requires_fresh_observation",
+      "requires_operator_confirmation",
+      "source_admission_sequence",
+      "source_completion_sequence",
+      "source_intent_id",
+      "surface"
+    ],
+    "properties": {
+      "effect_class": {
+        "type": "string"
+      },
+      "operations": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/WorldRecipeOperation"
+        }
+      },
+      "ordinal": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "requires_fresh_admission": {
+        "type": "boolean"
+      },
+      "requires_fresh_observation": {
+        "type": "boolean"
+      },
+      "requires_operator_confirmation": {
+        "type": "boolean"
+      },
+      "source_admission_sequence": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "source_completion_sequence": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "source_intent_id": {
+        "type": "string"
+      },
+      "surface": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "WorldRecipeInputKind": {
+        "type": "string",
+        "enum": [
+          "text",
+          "selection",
+          "key",
+          "scroll_delta",
+          "wait_duration"
+        ]
+      },
+      "WorldRecipeOperation": {
+        "description": "A semantic operation template. Values, selectors, coordinates, handles, permits, and grants are deliberately absent and must be resolved afresh.",
+        "type": "object",
+        "required": [
+          "requires_operator_confirmation",
+          "verb"
+        ],
+        "properties": {
+          "input_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorldRecipeInputKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requires_operator_confirmation": {
+            "type": "boolean"
+          },
+          "target_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verb": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "WorldTimelineCheckpoint": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldTimelineCheckpoint",
+    "type": "object",
+    "required": [
+      "admitted_at_ms",
+      "permit_expires_at_ms",
+      "surface",
+      "world_revision"
+    ],
+    "properties": {
+      "admitted_at_ms": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "control_generation": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "permit_expires_at_ms": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "surface": {
+        "type": "string"
+      },
+      "world_revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    }
+  },
+  "WorldTimelineCompensation": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldTimelineCompensation",
+    "type": "object",
+    "required": [
+      "automatic_dispatch_allowed",
+      "requires_new_intent",
+      "strategy"
+    ],
+    "properties": {
+      "automatic_dispatch_allowed": {
+        "type": "boolean"
+      },
+      "requires_new_intent": {
+        "type": "boolean"
+      },
+      "strategy": {
+        "type": "string"
+      }
+    }
+  },
+  "WorldTimelineEvent": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldTimelineEvent",
+    "description": "One bounded, secret-free event in the workshop daemon's cross-world ledger.",
+    "type": "object",
+    "required": [
+      "authority_id",
+      "driver_id",
+      "event_type",
+      "occurred_at_ms",
+      "ownership",
+      "recorded_at_ms",
+      "schema_version",
+      "sequence",
+      "surface",
+      "world_id",
+      "world_revision"
+    ],
+    "properties": {
+      "authority_id": {
+        "type": "string"
+      },
+      "checkpoint": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/WorldTimelineCheckpoint"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "driver_id": {
+        "type": "string"
+      },
+      "effect_class": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "event_type": {
+        "type": "string"
+      },
+      "intent_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "occurred_at_ms": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "ownership": {
+        "type": "string"
+      },
+      "principal_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "principal_kind": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "recorded_at_ms": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "recovery": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/WorldTimelineRecovery"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "resource_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "schema_version": {
+        "type": "integer",
+        "format": "uint16",
+        "minimum": 0.0
+      },
+      "sequence": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "status": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "summary": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "surface": {
+        "type": "string"
+      },
+      "trace_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "world_id": {
+        "type": "string"
+      },
+      "world_revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    },
+    "definitions": {
+      "WorldTimelineCheckpoint": {
+        "type": "object",
+        "required": [
+          "admitted_at_ms",
+          "permit_expires_at_ms",
+          "surface",
+          "world_revision"
+        ],
+        "properties": {
+          "admitted_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "control_generation": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "permit_expires_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "surface": {
+            "type": "string"
+          },
+          "world_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      },
+      "WorldTimelineCompensation": {
+        "type": "object",
+        "required": [
+          "automatic_dispatch_allowed",
+          "requires_new_intent",
+          "strategy"
+        ],
+        "properties": {
+          "automatic_dispatch_allowed": {
+            "type": "boolean"
+          },
+          "requires_new_intent": {
+            "type": "boolean"
+          },
+          "strategy": {
+            "type": "string"
+          }
+        }
+      },
+      "WorldTimelineRecovery": {
+        "type": "object",
+        "required": [
+          "requires_fresh_admission",
+          "strategy"
+        ],
+        "properties": {
+          "compensation": {
+            "description": "Absent only when reading a legacy durable record that predated an explicit compensation boundary.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorldTimelineCompensation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requires_fresh_admission": {
+            "type": "boolean"
+          },
+          "strategy": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "WorldTimelineRecovery": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldTimelineRecovery",
+    "type": "object",
+    "required": [
+      "requires_fresh_admission",
+      "strategy"
+    ],
+    "properties": {
+      "compensation": {
+        "description": "Absent only when reading a legacy durable record that predated an explicit compensation boundary.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/WorldTimelineCompensation"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "requires_fresh_admission": {
+        "type": "boolean"
+      },
+      "strategy": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "WorldTimelineCompensation": {
+        "type": "object",
+        "required": [
+          "automatic_dispatch_allowed",
+          "requires_new_intent",
+          "strategy"
+        ],
+        "properties": {
+          "automatic_dispatch_allowed": {
+            "type": "boolean"
+          },
+          "requires_new_intent": {
+            "type": "boolean"
+          },
+          "strategy": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "WorldTimelineResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldTimelineResponse",
+    "type": "object",
+    "required": [
+      "events",
+      "has_more",
+      "next_sequence"
+    ],
+    "properties": {
+      "events": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/WorldTimelineEvent"
+        }
+      },
+      "has_more": {
+        "type": "boolean"
+      },
+      "next_sequence": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    },
+    "definitions": {
+      "WorldTimelineCheckpoint": {
+        "type": "object",
+        "required": [
+          "admitted_at_ms",
+          "permit_expires_at_ms",
+          "surface",
+          "world_revision"
+        ],
+        "properties": {
+          "admitted_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "control_generation": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "permit_expires_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "surface": {
+            "type": "string"
+          },
+          "world_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      },
+      "WorldTimelineCompensation": {
+        "type": "object",
+        "required": [
+          "automatic_dispatch_allowed",
+          "requires_new_intent",
+          "strategy"
+        ],
+        "properties": {
+          "automatic_dispatch_allowed": {
+            "type": "boolean"
+          },
+          "requires_new_intent": {
+            "type": "boolean"
+          },
+          "strategy": {
+            "type": "string"
+          }
+        }
+      },
+      "WorldTimelineEvent": {
+        "description": "One bounded, secret-free event in the workshop daemon's cross-world ledger.",
+        "type": "object",
+        "required": [
+          "authority_id",
+          "driver_id",
+          "event_type",
+          "occurred_at_ms",
+          "ownership",
+          "recorded_at_ms",
+          "schema_version",
+          "sequence",
+          "surface",
+          "world_id",
+          "world_revision"
+        ],
+        "properties": {
+          "authority_id": {
+            "type": "string"
+          },
+          "checkpoint": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorldTimelineCheckpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "driver_id": {
+            "type": "string"
+          },
+          "effect_class": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "intent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "occurred_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "ownership": {
+            "type": "string"
+          },
+          "principal_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "principal_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recorded_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "recovery": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorldTimelineRecovery"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resource_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "surface": {
+            "type": "string"
+          },
+          "trace_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "world_id": {
+            "type": "string"
+          },
+          "world_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      },
+      "WorldTimelineRecovery": {
+        "type": "object",
+        "required": [
+          "requires_fresh_admission",
+          "strategy"
+        ],
+        "properties": {
+          "compensation": {
+            "description": "Absent only when reading a legacy durable record that predated an explicit compensation boundary.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorldTimelineCompensation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requires_fresh_admission": {
+            "type": "boolean"
+          },
+          "strategy": {
+            "type": "string"
           }
         }
       }

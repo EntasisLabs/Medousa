@@ -10,9 +10,12 @@ import {
 } from "$lib/utils/workshopLocality";
 
 const STORAGE_PREFIX = "medousa-home-worker-targets-v1";
+const WORLD_STORAGE_PREFIX = "medousa-home-world-targets-v1";
 const MAX_REMEMBERED_SESSIONS = 100;
 
 type SelectionMap = Record<string, ExecutionTargetSelection>;
+export type WorldExecutionFamily = "browser" | "computer";
+type WorldSelectionMap = Partial<Record<WorldExecutionFamily, string>>;
 
 function normalizedSelection(value: unknown): ExecutionTargetSelection | null {
   if (!value || typeof value !== "object") return null;
@@ -42,6 +45,25 @@ function loadSelections(workshopId: string): SelectionMap {
   }
 }
 
+function loadWorldSelections(workshopId: string): WorldSelectionMap {
+  if (typeof localStorage === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(
+      workshopScopedStorageKey(WORLD_STORAGE_PREFIX, workshopId),
+    );
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const selections: WorldSelectionMap = {};
+    for (const family of ["browser", "computer"] as const) {
+      const runtimeId = typeof parsed[family] === "string" ? parsed[family].trim() : "";
+      if (runtimeId) selections[family] = runtimeId;
+    }
+    return selections;
+  } catch {
+    return {};
+  }
+}
+
 function compactRuntimeId(runtimeId: string): string {
   const id = runtimeId.trim();
   if (id.length <= 24) return id;
@@ -54,6 +76,7 @@ export class ExecutionTargetStore {
   error = $state<string | null>(null);
   workshopScopeId = $state("");
   selections = $state<SelectionMap>({});
+  worldSelections = $state<WorldSelectionMap>({});
 
   private epoch = 0;
   private loaded = false;
@@ -75,6 +98,7 @@ export class ExecutionTargetStore {
     this.refreshInFlight = null;
     this.workshopScopeId = "";
     this.selections = {};
+    this.worldSelections = {};
   }
 
   activateWorkshopScope(workshopId: string) {
@@ -83,6 +107,7 @@ export class ExecutionTargetStore {
     this.resetForWorkshopSwitch();
     this.workshopScopeId = scope;
     this.selections = loadSelections(scope);
+    this.worldSelections = loadWorldSelections(scope);
   }
 
   async refresh(options: { force?: boolean } = {}): Promise<void> {
@@ -144,6 +169,49 @@ export class ExecutionTargetStore {
 
   agentTargets(): ExecutionTargetInventoryEntry[] {
     return (this.inventory?.targets ?? []).filter((target) => target.agent_selectable);
+  }
+
+  worldTargets(
+    family: WorldExecutionFamily,
+    options: { agentOnly?: boolean } = {},
+  ): ExecutionTargetInventoryEntry[] {
+    const required = `world.${family}`;
+    return (options.agentOnly ? this.agentTargets() : this.userTargets()).filter((target) =>
+      target.capabilities.includes(required),
+    );
+  }
+
+  worldRuntimeId(family: WorldExecutionFamily): string | null {
+    const selected = this.worldSelections[family]?.trim();
+    if (selected) return selected;
+    const targets = this.worldTargets(family);
+    const defaultId = this.defaultRuntimeId();
+    if (defaultId && targets.some((target) => target.runtime_id === defaultId)) {
+      return defaultId;
+    }
+    const parentId = this.inventory?.parent_runtime_id?.trim();
+    if (parentId && targets.some((target) => target.runtime_id === parentId)) {
+      return parentId;
+    }
+    return targets[0]?.runtime_id ?? null;
+  }
+
+  setWorldRuntimeId(family: WorldExecutionFamily, runtimeId: string) {
+    const id = runtimeId.trim();
+    if (!id) return;
+    this.worldSelections = { ...this.worldSelections, [family]: id };
+    this.persistWorldSelections();
+  }
+
+  worldRuntimeLabel(family: WorldExecutionFamily): string {
+    const runtimeId = this.worldRuntimeId(family);
+    return this.runtimeLabel(runtimeId) ?? "Unavailable workshop";
+  }
+
+  worldSelectionUnavailable(family: WorldExecutionFamily): boolean {
+    const selected = this.worldSelections[family]?.trim();
+    if (!selected || !this.inventory) return false;
+    return !this.worldTargets(family).some((target) => target.runtime_id === selected);
   }
 
   defaultRuntimeId(): string | null {
@@ -211,6 +279,14 @@ export class ExecutionTargetStore {
     localStorage.setItem(
       workshopScopedStorageKey(STORAGE_PREFIX, this.workshopScopeId),
       JSON.stringify(Object.fromEntries(entries)),
+    );
+  }
+
+  private persistWorldSelections() {
+    if (!this.workshopScopeId || typeof localStorage === "undefined") return;
+    localStorage.setItem(
+      workshopScopedStorageKey(WORLD_STORAGE_PREFIX, this.workshopScopeId),
+      JSON.stringify(this.worldSelections),
     );
   }
 }

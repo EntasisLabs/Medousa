@@ -7,6 +7,10 @@ use stasis::domain::errors::StasisError;
 use tokio::sync::mpsc;
 
 use medousa_browser_bridge::BrowserObservation;
+use medousa_world::{
+    WORLD_ACTION_RECIPE_HINT_SCHEMA_VERSION, WorldActionRecipeHint, WorldRecipeInputKind,
+    WorldRecipeOperationHint,
+};
 
 use crate::browser_host_client::{browser_host_act, browser_host_current_context};
 use crate::browser_search::{client_executed, surface_from_scope};
@@ -78,6 +82,17 @@ impl BrowserActAction {
             }
         }
     }
+
+    fn recipe_input_kind(self) -> Option<WorldRecipeInputKind> {
+        match self {
+            Self::Click => None,
+            Self::Type => Some(WorldRecipeInputKind::Text),
+            Self::Press => Some(WorldRecipeInputKind::Key),
+            Self::Scroll => Some(WorldRecipeInputKind::ScrollDelta),
+            Self::Select => Some(WorldRecipeInputKind::Selection),
+            Self::Wait => Some(WorldRecipeInputKind::WaitDuration),
+        }
+    }
 }
 
 pub struct CognitionBrowserActTool {
@@ -97,6 +112,11 @@ impl CognitionBrowserActTool {
     }
 
     async fn browser_enabled(&self) -> bool {
+        if crate::world_execution::active_world_for(medousa_world::WorldSurfaceKind::Browser)
+            .is_some()
+        {
+            return true;
+        }
         let scope =
             crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
                 .await;
@@ -391,6 +411,66 @@ struct BrowserActInvocation {
     allow_high_risk: bool,
 }
 
+#[derive(Debug, Clone)]
+struct BrowserRecipeOperationDraft {
+    verb: String,
+    target_ref: Option<String>,
+    uses_selector: bool,
+    input_kind: Option<WorldRecipeInputKind>,
+}
+
+fn browser_recipe_operation_drafts(
+    invocation: &BrowserActInvocation,
+) -> Vec<BrowserRecipeOperationDraft> {
+    invocation
+        .steps
+        .iter()
+        .map(|step| BrowserRecipeOperationDraft {
+            verb: step.action.as_str().to_string(),
+            target_ref: step
+                .target_ref
+                .as_ref()
+                .map(|target_ref| target_ref.as_str().to_string()),
+            uses_selector: step.selector.is_some(),
+            input_kind: step.action.recipe_input_kind(),
+        })
+        .collect()
+}
+
+fn browser_recipe_hint(
+    drafts: &[BrowserRecipeOperationDraft],
+    resolved: &[crate::world_authority::ResolvedBrowserRecipeTarget],
+) -> Option<WorldActionRecipeHint> {
+    if drafts.is_empty() || drafts.iter().any(|draft| draft.uses_selector) {
+        return None;
+    }
+    let operations = drafts
+        .iter()
+        .map(|draft| {
+            let target = match draft.target_ref.as_deref() {
+                Some(target_ref) => Some(
+                    resolved
+                        .iter()
+                        .find(|target| target.element_ref == target_ref)?,
+                ),
+                None => None,
+            };
+            Some(WorldRecipeOperationHint {
+                verb: draft.verb.clone(),
+                target_role: target.and_then(|target| target.role.clone()),
+                target_name: target.and_then(|target| target.name.clone()),
+                input_kind: draft.input_kind,
+                requires_operator_confirmation: target
+                    .is_some_and(|target| target.requires_operator_confirmation),
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(WorldActionRecipeHint {
+        schema_version: WORLD_ACTION_RECIPE_HINT_SCHEMA_VERSION,
+        operations,
+    })
+}
+
 impl BrowserActInvocation {
     fn world_effect_class(&self) -> medousa_world::WorldEffectClass {
         if self.steps.iter().any(|step| {
@@ -554,6 +634,7 @@ impl CognitionBrowserActTool {
             )));
         }
         let world_effect_class = invocation.world_effect_class();
+        let recipe_drafts = browser_recipe_operation_drafts(&invocation);
         let is_batch = invocation.is_batch;
         let allow_high_risk = invocation.allow_high_risk;
         let observation_revision = invocation.observation_revision;
@@ -620,22 +701,43 @@ impl CognitionBrowserActTool {
         let scope =
             crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope)
                 .await;
-        #[cfg(feature = "full-daemon")]
-        if let Some(driver_id) = scope
+        let active_world = crate::world_execution::active_world_for(
+            medousa_world::WorldSurfaceKind::Browser,
+        );
+        let selected_driver_id = active_world
             .as_ref()
-            .and_then(|scope| scope.browser_driver_id.as_deref())
+            .map(|binding| binding.driver_id().as_str().to_string())
+            .or_else(|| {
+                scope
+                    .as_ref()
+                    .and_then(|scope| scope.browser_driver_id.clone())
+            });
+        #[cfg(feature = "full-daemon")]
+        if let Some(driver_id) = selected_driver_id
+            .as_deref()
             .filter(|driver_id| crate::browser_tools::is_isolated_browser_driver_id(driver_id))
         {
-            let owner_profile_id = scope
-                .as_ref()
-                .and_then(|scope| scope.identity_user_id.as_deref())
-                .map(str::to_string)
-                .unwrap_or_else(crate::user_profiles::resolve_workshop_identity_user_id);
             let host = crate::daemon::isolated_browser_host::global_host().ok_or_else(|| {
                 StasisError::PortFailure(format!(
                     "{COGNITION_BROWSER_ACT}: isolated browser host is unavailable"
                 ))
             })?;
+            let owner_profile_id = if let Some(binding) = active_world.as_ref() {
+                host.authorized_world(binding.world_id().as_str())
+                    .await
+                    .map_err(|error| {
+                        StasisError::PortFailure(format!(
+                            "{COGNITION_BROWSER_ACT}: {error}"
+                        ))
+                    })?
+                    .owner_profile_id
+            } else {
+                scope
+                    .as_ref()
+                    .and_then(|scope| scope.identity_user_id.as_deref())
+                    .map(str::to_string)
+                    .unwrap_or_else(crate::user_profiles::resolve_workshop_identity_user_id)
+            };
             let browser_context = host
                 .context_for_driver(&owner_profile_id, driver_id)
                 .await
@@ -644,10 +746,25 @@ impl CognitionBrowserActTool {
                         "{COGNITION_BROWSER_ACT}: {error}"
                     ))
                 })?;
+            if let Some(binding) = active_world.as_ref() {
+                crate::world_authority::validate_browser_world_binding(
+                    binding.world_id().as_str(),
+                    binding.authority_id(),
+                    &browser_context.driver_id,
+                    &browser_context.tab_group_id,
+                )
+                .map_err(|error| {
+                    StasisError::PortFailure(format!(
+                        "{COGNITION_BROWSER_ACT}: {error}"
+                    ))
+                })?;
+            }
             let authority_id = crate::workshop_authority::current()
                 .map_err(StasisError::PortFailure)?
                 .to_string();
-            if !semantic_targets.is_empty() {
+            let resolved_recipe_targets = if semantic_targets.is_empty() {
+                Vec::new()
+            } else {
                 crate::world_authority::validate_browser_element_refs(
                     crate::world_authority::BrowserElementRefFence {
                         authority_id: &authority_id,
@@ -665,21 +782,25 @@ impl CognitionBrowserActTool {
                     StasisError::PortFailure(format!(
                         "{COGNITION_BROWSER_ACT}: semantic target denied: {error}"
                     ))
-                })?;
-            }
+                })?
+            };
+            let recipe_hint = browser_recipe_hint(&recipe_drafts, &resolved_recipe_targets);
             let trace_id = scope
                 .as_ref()
                 .map(|scope| scope.turn_correlation_id.as_str())
                 .filter(|trace_id| !trace_id.trim().is_empty())
                 .unwrap_or("browser-action");
             let admission = crate::world_authority::admit_browser_action(
-                &authority_id,
-                &browser_context.driver_id,
-                &browser_context.tab_group_id,
-                &browser_context.tab_id,
-                trace_id,
-                &summary,
-                world_effect_class,
+                crate::world_authority::BrowserWorldActionRequest {
+                    authority_id: &authority_id,
+                    driver_id: &browser_context.driver_id,
+                    tab_group_id: &browser_context.tab_group_id,
+                    tab_id: &browser_context.tab_id,
+                    trace_id,
+                    summary: &summary,
+                    effect_class: world_effect_class,
+                    recipe_hint,
+                },
             )
             .map_err(|error| {
                 StasisError::PortFailure(format!(
@@ -724,9 +845,8 @@ impl CognitionBrowserActTool {
             )));
         }
         #[cfg(not(feature = "full-daemon"))]
-        if scope
-            .as_ref()
-            .and_then(|scope| scope.browser_driver_id.as_deref())
+        if selected_driver_id
+            .as_deref()
             .is_some_and(crate::browser_tools::is_isolated_browser_driver_id)
         {
             return Err(StasisError::PortFailure(format!(
@@ -748,14 +868,23 @@ impl CognitionBrowserActTool {
         let browser_context = browser_host_current_context()
             .await
             .map_err(StasisError::PortFailure)?;
-        if let Some(selected_driver_id) = scope
-            .as_ref()
-            .and_then(|scope| scope.browser_driver_id.as_deref())
+        if let Some(selected_driver_id) = selected_driver_id.as_deref()
             && selected_driver_id != browser_context.driver_id
         {
             return Err(StasisError::PortFailure(format!(
                 "{COGNITION_BROWSER_ACT}: selected browser driver is no longer attached"
             )));
+        }
+        if let Some(binding) = active_world.as_ref() {
+            crate::world_authority::validate_browser_world_binding(
+                binding.world_id().as_str(),
+                binding.authority_id(),
+                &browser_context.driver_id,
+                &browser_context.tab_group_id,
+            )
+            .map_err(|error| {
+                StasisError::PortFailure(format!("{COGNITION_BROWSER_ACT}: {error}"))
+            })?;
         }
         if browser_context.control != "agent" {
             let (code, error) = if browser_context.control == "awaiting_operator" {
@@ -781,7 +910,9 @@ impl CognitionBrowserActTool {
         let authority_id = crate::workshop_authority::current()
             .map_err(StasisError::PortFailure)?
             .to_string();
-        if !semantic_targets.is_empty() {
+        let resolved_recipe_targets = if semantic_targets.is_empty() {
+            Vec::new()
+        } else {
             crate::world_authority::validate_browser_element_refs(
                 crate::world_authority::BrowserElementRefFence {
                     authority_id: &authority_id,
@@ -799,21 +930,25 @@ impl CognitionBrowserActTool {
                 StasisError::PortFailure(format!(
                     "{COGNITION_BROWSER_ACT}: semantic target denied: {error}"
                 ))
-            })?;
-        }
+            })?
+        };
+        let recipe_hint = browser_recipe_hint(&recipe_drafts, &resolved_recipe_targets);
         let trace_id = scope
             .as_ref()
             .map(|scope| scope.turn_correlation_id.as_str())
             .filter(|trace_id| !trace_id.trim().is_empty())
             .unwrap_or("browser-action");
         let admission = crate::world_authority::admit_browser_action(
-            &authority_id,
-            &browser_context.driver_id,
-            &browser_context.tab_group_id,
-            &browser_context.tab_id,
-            trace_id,
-            &summary,
-            world_effect_class,
+            crate::world_authority::BrowserWorldActionRequest {
+                authority_id: &authority_id,
+                driver_id: &browser_context.driver_id,
+                tab_group_id: &browser_context.tab_group_id,
+                tab_id: &browser_context.tab_id,
+                trace_id,
+                summary: &summary,
+                effect_class: world_effect_class,
+                recipe_hint,
+            },
         )
         .map_err(|error| {
             StasisError::PortFailure(format!(
@@ -1243,6 +1378,70 @@ mod tests {
             error
                 .to_string()
                 .contains("target_ref requires document_id and observation_revision")
+        );
+    }
+
+    #[test]
+    fn browser_recipe_keeps_semantics_but_not_target_refs_or_values() {
+        let invocation = BrowserActInvocation::try_from(BrowserActInput {
+            action: Some("type".to_string()).into(),
+            actions: None.into(),
+            target_ref: Some("el:opaque:1".to_string()).into(),
+            selector: None.into(),
+            observation_revision: Some(7).into(),
+            document_id: Some("doc:one".to_string()).into(),
+            guard: None.into(),
+            text: Some("must-not-survive".to_string()).into(),
+            key: None.into(),
+            delta_y: None.into(),
+            value: None.into(),
+            ms: None.into(),
+            allow_high_risk: None.into(),
+        })
+        .expect("semantic invocation");
+        let hint = browser_recipe_hint(
+            &browser_recipe_operation_drafts(&invocation),
+            &[crate::world_authority::ResolvedBrowserRecipeTarget {
+                element_ref: "el:opaque:1".to_string(),
+                role: Some("textbox".to_string()),
+                name: Some("Search".to_string()),
+                requires_operator_confirmation: false,
+            }],
+        )
+        .expect("semantic target derives a hint");
+
+        assert_eq!(hint.operations[0].verb, "type");
+        assert_eq!(hint.operations[0].target_name.as_deref(), Some("Search"));
+        assert_eq!(
+            hint.operations[0].input_kind,
+            Some(WorldRecipeInputKind::Text)
+        );
+        let encoded = serde_json::to_string(&hint).expect("serialize hint");
+        assert!(!encoded.contains("el:opaque:1"));
+        assert!(!encoded.contains("must-not-survive"));
+
+        let selector_invocation = BrowserActInvocation::try_from(BrowserActInput {
+            action: Some("click".to_string()).into(),
+            actions: None.into(),
+            target_ref: None.into(),
+            selector: Some("#legacy-selector".to_string()).into(),
+            observation_revision: None.into(),
+            document_id: None.into(),
+            guard: None.into(),
+            text: None.into(),
+            key: None.into(),
+            delta_y: None.into(),
+            value: None.into(),
+            ms: None.into(),
+            allow_high_risk: None.into(),
+        })
+        .expect("legacy selector invocation");
+        assert!(
+            browser_recipe_hint(
+                &browser_recipe_operation_drafts(&selector_invocation),
+                &[]
+            )
+            .is_none()
         );
     }
 }

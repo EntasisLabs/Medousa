@@ -53,6 +53,7 @@ OPERATIONS: dict[str, Operation] = {
     "browser.worlds.isolated.by_world_id.lifecycle.post": Operation("browser.worlds.isolated.by_world_id.lifecycle.post", "POST", "/v1/browser/worlds/isolated/{world_id}/lifecycle", False),
     "browser.worlds.isolated.by_world_id.navigate.post": Operation("browser.worlds.isolated.by_world_id.navigate.post", "POST", "/v1/browser/worlds/isolated/{world_id}/navigate", False),
     "browser.worlds.isolated.by_world_id.observe.post": Operation("browser.worlds.isolated.by_world_id.observe.post", "POST", "/v1/browser/worlds/isolated/{world_id}/observe", False),
+    "browser.worlds.isolated.by_world_id.presentation.get": Operation("browser.worlds.isolated.by_world_id.presentation.get", "GET", "/v1/browser/worlds/isolated/{world_id}/presentation", True),
     "browser.worlds.isolated.by_world_id.screenshot.post": Operation("browser.worlds.isolated.by_world_id.screenshot.post", "POST", "/v1/browser/worlds/isolated/{world_id}/screenshot", False),
     "browser.worlds.isolated.get": Operation("browser.worlds.isolated.get", "GET", "/v1/browser/worlds/isolated", False),
     "browser.worlds.isolated.post": Operation("browser.worlds.isolated.post", "POST", "/v1/browser/worlds/isolated", False),
@@ -93,6 +94,12 @@ OPERATIONS: dict[str, Operation] = {
     "components.by_component_id.store.get": Operation("components.by_component_id.store.get", "GET", "/v1/components/{component_id}/store", False),
     "components.by_component_id.store.keys.get": Operation("components.by_component_id.store.keys.get", "GET", "/v1/components/{component_id}/store/keys", False),
     "components.by_component_id.store.put": Operation("components.by_component_id.store.put", "PUT", "/v1/components/{component_id}/store", False),
+    "computer.drivers.by_driver_id.act.post": Operation("computer.drivers.by_driver_id.act.post", "POST", "/v1/computer/drivers/{driver_id}/act", False),
+    "computer.drivers.by_driver_id.control.post": Operation("computer.drivers.by_driver_id.control.post", "POST", "/v1/computer/drivers/{driver_id}/control", False),
+    "computer.drivers.by_driver_id.observe.post": Operation("computer.drivers.by_driver_id.observe.post", "POST", "/v1/computer/drivers/{driver_id}/observe", False),
+    "computer.drivers.by_driver_id.preflight.get": Operation("computer.drivers.by_driver_id.preflight.get", "GET", "/v1/computer/drivers/{driver_id}/preflight", False),
+    "computer.drivers.by_driver_id.watch.post": Operation("computer.drivers.by_driver_id.watch.post", "POST", "/v1/computer/drivers/{driver_id}/watch", False),
+    "computer.drivers.get": Operation("computer.drivers.get", "GET", "/v1/computer/drivers", False),
     "continuations.lineage.by_turn_correlation_id.get": Operation("continuations.lineage.by_turn_correlation_id.get", "GET", "/v1/continuations/lineage/{turn_correlation_id}", False),
     "continuations.status.get": Operation("continuations.status.get", "GET", "/v1/continuations/status", False),
     "deliver.outbox.post": Operation("deliver.outbox.post", "POST", "/v1/deliver/outbox", False),
@@ -445,6 +452,10 @@ OPERATIONS: dict[str, Operation] = {
     "world.index.post": Operation("world.index.post", "POST", "/v1/world/index", False),
     "world.reset_store.post": Operation("world.reset_store.post", "POST", "/v1/world/reset-store", False),
     "world.status.get": Operation("world.status.get", "GET", "/v1/world/status", False),
+    "worlds.evidence.get": Operation("worlds.evidence.get", "GET", "/v1/worlds/evidence", False),
+    "worlds.recipes.derive.get": Operation("worlds.recipes.derive.get", "GET", "/v1/worlds/recipes/derive", False),
+    "worlds.recipes.run.post": Operation("worlds.recipes.run.post", "POST", "/v1/worlds/recipes/run", False),
+    "worlds.timeline.get": Operation("worlds.timeline.get", "GET", "/v1/worlds/timeline", False),
 }
 
 

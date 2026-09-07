@@ -9,7 +9,7 @@ Integrator / self-host cookbooks: [../cookbook/README.md](../cookbook/README.md)
 | [Getting started](getting-started.md) | Download → welcome → first chat |
 | [Models and agent sources](models-and-agent-sources.md) | Choose runtimes, models, modes, and reply narration in chat |
 | [Bots](bots.md) | Create durable named teammates with their own memory and conversation |
-| [Packages](packages.md) | Add offline brain, adapters, CLI, MCP from Settings |
+| [Packages](packages.md) | Add optional computer, coding, model, channel, and MCP capabilities |
 | [Workshop & Automations](workshop-and-automations.md) | Flows, schedules, specialists, background work |
 | [Phone pairing](phone-pairing.md) | Add another computer as an optional portal |
 | [Peers & Nearby](peers-and-nearby.md) | LAN / tunnel workshops (deep dive linked) |
@@ -18,7 +18,7 @@ Integrator / self-host cookbooks: [../cookbook/README.md](../cookbook/README.md)
 | [VS Code](vscode.md) | Use Medousa chat beside your editor |
 | [Neovim](neovim.md) | Use the keyboard-first Medousa coding room |
 | [Obsidian](obsidian.md) | Use the vault-native Medousa companion |
-| [Browser](browser.md) | Use the page-aware Medousa companion in Chrome or Edge |
+| [Browser](browser.md) | Choose governed workshop worlds, review activity, or use the Chromium companion |
 | [Web in Medousa](web-in-medousa.md) | Use workshop and device browsers with bounded agent control |
 | [Secure credential handoff](secure-credential-handoff.md) | Give OpenShell or Grapheme an API key without putting it in chat |
 | [Desktop companion](desktop-companion.md) | Keep chat, approvals, notes, and views in a floating pet |

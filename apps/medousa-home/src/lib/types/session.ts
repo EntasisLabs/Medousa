@@ -118,8 +118,12 @@ export interface CreateTurnTicketRequest {
   stageRouting?: import("$lib/types/runtime").StageRoutingMatrix;
   channelSurface?: string;
   browserDriverId?: string;
+  selectedWorlds?: TurnWorldSelection[];
   mediaRefs?: import("$lib/types/media").MediaRef[];
   voicePresetId?: string;
   voiceAppendix?: string;
   identityUserId?: string;
 }
+
+export type TurnWorldSelection =
+  import("$lib/types/generated/daemon_api").TurnWorldSelection;

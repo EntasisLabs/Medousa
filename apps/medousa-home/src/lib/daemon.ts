@@ -23,3 +23,5 @@ export * from "./daemon/runtime";
 export * from "./daemon/identity";
 export * from "./daemon/calendar";
 export * from "./daemon/misc";
+export * from "./daemon/computer";
+export * from "./daemon/worldActivity";

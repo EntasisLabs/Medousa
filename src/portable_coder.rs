@@ -492,6 +492,7 @@ mod daemon_runner {
                 supports_liquid_markdown: false,
                 supports_browser_host: false,
                 browser_driver_id: None,
+                selected_worlds: Vec::new(),
                 channel_surface: Some("portable_coder".to_string()),
             };
             let session_id = SessionId::parse(&task.parent_session_id).map_err(|error| {
@@ -1079,6 +1080,8 @@ mod tests {
             effective_tool_domains: vec!["code".to_string(), "turn".to_string()],
             requested_tool_names: task.requested_tool_names.clone(),
             effective_tool_names: task.requested_tool_names.clone(),
+            requested_world_ids: Vec::new(),
+            effective_world_ids: Vec::new(),
             network_policy: PeerNetworkPolicy::Deny,
             issued_at: now,
             expires_at: task.deadline_at,

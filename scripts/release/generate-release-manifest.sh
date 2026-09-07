@@ -168,6 +168,7 @@ COMPONENT_DISPLAY_NAMES=(
   "mcp-gateway:MCP gateway"
   "coding-engine:Coding engine"
   "shell-session:Shell session host"
+  "computer-driver:Computer control"
 )
 
 OUT="${DIST_DIR}/release-manifest.json"

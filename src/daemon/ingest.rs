@@ -1298,6 +1298,7 @@ async fn spawn_continuation_agent_turn(
         supports_liquid_markdown: false,
         supports_browser_host: false,
         browser_driver_id: None,
+        selected_worlds: Vec::new(),
         channel_surface: interactive_request
             .surface
             .as_ref()
@@ -1437,6 +1438,7 @@ pub async fn spawn_daemon_api_agent_turn(
         supports_liquid_markdown: false,
         supports_browser_host: false,
         browser_driver_id: None,
+        selected_worlds: Vec::new(),
         channel_surface: Some("api".to_string()),
     };
     let execution = match crate::agent_runtime::execution_context::TurnExecutionContext::from_scope(
@@ -2271,6 +2273,11 @@ async fn start_ingest_ask_stream(
             .surface
             .as_ref()
             .and_then(|surface| surface.browser_driver_id.clone()),
+        selected_worlds: interactive_request
+            .surface
+            .as_ref()
+            .map(|surface| surface.selected_worlds.clone())
+            .unwrap_or_default(),
         channel_surface: interactive_request
             .surface
             .as_ref()

@@ -101,13 +101,20 @@ pub async fn execution_targets(
         .agent()
         .worker_scheduler
         .execution_runtime_id();
-    let candidate = crate::workshop_contract::ExecutionTargetCandidate::local(
-        runtime_id.clone(),
+    let mut capabilities =
         stasis::domain::runtime::placement::WorkerCapabilities::any()
             .node_id(&runtime_id)
             .platform(std::env::consts::OS)
             .architecture(std::env::consts::ARCH)
-            .with_capability("assistant.work"),
+            .with_capability("assistant.work")
+            .with_capability("coder.work");
+    let computer_drivers = state.computer_drivers.registrations().await;
+    capabilities.capabilities.extend(
+        crate::workshop_contract::world_driver_execution_capabilities(&computer_drivers, true),
+    );
+    let candidate = crate::workshop_contract::ExecutionTargetCandidate::local(
+        runtime_id.clone(),
+        capabilities,
     );
     Json(crate::workshop_contract::ExecutionTargetInventory {
         schema_version:

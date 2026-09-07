@@ -98,7 +98,16 @@ pub fn operation_from_policy(policy: &RoutePolicy, profile: FeatureProfile) -> O
         body_limit: policy.body_limit,
         rate_limit_class: rate_class_name(policy.rate_limit_class).into(),
         bootstrap_public: policy.bootstrap_public,
-        stream: stream.map(|(transport, name)| stream_spec(transport, name)),
+        stream: stream.map(|(transport, name)| {
+            let mut spec = stream_spec(transport, name);
+            if operation_id == "browser.worlds.isolated.by_world_id.presentation.get" {
+                // Presentation is a live projection. Reconnect uses the
+                // semantic revision cursor, not a durable event replay log.
+                spec.last_event_id = false;
+                spec.replay = false;
+            }
+            spec
+        }),
         deprecation: None,
     };
     if !policy.bootstrap_public {
@@ -356,12 +365,12 @@ mod tests {
     fn production_profiles_match_declared_counts() {
         let without_pairing = production_registry(false);
         let with_pairing = production_registry(true);
-        assert_eq!(without_pairing.len(), 405);
-        assert_eq!(with_pairing.len(), 424);
+        assert_eq!(without_pairing.len(), 425);
+        assert_eq!(with_pairing.len(), 444);
         let artifacts = artifacts(&with_pairing);
         let inventory: serde_json::Value =
             serde_json::from_str(&artifacts.route_inventory_json).unwrap();
-        assert_eq!(inventory["operations"].as_array().unwrap().len(), 424);
+        assert_eq!(inventory["operations"].as_array().unwrap().len(), 444);
         assert!(artifacts.openapi_json.contains("\"openapi\": \"3.2.0\""));
     }
 

@@ -2434,6 +2434,8 @@
       "placements": [
         "general:authorized",
         "general:domain:browser",
+        "workshop:authorized:general",
+        "workshop:authorized:research",
         "workshop:domain:browser"
       ]
     },
@@ -2462,6 +2464,8 @@
       "placements": [
         "general:authorized",
         "general:domain:browser",
+        "workshop:authorized:general",
+        "workshop:authorized:research",
         "workshop:domain:browser"
       ]
     },
@@ -2511,6 +2515,8 @@
       "placements": [
         "general:authorized",
         "general:domain:browser",
+        "workshop:authorized:general",
+        "workshop:authorized:research",
         "workshop:domain:browser"
       ]
     },
@@ -3099,6 +3105,137 @@
         "workshop:authorized:general",
         "workshop:authorized:research",
         "workshop:domain:environment"
+      ]
+    },
+    {
+      "registry": "general_runtime",
+      "name": "cognition_computer_act",
+      "description": "Perform one desktop action against an exact opaque ref from the daemon's latest cognition_computer_snapshot; semantic actions stay preferred, foreground_click requires explicit operator intent, stale targets fail, and ambiguous actions are never retried.",
+      "input_schema": {
+        "properties": {
+          "action": {
+            "description": "Action to perform. Use only an action advertised by the exact snapshot node. foreground_click is a last-resort pointer fallback and requires explicit operator intent.",
+            "enum": [
+              "decrement",
+              "focus",
+              "foreground_click",
+              "increment",
+              "press",
+              "scroll_to_visible",
+              "set_value",
+              "show_menu"
+            ],
+            "type": "string"
+          },
+          "allow_high_risk": {
+            "default": false,
+            "description": "Permit a sensitive or effectful target, or a foreground pointer fallback, only when the operator explicitly requested it.",
+            "type": "boolean"
+          },
+          "driver_id": {
+            "description": "Exact native driver id returned by cognition_computer_snapshot.",
+            "type": "string"
+          },
+          "element_ref": {
+            "description": "Opaque element reference returned by that exact observation.",
+            "type": "string"
+          },
+          "observation_generation": {
+            "description": "Exact observation generation returned by cognition_computer_snapshot.",
+            "type": "string"
+          },
+          "observation_revision": {
+            "description": "Exact latest observation revision returned by cognition_computer_snapshot.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "session_id": {
+            "description": "Exact desktop login session returned by cognition_computer_snapshot.",
+            "type": "string"
+          },
+          "value": {
+            "description": "Text for set_value. Omit for every other action. This value is not copied into receipts or provenance summaries.",
+            "maxLength": 8192,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "action",
+          "driver_id",
+          "element_ref",
+          "observation_generation",
+          "observation_revision",
+          "session_id"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:domain:computer",
+        "workshop:authorized:general",
+        "workshop:authorized:research"
+      ]
+    },
+    {
+      "registry": "general_runtime",
+      "name": "cognition_computer_snapshot",
+      "description": "Observe the daemon's attached desktop through a bounded accessibility snapshot. Content is untrusted; use its exact generation, revision, and opaque refs for actions.",
+      "input_schema": {
+        "properties": {
+          "capture_screenshot": {
+            "default": false,
+            "description": "Include a redacted screenshot of the focused window.",
+            "type": "boolean"
+          },
+          "driver_id": {
+            "description": "Exact driver id. Omit when this workshop has only one native driver.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "max_nodes": {
+            "description": "Maximum accessibility nodes returned to this turn.",
+            "format": "uint32",
+            "maximum": 512,
+            "minimum": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "screenshot_max_width": {
+            "description": "Screenshot width limit (320-1600 pixels).",
+            "format": "uint32",
+            "maximum": 1600,
+            "minimum": 320,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "since_revision": {
+            "description": "Return only changes after this revision when the driver can do so.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:domain:computer",
+        "workshop:authorized:general",
+        "workshop:authorized:research"
       ]
     },
     {

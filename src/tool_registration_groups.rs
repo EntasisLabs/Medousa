@@ -98,6 +98,11 @@ pub fn register_shared_interactive_tools(
     bindings: &SharedToolRegistrationBindings,
 ) -> stasis::prelude::Result<()> {
     register_portable_interactive_tools(registry, bindings)?;
+    crate::computer_tools::register_computer_tools(
+        registry,
+        bindings.turn_scope.clone(),
+        bindings.event_tx.clone(),
+    )?;
     crate::skill_tools::register_skill_probe_tool(
         registry,
         bindings.runtime.clone(),

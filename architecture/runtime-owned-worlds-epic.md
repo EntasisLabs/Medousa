@@ -1,6 +1,6 @@
 # Runtime-owned worlds
 
-> **Status:** Active — architecture locked; Phases 1–4 implemented locally, with computer-use drivers next
+> **Status:** Core complete — Phases 1–7 implemented and verified; packaged Windows/Linux computer drivers remain explicit platform follow-ups
 >
 > **Date:** 2026-09-04
 >
@@ -505,9 +505,10 @@ Current local slice:
   pixel attachment so long turns stay memory-bounded.
 - Windows/Linux/mobile screenshot drivers, client hydration of binary
   artifacts, pushed console/network deltas, hardened isolated-world DOM
-  inspection, and the latency/pixel harness remain open before Phase 3 is
-  considered complete. Mobile and extension action transports remain
-  intentionally deferred to Phase 4.
+  inspection, and the latency/pixel harness remain cross-platform and
+  production-hardening follow-ups tracked with Phase 7. The core Phase 3
+  outcome is complete; mobile and extension action transport landed through
+  the instance-addressed Phase 4 path.
 
 Implementation:
 
@@ -618,6 +619,131 @@ Suggested commit boundary:
 **Outcome:** The world contract drives native applications and desktops while
 preserving platform security boundaries and background execution semantics.
 
+Current foundation slice:
+
+- The daemon composition owns one explicit world-authority service shared by
+  browser and native-computer adapters.
+- `medousa-computer-bridge` defines the platform-neutral, bounded preflight and
+  semantic-observation protocol, including sensitive-value redaction and exact
+  desktop-session identity.
+- The native driver broker admits observation through that authority, fences
+  it to one registered colocated driver, validates the result, and records a
+  confirmed or failed effect.
+- An in-memory fake driver proves the governed path.
+
+Current macOS observation slice:
+
+- `medousa-computer` is a persistent, colocated sidecar with a bounded private
+  stdin/stdout protocol. It does not open a network listener.
+- Read-only preflight reports Accessibility, Screen Recording, and input-event
+  permission state without asking macOS to display a permission prompt.
+- The first sensor projects active displays, the focused application, windows,
+  and a bounded accessibility tree. Secure text values never cross the bridge,
+  AX calls have a hard messaging timeout, and the daemon kills/restarts a
+  wedged sidecar inside a bounded request window.
+- `medousa doctor` reports the installed driver identity, exact login session,
+  and permission guidance.
+- Authenticated daemon routes expose static driver inventory, non-prompting
+  preflight, and operator-only semantic observation. The caller must echo the
+  exact preflight session, while the daemon derives the desktop resource and
+  records observation provenance through the shared world authority.
+
+Current macOS action slice:
+
+- Each accessibility node advertises the actions macOS actually supports for
+  that exact observation. The bounded vocabulary is `press`, `focus`,
+  `set_value`, `show_menu`, `increment`, `decrement`, and
+  `scroll_to_visible`; the native sidecar accepts no coordinates and never
+  moves the physical pointer.
+- Every action is fenced to the latest exact desktop session, observation
+  generation, revision, resource, and opaque element reference. The broker
+  rejects actions the node did not advertise and consumes an admitted
+  observation before native dispatch, preventing sequential replay or
+  concurrent reuse against changed UI.
+- Secure text fields never advertise `set_value`; credentials require a future
+  opaque grant path instead of passing secret text through a model tool call.
+- The daemon grants only exact-resource interaction, acquires control, rechecks
+  the permit immediately before dispatch, and records the native receipt.
+- Effectful sidecar requests are never automatically retried. A lost or invalid
+  acknowledgement is recorded as indeterminate for reconciliation rather than
+  risking a duplicate action. Callers must observe again after every admitted
+  action, including failed or indeterminate dispatch.
+- The main Medousa lane exposes `cognition_computer_snapshot` and
+  `cognition_computer_act` directly against the daemon broker. A single native
+  driver is selected without ceremony; multiple drivers require an exact id.
+  Agent observations are capped below the driver transport maximum, and their
+  large payloads are requeryable instead of retained inline forever.
+- Action risk is resolved from the broker's cached node semantics, not caller
+  labels. Disabled nodes fail closed, while sensitive and effectful-looking
+  targets require an explicit `allow_high_risk` assertion tied to operator
+  intent. Text supplied to `set_value` stays out of receipts, tool summaries,
+  and provenance.
+- `medousa-computer` ships as the optional `computer-driver` package through
+  the same release manifest and `{dataDir}/bin` installer path as other
+  workshop sidecars; it is never folded into the daemon or silently installed.
+
+Current macOS pixel slice:
+
+- `cognition_computer_snapshot` can request a bounded PNG of the exact focused
+  window attached to its semantic observation. Pixel access is a separate
+  capability and the broker holds the observation fence across capture, so an
+  admitted action cannot race the frame.
+- The sidecar uses ScreenCaptureKit's desktop-independent-window filter rather
+  than a display-wide capture. It rechecks application, title, and geometry
+  before and after capture and fails closed when the window identity changes.
+- Secure accessibility regions are collected on both sides of capture and
+  redacted before encoding. Missing secure bounds, truncated traversal, stale
+  focus, permission loss, ambiguous native-window matching, and oversized
+  payloads all reject the capture.
+- Raw image data remains local to the bridge. The daemon verifies the PNG,
+  digest, dimensions, byte bounds, session, generation, revision, and focused
+  window before persisting a content-addressed artifact; model hydration is
+  transient and session-bound, so pixels do not accumulate in transcripts.
+
+Current macOS foreground fallback slice:
+
+- Accessibility remains the default action path. The driver advertises
+  `foreground_click` only for a conservative set of bounded, enabled,
+  non-sensitive controls in the exact focused window and only when macOS did
+  not advertise `AXPress`.
+- The caller still supplies only an opaque element reference. The sidecar
+  re-resolves its center from cached and current AX geometry, revalidates the
+  exact focused app/window/frame and semantic identity, and requires the center
+  hit test to resolve to the element or one of its descendants.
+- Input-control permission is preflighted before the daemon consumes the
+  observation fence and checked again in the sidecar. A foreground click always
+  requires explicit high-risk operator intent, emits one mouse down/up pair,
+  and is never retried.
+- Hardware-input counters and mouse-button state fence target resolution; new
+  human input preempts dispatch and requires another observation. The action is
+  intentionally one-shot so the remaining race window is bounded to the final
+  local event post rather than an opaque interaction loop.
+
+Current Home control slice:
+
+- Runtime Controls reads driver inventory and permission preflight through the
+  selected workshop daemon, so local and remote worlds use the same authority
+  path. Opening or refreshing the view never prompts for operating-system
+  access and never talks directly to the viewing device's OS.
+- Home shows semantic observation, focused-window pixels, and guarded
+  foreground-input readiness separately. Missing packages, unavailable
+  sidecars, and denied permissions stay visible instead of collapsing into a
+  generic tool failure.
+- The native desktop remains explicitly `attached`. Home can open a bounded
+  focused-window view through the selected workshop, including from mobile or
+  another desktop. It keeps one replaceable frame and stops polling when the
+  view closes, so pixels do not accumulate in client state or transcripts.
+- Watch reuses the broker's latest exact semantic observation whenever possible
+  and backs off while an agent is between observations. Merely watching does not
+  overwrite the action fence that the agent is about to use.
+- **Take control** acquires a real human world lease, increments the canonical
+  generation, clears stale observations, and revalidates queued native actions
+  after their final async fence acquisition. **Return to Medousa** increments
+  the generation again, requiring a fresh agent observation and lease.
+- The control holder response is client-safe: Home can distinguish itself,
+  another human, Medousa, and availability without receiving another
+  principal's identity. Closing Home never silently releases human control.
+
 Implementation:
 
 - Package computer-use drivers as optional sidecars resolved through the
@@ -634,7 +760,7 @@ Implementation:
 
 Acceptance:
 
-- The user can watch and interrupt a daemon-owned desktop operation.
+- The user can watch and interrupt a daemon-governed attached desktop operation.
 - A supported accessibility action does not move the user's physical cursor.
 - Permission failure is diagnosed before a turn enters an action loop.
 - Browser-only work continues to use the browser adapter.
@@ -648,6 +774,84 @@ Suggested commit boundary:
 
 **Outcome:** Worlds run on an explicitly selected workshop and survive client,
 agent, and network lifecycle changes.
+
+Current federation inventory slice:
+
+- The existing execution-target inventory now carries normalized
+  `world.browser.*` and `world.computer.*` capabilities derived from the
+  concrete drivers colocated with each workshop. Isolated-browser
+  provisioning and registered native drivers use the same vocabulary.
+- Signed peer target probes include those mechanics only when the destination's
+  current directional policy admits Assistant or Coder work plus the explicit
+  `world` tool domain. Pairing, legacy task grants, ordinary web access, expired
+  policy, and disabled policy expose no world authority.
+- Browser/computer cognition tools now compile into the distinct `world`
+  domain rather than inheriting the safe `web` domain. Exact destination grants
+  remain the final tool ceiling, while Home exposes one calm advanced toggle
+  for granting that domain.
+- Local and remote candidate matching can require the normalized capability
+  strings without learning a URL, host path, driver transport, credential, or
+  ambient principal identity.
+
+Current user-placement slice:
+
+- Home resolves Browser and Computer choices from that authorized capability
+  inventory and stores an exact runtime id per world family. A stale explicit
+  choice stays visible and fails closed instead of falling back.
+- The unary daemon bridge can route a generated operation through the existing
+  authenticated transport for an exact paired runtime. URLs and credentials
+  remain below the client-facing selection boundary.
+- Browser worlds persist their owning runtime beside the opaque world id. Every
+  lifecycle, navigation, observation, screenshot, and human-input request uses
+  that binding; changing the creation target does not retarget an active world.
+- Computer readiness follows the selected runtime, while an open live view
+  captures the exact runtime, driver, and desktop session it began with.
+
+Current worker/Bot eligibility slice:
+
+- Turn admission accepts a bounded, normalized set of exact world-to-runtime
+  bindings resolved by the privileged client from the owning workshop. Home
+  advertises only a currently loaded workshop world, never a stale preference.
+- Foreground agents and Bots see only opaque eligible world ids. Driver, URL,
+  host, transport, and runtime placement do not enter model-authored prompts or
+  worker requests.
+- A worker may request only a sorted subset of the parent's eligible ids, and
+  every id must belong to that worker's exact resolved runtime. Omission grants
+  no implicit world inheritance.
+- Delegated worker specifications and destination-issued task grants preserve
+  the exact id subset. The destination still intersects the explicit `world`
+  domain.
+
+Current signed-intent execution slice:
+
+- The existing signed mesh task is the one remote hop: its canonical worker
+  specification carries exact world ids and the destination mints the task
+  grant. Individual browser/computer actions are not proxied back through
+  Home or wrapped in a second remote authorization ceremony.
+- The destination registry exposes world tools only when the worker has an
+  exact eligible id, adds that opaque id to the tool schema, and resolves the
+  concrete driver locally for the duration of one invocation. Driver and
+  authority mechanics are removed from model-visible requests and results.
+- Remote world calls revalidate the destination's current directional policy
+  at every tool boundary. Revoking the `world` domain stops the next call even
+  though the immutable signed task remains valid provenance.
+- Destination world-kernel grants use the worker principal and cannot outlive
+  the destination-issued task grant. Isolated browser ownership is resolved
+  only inside that exact task-local world boundary.
+
+Current durable closeout slice:
+
+- Bot profile schema v2 stores one explicit persistent-browser world/runtime
+  binding. Old profiles migrate with no world authority, duplicated Bots do
+  not inherit it, and an explicit per-turn selection always wins.
+- The owning destination may rehydrate only a persistent, agent-controlled
+  world whose stopped state was caused by workshop restart. Human takeover,
+  manual stop, pause, ordinary failure, and ephemeral worlds still require an
+  operator decision.
+- Home watches a remote isolated browser through one destination-owned SSE
+  projection. Each changed semantic revision is paired atomically with a
+  redacted, size-capped JPEG; hidden views close the stream and older or
+  interrupted daemons retain the bounded unary fallback.
 
 Implementation:
 
@@ -679,6 +883,123 @@ Suggested commit boundary:
 **Outcome:** World operation is explainable, recoverable where possible, and
 measurably more reliable than an opaque computer-use loop.
 
+**Proof status (2026-09-06): Complete for the core epic.** The remaining
+Windows/Linux native-driver packages extend platform coverage; they do not
+change the authority, recovery, recipe, evidence, or review contracts proven
+here.
+
+Current durable causal-ledger slice:
+
+- The daemon appends every world-kernel event to one bounded, monotonic JSONL
+  ledger before an admitted permit reaches its driver. A durability failure
+  makes world mutation read-only rather than allowing untraceable effects.
+- Admission captures a surface revision, control generation, permit lifetime,
+  semantic summary, effect class, and an effect-specific recovery strategy.
+  It does not persist page bodies, native handles, credentials, or reusable
+  authority.
+- Every new admission also declares a compensation boundary independently of
+  recovery: none needed, reconcile before a fresh domain action,
+  operator-directed action, or unavailable. No compensation is automatically
+  dispatched, and any corrective action is a new attributable intent with
+  fresh admission. Legacy records default to an unspecified fail-closed state.
+- Startup pairs admissions with terminal receipts. An unmatched observation
+  becomes `needs_reconciliation`; an unmatched mutation or external effect
+  becomes `indeterminate`. In both cases the old permit is discarded and any
+  next attempt requires fresh admission.
+- Authenticated workshop clients can page through the redacted cross-world
+  ledger at `GET /v1/worlds/timeline`. This is the contract foundation for the
+  unified review UI and evidence promotion that remain in Phase 7.
+
+Current semantic-recipe slice:
+
+- Browser and native-computer admission may persist a bounded semantic action
+  hint: verb, observed role/name, fresh-input kind, and whether operator
+  confirmation remains required. Actual values, selectors, coordinates,
+  opaque target refs, native handles, and reusable authority are excluded.
+- `GET /v1/worlds/recipes/derive?trace_id=…` derives an inert, deterministic
+  recipe only when every effectful action has a confirmed terminal receipt.
+  Missing admissions, legacy or selector-based actions, failures,
+  interruptions, and uncertain outcomes fail closed instead of yielding a
+  partial workflow.
+- Every derived step declares that replay needs a fresh observation and fresh
+  admission. The response cannot execute itself, carries no authority, and
+  does not permit automatic dispatch.
+
+Current governed-runner slice:
+
+- `POST /v1/worlds/recipes/run` accepts only a source trace plus its
+  server-derived recipe id, a durable run id, an exact destination world for
+  every step, and fresh values supplied separately per operation. The daemon
+  re-derives the recipe; callers cannot submit or modify action templates.
+- Execution requires authenticated `admin.execute` authority and explicit
+  operator approval. Source-marked and freshly detected high-risk targets also
+  require per-operation confirmation. External and irreversible effects remain
+  non-executable in this slice.
+- Every step takes a new bounded full semantic observation, requires an exact
+  unique role/name match, resolves a new opaque target, and crosses the normal
+  browser or native-computer admission path. Fuzzy matches, sensitive fields,
+  truncated observations, changed worlds, stale refs, or lost control stop the
+  run before the next action.
+- A run trace named from the caller's bounded `run_id` is checked before any
+  mutation. Once that trace crosses a durable world boundary, the same id is
+  refused rather than risking a duplicate effect. Uncertain post-dispatch
+  results stop with `effect_may_have_applied=true` and must be inspected in the
+  causal timeline.
+- Fresh values and driver-native refs exist only at the live adapter boundary;
+  neither appears in recipe metadata, timeline summaries, receipts, or the run
+  response. Runs stop on their first failed step and are bounded to 32 total
+  operations.
+
+Current production-proof slice:
+
+- A dedicated world-authority adversarial suite treats prompt-injection text,
+  stale observations, human takeover races, driver disconnects, uncertain
+  irreversible effects, and acknowledged external-effect retries as attacks on
+  one common boundary.
+  The cases run inside the existing workspace library lane rather than adding
+  another duplicate release build.
+- The existing micro-CI job now measures the pure admission/completion hot
+  path, immediate human takeover, and a worst-case 1,024-node cached semantic
+  observation. Checked-in ceilings enforce the 1 ms admission target, one
+  60 Hz frame for takeover, and 10 ms cached-observation target.
+- Bench outputs are machine-readable but remain separate from application and
+  network response time. Raising a ceiling requires changing the reviewed
+  budget file rather than silently accepting a slower sample.
+
+Current evidence-promotion slice:
+
+- The daemon records raw event kind, effect/status classification, action
+  elapsed time, and durability latency in a bounded process-local telemetry
+  ring. High-rate samples do not become an unbounded audit log.
+- Failures, interruptions, uncertain outcomes, external or irreversible
+  effects, and actions requiring operator confirmation are promoted into a
+  bounded durable sidecar keyed to their causal-ledger sequence.
+- Promoted evidence is deliberately payload-free: it contains causal identity,
+  principal kind, checkpoint/recovery metadata, promotion reasons, and timing,
+  but excludes summaries, errors, page text, values, selectors, coordinates,
+  screenshots, grants, permits, and native handles.
+- The bounded evidence sidecar is the durable review artifact for this slice.
+  Large screenshot and binary artifacts remain in their existing
+  content-addressed stores rather than being copied into world activity.
+- Authenticated workshop clients can page the evidence sidecar at
+  `GET /v1/worlds/evidence`; records point back to the separately redacted
+  timeline and cannot be replayed as authority.
+
+Current unified-review slice:
+
+- Runtime settings expose one quiet **World activity** entry that opens a
+  desktop dialog or native-feeling mobile sheet for the active workshop.
+- Home requests the newest bounded ledger and evidence pages directly, merges
+  them by daemon sequence, and renders every principal kind in one causal
+  order. It never walks the full retained ledger merely to reach recent work.
+- Each expandable event identifies who acted, the governing authority, world
+  and driver, intent/trace, revision checkpoint, terminal status, and recovery
+  and compensation requirements. A separate Evidence filter focuses review on
+  promoted events.
+- Older daemons remain useful: if the evidence operation is absent, Home keeps
+  the causal timeline visible and states that promoted evidence is unavailable.
+  No raw page, value, screenshot, error, or reusable authority enters the view.
+
 Implementation:
 
 - Add domain-specific checkpoints and compensation plans.
@@ -692,6 +1013,17 @@ Implementation:
 - Publish performance and reliability budgets in CI without coupling release
   packaging to unnecessary duplicate compilation.
 
+The hard reliability budget is enforced by the adversarial tests already run
+in the workspace library lane:
+
+- unauthorized or stale mutation permits admitted: **0**;
+- permits accepted after human takeover: **0**;
+- duplicate permits after an acknowledged or indeterminate idempotency key:
+  **0**;
+- unmatched durable admissions reopened without a typed recovery state:
+  **0**; and
+- compensation dispatched automatically or with old authority: **0**.
+
 Acceptance:
 
 - A crash between admission and completion resolves to a typed indeterminate
@@ -700,6 +1032,16 @@ Acceptance:
 - A replayed recipe receives fresh admission and fails safely when the world
   differs.
 - Common browser and computer workflows meet the latency budgets above.
+
+Closeout proof:
+
+| Acceptance | Evidence |
+|---|---|
+| Crash recovery is typed | Startup recovery tests reopen unmatched admissions as `needs_reconciliation` or `indeterminate`, discard the old permit, and preserve their checkpoint and causal ids. |
+| Activity is attributable | The timeline/evidence routes and Home review sheet expose principal kind, intent/trace, authority, driver, revision, outcome, recovery, and compensation in one bounded causal view. |
+| Recipes re-enter authority | Derivation rejects partial or uncertain traces; execution re-observes exact semantic targets and sends every step through fresh admission with a durable run id. |
+| Reliability fails closed | The adversarial suite covers prompt injection, stale state, takeover, disconnect, irreversible uncertainty, and idempotent external effects under the zero-tolerance budget above. |
+| Hot paths remain fast | On the closeout Mac, 20,000 iterations measured admission/completion p95 at 3,459 ns and takeover p95 at 375 ns; a 1,024-node cached observation measured p95 at 91,333 ns. All remain far below the checked-in 1 ms, one-frame, and 10 ms ceilings. These are daemon/cached-state measurements, not target-application or network-response claims. |
 
 Suggested commit boundary:
 

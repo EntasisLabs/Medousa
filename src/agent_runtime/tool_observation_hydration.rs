@@ -6,6 +6,7 @@ use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
 
 use crate::browser_tools::COGNITION_BROWSER_SNAPSHOT;
+use crate::computer_tools::COGNITION_COMPUTER_SNAPSHOT;
 
 const MAX_SCREENSHOT_BYTES: usize = 8 * 1024 * 1024;
 const MAX_SCREENSHOT_WIDTH: u32 = 1600;
@@ -46,9 +47,36 @@ struct BrowserScreenshotViewport {
     device_scale_factor: f64,
 }
 
+#[derive(Debug, Deserialize)]
+struct ComputerScreenshotReceipt {
+    artifact_id: String,
+    mime: String,
+    byte_size: usize,
+    sha256: String,
+    observation_generation: String,
+    observation_revision: u64,
+    window_resource_id: String,
+    coordinate_frame: String,
+    image_width: u32,
+    image_height: u32,
+    untrusted_content: bool,
+}
+
+struct ValidatedScreenshotReceipt {
+    artifact_id: String,
+    mime: String,
+    byte_size: usize,
+    sha256: String,
+    image_width: u32,
+    image_height: u32,
+}
+
 impl ToolObservationHydrationPort for DaemonToolObservationHydrationPort {
     fn accepts(&self, tool_name: &str) -> bool {
-        tool_name == COGNITION_BROWSER_SNAPSHOT
+        matches!(
+            tool_name,
+            COGNITION_BROWSER_SNAPSHOT | COGNITION_COMPUTER_SNAPSHOT
+        )
     }
 
     fn hydrate(
@@ -57,7 +85,10 @@ impl ToolObservationHydrationPort for DaemonToolObservationHydrationPort {
     ) -> RuntimePortFuture<Result<Option<HydratedToolObservation>, String>> {
         let session_id = self.session_id.clone();
         Box::pin(async move {
-            if request.tool_name != COGNITION_BROWSER_SNAPSHOT {
+            if !matches!(
+                request.tool_name.as_str(),
+                COGNITION_BROWSER_SNAPSHOT | COGNITION_COMPUTER_SNAPSHOT
+            ) {
                 return Ok(None);
             }
             let Some(screenshot) = request.tool_output.get("screenshot") else {
@@ -66,9 +97,33 @@ impl ToolObservationHydrationPort for DaemonToolObservationHydrationPort {
             if screenshot.is_null() {
                 return Ok(None);
             }
-            let receipt: BrowserScreenshotReceipt = serde_json::from_value(screenshot.clone())
-                .map_err(|_| "browser screenshot receipt is malformed".to_string())?;
-            validate_receipt(&request.source_call_id, &receipt)?;
+            let receipt = if request.tool_name == COGNITION_BROWSER_SNAPSHOT {
+                let receipt: BrowserScreenshotReceipt =
+                    serde_json::from_value(screenshot.clone())
+                        .map_err(|_| "browser screenshot receipt is malformed".to_string())?;
+                validate_browser_receipt(&request.source_call_id, &receipt)?;
+                ValidatedScreenshotReceipt {
+                    artifact_id: receipt.artifact_id,
+                    mime: receipt.mime,
+                    byte_size: receipt.byte_size,
+                    sha256: receipt.sha256,
+                    image_width: receipt.image_width,
+                    image_height: receipt.image_height,
+                }
+            } else {
+                let receipt: ComputerScreenshotReceipt =
+                    serde_json::from_value(screenshot.clone())
+                        .map_err(|_| "computer screenshot receipt is malformed".to_string())?;
+                validate_computer_receipt(&request.source_call_id, &receipt)?;
+                ValidatedScreenshotReceipt {
+                    artifact_id: receipt.artifact_id,
+                    mime: receipt.mime,
+                    byte_size: receipt.byte_size,
+                    sha256: receipt.sha256,
+                    image_width: receipt.image_width,
+                    image_height: receipt.image_height,
+                }
+            };
 
             let artifact_id = receipt.artifact_id.clone();
             let fetch_session_id = session_id.clone();
@@ -76,14 +131,12 @@ impl ToolObservationHydrationPort for DaemonToolObservationHydrationPort {
                 crate::artifact_store::fetch_binary_artifact(&fetch_session_id, &artifact_id)
             })
             .await
-            .map_err(|_| "browser screenshot artifact lookup failed".to_string())?
-            .ok_or_else(|| {
-                "browser screenshot artifact is unavailable in this session".to_string()
-            })?;
+                .map_err(|_| "screenshot artifact lookup failed".to_string())?
+                .ok_or_else(|| "screenshot artifact is unavailable in this session".to_string())?;
 
             if fetched.record.session_id != session_id
                 || fetched.record.artifact_id != receipt.artifact_id
-                || fetched.record.tool_name != COGNITION_BROWSER_SNAPSHOT
+                || fetched.record.tool_name != request.tool_name
                 || fetched.record.direction != "screenshot"
                 || fetched.record.content_type != "image/png"
                 || fetched.mime != receipt.mime
@@ -91,16 +144,16 @@ impl ToolObservationHydrationPort for DaemonToolObservationHydrationPort {
                 || fetched.bytes.len() != receipt.byte_size
                 || !fetched.record.hash64.eq_ignore_ascii_case(&receipt.sha256)
             {
-                return Err("browser screenshot artifact does not match its receipt".to_string());
+                return Err("screenshot artifact does not match its receipt".to_string());
             }
             let (width, height) = png_dimensions(&fetched.bytes)
-                .ok_or_else(|| "browser screenshot artifact is not a bounded PNG".to_string())?;
+                .ok_or_else(|| "screenshot artifact is not a bounded PNG".to_string())?;
             if width != receipt.image_width || height != receipt.image_height {
-                return Err("browser screenshot dimensions do not match its receipt".to_string());
+                return Err("screenshot dimensions do not match its receipt".to_string());
             }
             let actual_sha256 = format!("{:x}", Sha256::digest(&fetched.bytes));
             if !actual_sha256.eq_ignore_ascii_case(&receipt.sha256) {
-                return Err("browser screenshot bytes do not match their digest".to_string());
+                return Err("screenshot bytes do not match their digest".to_string());
             }
 
             Ok(Some(HydratedToolObservation {
@@ -116,7 +169,7 @@ impl ToolObservationHydrationPort for DaemonToolObservationHydrationPort {
     }
 }
 
-fn validate_receipt(
+fn validate_browser_receipt(
     source_call_id: &str,
     receipt: &BrowserScreenshotReceipt,
 ) -> Result<(), String> {
@@ -148,6 +201,40 @@ fn validate_receipt(
         || !viewport_valid
     {
         return Err("browser screenshot receipt failed runtime validation".to_string());
+    }
+    Ok(())
+}
+
+fn validate_computer_receipt(
+    source_call_id: &str,
+    receipt: &ComputerScreenshotReceipt,
+) -> Result<(), String> {
+    let digest_valid =
+        receipt.sha256.len() == 64 && receipt.sha256.bytes().all(|byte| byte.is_ascii_hexdigit());
+    let dimensions_valid = receipt.image_width > 0
+        && receipt.image_height > 0
+        && receipt.image_width <= medousa_computer_bridge::MAX_COMPUTER_SCREENSHOT_WIDTH
+        && receipt.image_height <= medousa_computer_bridge::MAX_COMPUTER_SCREENSHOT_HEIGHT
+        && u64::from(receipt.image_width) * u64::from(receipt.image_height)
+            <= medousa_computer_bridge::MAX_COMPUTER_SCREENSHOT_PIXELS;
+    if source_call_id.trim().is_empty()
+        || receipt.artifact_id.trim().is_empty()
+        || receipt.artifact_id.len() > 256
+        || !receipt.artifact_id.starts_with("art:")
+        || receipt.mime != "image/png"
+        || receipt.byte_size == 0
+        || receipt.byte_size > medousa_computer_bridge::MAX_COMPUTER_SCREENSHOT_BYTES
+        || receipt.observation_generation.trim().is_empty()
+        || receipt.observation_generation.len() > 256
+        || receipt.window_resource_id.trim().is_empty()
+        || receipt.window_resource_id.len() > 256
+        || receipt.observation_revision == 0
+        || receipt.coordinate_frame != "focused_window_pixels"
+        || !receipt.untrusted_content
+        || !digest_valid
+        || !dimensions_valid
+    {
+        return Err("computer screenshot receipt failed runtime validation".to_string());
     }
     Ok(())
 }
@@ -201,6 +288,30 @@ mod tests {
                 "image_width": width,
                 "image_height": height,
                 "sensitive_regions_redacted": 0,
+                "captured_at_ms": 1,
+                "untrusted_content": true
+            }
+        })
+    }
+
+    fn computer_screenshot_output(
+        record: &crate::artifact_store::ArtifactRecord,
+        width: u32,
+        height: u32,
+    ) -> serde_json::Value {
+        json!({
+            "screenshot": {
+                "artifact_id": record.artifact_id,
+                "mime": "image/png",
+                "byte_size": record.byte_size,
+                "sha256": record.hash64,
+                "observation_generation": "generation-1",
+                "observation_revision": 7,
+                "window_resource_id": "window-1",
+                "coordinate_frame": "focused_window_pixels",
+                "image_width": width,
+                "image_height": height,
+                "sensitive_regions_redacted": 1,
                 "captured_at_ms": 1,
                 "untrusted_content": true
             }
@@ -263,6 +374,36 @@ mod tests {
                 .await
                 .expect_err("cross-session fetch must fail");
         assert!(error.contains("this session"));
+    }
+
+    #[tokio::test]
+    async fn hydrates_a_session_bound_computer_screenshot() {
+        let session_id = "computer-observation-hydration-session";
+        let png = test_png(3, 2);
+        let record = crate::artifact_store::persist_binary_artifact(
+            session_id,
+            COGNITION_COMPUTER_SNAPSHOT,
+            "screenshot",
+            "image/png",
+            Some("Focused desktop window"),
+            &png,
+        )
+        .expect("persist screenshot");
+        let request = ToolObservationHydrationRequest {
+            tool_name: COGNITION_COMPUTER_SNAPSHOT.to_string(),
+            source_call_id: "call-computer".to_string(),
+            tool_output: computer_screenshot_output(&record, 3, 2),
+        };
+
+        let hydrated = DaemonToolObservationHydrationPort::new(session_id)
+            .hydrate(request)
+            .await
+            .expect("hydrate")
+            .expect("image");
+
+        assert_eq!(hydrated.bytes, png);
+        assert_eq!(hydrated.artifact_id, record.artifact_id);
+        assert_eq!(hydrated.tool_name, COGNITION_COMPUTER_SNAPSHOT);
     }
 
     #[tokio::test]

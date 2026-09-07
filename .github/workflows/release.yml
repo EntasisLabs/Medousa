@@ -40,6 +40,11 @@ on:
         required: true
         type: boolean
         default: false
+      ship_computer_driver:
+        description: Ship governed native computer driver (medousa-computer)
+        required: true
+        type: boolean
+        default: false
       ship_desktop:
         description: Ship Medousa Home desktop
         required: true
@@ -142,6 +147,7 @@ jobs:
       ship_mcp: ${{ steps.sel.outputs.ship_mcp }}
       ship_coding_engine: ${{ steps.sel.outputs.ship_coding_engine }}
       ship_shell_session: ${{ steps.sel.outputs.ship_shell_session }}
+      ship_computer_driver: ${{ steps.sel.outputs.ship_computer_driver }}
       ship_desktop: ${{ steps.sel.outputs.ship_desktop }}
       ship_installer: ${{ steps.sel.outputs.ship_installer }}
       ship_local_brain: ${{ steps.sel.outputs.ship_local_brain }}
@@ -168,7 +174,7 @@ jobs:
             VERSION="${GITHUB_REF_NAME#v}"
             TAG="${GITHUB_REF_NAME}"
             medousa_assert_full_train_versions "${VERSION}"
-            E=true; A=true; M=true; C=true; S=true; D=true; I=true; L=true; X=true
+            E=true; A=true; M=true; C=true; S=true; U=true; D=true; I=true; L=true; X=true
           else
             FULL=0
             if [[ -n "${{ github.event.inputs.version }}" ]]; then
@@ -190,7 +196,7 @@ jobs:
               if medousa_package_versions_lockstep "${VERSION}"; then
                 medousa_assert_full_train_versions "${VERSION}"
                 FULL=1
-                E=true; A=true; M=true; C=true; S=true; D=true; I=true; L=true; X=true
+                E=true; A=true; M=true; C=true; S=true; U=true; D=true; I=true; L=true; X=true
                 echo "ship_all: package stamps lockstep at ${VERSION} — full train"
               else
                 # Mixed stamps (e.g. 0.6.0 engine/desktop + 0.4.1 adapters): ship only
@@ -201,11 +207,12 @@ jobs:
                 M="${ship_mcp}"
                 C="${ship_coding_engine}"
                 S="${ship_shell_session}"
+                U="${ship_computer_driver}"
                 D="${ship_desktop}"
                 I="${ship_installer}"
                 L="${ship_local_brain}"
                 X=true
-                echo "::warning::ship_all with mixed package-versions.toml stamps — shipping channel-head ${VERSION} packages only (engine=${E} adapters=${A} mcp=${M} coding-engine=${C} shell-session=${S} desktop=${D} installer=${I} local-brain=${L}). Push a v${VERSION} tag after bumping every stamp for a true full train."
+                echo "::warning::ship_all with mixed package-versions.toml stamps — shipping channel-head ${VERSION} packages only (engine=${E} adapters=${A} mcp=${M} coding-engine=${C} shell-session=${S} computer-driver=${U} desktop=${D} installer=${I} local-brain=${L}). Push a v${VERSION} tag after bumping every stamp for a true full train."
               fi
             else
               E="${{ github.event.inputs.ship_engine }}"
@@ -213,13 +220,14 @@ jobs:
               M="${{ github.event.inputs.ship_mcp }}"
               C="${{ github.event.inputs.ship_coding_engine }}"
               S="${{ github.event.inputs.ship_shell_session }}"
+              U="${{ github.event.inputs.ship_computer_driver }}"
               D="${{ github.event.inputs.ship_desktop }}"
               I="${{ github.event.inputs.ship_installer }}"
               L="${{ github.event.inputs.ship_local_brain }}"
               X="${{ github.event.inputs.ship_integrations }}"
             fi
 
-            if [[ "${E}" != "true" && "${A}" != "true" && "${M}" != "true" && "${C}" != "true" && "${S}" != "true" && "${D}" != "true" && "${I}" != "true" && "${L}" != "true" && "${X}" != "true" ]]; then
+            if [[ "${E}" != "true" && "${A}" != "true" && "${M}" != "true" && "${C}" != "true" && "${S}" != "true" && "${U}" != "true" && "${D}" != "true" && "${I}" != "true" && "${L}" != "true" && "${X}" != "true" ]]; then
               echo "::error::Select at least one ship_* component (or ship_all). For ship_all, bump package-versions.toml so at least one package matches the channel head."
               exit 1
             fi
@@ -236,6 +244,7 @@ jobs:
             echo "ship_mcp=${M}"
             echo "ship_coding_engine=${C}"
             echo "ship_shell_session=${S}"
+            echo "ship_computer_driver=${U}"
             echo "ship_desktop=${D}"
             echo "ship_installer=${I}"
             echo "ship_local_brain=${L}"
@@ -246,7 +255,7 @@ jobs:
             echo "version=${VERSION}"
             echo "tag=${TAG}"
           } >> "${GITHUB_OUTPUT}"
-          echo "Release selection: engine=${E} adapters=${A} mcp=${M} coding-engine=${C} shell-session=${S} desktop=${D} installer=${I} local-brain=${L} integrations=${X} full=${FULL} reuse_r2_daemon=${REUSE_R2} daemon_engine=${DAEMON_ENGINE_V} v=${VERSION}"
+          echo "Release selection: engine=${E} adapters=${A} mcp=${M} coding-engine=${C} shell-session=${S} computer-driver=${U} desktop=${D} installer=${I} local-brain=${L} integrations=${X} full=${FULL} reuse_r2_daemon=${REUSE_R2} daemon_engine=${DAEMON_ENGINE_V} v=${VERSION}"
 
   # Daemon (+ launcher) build. Feeds desktop sidecar and engine packaging so
   # other jobs do not recompile medousa_daemon.
@@ -665,6 +674,57 @@ jobs:
           path: |
             dist/coding-engine-*.tar.gz
             dist/shell-session-*.tar.gz
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  build-computer:
+    name: computer driver (${{ matrix.target }})
+    needs: prepare
+    if: needs.prepare.outputs.ship_computer_driver == 'true'
+    runs-on: ${{ vars.MEDOUSA_SELF_HOSTED == 'true' && matrix.runner || matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-14
+            runner: [self-hosted, macOS, ARM64]
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+            runner: [self-hosted, macOS, X64]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Rust cache (hosted only)
+        if: ${{ vars.MEDOUSA_SELF_HOSTED != 'true' }}
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> .cache/cargo-target
+          cache-workspace-crates: true
+          cache-on-failure: true
+          shared-key: release-computer-${{ matrix.target }}
+      - name: Build governed computer driver
+        run: |
+          ./scripts/release/build.sh \
+            --target "${{ matrix.target }}" \
+            --without-local-brain \
+            --components computer-driver
+          ./scripts/release/package-all-components.sh \
+            --target "${{ matrix.target }}" \
+            --packages computer-driver
+      - name: Upload computer driver artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: medousa-computer-${{ matrix.target }}
+          path: |
+            dist/computer-driver-*.tar.gz
             dist/SHA256SUMS
           if-no-files-found: error
 
@@ -1251,6 +1311,7 @@ jobs:
         build-adapters,
         build-mcp,
         build-coder,
+        build-computer,
         build-desktop,
         build-installer,
         build-local-brain,
@@ -1264,6 +1325,7 @@ jobs:
       (needs.build-adapters.result == 'success' || needs.build-adapters.result == 'skipped') &&
       (needs.build-mcp.result == 'success' || needs.build-mcp.result == 'skipped') &&
       (needs.build-coder.result == 'success' || needs.build-coder.result == 'skipped') &&
+      (needs.build-computer.result == 'success' || needs.build-computer.result == 'skipped') &&
       (needs.build-desktop.result == 'success' || needs.build-desktop.result == 'skipped') &&
       (needs.build-installer.result == 'success' || needs.build-installer.result == 'skipped') &&
       (needs.build-local-brain.result == 'success' || needs.build-local-brain.result == 'skipped') &&
@@ -1273,6 +1335,7 @@ jobs:
         needs.build-adapters.result == 'success' ||
         needs.build-mcp.result == 'success' ||
         needs.build-coder.result == 'success' ||
+        needs.build-computer.result == 'success' ||
         needs.build-desktop.result == 'success' ||
         needs.build-installer.result == 'success' ||
         needs.build-local-brain.result == 'success' ||
@@ -1303,6 +1366,7 @@ jobs:
           find dist/artifacts -name 'mcp-gateway-*.tar.gz' -exec cp {} dist/final/ \;
           find dist/artifacts -name 'coding-engine-*.tar.gz' -exec cp {} dist/final/ \;
           find dist/artifacts -name 'shell-session-*.tar.gz' -exec cp {} dist/final/ \;
+          find dist/artifacts -name 'computer-driver-*.tar.gz' -exec cp {} dist/final/ \;
           find dist/artifacts -name 'medousa_local-*.tar.gz' -exec cp {} dist/final/ \;
           find dist/artifacts -name 'medousa-vscode-v*.vsix' -exec cp {} dist/final/ \;
           find dist/artifacts -name 'medousa-neovim-v*.tar.gz' -exec cp {} dist/final/ \;
@@ -1384,6 +1448,9 @@ jobs:
             dist/final/engine-*.tar.gz
             dist/final/adapter-*.tar.gz
             dist/final/mcp-gateway-*.tar.gz
+            dist/final/coding-engine-*.tar.gz
+            dist/final/shell-session-*.tar.gz
+            dist/final/computer-driver-*.tar.gz
             dist/final/medousa_local-*.tar.gz
             dist/final/medousa-vscode-v*.vsix
             dist/final/medousa-neovim-v*.tar.gz

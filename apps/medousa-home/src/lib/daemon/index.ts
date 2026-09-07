@@ -24,3 +24,5 @@ export * from "./identity";
 export * from "./calendar";
 export * from "./misc";
 export * from "./browserWorlds";
+export * from "./computer";
+export * from "./worldActivity";

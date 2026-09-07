@@ -103,6 +103,7 @@ MEDOUSA_PACKAGE_VERSION_IDS=(
   mcp-gateway
   coding-engine
   shell-session
+  computer-driver
   local-brain
   desktop
   installer
@@ -240,7 +241,7 @@ medousa_assert_full_train_versions() {
 # Emit true/false for each component group whose package stamp(s) equal HEAD.
 # Usage: eval "$(medousa_ship_flags_for_channel_head 0.6.0)"
 # Sets: ship_engine ship_adapters ship_mcp ship_coding_engine ship_shell_session
-#       ship_desktop ship_installer ship_local_brain
+#       ship_computer_driver ship_desktop ship_installer ship_local_brain
 medousa_ship_flags_for_channel_head() {
   local head="${1:-}"
   local v
@@ -269,6 +270,9 @@ medousa_ship_flags_for_channel_head() {
 
   v="$(medousa_package_version shell-session)"
   echo "ship_shell_session=$([[ "${v}" == "${head}" ]] && echo true || echo false)"
+
+  v="$(medousa_package_version computer-driver)"
+  echo "ship_computer_driver=$([[ "${v}" == "${head}" ]] && echo true || echo false)"
 
   v="$(medousa_package_version desktop)"
   echo "ship_desktop=$([[ "${v}" == "${head}" ]] && echo true || echo false)"
@@ -330,6 +334,7 @@ MEDOUSA_COMPONENT_IDS=(
   mcp-gateway
   coding-engine
   shell-session
+  computer-driver
 )
 
 medousa_component_binaries() {
@@ -344,6 +349,7 @@ medousa_component_binaries() {
     mcp-gateway) echo "medousa_mcp_gateway" ;;
     coding-engine) echo "medousa-code" ;;
     shell-session) echo "medousa-session" ;;
+    computer-driver) echo "medousa-computer" ;;
     *)
       echo "error: unknown component package: $1" >&2
       return 1
@@ -356,7 +362,7 @@ medousa_component_category() {
     engine) echo "core" ;;
     adapter-*) echo "adapter" ;;
     mcp-gateway) echo "core" ;;
-    coding-engine | shell-session) echo "expansion" ;;
+    coding-engine | shell-session | computer-driver) echo "expansion" ;;
     local-brain) echo "core" ;;
     desktop | installer) echo "core" ;;
     model-*) echo "model" ;;
@@ -368,7 +374,7 @@ medousa_component_category() {
 medousa_component_depends() {
   case "$1" in
     engine | desktop | installer) echo "" ;;
-    adapter-* | mcp-gateway | local-brain | coding-engine | shell-session) echo "engine" ;;
+    adapter-* | mcp-gateway | local-brain | coding-engine | shell-session | computer-driver) echo "engine" ;;
     model-*) echo "local-brain" ;;
     *) echo "" ;;
   esac

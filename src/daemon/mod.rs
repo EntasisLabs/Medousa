@@ -5,6 +5,7 @@ pub mod blob_transfer_host;
 pub mod bounded_set;
 pub mod chatgpt_oauth;
 pub mod coding_engine_host;
+pub mod computer_driver_host;
 pub mod continuations;
 pub mod contract;
 mod contract_bindings;

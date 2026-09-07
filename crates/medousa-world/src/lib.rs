@@ -7,5 +7,8 @@
 mod authority;
 mod model;
 
+#[cfg(test)]
+mod evaluation_tests;
+
 pub use authority::{WorldAuthority, WorldAuthorityError};
 pub use model::*;

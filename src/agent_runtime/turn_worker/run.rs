@@ -56,6 +56,7 @@ use super::prompts::{
 };
 use super::registry::{
     AllowlistToolRegistry, SessionBootstrapToolRegistry, WorkerSessionToolRegistry,
+    WorldScopedToolRegistry,
 };
 use super::store::{
     TurnWorkDisposition, TurnWorkRecord, TurnWorkStatus, TurnWorkerStore, turn_worker_store,
@@ -101,7 +102,9 @@ fn delegated_task_grant_error(
                     .parent_turn_correlation_id
                     .as_deref()
                     .unwrap_or_default()
-            || grant.requested_tool_names != spec.tools.names)
+            || grant.requested_tool_names != spec.tools.names
+            || grant.requested_world_ids != spec.world_ids
+            || grant.effective_world_ids != spec.world_ids)
     {
         return Some("canonical worker specification does not match the durable worker");
     }
@@ -120,6 +123,11 @@ fn delegated_task_grant_error(
             .effective_tool_domains
             .iter()
             .any(|domain| domain == "turn")
+        || (!grant.effective_world_ids.is_empty()
+            && !grant
+                .effective_tool_domains
+                .iter()
+                .any(|domain| domain == "world"))
     {
         return Some("task execution grant does not match the durable worker");
     }
@@ -342,6 +350,19 @@ async fn prepare_worker_coder(
 fn worker_turn_scope(record: &TurnWorkRecord) -> TurnContinuationScope {
     let canvas_lane =
         worker_canvas_lane_enabled(record.disposition == TurnWorkDisposition::Bound, record);
+    let selected_worlds = record
+        .worker_spawn_spec
+        .as_ref()
+        .map(|spec| {
+            spec.world_ids
+                .iter()
+                .map(|world_id| medousa_types::TurnWorldSelection {
+                    world_id: world_id.clone(),
+                    execution_runtime_id: record.execution_placement.resolved_runtime_id.clone(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     TurnContinuationScope {
         turn_correlation_id: record
             .parent_turn_correlation_id
@@ -361,6 +382,7 @@ fn worker_turn_scope(record: &TurnWorkRecord) -> TurnContinuationScope {
         supports_liquid_markdown: record.supports_liquid_markdown,
         supports_browser_host: record.supports_browser_host,
         browser_driver_id: None,
+        selected_worlds,
         channel_surface: Some(match record.disposition {
             TurnWorkDisposition::Bound => "workshop-canvas".to_string(),
             TurnWorkDisposition::Delegated => "delegated-worker".to_string(),
@@ -395,6 +417,8 @@ pub struct ActiveWorkerBusSession {
     /// Host client advertised Liquid Markdown hydration support.
     pub supports_liquid_markdown: bool,
     pub supports_browser_host: bool,
+    /// Exact operator-admitted world-to-runtime bindings for the parent turn.
+    pub selected_worlds: Vec<medousa_types::TurnWorldSelection>,
     pub parent_agent_mode: Option<String>,
     pub parent_code_work_id: Option<String>,
 }
@@ -656,6 +680,7 @@ impl TurnWorkerScheduler {
         stage_role: Option<&str>,
         model_hint: Option<&str>,
         execution_target: Option<ExecutionTargetSelection>,
+        requested_world_ids: &[String],
     ) -> stasis::prelude::Result<SpawnTurnWorkerOutput> {
         let parent = self.active_parent().map_err(|error| {
             stasis::domain::errors::StasisError::PortFailure(format!(
@@ -688,6 +713,16 @@ impl TurnWorkerScheduler {
             }],
         )
         .map_err(|error| stasis::domain::errors::StasisError::PortFailure(error.to_string()))?;
+        let world_ids = crate::turn_scope::resolve_requested_world_ids(
+            requested_world_ids,
+            &bus.selected_worlds,
+            &execution_placement.resolved_runtime_id,
+        )
+        .map_err(|error| {
+            stasis::domain::errors::StasisError::PortFailure(format!(
+                "cognition_workshop_mutate: {error}"
+            ))
+        })?;
         let mut handoff = bus
             .host_handoff_slot
             .write()
@@ -875,6 +910,7 @@ impl TurnWorkerScheduler {
             },
             code_project,
             execution_placement: execution_placement.clone(),
+            world_ids,
             max_tool_rounds,
             tools: crate::delegated_task::WorkerToolRequest {
                 names: requested_tool_names,
@@ -1467,7 +1503,12 @@ async fn run_worker_turn_inner(
     } else {
         None
     };
-    let filtered_registry: Arc<dyn ToolRegistry> = if let Some(coder) = &prepared_coder {
+    let world_ids = record
+        .worker_spawn_spec
+        .as_ref()
+        .map(|spec| spec.world_ids.clone())
+        .unwrap_or_default();
+    let lane_registry: Arc<dyn ToolRegistry> = if let Some(coder) = &prepared_coder {
         let coder_registry: Arc<dyn ToolRegistry> = coder.registry.clone();
         if is_delegated {
             Arc::new(AllowlistToolRegistry::delegated(coder_registry, allowlist))
@@ -1494,8 +1535,28 @@ async fn run_worker_turn_inner(
             session_registry,
             record.session_id.clone(),
             allowlist,
+            record.supports_browser_host || !world_ids.is_empty(),
         ))
     };
+    let remote_world_authority = if is_delegated {
+        record.task_execution_grant.clone().map(|grant| {
+            (
+                crate::peer_execution_policy::PeerExecutionPolicyStore::default(),
+                grant,
+            )
+        })
+    } else {
+        None
+    };
+    let filtered_registry: Arc<dyn ToolRegistry> = Arc::new(WorldScopedToolRegistry::new(
+        lane_registry,
+        world_ids,
+        format!(
+            "worker:{}:{}",
+            record.execution_placement.resolved_runtime_id, record.work_id
+        ),
+        remote_world_authority,
+    ));
     // Genai reads env vars; keys live in keyring/file first — inject for the
     // *worker* provider (may differ from the host turn).
     crate::workshop_env::apply_provider_llm_env(&record.provider);
@@ -2249,6 +2310,7 @@ mod tests {
             supports_ui_artifacts: false,
             supports_liquid_markdown: false,
             supports_browser_host: false,
+            selected_worlds: Vec::new(),
             parent_agent_mode: None,
             parent_code_work_id: None,
         };

@@ -38,10 +38,10 @@ describe("chooseBrowserSurfaceSource", () => {
   it("honors an explicit existing world", () => {
     expect(
       chooseBrowserSurfaceSource([world("one", 10), world("two", 20)], {
-        source: { kind: "workshop", worldId: "one" },
+        source: { kind: "workshop", worldId: "one", runtimeId: "runtime-one" },
         selectedAt: 30,
-      }),
-    ).toEqual({ kind: "workshop", worldId: "one" });
+      }, "runtime-one"),
+    ).toEqual({ kind: "workshop", worldId: "one", runtimeId: "runtime-one" });
   });
 
   it("surfaces a newly attached agent world after a device choice", () => {
@@ -49,8 +49,8 @@ describe("chooseBrowserSurfaceSource", () => {
       chooseBrowserSurfaceSource([world("agent", 40)], {
         source: { kind: "device" },
         selectedAt: 30,
-      }),
-    ).toEqual({ kind: "workshop", worldId: "agent" });
+      }, "runtime-two"),
+    ).toEqual({ kind: "workshop", worldId: "agent", runtimeId: "runtime-two" });
   });
 
   it("never silently substitutes an old or failed world for device browsing", () => {
@@ -58,7 +58,7 @@ describe("chooseBrowserSurfaceSource", () => {
       chooseBrowserSurfaceSource([world("old", 10), world("failed", 50, { state: "failed" })], {
         source: { kind: "device" },
         selectedAt: 30,
-      }),
+      }, "runtime-three"),
     ).toEqual({ kind: "device" });
   });
 });

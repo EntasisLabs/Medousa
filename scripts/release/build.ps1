@@ -25,7 +25,8 @@ Options:
 
 Builds all release binaries into <output>/bin/:
   medousa, medousa_cli, medousa_daemon, medousa_tui, channel adapters,
-  medousa_mcp_gateway, medousa_whatsapp, medousa-code, medousa-session
+  medousa_mcp_gateway, medousa_whatsapp, medousa-code, medousa-session,
+  medousa-computer
 
 By default also builds medousa_local (offline brain) into the same <output>/bin/ and packages
 a separate medousa_local-*.tar.gz. Use --without-local-brain to skip the slow mistralrs build.
@@ -117,11 +118,16 @@ $sessionBuildArgs = @("build", "--release", "-p", "medousa-session", "--bin", "m
 if ($Target) { $sessionBuildArgs += @("--target", $Target) }
 Invoke-MedousaCargo @sessionBuildArgs
 
+Write-MedousaLog "cargo build (medousa-computer)..."
+$computerBuildArgs = @("build", "--release", "-p", "medousa-computer", "--bin", "medousa-computer")
+if ($Target) { $computerBuildArgs += @("--target", $Target) }
+Invoke-MedousaCargo @computerBuildArgs
+
 $mainRelease = Get-MedousaCargoReleaseDir $Target
 $waRelease = Get-MedousaWhatsappCargoReleaseDir $Target
 
 Write-MedousaLog "phase 1/2: staging release binaries -> $binDir"
-$stageBins = $MedousaBinaries + @("medousa-code", "medousa-session")
+$stageBins = $MedousaBinaries + @("medousa-code", "medousa-session", "medousa-computer")
 foreach ($bin in $stageBins) {
     if ($bin -eq "medousa_local") { continue }
     $src = Find-MedousaReleaseBinary -Bin $bin -Target $Target

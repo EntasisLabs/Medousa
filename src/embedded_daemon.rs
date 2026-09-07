@@ -2591,6 +2591,10 @@ fn normalize_embedded_turn_surface(mut surface: TurnSurfaceContext) -> Result<Tu
     if surface.browser_driver_id.is_some() {
         surface.supports_browser_host = true;
     }
+    surface.selected_worlds = crate::turn_scope::normalize_turn_world_selections(std::mem::take(
+        &mut surface.selected_worlds,
+    ))
+    .map_err(anyhow::Error::msg)?;
     Ok(surface)
 }
 
@@ -5338,6 +5342,7 @@ impl EmbeddedDaemonClient {
             supports_liquid_markdown: surface.supports_liquid_markdown,
             supports_browser_host: surface.supports_browser_host,
             browser_driver_id: surface.browser_driver_id.clone(),
+            selected_worlds: surface.selected_worlds.clone(),
             channel_surface: surface.channel_surface.clone(),
         };
         let mut context = TurnExecutionContext::new(

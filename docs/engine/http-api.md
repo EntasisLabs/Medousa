@@ -385,6 +385,7 @@ agent-driven operations.
 | POST | `/v1/browser/worlds/isolated/{world_id}/lifecycle` | `pause`, `resume`, `takeover`, `return_to_agent`, `attach_view`, `detach_view`, or `stop` |
 | POST | `/v1/browser/worlds/isolated/{world_id}/navigate` | Navigate under human control to `http`, `https`, or `about:blank` |
 | POST | `/v1/browser/worlds/isolated/{world_id}/observe` | Capture a bounded semantic observation, optionally after a known revision |
+| GET | `/v1/browser/worlds/isolated/{world_id}/presentation` | Stream changed semantic fences paired with size-capped redacted viewport artifacts |
 | POST | `/v1/browser/worlds/isolated/{world_id}/screenshot` | Capture redacted pixels bound to an exact document and observation revision |
 | DELETE | `/v1/browser/worlds/isolated/{world_id}?delete_profile=false` | Stop and remove the world; ephemeral data is always deleted |
 
@@ -395,7 +396,180 @@ profile ids are explicit safe identifiers, not filesystem paths. The response's
 `InteractiveTurnRequest.surface.browser_driver_id`; the daemon does not fall
 back to a shared browser if that instance is unavailable. A detached view does
 not stop execution. After daemon restart, previously active worlds recover as
-`stopped` and require `resume`.
+`stopped`. Human views require an explicit `resume`; a Bot with an explicitly
+saved persistent-world binding may rehydrate that exact world at its next
+authorized action boundary.
+
+The presentation stream accepts optional `since_revision`, `max_width`, and
+`interval_ms` query parameters. It emits only when the semantic revision
+changes. Each event contains one observation and its matching redacted JPEG;
+the daemon reduces dimensions until the encoded artifact fits the stream's
+bounded frame budget.
+
+To make a resolved world eligible for a Bot or worker, an authenticated client
+may also include it in `InteractiveTurnRequest.surface.selected_worlds` as an
+exact `{ world_id, execution_runtime_id }` binding. Admission bounds,
+normalizes, and freezes the list. Models see and request only opaque world ids;
+the daemon keeps placement and rejects ids outside the admitted set or assigned
+to another runtime. A durable Bot binding remains opt-in and never propagates
+when the Bot is duplicated.
+
+---
+
+## Native computer drivers
+
+Native computer drivers are colocated workshop sidecars. Clients never connect
+to a sidecar directly: discovery, permission preflight, observation, viewing,
+control handoff, and action remain behind daemon bearer authentication and the
+exact-origin boundary.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/v1/computer/drivers` | List native drivers registered by this workshop |
+| GET | `/v1/computer/drivers/{driver_id}/preflight` | Read permission state and the exact desktop session without prompting |
+| POST | `/v1/computer/drivers/{driver_id}/observe` | Capture a bounded semantic snapshot through world authority |
+| POST | `/v1/computer/drivers/{driver_id}/watch` | Return one bounded, redacted frame of the exact focused window |
+| POST | `/v1/computer/drivers/{driver_id}/act` | Perform one advertised action from the latest exact semantic snapshot |
+| POST | `/v1/computer/drivers/{driver_id}/control` | Take human control or return the desktop to Medousa |
+
+The observation body accepts `session_id`, optional `after_revision`, and
+optional `max_nodes` (default 2,048; maximum 4,096). The session must exactly
+match the latest preflight result. The daemon derives the desktop resource;
+clients cannot choose one. Observation requires `admin.execute`, while inventory
+and preflight require `WorkshopRead`. Preflight also returns the daemon's
+current control generation and a client-safe holder state; it never returns a
+different principal's identity.
+
+The watch body accepts `session_id` and optional `max_width` (default 1,280;
+minimum 320; maximum 1,600). The daemon reuses the latest exact semantic fence
+when one exists, so watching does not replace an agent's observation. If no
+fence exists and a non-human operation is between observations, the route
+returns `409` and the client should retain its last bounded frame and retry.
+Raw PNG data is returned only to the authenticated native client, which keeps a
+single replaceable frame; it is not copied into the turn transcript or durable
+world provenance.
+
+The control body accepts the exact `session_id` plus `action` set to
+`take_control` or `return_to_medousa`. Taking control acquires an indefinite
+human lease, increments the canonical control generation, and clears the old
+observation fence. Queued non-human work therefore fails at its next governed
+action boundary. Returning control increments the generation again; Medousa
+must observe and acquire a fresh lease before acting. Both watch and control
+require `admin.execute`.
+
+The action body accepts `session_id`, `observation_generation`,
+`observation_revision`, `element_ref`, `action`, optional `value`, and optional
+`allow_high_risk` (default `false`). Actions are `press`, `focus`, `set_value`,
+`show_menu`, `increment`, `decrement`, `scroll_to_visible`, and the guarded
+`foreground_click` fallback; `value` is required only for `set_value` and capped
+at 8 KiB. All four identity fields must match the driver's latest snapshot, and
+the target node must advertise the requested action in that exact snapshot.
+Disabled elements are rejected.
+Secure text fields never advertise `set_value` because secret injection needs
+an opaque credential path rather than model-visible text.
+Sensitive or effectful-looking targets require the caller to set
+`allow_high_risk=true` only after explicit operator intent.
+
+`foreground_click` is only advertised for a bounded, enabled, non-sensitive
+element in the exact focused window when macOS exposes no semantic `press`.
+It never accepts caller coordinates. The sidecar recomputes the element center,
+revalidates the focused app, window, frame, element identity, geometry, and hit
+test, and requires input-control permission immediately before posting one
+mouse down/up pair. Any HID activity during target resolution preempts the
+action. Because this fallback moves the physical pointer, it always requires
+`allow_high_risk=true` backed by explicit operator intent.
+
+An admitted mutation consumes its observation fence before native dispatch, so
+the same snapshot cannot be replayed for a second action; observe again after
+every admitted action, including a failed or indeterminate dispatch. The action
+crosses world authority with an exact resource grant and control lease, then is
+dispatched as a background accessibility operation unless the exact node only
+advertised `foreground_click`. Action transport is never retried after dispatch
+ambiguity. `set_value` text is not copied into receipts or provenance. This
+slice exposes no arbitrary pointer coordinates. The watch endpoint only emits
+the redacted focused-window capture and does not accept interaction coordinates.
+
+---
+
+## Governed-world timeline
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/v1/worlds/timeline?after_sequence=…&limit=…` | Page through the workshop's bounded browser/computer causal ledger |
+| GET | `/v1/worlds/evidence?after_sequence=…&limit=…` | Page through durable metadata-only evidence promoted around failures and sensitive effects |
+| GET | `/v1/worlds/recipes/derive?trace_id=…` | Derive an inert semantic recipe from one fully confirmed trace |
+| POST | `/v1/worlds/recipes/run` | Run a server-derived recipe through fresh governed world boundaries |
+
+`after_sequence` is an exclusive daemon-wide cursor. `limit` defaults to 100
+and is capped at 200. Set `tail=true` to receive the newest bounded page in
+chronological order without walking the ledger from its oldest retained event;
+in that form `has_more` means older records were omitted. The response returns
+`events`, `next_sequence`, and `has_more`. The projection includes stable
+world, authority, driver, principal, resource, intent, trace, effect, revision,
+checkpoint, and recovery metadata. It does not expose action idempotency keys,
+capability-grant ids, page bodies, credentials, or native handles.
+
+The daemon syncs an admission before its driver receives the action permit. On
+restart, an admission without a terminal receipt is recorded as
+`action_interrupted`: observations require re-observation, local mutations
+require fresh-state reconciliation, and external or irreversible effects
+require operator review. Recovery always requires a fresh admission; timeline
+records are evidence and never executable authority.
+
+Recovery also carries an explicit compensation boundary. Observation-only work
+needs no compensation; reversible local effects may be reconciled before a new
+domain action; other local or external effects require an operator-directed new
+action; and irreversible effects advertise no compensation. Compensation is
+never dispatched automatically or with the interrupted permit. Legacy records
+without this metadata remain readable and fail closed without inventing a
+rollback guarantee.
+
+The daemon also keeps a bounded process-local telemetry ring for every world
+event and promotes only high-value records to a separate durable evidence
+sidecar. Promotion covers failures, interrupted or uncertain outcomes,
+external or irreversible effects, and actions requiring explicit operator
+confirmation. Evidence records contain causal ids, classified status,
+checkpoint/recovery metadata, and bounded timing measurements. They never
+contain page text, action values, selectors, coordinates, screenshots, driver
+errors, capability grants, permits, or other reusable authority. The timeline
+remains the source for its separately redacted human-readable summary.
+
+Recipe derivation is deliberately stricter than timeline review. Every
+effectful admission in the selected trace must have a matching `confirmed`
+receipt and daemon-authored semantic recipe metadata. Failed, interrupted,
+indeterminate, truncated, legacy, or selector-based traces return `409` rather
+than producing a partial recipe. A missing trace returns `404`.
+
+The derive response contains semantic verbs, optional target role/name hints,
+and the kind of value that a future run must ask for. It never copies typed or
+selected values, selectors, coordinates, element/native handles, idempotency
+keys, grants, control leases, or permits. Recipe steps explicitly require a
+fresh observation and fresh world admission; sensitive-looking targets retain
+an operator-confirmation requirement. Derivation produces reviewable guidance
+only and cannot dispatch it.
+
+Recipe execution requires `admin.execute` plus exact-origin browser policy. The
+request names `source_trace_id`, the matching `recipe_id`, a bounded unique
+`run_id`, `operator_approved: true`, and one exact `world_id` target for every
+step. Values are supplied separately as operation-indexed `inputs`; operations
+flagged by the source or by the freshly observed destination also require an
+operation-indexed confirmation. The daemon re-derives the recipe from its own
+ledger, so the request cannot add or alter verbs, semantic targets, effects, or
+authority.
+
+The runner supports local reversible and local mutation steps only. Before
+each step it obtains a new bounded full observation and requires an exact,
+unique role/name match on the selected world. Truncated state, ambiguity,
+sensitive nodes, changed control, stale bindings, and missing fresh input stop
+the run without guessing. Browser steps cross the existing shared or isolated
+browser admission path; desktop/application/composite steps cross the native
+computer broker. No source ref, revision, permit, grant, or value is reused.
+
+The response is `completed` or `stopped`, includes only confirmed step
+provenance, and reports whether a stopped step may have applied. It contains no
+fresh values or native refs. A run is bounded to 32 operations and stops on the
+first failure. Once `world-recipe-run:{run_id}` has any durable boundary, reuse
+returns `409`; inspect that trace instead of retrying an uncertain effect.
 
 ---
 
@@ -807,7 +981,22 @@ particular lane. Reducing or revoking a scope cancels active remote workers that
 require the removed authority; completed results retain the grant and policy
 revision under which they ran.
 
+The `custom` policy keeps governed browser/computer tools in an explicit
+`world` tool domain. Ordinary web search remains in `web`; granting Assistant
+work or web access does not silently grant browser identity or desktop
+control.
+
 ## Explicit daemon delegation
+
+`GET /v1/execution-targets` returns the local authorized execution inventory.
+The signed `POST /v1/mesh/execution-target` probe supplies the same sanitized
+target entry for a paired destination. In addition to worker capabilities,
+entries may advertise mechanical world-driver capability strings under
+`world.browser.*` and `world.computer.*`. Those values describe colocated
+drivers and never constitute authority. A destination includes them in a peer
+probe only when its current directional policy admits Assistant or Coder work
+and the explicit `world` tool domain; disabled, expired, legacy, and ordinary
+Assistant-work policies expose none.
 
 `POST /v1/mesh/tasks` is a native-only daemon-to-daemon route. It requires all
 of the following: an authenticated pairing bearer, an explicit `task.request`

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use medousa_install_support::manifest::{
     package_dir, package_installed, read_install_manifest, write_install_manifest,
-    InstallManifest, PackageInstallRecord, ReleaseManifest,
+    release_package_matches_host, InstallManifest, PackageInstallRecord, ReleaseManifest,
 };
 use medousa_install_support::packages::{
     catalog_entry, default_install_profiles, expand_package_dependencies, package_catalog,
@@ -189,6 +189,7 @@ fn remote_package_ids(remote: &Option<ReleaseManifest>) -> Vec<String> {
             manifest
                 .packages
                 .values()
+                .filter(|pkg| release_package_matches_host(pkg))
                 .map(|pkg| pkg.id.clone())
                 .collect::<HashSet<_>>()
                 .into_iter()
@@ -201,7 +202,11 @@ fn estimate_bytes(package_ids: &[String], remote: &Option<ReleaseManifest>) -> u
     let mut total = 0u64;
     for id in package_ids {
         if let Some(manifest) = remote {
-            if let Some(pkg) = manifest.packages.values().find(|p| p.id == *id) {
+            if let Some(pkg) = manifest
+                .packages
+                .values()
+                .find(|p| p.id == *id && release_package_matches_host(p))
+            {
                 total += pkg.size_bytes;
                 continue;
             }
@@ -237,7 +242,8 @@ fn build_package_summaries(
     remote: &Option<ReleaseManifest>,
     installed: &HashMap<String, PackageInstallRecord>,
 ) -> Vec<PackageSummary> {
-    let remote_ids = remote_package_ids(remote);
+    let mut remote_ids = remote_package_ids(remote);
+    remote_ids.extend(installed.keys().cloned());
     let catalog = visible_catalog(&remote_ids);
     catalog
         .into_iter()
@@ -249,7 +255,7 @@ fn build_package_summaries(
                 manifest
                     .packages
                     .values()
-                    .find(|pkg| pkg.id == entry.id)
+                    .find(|pkg| pkg.id == entry.id && release_package_matches_host(pkg))
             });
             let remote_pkg_version = remote_pkg.map(|pkg| pkg.version.clone());
             let installed_version = installed_record.map(|r| r.version.clone());

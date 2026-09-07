@@ -215,6 +215,16 @@ pub async fn packages_catalog() -> Result<HomePackagesCatalog, String> {
 
     let packages = home_packages_catalog()
         .into_iter()
+        .filter(|entry| {
+            !entry.remote_only
+                || package_is_present(&data, entry)
+                || local
+                    .as_ref()
+                    .is_some_and(|m| m.packages.iter().any(|p| p.id == entry.id))
+                || remote
+                    .as_ref()
+                    .is_some_and(|m| resolve_release_package(m, entry.id).is_ok())
+        })
         .map(|entry| {
             let installed = package_is_present(&data, &entry)
                 || local

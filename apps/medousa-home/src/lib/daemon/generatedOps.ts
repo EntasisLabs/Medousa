@@ -50,6 +50,7 @@ export const OPERATIONS = {
   "browser.worlds.isolated.by_world_id.lifecycle.post": { id: "browser.worlds.isolated.by_world_id.lifecycle.post", method: "POST", path: "/v1/browser/worlds/isolated/{world_id}/lifecycle", streaming: false },
   "browser.worlds.isolated.by_world_id.navigate.post": { id: "browser.worlds.isolated.by_world_id.navigate.post", method: "POST", path: "/v1/browser/worlds/isolated/{world_id}/navigate", streaming: false },
   "browser.worlds.isolated.by_world_id.observe.post": { id: "browser.worlds.isolated.by_world_id.observe.post", method: "POST", path: "/v1/browser/worlds/isolated/{world_id}/observe", streaming: false },
+  "browser.worlds.isolated.by_world_id.presentation.get": { id: "browser.worlds.isolated.by_world_id.presentation.get", method: "GET", path: "/v1/browser/worlds/isolated/{world_id}/presentation", streaming: true },
   "browser.worlds.isolated.by_world_id.screenshot.post": { id: "browser.worlds.isolated.by_world_id.screenshot.post", method: "POST", path: "/v1/browser/worlds/isolated/{world_id}/screenshot", streaming: false },
   "browser.worlds.isolated.get": { id: "browser.worlds.isolated.get", method: "GET", path: "/v1/browser/worlds/isolated", streaming: false },
   "browser.worlds.isolated.post": { id: "browser.worlds.isolated.post", method: "POST", path: "/v1/browser/worlds/isolated", streaming: false },
@@ -90,6 +91,12 @@ export const OPERATIONS = {
   "components.by_component_id.store.get": { id: "components.by_component_id.store.get", method: "GET", path: "/v1/components/{component_id}/store", streaming: false },
   "components.by_component_id.store.keys.get": { id: "components.by_component_id.store.keys.get", method: "GET", path: "/v1/components/{component_id}/store/keys", streaming: false },
   "components.by_component_id.store.put": { id: "components.by_component_id.store.put", method: "PUT", path: "/v1/components/{component_id}/store", streaming: false },
+  "computer.drivers.by_driver_id.act.post": { id: "computer.drivers.by_driver_id.act.post", method: "POST", path: "/v1/computer/drivers/{driver_id}/act", streaming: false },
+  "computer.drivers.by_driver_id.control.post": { id: "computer.drivers.by_driver_id.control.post", method: "POST", path: "/v1/computer/drivers/{driver_id}/control", streaming: false },
+  "computer.drivers.by_driver_id.observe.post": { id: "computer.drivers.by_driver_id.observe.post", method: "POST", path: "/v1/computer/drivers/{driver_id}/observe", streaming: false },
+  "computer.drivers.by_driver_id.preflight.get": { id: "computer.drivers.by_driver_id.preflight.get", method: "GET", path: "/v1/computer/drivers/{driver_id}/preflight", streaming: false },
+  "computer.drivers.by_driver_id.watch.post": { id: "computer.drivers.by_driver_id.watch.post", method: "POST", path: "/v1/computer/drivers/{driver_id}/watch", streaming: false },
+  "computer.drivers.get": { id: "computer.drivers.get", method: "GET", path: "/v1/computer/drivers", streaming: false },
   "continuations.lineage.by_turn_correlation_id.get": { id: "continuations.lineage.by_turn_correlation_id.get", method: "GET", path: "/v1/continuations/lineage/{turn_correlation_id}", streaming: false },
   "continuations.status.get": { id: "continuations.status.get", method: "GET", path: "/v1/continuations/status", streaming: false },
   "deliver.outbox.post": { id: "deliver.outbox.post", method: "POST", path: "/v1/deliver/outbox", streaming: false },
@@ -442,6 +449,10 @@ export const OPERATIONS = {
   "world.index.post": { id: "world.index.post", method: "POST", path: "/v1/world/index", streaming: false },
   "world.reset_store.post": { id: "world.reset_store.post", method: "POST", path: "/v1/world/reset-store", streaming: false },
   "world.status.get": { id: "world.status.get", method: "GET", path: "/v1/world/status", streaming: false },
+  "worlds.evidence.get": { id: "worlds.evidence.get", method: "GET", path: "/v1/worlds/evidence", streaming: false },
+  "worlds.recipes.derive.get": { id: "worlds.recipes.derive.get", method: "GET", path: "/v1/worlds/recipes/derive", streaming: false },
+  "worlds.recipes.run.post": { id: "worlds.recipes.run.post", method: "POST", path: "/v1/worlds/recipes/run", streaming: false },
+  "worlds.timeline.get": { id: "worlds.timeline.get", method: "GET", path: "/v1/worlds/timeline", streaming: false },
 } as const satisfies Record<string, Operation>;
 
 export type OperationId = keyof typeof OPERATIONS;

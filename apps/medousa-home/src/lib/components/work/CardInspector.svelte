@@ -274,6 +274,7 @@
         stageRouting: opts.stageRouting,
         channelSurface: opts.channelSurface,
         browserDriverId: opts.browserDriverId,
+        selectedWorlds: opts.selectedWorlds,
         voicePresetId: voice.voicePresetId,
         voiceAppendix: voice.voiceAppendix,
         identityUserId: opts.identityUserId,

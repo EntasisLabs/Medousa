@@ -1,4 +1,42 @@
-# Medousa for Chromium browsers
+# Browser surfaces
+
+## Choose where a governed browser runs
+
+In Medousa's **Browser** view, open the browser-world selector and choose the
+workshop that should own new browser worlds. Only paired workshops that
+advertise an authorized isolated-browser driver appear. You can then reopen a
+world on that workshop or create a private or saved browser there.
+
+An open world stays pinned to the workshop that created it. Changing the
+workshop selector changes where the next world is opened; it does not move or
+silently recreate the active world. If that workshop goes offline or loses
+authorization, Medousa keeps the exact choice visible and reports the failure
+instead of falling back to another machine.
+
+Choose **Device browser** when you want the ordinary browser on the phone or
+computer running Medousa. Device browsing and workshop-owned browser worlds
+remain separate because they have different cookie, passkey, recovery, and
+policy authority.
+
+## Review world activity
+
+Open **Settings → Runtime Controls → World activity → Review activity** to see
+the newest governed browser and computer events on the active workshop. The
+list combines human, Medousa, Bot, worker, peer, and system activity in one
+causal order. Open an event to inspect its authority, world revision, driver,
+intent, checkpoint, recovery requirement, and compensation boundary. A
+compensation note describes whether no correction is needed, a new
+domain-specific action may be considered after reconciliation, an operator must
+decide, or no compensation is available. It never means Medousa will silently
+reuse the old action or authority.
+
+Use the **Evidence** filter to focus on failures, interrupted or uncertain
+outcomes, sensitive effects, and actions that required operator confirmation.
+This view contains bounded metadata and redacted summaries, not page contents,
+typed values, screenshots, credentials, or reusable permissions. If the list
+says earlier activity is hidden, it remains in the workshop's bounded ledger.
+
+## Medousa for Chromium browsers
 
 Medousa for Chromium browsers keeps a focused companion beside the page you are
 already using. It captures page context only when you ask, so the current tab

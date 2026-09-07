@@ -185,6 +185,30 @@ fn main() {
     // Bots
     export_type!(schemas, BotId, "BotId");
     export_type!(schemas, BotSessionKind, "BotSessionKind");
+    export_type!(schemas, BotWorldBindingKind, "BotWorldBindingKind");
+    export_type!(schemas, BotWorldBinding, "BotWorldBinding");
+
+    // Governed browser presentation
+    export_type!(
+        schemas,
+        BrowserPresentationViewport,
+        "BrowserPresentationViewport"
+    );
+    export_type!(
+        schemas,
+        BrowserPresentationObservation,
+        "BrowserPresentationObservation"
+    );
+    export_type!(
+        schemas,
+        BrowserPresentationScreenshot,
+        "BrowserPresentationScreenshot"
+    );
+    export_type!(
+        schemas,
+        BrowserPresentationFrame,
+        "BrowserPresentationFrame"
+    );
     export_type!(schemas, BotProfile, "BotProfile");
     export_type!(schemas, BotSessionBinding, "BotSessionBinding");
     export_type!(schemas, CreateBotRequest, "CreateBotRequest");
@@ -611,6 +635,49 @@ fn main() {
     export_type!(schemas, FeedReadRequest, "FeedReadRequest");
     export_type!(schemas, FeedStreamQuery, "FeedStreamQuery");
     export_type!(schemas, FeedStreamEvent, "FeedStreamEvent");
+
+    // Governed world causal timeline
+    export_type!(schemas, WorldTimelineCheckpoint, "WorldTimelineCheckpoint");
+    export_type!(
+        schemas,
+        WorldTimelineCompensation,
+        "WorldTimelineCompensation"
+    );
+    export_type!(schemas, WorldTimelineRecovery, "WorldTimelineRecovery");
+    export_type!(schemas, WorldTimelineEvent, "WorldTimelineEvent");
+    export_type!(schemas, WorldTimelineResponse, "WorldTimelineResponse");
+    export_type!(schemas, WorldEvidenceRecord, "WorldEvidenceRecord");
+    export_type!(schemas, WorldEvidenceResponse, "WorldEvidenceResponse");
+    export_type!(schemas, WorldRecipeInputKind, "WorldRecipeInputKind");
+    export_type!(schemas, WorldRecipeOperation, "WorldRecipeOperation");
+    export_type!(schemas, WorldRecipeStep, "WorldRecipeStep");
+    export_type!(schemas, WorldRecipe, "WorldRecipe");
+    export_type!(
+        schemas,
+        WorldRecipeDeriveResponse,
+        "WorldRecipeDeriveResponse"
+    );
+    export_type!(schemas, WorldRecipeRunTarget, "WorldRecipeRunTarget");
+    export_type!(
+        schemas,
+        WorldRecipeRunInputValue,
+        "WorldRecipeRunInputValue"
+    );
+    export_type!(schemas, WorldRecipeRunInput, "WorldRecipeRunInput");
+    export_type!(
+        schemas,
+        WorldRecipeRunConfirmation,
+        "WorldRecipeRunConfirmation"
+    );
+    export_type!(schemas, WorldRecipeRunRequest, "WorldRecipeRunRequest");
+    export_type!(schemas, WorldRecipeRunStatus, "WorldRecipeRunStatus");
+    export_type!(
+        schemas,
+        WorldRecipeRunStepResult,
+        "WorldRecipeRunStepResult"
+    );
+    export_type!(schemas, WorldRecipeRunStop, "WorldRecipeRunStop");
+    export_type!(schemas, WorldRecipeRunResponse, "WorldRecipeRunResponse");
 
     let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sdk-contract");
     fs::create_dir_all(&out_dir).expect("create sdk-contract dir");

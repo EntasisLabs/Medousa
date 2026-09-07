@@ -656,6 +656,7 @@ mod tests {
                 supports_liquid_markdown: true,
                 supports_browser_host: true,
                 browser_driver_id: None,
+                selected_worlds: Vec::new(),
             }),
             host_context: None,
             max_tool_rounds: None,

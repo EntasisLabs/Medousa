@@ -40,8 +40,8 @@ pub mod workspace_card;
 use crate::daemon::sse::stream_sse_json_workshop;
 use crate::daemon::types::{
     AgentModeId, DaemonHealth, EnvironmentStreamEvent, InteractiveTurnAccepted,
-    InteractiveTurnRequest, StageRoutingMatrix, TurnSurfaceContext, WorkspaceStreamEvent,
-    DEFAULT_DAEMON_URL,
+    InteractiveTurnRequest, StageRoutingMatrix, TurnSurfaceContext, TurnWorldSelection,
+    WorkspaceStreamEvent, DEFAULT_DAEMON_URL,
 };
 use crate::embedded_daemon::EmbeddedDaemonState;
 use crate::workshop_transport;
@@ -459,6 +459,7 @@ pub async fn interactive_turn_send(
     stage_routing: Option<StageRoutingMatrix>,
     channel_surface: Option<String>,
     browser_driver_id: Option<String>,
+    selected_worlds: Option<Vec<TurnWorldSelection>>,
 ) -> Result<InteractiveTurnAccepted, String> {
     let provider = provider
         .map(|value| value.trim().to_string())
@@ -536,6 +537,7 @@ pub async fn interactive_turn_send(
             browser_driver_id: browser_driver_id.or_else(|| {
                 supports_browser_host.then(|| crate::browser_driver::id().to_string())
             }),
+            selected_worlds: selected_worlds.unwrap_or_default(),
         }),
         host_context: None,
         max_tool_rounds: None,

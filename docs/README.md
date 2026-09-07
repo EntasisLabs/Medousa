@@ -25,7 +25,7 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 | [Getting started](guides/getting-started.md) | Download → welcome → first chat |
 | [Models and agent sources](guides/models-and-agent-sources.md) | Choose runtimes, models, modes, and reply narration in chat |
 | [Bots](guides/bots.md) | Create durable named teammates with their own memory and conversation |
-| [Packages](guides/packages.md) | Offline brain, adapters, CLI, MCP from Settings |
+| [Packages](guides/packages.md) | Optional computer, coding, model, channel, and MCP capabilities |
 | [Workshop & Automations](guides/workshop-and-automations.md) | Flows, schedules, specialists |
 | [Phone pairing](guides/phone-pairing.md) | Add another computer as an optional mobile portal |
 | [Peers & Nearby](guides/peers-and-nearby.md) | LAN / tunnel workshops |
@@ -34,7 +34,7 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 | [VS Code](guides/vscode.md) | Medousa chat, editor context, and workshop sessions in VS Code |
 | [Neovim](guides/neovim.md) | Keyboard-first coding room with contextual chat and safe code application |
 | [Obsidian](guides/obsidian.md) | Vault-native Medousa chat and bounded note context |
-| [Browser](guides/browser.md) | Page-aware Medousa side panel for Chrome and Edge |
+| [Browser](guides/browser.md) | Choose governed workshop worlds, review activity, or use the Chromium companion |
 | [Web in Medousa](guides/web-in-medousa.md) | Choose a workshop or device browser, take control, and keep identities separate |
 | [Secure credential handoff](guides/secure-credential-handoff.md) | Give OpenShell or Grapheme an API key without putting it in chat |
 | [Desktop companion](guides/desktop-companion.md) | Floating pet for chat, approvals, notes, Web, and views |

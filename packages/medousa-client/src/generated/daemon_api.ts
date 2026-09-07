@@ -328,10 +328,16 @@ export interface StageRoutingMatrix {
   verifier: StageRoute;
 }
 
+export interface TurnWorldSelection {
+  execution_runtime_id: string;
+  world_id: string;
+}
+
 export interface TurnSurfaceContext {
   browser_driver_id?: string | null;
   channel_id?: string | null;
   channel_surface?: string | null;
+  selected_worlds?: TurnWorldSelection[];
   supports_browser_host?: boolean;
   supports_liquid_markdown?: boolean;
   supports_ui_artifacts?: boolean;
@@ -549,6 +555,14 @@ export type BotId = string;
 
 export type BotSessionKind = "primary" | "secondary";
 
+export type BotWorldBindingKind = "persistent_browser";
+
+export interface BotWorldBinding {
+  execution_runtime_id: string;
+  kind: BotWorldBindingKind;
+  world_id: string;
+}
+
 export interface BotProfile {
   additional_manuscript_ids?: string[];
   archived?: boolean;
@@ -565,6 +579,7 @@ export interface BotProfile {
   role_description?: string | null;
   schema_version: number;
   updated_at: string;
+  world_binding?: BotWorldBinding | null;
 }
 
 export interface BotSessionBinding {
@@ -582,16 +597,19 @@ export interface CreateBotRequest {
   display_name: string;
   primary_manuscript_id: string;
   role_description?: string | null;
+  world_binding?: BotWorldBinding | null;
 }
 
 export interface UpdateBotRequest {
   additional_manuscript_ids?: string[];
   avatar_ref?: string | null;
+  clear_world_binding?: boolean;
   default_mode?: AgentModeId | null;
   display_name: string;
   expected_revision: number;
   primary_manuscript_id: string;
   role_description?: string | null;
+  world_binding?: BotWorldBinding | null;
 }
 
 export interface DuplicateBotRequest {
@@ -621,6 +639,99 @@ export interface SessionBotResponse {
   binding?: BotSessionBinding | null;
   bot?: BotProfile | null;
   session_id: string;
+}
+
+export interface BrowserPresentationViewport {
+  device_scale_factor: number;
+  height: number;
+  scroll_x: number;
+  scroll_y: number;
+  width: number;
+}
+
+export interface BrowserPresentationObservation {
+  base_revision?: number | null;
+  captured_at_ms: number;
+  document_id: string;
+  full: boolean;
+  revision: number;
+  schema_version: number;
+  tab_id: string;
+  title: string;
+  truncated: boolean;
+  untrusted_content: boolean;
+  url: string;
+  viewport: BrowserPresentationViewport;
+}
+
+export interface BrowserPresentationScreenshot {
+  byte_size: number;
+  captured_at_ms: number;
+  coordinate_frame: string;
+  document_id: string;
+  image_base64: string;
+  image_height: number;
+  image_width: number;
+  mime: string;
+  observation_revision: number;
+  schema_version: number;
+  sensitive_regions_redacted: number;
+  sha256: string;
+  tab_id: string;
+  title: string;
+  untrusted_content: boolean;
+  url: string;
+  viewport: BrowserPresentationViewport;
+}
+
+export interface BrowserPresentationFrame {
+  observation: BrowserPresentationObservation;
+  schema_version: number;
+  screenshot: BrowserPresentationScreenshot;
+  world_id: string;
+}
+
+export interface WorldTimelineCheckpoint {
+  admitted_at_ms: number;
+  control_generation?: number | null;
+  permit_expires_at_ms: number;
+  surface: string;
+  world_revision: number;
+}
+
+export interface WorldTimelineRecovery {
+  requires_fresh_admission: boolean;
+  strategy: string;
+}
+
+export interface WorldTimelineEvent {
+  authority_id: string;
+  checkpoint?: WorldTimelineCheckpoint | null;
+  driver_id: string;
+  effect_class?: string | null;
+  event_type: string;
+  intent_id?: string | null;
+  occurred_at_ms: number;
+  ownership: string;
+  principal_id?: string | null;
+  principal_kind?: string | null;
+  recorded_at_ms: number;
+  recovery?: WorldTimelineRecovery | null;
+  resource_id?: string | null;
+  schema_version: number;
+  sequence: number;
+  status?: string | null;
+  summary?: string | null;
+  surface: string;
+  trace_id?: string | null;
+  world_id: string;
+  world_revision: number;
+}
+
+export interface WorldTimelineResponse {
+  events: WorldTimelineEvent[];
+  has_more: boolean;
+  next_sequence: number;
 }
 
 export type CodeProjectSource = "blank" | "repository";

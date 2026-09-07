@@ -409,6 +409,7 @@ pub fn surface_from_scope(
         supports_liquid_markdown: scope.supports_liquid_markdown,
         supports_browser_host: scope.supports_browser_host,
         browser_driver_id: scope.browser_driver_id.clone(),
+        selected_worlds: scope.selected_worlds.clone(),
     })
 }
 

@@ -27,13 +27,21 @@ pub async fn daemon_unary(
     operation: DaemonOperation,
     path_params: HashMap<String, String>,
     body: Option<Value>,
+    execution_runtime_id: Option<String>,
+    query: Option<HashMap<String, String>>,
 ) -> Result<Value, String> {
+    let execution_runtime_id = execution_runtime_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|runtime_id| !runtime_id.is_empty());
     #[cfg(any(target_os = "ios", target_os = "android"))]
-    if let Some(client) = embedded_state.client_if_active().await? {
-        if let Some(response) =
-            embedded_browser_session_unary(&client, operation, &path_params, body.as_ref())?
-        {
-            return Ok(response);
+    if execution_runtime_id.is_none() {
+        if let Some(client) = embedded_state.client_if_active().await? {
+            if let Some(response) =
+                embedded_browser_session_unary(&client, operation, &path_params, body.as_ref())?
+            {
+                return Ok(response);
+            }
         }
     }
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -44,7 +52,12 @@ pub async fn daemon_unary(
     if op.streaming {
         return Err("use daemon_stream_start for streaming operations".into());
     }
-    let path = expand_operation_path(op.path, &path_params, None)?;
+    let path = expand_operation_path(op.path, &path_params, query.as_ref())?;
+    if let Some(runtime_id) = execution_runtime_id {
+        let config = crate::active_workshop::transport_config_for_runtime_id(runtime_id)?;
+        return workshop_transport::workshop_json_request(&config, op.method, &path, body.as_ref())
+            .await;
+    }
     match op.method {
         "GET" => workshop_http::get_json(&state, &path).await,
         "DELETE" => workshop_http::delete_json(&state, &path).await,

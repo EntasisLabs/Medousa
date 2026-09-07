@@ -674,6 +674,7 @@ mod tests {
             supports_liquid_markdown: false,
             supports_browser_host: false,
             browser_driver_id: None,
+            selected_worlds: Vec::new(),
             channel_surface: None,
         };
         TurnExecutionContext::new(
@@ -702,6 +703,7 @@ mod tests {
             memory_scope_id: "bot_0123456789abcdef0123456789abcdef".to_string(),
             default_mode: Some(medousa_types::AgentModeId::Teacher),
             primary_session_id: Some("session-a".to_string()),
+            world_binding: None,
             archived: false,
             revision: 7,
             created_at: Utc::now(),

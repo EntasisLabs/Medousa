@@ -255,8 +255,33 @@ impl WorkshopExecutionRouter {
             Agent,
         }
 
-        let user_default = crate::agent_runtime::execution_context::active_turn_execution_context()
+        let active_execution =
+            crate::agent_runtime::execution_context::active_turn_execution_context();
+        let user_default = active_execution
+            .as_ref()
             .and_then(|context| context.worker_execution_target().cloned());
+        let world_runtime_id = active_execution
+            .as_ref()
+            .map(|context| {
+                crate::turn_scope::execution_runtime_for_requested_worlds(
+                    &input.world_ids,
+                    &context.legacy_scope().selected_worlds,
+                )
+            })
+            .transpose()
+            .map_err(|error| {
+                target_resolution_error(ExecutionTargetResolutionError::UnsupportedTarget {
+                    detail: error,
+                })
+            })?
+            .flatten();
+        if !input.world_ids.is_empty() && active_execution.is_none() {
+            return Err(target_resolution_error(
+                ExecutionTargetResolutionError::UnsupportedTarget {
+                    detail: "world execution requires an admitted parent turn".to_string(),
+                },
+            ));
+        }
         let bound_coder_runtime_id = input
             .intent
             .as_deref()
@@ -272,56 +297,84 @@ impl WorkshopExecutionRouter {
                     .and_then(|binding| binding.execution_runtime_id)
             })
             .flatten();
-        let (requested, authority) = match user_default {
-            Some(
-                requested @ (ExecutionTargetSelection::SameAsParent
-                | ExecutionTargetSelection::Exact { .. }),
-            ) => (requested, SelectionAuthority::User),
-            Some(requested @ ExecutionTargetSelection::Auto { .. }) => input
-                .execution_target
-                .clone()
-                .map(|agent_request| (agent_request, SelectionAuthority::Agent))
-                .unwrap_or((requested, SelectionAuthority::Agent)),
-            None if input.execution_target.is_some() => {
-                let requested = input
+        let (requested, authority) = if let Some(world_runtime_id) = world_runtime_id {
+            let conflicting_target = user_default
+                .as_ref()
+                .or(input.execution_target.as_ref())
+                .is_some_and(|selection| match selection {
+                    ExecutionTargetSelection::SameAsParent => world_runtime_id != parent_runtime_id,
+                    ExecutionTargetSelection::Exact { runtime_id } => {
+                        runtime_id.trim() != world_runtime_id
+                    }
+                    ExecutionTargetSelection::Auto { .. } => false,
+                });
+            if conflicting_target {
+                return Err(target_resolution_error(
+                    ExecutionTargetResolutionError::UnsupportedTarget {
+                        detail: "selected world belongs to a different execution workshop"
+                            .to_string(),
+                    },
+                ));
+            }
+            (
+                ExecutionTargetSelection::Exact {
+                    runtime_id: world_runtime_id,
+                },
+                SelectionAuthority::User,
+            )
+        } else {
+            match user_default {
+                Some(
+                    requested @ (ExecutionTargetSelection::SameAsParent
+                    | ExecutionTargetSelection::Exact { .. }),
+                ) => (requested, SelectionAuthority::User),
+                Some(requested @ ExecutionTargetSelection::Auto { .. }) => input
                     .execution_target
                     .clone()
-                    .expect("checked execution target");
-                let is_bound_coder_target = matches!(
-                    &requested,
-                    ExecutionTargetSelection::Exact { runtime_id }
-                        if bound_coder_runtime_id.as_deref() == Some(runtime_id.as_str())
-                );
-                (
-                    requested,
-                    if is_bound_coder_target {
-                        SelectionAuthority::User
-                    } else {
-                        SelectionAuthority::Agent
-                    },
-                )
-            }
-            None if self.ingress_default == WorkshopIngressDefault::SameAsParent => (
-                ExecutionTargetSelection::SameAsParent,
-                SelectionAuthority::User,
-            ),
-            None => {
-                let mut bound_runtime_id = None;
-                for target in &self.targets {
-                    if let Some(runtime_id) = target.ingress_default_runtime_id().await? {
-                        bound_runtime_id = Some(runtime_id);
-                        break;
-                    }
+                    .map(|agent_request| (agent_request, SelectionAuthority::Agent))
+                    .unwrap_or((requested, SelectionAuthority::Agent)),
+                None if input.execution_target.is_some() => {
+                    let requested = input
+                        .execution_target
+                        .clone()
+                        .expect("checked execution target");
+                    let is_bound_coder_target = matches!(
+                        &requested,
+                        ExecutionTargetSelection::Exact { runtime_id }
+                            if bound_coder_runtime_id.as_deref() == Some(runtime_id.as_str())
+                    );
+                    (
+                        requested,
+                        if is_bound_coder_target {
+                            SelectionAuthority::User
+                        } else {
+                            SelectionAuthority::Agent
+                        },
+                    )
                 }
-                let runtime_id = bound_runtime_id.ok_or_else(|| {
-                    target_resolution_error(ExecutionTargetResolutionError::UnsupportedTarget {
-                        detail: "the legacy bound remote workshop is not configured".to_string(),
-                    })
-                })?;
-                (
-                    ExecutionTargetSelection::Exact { runtime_id },
+                None if self.ingress_default == WorkshopIngressDefault::SameAsParent => (
+                    ExecutionTargetSelection::SameAsParent,
                     SelectionAuthority::User,
-                )
+                ),
+                None => {
+                    let mut bound_runtime_id = None;
+                    for target in &self.targets {
+                        if let Some(runtime_id) = target.ingress_default_runtime_id().await? {
+                            bound_runtime_id = Some(runtime_id);
+                            break;
+                        }
+                    }
+                    let runtime_id = bound_runtime_id.ok_or_else(|| {
+                        target_resolution_error(ExecutionTargetResolutionError::UnsupportedTarget {
+                            detail: "the legacy bound remote workshop is not configured"
+                                .to_string(),
+                        })
+                    })?;
+                    (
+                        ExecutionTargetSelection::Exact { runtime_id },
+                        SelectionAuthority::User,
+                    )
+                }
             }
         };
         let candidate_values = candidates
@@ -464,14 +517,25 @@ struct LocalWorkshopExecution {
 impl WorkshopExecutionTarget for LocalWorkshopExecution {
     async fn candidates(&self) -> stasis::prelude::Result<Vec<ExecutionTargetCandidate>> {
         let runtime_id = self.scheduler.execution_runtime_id();
+        let computer_drivers = match crate::daemon::computer_driver_host::global_computer_broker() {
+            Some(broker) => broker.registrations().await,
+            None => Vec::new(),
+        };
+        let mut capabilities = stasis::domain::runtime::placement::WorkerCapabilities::any()
+            .node_id(&runtime_id)
+            .platform(std::env::consts::OS)
+            .architecture(std::env::consts::ARCH)
+            .with_capability("assistant.work")
+            .with_capability("coder.work");
+        capabilities.capabilities.extend(
+            crate::workshop_contract::world_driver_execution_capabilities(
+                &computer_drivers,
+                crate::daemon::isolated_browser_host::global_host().is_some(),
+            ),
+        );
         Ok(vec![ExecutionTargetCandidate::local(
             runtime_id.clone(),
-            stasis::domain::runtime::placement::WorkerCapabilities::any()
-                .node_id(&runtime_id)
-                .platform(std::env::consts::OS)
-                .architecture(std::env::consts::ARCH)
-                .with_capability("assistant.work")
-                .with_capability("coder.work"),
+            capabilities,
         )])
     }
 
@@ -509,6 +573,7 @@ impl WorkshopExecutionTarget for LocalWorkshopExecution {
                 stage_role: CompatOption::from(input.stage_role),
                 model_hint: CompatOption::from(input.model_hint),
                 execution_target: CompatOption::from(input.execution_target),
+                world_ids: input.world_ids,
             })
             .await?;
         serialize_output(CognitionSpawnTurnWorkerTool::tool_id(), output)
@@ -689,6 +754,7 @@ mod tests {
             stage_role: None,
             model_hint: None,
             execution_target: target,
+            world_ids: Vec::new(),
         }
     }
 
@@ -791,6 +857,138 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn admitted_world_pins_its_user_authorized_runtime() {
+        use crate::agent_runtime::execution_context::{
+            ProviderRoute, SurfaceCapabilities, TurnExecutionContext, with_turn_execution_context,
+        };
+        use crate::request_principal::{RequestPrincipal, TransportClass};
+        use crate::session_storage::SessionId;
+        use crate::turn_continuation::TurnContinuationScope;
+        use medousa_types::TurnWorldSelection;
+        use std::time::{Duration, Instant};
+        use tokio_util::sync::CancellationToken;
+
+        let spawn_count = Arc::new(AtomicUsize::new(0));
+        let router = WorkshopExecutionRouter::new(
+            "runtime-parent",
+            WorkshopIngressDefault::SameAsParent,
+            vec![Arc::new(FakeExecutionTarget {
+                runtime_id: "runtime-world".to_string(),
+                spawn_count: spawn_count.clone(),
+                user_selectable: true,
+                agent_selectable: false,
+            })],
+        );
+        let scope = TurnContinuationScope {
+            turn_correlation_id: "turn-world-placement".to_string(),
+            session_id: "session-world-placement".to_string(),
+            identity_user_id: None,
+            original_prompt: "use this browser".to_string(),
+            delivery_target: None,
+            provider: "test".to_string(),
+            model: "test".to_string(),
+            response_depth_mode: "standard".to_string(),
+            supports_ui_artifacts: false,
+            supports_liquid_markdown: false,
+            supports_browser_host: true,
+            browser_driver_id: None,
+            selected_worlds: vec![TurnWorldSelection {
+                world_id: "world:browser:selected".to_string(),
+                execution_runtime_id: "runtime-world".to_string(),
+            }],
+            channel_surface: None,
+        };
+        let context = Arc::new(TurnExecutionContext::new(
+            "turn-world-placement",
+            "turn-world-placement",
+            SessionId::parse("session-world-placement").expect("session"),
+            RequestPrincipal::local_app(Arc::from("test"), TransportClass::Loopback),
+            ProviderRoute::new("test", "test"),
+            SurfaceCapabilities::default(),
+            CancellationToken::new(),
+            Instant::now() + Duration::from_secs(60),
+            scope,
+        ));
+        let mut spawn = spawn_for(None);
+        spawn.world_ids = vec!["world:browser:selected".to_string()];
+
+        let output = with_turn_execution_context(context, router.spawn(spawn))
+            .await
+            .expect("operator-selected world should pin its owning runtime");
+        assert_eq!(spawn_count.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            output["execution_placement"]["resolved_runtime_id"],
+            "runtime-world"
+        );
+    }
+
+    #[tokio::test]
+    async fn admitted_world_rejects_a_conflicting_user_target() {
+        use crate::agent_runtime::execution_context::{
+            ProviderRoute, SurfaceCapabilities, TurnExecutionContext, with_turn_execution_context,
+        };
+        use crate::request_principal::{RequestPrincipal, TransportClass};
+        use crate::session_storage::SessionId;
+        use crate::turn_continuation::TurnContinuationScope;
+        use medousa_types::TurnWorldSelection;
+        use std::time::{Duration, Instant};
+        use tokio_util::sync::CancellationToken;
+
+        let spawn_count = Arc::new(AtomicUsize::new(0));
+        let router = WorkshopExecutionRouter::new(
+            "runtime-parent",
+            WorkshopIngressDefault::SameAsParent,
+            vec![Arc::new(FakeExecutionTarget {
+                runtime_id: "runtime-world".to_string(),
+                spawn_count: spawn_count.clone(),
+                user_selectable: true,
+                agent_selectable: true,
+            })],
+        );
+        let scope = TurnContinuationScope {
+            turn_correlation_id: "turn-world-conflict".to_string(),
+            session_id: "session-world-conflict".to_string(),
+            identity_user_id: None,
+            original_prompt: "use this browser".to_string(),
+            delivery_target: None,
+            provider: "test".to_string(),
+            model: "test".to_string(),
+            response_depth_mode: "standard".to_string(),
+            supports_ui_artifacts: false,
+            supports_liquid_markdown: false,
+            supports_browser_host: true,
+            browser_driver_id: None,
+            selected_worlds: vec![TurnWorldSelection {
+                world_id: "world:browser:selected".to_string(),
+                execution_runtime_id: "runtime-world".to_string(),
+            }],
+            channel_surface: None,
+        };
+        let context = Arc::new(
+            TurnExecutionContext::new(
+                "turn-world-conflict",
+                "turn-world-conflict",
+                SessionId::parse("session-world-conflict").expect("session"),
+                RequestPrincipal::local_app(Arc::from("test"), TransportClass::Loopback),
+                ProviderRoute::new("test", "test"),
+                SurfaceCapabilities::default(),
+                CancellationToken::new(),
+                Instant::now() + Duration::from_secs(60),
+                scope,
+            )
+            .with_worker_execution_target(ExecutionTargetSelection::SameAsParent),
+        );
+        let mut spawn = spawn_for(None);
+        spawn.world_ids = vec!["world:browser:selected".to_string()];
+
+        let error = with_turn_execution_context(context, router.spawn(spawn))
+            .await
+            .expect_err("conflicting user placement must fail closed");
+        assert!(error.to_string().contains("different execution workshop"));
+        assert_eq!(spawn_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
     async fn agent_cannot_select_a_user_only_target() {
         let spawn_count = Arc::new(AtomicUsize::new(0));
         let router = WorkshopExecutionRouter::new(
@@ -848,6 +1046,7 @@ mod tests {
             supports_liquid_markdown: false,
             supports_browser_host: false,
             browser_driver_id: None,
+            selected_worlds: Vec::new(),
             channel_surface: None,
         };
         let context = TurnExecutionContext::new(

@@ -1,5 +1,7 @@
 <script lang="ts">
   import SettingsCharterSaveBar from "$lib/components/settings/SettingsCharterSaveBar.svelte";
+  import SettingsComputerControl from "$lib/components/settings/SettingsComputerControl.svelte";
+  import SettingsWorldActivity from "$lib/components/settings/SettingsWorldActivity.svelte";
   import SettingsVersionsSection from "$lib/components/settings/SettingsVersionsSection.svelte";
   import SettingsWorkerCapacity from "$lib/components/settings/SettingsWorkerCapacity.svelte";
   import { workshop } from "$lib/stores/workshop.svelte";
@@ -16,15 +18,11 @@
     parseMultilineList,
   } from "$lib/types/workshopDefaults";
   import { ChevronDown } from "@lucide/svelte";
-
   interface Props {
     nativeWorkloads?: boolean;
   }
-
   let { nativeWorkloads = true }: Props = $props();
-
   type Picker = "posture" | "specialists" | "search" | "backend" | null;
-
   const BACKEND_LABELS: Record<(typeof BACKEND_OPTIONS)[number], { label: string; hint: string }> = {
     "surreal-mem": {
       label: "Surreal (memory)",
@@ -682,8 +680,10 @@
       </div>
     </details>
     </div>
-  {/if}
 
+    <SettingsComputerControl />
+  {/if}
+  <SettingsWorldActivity />
   <div class="prefs-band">
     <div class="prefs-band-head">
       <h3 class="settings-subsection-heading">Engine</h3>

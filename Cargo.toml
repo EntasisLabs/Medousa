@@ -26,6 +26,8 @@ members = [
     "crates/medousa-store",
     "crates/medousa-browser-lite",
     "crates/medousa-browser-bridge",
+    "crates/medousa-computer-bridge",
+    "crates/medousa-computer",
     "crates/medousa-world",
     "crates/medousa-install-support",
     "crates/medousa-local-credential",
@@ -95,6 +97,7 @@ detamu-language-rust = { version = "0.1.1", optional = true }
 detamu-language = { version = "0.1.1", optional = true }
 medousa-browser-lite = { path = "crates/medousa-browser-lite", optional = true }
 medousa-browser-bridge = { path = "crates/medousa-browser-bridge", optional = true }
+medousa-computer-bridge = { path = "crates/medousa-computer-bridge", optional = true }
 medousa-world = { path = "crates/medousa-world" }
 medousa-local-inference = { path = "crates/medousa-local-inference", optional = true }
 anyhow = "1"
@@ -114,7 +117,7 @@ uuid = { version = "1", features = ["v4"] }
 dirs = { version = "5", optional = true }
 ratatui = { version = "0.30.0", optional = true }
 ratatui-image = { version = "11.0.2", default-features = false, features = ["crossterm"], optional = true }
-image = { version = "0.25.6", default-features = false, features = ["png"], optional = true }
+image = { version = "0.25.6", default-features = false, features = ["jpeg", "png"], optional = true }
 crossterm = { version = "0.28", features = ["event-stream"], optional = true }
 futures-util = { version = "0.3", optional = true }
 stasis-rs = { version = "0.10.0", default-features = false }
@@ -204,6 +207,7 @@ full-daemon = [
     "dep:detamu-language",
     "dep:medousa-browser-lite",
     "dep:medousa-browser-bridge",
+    "dep:medousa-computer-bridge",
     "dep:medousa-local-inference",
     "dep:clap",
     "dep:chrono-tz",

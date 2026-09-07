@@ -86,6 +86,8 @@ pub enum DaemonOperation {
     BrowserWorldsIsolatedByWorldIdNavigatePost,
     #[serde(rename = "browser.worlds.isolated.by_world_id.observe.post")]
     BrowserWorldsIsolatedByWorldIdObservePost,
+    #[serde(rename = "browser.worlds.isolated.by_world_id.presentation.get")]
+    BrowserWorldsIsolatedByWorldIdPresentationGet,
     #[serde(rename = "browser.worlds.isolated.by_world_id.screenshot.post")]
     BrowserWorldsIsolatedByWorldIdScreenshotPost,
     #[serde(rename = "browser.worlds.isolated.get")]
@@ -166,6 +168,18 @@ pub enum DaemonOperation {
     ComponentsByComponentIdStoreKeysGet,
     #[serde(rename = "components.by_component_id.store.put")]
     ComponentsByComponentIdStorePut,
+    #[serde(rename = "computer.drivers.by_driver_id.act.post")]
+    ComputerDriversByDriverIdActPost,
+    #[serde(rename = "computer.drivers.by_driver_id.control.post")]
+    ComputerDriversByDriverIdControlPost,
+    #[serde(rename = "computer.drivers.by_driver_id.observe.post")]
+    ComputerDriversByDriverIdObservePost,
+    #[serde(rename = "computer.drivers.by_driver_id.preflight.get")]
+    ComputerDriversByDriverIdPreflightGet,
+    #[serde(rename = "computer.drivers.by_driver_id.watch.post")]
+    ComputerDriversByDriverIdWatchPost,
+    #[serde(rename = "computer.drivers.get")]
+    ComputerDriversGet,
     #[serde(rename = "continuations.lineage.by_turn_correlation_id.get")]
     ContinuationsLineageByTurnCorrelationIdGet,
     #[serde(rename = "continuations.status.get")]
@@ -870,6 +884,14 @@ pub enum DaemonOperation {
     WorldResetStorePost,
     #[serde(rename = "world.status.get")]
     WorldStatusGet,
+    #[serde(rename = "worlds.evidence.get")]
+    WorldsEvidenceGet,
+    #[serde(rename = "worlds.recipes.derive.get")]
+    WorldsRecipesDeriveGet,
+    #[serde(rename = "worlds.recipes.run.post")]
+    WorldsRecipesRunPost,
+    #[serde(rename = "worlds.timeline.get")]
+    WorldsTimelineGet,
 }
 
 impl DaemonOperation {
@@ -916,6 +938,7 @@ impl DaemonOperation {
             Self::BrowserWorldsIsolatedByWorldIdLifecyclePost => "browser.worlds.isolated.by_world_id.lifecycle.post",
             Self::BrowserWorldsIsolatedByWorldIdNavigatePost => "browser.worlds.isolated.by_world_id.navigate.post",
             Self::BrowserWorldsIsolatedByWorldIdObservePost => "browser.worlds.isolated.by_world_id.observe.post",
+            Self::BrowserWorldsIsolatedByWorldIdPresentationGet => "browser.worlds.isolated.by_world_id.presentation.get",
             Self::BrowserWorldsIsolatedByWorldIdScreenshotPost => "browser.worlds.isolated.by_world_id.screenshot.post",
             Self::BrowserWorldsIsolatedGet => "browser.worlds.isolated.get",
             Self::BrowserWorldsIsolatedPost => "browser.worlds.isolated.post",
@@ -956,6 +979,12 @@ impl DaemonOperation {
             Self::ComponentsByComponentIdStoreGet => "components.by_component_id.store.get",
             Self::ComponentsByComponentIdStoreKeysGet => "components.by_component_id.store.keys.get",
             Self::ComponentsByComponentIdStorePut => "components.by_component_id.store.put",
+            Self::ComputerDriversByDriverIdActPost => "computer.drivers.by_driver_id.act.post",
+            Self::ComputerDriversByDriverIdControlPost => "computer.drivers.by_driver_id.control.post",
+            Self::ComputerDriversByDriverIdObservePost => "computer.drivers.by_driver_id.observe.post",
+            Self::ComputerDriversByDriverIdPreflightGet => "computer.drivers.by_driver_id.preflight.get",
+            Self::ComputerDriversByDriverIdWatchPost => "computer.drivers.by_driver_id.watch.post",
+            Self::ComputerDriversGet => "computer.drivers.get",
             Self::ContinuationsLineageByTurnCorrelationIdGet => "continuations.lineage.by_turn_correlation_id.get",
             Self::ContinuationsStatusGet => "continuations.status.get",
             Self::DeliverOutboxPost => "deliver.outbox.post",
@@ -1308,6 +1337,10 @@ impl DaemonOperation {
             Self::WorldIndexPost => "world.index.post",
             Self::WorldResetStorePost => "world.reset_store.post",
             Self::WorldStatusGet => "world.status.get",
+            Self::WorldsEvidenceGet => "worlds.evidence.get",
+            Self::WorldsRecipesDeriveGet => "worlds.recipes.derive.get",
+            Self::WorldsRecipesRunPost => "worlds.recipes.run.post",
+            Self::WorldsTimelineGet => "worlds.timeline.get",
         }
     }
 }

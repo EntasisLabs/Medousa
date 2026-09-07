@@ -24,6 +24,8 @@ pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
     "cognition_component_get",
     "cognition_component_list",
     "cognition_component_update",
+    "cognition_computer_act",
+    "cognition_computer_snapshot",
     "cognition_context_follow_pointer",
     "cognition_context_list_pointers",
     "cognition_custom_view_doctor",

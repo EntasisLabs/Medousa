@@ -149,6 +149,11 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                 &[
                     "cognition_capability",
                     "cognition_web_search",
+                    "cognition_browser_fetch",
+                    "cognition_browser_snapshot",
+                    "cognition_browser_act",
+                    "cognition_computer_snapshot",
+                    "cognition_computer_act",
                     "cognition_openshell_status",
                     "cognition_openshell_sandbox_run",
                     "cognition_shell_status",
@@ -177,6 +182,11 @@ pub fn allowed_tool_names_for_intent(intent: TurnWorkerIntent) -> HashSet<String
                 &mut names,
                 &[
                     "cognition_web_search",
+                    "cognition_browser_fetch",
+                    "cognition_browser_snapshot",
+                    "cognition_browser_act",
+                    "cognition_computer_snapshot",
+                    "cognition_computer_act",
                     "cognition_capability",
                     "cognition_shell_status",
                     "cognition_shell_run",
@@ -256,6 +266,8 @@ pub fn host_bus_tool_names() -> HashSet<String> {
             "cognition_browser_fetch",
             "cognition_browser_snapshot",
             "cognition_browser_act",
+            "cognition_computer_snapshot",
+            "cognition_computer_act",
         ],
     );
 
@@ -353,6 +365,8 @@ mod tests {
         assert!(!names.contains("cognition_calendar_list"));
         assert!(!names.contains("cognition_calendar_create"));
         assert!(names.contains("cognition_memory_mutate"));
+        assert!(names.contains("cognition_browser_snapshot"));
+        assert!(names.contains("cognition_computer_snapshot"));
     }
 
     #[test]
@@ -406,6 +420,8 @@ mod tests {
         assert!(names.contains("cognition_tools_discover"));
         assert!(names.contains("cognition_web_search"));
         assert!(names.contains("cognition_browser_fetch"));
+        assert!(names.contains("cognition_computer_snapshot"));
+        assert!(names.contains("cognition_computer_act"));
         assert!(names.contains("cognition_shell_status"));
         assert!(names.contains("cognition_shell_run"));
         assert!(names.contains("cognition_openshell_request_secret"));
@@ -421,6 +437,8 @@ mod tests {
         assert!(names.contains("cognition_component_create"));
         assert!(names.contains("cognition_turn"));
         assert!(names.contains("cognition_tools_discover"));
+        assert!(names.contains("cognition_browser_snapshot"));
+        assert!(names.contains("cognition_computer_act"));
     }
 
     #[test]
@@ -454,7 +472,7 @@ mod tests {
     #[test]
     fn destination_grant_compiles_only_exact_named_tools() {
         let now = chrono::Utc::now();
-        let grant = TaskExecutionGrant {
+        let mut grant = TaskExecutionGrant {
             schema_version: crate::peer_execution_policy::TASK_EXECUTION_GRANT_SCHEMA_VERSION,
             grant_id: "grant-1".to_string(),
             peer_device_id: "peer-1".to_string(),
@@ -484,6 +502,8 @@ mod tests {
                 "cognition_web_search".to_string(),
             ],
             effective_tool_names: vec!["cognition_turn".to_string()],
+            requested_world_ids: Vec::new(),
+            effective_world_ids: Vec::new(),
             network_policy: crate::peer_execution_policy::PeerNetworkPolicy::WebOnly,
             issued_at: now,
             expires_at: now + chrono::Duration::minutes(5),
@@ -494,5 +514,12 @@ mod tests {
         assert!(!names.contains("cognition_utility_time_now"));
         assert!(!names.contains("cognition_web_search"));
         assert!(!names.contains("cognition_shell_run"));
+
+        grant.effective_tool_names.clear();
+        grant.effective_tool_domains = vec!["turn".to_string(), "world".to_string()];
+        let names = remote_delegated_tool_ceiling_for_grant(Some(&grant));
+        assert!(!names.contains("cognition_browser_snapshot"));
+        assert!(!names.contains("cognition_computer_snapshot"));
+        assert!(!names.contains("cognition_computer_act"));
     }
 }

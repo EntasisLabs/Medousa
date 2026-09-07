@@ -296,6 +296,13 @@ pub const BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_OBSERVE_POST: Operation = Operatio
     streaming: false,
 };
 
+pub const BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_PRESENTATION_GET: Operation = Operation {
+    id: "browser.worlds.isolated.by_world_id.presentation.get",
+    method: "GET",
+    path: "/v1/browser/worlds/isolated/{world_id}/presentation",
+    streaming: true,
+};
+
 pub const BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_SCREENSHOT_POST: Operation = Operation {
     id: "browser.worlds.isolated.by_world_id.screenshot.post",
     method: "POST",
@@ -573,6 +580,48 @@ pub const COMPONENTS_BY_COMPONENT_ID_STORE_PUT: Operation = Operation {
     id: "components.by_component_id.store.put",
     method: "PUT",
     path: "/v1/components/{component_id}/store",
+    streaming: false,
+};
+
+pub const COMPUTER_DRIVERS_BY_DRIVER_ID_ACT_POST: Operation = Operation {
+    id: "computer.drivers.by_driver_id.act.post",
+    method: "POST",
+    path: "/v1/computer/drivers/{driver_id}/act",
+    streaming: false,
+};
+
+pub const COMPUTER_DRIVERS_BY_DRIVER_ID_CONTROL_POST: Operation = Operation {
+    id: "computer.drivers.by_driver_id.control.post",
+    method: "POST",
+    path: "/v1/computer/drivers/{driver_id}/control",
+    streaming: false,
+};
+
+pub const COMPUTER_DRIVERS_BY_DRIVER_ID_OBSERVE_POST: Operation = Operation {
+    id: "computer.drivers.by_driver_id.observe.post",
+    method: "POST",
+    path: "/v1/computer/drivers/{driver_id}/observe",
+    streaming: false,
+};
+
+pub const COMPUTER_DRIVERS_BY_DRIVER_ID_PREFLIGHT_GET: Operation = Operation {
+    id: "computer.drivers.by_driver_id.preflight.get",
+    method: "GET",
+    path: "/v1/computer/drivers/{driver_id}/preflight",
+    streaming: false,
+};
+
+pub const COMPUTER_DRIVERS_BY_DRIVER_ID_WATCH_POST: Operation = Operation {
+    id: "computer.drivers.by_driver_id.watch.post",
+    method: "POST",
+    path: "/v1/computer/drivers/{driver_id}/watch",
+    streaming: false,
+};
+
+pub const COMPUTER_DRIVERS_GET: Operation = Operation {
+    id: "computer.drivers.get",
+    method: "GET",
+    path: "/v1/computer/drivers",
     streaming: false,
 };
 
@@ -3040,6 +3089,34 @@ pub const WORLD_STATUS_GET: Operation = Operation {
     streaming: false,
 };
 
+pub const WORLDS_EVIDENCE_GET: Operation = Operation {
+    id: "worlds.evidence.get",
+    method: "GET",
+    path: "/v1/worlds/evidence",
+    streaming: false,
+};
+
+pub const WORLDS_RECIPES_DERIVE_GET: Operation = Operation {
+    id: "worlds.recipes.derive.get",
+    method: "GET",
+    path: "/v1/worlds/recipes/derive",
+    streaming: false,
+};
+
+pub const WORLDS_RECIPES_RUN_POST: Operation = Operation {
+    id: "worlds.recipes.run.post",
+    method: "POST",
+    path: "/v1/worlds/recipes/run",
+    streaming: false,
+};
+
+pub const WORLDS_TIMELINE_GET: Operation = Operation {
+    id: "worlds.timeline.get",
+    method: "GET",
+    path: "/v1/worlds/timeline",
+    streaming: false,
+};
+
 pub static ALL: &[Operation] = &[
     ADMIN_LOCAL_CREDENTIALS_BY_NAME_DELETE,
     ADMIN_LOCAL_CREDENTIALS_BY_NAME_ROTATE_POST,
@@ -3082,6 +3159,7 @@ pub static ALL: &[Operation] = &[
     BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_LIFECYCLE_POST,
     BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_NAVIGATE_POST,
     BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_OBSERVE_POST,
+    BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_PRESENTATION_GET,
     BROWSER_WORLDS_ISOLATED_BY_WORLD_ID_SCREENSHOT_POST,
     BROWSER_WORLDS_ISOLATED_GET,
     BROWSER_WORLDS_ISOLATED_POST,
@@ -3122,6 +3200,12 @@ pub static ALL: &[Operation] = &[
     COMPONENTS_BY_COMPONENT_ID_STORE_GET,
     COMPONENTS_BY_COMPONENT_ID_STORE_KEYS_GET,
     COMPONENTS_BY_COMPONENT_ID_STORE_PUT,
+    COMPUTER_DRIVERS_BY_DRIVER_ID_ACT_POST,
+    COMPUTER_DRIVERS_BY_DRIVER_ID_CONTROL_POST,
+    COMPUTER_DRIVERS_BY_DRIVER_ID_OBSERVE_POST,
+    COMPUTER_DRIVERS_BY_DRIVER_ID_PREFLIGHT_GET,
+    COMPUTER_DRIVERS_BY_DRIVER_ID_WATCH_POST,
+    COMPUTER_DRIVERS_GET,
     CONTINUATIONS_LINEAGE_BY_TURN_CORRELATION_ID_GET,
     CONTINUATIONS_STATUS_GET,
     DELIVER_OUTBOX_POST,
@@ -3474,6 +3558,10 @@ pub static ALL: &[Operation] = &[
     WORLD_INDEX_POST,
     WORLD_RESET_STORE_POST,
     WORLD_STATUS_GET,
+    WORLDS_EVIDENCE_GET,
+    WORLDS_RECIPES_DERIVE_GET,
+    WORLDS_RECIPES_RUN_POST,
+    WORLDS_TIMELINE_GET,
 ];
 
 pub fn by_id(id: &str) -> Option<&'static Operation> {

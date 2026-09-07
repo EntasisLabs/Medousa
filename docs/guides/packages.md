@@ -4,8 +4,8 @@
 standalone installer.
 
 Home already ships with the **engine** (daemon, CLI, and TUI). Packages is where
-you add more later — coding support, the shell session host, offline brain,
-messaging adapters, or the MCP gateway. Those
+you add more later — coding support, the shell session host, governed computer
+control, offline brain, messaging adapters, or the MCP gateway. Those
 optional binaries are separate programs; they are not compiled into
 `medousa_daemon`.
 
@@ -40,6 +40,7 @@ or **Installed**.
 | **Coding engine** | Project language-service bridge used by Code |
 | **Language servers** | Pyright plus TypeScript and Svelte language support |
 | **Shell session host** | Shared workshop PTYs for Terminal and interactive project tasks |
+| **Computer control** | `medousa-computer` — governed native desktop observation and actions (macOS platform proof) |
 | **Telegram / Discord / Slack / WhatsApp** | Channel adapter binaries |
 
 **Not listed here (on purpose):**
@@ -59,6 +60,21 @@ or **Installed**.
 2. Wait for the progress line — one install at a time is enough.
 3. When it says **Installed**, the binary is under your Medousa data directory
    (`…/medousa/bin`). Home finds it automatically.
+
+For **Computer control**, restart that workshop's daemon after installing, then
+open **Settings → Runtime Controls → Computer**. Medousa reports Accessibility,
+focused-window pixels, and foreground-input readiness independently. This
+check is safe to refresh: it reports the workshop computer's current operating
+system permissions without opening a permission prompt. Use **Computer
+workshop** to choose among paired workshops that advertise authorized computer
+control. The status and guidance belong to that selected computer—not to the
+phone or desktop running the Medousa window. Choose **Watch** for a bounded live
+view of its focused window. That view is pinned to the selected runtime and
+desktop session even if you change the default while it is open. **Take
+control** immediately fences queued Medousa actions; use the target computer
+directly, then choose **Return to Medousa** when it may resume. Closing the view
+does not silently change who has control. An unavailable or revoked exact
+workshop fails closed rather than redirecting the view.
 
 Need model weights next? Use the link to **Connection → Extras** (private brain
 panel) or **Settings → Models**, then download Gemma.

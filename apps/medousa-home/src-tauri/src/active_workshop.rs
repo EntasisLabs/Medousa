@@ -146,10 +146,10 @@ pub fn transport_config_for_runtime_id(
                 .is_some_and(|pairing| pairing.workshop_device_id.trim() == runtime_id)
         })
         .ok_or_else(|| {
-            format!("The selected Coder workshop '{runtime_id}' is not paired on this device")
+            format!("The selected execution workshop '{runtime_id}' is not paired on this device")
         })?;
     if !matches!(workshop.kind.as_str(), "portal" | "paired") {
-        return Err("Selected Coder runtime is not a paired workshop".to_string());
+        return Err("Selected execution runtime is not a paired workshop".to_string());
     }
     let config = crate::pairing_client::load_workshop_transport_config_for_id(
         &workshop.id,

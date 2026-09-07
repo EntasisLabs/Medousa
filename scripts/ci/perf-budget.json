@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "notes": "Micro-CI ceilings for P01/P03. Generous hosted-runner noise allowance; lower with evidence, never raise without the budget protocol.",
+  "notes": "Micro-CI ceilings for P01/P03 and governed-world in-memory hot paths. Generous hosted-runner noise allowance; lower with evidence, never raise without the budget protocol.",
   "probes": {
     "p01": {
       "elapsedMs": 8000,
@@ -8,6 +8,14 @@
     },
     "p03": {
       "appendMs": 8000
+    },
+    "worldAuthority": {
+      "admissionCompletionP95Ns": 1000000,
+      "humanTakeoverP95Ns": 16666667
+    },
+    "worldCachedObservation": {
+      "p95Ns": 10000000,
+      "nodes": 1024
     }
   }
 }
