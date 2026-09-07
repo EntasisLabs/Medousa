@@ -144,6 +144,19 @@ impl WorldAuthorityService {
         }
     }
 
+    pub fn latest_durable_events(&self, limit: usize) -> Result<Vec<DurableWorldEvent>, String> {
+        let timeline = self
+            .timeline
+            .lock()
+            .map_err(|_| "world causal timeline lock poisoned".to_string())?;
+        match &*timeline {
+            WorldTimelineState::Disabled => Ok(Vec::new()),
+            WorldTimelineState::Active(store) | WorldTimelineState::Failed { store, .. } => {
+                Ok(store.latest_events(limit))
+            }
+        }
+    }
+
     pub fn durable_events_for_trace(
         &self,
         trace_id: &str,
@@ -173,6 +186,22 @@ impl WorldAuthorityService {
             WorldTimelineState::Disabled => Ok(Vec::new()),
             WorldTimelineState::Active(store) | WorldTimelineState::Failed { store, .. } => {
                 Ok(store.evidence_after(sequence, limit))
+            }
+        }
+    }
+
+    pub fn latest_durable_evidence(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<WorldEvidenceRecord>, String> {
+        let timeline = self
+            .timeline
+            .lock()
+            .map_err(|_| "world causal timeline lock poisoned".to_string())?;
+        match &*timeline {
+            WorldTimelineState::Disabled => Ok(Vec::new()),
+            WorldTimelineState::Active(store) | WorldTimelineState::Failed { store, .. } => {
+                Ok(store.latest_evidence(limit))
             }
         }
     }

@@ -8,6 +8,7 @@ export async function daemonUnary<T>(
   pathParams: Record<string, string> = {},
   body?: unknown,
   executionRuntimeId?: string | null,
+  query?: Record<string, string>,
 ): Promise<T> {
   const operation = OPERATIONS[id];
   if (operation.streaming) {
@@ -18,6 +19,7 @@ export async function daemonUnary<T>(
     pathParams,
     body,
     executionRuntimeId: executionRuntimeId?.trim() || null,
+    query,
   });
 }
 

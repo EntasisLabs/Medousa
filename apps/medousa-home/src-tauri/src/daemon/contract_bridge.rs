@@ -28,6 +28,7 @@ pub async fn daemon_unary(
     path_params: HashMap<String, String>,
     body: Option<Value>,
     execution_runtime_id: Option<String>,
+    query: Option<HashMap<String, String>>,
 ) -> Result<Value, String> {
     let execution_runtime_id = execution_runtime_id
         .as_deref()
@@ -51,7 +52,7 @@ pub async fn daemon_unary(
     if op.streaming {
         return Err("use daemon_stream_start for streaming operations".into());
     }
-    let path = expand_operation_path(op.path, &path_params, None)?;
+    let path = expand_operation_path(op.path, &path_params, query.as_ref())?;
     if let Some(runtime_id) = execution_runtime_id {
         let config = crate::active_workshop::transport_config_for_runtime_id(runtime_id)?;
         return workshop_transport::workshop_json_request(&config, op.method, &path, body.as_ref())

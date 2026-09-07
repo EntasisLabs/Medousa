@@ -501,11 +501,13 @@ the redacted focused-window capture and does not accept interaction coordinates.
 | POST | `/v1/worlds/recipes/run` | Run a server-derived recipe through fresh governed world boundaries |
 
 `after_sequence` is an exclusive daemon-wide cursor. `limit` defaults to 100
-and is capped at 200; the response returns `events`, `next_sequence`, and
-`has_more`. The projection includes stable world, authority, driver, principal,
-resource, intent, trace, effect, revision, checkpoint, and recovery metadata.
-It does not expose action idempotency keys, capability-grant ids, page bodies,
-credentials, or native handles.
+and is capped at 200. Set `tail=true` to receive the newest bounded page in
+chronological order without walking the ledger from its oldest retained event;
+in that form `has_more` means older records were omitted. The response returns
+`events`, `next_sequence`, and `has_more`. The projection includes stable
+world, authority, driver, principal, resource, intent, trace, effect, revision,
+checkpoint, and recovery metadata. It does not expose action idempotency keys,
+capability-grant ids, page bodies, credentials, or native handles.
 
 The daemon syncs an admission before its driver receives the action permit. On
 restart, an admission without a terminal receipt is recorded as

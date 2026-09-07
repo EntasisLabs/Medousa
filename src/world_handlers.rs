@@ -33,6 +33,8 @@ pub struct WorldTimelineQuery {
     after_sequence: u64,
     #[serde(default = "default_page_size")]
     limit: usize,
+    #[serde(default)]
+    tail: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -49,12 +51,22 @@ pub async fn list_world_timeline(
     Query(query): Query<WorldTimelineQuery>,
 ) -> Result<Json<WorldTimelineResponse>, (axum::http::StatusCode, String)> {
     let limit = query.limit.clamp(1, MAX_PAGE_SIZE);
-    let mut records = state
-        .world_authority
-        .durable_events_after(query.after_sequence, limit.saturating_add(1))
-        .map_err(|error| (axum::http::StatusCode::SERVICE_UNAVAILABLE, error))?;
+    let mut records = if query.tail {
+        state
+            .world_authority
+            .latest_durable_events(limit.saturating_add(1))
+    } else {
+        state
+            .world_authority
+            .durable_events_after(query.after_sequence, limit.saturating_add(1))
+    }
+    .map_err(|error| (axum::http::StatusCode::SERVICE_UNAVAILABLE, error))?;
     let has_more = records.len() > limit;
-    records.truncate(limit);
+    if query.tail && has_more {
+        records.remove(0);
+    } else {
+        records.truncate(limit);
+    }
     let next_sequence = records
         .last()
         .map(|record| record.ledger_sequence)
@@ -71,12 +83,22 @@ pub async fn list_world_evidence(
     Query(query): Query<WorldTimelineQuery>,
 ) -> Result<Json<WorldEvidenceResponse>, (axum::http::StatusCode, String)> {
     let limit = query.limit.clamp(1, MAX_PAGE_SIZE);
-    let mut evidence = state
-        .world_authority
-        .durable_evidence_after(query.after_sequence, limit.saturating_add(1))
-        .map_err(|error| (axum::http::StatusCode::SERVICE_UNAVAILABLE, error))?;
+    let mut evidence = if query.tail {
+        state
+            .world_authority
+            .latest_durable_evidence(limit.saturating_add(1))
+    } else {
+        state
+            .world_authority
+            .durable_evidence_after(query.after_sequence, limit.saturating_add(1))
+    }
+    .map_err(|error| (axum::http::StatusCode::SERVICE_UNAVAILABLE, error))?;
     let has_more = evidence.len() > limit;
-    evidence.truncate(limit);
+    if query.tail && has_more {
+        evidence.remove(0);
+    } else {
+        evidence.truncate(limit);
+    }
     let next_sequence = evidence
         .last()
         .map(|record| record.ledger_sequence)

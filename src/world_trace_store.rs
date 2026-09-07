@@ -203,6 +203,15 @@ impl WorldTraceStore {
             .collect()
     }
 
+    pub fn latest_events(&self, limit: usize) -> Vec<DurableWorldEvent> {
+        let limit = limit.clamp(1, 1_000);
+        self.events
+            .iter()
+            .skip(self.events.len().saturating_sub(limit))
+            .cloned()
+            .collect()
+    }
+
     pub fn events_for_trace(&self, trace_id: &str) -> Vec<DurableWorldEvent> {
         self.events
             .iter()
@@ -223,6 +232,15 @@ impl WorldTraceStore {
             .iter()
             .filter(|record| record.ledger_sequence > sequence)
             .take(limit.clamp(1, 1_000))
+            .cloned()
+            .collect()
+    }
+
+    pub fn latest_evidence(&self, limit: usize) -> Vec<WorldEvidenceRecord> {
+        let limit = limit.clamp(1, 1_000);
+        self.evidence
+            .iter()
+            .skip(self.evidence.len().saturating_sub(limit))
             .cloned()
             .collect()
     }
@@ -1234,5 +1252,37 @@ mod tests {
             4
         );
         assert!(store.evidence_after(0, 10).is_empty());
+    }
+
+    #[test]
+    fn latest_pages_keep_chronology_while_skipping_older_records() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("timeline.jsonl");
+        let (mut store, _) = WorldTraceStore::open(&path, 10).unwrap();
+        for index in 0..5 {
+            let mut envelope = admission(
+                &format!("intent:{index}"),
+                WorldEffectClass::ExternalEffect,
+            );
+            envelope.event.sequence = index + 1;
+            store.append_envelopes(vec![envelope], 10 + index).unwrap();
+        }
+
+        assert_eq!(
+            store
+                .latest_events(3)
+                .iter()
+                .map(|record| record.ledger_sequence)
+                .collect::<Vec<_>>(),
+            vec![3, 4, 5]
+        );
+        assert_eq!(
+            store
+                .latest_evidence(2)
+                .iter()
+                .map(|record| record.ledger_sequence)
+                .collect::<Vec<_>>(),
+            vec![4, 5]
+        );
     }
 }
