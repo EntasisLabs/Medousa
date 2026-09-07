@@ -21,6 +21,7 @@ pub mod browser_snapshot_tools;
 pub mod browser_tools;
 pub mod world_authority;
 pub mod world_execution;
+pub mod world_trace_store;
 pub mod bot_profiles;
 pub mod calendar;
 pub mod calendar_api;
