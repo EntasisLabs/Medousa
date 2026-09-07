@@ -2,3 +2,8 @@
 # Override: CARGO_TARGET_DIR or MEDOUSA_CARGO_TARGET_DIR
 [build]
 target-dir = "../.cache/cargo-target"
+
+# Swift plugin build scripts use Tauri's default of iOS 13 unless this is set.
+# Keep host-side Swift availability checks aligned with the mobile app.
+[env]
+IPHONEOS_DEPLOYMENT_TARGET = "16.1"
