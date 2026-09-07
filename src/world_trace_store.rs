@@ -973,8 +973,9 @@ mod tests {
     use super::*;
     use medousa_world::{
         WORLD_ACTION_CHECKPOINT_SCHEMA_VERSION, WORLD_EVENT_ENVELOPE_SCHEMA_VERSION,
-        WorldActionCheckpoint, WorldAuthorityId, WorldDriverId, WorldOwnership, WorldPrincipal,
-        WorldRecoveryPlan, WorldResourceId, WorldSurfaceKind, WorldTraceId,
+        WorldActionCheckpoint, WorldAuthorityId, WorldCompensationStrategy, WorldDriverId,
+        WorldOwnership, WorldPrincipal, WorldRecoveryPlan, WorldRecoveryStrategy,
+        WorldResourceId, WorldSurfaceKind, WorldTraceId,
     };
 
     fn admission(intent: &str, effect_class: WorldEffectClass) -> WorldEventEnvelope {
@@ -1027,31 +1028,85 @@ mod tests {
     }
 
     #[test]
-    fn startup_promotes_unmatched_mutation_to_indeterminate_without_replay() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("timeline.jsonl");
-        let (mut store, recovered) = WorldTraceStore::open(&path, 10).unwrap();
-        assert_eq!(recovered, 0);
-        store
-            .append_envelopes(
-                vec![admission("intent:crashed", WorldEffectClass::LocalMutation)],
-                10,
-            )
-            .unwrap();
-        drop(store);
+    fn startup_types_every_unmatched_effect_without_replaying_it() {
+        let cases = [
+            (
+                "observe",
+                WorldEffectClass::Observe,
+                WorldActionStatus::NeedsReconciliation,
+                WorldRecoveryStrategy::Reobserve,
+                WorldCompensationStrategy::NotApplicable,
+            ),
+            (
+                "pixels",
+                WorldEffectClass::ObservePixels,
+                WorldActionStatus::NeedsReconciliation,
+                WorldRecoveryStrategy::Reobserve,
+                WorldCompensationStrategy::NotApplicable,
+            ),
+            (
+                "reversible",
+                WorldEffectClass::LocalReversible,
+                WorldActionStatus::Indeterminate,
+                WorldRecoveryStrategy::ReconcileFromFreshObservation,
+                WorldCompensationStrategy::ReconcileThenDomainAction,
+            ),
+            (
+                "mutation",
+                WorldEffectClass::LocalMutation,
+                WorldActionStatus::Indeterminate,
+                WorldRecoveryStrategy::ReconcileFromFreshObservation,
+                WorldCompensationStrategy::OperatorDirected,
+            ),
+            (
+                "external",
+                WorldEffectClass::ExternalEffect,
+                WorldActionStatus::Indeterminate,
+                WorldRecoveryStrategy::OperatorReview,
+                WorldCompensationStrategy::OperatorDirected,
+            ),
+            (
+                "irreversible",
+                WorldEffectClass::Irreversible,
+                WorldActionStatus::Indeterminate,
+                WorldRecoveryStrategy::OperatorReview,
+                WorldCompensationStrategy::Unavailable,
+            ),
+        ];
 
-        let (store, recovered) = WorldTraceStore::open(&path, 30).unwrap();
-        assert_eq!(recovered, 1);
-        let events = store.events_after(0, 10);
-        assert_eq!(events.len(), 2);
-        assert!(matches!(
-            &events[1].envelope.event.event,
-            WorldEventKind::ActionInterrupted {
-                status: WorldActionStatus::Indeterminate,
+        for (name, effect, expected_status, expected_recovery, expected_compensation) in cases {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("timeline.jsonl");
+            let (mut store, recovered) = WorldTraceStore::open(&path, 10).unwrap();
+            assert_eq!(recovered, 0);
+            store
+                .append_envelopes(vec![admission(&format!("intent:{name}"), effect)], 10)
+                .unwrap();
+            drop(store);
+
+            let (store, recovered) = WorldTraceStore::open(&path, 30).unwrap();
+            assert_eq!(recovered, 1, "{name}");
+            let events = store.events_after(0, 10);
+            assert_eq!(events.len(), 2, "{name}");
+            let WorldEventKind::ActionInterrupted {
+                effect_class,
+                status,
                 recovery,
                 ..
-            } if recovery == &WorldEffectClass::LocalMutation.recovery_plan()
-        ));
+            } = &events[1].envelope.event.event
+            else {
+                panic!("{name} did not receive a typed interrupted outcome");
+            };
+            assert_eq!(*effect_class, effect, "{name}");
+            assert_eq!(*status, expected_status, "{name}");
+            assert_eq!(recovery.strategy, expected_recovery, "{name}");
+            assert_eq!(
+                recovery.compensation.strategy, expected_compensation,
+                "{name}"
+            );
+            assert!(recovery.requires_fresh_admission, "{name}");
+            assert!(!recovery.compensation.automatic_dispatch_allowed, "{name}");
+        }
     }
 
     #[test]

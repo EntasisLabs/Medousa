@@ -3,6 +3,11 @@
 //! These intentionally read like attacks rather than implementation unit
 //! tests. They keep untrusted observations, stale state, competing control,
 //! and uncertain irreversible effects from regressing independently.
+//!
+//! The hard CI reliability budget is zero unauthorized or stale admissions,
+//! zero accepted permits after takeover, zero duplicate dispatch after a
+//! terminal or indeterminate receipt, and zero automatic compensation. Each
+//! violation fails this suite in the existing workspace library lane.
 
 use std::collections::BTreeSet;
 

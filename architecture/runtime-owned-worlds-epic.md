@@ -1,6 +1,6 @@
 # Runtime-owned worlds
 
-> **Status:** Active — architecture locked; Phases 1–6 core outcomes implemented; Phase 7 in progress
+> **Status:** Core complete — Phases 1–7 implemented and verified; packaged Windows/Linux computer drivers remain explicit platform follow-ups
 >
 > **Date:** 2026-09-04
 >
@@ -883,6 +883,11 @@ Suggested commit boundary:
 **Outcome:** World operation is explainable, recoverable where possible, and
 measurably more reliable than an opaque computer-use loop.
 
+**Proof status (2026-09-06): Complete for the core epic.** The remaining
+Windows/Linux native-driver packages extend platform coverage; they do not
+change the authority, recovery, recipe, evidence, or review contracts proven
+here.
+
 Current durable causal-ledger slice:
 
 - The daemon appends every world-kernel event to one bounded, monotonic JSONL
@@ -973,6 +978,9 @@ Current evidence-promotion slice:
   principal kind, checkpoint/recovery metadata, promotion reasons, and timing,
   but excludes summaries, errors, page text, values, selectors, coordinates,
   screenshots, grants, permits, and native handles.
+- The bounded evidence sidecar is the durable review artifact for this slice.
+  Large screenshot and binary artifacts remain in their existing
+  content-addressed stores rather than being copied into world activity.
 - Authenticated workshop clients can page the evidence sidecar at
   `GET /v1/worlds/evidence`; records point back to the separately redacted
   timeline and cannot be replayed as authority.
@@ -1005,6 +1013,17 @@ Implementation:
 - Publish performance and reliability budgets in CI without coupling release
   packaging to unnecessary duplicate compilation.
 
+The hard reliability budget is enforced by the adversarial tests already run
+in the workspace library lane:
+
+- unauthorized or stale mutation permits admitted: **0**;
+- permits accepted after human takeover: **0**;
+- duplicate permits after an acknowledged or indeterminate idempotency key:
+  **0**;
+- unmatched durable admissions reopened without a typed recovery state:
+  **0**; and
+- compensation dispatched automatically or with old authority: **0**.
+
 Acceptance:
 
 - A crash between admission and completion resolves to a typed indeterminate
@@ -1013,6 +1032,16 @@ Acceptance:
 - A replayed recipe receives fresh admission and fails safely when the world
   differs.
 - Common browser and computer workflows meet the latency budgets above.
+
+Closeout proof:
+
+| Acceptance | Evidence |
+|---|---|
+| Crash recovery is typed | Startup recovery tests reopen unmatched admissions as `needs_reconciliation` or `indeterminate`, discard the old permit, and preserve their checkpoint and causal ids. |
+| Activity is attributable | The timeline/evidence routes and Home review sheet expose principal kind, intent/trace, authority, driver, revision, outcome, recovery, and compensation in one bounded causal view. |
+| Recipes re-enter authority | Derivation rejects partial or uncertain traces; execution re-observes exact semantic targets and sends every step through fresh admission with a durable run id. |
+| Reliability fails closed | The adversarial suite covers prompt injection, stale state, takeover, disconnect, irreversible uncertainty, and idempotent external effects under the zero-tolerance budget above. |
+| Hot paths remain fast | On the closeout Mac, 20,000 iterations measured admission/completion p95 at 3,459 ns and takeover p95 at 375 ns; a 1,024-node cached observation measured p95 at 91,333 ns. All remain far below the checked-in 1 ms, one-frame, and 10 ms ceilings. These are daemon/cached-state measurements, not target-application or network-response claims. |
 
 Suggested commit boundary:
 
