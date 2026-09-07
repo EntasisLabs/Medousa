@@ -9,7 +9,9 @@ vi.mock("$lib/daemon/contractClient", () => ({
 import {
   loadLatestWorldActivity,
   mergeWorldActivity,
+  worldActivityDetailLabel,
   worldActivityTone,
+  worldActivityWhen,
   worldActorLabel,
 } from "$lib/daemon/worldActivity";
 import type {
@@ -98,6 +100,8 @@ describe("world activity client", () => {
     });
     expect(worldActorLabel(interrupted)).toBe("Medousa");
     expect(worldActivityTone(interrupted)).toBe("danger");
+    expect(worldActivityDetailLabel("needs_reconciliation")).toBe("Needs Reconciliation");
+    expect(worldActivityWhen(1_000, 61_000)).toBe("1m");
     expect(
       mergeWorldActivity(
         { events: [interrupted], has_more: false, next_sequence: 3 },

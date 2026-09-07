@@ -18,6 +18,20 @@ computer running Medousa. Device browsing and workshop-owned browser worlds
 remain separate because they have different cookie, passkey, recovery, and
 policy authority.
 
+## Review world activity
+
+Open **Settings → Runtime Controls → World activity → Review activity** to see
+the newest governed browser and computer events on the active workshop. The
+list combines human, Medousa, Bot, worker, peer, and system activity in one
+causal order. Open an event to inspect its authority, world revision, driver,
+intent, checkpoint, and recovery requirement.
+
+Use the **Evidence** filter to focus on failures, interrupted or uncertain
+outcomes, sensitive effects, and actions that required operator confirmation.
+This view contains bounded metadata and redacted summaries, not page contents,
+typed values, screenshots, credentials, or reusable permissions. If the list
+says earlier activity is hidden, it remains in the workshop's bounded ledger.
+
 ## Medousa for Chromium browsers
 
 Medousa for Chromium browsers keeps a focused companion beside the page you are

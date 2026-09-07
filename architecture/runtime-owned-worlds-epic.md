@@ -971,6 +971,20 @@ Current evidence-promotion slice:
   `GET /v1/worlds/evidence`; records point back to the separately redacted
   timeline and cannot be replayed as authority.
 
+Current unified-review slice:
+
+- Runtime settings expose one quiet **World activity** entry that opens a
+  desktop dialog or native-feeling mobile sheet for the active workshop.
+- Home requests the newest bounded ledger and evidence pages directly, merges
+  them by daemon sequence, and renders every principal kind in one causal
+  order. It never walks the full retained ledger merely to reach recent work.
+- Each expandable event identifies who acted, the governing authority, world
+  and driver, intent/trace, revision checkpoint, terminal status, and recovery
+  requirement. A separate Evidence filter focuses review on promoted events.
+- Older daemons remain useful: if the evidence operation is absent, Home keeps
+  the causal timeline visible and states that promoted evidence is unavailable.
+  No raw page, value, screenshot, error, or reusable authority enters the view.
+
 Implementation:
 
 - Add domain-specific checkpoints and compensation plans.

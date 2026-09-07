@@ -122,3 +122,24 @@ export function worldActivityTone(event: WorldTimelineEvent): WorldActivityTone 
   if (event.status === "confirmed") return "success";
   return "neutral";
 }
+
+export function worldActivityWhen(timestampMs: number, nowMs = Date.now()): string {
+  if (!Number.isFinite(timestampMs) || timestampMs <= 0) return "";
+  const elapsedMinutes = Math.max(0, Math.floor((nowMs - timestampMs) / 60_000));
+  if (elapsedMinutes < 1) return "now";
+  if (elapsedMinutes < 60) return `${elapsedMinutes}m`;
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  if (elapsedHours < 24) return `${elapsedHours}h`;
+  const elapsedDays = Math.floor(elapsedHours / 24);
+  if (elapsedDays < 14) return `${elapsedDays}d`;
+  return new Date(timestampMs).toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+export function worldActivityDetailLabel(value?: string | null): string {
+  if (!value) return "";
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+}
