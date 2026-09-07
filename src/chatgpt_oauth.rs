@@ -1098,6 +1098,8 @@ mod tests {
             assert_eq!(headers.get("chatgpt-account-id").unwrap(), "acct_123");
             assert_eq!(headers.get("originator").unwrap(), CODEX_COMPAT_ORIGINATOR);
             assert_eq!(headers.get("version").unwrap(), CODEX_COMPAT_VERSION);
+            // Pin the Astra-capable contract so a version regression is visible.
+            assert_eq!(headers.get("version").unwrap(), "0.153.4");
             assert_eq!(
                 headers.get("user-agent").unwrap(),
                 codex_compat_user_agent().as_str()
@@ -1108,6 +1110,7 @@ mod tests {
             );
             Json(serde_json::json!({
                 "models": [
+                    { "slug": "gpt-6-astra", "visibility": "list", "priority": 30 },
                     { "slug": "gpt-visible-slow", "visibility": "list", "priority": 10 },
                     { "slug": "gpt-hidden", "visibility": "hide", "priority": 100 },
                     { "slug": "gpt-visible-fast", "visibility": "list", "priority": 20 }
@@ -1133,7 +1136,10 @@ mod tests {
             .list_models_from_url(&format!("http://{address}/models"))
             .await
             .unwrap();
-        assert_eq!(result.models, vec!["gpt-visible-fast", "gpt-visible-slow"]);
+        assert_eq!(
+            result.models,
+            vec!["gpt-6-astra", "gpt-visible-fast", "gpt-visible-slow"]
+        );
     }
 
     #[tokio::test]

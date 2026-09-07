@@ -2,7 +2,9 @@
 
 use async_trait::async_trait;
 use futures_util::StreamExt;
-use genai::chat::{ChatOptions, ChatRequest, ChatResponse, ChatStreamEvent, MessageContent, Usage};
+use genai::chat::{
+    ChatOptions, ChatRequest, ChatResponse, ChatStreamEvent, MessageContent, ReasoningEffort, Usage,
+};
 use genai::resolver::AuthData;
 use genai::{Client, Headers};
 use stasis::application::runtime::chat_options_resolver::apply_model_reasoning_suffix;
@@ -32,7 +34,8 @@ impl From<genai::Error> for StreamOnceError {
 /// Version of the Codex backend contract implemented by this adapter. This is
 /// intentionally independent from Medousa's product version: the ChatGPT Codex
 /// backend gates newer models on this protocol identity.
-pub(crate) const CODEX_COMPAT_VERSION: &str = "0.145.0";
+/// Astra catalog baseline: https://learn.chatgpt.com/docs/changelog (0.153.4).
+pub(crate) const CODEX_COMPAT_VERSION: &str = "0.153.4";
 pub(crate) const CODEX_COMPAT_ORIGINATOR: &str = "codex_cli_rs";
 
 pub(crate) fn codex_compat_user_agent() -> String {
@@ -117,7 +120,32 @@ impl OpenAiCodexChatClient {
     }
 
     fn model_target(&self) -> String {
-        format!("openai_resp::{}", self.model.trim())
+        let (_, model) = ReasoningEffort::from_model_name(self.model.trim());
+        format!("openai_resp::{model}")
+    }
+
+    fn stream_options(&self, options: Option<&ChatOptions>) -> ChatOptions {
+        let mut options =
+            apply_model_reasoning_suffix(&self.model, options.cloned().unwrap_or_default());
+        let (_, model) = ReasoningEffort::from_model_name(self.model.trim());
+        if model == "gpt-6-astra" {
+            // Astra accepts reasoning effort instead of sampling controls.
+            // Preserve supported efforts and let an unset effort use its default.
+            options.temperature = None;
+            options.top_p = None;
+            if matches!(
+                options.reasoning_effort,
+                Some(ReasoningEffort::None | ReasoningEffort::Minimal)
+            ) {
+                options.reasoning_effort = Some(ReasoningEffort::Low);
+            }
+        }
+        options
+            .with_capture_content(true)
+            .with_capture_usage(true)
+            .with_capture_tool_calls(true)
+            .with_capture_reasoning_content(true)
+            .with_normalize_reasoning_content(true)
     }
 
     async fn credentials(&self) -> StasisResult<(String, String)> {
@@ -154,14 +182,7 @@ impl OpenAiCodexChatClient {
         options: Option<&ChatOptions>,
         chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
     ) -> Result<ChatResponse, StreamOnceError> {
-        let mut stream_options =
-            apply_model_reasoning_suffix(&self.model, options.cloned().unwrap_or_default());
-        stream_options = stream_options
-            .with_capture_content(true)
-            .with_capture_usage(true)
-            .with_capture_tool_calls(true)
-            .with_capture_reasoning_content(true)
-            .with_normalize_reasoning_content(true);
+        let stream_options = self.stream_options(options);
 
         let mut stream_response = self
             .client(&credentials.0, &credentials.1)
@@ -448,6 +469,36 @@ mod tests {
 
     #[tokio::test]
     async fn sse_fixture_normalizes_text_reasoning_tools_and_usage() {
+        assert_sse_fixture("gpt-5.6-sol", None, "gpt-5.6-sol", None).await;
+    }
+
+    #[tokio::test]
+    async fn astra_requests_use_supported_options_and_preserve_stream_content() {
+        for (model, effort, expected_effort) in [
+            ("gpt-6-astra", None, None),
+            ("gpt-6-astra", Some(ReasoningEffort::None), Some("low")),
+            ("gpt-6-astra", Some(ReasoningEffort::Minimal), Some("low")),
+            ("gpt-6-astra", Some(ReasoningEffort::Low), Some("low")),
+            ("gpt-6-astra", Some(ReasoningEffort::Medium), Some("medium")),
+            ("gpt-6-astra", Some(ReasoningEffort::High), Some("high")),
+            ("gpt-6-astra", Some(ReasoningEffort::XHigh), Some("xhigh")),
+            ("gpt-6-astra", Some(ReasoningEffort::Max), Some("max")),
+            ("gpt-6-astra-minimal", None, Some("low")),
+            ("gpt-6-astra-max", None, Some("max")),
+            ("gpt-6-astra-max", Some(ReasoningEffort::High), Some("high")),
+        ] {
+            let mut options = ChatOptions::default().with_temperature(0.2).with_top_p(0.8);
+            options.reasoning_effort = effort;
+            assert_sse_fixture(model, Some(options), "gpt-6-astra", expected_effort).await;
+        }
+    }
+
+    async fn assert_sse_fixture(
+        model: &str,
+        options: Option<ChatOptions>,
+        expected_model: &str,
+        expected_effort: Option<&str>,
+    ) {
         #[derive(Clone, Default)]
         struct Capture(Arc<Mutex<Option<(HeaderMap, serde_json::Value)>>>);
 
@@ -456,6 +507,16 @@ mod tests {
             headers: HeaderMap,
             axum::Json(body): axum::Json<serde_json::Value>,
         ) -> axum::response::Response {
+            let completed = serde_json::json!({
+                "type": "response.completed",
+                "response": {
+                    "id": "resp_stream",
+                    "status": "completed",
+                    "model": body["model"],
+                    "output": [],
+                    "usage": { "input_tokens": 3, "output_tokens": 4, "total_tokens": 7 }
+                }
+            });
             *capture.0.lock().unwrap() = Some((headers, body));
             let fixture = concat!(
                 "event: response.output_text.delta\n",
@@ -465,10 +526,9 @@ mod tests {
                 "event: response.output_item.added\n",
                 "data: {\"type\":\"response.output_item.added\",\"output_index\":1,\"item\":{\"type\":\"function_call\",\"call_id\":\"call_1\",\"name\":\"code_read\"}}\n\n",
                 "event: response.function_call_arguments.delta\n",
-                "data: {\"type\":\"response.function_call_arguments.delta\",\"output_index\":1,\"delta\":\"{\\\"path\\\":\\\"src/lib.rs\\\"}\"}\n\n",
-                "event: response.completed\n",
-                "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_stream\",\"status\":\"completed\",\"model\":\"gpt-5.6-sol\",\"output\":[],\"usage\":{\"input_tokens\":3,\"output_tokens\":4,\"total_tokens\":7}}}\n\n"
+                "data: {\"type\":\"response.function_call_arguments.delta\",\"output_index\":1,\"delta\":\"{\\\"path\\\":\\\"src/lib.rs\\\"}\"}\n\n"
             );
+            let fixture = format!("{fixture}event: response.completed\ndata: {completed}\n\n");
             axum::response::Response::builder()
                 .header("content-type", "text/event-stream")
                 .body(axum::body::Body::from(fixture))
@@ -482,8 +542,7 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-        let client =
-            OpenAiCodexChatClient::with_url("gpt-5.6-sol", format!("http://{address}/responses"));
+        let client = OpenAiCodexChatClient::with_url(model, format!("http://{address}/responses"));
         let (tx, mut rx) = mpsc::channel(8);
         let image_base64 = Arc::<str>::from(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
@@ -503,7 +562,7 @@ mod tests {
             .stream_once(
                 &("oauth-secret".to_string(), "acct_123".to_string()),
                 request,
-                None,
+                options.as_ref(),
                 Some(&tx),
             )
             .await
@@ -522,7 +581,11 @@ mod tests {
         let (headers, body) = capture.0.lock().unwrap().take().unwrap();
         assert_eq!(headers.get("authorization").unwrap(), "Bearer oauth-secret");
         assert_eq!(headers.get("chatgpt-account-id").unwrap(), "acct_123");
-        assert_eq!(body["model"], "gpt-5.6-sol");
+        assert_eq!(headers.get("version").unwrap(), CODEX_COMPAT_VERSION);
+        assert_eq!(body["model"], expected_model);
+        assert_eq!(body["reasoning"]["effort"].as_str(), expected_effort);
+        assert!(body.get("temperature").is_none());
+        assert!(body.get("top_p").is_none());
         assert_eq!(body["instructions"], "use tools");
         assert_eq!(body["store"], false);
         assert_eq!(body["stream"], true);

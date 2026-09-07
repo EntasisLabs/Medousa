@@ -82,18 +82,23 @@ describe("modelHasVision", () => {
 });
 
 describe("live model capability fallback", () => {
-  it("keeps ChatGPT account GPT models multimodal when the account catalog returns ids", () => {
-    const [record] = recordsFromModelIds(
-      "openai-codex",
-      ["gpt-5.6-sol"],
-      "chatgpt-account",
-    );
-    expect(record).toMatchObject({
-      inputModalities: ["text", "image"],
-      outputModalities: ["text"],
-      supportsToolCalling: true,
-      supportsVision: true,
-    });
+  it.each(["gpt-5.6-sol", "gpt-6-astra"])(
+    "keeps ChatGPT account %s multimodal when the account catalog returns ids",
+    (model) => {
+      const [record] = recordsFromModelIds("openai-codex", [model], "chatgpt-account");
+      expect(record).toMatchObject({
+        inputModalities: ["text", "image"],
+        outputModalities: ["text"],
+        supportsToolCalling: true,
+        supportsVision: true,
+      });
+    },
+  );
+
+  it("recognizes Astra image input without guessing about other GPT-6 models", () => {
+    expect(inferModelSupportsVision("openai", "gpt-6-astra")).toBe(true);
+    expect(inferModelSupportsVision("openrouter", "openai/gpt-6-astra")).toBe(true);
+    expect(inferModelSupportsVision("openai-codex", "gpt-6-unknown")).toBe(false);
   });
 
   it("matches native model vision boundaries instead of marking every model multimodal", () => {

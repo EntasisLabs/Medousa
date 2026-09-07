@@ -208,9 +208,11 @@ export function inferModelSupportsVision(provider: string, model: string): boole
       modelId.startsWith("gpt-4.1") ||
       modelId.startsWith("gpt-4-turbo") ||
       modelId.startsWith("gpt-5") ||
+      modelId.startsWith("gpt-6-astra") ||
       modelId.includes("openai/gpt-4o") ||
       modelId.includes("openai/gpt-4.1") ||
-      modelId.includes("openai/gpt-5")
+      modelId.includes("openai/gpt-5") ||
+      modelId.includes("openai/gpt-6-astra")
     );
   }
   if (providerId === "anthropic") {
