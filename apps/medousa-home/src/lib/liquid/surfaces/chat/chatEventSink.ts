@@ -12,6 +12,7 @@
 
 import type { SceneEvent } from "$lib/liquid/core";
 import type { EventSink } from "$lib/liquid/ports";
+import { resolveTeacherIntent } from "./teacherActions";
 
 /** Actions on a `run` event that mean "start a new turn with this text". */
 const SUBMIT_ACTIONS = new Set(["submit", "prompt"]);
@@ -30,12 +31,14 @@ function cleanText(value: unknown): string | null {
 export function intentFromEvent(event: SceneEvent): string | null {
   const payload = (event.payload ?? {}) as Record<string, unknown>;
   if (event.type === "submit") {
-    return cleanText(payload.intent);
+    return resolveTeacherIntent(cleanText(payload.intent));
   }
   if (event.type === "run") {
     const action = typeof payload.action === "string" ? payload.action : "";
     if (!SUBMIT_ACTIONS.has(action)) return null;
-    return cleanText(payload.prompt) ?? cleanText(payload.text) ?? cleanText(payload.intent);
+    return resolveTeacherIntent(
+      cleanText(payload.prompt) ?? cleanText(payload.text) ?? cleanText(payload.intent),
+    );
   }
   return null;
 }

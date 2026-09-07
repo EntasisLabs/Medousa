@@ -119,6 +119,12 @@ Source and mode are independent:
   and verifies current, contested, niche, or high-stakes claims with sources.
   It will give a direct answer when you are stuck, ask for one, or safety
   matters, then reconnect that answer to the underlying model.
+  After an explanation it may offer a small optional next step: **Try an example**,
+  **Show a worked model**, or **Check my understanding**. In Medousa chat these
+  Liquid Markdown action rows send a normal conversational request about the
+  current concept. You can also type your choice, ask for a direct answer, or
+  decline practice. Teacher waits for your response rather than starting
+  background lessons; selecting an option is not evidence of mastery.
 - **Instant** keeps General's behavior and agent loop but loads only recent
   conversation context and a compact everyday tool set. MCP capabilities stay
   available through lazy search and invocation instead of preloading every MCP

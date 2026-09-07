@@ -23,7 +23,7 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 | Guide | You want to… |
 |-------|----------------|
 | [Getting started](guides/getting-started.md) | Download → welcome → first chat |
-| [Models and agent sources](guides/models-and-agent-sources.md) | Choose runtimes, models, modes, and reply narration in chat |
+| [Models and agent sources](guides/models-and-agent-sources.md) | Choose runtimes, models, Teacher learning actions, and reply narration in chat |
 | [Bots](guides/bots.md) | Create durable named teammates with their own memory and conversation |
 | [Packages](guides/packages.md) | Optional computer, coding, model, channel, and MCP capabilities |
 | [Workshop & Automations](guides/workshop-and-automations.md) | Flows, schedules, specialists |
