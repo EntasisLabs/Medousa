@@ -1,12 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import {
-    Check,
     GitPullRequestArrow,
     History,
-    MessageSquareWarning,
     MoreHorizontal,
-    Pencil,
     Play,
     Square,
   } from "@lucide/svelte";
@@ -47,6 +44,7 @@
   } from "$lib/code/undertakingCommandController";
   import UndertakingWorldPanel from "$lib/components/work/UndertakingWorldPanel.svelte";
   import UndertakingReviewCanvas from "$lib/components/work/UndertakingReviewCanvas.svelte";
+  import UndertakingReviewActions from "$lib/components/work/UndertakingReviewActions.svelte";
   import type { WorldLocationIntent } from "$lib/work/undertakingWorldController";
   import {
     closeUndertaking,
@@ -95,6 +93,7 @@
   let worldLocate = $state<WorldLocationIntent | null>(null);
   let creating = $state(false);
   let reviewRationale = $state("");
+  let integrationStrategy = $state<"fast_forward_only" | "preserve_branch">("fast_forward_only");
   let reviewNoteOpen = $state(false);
   let acknowledgePolicy = $state(false);
   let acknowledgeBlocking = $state(false);
@@ -139,6 +138,14 @@
   );
   const actions = $derived(detail?.allowed_actions);
   const workspaceCopy = $derived(undertakingWorkspaceCopy(detail));
+  const sourceBranch = $derived(gitTargetBaseRef(detail?.target) ?? "source branch"),
+    reviewedBranch = $derived(detail?.environment?.branch?.trim() || "working branch");
+  const recordedIntegrationStrategy = $derived(review?.decision?.strategy ?? detail?.review_decisions?.at(-1)?.strategy ?? null);
+  const integrationActionLabel = $derived.by(() => {
+    const strategy = recordedIntegrationStrategy ?? integrationStrategy;
+    if (workspaceCopy.attached || strategy === "keep_checkout") return "Keep changes here";
+    return strategy === "fast_forward_only" ? `Apply to ${sourceBranch}` : `Keep ${reviewedBranch}`;
+  });
   const activeItems = $derived(
     undertakings.items.filter(
       (i) => i.human_phase !== "complete" && i.state !== "discarded" && i.state !== "accepted",
@@ -528,17 +535,25 @@
 
   async function recordApproval() {
     if (!review?.evidence_id || !review.evidence_digest || !detail) return;
+    const strategy = workspaceCopy.attached ? "keep_checkout" : integrationStrategy;
     await run(async () => {
       await recordReviewIntent(detail.id, {
         evidence_id: review.evidence_id!,
         evidence_digest: review.evidence_digest!,
-        strategy: workspaceCopy.attached ? "keep_checkout" : "preserve_branch",
+        strategy,
         rationale: reviewRationale.trim() || "Reviewed in Medousa",
         acknowledged_violations: acknowledgePolicy
           ? (review.policy?.violations.map((violation) => violation.id) ?? [])
           : [],
       });
       await undertakings.refreshDetail();
+      toast.show(
+        strategy === "fast_forward_only"
+          ? `Approved — ready to apply to ${sourceBranch}.`
+          : strategy === "preserve_branch"
+            ? `Approved — ${reviewedBranch} will be kept separate.`
+            : "Approved — changes will stay in this checkout.",
+      );
     });
   }
 
@@ -676,11 +691,24 @@
     if (!detail) return;
     const decisionId = review?.decision?.id ?? detail.review_decisions?.at(-1)?.id;
     if (!decisionId) return;
-    if (!window.confirm(workspaceCopy.finishPrompt)) return;
+    const strategy = recordedIntegrationStrategy;
+    const prompt = workspaceCopy.attached || strategy === "keep_checkout"
+      ? "Finish this project and keep the changes in this checkout?"
+      : strategy === "fast_forward_only"
+        ? `Apply the reviewed changes to ${sourceBranch}? This only succeeds if ${sourceBranch} can be fast-forwarded safely.`
+        : `Finish this project and keep ${reviewedBranch} as a separate branch? ${sourceBranch} will not change.`;
+    if (!window.confirm(prompt)) return;
     await run(async () => {
-      await applyDecision(detail!.id, decisionId);
+      const result = await applyDecision(detail!.id, decisionId);
       await undertakings.refreshDetail();
       await undertakings.refreshList();
+      toast.show(
+        result.disposition === "base_fast_forwarded"
+          ? `Applied reviewed changes to ${sourceBranch}.`
+          : result.disposition === "branch_preserved"
+            ? `Finished — ${reviewedBranch} was kept separate.`
+            : "Finished — changes remain in this checkout.",
+      );
     });
   }
 
@@ -939,42 +967,18 @@
             {/if}
           </div>
           <div class="flex shrink-0 items-center gap-1.5">
-            {#if reviewCanvas && review && actions?.review.allowed}
-              {#if actions.continue_editing?.allowed}
-                <button
-                  type="button"
-                  class="scripts-workbench-toolbar-btn"
-                  disabled={busy}
-                  title="Continue editing"
-                  aria-label="Continue editing"
-                  onclick={() => void beginContinueEditing()}
-                ><Pencil size={14} strokeWidth={1.75} /></button>
-              {/if}
-              <button
-                type="button"
-                class="scripts-workbench-toolbar-btn"
-                disabled={busy}
-                title="Request changes"
-                aria-label="Request changes"
-                onclick={() => void beginRequestChanges()}
-              ><MessageSquareWarning size={14} strokeWidth={1.75} /></button>
-              <button
-                type="button"
-                class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-primary"
-                disabled={!canApproveReview}
-                title="Approve changes"
-                aria-label="Approve changes"
-                onclick={() => void recordApproval()}
-              ><Check size={14} strokeWidth={1.75} /></button>
-            {:else if reviewCanvas && review && actions?.apply.allowed}
-              <button
-                type="button"
-                class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-primary"
-                disabled={busy}
-                title="Finish project"
-                aria-label="Finish project"
-                onclick={() => void applyApproval()}
-              ><Check size={14} strokeWidth={1.75} /></button>
+            {#if reviewCanvas && review}
+              <UndertakingReviewActions
+                attached={workspaceCopy.attached} {busy} canApprove={canApproveReview}
+                allowContinue={Boolean(actions?.continue_editing?.allowed)}
+                allowReview={Boolean(actions?.review.allowed)} allowApply={Boolean(actions?.apply.allowed)}
+                {sourceBranch} {reviewedBranch} actionLabel={integrationActionLabel}
+                bind:integrationStrategy
+                onContinue={() => void beginContinueEditing()}
+                onRequestChanges={() => void beginRequestChanges()}
+                onApprove={() => void recordApproval()}
+                onApply={() => void applyApproval()}
+              />
             {:else if !detail.environment && actions?.provision.allowed}
               <button
                 type="button"
