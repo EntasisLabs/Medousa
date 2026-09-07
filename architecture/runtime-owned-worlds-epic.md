@@ -892,6 +892,11 @@ Current durable causal-ledger slice:
   semantic summary, effect class, and an effect-specific recovery strategy.
   It does not persist page bodies, native handles, credentials, or reusable
   authority.
+- Every new admission also declares a compensation boundary independently of
+  recovery: none needed, reconcile before a fresh domain action,
+  operator-directed action, or unavailable. No compensation is automatically
+  dispatched, and any corrective action is a new attributable intent with
+  fresh admission. Legacy records default to an unspecified fail-closed state.
 - Startup pairs admissions with terminal receipts. An unmatched observation
   becomes `needs_reconciliation`; an unmatched mutation or external effect
   becomes `indeterminate`. In both cases the old permit is discarded and any
@@ -943,8 +948,9 @@ Current governed-runner slice:
 Current production-proof slice:
 
 - A dedicated world-authority adversarial suite treats prompt-injection text,
-  stale observations, human takeover races, uncertain irreversible effects,
-  and acknowledged external-effect retries as attacks on one common boundary.
+  stale observations, human takeover races, driver disconnects, uncertain
+  irreversible effects, and acknowledged external-effect retries as attacks on
+  one common boundary.
   The cases run inside the existing workspace library lane rather than adding
   another duplicate release build.
 - The existing micro-CI job now measures the pure admission/completion hot
@@ -980,7 +986,8 @@ Current unified-review slice:
   order. It never walks the full retained ledger merely to reach recent work.
 - Each expandable event identifies who acted, the governing authority, world
   and driver, intent/trace, revision checkpoint, terminal status, and recovery
-  requirement. A separate Evidence filter focuses review on promoted events.
+  and compensation requirements. A separate Evidence filter focuses review on
+  promoted events.
 - Older daemons remain useful: if the evidence operation is absent, Home keeps
   the causal timeline visible and states that promoted evidence is unavailable.
   No raw page, value, screenshot, error, or reusable authority enters the view.

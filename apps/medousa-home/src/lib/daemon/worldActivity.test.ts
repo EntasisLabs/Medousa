@@ -10,6 +10,7 @@ import {
   loadLatestWorldActivity,
   mergeWorldActivity,
   worldActivityDetailLabel,
+  worldCompensationLabel,
   worldActivityTone,
   worldActivityWhen,
   worldActorLabel,
@@ -101,6 +102,20 @@ describe("world activity client", () => {
     expect(worldActorLabel(interrupted)).toBe("Medousa");
     expect(worldActivityTone(interrupted)).toBe("danger");
     expect(worldActivityDetailLabel("needs_reconciliation")).toBe("Needs Reconciliation");
+    expect(
+      worldCompensationLabel({
+        strategy: "operator_directed",
+        automatic_dispatch_allowed: false,
+        requires_new_intent: true,
+      }),
+    ).toBe("Operator-directed new action");
+    expect(
+      worldCompensationLabel({
+        strategy: "unavailable",
+        automatic_dispatch_allowed: false,
+        requires_new_intent: false,
+      }),
+    ).toBe("No compensation available");
     expect(worldActivityWhen(1_000, 61_000)).toBe("1m");
     expect(
       mergeWorldActivity(

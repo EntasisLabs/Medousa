@@ -14,12 +14,12 @@ use std::time::Instant;
 
 use medousa_types::{
     WORLD_EVIDENCE_SCHEMA_VERSION, WorldEvidenceRecord, WorldTimelineCheckpoint,
-    WorldTimelineRecovery,
+    WorldTimelineCompensation, WorldTimelineRecovery,
 };
 use medousa_world::{
-    WorldActionStatus, WorldEffectClass, WorldEvent, WorldEventEnvelope, WorldEventKind, WorldId,
-    WorldIntentId, WorldOwnership, WorldPrincipalKind, WorldRecoveryPlan, WorldRecoveryStrategy,
-    WorldSurfaceKind,
+    WorldActionStatus, WorldCompensationPlan, WorldCompensationStrategy, WorldEffectClass,
+    WorldEvent, WorldEventEnvelope, WorldEventKind, WorldId, WorldIntentId, WorldOwnership,
+    WorldPrincipalKind, WorldRecoveryPlan, WorldRecoveryStrategy, WorldSurfaceKind,
 };
 use serde::{Deserialize, Serialize};
 
@@ -853,7 +853,21 @@ fn public_recovery(recovery: &WorldRecoveryPlan) -> WorldTimelineRecovery {
     WorldTimelineRecovery {
         strategy: recovery_strategy_label(recovery.strategy).to_string(),
         requires_fresh_admission: recovery.requires_fresh_admission,
+        compensation: public_compensation(&recovery.compensation),
     }
+}
+
+fn public_compensation(
+    compensation: &WorldCompensationPlan,
+) -> Option<WorldTimelineCompensation> {
+    if compensation.strategy == WorldCompensationStrategy::Unspecified {
+        return None;
+    }
+    Some(WorldTimelineCompensation {
+        strategy: compensation_strategy_label(compensation.strategy).to_string(),
+        automatic_dispatch_allowed: compensation.automatic_dispatch_allowed,
+        requires_new_intent: compensation.requires_new_intent,
+    })
 }
 
 fn ownership_label(ownership: WorldOwnership) -> &'static str {
@@ -914,6 +928,18 @@ fn recovery_strategy_label(strategy: WorldRecoveryStrategy) -> &'static str {
     }
 }
 
+fn compensation_strategy_label(strategy: WorldCompensationStrategy) -> &'static str {
+    match strategy {
+        WorldCompensationStrategy::Unspecified => "unspecified",
+        WorldCompensationStrategy::NotApplicable => "not_applicable",
+        WorldCompensationStrategy::ReconcileThenDomainAction => {
+            "reconcile_then_domain_action"
+        }
+        WorldCompensationStrategy::OperatorDirected => "operator_directed",
+        WorldCompensationStrategy::Unavailable => "unavailable",
+    }
+}
+
 fn interrupted_status(effect_class: WorldEffectClass) -> WorldActionStatus {
     match effect_class {
         WorldEffectClass::Observe | WorldEffectClass::ObservePixels => {
@@ -948,7 +974,7 @@ mod tests {
     use medousa_world::{
         WORLD_ACTION_CHECKPOINT_SCHEMA_VERSION, WORLD_EVENT_ENVELOPE_SCHEMA_VERSION,
         WorldActionCheckpoint, WorldAuthorityId, WorldDriverId, WorldOwnership, WorldPrincipal,
-        WorldRecoveryPlan, WorldRecoveryStrategy, WorldResourceId, WorldSurfaceKind, WorldTraceId,
+        WorldRecoveryPlan, WorldResourceId, WorldSurfaceKind, WorldTraceId,
     };
 
     fn admission(intent: &str, effect_class: WorldEffectClass) -> WorldEventEnvelope {
@@ -980,10 +1006,7 @@ mod tests {
                     effect_class,
                     summary: "click continue".to_string(),
                     checkpoint,
-                    recovery: WorldRecoveryPlan {
-                        strategy: effect_class.recovery_strategy(),
-                        requires_fresh_admission: true,
-                    },
+                    recovery: effect_class.recovery_plan(),
                     recipe_hint: None,
                 },
             },
@@ -1025,13 +1048,25 @@ mod tests {
             &events[1].envelope.event.event,
             WorldEventKind::ActionInterrupted {
                 status: WorldActionStatus::Indeterminate,
-                recovery: WorldRecoveryPlan {
-                    strategy: WorldRecoveryStrategy::ReconcileFromFreshObservation,
-                    requires_fresh_admission: true,
-                },
+                recovery,
                 ..
-            }
+            } if recovery == &WorldEffectClass::LocalMutation.recovery_plan()
         ));
+    }
+
+    #[test]
+    fn legacy_recovery_metadata_defaults_to_a_fail_closed_compensation_boundary() {
+        let plan: WorldRecoveryPlan = serde_json::from_str(
+            r#"{"strategy":"operator_review","requires_fresh_admission":true}"#,
+        )
+        .expect("deserialize pre-compensation recovery metadata");
+        assert_eq!(
+            plan.compensation.strategy,
+            medousa_world::WorldCompensationStrategy::Unspecified
+        );
+        assert!(!plan.compensation.automatic_dispatch_allowed);
+        assert!(plan.compensation.requires_new_intent);
+        assert!(public_compensation(&plan.compensation).is_none());
     }
 
     #[test]

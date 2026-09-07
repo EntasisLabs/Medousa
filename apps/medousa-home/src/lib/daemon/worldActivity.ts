@@ -1,6 +1,7 @@
 import type {
   WorldEvidenceRecord,
   WorldEvidenceResponse,
+  WorldTimelineCompensation,
   WorldTimelineEvent,
   WorldTimelineResponse,
 } from "$lib/types/generated/daemon_api";
@@ -142,4 +143,19 @@ export function worldActivityDetailLabel(value?: string | null): string {
     .filter(Boolean)
     .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
     .join(" ");
+}
+
+export function worldCompensationLabel(compensation: WorldTimelineCompensation): string {
+  switch (compensation.strategy) {
+    case "not_applicable":
+      return "No compensation needed";
+    case "reconcile_then_domain_action":
+      return "Reconcile, then admit a new domain action";
+    case "operator_directed":
+      return "Operator-directed new action";
+    case "unavailable":
+      return "No compensation available";
+    default:
+      return worldActivityDetailLabel(compensation.strategy);
+  }
 }

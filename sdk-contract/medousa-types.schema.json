@@ -26603,6 +26603,25 @@
           }
         }
       },
+      "WorldTimelineCompensation": {
+        "type": "object",
+        "required": [
+          "automatic_dispatch_allowed",
+          "requires_new_intent",
+          "strategy"
+        ],
+        "properties": {
+          "automatic_dispatch_allowed": {
+            "type": "boolean"
+          },
+          "requires_new_intent": {
+            "type": "boolean"
+          },
+          "strategy": {
+            "type": "string"
+          }
+        }
+      },
       "WorldTimelineRecovery": {
         "type": "object",
         "required": [
@@ -26610,6 +26629,17 @@
           "strategy"
         ],
         "properties": {
+          "compensation": {
+            "description": "Absent only when reading a legacy durable record that predated an explicit compensation boundary.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorldTimelineCompensation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "requires_fresh_admission": {
             "type": "boolean"
           },
@@ -26822,6 +26852,25 @@
           }
         }
       },
+      "WorldTimelineCompensation": {
+        "type": "object",
+        "required": [
+          "automatic_dispatch_allowed",
+          "requires_new_intent",
+          "strategy"
+        ],
+        "properties": {
+          "automatic_dispatch_allowed": {
+            "type": "boolean"
+          },
+          "requires_new_intent": {
+            "type": "boolean"
+          },
+          "strategy": {
+            "type": "string"
+          }
+        }
+      },
       "WorldTimelineRecovery": {
         "type": "object",
         "required": [
@@ -26829,6 +26878,17 @@
           "strategy"
         ],
         "properties": {
+          "compensation": {
+            "description": "Absent only when reading a legacy durable record that predated an explicit compensation boundary.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorldTimelineCompensation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "requires_fresh_admission": {
             "type": "boolean"
           },
@@ -28074,6 +28134,27 @@
       }
     }
   },
+  "WorldTimelineCompensation": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldTimelineCompensation",
+    "type": "object",
+    "required": [
+      "automatic_dispatch_allowed",
+      "requires_new_intent",
+      "strategy"
+    ],
+    "properties": {
+      "automatic_dispatch_allowed": {
+        "type": "boolean"
+      },
+      "requires_new_intent": {
+        "type": "boolean"
+      },
+      "strategy": {
+        "type": "string"
+      }
+    }
+  },
   "WorldTimelineEvent": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "WorldTimelineEvent",
@@ -28243,6 +28324,25 @@
           }
         }
       },
+      "WorldTimelineCompensation": {
+        "type": "object",
+        "required": [
+          "automatic_dispatch_allowed",
+          "requires_new_intent",
+          "strategy"
+        ],
+        "properties": {
+          "automatic_dispatch_allowed": {
+            "type": "boolean"
+          },
+          "requires_new_intent": {
+            "type": "boolean"
+          },
+          "strategy": {
+            "type": "string"
+          }
+        }
+      },
       "WorldTimelineRecovery": {
         "type": "object",
         "required": [
@@ -28250,6 +28350,17 @@
           "strategy"
         ],
         "properties": {
+          "compensation": {
+            "description": "Absent only when reading a legacy durable record that predated an explicit compensation boundary.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorldTimelineCompensation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "requires_fresh_admission": {
             "type": "boolean"
           },
@@ -28269,11 +28380,43 @@
       "strategy"
     ],
     "properties": {
+      "compensation": {
+        "description": "Absent only when reading a legacy durable record that predated an explicit compensation boundary.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/WorldTimelineCompensation"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "requires_fresh_admission": {
         "type": "boolean"
       },
       "strategy": {
         "type": "string"
+      }
+    },
+    "definitions": {
+      "WorldTimelineCompensation": {
+        "type": "object",
+        "required": [
+          "automatic_dispatch_allowed",
+          "requires_new_intent",
+          "strategy"
+        ],
+        "properties": {
+          "automatic_dispatch_allowed": {
+            "type": "boolean"
+          },
+          "requires_new_intent": {
+            "type": "boolean"
+          },
+          "strategy": {
+            "type": "string"
+          }
+        }
       }
     }
   },
@@ -28337,6 +28480,25 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0.0
+          }
+        }
+      },
+      "WorldTimelineCompensation": {
+        "type": "object",
+        "required": [
+          "automatic_dispatch_allowed",
+          "requires_new_intent",
+          "strategy"
+        ],
+        "properties": {
+          "automatic_dispatch_allowed": {
+            "type": "boolean"
+          },
+          "requires_new_intent": {
+            "type": "boolean"
+          },
+          "strategy": {
+            "type": "string"
           }
         }
       },
@@ -28477,6 +28639,17 @@
           "strategy"
         ],
         "properties": {
+          "compensation": {
+            "description": "Absent only when reading a legacy durable record that predated an explicit compensation boundary.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorldTimelineCompensation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "requires_fresh_admission": {
             "type": "boolean"
           },

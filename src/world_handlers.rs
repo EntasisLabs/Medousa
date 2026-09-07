@@ -6,11 +6,12 @@ use axum::Json;
 use medousa_types::{
     WORLD_TIMELINE_EVENT_SCHEMA_VERSION, WorldEvidenceResponse, WorldRecipeDeriveResponse,
     WorldRecipeRunRequest, WorldRecipeRunResponse, WorldTimelineCheckpoint, WorldTimelineEvent,
-    WorldTimelineRecovery, WorldTimelineResponse,
+    WorldTimelineCompensation, WorldTimelineRecovery, WorldTimelineResponse,
 };
 use medousa_world::{
-    WorldActionCheckpoint, WorldActionStatus, WorldEffectClass, WorldEventKind, WorldOwnership,
-    WorldPrincipalKind, WorldRecoveryPlan, WorldRecoveryStrategy, WorldSurfaceKind,
+    WorldActionCheckpoint, WorldActionStatus, WorldCompensationPlan, WorldCompensationStrategy,
+    WorldEffectClass, WorldEventKind, WorldOwnership, WorldPrincipalKind, WorldRecoveryPlan,
+    WorldRecoveryStrategy, WorldSurfaceKind,
 };
 use serde::Deserialize;
 
@@ -360,7 +361,21 @@ fn public_recovery(recovery: &WorldRecoveryPlan) -> WorldTimelineRecovery {
     WorldTimelineRecovery {
         strategy: recovery_strategy_label(recovery.strategy).to_string(),
         requires_fresh_admission: recovery.requires_fresh_admission,
+        compensation: public_compensation(&recovery.compensation),
     }
+}
+
+fn public_compensation(
+    compensation: &WorldCompensationPlan,
+) -> Option<WorldTimelineCompensation> {
+    if compensation.strategy == WorldCompensationStrategy::Unspecified {
+        return None;
+    }
+    Some(WorldTimelineCompensation {
+        strategy: compensation_strategy_label(compensation.strategy).to_string(),
+        automatic_dispatch_allowed: compensation.automatic_dispatch_allowed,
+        requires_new_intent: compensation.requires_new_intent,
+    })
 }
 
 fn ownership_label(ownership: WorldOwnership) -> &'static str {
@@ -421,14 +436,25 @@ fn recovery_strategy_label(strategy: WorldRecoveryStrategy) -> &'static str {
     }
 }
 
+fn compensation_strategy_label(strategy: WorldCompensationStrategy) -> &'static str {
+    match strategy {
+        WorldCompensationStrategy::Unspecified => "unspecified",
+        WorldCompensationStrategy::NotApplicable => "not_applicable",
+        WorldCompensationStrategy::ReconcileThenDomainAction => {
+            "reconcile_then_domain_action"
+        }
+        WorldCompensationStrategy::OperatorDirected => "operator_directed",
+        WorldCompensationStrategy::Unavailable => "unavailable",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use medousa_world::{
         WORLD_ACTION_CHECKPOINT_SCHEMA_VERSION, WORLD_EVENT_ENVELOPE_SCHEMA_VERSION,
         WorldActionCheckpoint, WorldAuthorityId, WorldDriverId, WorldEvent, WorldEventEnvelope,
-        WorldId, WorldOwnership, WorldPrincipal, WorldRecoveryPlan, WorldResourceId,
-        WorldTraceId,
+        WorldId, WorldOwnership, WorldPrincipal, WorldResourceId, WorldTraceId,
     };
 
     #[test]
@@ -511,10 +537,7 @@ mod tests {
                             admitted_at_ms: 20,
                             permit_expires_at_ms: 25,
                         },
-                        recovery: WorldRecoveryPlan {
-                            strategy: WorldRecoveryStrategy::ReconcileFromFreshObservation,
-                            requires_fresh_admission: true,
-                        },
+                        recovery: WorldEffectClass::LocalMutation.recovery_plan(),
                     },
                 },
             },
@@ -526,6 +549,14 @@ mod tests {
             event.recovery.as_ref().map(|recovery| recovery.strategy.as_str()),
             Some("reconcile_from_fresh_observation")
         );
+        let compensation = event
+            .recovery
+            .as_ref()
+            .and_then(|recovery| recovery.compensation.as_ref())
+            .expect("explicit compensation boundary");
+        assert_eq!(compensation.strategy, "operator_directed");
+        assert!(!compensation.automatic_dispatch_allowed);
+        assert!(compensation.requires_new_intent);
         let encoded = serde_json::to_string(&event).expect("serialize public event");
         assert!(!encoded.contains("idempotency_key"));
         assert!(!encoded.contains("grant_id"));

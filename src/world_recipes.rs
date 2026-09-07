@@ -404,7 +404,7 @@ mod tests {
         WORLD_ACTION_CHECKPOINT_SCHEMA_VERSION, WORLD_EVENT_ENVELOPE_SCHEMA_VERSION,
         WorldActionCheckpoint, WorldAuthorityId, WorldDriverId, WorldEvent, WorldEventEnvelope,
         WorldGrantId, WorldId, WorldIntentId, WorldOwnership, WorldPrincipal,
-        WorldRecipeOperationHint, WorldRecoveryPlan, WorldResourceId, WorldTraceId,
+        WorldRecipeOperationHint, WorldResourceId, WorldTraceId,
     };
 
     fn durable_event(
@@ -453,10 +453,7 @@ mod tests {
                     admitted_at_ms: 10,
                     permit_expires_at_ms: 20,
                 },
-                recovery: WorldRecoveryPlan {
-                    strategy: WorldEffectClass::LocalMutation.recovery_strategy(),
-                    requires_fresh_admission: true,
-                },
+                recovery: WorldEffectClass::LocalMutation.recovery_plan(),
                 recipe_hint: Some(WorldActionRecipeHint {
                     schema_version: WORLD_ACTION_RECIPE_HINT_SCHEMA_VERSION,
                     operations: vec![WorldRecipeOperationHint {

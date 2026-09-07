@@ -18,9 +18,21 @@ pub struct WorldTimelineCheckpoint {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct WorldTimelineCompensation {
+    pub strategy: String,
+    pub automatic_dispatch_allowed: bool,
+    pub requires_new_intent: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorldTimelineRecovery {
     pub strategy: String,
     pub requires_fresh_admission: bool,
+    /// Absent only when reading a legacy durable record that predated an
+    /// explicit compensation boundary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compensation: Option<WorldTimelineCompensation>,
 }
 
 /// One bounded, secret-free event in the workshop daemon's cross-world ledger.

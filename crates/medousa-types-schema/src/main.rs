@@ -638,6 +638,11 @@ fn main() {
 
     // Governed world causal timeline
     export_type!(schemas, WorldTimelineCheckpoint, "WorldTimelineCheckpoint");
+    export_type!(
+        schemas,
+        WorldTimelineCompensation,
+        "WorldTimelineCompensation"
+    );
     export_type!(schemas, WorldTimelineRecovery, "WorldTimelineRecovery");
     export_type!(schemas, WorldTimelineEvent, "WorldTimelineEvent");
     export_type!(schemas, WorldTimelineResponse, "WorldTimelineResponse");

@@ -24,7 +24,11 @@ Open **Settings → Runtime Controls → World activity → Review activity** to
 the newest governed browser and computer events on the active workshop. The
 list combines human, Medousa, Bot, worker, peer, and system activity in one
 causal order. Open an event to inspect its authority, world revision, driver,
-intent, checkpoint, and recovery requirement.
+intent, checkpoint, recovery requirement, and compensation boundary. A
+compensation note describes whether no correction is needed, a new
+domain-specific action may be considered after reconciliation, an operator must
+decide, or no compensation is available. It never means Medousa will silently
+reuse the old action or authority.
 
 Use the **Evidence** filter to focus on failures, interrupted or uncertain
 outcomes, sensitive effects, and actions that required operator confirmation.

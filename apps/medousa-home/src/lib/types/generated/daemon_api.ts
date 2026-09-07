@@ -699,7 +699,14 @@ export interface WorldTimelineCheckpoint {
   world_revision: number;
 }
 
+export interface WorldTimelineCompensation {
+  automatic_dispatch_allowed: boolean;
+  requires_new_intent: boolean;
+  strategy: string;
+}
+
 export interface WorldTimelineRecovery {
+  compensation?: WorldTimelineCompensation | null;
   requires_fresh_admission: boolean;
   strategy: string;
 }

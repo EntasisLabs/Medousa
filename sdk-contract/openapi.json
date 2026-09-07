@@ -9079,6 +9079,25 @@
         ],
         "type": "object"
       },
+      "WorldTimelineCompensation": {
+        "properties": {
+          "automatic_dispatch_allowed": {
+            "type": "boolean"
+          },
+          "requires_new_intent": {
+            "type": "boolean"
+          },
+          "strategy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "automatic_dispatch_allowed",
+          "requires_new_intent",
+          "strategy"
+        ],
+        "type": "object"
+      },
       "WorldTimelineEvent": {
         "description": "One bounded, secret-free event in the workshop daemon's cross-world ledger.",
         "properties": {
@@ -9211,6 +9230,17 @@
       },
       "WorldTimelineRecovery": {
         "properties": {
+          "compensation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorldTimelineCompensation"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Absent only when reading a legacy durable record that predated an explicit compensation boundary."
+          },
           "requires_fresh_admission": {
             "type": "boolean"
           },

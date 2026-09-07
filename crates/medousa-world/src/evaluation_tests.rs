@@ -8,10 +8,10 @@ use std::collections::BTreeSet;
 
 use crate::{
     WorldActionIntent, WorldActionStatus, WorldAdmission, WorldAuthority, WorldAuthorityError,
-    WorldAuthorityId, WorldCapability, WorldDriverId, WorldEffectClass, WorldGrantId,
-    WorldGrantRequest, WorldId, WorldIntentId, WorldOwnership, WorldPrincipal, WorldPrincipalId,
-    WorldRecoveryStrategy, WorldResourceId, WorldResourceScope, WorldSessionSpec, WorldSurfaceKind,
-    WorldTraceId,
+    WorldAuthorityId, WorldCapability, WorldCompensationStrategy, WorldDriverId, WorldEffectClass,
+    WorldGrantId, WorldGrantRequest, WorldId, WorldIntentId, WorldOwnership, WorldPrincipal,
+    WorldPrincipalId, WorldRecoveryStrategy, WorldResourceId, WorldResourceScope, WorldSessionSpec,
+    WorldSurfaceKind, WorldTraceId,
 };
 
 const NOW: u64 = 10_000;
@@ -293,8 +293,76 @@ fn irreversible_effect_needs_distinct_authority_and_uncertainty_needs_review() {
         .expect("uncertain effect remains recorded");
     assert_eq!(outcome.status, WorldActionStatus::Indeterminate);
     assert_eq!(
-        outcome.recovery.unwrap().strategy,
-        WorldRecoveryStrategy::OperatorReview
+        outcome.recovery.as_ref().map(|plan| plan.strategy),
+        Some(WorldRecoveryStrategy::OperatorReview)
+    );
+    assert_eq!(
+        outcome
+            .recovery
+            .as_ref()
+            .map(|plan| plan.compensation.strategy),
+        Some(WorldCompensationStrategy::Unavailable)
+    );
+}
+
+#[test]
+fn driver_disconnect_after_admission_cannot_redispatch_the_uncertain_effect() {
+    let mut harness = EvaluationHarness::new([WorldCapability::Interact]);
+    harness.acquire_agent_control();
+    let first = harness.intent(
+        "intent:disconnect-one",
+        "disconnect-once",
+        WorldEffectClass::LocalMutation,
+        "activate exact observed target",
+    );
+    let permit = match harness
+        .authority
+        .admit_action(&harness.world_id, first, NOW + 3)
+        .expect("admit before disconnect")
+    {
+        WorldAdmission::Admitted { permit } => permit,
+        WorldAdmission::Replay { .. } => panic!("unexpected replay"),
+    };
+    let outcome = harness
+        .authority
+        .mark_action_indeterminate(&permit, "driver disconnected after dispatch", NOW + 4)
+        .expect("disconnect remains attributable");
+    assert_eq!(outcome.status, WorldActionStatus::Indeterminate);
+    let recovery = outcome.recovery.as_ref().expect("typed recovery");
+    assert_eq!(
+        recovery.strategy,
+        WorldRecoveryStrategy::ReconcileFromFreshObservation
+    );
+    assert_eq!(
+        recovery.compensation.strategy,
+        WorldCompensationStrategy::OperatorDirected
+    );
+    assert!(recovery.compensation.requires_new_intent);
+    assert!(!recovery.compensation.automatic_dispatch_allowed);
+    let event_count = harness
+        .authority
+        .events_after(&harness.world_id, 0, 128)
+        .unwrap()
+        .len();
+
+    let retry = harness.intent(
+        "intent:disconnect-two",
+        "disconnect-once",
+        WorldEffectClass::LocalMutation,
+        "activate exact observed target",
+    );
+    let replay = harness
+        .authority
+        .admit_action(&harness.world_id, retry, NOW + 5)
+        .expect("uncertain effect is replayed as an outcome, not dispatched");
+    assert_eq!(replay, WorldAdmission::Replay { outcome });
+    assert_eq!(
+        harness
+            .authority
+            .events_after(&harness.world_id, 0, 128)
+            .unwrap()
+            .len(),
+        event_count
     );
 }
 

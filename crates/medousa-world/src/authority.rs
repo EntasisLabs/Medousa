@@ -8,8 +8,8 @@ use crate::model::{
     WorldActionIntent, WorldActionOutcome, WorldActionPermit, WorldActionRecipeHint,
     WorldActionStatus, WorldAdmission, WorldCapability, WorldCapabilityGrant, WorldControlLease,
     WorldEvent, WorldEventEnvelope, WorldEventKind, WorldGrantId, WorldGrantRequest, WorldId,
-    WorldIntentId, WorldPrincipal, WorldPrincipalKind, WorldRecoveryPlan, WorldResourceId,
-    WorldResourceScope, WorldSession, WorldSessionSpec,
+    WorldIntentId, WorldPrincipal, WorldPrincipalKind, WorldResourceId, WorldResourceScope,
+    WorldSession, WorldSessionSpec,
 };
 
 const DEFAULT_EVENT_CAPACITY: usize = 4_096;
@@ -637,10 +637,7 @@ impl WorldAuthority {
             admitted_at_ms: now_ms,
             permit_expires_at_ms: intent.permit_expires_at_ms,
         };
-        let recovery = WorldRecoveryPlan {
-            strategy: intent.effect_class.recovery_strategy(),
-            requires_fresh_admission: true,
-        };
+        let recovery = intent.effect_class.recovery_plan();
         let permit = WorldActionPermit {
             world_id: world_id.clone(),
             driver_id: record.state.driver_id.clone(),
@@ -1232,6 +1229,12 @@ mod tests {
             crate::model::WorldRecoveryStrategy::ReconcileFromFreshObservation
         );
         assert!(permit.recovery.requires_fresh_admission);
+        assert_eq!(
+            permit.recovery.compensation.strategy,
+            crate::model::WorldCompensationStrategy::OperatorDirected
+        );
+        assert!(!permit.recovery.compensation.automatic_dispatch_allowed);
+        assert!(permit.recovery.compensation.requires_new_intent);
 
         let envelopes = authority.event_envelopes_after(&cursors);
         assert_eq!(envelopes.len(), 1);

@@ -3,6 +3,7 @@
   import {
     loadLatestWorldActivity,
     worldActivityDetailLabel,
+    worldCompensationLabel,
     worldActivityTone,
     worldActivityWhen,
     worldActorLabel,
@@ -287,6 +288,17 @@
                             {event.recovery.requires_fresh_admission ? " · fresh admission required" : ""}
                           </dd>
                         </div>
+                        {#if event.recovery.compensation}
+                          <div>
+                            <dt>Compensation</dt>
+                            <dd>
+                              {worldCompensationLabel(event.recovery.compensation)}
+                              {event.recovery.compensation.automatic_dispatch_allowed
+                                ? " · automatic dispatch allowed"
+                                : ""}
+                            </dd>
+                          </div>
+                        {/if}
                       {/if}
                       {#if item.evidence}
                         <div class="world-activity-evidence-detail">

@@ -237,6 +237,36 @@ impl WorldEffectClass {
             Self::ExternalEffect | Self::Irreversible => WorldRecoveryStrategy::OperatorReview,
         }
     }
+
+    pub fn recovery_plan(self) -> WorldRecoveryPlan {
+        let compensation = match self {
+            Self::Observe | Self::ObservePixels => WorldCompensationPlan {
+                strategy: WorldCompensationStrategy::NotApplicable,
+                automatic_dispatch_allowed: false,
+                requires_new_intent: false,
+            },
+            Self::LocalReversible => WorldCompensationPlan {
+                strategy: WorldCompensationStrategy::ReconcileThenDomainAction,
+                automatic_dispatch_allowed: false,
+                requires_new_intent: true,
+            },
+            Self::LocalMutation | Self::ExternalEffect => WorldCompensationPlan {
+                strategy: WorldCompensationStrategy::OperatorDirected,
+                automatic_dispatch_allowed: false,
+                requires_new_intent: true,
+            },
+            Self::Irreversible => WorldCompensationPlan {
+                strategy: WorldCompensationStrategy::Unavailable,
+                automatic_dispatch_allowed: false,
+                requires_new_intent: false,
+            },
+        };
+        WorldRecoveryPlan {
+            strategy: self.recovery_strategy(),
+            requires_fresh_admission: true,
+            compensation,
+        }
+    }
 }
 
 /// State fence captured before a driver receives an admitted action.
@@ -266,11 +296,53 @@ pub enum WorldRecoveryStrategy {
     OperatorReview,
 }
 
+/// Whether a separate, attributable action may compensate for an uncertain
+/// or completed effect. This never represents an inverse action itself.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorldCompensationStrategy {
+    /// A legacy record did not declare a compensation boundary. Fail closed.
+    #[default]
+    Unspecified,
+    /// Observation-only work did not create an effect to compensate for.
+    NotApplicable,
+    /// Reobserve first, then admit a domain-specific corrective action.
+    ReconcileThenDomainAction,
+    /// A human must decide whether a distinct corrective action is appropriate.
+    OperatorDirected,
+    /// The runtime makes no claim that the effect can be compensated.
+    Unavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WorldCompensationPlan {
+    pub strategy: WorldCompensationStrategy,
+    /// No current compensation path may dispatch as a recovery side effect.
+    pub automatic_dispatch_allowed: bool,
+    /// Any corrective action must enter the timeline as a new intent and pass
+    /// fresh policy, state, and control admission.
+    pub requires_new_intent: bool,
+}
+
+impl Default for WorldCompensationPlan {
+    fn default() -> Self {
+        Self {
+            strategy: WorldCompensationStrategy::Unspecified,
+            automatic_dispatch_allowed: false,
+            requires_new_intent: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorldRecoveryPlan {
     pub strategy: WorldRecoveryStrategy,
     /// Recovery never carries the old permit or grant into a new process.
     pub requires_fresh_admission: bool,
+    /// Compensation never reuses the interrupted action or its authority.
+    #[serde(default)]
+    pub compensation: WorldCompensationPlan,
 }
 
 /// The kind of value a semantic replay must obtain again. Values themselves
@@ -550,4 +622,53 @@ pub struct WorldEventEnvelope {
     pub ownership: WorldOwnership,
     pub surface: WorldSurfaceKind,
     pub event: WorldEvent,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn effect_classes_declare_truthful_compensation_boundaries() {
+        let cases = [
+            (
+                WorldEffectClass::Observe,
+                WorldCompensationStrategy::NotApplicable,
+                false,
+            ),
+            (
+                WorldEffectClass::ObservePixels,
+                WorldCompensationStrategy::NotApplicable,
+                false,
+            ),
+            (
+                WorldEffectClass::LocalReversible,
+                WorldCompensationStrategy::ReconcileThenDomainAction,
+                true,
+            ),
+            (
+                WorldEffectClass::LocalMutation,
+                WorldCompensationStrategy::OperatorDirected,
+                true,
+            ),
+            (
+                WorldEffectClass::ExternalEffect,
+                WorldCompensationStrategy::OperatorDirected,
+                true,
+            ),
+            (
+                WorldEffectClass::Irreversible,
+                WorldCompensationStrategy::Unavailable,
+                false,
+            ),
+        ];
+
+        for (effect, strategy, requires_new_intent) in cases {
+            let plan = effect.recovery_plan();
+            assert_eq!(plan.compensation.strategy, strategy);
+            assert!(!plan.compensation.automatic_dispatch_allowed);
+            assert_eq!(plan.compensation.requires_new_intent, requires_new_intent);
+            assert!(plan.requires_fresh_admission);
+        }
+    }
 }

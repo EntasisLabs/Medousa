@@ -516,6 +516,14 @@ require fresh-state reconciliation, and external or irreversible effects
 require operator review. Recovery always requires a fresh admission; timeline
 records are evidence and never executable authority.
 
+Recovery also carries an explicit compensation boundary. Observation-only work
+needs no compensation; reversible local effects may be reconciled before a new
+domain action; other local or external effects require an operator-directed new
+action; and irreversible effects advertise no compensation. Compensation is
+never dispatched automatically or with the interrupted permit. Legacy records
+without this metadata remain readable and fail closed without inventing a
+rollback guarantee.
+
 The daemon also keeps a bounded process-local telemetry ring for every world
 event and promotes only high-value records to a separate durable evidence
 sidecar. Promotion covers failures, interrupted or uncertain outcomes,
