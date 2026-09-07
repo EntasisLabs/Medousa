@@ -3089,6 +3089,13 @@ pub const WORLD_STATUS_GET: Operation = Operation {
     streaming: false,
 };
 
+pub const WORLDS_EVIDENCE_GET: Operation = Operation {
+    id: "worlds.evidence.get",
+    method: "GET",
+    path: "/v1/worlds/evidence",
+    streaming: false,
+};
+
 pub const WORLDS_RECIPES_DERIVE_GET: Operation = Operation {
     id: "worlds.recipes.derive.get",
     method: "GET",
@@ -3551,6 +3558,7 @@ pub static ALL: &[Operation] = &[
     WORLD_INDEX_POST,
     WORLD_RESET_STORE_POST,
     WORLD_STATUS_GET,
+    WORLDS_EVIDENCE_GET,
     WORLDS_RECIPES_DERIVE_GET,
     WORLDS_RECIPES_RUN_POST,
     WORLDS_TIMELINE_GET,

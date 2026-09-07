@@ -449,6 +449,7 @@ export const OPERATIONS = {
   "world.index.post": { id: "world.index.post", method: "POST", path: "/v1/world/index", streaming: false },
   "world.reset_store.post": { id: "world.reset_store.post", method: "POST", path: "/v1/world/reset-store", streaming: false },
   "world.status.get": { id: "world.status.get", method: "GET", path: "/v1/world/status", streaming: false },
+  "worlds.evidence.get": { id: "worlds.evidence.get", method: "GET", path: "/v1/worlds/evidence", streaming: false },
   "worlds.recipes.derive.get": { id: "worlds.recipes.derive.get", method: "GET", path: "/v1/worlds/recipes/derive", streaming: false },
   "worlds.recipes.run.post": { id: "worlds.recipes.run.post", method: "POST", path: "/v1/worlds/recipes/run", streaming: false },
   "worlds.timeline.get": { id: "worlds.timeline.get", method: "GET", path: "/v1/worlds/timeline", streaming: false },

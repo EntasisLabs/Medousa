@@ -641,6 +641,8 @@ fn main() {
     export_type!(schemas, WorldTimelineRecovery, "WorldTimelineRecovery");
     export_type!(schemas, WorldTimelineEvent, "WorldTimelineEvent");
     export_type!(schemas, WorldTimelineResponse, "WorldTimelineResponse");
+    export_type!(schemas, WorldEvidenceRecord, "WorldEvidenceRecord");
+    export_type!(schemas, WorldEvidenceResponse, "WorldEvidenceResponse");
     export_type!(schemas, WorldRecipeInputKind, "WorldRecipeInputKind");
     export_type!(schemas, WorldRecipeOperation, "WorldRecipeOperation");
     export_type!(schemas, WorldRecipeStep, "WorldRecipeStep");

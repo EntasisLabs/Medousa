@@ -4,9 +4,9 @@ use axum::extract::{Extension, Query, State};
 use axum::routing::{get, post};
 use axum::Json;
 use medousa_types::{
-    WORLD_TIMELINE_EVENT_SCHEMA_VERSION, WorldRecipeDeriveResponse, WorldRecipeRunRequest,
-    WorldRecipeRunResponse, WorldTimelineCheckpoint, WorldTimelineEvent, WorldTimelineRecovery,
-    WorldTimelineResponse,
+    WORLD_TIMELINE_EVENT_SCHEMA_VERSION, WorldEvidenceResponse, WorldRecipeDeriveResponse,
+    WorldRecipeRunRequest, WorldRecipeRunResponse, WorldTimelineCheckpoint, WorldTimelineEvent,
+    WorldTimelineRecovery, WorldTimelineResponse,
 };
 use medousa_world::{
     WorldActionCheckpoint, WorldActionStatus, WorldEffectClass, WorldEventKind, WorldOwnership,
@@ -61,6 +61,28 @@ pub async fn list_world_timeline(
         .unwrap_or(query.after_sequence);
     Ok(Json(WorldTimelineResponse {
         events: records.into_iter().map(public_event).collect(),
+        next_sequence,
+        has_more,
+    }))
+}
+
+pub async fn list_world_evidence(
+    State(state): State<AppState>,
+    Query(query): Query<WorldTimelineQuery>,
+) -> Result<Json<WorldEvidenceResponse>, (axum::http::StatusCode, String)> {
+    let limit = query.limit.clamp(1, MAX_PAGE_SIZE);
+    let mut evidence = state
+        .world_authority
+        .durable_evidence_after(query.after_sequence, limit.saturating_add(1))
+        .map_err(|error| (axum::http::StatusCode::SERVICE_UNAVAILABLE, error))?;
+    let has_more = evidence.len() > limit;
+    evidence.truncate(limit);
+    let next_sequence = evidence
+        .last()
+        .map(|record| record.ledger_sequence)
+        .unwrap_or(query.after_sequence);
+    Ok(Json(WorldEvidenceResponse {
+        evidence,
         next_sequence,
         has_more,
     }))
@@ -131,6 +153,19 @@ pub fn world_timeline_surface() -> DeclaredRouter<AppState> {
                 rate_limit_class: RateLimitClass::Read,
             },
             get(list_world_timeline),
+        )
+        .route(
+            RoutePolicy {
+                method: axum::http::Method::GET,
+                path: "/v1/worlds/evidence",
+                group: RouteGroup::Portal,
+                required_capability: Some(Capability::WorkshopRead),
+                bootstrap_public: false,
+                browser_policy: BrowserPolicy::ExactOrigin,
+                body_limit: 1024,
+                rate_limit_class: RateLimitClass::Read,
+            },
+            get(list_world_evidence),
         )
         .route(
             RoutePolicy {
@@ -386,6 +421,22 @@ mod tests {
         assert_eq!(route.group, RouteGroup::Portal);
         assert_eq!(route.required_capability, Some("workshop.read"));
         assert_eq!(route.browser_policy, BrowserPolicy::ExactOrigin);
+        assert!(!route.bootstrap_public);
+    }
+
+    #[test]
+    fn promoted_evidence_is_an_authenticated_exact_origin_read() {
+        let surface = world_timeline_surface();
+        let route = surface
+            .inventory()
+            .entries()
+            .find(|entry| entry.path == "/v1/worlds/evidence")
+            .expect("world evidence route");
+        assert_eq!(route.method, "GET");
+        assert_eq!(route.group, RouteGroup::Portal);
+        assert_eq!(route.required_capability, Some("workshop.read"));
+        assert_eq!(route.browser_policy, BrowserPolicy::ExactOrigin);
+        assert_eq!(route.rate_limit_class, RateLimitClass::Read);
         assert!(!route.bootstrap_public);
     }
 

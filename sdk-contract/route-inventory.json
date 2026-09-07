@@ -7011,6 +7011,22 @@
       ],
       "feature_profile": "core",
       "method": "GET",
+      "operation_id": "worlds.evidence.get",
+      "path": "/v1/worlds/evidence",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "exact_origin",
+      "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
       "operation_id": "worlds.recipes.derive.get",
       "path": "/v1/worlds/recipes/derive",
       "rate_limit_class": "read",

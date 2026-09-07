@@ -26425,6 +26425,420 @@
       }
     }
   },
+  "WorldEvidenceRecord": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldEvidenceRecord",
+    "description": "Durable, payload-free evidence promoted from a high-value world event.\n\nRaw page text, action values, selectors, coordinates, screenshots, driver errors, and reusable authority are deliberately absent. The causal ledger remains the source of the human-readable summary for the referenced event.",
+    "type": "object",
+    "required": [
+      "authority_id",
+      "driver_id",
+      "event_type",
+      "evidence_id",
+      "ledger_sequence",
+      "ownership",
+      "promoted_at_ms",
+      "reasons",
+      "schema_version",
+      "surface",
+      "world_id"
+    ],
+    "properties": {
+      "action_elapsed_ms": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "authority_id": {
+        "type": "string"
+      },
+      "checkpoint": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/WorldTimelineCheckpoint"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "driver_id": {
+        "type": "string"
+      },
+      "durability_latency_us": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "effect_class": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "event_type": {
+        "type": "string"
+      },
+      "evidence_id": {
+        "type": "string"
+      },
+      "intent_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "ledger_sequence": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "ownership": {
+        "type": "string"
+      },
+      "principal_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "principal_kind": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "promoted_at_ms": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "reasons": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "recovery": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/WorldTimelineRecovery"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "resource_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "schema_version": {
+        "type": "integer",
+        "format": "uint16",
+        "minimum": 0.0
+      },
+      "status": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "surface": {
+        "type": "string"
+      },
+      "trace_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "world_id": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "WorldTimelineCheckpoint": {
+        "type": "object",
+        "required": [
+          "admitted_at_ms",
+          "permit_expires_at_ms",
+          "surface",
+          "world_revision"
+        ],
+        "properties": {
+          "admitted_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "control_generation": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "permit_expires_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "surface": {
+            "type": "string"
+          },
+          "world_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      },
+      "WorldTimelineRecovery": {
+        "type": "object",
+        "required": [
+          "requires_fresh_admission",
+          "strategy"
+        ],
+        "properties": {
+          "requires_fresh_admission": {
+            "type": "boolean"
+          },
+          "strategy": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "WorldEvidenceResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorldEvidenceResponse",
+    "type": "object",
+    "required": [
+      "evidence",
+      "has_more",
+      "next_sequence"
+    ],
+    "properties": {
+      "evidence": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/WorldEvidenceRecord"
+        }
+      },
+      "has_more": {
+        "type": "boolean"
+      },
+      "next_sequence": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    },
+    "definitions": {
+      "WorldEvidenceRecord": {
+        "description": "Durable, payload-free evidence promoted from a high-value world event.\n\nRaw page text, action values, selectors, coordinates, screenshots, driver errors, and reusable authority are deliberately absent. The causal ledger remains the source of the human-readable summary for the referenced event.",
+        "type": "object",
+        "required": [
+          "authority_id",
+          "driver_id",
+          "event_type",
+          "evidence_id",
+          "ledger_sequence",
+          "ownership",
+          "promoted_at_ms",
+          "reasons",
+          "schema_version",
+          "surface",
+          "world_id"
+        ],
+        "properties": {
+          "action_elapsed_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "authority_id": {
+            "type": "string"
+          },
+          "checkpoint": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorldTimelineCheckpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "driver_id": {
+            "type": "string"
+          },
+          "durability_latency_us": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "effect_class": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "evidence_id": {
+            "type": "string"
+          },
+          "intent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ledger_sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "ownership": {
+            "type": "string"
+          },
+          "principal_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "principal_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "promoted_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recovery": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorldTimelineRecovery"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resource_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "surface": {
+            "type": "string"
+          },
+          "trace_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "world_id": {
+            "type": "string"
+          }
+        }
+      },
+      "WorldTimelineCheckpoint": {
+        "type": "object",
+        "required": [
+          "admitted_at_ms",
+          "permit_expires_at_ms",
+          "surface",
+          "world_revision"
+        ],
+        "properties": {
+          "admitted_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "control_generation": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "permit_expires_at_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "surface": {
+            "type": "string"
+          },
+          "world_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      },
+      "WorldTimelineRecovery": {
+        "type": "object",
+        "required": [
+          "requires_fresh_admission",
+          "strategy"
+        ],
+        "properties": {
+          "requires_fresh_admission": {
+            "type": "boolean"
+          },
+          "strategy": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
   "WorldRecipe": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "WorldRecipe",

@@ -734,6 +734,37 @@ export interface WorldTimelineResponse {
   next_sequence: number;
 }
 
+export interface WorldEvidenceRecord {
+  action_elapsed_ms?: number | null;
+  authority_id: string;
+  checkpoint?: WorldTimelineCheckpoint | null;
+  driver_id: string;
+  durability_latency_us?: number | null;
+  effect_class?: string | null;
+  event_type: string;
+  evidence_id: string;
+  intent_id?: string | null;
+  ledger_sequence: number;
+  ownership: string;
+  principal_id?: string | null;
+  principal_kind?: string | null;
+  promoted_at_ms: number;
+  reasons: string[];
+  recovery?: WorldTimelineRecovery | null;
+  resource_id?: string | null;
+  schema_version: number;
+  status?: string | null;
+  surface: string;
+  trace_id?: string | null;
+  world_id: string;
+}
+
+export interface WorldEvidenceResponse {
+  evidence: WorldEvidenceRecord[];
+  has_more: boolean;
+  next_sequence: number;
+}
+
 export type WorldRecipeInputKind = "text" | "selection" | "key" | "scroll_delta" | "wait_duration";
 
 export interface WorldRecipeOperation {

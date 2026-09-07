@@ -365,12 +365,12 @@ mod tests {
     fn production_profiles_match_declared_counts() {
         let without_pairing = production_registry(false);
         let with_pairing = production_registry(true);
-        assert_eq!(without_pairing.len(), 424);
-        assert_eq!(with_pairing.len(), 443);
+        assert_eq!(without_pairing.len(), 425);
+        assert_eq!(with_pairing.len(), 444);
         let artifacts = artifacts(&with_pairing);
         let inventory: serde_json::Value =
             serde_json::from_str(&artifacts.route_inventory_json).unwrap();
-        assert_eq!(inventory["operations"].as_array().unwrap().len(), 443);
+        assert_eq!(inventory["operations"].as_array().unwrap().len(), 444);
         assert!(artifacts.openapi_json.contains("\"openapi\": \"3.2.0\""));
     }
 

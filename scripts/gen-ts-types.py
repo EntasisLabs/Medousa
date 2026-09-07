@@ -55,6 +55,7 @@ EXPORTED_TYPES = [
     "SessionBotResponse",
     "BrowserPresentationFrame",
     "WorldTimelineResponse",
+    "WorldEvidenceResponse",
     "WorldRecipeDeriveResponse",
     "WorldRecipeRunRequest",
     "WorldRecipeRunResponse",

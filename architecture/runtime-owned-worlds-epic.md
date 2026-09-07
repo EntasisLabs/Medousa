@@ -955,6 +955,22 @@ Current production-proof slice:
   network response time. Raising a ceiling requires changing the reviewed
   budget file rather than silently accepting a slower sample.
 
+Current evidence-promotion slice:
+
+- The daemon records raw event kind, effect/status classification, action
+  elapsed time, and durability latency in a bounded process-local telemetry
+  ring. High-rate samples do not become an unbounded audit log.
+- Failures, interruptions, uncertain outcomes, external or irreversible
+  effects, and actions requiring operator confirmation are promoted into a
+  bounded durable sidecar keyed to their causal-ledger sequence.
+- Promoted evidence is deliberately payload-free: it contains causal identity,
+  principal kind, checkpoint/recovery metadata, promotion reasons, and timing,
+  but excludes summaries, errors, page text, values, selectors, coordinates,
+  screenshots, grants, permits, and native handles.
+- Authenticated workshop clients can page the evidence sidecar at
+  `GET /v1/worlds/evidence`; records point back to the separately redacted
+  timeline and cannot be replayed as authority.
+
 Implementation:
 
 - Add domain-specific checkpoints and compensation plans.

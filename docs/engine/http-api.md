@@ -496,6 +496,7 @@ the redacted focused-window capture and does not accept interaction coordinates.
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/v1/worlds/timeline?after_sequence=…&limit=…` | Page through the workshop's bounded browser/computer causal ledger |
+| GET | `/v1/worlds/evidence?after_sequence=…&limit=…` | Page through durable metadata-only evidence promoted around failures and sensitive effects |
 | GET | `/v1/worlds/recipes/derive?trace_id=…` | Derive an inert semantic recipe from one fully confirmed trace |
 | POST | `/v1/worlds/recipes/run` | Run a server-derived recipe through fresh governed world boundaries |
 
@@ -512,6 +513,16 @@ restart, an admission without a terminal receipt is recorded as
 require fresh-state reconciliation, and external or irreversible effects
 require operator review. Recovery always requires a fresh admission; timeline
 records are evidence and never executable authority.
+
+The daemon also keeps a bounded process-local telemetry ring for every world
+event and promotes only high-value records to a separate durable evidence
+sidecar. Promotion covers failures, interrupted or uncertain outcomes,
+external or irreversible effects, and actions requiring explicit operator
+confirmation. Evidence records contain causal ids, classified status,
+checkpoint/recovery metadata, and bounded timing measurements. They never
+contain page text, action values, selectors, coordinates, screenshots, driver
+errors, capability grants, permits, or other reusable authority. The timeline
+remains the source for its separately redacted human-readable summary.
 
 Recipe derivation is deliberately stricter than timeline review. Every
 effectful admission in the selected trace must have a matching `confirmed`

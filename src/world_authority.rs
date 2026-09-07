@@ -17,6 +17,7 @@ use medousa_world::{
     WorldSurfaceKind, WorldTraceId,
 };
 use medousa_browser_bridge::BrowserObservation;
+use medousa_types::WorldEvidenceRecord;
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -155,6 +156,23 @@ impl WorldAuthorityService {
             WorldTimelineState::Disabled => Ok(Vec::new()),
             WorldTimelineState::Active(store) | WorldTimelineState::Failed { store, .. } => {
                 Ok(store.events_for_trace(trace_id))
+            }
+        }
+    }
+
+    pub fn durable_evidence_after(
+        &self,
+        sequence: u64,
+        limit: usize,
+    ) -> Result<Vec<WorldEvidenceRecord>, String> {
+        let timeline = self
+            .timeline
+            .lock()
+            .map_err(|_| "world causal timeline lock poisoned".to_string())?;
+        match &*timeline {
+            WorldTimelineState::Disabled => Ok(Vec::new()),
+            WorldTimelineState::Active(store) | WorldTimelineState::Failed { store, .. } => {
+                Ok(store.evidence_after(sequence, limit))
             }
         }
     }
