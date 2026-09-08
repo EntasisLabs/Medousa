@@ -7,7 +7,10 @@ session `turn_ledger` JSONL store in the daemon's data directory. Session deleti
 removes these records with the rest of that ledger. Host and worker loops use
 the same runtime implementation.
 
-Each record addresses `stream_turn_id` and `rounds_executed`. Its `inference`
+Daemon records carry `execution_id` (the actual host turn or worker ID) and, for
+workers, `parent_turn_id`. `stream_turn_id` is a UI counter and may repeat across
+turns and peers; it is not a unique execution identifier. Records also carry
+`rounds_executed`. Their `inference`
 object contains:
 
 - `schema_version: 2` (the report also accepts version 1) and `outcome`: `completed`, `provider_error`,
@@ -50,7 +53,8 @@ Summarize a completed session ledger snapshot with:
 python3 scripts/analyze-coder-usage.py /path/to/session-ledger.jsonl
 ```
 
-The JSON report groups by turn, includes counter coverage and partial reported
+The JSON report groups by execution ID, labels legacy stream-only attribution
+`legacy_stream_ambiguous`, includes counter coverage and partial reported
 sums, and leaves incomplete totals and cache ratios `null`. Use it to compare
 tool rounds and generated edit payloads across equivalent tasks. Provider usage
 reports remain the billing authority.
@@ -172,3 +176,58 @@ Use the existing token counts to measure whole-request costs, and compare
 representative tasks for missed evidence, unnecessary edits, verification
 quality, and recovery from failed reads before claiming behavioral equivalence
 or a savings percentage.
+
+
+## Task ownership and peer execution
+
+The latest user request owns a new host turn's goal. Earlier goals and gaps are
+labeled as context, not carried forward as active tool obligations. Exact in-turn
+resume still restores its checkpoint. A peer receives the host handoff but starts
+its own goal, step counter, and tool obligations.
+
+In Coder, use your own tools directly to work and `turn.update_user` for progress.
+`workshop.spawn` explicitly creates a separate concurrent peer. Assign a bounded
+task and expected result, perform complementary work, and integrate its findings.
+The ambiguous `turn.begin_work` action is hidden from Coder advertisements and
+schema discovery; old calls still map to spawning a peer for compatibility.
+
+Coder's `intent` is the short purpose of the call. The separate `worker_profile`
+selects the peer environment, defaulting to `coder`; explicitly select `research`
+or `general` only for those assignments. Fetched action schemas include required
+Coder intent metadata. Existing profile-valued intents remain accepted for old
+calls. Coder peers retain Forge admission, leases, and workspace placement rules;
+spawning does not grant permission for concurrent writers in an attached checkout.
+
+Worker status and cancellation return compact `record`/`records` summaries:
+identity, profile, status, bounded task/result/error text, termination reason, and
+update time. Result text is paginated in 1,200-character slices: call
+`workshop.status` with `work_id` and the returned `result_next_offset` as
+`result_offset` until it is null. Pages reassemble the full result without
+replaying internal transcripts. Full worker transcripts remain in workspace
+history. Session lookup
+uses the active execution context before the legacy host bus. Status is queried
+with `workshop.status`; cancellation uses `workshop.cancel` with the worker ID,
+not scheduler job cancellation or capability discovery.
+
+## Accumulated tool observations
+
+When retained tool-response text exceeds 256 KiB, the runtime compacts eligible
+older results toward 128 KiB. The four newest results, errors, tool-call arguments,
+assistant messages, and user guidance stay intact. Compaction preserves each
+provider call/response pair and runs in batches to avoid rewriting history on
+every round. These are observation thresholds, not a hard total-context cap.
+
+Coder stores old observations as evidence before replacing them. Receipts remain
+readable with the indicated evidence tool. If storage is unavailable, a result
+with no existing reference and no safe query path remains intact. A fresh read
+returns current state; it is not equivalent to replaying historical evidence.
+Mutations must never be rerun merely to retrieve their output. Authoritative tool
+receipts remain unchanged. Coder peers use the same evidence storage path.
+
+Failure guidance addresses missing metadata, stale pointers, unavailable shell
+paths, missing worker scope, and unavailable backends without recommending
+unrelated delegation. Repeated failures are grouped by the existing perception
+governor. Progress guidance calls for new findings, blockers, or changed plans,
+so acknowledgments are not required on every tool round. Identical consecutive
+progress messages are delivered once within a loop; comparison uses the complete
+text so an update with new findings after the same opening is still delivered.

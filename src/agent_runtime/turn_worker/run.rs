@@ -1047,7 +1047,7 @@ impl TurnWorkerScheduler {
             user_ack: user_ack.to_string(),
             handoff_summary,
             scratch_digest,
-            message: "Worker enqueued on durable bus; host turn may end with user_ack.".to_string(),
+            message: "A separate peer is enqueued and will run concurrently. Its task is delegated; continue complementary work only, then integrate its result. Use workshop.status or workshop.cancel with work_id for control.".to_string(),
         })
     }
 
@@ -1271,6 +1271,8 @@ fn ledger_bus_event(
     detail: String,
 ) {
     let record = TurnLedgerRecord {
+        execution_id: None,
+        parent_turn_id: None,
         inference: None,
         timestamp: Utc::now(),
         stream_turn_id,
@@ -1651,6 +1653,16 @@ async fn run_worker_turn_inner(
             ),
         ))
         .with_delegation_control(delegation_control);
+    let runtime_ports = if let Some(coder) = &prepared_coder {
+        runtime_ports.with_perception_evidence(Arc::new(
+            super::super::perception_governor::DaemonPerceptionEvidencePort::for_coder_undertaking(
+                coder.registry.undertaking_id().to_string(),
+                Some(coder.registry.clone()),
+            ),
+        ))
+    } else {
+        runtime_ports
+    };
     let mut completion_gate = ToolLoopCompletionGate {
         stream_turn_id,
         runtime_ports,

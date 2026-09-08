@@ -4,9 +4,9 @@
 //! as `[MEDOUSA_TOOL_SLICES]` and used to seed the next turn's scratchpad.
 
 use crate::agent_runtime::prompt_prep::truncate_text_for_budget;
-use medousa_engine::{TurnScratchPhase, TurnScratchpad};
 use crate::session_history::ConversationTurn;
 use crate::turn_parts::{TurnPart, compose_turn_markdown};
+use medousa_engine::TurnScratchpad;
 pub use medousa_types::turn::TurnSliceSummary;
 use serde::{Deserialize, Serialize};
 
@@ -313,27 +313,27 @@ pub fn session_scratch_seed_from_history(
     };
 
     let summary = resolve_slice_summary(turn);
+    // Earlier work is context, never the new turn's objective or execution state.
+    // In-turn retries/resume restore their own scratch through the checkpoint path.
+    for note in &summary.working_notes {
+        // Carry findings, not an expanding chain of previous acknowledgments.
+        if !note.starts_with("Previous turn goal (context only):")
+            && !note.starts_with("Previous turn gaps (reassess for current request):")
+        {
+            scratch.push_working_note(note.clone());
+        }
+    }
     if !summary.goal.trim().is_empty() {
-        scratch.goal = summary.goal.clone();
+        scratch.push_working_note(format!(
+            "Previous turn goal (context only): {}",
+            summary.goal
+        ));
     }
     if !summary.open_gaps.is_empty() {
-        scratch.open_gaps = summary.open_gaps.clone();
-    }
-    if let (Some(work_id), Some(intent)) = (
-        summary.delegate_work_id.as_ref(),
-        summary.delegate_intent.as_ref(),
-    ) {
-        scratch.set_delegate(work_id.clone(), intent.clone());
-    } else if summary.tool_rounds > 0 {
-        scratch.phase = TurnScratchPhase::Execute;
-        scratch.step = summary.tool_rounds;
-        scratch.last_tools = summary.tools.clone();
-    }
-    if !summary.recent_digests.is_empty() {
-        scratch.round_digests = summary.recent_digests.clone();
-    }
-    if !summary.working_notes.is_empty() {
-        scratch.working_notes = summary.working_notes.clone();
+        scratch.push_working_note(format!(
+            "Previous turn gaps (reassess for current request): {}",
+            summary.open_gaps.join("; ")
+        ));
     }
 
     scratch
@@ -644,18 +644,33 @@ mod tests {
     }
 
     #[test]
-    fn session_scratch_seed_carries_goal_and_gaps() {
+    fn session_scratch_seed_preserves_current_request_and_prior_context() {
         let mut turn = assistant_with_tools();
         turn.slice_summary = Some(TurnSliceSummary {
             goal: "scope research workers".to_string(),
+            working_notes: vec!["Previous turn goal (context only): obsolete acknowledgment".into(), "Preserve the regression test".into()],
             open_gaps: vec!["spawn workers".to_string()],
             tool_rounds: 2,
             tools: vec!["cognition_manuscript_list".to_string()],
             ..Default::default()
         });
-        let seed = session_scratch_seed_from_history(&[turn], "do it now");
-        assert_eq!(seed.goal, "scope research workers");
-        assert_eq!(seed.open_gaps, vec!["spawn workers".to_string()]);
+        let seed = session_scratch_seed_from_history(&[turn], "Cancel the running peer");
+        assert_eq!(seed.goal, "Cancel the running peer");
+        assert!(seed.open_gaps.is_empty());
+        assert_eq!(seed.step, 0);
+        assert!(seed.delegate.is_none());
+        assert!(seed.working_notes.iter().all(|note| !note.contains("obsolete acknowledgment")));
+        assert!(seed.working_notes.iter().any(|note| note == "Preserve the regression test"));
+        assert!(
+            seed.working_notes
+                .iter()
+                .any(|note| note.contains("scope research workers"))
+        );
+        assert!(
+            seed.working_notes
+                .iter()
+                .any(|note| note.contains("spawn workers"))
+        );
     }
 
     #[test]

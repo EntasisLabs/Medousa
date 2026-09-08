@@ -358,7 +358,8 @@ fn actor_slice(actor: SttpPolicyActor) -> Result<SttpContentSlice, SttpDocumentB
             json!({
                 "a1_owner(.99)": "principal-facing outcome",
                 "a2_continuity(.99)": "integrate evidence in one voice",
-                "a3_delegate(.97)": "delegate for useful parallelism, not ceremony"
+                "a3_delegate(.97)": "workshop.spawn creates a separate concurrent peer; assign bounded ownership + expected result; host does complementary work and integrates results",
+                "a4_start(.99)": "use own tools directly; no begin-work ceremony; report only new findings, blockers, or changed plans"
             }),
         ),
         SttpPolicyActor::Worker => SttpContentSlice::new().field(

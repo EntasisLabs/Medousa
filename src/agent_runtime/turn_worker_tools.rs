@@ -228,6 +228,15 @@ impl CognitionSpawnTurnWorkerTool {
     }
 }
 
+async fn active_control_session(
+    scheduler: &crate::agent_runtime::turn_worker::TurnWorkerScheduler,
+) -> Option<String> {
+    if let Some(context) = super::execution_context::active_turn_execution_context() {
+        return Some(context.session_id().to_string());
+    }
+    scheduler.active_bus_session_id().await
+}
+
 pub struct CognitionTurnWorkerStatusTool {
     scheduler: Arc<crate::agent_runtime::turn_worker::TurnWorkerScheduler>,
 }
@@ -240,6 +249,9 @@ impl CognitionTurnWorkerStatusTool {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct TurnWorkerStatusInput {
+    /// Character offset into one worker's result. Continue using result_next_offset.
+    #[serde(default)]
+    pub(crate) result_offset: usize,
     #[serde(default)]
     #[schemars(
         with = "String",
@@ -254,20 +266,81 @@ pub struct TurnWorkerStatusInput {
     pub(crate) session_id: CompatOption<String>,
 }
 
+/// Model-facing control receipt. Full records remain available through workspace cards.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct TurnWorkerSummary {
+    pub work_id: String,
+    pub session_id: String,
+    pub intent: String,
+    #[schemars(with = "String")]
+    pub status: TurnWorkStatus,
+    pub task_prompt: String,
+    pub result_text: Option<String>,
+    pub result_offset: usize,
+    pub result_total_chars: usize,
+    pub result_next_offset: Option<usize>,
+    pub error: Option<String>,
+    pub termination_reason: Option<String>,
+    pub updated_at: String,
+}
+
+impl From<TurnWorkRecord> for TurnWorkerSummary {
+    fn from(record: TurnWorkRecord) -> Self {
+        Self::from_record(record, 0)
+    }
+}
+
+impl TurnWorkerSummary {
+    fn from_record(record: TurnWorkRecord, offset: usize) -> Self {
+        fn bounded(value: &str) -> String {
+            let mut chars = value.chars();
+            let mut text: String = chars.by_ref().take(1200).collect();
+            if chars.next().is_some() {
+                text.push('…');
+            }
+            text
+        }
+        let result_total_chars = record
+            .result_text
+            .as_deref()
+            .map_or(0, |text| text.chars().count());
+        let result_offset = offset.min(result_total_chars);
+        let result_end = result_offset.saturating_add(1200).min(result_total_chars);
+        let result_text = record
+            .result_text
+            .as_deref()
+            .map(|text| text.chars().skip(result_offset).take(1200).collect());
+        Self {
+            work_id: record.work_id,
+            session_id: record.session_id,
+            intent: record.intent,
+            status: record.status,
+            task_prompt: bounded(&record.task_prompt),
+            result_text,
+            result_offset,
+            result_total_chars,
+            result_next_offset: (result_end < result_total_chars).then_some(result_end),
+            error: record.error.as_deref().map(bounded),
+            termination_reason: record.termination_reason,
+            updated_at: record.updated_at.to_rfc3339(),
+        }
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(untagged)]
 pub enum TurnWorkerStatusOutput {
     Record {
         ok: bool,
         #[schemars(with = "serde_json::Value")]
-        record: Box<TurnWorkRecord>,
+        record: Box<TurnWorkerSummary>,
     },
     List {
         ok: bool,
         session_id: String,
         active_count: usize,
         #[schemars(with = "Vec<serde_json::Value>")]
-        records: Vec<TurnWorkRecord>,
+        records: Vec<TurnWorkerSummary>,
     },
 }
 
@@ -286,8 +359,13 @@ impl CognitionTurnWorkerStatusTool {
                 .ok_or_else(|| StasisError::PortFailure(format!("work_id not found: {work_id}")))?;
             return Ok(TurnWorkerStatusOutput::Record {
                 ok: true,
-                record: Box::new(record),
+                record: Box::new(TurnWorkerSummary::from_record(record, input.result_offset)),
             });
+        }
+        if input.result_offset != 0 {
+            return Err(StasisError::PortFailure(
+                "workshop.status: result_offset requires work_id".into(),
+            ));
         }
         let session_id = match input
             .session_id
@@ -297,10 +375,7 @@ impl CognitionTurnWorkerStatusTool {
             .filter(|s| !s.is_empty())
         {
             Some(session_id) => session_id.to_string(),
-            None => self
-                .scheduler
-                .active_bus_session_id()
-                .await
+            None => active_control_session(&self.scheduler).await
                 .ok_or_else(|| {
                     StasisError::PortFailure(
                         "cognition_turn_worker_status: session_id required when no host turn is active"
@@ -322,7 +397,7 @@ impl CognitionTurnWorkerStatusTool {
             ok: true,
             session_id,
             active_count: active,
-            records,
+            records: records.into_iter().map(Into::into).collect(),
         })
     }
 }
@@ -345,9 +420,9 @@ pub struct TurnWorkerCancelInput {
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct TurnWorkerCancelOutput {
     pub ok: bool,
-    /// Evolving durable worker record; its wire projection remains owned by the worker store.
+    /// Compact control summary; full transcript remains in workspace history.
     #[schemars(with = "serde_json::Value")]
-    pub record: TurnWorkRecord,
+    pub record: TurnWorkerSummary,
 }
 
 #[medousa_tool(id = COGNITION_TURN_WORKER_CANCEL_ID)]
@@ -363,9 +438,7 @@ impl CognitionTurnWorkerCancelTool {
                 "cognition_turn_worker_cancel: work_id required".to_string(),
             ));
         }
-        let session_id = self
-            .scheduler
-            .active_bus_session_id()
+        let session_id = active_control_session(&self.scheduler)
             .await
             .ok_or_else(|| {
                 StasisError::PortFailure(
@@ -388,7 +461,7 @@ impl CognitionTurnWorkerCancelTool {
         })?;
         Ok(TurnWorkerCancelOutput {
             ok: true,
-            record: updated,
+            record: updated.into(),
         })
     }
 }
@@ -525,6 +598,68 @@ pub async fn steer_bound_workshop_for_session(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn control_summary_excludes_worker_transcript_and_bounds_text() {
+        let record: TurnWorkRecord = serde_json::from_value(serde_json::json!({
+            "work_id":"worker-1", "session_id":"session-1", "intent":"coder",
+            "task_prompt":"x".repeat(10000), "status":"running", "tool_names":[],
+            "user_ack":"peer is reviewing", "provider":"test", "model":"test",
+            "response_depth_mode":"standard", "result_text":"y".repeat(10000),
+            "live_thinking":"private transcript", "live_output":"bulky output",
+            "created_at":"2026-09-08T00:00:00Z", "updated_at":"2026-09-08T00:00:00Z"
+        }))
+        .unwrap();
+        let second_page = TurnWorkerSummary::from_record(record.clone(), 1200);
+        assert_eq!(second_page.result_offset, 1200);
+        assert_eq!(second_page.result_next_offset, Some(2400));
+        assert_eq!(
+            second_page.result_text.as_deref(),
+            Some("y".repeat(1200).as_str())
+        );
+        let summary = serde_json::to_value(TurnWorkerSummary::from(record)).unwrap();
+        assert_eq!(summary["work_id"], "worker-1");
+        assert_eq!(summary["status"], "running");
+        assert_eq!(summary["result_next_offset"], 1200);
+        assert_eq!(summary["result_total_chars"], 10000);
+        assert!(summary["task_prompt"].as_str().unwrap().chars().count() <= 1201);
+        assert!(summary.to_string().len() < 4000);
+        for field in [
+            "live_thinking",
+            "live_output",
+            "handoff_capsule",
+            "live_tool_activity",
+        ] {
+            assert!(summary.get(field).is_none());
+        }
+    }
+
+    #[test]
+    fn worker_result_pages_reassemble_unicode_exactly() {
+        let text = "é🦀".repeat(1800);
+        let record: TurnWorkRecord = serde_json::from_value(serde_json::json!({
+            "work_id":"worker-1", "session_id":"session-1", "intent":"coder",
+            "task_prompt":"Review", "status":"completed", "tool_names":[],
+            "user_ack":"peer is reviewing", "provider":"test", "model":"test",
+            "response_depth_mode":"standard", "result_text":text,
+            "created_at":"2026-09-08T00:00:00Z", "updated_at":"2026-09-08T00:00:00Z"
+        }))
+        .unwrap();
+        let mut offset = 0;
+        let mut reconstructed = String::new();
+        loop {
+            let page = TurnWorkerSummary::from_record(record.clone(), offset);
+            reconstructed.push_str(page.result_text.as_deref().unwrap());
+            match page.result_next_offset {
+                Some(next) => offset = next,
+                None => break,
+            }
+        }
+        assert_eq!(reconstructed, text);
+        let end = TurnWorkerSummary::from_record(record, usize::MAX);
+        assert_eq!(end.result_text.as_deref(), Some(""));
+        assert!(end.result_next_offset.is_none());
+    }
 
     #[test]
     fn spawn_command_parses_intent_and_normalizes_identifiers() {

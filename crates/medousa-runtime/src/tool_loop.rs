@@ -438,6 +438,7 @@ impl MedousaToolLoopPipeline {
                     tool_rounds_remaining,
                 );
                 sync_scratch_snapshot(completion_gate.as_deref_mut(), &turn_ctx.scratchpad);
+                perception_governor.compact_tool_history(&mut turn_ctx.tool_lane.messages);
                 let mut messages =
                     turn_ctx.build_model_messages(shared_inputs.system_prompt.as_deref());
                 ensure_assistant_tool_turn_reasoning(&mut messages);
@@ -937,6 +938,7 @@ impl MedousaToolLoopPipeline {
                     turn_progress_message_from_invocations(round_invocations)
                     && let Some(gate) = completion_gate.as_ref()
                     && let Some(presentation) = gate.runtime_ports.turn_presentation()
+                    && loop_awareness.record_progress(&progress_message)
                 {
                     presentation
                         .turn_progress(
@@ -1239,6 +1241,8 @@ impl MedousaToolLoopPipeline {
                         persist_gate_ledger(
                             gate,
                             &TurnLedgerRecord {
+                                execution_id: None,
+                                parent_turn_id: None,
                                 inference: None,
                                 timestamp: chrono::Utc::now(),
                                 stream_turn_id: gate.stream_turn_id,
@@ -1295,6 +1299,8 @@ impl MedousaToolLoopPipeline {
                         persist_gate_ledger(
                             gate,
                             &TurnLedgerRecord {
+                                execution_id: None,
+                                parent_turn_id: None,
                                 inference: None,
                                 timestamp: chrono::Utc::now(),
                                 stream_turn_id: gate.stream_turn_id,
@@ -1924,12 +1930,20 @@ fn tool_round_budget_exhausted_message(
 }
 
 fn recoverable_tool_error_value(message: &str) -> Value {
-    serde_json::json!({
-        "ok": false,
-        "error": message,
-        "recoverable": true,
-        "hint": "Read the error, fix arguments or choose another allowed tool, retry once if policy allows; delegate via cognition_workshop_mutate action=workshop.spawn when the host profile blocks direct execution."
-    })
+    let hint = if message.contains("intent is required") {
+        "Add intent: a short purpose for this call, then retry the same action."
+    } else if message.contains("allowed_binaries") || message.contains("preflight") {
+        "This execution path is unavailable under the current shell configuration. Use the advertised Coder shell tool if available. Retry this path only after its configuration changes."
+    } else if message.contains("pointer not found") {
+        "The pointer is unavailable in this scope. Discover a current pointer; do not retry the stale reference."
+    } else if message.contains("worker parent scope missing") {
+        "This worker cannot start another workshop here. Complete its assigned task with available tools and return findings or the blocker to the host."
+    } else if message.contains("MCP gateway") || message.contains("failed to execute grapheme") {
+        "This capability backend is unavailable. Use an available tool or report the missing dependency; retry only after availability changes."
+    } else {
+        "Use this error to correct the arguments or choose an available tool. Retry once after correcting the cause; if it persists, report the blocker."
+    };
+    serde_json::json!({"ok": false, "error": message, "recoverable": true, "hint": hint})
 }
 
 fn build_fallback_synthesis_prompt(
@@ -2228,6 +2242,28 @@ mod tests {
     }
 
     #[test]
+    fn recovery_guidance_addresses_the_failure_without_spawning_work() {
+        for error in [
+            "Coder tool intent is required",
+            "allowed_binaries must intersect allowlist",
+            "pointer not found",
+            "worker parent scope missing",
+            "failed to reach MCP gateway",
+            "bad argument",
+        ] {
+            let output = recoverable_tool_error_value(error);
+            assert_eq!(output["error"], error);
+            assert!(!output["hint"].as_str().unwrap().contains("workshop.spawn"));
+        }
+        assert!(
+            recoverable_tool_error_value("Coder tool intent is required")["hint"]
+                .as_str()
+                .unwrap()
+                .contains("Add intent")
+        );
+    }
+
+    #[test]
     fn assistant_tool_round_replays_reasoning_content() {
         let message = assistant_tool_round_message(
             MessageContent::from_parts(vec![
@@ -2312,7 +2348,7 @@ mod tests {
             out["hint"]
                 .as_str()
                 .unwrap()
-                .contains("cognition_workshop_mutate action=workshop.spawn")
+                .contains("correct the arguments or choose an available tool")
         );
     }
 

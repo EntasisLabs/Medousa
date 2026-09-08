@@ -944,7 +944,7 @@ impl ToolRegistry for PortableCoderToolRegistry {
                     ),
                     _ => tool,
                 };
-                with_required_coder_intent(tool).map_err(|error| {
+                with_required_coder_intent(with_coder_tool_advertisement(tool)).map_err(|error| {
                     StasisError::PortFailure(format!(
                         "cannot compile portable Coder tool surface: {error}"
                     ))
@@ -970,7 +970,11 @@ impl ToolRegistry for PortableCoderToolRegistry {
         }
         let input = self.bind_input(id.as_str(), input)?;
         self.verify()?;
-        self.inner.invoke_tool(id.as_str(), input).await
+        let mut output = self.inner.invoke_tool(id.as_str(), input).await?;
+        if id.as_str() == crate::public_api::COGNITION_SCHEMA {
+            project_coder_action_schemas(&mut output)?;
+        }
+        Ok(output)
     }
 }
 
@@ -2653,8 +2657,20 @@ impl ToolRegistry for CoderBoundToolRegistry {
         authority.heartbeat()?;
         let (metadata, input) = take_coder_call(input)?;
         let intent = metadata.intent;
-        let spawn_intent_hint =
-            crate::agent_runtime::turn_worker::TurnWorkerIntent::parse(intent.as_str());
+        let spawn_intent_hint = input
+            .get("worker_profile")
+            .filter(|value| !value.is_null())
+            .map(|value| {
+                let profile = value.as_str().ok_or_else(|| StasisError::PortFailure("worker_profile must be a string".into()))?;
+                crate::agent_runtime::turn_worker::TurnWorkerIntent::parse(profile).ok_or_else(
+                    || StasisError::PortFailure(format!("unknown worker_profile: {profile}")),
+                )
+            })
+            .transpose()?
+            // Accept old calls that used intent as a profile; new calls use worker_profile.
+            .or_else(|| {
+                crate::agent_runtime::turn_worker::TurnWorkerIntent::parse(intent.as_str())
+            });
         let input = self.enrich_semantic_input(tool_name, input)?;
         let targets = tool_targets(tool_name, &input, authority.lease());
         let claims = super::coder_claims::infer_tool_claims(
@@ -2780,6 +2796,14 @@ impl ToolRegistry for CoderBoundToolRegistry {
                 &crate::execution_policy::load_parallel_execution_settings(),
             )
             .await
+        } else if tool_name == crate::public_api::COGNITION_SCHEMA {
+            self.inner
+                .invoke_tool(tool_name, input.clone())
+                .await
+                .and_then(|mut output| {
+                    project_coder_action_schemas(&mut output)?;
+                    Ok(output)
+                })
         } else if CODER_RUNTIME_TOOLS.contains(&tool_name) {
             self.invoke_runtime_tool(tool_name, &input)
         } else if crate::turn_control_tools::is_begin_work_tool_name(tool_name, &input) {
@@ -2913,7 +2937,18 @@ fn with_required_coder_intent(
     CODER_MODE_ADAPTER.compose_tool(tool)
 }
 
-fn with_coder_tool_advertisement(tool: Tool) -> Tool {
+fn with_coder_tool_advertisement(mut tool: Tool) -> Tool {
+    if tool.name.as_str() == crate::public_api::COGNITION_TURN {
+        if let Some(actions) = tool
+            .schema
+            .as_mut()
+            .and_then(|schema| schema.pointer_mut("/properties/action/enum"))
+            .and_then(Value::as_array_mut)
+        {
+            actions.retain(|action| action != "turn.begin_work");
+        }
+        return tool.with_description("Update progress, checkpoint, or finish the current turn. Use your own tools directly to work. To create a separate concurrent peer, use workshop.spawn.");
+    }
     match tool.name.as_str() {
         crate::public_api::COGNITION_WORKSHOP_MUTATE => tool.with_description(
             "Spawn, cancel, or steer a peer sub-agent. Use action=workshop.spawn for parallel work.",
@@ -2923,6 +2958,38 @@ fn with_coder_tool_advertisement(tool: Tool) -> Tool {
         }
         _ => tool,
     }
+}
+
+/// Project fetched action contracts through the same metadata adapter as advertised tools.
+fn project_coder_action_schemas(output: &mut Value) -> Result<()> {
+    let Some(types) = output.get_mut("types").and_then(Value::as_array_mut) else {
+        return Ok(());
+    };
+    types.retain(|entry| entry["name"] != "turn.begin_work");
+    for entry in types {
+        let spawn = entry["name"] == "workshop.spawn";
+        if spawn {
+            entry["summary"] = json!(
+                "Create a separate peer running concurrently. Assign a bounded task and expected result; continue only complementary work, then integrate the peer's result."
+            );
+        }
+        let Some(mut schema) = entry.get("parameters").cloned() else {
+            continue;
+        };
+        if spawn && let Some(props) = schema.get_mut("properties").and_then(Value::as_object_mut) {
+            props.remove("intent");
+            props.insert("worker_profile".into(), json!({"type":"string", "enum":["coder", "research", "general", "memory.avec_calibrate", "memory.context"], "default":"coder", "description":"Peer execution profile; independent of this call's intent. Coding tasks use coder."}));
+            props.insert("task".into(), json!({"type":"string", "minLength":1, "description":"Bounded assignment owned by the peer, including the result it must return. Avoid overlapping host edits."}));
+            props.insert("user_ack".into(), json!({"type":"string", "description":"Tell the user which task a separate peer is taking on."}));
+        }
+        let name = entry["tool"].as_str().unwrap_or("cognition_schema");
+        let projected =
+            with_required_coder_intent(Tool::new(name).with_schema(schema)).map_err(|error| {
+                StasisError::PortFailure(format!("cannot project Coder action schema: {error}"))
+            })?;
+        entry["parameters"] = projected.schema.unwrap_or(Value::Null);
+    }
+    Ok(())
 }
 
 pub(crate) fn register_catalog_placements(index: &mut ToolPlacementIndex) {
@@ -3124,13 +3191,8 @@ pub(crate) fn remap_begin_work_to_spawn_input(
     Ok(out)
 }
 
-fn default_peer_spawn_intent(task: &str, user_ack: &str) -> String {
-    let hay = format!("{task}\n{user_ack}").to_ascii_lowercase();
-    if hay.contains("research") || hay.contains("investigate") || hay.contains("survey") {
-        "research".into()
-    } else {
-        "general".into()
-    }
+fn default_peer_spawn_intent(_task: &str, _user_ack: &str) -> String {
+    "coder".into()
 }
 
 fn ensure_spawn_worker_intent(
@@ -3149,6 +3211,7 @@ fn ensure_spawn_worker_intent(
         .map(|value| value.as_str().to_string())
         .unwrap_or_else(|| default_peer_spawn_intent(task, user_ack));
     if let Some(map) = input.as_object_mut() {
+        map.remove("worker_profile");
         map.insert("intent".into(), Value::String(intent));
     }
 }
@@ -5142,6 +5205,57 @@ mod tests {
     }
 
     #[test]
+    fn coder_fetched_schema_matches_call_metadata_and_peer_semantics() {
+        let schemas = crate::schema_api::dispatch_for_coder_test();
+        let mut output = schemas;
+        project_coder_action_schemas(&mut output).unwrap();
+        let entries = output["types"].as_array().unwrap();
+        assert!(
+            entries
+                .iter()
+                .all(|entry| entry["name"] != "turn.begin_work")
+        );
+        for entry in entries {
+            let required = entry["parameters"]["required"].as_array().unwrap();
+            assert!(required.contains(&json!("intent")), "{}", entry["name"]);
+        }
+        let spawn = entries
+            .iter()
+            .find(|entry| entry["name"] == "workshop.spawn")
+            .unwrap();
+        assert_eq!(
+            spawn["parameters"]["properties"]["worker_profile"]["default"],
+            "coder"
+        );
+        assert!(spawn["summary"].as_str().unwrap().contains("separate peer"));
+    }
+
+    #[tokio::test]
+    async fn coder_spawn_profile_is_separate_from_call_purpose() {
+        let fixture = fixture();
+        let authority = authority(&fixture);
+        let inner = Arc::new(RecordingRegistry::default());
+        let registry = CoderBoundToolRegistry::new(
+            inner,
+            &authority,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+        for (profile, expected) in [(None, "coder"), (Some("research"), "research")] {
+            let mut input = json!({"action":"workshop.spawn", "intent":"Check the regression independently", "task":"Review the fix; return any uncovered cases", "user_ack":"A peer is reviewing the fix"});
+            if let Some(profile) = profile {
+                input["worker_profile"] = json!(profile);
+            }
+            let output = registry
+                .invoke_tool(crate::public_api::COGNITION_WORKSHOP_MUTATE, input)
+                .await
+                .unwrap();
+            assert_eq!(output["input"]["intent"], expected);
+        }
+        assert!(registry.invoke_tool(crate::public_api::COGNITION_WORKSHOP_MUTATE, json!({"action":"workshop.spawn", "intent":"Delegate review", "worker_profile":"typo"})).await.is_err());
+    }
+
+    #[test]
     fn begin_work_remap_builds_spawn_args() {
         let mapped = remap_begin_work_to_spawn_input(
             &json!({
@@ -5153,7 +5267,7 @@ mod tests {
         .expect("remap");
         assert_eq!(mapped["task"], "Survey related crates for the bug");
         assert_eq!(mapped["user_ack"], "Researching dependency graph");
-        assert_eq!(mapped["intent"], "research");
+        assert_eq!(mapped["intent"], "coder");
         assert_eq!(mapped["action"], "workshop.spawn");
 
         let goal_only =
@@ -5161,7 +5275,7 @@ mod tests {
                 .expect("goal only");
         assert_eq!(goal_only["task"], "Write a focused unit test");
         assert_eq!(goal_only["user_ack"], "Write a focused unit test");
-        assert_eq!(goal_only["intent"], "general");
+        assert_eq!(goal_only["intent"], "coder");
 
         let hinted = remap_begin_work_to_spawn_input(
             &json!({ "message": "Dig into memory nodes" }),
@@ -5210,7 +5324,7 @@ mod tests {
         let input = &out["input"];
         assert_eq!(input["task"], "Investigate failing CI flakes");
         assert_eq!(input["user_ack"], "Spinning a research peer");
-        assert_eq!(input["intent"], "research");
+        assert_eq!(input["intent"], "coder");
         assert_eq!(input["action"], "workshop.spawn");
     }
 

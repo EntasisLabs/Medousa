@@ -2103,13 +2103,12 @@
     {
       "registry": "coder_bound",
       "name": "cognition_turn",
-      "description": "Record turn progress or set its outcome. action is a typed name (turn.finish, turn.checkpoint, …). Fetch fields with cognition_schema types=[...].",
+      "description": "Update progress, checkpoint, or finish the current turn. Use your own tools directly to work. To create a separate concurrent peer, use workshop.spawn.",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
           "action": {
             "enum": [
-              "turn.begin_work",
               "turn.checkpoint",
               "turn.finish",
               "turn.propose_mode",

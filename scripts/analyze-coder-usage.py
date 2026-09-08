@@ -15,8 +15,10 @@ def summarize(records):
             continue
         if type(usage.get("schema_version")) is not int or usage["schema_version"] not in (1, 2):
             raise ValueError("unsupported inference usage schema")
-        turn_id = str(record["stream_turn_id"])
+        turn_id = record.get("execution_id") or str(record["stream_turn_id"])
         turn = turns.setdefault(turn_id, {
+            "attribution": "execution" if record.get("execution_id") else "legacy_stream_ambiguous",
+            "parent_turn_id": record.get("parent_turn_id"),
             "requests": 0, "outcomes": collections.Counter(),
             "models": collections.Counter(), "tools": collections.Counter(),
             "tokens": {key: {"reported_sum": 0, "reported_requests": 0}

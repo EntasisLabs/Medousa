@@ -61,6 +61,10 @@ pub enum TurnLedgerEventKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TurnLedgerRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_turn_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inference: Option<crate::inference_usage::InferenceUsage>,
     pub timestamp: DateTime<Utc>,
     pub stream_turn_id: u64,
@@ -85,6 +89,7 @@ pub struct TurnLedgerRecord {
 pub struct TurnLoopAwareness {
     user_responses_sent: usize,
     last_response_preview: Option<String>,
+    last_progress_message: Option<String>,
 }
 
 impl TurnLoopAwareness {
@@ -109,6 +114,20 @@ impl TurnLoopAwareness {
             trimmed,
             USER_RESPONSE_PREVIEW_MAX_CHARS,
         ));
+    }
+
+    /// Compare complete normalized progress text, not a truncated preview:
+    /// updates with the same introduction but new findings must still be delivered.
+    pub fn record_progress(&mut self, text: &str) -> bool {
+        let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        if normalized.is_empty()
+            || self.last_progress_message.as_deref() == Some(normalized.as_str())
+        {
+            return false;
+        }
+        self.record_user_response(text);
+        self.last_progress_message = Some(normalized);
+        true
     }
 
     pub fn loop_budget_message(&self, tool_rounds_remaining: usize) -> String {
@@ -209,6 +228,8 @@ pub fn record_fsm_continue(
     scratch: &TurnScratchpad,
 ) -> TurnLedgerRecord {
     TurnLedgerRecord {
+        execution_id: None,
+        parent_turn_id: None,
         inference: None,
         timestamp: Utc::now(),
         stream_turn_id,
@@ -231,6 +252,8 @@ pub fn record_tool_round(
     scratch: &TurnScratchpad,
 ) -> TurnLedgerRecord {
     TurnLedgerRecord {
+        execution_id: None,
+        parent_turn_id: None,
         inference: None,
         timestamp: Utc::now(),
         stream_turn_id,
@@ -253,6 +276,8 @@ pub fn record_finalized(
     tools_invoked: &[String],
 ) -> TurnLedgerRecord {
     TurnLedgerRecord {
+        execution_id: None,
+        parent_turn_id: None,
         inference: None,
         timestamp: Utc::now(),
         stream_turn_id,
@@ -275,6 +300,8 @@ pub fn record_stuck(
     text_only_limit: usize,
 ) -> TurnLedgerRecord {
     TurnLedgerRecord {
+        execution_id: None,
+        parent_turn_id: None,
         inference: None,
         timestamp: Utc::now(),
         stream_turn_id,
@@ -312,6 +339,16 @@ mod tests {
         assert!(discipline.on_text_only_continue(2));
         discipline.on_tool_round();
         assert!(!discipline.on_text_only_continue(4));
+    }
+
+    #[test]
+    fn repeated_progress_is_suppressed_but_new_findings_are_delivered() {
+        let mut awareness = TurnLoopAwareness::default();
+        assert!(awareness.record_progress("Checking the tests"));
+        assert!(!awareness.record_progress(" Checking  the tests "));
+        let prefix = "a".repeat(150);
+        assert!(awareness.record_progress(&format!("{prefix}: one failure")));
+        assert!(awareness.record_progress(&format!("{prefix}: tests passed")));
     }
 
     #[test]

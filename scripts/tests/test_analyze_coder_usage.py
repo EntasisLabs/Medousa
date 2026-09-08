@@ -24,6 +24,18 @@ def row(tokens, outcome="completed"):
 
 
 class UsageReportTests(unittest.TestCase):
+    def test_execution_ids_separate_parent_worker_and_later_turn(self):
+        records = []
+        for execution, parent in [("turn-a", None), ("worker-a", "turn-a"), ("turn-b", None)]:
+            record = row({"input": 100})
+            record.update(execution_id=execution, parent_turn_id=parent)
+            records.append(record)
+        report = usage.summarize(records)
+        self.assertEqual(set(report), {"turn-a", "worker-a", "turn-b"})
+        self.assertEqual(report["worker-a"]["parent_turn_id"], "turn-a")
+        self.assertTrue(all(turn["requests"] == 1 for turn in report.values()))
+        self.assertEqual(usage.summarize([row({})])["7"]["attribution"], "legacy_stream_ambiguous")
+
     def test_missing_usage_does_not_become_zero_or_a_complete_total(self):
         report = usage.summarize([
             {"kind": "finalized"},

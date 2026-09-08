@@ -46,6 +46,16 @@ fn append_turn_ledger_record_to(
         return;
     };
     let mut record = record.clone();
+    if let Some(context) = super::execution_context::active_turn_execution_context() {
+        record
+            .execution_id
+            .get_or_insert_with(|| context.turn_id().to_string());
+        if context.turn_id() != context.correlation_id() {
+            record
+                .parent_turn_id
+                .get_or_insert_with(|| context.correlation_id().to_string());
+        }
+    }
     if record.active_profile_id.is_none() {
         record.active_profile_id = Some(crate::user_profiles::resolve_workshop_active_profile_id());
     }
@@ -144,10 +154,7 @@ mod tests {
         };
         let profile = medousa_types::BotProfile {
             schema_version: medousa_types::BOT_PROFILE_SCHEMA_VERSION,
-            bot_id: medousa_types::BotId::parse(
-                "bot_0123456789abcdef0123456789abcdef",
-            )
-            .unwrap(),
+            bot_id: medousa_types::BotId::parse("bot_0123456789abcdef0123456789abcdef").unwrap(),
             owner_profile_id: "user:test".to_string(),
             display_name: "Ada".to_string(),
             role_description: None,
@@ -164,7 +171,7 @@ mod tests {
             updated_at: chrono::Utc::now(),
         };
         let context = crate::agent_runtime::execution_context::TurnExecutionContext::new(
-            "turn-bot",
+            "worker-1",
             "turn-bot",
             session.clone(),
             crate::request_principal::RequestPrincipal::anonymous(
@@ -203,6 +210,8 @@ mod tests {
             Some("bot_0123456789abcdef0123456789abcdef")
         );
         assert_eq!(parsed.bot_profile_revision, Some(4));
+        assert_eq!(parsed.execution_id.as_deref(), Some("worker-1"));
+        assert_eq!(parsed.parent_turn_id.as_deref(), Some("turn-bot"));
         let _ = delete_turn_ledger(&session);
     }
 }

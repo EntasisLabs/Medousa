@@ -286,6 +286,8 @@ impl InferenceObservation {
         usage.elapsed_ms = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX);
         if let Some(sink) = self.ports.ledger_sink() {
             sink.persist(&TurnLedgerRecord {
+                execution_id: None,
+                parent_turn_id: None,
                 timestamp: chrono::Utc::now(),
                 stream_turn_id: self.stream_turn_id,
                 kind: TurnLedgerEventKind::Inference,
