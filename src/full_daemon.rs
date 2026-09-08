@@ -105,6 +105,7 @@ pub mod capability_tools;
 pub mod chatgpt_oauth;
 pub mod code_intelligence_tools;
 pub mod coding_tools;
+pub mod code_edits;
 pub mod cognitive_identity;
 pub mod cognitive_identity_writer;
 pub mod component_runtime_diagnostics;

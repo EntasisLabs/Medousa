@@ -349,8 +349,15 @@ enum Ev {
 
 #[derive(Clone, Default)]
 struct CapturingPorts {
+    ledger: Arc<Mutex<Vec<crate::loop_state::TurnLedgerRecord>>>,
     events: Arc<Mutex<Vec<Ev>>>,
     next_tool_run_id: Arc<AtomicU64>,
+}
+
+impl crate::ports::TurnLedgerSink for CapturingPorts {
+    fn persist(&self, record: &crate::loop_state::TurnLedgerRecord) {
+        self.ledger.lock().unwrap().push(record.clone());
+    }
 }
 
 impl CapturingPorts {
@@ -413,6 +420,7 @@ impl TurnPresentationPort for CapturingPorts {
 // ── Harness ──────────────────────────────────────────────────────────────────
 
 struct GoldenOutcome {
+    ledger: Vec<crate::loop_state::TurnLedgerRecord>,
     text: String,
     termination_reason: String,
     rounds_executed: usize,
@@ -451,6 +459,7 @@ async fn run_golden(
 
     let capturing_ports = Arc::new(CapturingPorts::default());
     let runtime_ports = RuntimePorts::new()
+        .with_ledger_sink(capturing_ports.clone())
         .with_tool_run_events(capturing_ports.clone())
         .with_turn_presentation(capturing_ports.clone());
     let mut gate = ToolLoopCompletionGate::new_for_execution(1, runtime_ports, max_rounds);
@@ -506,6 +515,7 @@ async fn run_golden(
     }
 
     GoldenOutcome {
+        ledger: capturing_ports.ledger.lock().unwrap().clone(),
         text: response.text,
         termination_reason: response.termination_reason,
         rounds_executed: response.rounds_executed,
@@ -1030,4 +1040,86 @@ async fn golden_streamed_content_reaches_sink() {
         1
     );
     assert!(!outcome.event_kinds.iter().any(|kind| kind == "pack_hold"));
+}
+
+#[tokio::test]
+async fn golden_usage_records_every_request_once_for_streaming_and_nonstreaming() {
+    use genai::chat::{CompletionTokensDetails, PromptTokensDetails, Usage};
+    for stream in [false, true] {
+        let mut response = text_response("sensitive answer");
+        response.usage = Usage {
+            prompt_tokens: Some(1000),
+            completion_tokens: Some(200),
+            total_tokens: Some(1200),
+            prompt_tokens_details: Some(PromptTokensDetails {
+                cached_tokens: Some(800),
+                cache_creation_tokens: Some(100),
+                ..Default::default()
+            }),
+            completion_tokens_details: Some(CompletionTokensDetails {
+                reasoning_tokens: Some(150),
+                ..Default::default()
+            }),
+        };
+        let outcome = run_golden("sensitive prompt", vec![response], 4, stream).await;
+        let rows: Vec<_> = outcome
+            .ledger
+            .iter()
+            .filter_map(|r| r.inference.as_ref())
+            .collect();
+        assert_eq!(rows.len(), outcome.request_count);
+        assert_eq!(rows[0].outcome, "completed");
+        assert_eq!(rows[0].tokens.input, Some(1000));
+        assert_eq!(rows[0].tokens.output, Some(200));
+        assert_eq!(rows[0].tokens.reasoning, Some(150));
+        assert_eq!(rows[0].tokens.cache_read, Some(800));
+        assert_eq!(rows[0].tokens.cache_write, Some(100));
+        let json = serde_json::to_string(&rows).unwrap();
+        assert!(!json.contains("sensitive prompt"));
+        assert!(!json.contains("sensitive answer"));
+    }
+}
+
+#[test]
+fn usage_counts_shared_intent_once_and_batch_children_as_requests() {
+    let ports = Arc::new(CapturingPorts::default());
+    let gate = ToolLoopCompletionGate::new_for_execution(
+        7,
+        RuntimePorts::new().with_ledger_sink(ports.clone()),
+        4,
+    );
+    let response = tool_response(vec![tool_call(
+        "cognition_coder_read_batch",
+        json!({
+            "intent": "Find α callers", "operations": [
+                {"action":"code.read", "path":"secret.rs"},
+                {"action":"code.search", "query":"private"}
+            ]
+        }),
+    )]);
+    let mut observation = crate::inference_usage::InferenceObservation::start(
+        Some(&gate),
+        1,
+        crate::inference_usage::RequestFootprint::new(
+            &ChatRequest::from_user("private"),
+            None,
+            None,
+        ),
+        None,
+    );
+    observation.complete(&response);
+    drop(observation);
+    let ledger = ports.ledger.lock().unwrap();
+    let usage = ledger[0].inference.as_ref().unwrap();
+    assert_eq!(usage.schema_version, 2);
+    assert_eq!(
+        usage.generated.intent_chars,
+        Some("Find α callers".chars().count())
+    );
+    assert_eq!(usage.generated.requested_batch_operations, Some(2));
+    assert_eq!(usage.generated.tool_calls, 1);
+    let serialized = serde_json::to_string(&usage).unwrap();
+    assert!(!serialized.contains("secret.rs"));
+    assert!(!serialized.contains("Find α callers"));
+    assert!(!serialized.contains("private"));
 }

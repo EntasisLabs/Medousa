@@ -4,6 +4,8 @@ Shared client libraries for talking to **medousa_daemon** without duplicating HT
 
 **Docs:** [API reference](api-reference.md) · [Python SDK](python.md) · [Interactive streaming](interactive-streaming.md) · [Transports](transports.md) · [Artifacts](artifacts.md) · [Examples](examples/README.md)
 
+Coder tool contracts and local diagnostics: [Usage attribution and batch edits](../engine/coder-efficiency.md).
+
 ## Packages
 
 | Package | Role |

@@ -68,7 +68,7 @@ impl<'de> Deserialize<'de> for CoderToolIntent {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct CoderCallMetadata {
-    /// Short purpose of this tool call.
+    /// Purpose, usually 4-8 words.
     #[schemars(length(max = 320))]
     intent: CoderToolIntent,
 }
@@ -940,7 +940,7 @@ impl ToolRegistry for PortableCoderToolRegistry {
                         "Read the portable /workspace using only action=code.read or action=code.search.",
                     ),
                     crate::public_api::COGNITION_STORE_WRITE => tool.with_description(
-                        "Write the portable /workspace using only action=code.write and a digest precondition.",
+                        "Write the portable /workspace using action=code.write with a digest precondition; use edits to batch replacements against one revision. Fetch fields with cognition_schema types=[\"code.write\"].",
                     ),
                     _ => tool,
                 };
@@ -956,7 +956,18 @@ impl ToolRegistry for PortableCoderToolRegistry {
     async fn invoke_tool(&self, tool_name: &str, input: Value) -> Result<Value> {
         self.verify()?;
         let id = self.resolve(tool_name)?;
-        let (_, input) = take_coder_call(input)?;
+        let (metadata, input) = take_coder_call(input)?;
+        if id.as_str() == super::coder_read_batch::TOOL_NAME {
+            // A batch never expands the destination's admitted child tool set.
+            self.resolve(crate::public_api::COGNITION_STORE_READ)?;
+            return super::coder_read_batch::invoke(
+                self,
+                input,
+                metadata.intent.as_str(),
+                &crate::execution_policy::load_parallel_execution_settings(),
+            )
+            .await;
+        }
         let input = self.bind_input(id.as_str(), input)?;
         self.verify()?;
         self.inner.invoke_tool(id.as_str(), input).await
@@ -2761,6 +2772,14 @@ impl ToolRegistry for CoderBoundToolRegistry {
                 &input,
             )
             .await
+        } else if tool_name == super::coder_read_batch::TOOL_NAME {
+            super::coder_read_batch::invoke(
+                self,
+                input.clone(),
+                intent.as_str(),
+                &crate::execution_policy::load_parallel_execution_settings(),
+            )
+            .await
         } else if CODER_RUNTIME_TOOLS.contains(&tool_name) {
             self.invoke_runtime_tool(tool_name, &input)
         } else if crate::turn_control_tools::is_begin_work_tool_name(tool_name, &input) {
@@ -2880,6 +2899,7 @@ fn coder_runtime_tool_definitions() -> Vec<Tool> {
                 "required": ["reference"]
             })),
     ];
+    tools.push(super::coder_read_batch::tool_definition());
     tools.push(super::coder_experiments::tool_definition());
     tools.push(super::coder_causal::tool_definition());
     tools.extend(super::coder_semantic_actions::tool_definitions());
@@ -3012,6 +3032,7 @@ fn coder_initial_tool_ids() -> HashSet<ToolId> {
                 COGNITION_ENGINEERING_POINTERS,
                 COGNITION_ENGINEERING_POINTER_FOLLOW,
                 COGNITION_CODER_EVIDENCE_READ,
+                super::coder_read_batch::TOOL_NAME,
             ]
             .iter(),
         )
@@ -3354,6 +3375,7 @@ mod tests {
         invocations: StdMutex<Vec<(String, Value)>>,
         memory_nodes: StdMutex<Vec<Value>>,
         memory_unavailable: AtomicBool,
+        read_registry: Option<Arc<dyn ToolRegistry>>,
     }
 
     #[async_trait]
@@ -3394,6 +3416,11 @@ mod tests {
                 .lock()
                 .expect("invocations lock")
                 .push((tool_name.to_string(), input.clone()));
+            if tool_name == crate::public_api::COGNITION_STORE_READ
+                && let Some(registry) = &self.read_registry
+            {
+                return registry.invoke_tool(tool_name, input).await;
+            }
             if tool_name.starts_with("cognition_memory_")
                 && self.memory_unavailable.load(Ordering::SeqCst)
             {
@@ -4455,6 +4482,169 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn read_batch_uses_child_binding_and_preserves_each_activity() {
+        let fixture = fixture();
+        let authority = authority(&fixture);
+        crate::grapheme_script::store::set_test_grapheme_script_root_override(Some(
+            fixture.entry.worktree.clone(),
+        ));
+        struct RestoreRoot;
+        impl Drop for RestoreRoot {
+            fn drop(&mut self) {
+                crate::grapheme_script::store::set_test_grapheme_script_root_override(None);
+            }
+        }
+        let _root = RestoreRoot;
+        let mut reads =
+            stasis::application::orchestration::tool_registry::InMemoryToolRegistry::default();
+        let (event_tx, _events) = tokio::sync::mpsc::channel(16);
+        crate::store_tools::register_store_tools(
+            &mut reads,
+            event_tx,
+            Default::default(),
+            "batch-test".into(),
+        )
+        .unwrap();
+        let inner = Arc::new(RecordingRegistry {
+            read_registry: Some(Arc::new(reads)),
+            ..Default::default()
+        });
+        let registry = CoderBoundToolRegistry::new(
+            inner.clone(),
+            &authority,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+        let intent = "Locate affected callers";
+        let output = registry
+            .invoke_tool(
+                crate::agent_runtime::coder_read_batch::TOOL_NAME,
+                json!({
+                    "intent": intent, "operations": [
+                        {"action":"code.read", "path":"src/lib.rs"},
+                        {"action":"code.read", "path":"../escape"},
+                        {"action":"code.search", "query":"demo", "max_results":2}
+                    ]
+                }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(output["results"][0]["ok"], true);
+        assert_eq!(output["results"][1]["ok"], false);
+        assert_eq!(output["results"][2]["ok"], true);
+        let calls = inner.invocations.lock().unwrap();
+        assert_eq!(calls.len(), 3);
+        assert!(calls.iter().all(|(tool, input)| {
+            tool == crate::public_api::COGNITION_STORE_READ
+                && input["root"] == fixture.entry.worktree.to_string_lossy().as_ref()
+                && input.get("intent").is_none()
+        }));
+        let events = fixture
+            .activity
+            .events_for_work(&fixture.entry.work_id)
+            .unwrap();
+        let completed = events
+            .iter()
+            .filter(|event| {
+                event.tool.as_deref() == Some(crate::public_api::COGNITION_STORE_READ)
+                    && matches!(
+                        event.kind,
+                        super::super::coder_activity::CoderActivityKind::ToolCompleted
+                            | super::super::coder_activity::CoderActivityKind::ToolFailed
+                    )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(completed.len(), 3);
+        assert!(
+            completed
+                .iter()
+                .all(|event| event.intent.as_deref() == Some(intent))
+        );
+        let call_ids = completed
+            .iter()
+            .map(|event| &event.call_id)
+            .collect::<HashSet<_>>();
+        assert_eq!(call_ids.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn portable_read_batch_retains_admission_binding_and_revocation() {
+        struct RevokeAfterFirstChild(std::sync::atomic::AtomicUsize);
+        impl CoderExecutionGuard for RevokeAfterFirstChild {
+            fn verify(&self) -> Result<()> {
+                if self.0.fetch_add(1, Ordering::SeqCst) >= 3 {
+                    Err(StasisError::PortFailure("portable grant revoked".into()))
+                } else {
+                    Ok(())
+                }
+            }
+        }
+        let mut registrar = ToolRegistrar::new(crate::tool_catalog::first_party_placement_index());
+        for tool in [
+            crate::agent_runtime::coder_read_batch::tool_definition(),
+            Tool::new(crate::public_api::COGNITION_STORE_READ)
+                .with_schema(json!({"type":"object"})),
+        ] {
+            registrar
+                .register_runtime_adapter(
+                    resolve_known_coder_tool_id(tool.name.as_str()).unwrap(),
+                    tool.clone(),
+                    None,
+                )
+                .unwrap();
+        }
+        let (_, catalog) = registrar.finish();
+        for admit_read in [false, true] {
+            let inner = Arc::new(RecordingRegistry::default());
+            let mut allowed = vec![crate::agent_runtime::coder_read_batch::TOOL_NAME.to_owned()];
+            if admit_read {
+                allowed.push(crate::public_api::COGNITION_STORE_READ.to_owned());
+            }
+            let registry = PortableCoderToolRegistry::new(
+                inner.clone(),
+                catalog.clone(),
+                WorkPolicy::default(),
+                allowed,
+                Some(Arc::new(RevokeAfterFirstChild(
+                    std::sync::atomic::AtomicUsize::new(0),
+                ))),
+            )
+            .unwrap();
+            assert!(registry.list_tools().await.unwrap().iter().any(
+                |tool| tool.name.as_str() == crate::agent_runtime::coder_read_batch::TOOL_NAME
+            ));
+            // list_tools also verifies; use a fresh guard for the invocation count.
+            let registry = PortableCoderToolRegistry {
+                execution_guard: Some(Arc::new(RevokeAfterFirstChild(
+                    std::sync::atomic::AtomicUsize::new(0),
+                ))),
+                ..registry
+            };
+            let result = registry
+                .invoke_tool(
+                    crate::agent_runtime::coder_read_batch::TOOL_NAME,
+                    json!({"intent":"Inspect workspace callers", "operations":[
+                        {"action":"code.read", "path":"src/lib.rs"},
+                        {"action":"code.read", "path":"src/next.rs"}
+                    ]}),
+                )
+                .await;
+            let calls = inner.invocations.lock().unwrap();
+            if admit_read {
+                let output = result.unwrap();
+                assert_eq!(output["results"][0]["ok"], true);
+                assert_eq!(output["results"][1]["ok"], false);
+                assert_eq!(calls.len(), 1);
+                assert_eq!(calls[0].1["root"], "/workspace");
+                assert!(calls[0].1.get("intent").is_none());
+            } else {
+                assert!(result.is_err());
+                assert!(calls.is_empty());
+            }
+        }
     }
 
     #[tokio::test]

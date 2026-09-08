@@ -1271,6 +1271,7 @@ fn ledger_bus_event(
     detail: String,
 ) {
     let record = TurnLedgerRecord {
+        inference: None,
         timestamp: Utc::now(),
         stream_turn_id,
         kind,

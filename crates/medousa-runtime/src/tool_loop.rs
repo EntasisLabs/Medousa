@@ -375,6 +375,7 @@ impl MedousaToolLoopPipeline {
             &[],
         );
 
+        let mut previous_request = None;
         if !tools.is_empty() {
             while rounds_executed < effective_max_tool_rounds {
                 rounds_executed += 1;
@@ -441,6 +442,18 @@ impl MedousaToolLoopPipeline {
                     turn_ctx.build_model_messages(shared_inputs.system_prompt.as_deref());
                 ensure_assistant_tool_turn_reasoning(&mut messages);
                 let chat_request = ChatRequest::new(messages).with_tools(tools.clone());
+                let footprint = crate::inference_usage::RequestFootprint::new(
+                    &chat_request,
+                    shared_inputs.context.model_hint.clone(),
+                    shared_inputs.context.reasoning_effort.clone(),
+                );
+                let mut observation = crate::inference_usage::InferenceObservation::start(
+                    completion_gate.as_deref(),
+                    rounds_executed,
+                    footprint.clone(),
+                    previous_request.as_ref(),
+                );
+                previous_request = Some(footprint);
                 let response = match chunk_tx {
                     Some(tx) => {
                         match await_turn_result(
@@ -450,12 +463,14 @@ impl MedousaToolLoopPipeline {
                                 chat_request.clone(),
                                 shared_inputs.context_clone(),
                                 Some(tx),
+                                &mut observation,
                             ),
                         )
                         .await?
                         {
                             ChatCompletionOutcome::Ok(response) => *response,
                             ChatCompletionOutcome::MalformedToolJson => {
+                                drop(observation);
                                 complete_model_response(
                                     completion_gate.as_deref(),
                                     rounds_executed,
@@ -487,12 +502,14 @@ impl MedousaToolLoopPipeline {
                                 &self.prompt_pipeline,
                                 chat_request.clone(),
                                 shared_inputs.context_clone(),
+                                &mut observation,
                             ),
                         )
                         .await?
                         {
                             ChatCompletionOutcome::Ok(response) => *response,
                             ChatCompletionOutcome::MalformedToolJson => {
+                                drop(observation);
                                 complete_model_response(
                                     completion_gate.as_deref(),
                                     rounds_executed,
@@ -518,6 +535,7 @@ impl MedousaToolLoopPipeline {
                         }
                     }
                 };
+                drop(observation);
                 let maybe_text = response
                     .first_text()
                     .map(|value| value.trim().to_string())
@@ -1221,6 +1239,7 @@ impl MedousaToolLoopPipeline {
                         persist_gate_ledger(
                             gate,
                             &TurnLedgerRecord {
+                                inference: None,
                                 timestamp: chrono::Utc::now(),
                                 stream_turn_id: gate.stream_turn_id,
                                 kind: TurnLedgerEventKind::WorkDelegated,
@@ -1276,6 +1295,7 @@ impl MedousaToolLoopPipeline {
                         persist_gate_ledger(
                             gate,
                             &TurnLedgerRecord {
+                                inference: None,
                                 timestamp: chrono::Utc::now(),
                                 stream_turn_id: gate.stream_turn_id,
                                 kind: TurnLedgerEventKind::WorkDelegated,
@@ -2025,13 +2045,21 @@ async fn complete_chat_once(
     pipeline: &PromptExecutionPipeline,
     request: ChatRequest,
     context: PromptExecutionContext,
+    observation: &mut crate::inference_usage::InferenceObservation,
 ) -> Result<ChatCompletionOutcome> {
     match pipeline.complete_chat(request, context).await {
-        Ok(completion) => Ok(ChatCompletionOutcome::Ok(Box::new(completion.response))),
+        Ok(completion) => {
+            observation.complete(&completion.response);
+            Ok(ChatCompletionOutcome::Ok(Box::new(completion.response)))
+        }
         Err(err) if is_serde_json_completion_error(&err) => {
+            observation.failed(true);
             Ok(ChatCompletionOutcome::MalformedToolJson)
         }
-        Err(err) => Err(err),
+        Err(err) => {
+            observation.failed(false);
+            Err(err)
+        }
     }
 }
 
@@ -2040,16 +2068,24 @@ async fn complete_chat_stream_once(
     request: ChatRequest,
     context: PromptExecutionContext,
     chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
+    observation: &mut crate::inference_usage::InferenceObservation,
 ) -> Result<ChatCompletionOutcome> {
     match pipeline
         .complete_chat_stream(request, context, chunk_tx)
         .await
     {
-        Ok(completion) => Ok(ChatCompletionOutcome::Ok(Box::new(completion.response))),
+        Ok(completion) => {
+            observation.complete(&completion.response);
+            Ok(ChatCompletionOutcome::Ok(Box::new(completion.response)))
+        }
         Err(err) if is_serde_json_completion_error(&err) => {
+            observation.failed(true);
             Ok(ChatCompletionOutcome::MalformedToolJson)
         }
-        Err(err) => Err(err),
+        Err(err) => {
+            observation.failed(false);
+            Err(err)
+        }
     }
 }
 

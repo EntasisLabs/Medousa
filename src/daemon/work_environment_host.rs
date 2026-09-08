@@ -2338,6 +2338,7 @@ mod tests {
         let write = crate::work_environment_tools::code_write(
             &invocation,
             crate::work_environment_tools::EnvironmentCodeWriteRequest {
+                edits: None,
                 path: "src/phase3.txt".into(),
                 expected_sha256: "missing".into(),
                 content: Some("written by the catalog adapter\n".into()),

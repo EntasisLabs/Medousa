@@ -307,6 +307,10 @@ pub struct ArtifactsDelete {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CodeWrite {
+    /// Batch of 1–128 nonoverlapping exact replacements against the original digest. Exclusive with content/find/replace.
+    #[serde(default)]
+    #[schemars(length(min = 1, max = 128))]
+    edits: Option<Vec<crate::code_edits::CodeEdit>>,
     /// Path relative to root
     path: String,
     /// Hash from read, or missing for a new file
@@ -508,7 +512,7 @@ impl CognitionStoreReadTool {
 
 #[medousa_tool(id = STORE_WRITE_ID)]
 impl CognitionStoreWriteTool {
-    /// Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. action is a typed name (vault.write, artifacts.write, …). Fetch fields with cognition_schema types=[...].
+    /// Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. code.write accepts edits for multiple replacements against one digest. Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(
         &self,
         action: StoreWriteAction,
@@ -840,6 +844,7 @@ impl CodeWrite {
                 crate::work_environment_tools::EnvironmentCodeWriteRequest {
                     path: self.path,
                     expected_sha256: self.expected_sha256,
+                    edits: self.edits,
                     content: self.content,
                     find: self.find,
                     replace: self.replace,
@@ -859,6 +864,7 @@ impl CodeWrite {
             find: CompatOption::from(self.find),
             replace: CompatOption::from(self.replace),
             expected_sha256: self.expected_sha256,
+            edits: self.edits,
         })
         .await
     }
@@ -937,5 +943,26 @@ mod tests {
             );
             assert_eq!(schema["additionalProperties"], true);
         }
+    }
+
+    #[test]
+    fn code_write_schema_and_dispatch_expose_bounded_batch_edits() {
+        let schema = serde_json::to_value(schemars::schema_for!(CodeWrite)).unwrap();
+        assert_eq!(schema["properties"]["edits"]["maxItems"], 128);
+        let input: StoreWriteAction = serde_json::from_value(json!({
+            "action": "code.write", "path": "src/lib.rs", "expected_sha256": "sha256:observed",
+            "edits": [{"find": "before", "replace": "after"}]
+        }))
+        .unwrap();
+        let StoreWriteAction::CodeWrite(input) = input else {
+            panic!("code.write dispatch");
+        };
+        assert_eq!(input.edits.unwrap()[0].replace, "after");
+        assert!(
+            serde_json::from_value::<crate::code_edits::CodeEdit>(json!({
+                "find": "before", "replace": "after", "unknown": true
+            }))
+            .is_err()
+        );
     }
 }

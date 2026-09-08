@@ -37,6 +37,7 @@ pub mod coder_experiments;
 pub mod coder_memory;
 pub mod coder_mode;
 pub mod coder_pointers;
+pub mod coder_read_batch;
 pub mod coder_semantic_actions;
 pub mod coder_setup_tools;
 pub mod coder_tools;

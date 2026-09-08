@@ -183,7 +183,7 @@
             "description": "Optional semantic preconditions checked immediately before the action"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -234,7 +234,7 @@
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -271,7 +271,7 @@
             "type": "boolean"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -329,7 +329,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           }
@@ -360,7 +360,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           }
@@ -395,7 +395,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           }
@@ -419,7 +419,7 @@
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -458,7 +458,7 @@
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -500,7 +500,7 @@
             "type": "integer"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -536,7 +536,7 @@
             "type": "integer"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -572,7 +572,7 @@
             "type": "integer"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -608,7 +608,7 @@
             "type": "integer"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -640,7 +640,7 @@
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -692,7 +692,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -732,7 +732,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           }
@@ -755,7 +755,7 @@
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -802,7 +802,7 @@
             "uniqueItems": true
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           }
@@ -836,7 +836,7 @@
             "type": "array"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -933,7 +933,7 @@
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -960,7 +960,7 @@
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1008,6 +1008,119 @@
     },
     {
       "registry": "coder_bound",
+      "name": "cognition_coder_read_batch",
+      "description": "Read/search the workspace with one shared intent: 1-4 independent operations. Results are indexed; oversized items require a narrower read. No writes or dependent operations.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "intent": {
+            "description": "Purpose, usually 4-8 words.",
+            "maxLength": 320,
+            "type": "string"
+          },
+          "operations": {
+            "description": "Independent reads/searches with known arguments; results use zero-based indexes.",
+            "items": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "action": {
+                      "enum": [
+                        "code.read"
+                      ],
+                      "type": "string"
+                    },
+                    "byte_end": {
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "byte_start": {
+                      "format": "uint64",
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "line_end": {
+                      "format": "uint",
+                      "minimum": 1,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "line_start": {
+                      "format": "uint",
+                      "minimum": 1,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "path": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "action",
+                    "path"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "action": {
+                      "enum": [
+                        "code.search"
+                      ],
+                      "type": "string"
+                    },
+                    "max_results": {
+                      "format": "uint64",
+                      "maximum": 100,
+                      "minimum": 1,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "query": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "action",
+                    "query"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "intent",
+          "operations"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": false,
+      "placements": [
+        "coder:initial"
+      ]
+    },
+    {
+      "registry": "coder_bound",
       "name": "cognition_coder_shell_run",
       "description": "Run a one-shot shell command in the active Coder worktree. For interactive commands, use cognition_shell_session_*.",
       "input_schema": {
@@ -1020,7 +1133,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1063,7 +1176,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1106,7 +1219,7 @@
             "type": "integer"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1163,7 +1276,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           }
@@ -1186,7 +1299,7 @@
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1217,7 +1330,7 @@
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1256,7 +1369,7 @@
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1308,7 +1421,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1346,7 +1459,7 @@
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1382,7 +1495,7 @@
             "type": "boolean"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1415,7 +1528,7 @@
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1441,7 +1554,7 @@
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1477,7 +1590,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           }
@@ -1508,7 +1621,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           }
@@ -1540,7 +1653,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           }
@@ -1576,7 +1689,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           }
@@ -1615,7 +1728,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           }
@@ -1651,7 +1764,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           }
@@ -1688,7 +1801,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1790,7 +1903,7 @@
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1828,7 +1941,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1882,7 +1995,7 @@
             "type": "boolean"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -1933,7 +2046,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           }
@@ -1953,7 +2066,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_store_write",
-      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. action is a typed name (vault.write, artifacts.write, …). Fetch fields with cognition_schema types=[...].",
+      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. code.write accepts edits for multiple replacements against one digest. Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
@@ -1970,7 +2083,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           }
@@ -2007,7 +2120,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           }
@@ -2030,7 +2143,7 @@
       "input_schema": {
         "properties": {
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           },
@@ -2095,7 +2208,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           }
@@ -2126,7 +2239,7 @@
             "type": "string"
           },
           "intent": {
-            "description": "Short purpose of this tool call.",
+            "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
             "type": "string"
           }
@@ -4966,7 +5079,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_store_write",
-      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. action is a typed name (vault.write, artifacts.write, …). Fetch fields with cognition_schema types=[...].",
+      "description": "Create, update, delete, or move vault notes, HTML artifacts, code, or saved Grapheme scripts. code.write accepts edits for multiple replacements against one digest. Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {

@@ -11,6 +11,7 @@ pub mod completion_fsm;
 pub mod credentialed_ai;
 pub mod execution_boundary;
 pub mod execution_policy;
+pub mod inference_usage;
 pub mod loop_gate;
 pub mod loop_state;
 pub mod perception;

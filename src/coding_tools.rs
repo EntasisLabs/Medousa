@@ -1168,6 +1168,8 @@ fn search_dir(
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub(crate) struct CodeApplyPatchInput {
+    #[serde(default)]
+    pub(crate) edits: Option<Vec<crate::code_edits::CodeEdit>>,
     pub(crate) path: String,
     #[serde(default)]
     #[schemars(
@@ -1205,16 +1207,74 @@ pub(crate) struct CodeApplyPatchInput {
 enum CodeApplyMode {
     Write,
     Patch,
+    Batch,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
 struct CodeApplyPatchOutput {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    applied_edits: Option<usize>,
     ok: bool,
     mode: CodeApplyMode,
     path: String,
     root: String,
     bytes: usize,
     digest: String,
+}
+
+/// Remove staged bytes if the caller is cancelled before publication.
+struct BatchStagingFile(Option<PathBuf>);
+
+impl Drop for BatchStagingFile {
+    fn drop(&mut self) {
+        if let Some(path) = self.0.take()
+            && let Ok(runtime) = tokio::runtime::Handle::try_current()
+        {
+            runtime.spawn(async move {
+                let _ = tokio::fs::remove_file(path).await;
+            });
+        }
+    }
+}
+
+/// Stage and publish one complete replacement, preserving file permissions.
+async fn atomic_batch_write(path: &Path, original: &[u8], next: &str) -> StasisResult<()> {
+    use tokio::io::AsyncWriteExt;
+    // Concurrent native batch commits cannot publish against the same revision.
+    static COMMITS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _commit = COMMITS.lock().await;
+    let temp = path.with_file_name(format!(".medousa-edit-{}", uuid::Uuid::new_v4()));
+    let mut staging = BatchStagingFile(None);
+    let result: std::io::Result<()> = async {
+        let metadata = tokio::fs::symlink_metadata(path).await?;
+        if !metadata.file_type().is_file() {
+            return Err(std::io::Error::other(
+                "batch edit target must remain a regular file",
+            ));
+        }
+        let mut file = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)
+            .await?;
+        staging.0 = Some(temp.clone());
+        file.set_permissions(metadata.permissions()).await?;
+        file.write_all(next.as_bytes()).await?;
+        file.sync_all().await?;
+        drop(file);
+        if tokio::fs::read(path).await? != original {
+            return Err(std::io::Error::other(
+                "file changed during batch edit; read the current revision before retrying",
+            ));
+        }
+        tokio::fs::rename(&temp, path).await
+    }
+    .await;
+    if result.is_err() && staging.0.is_some() {
+        let _ = tokio::fs::remove_file(&temp).await;
+    }
+    staging.0 = None;
+    result.map_err(|error| StasisError::PortFailure(format!("batch edit commit failed: {error}")))
 }
 
 #[medousa_tool(id = COGNITION_CODE_APPLY_PATCH_ID)]
@@ -1228,6 +1288,13 @@ impl CognitionCodeApplyPatchTool {
         let content = input.content.into_option();
         let find = input.find.into_option();
         let replace = input.replace.into_option();
+        crate::code_edits::validate_edit_mode(
+            input.edits.as_deref(),
+            content.as_deref(),
+            find.as_deref(),
+            replace.as_deref(),
+        )
+        .map_err(StasisError::PortFailure)?;
         let (root, path) = root_and_path(&input.path, requested_root.as_deref())?;
         let expected_digest = input.expected_sha256.trim();
         if expected_digest.is_empty() {
@@ -1236,6 +1303,25 @@ impl CognitionCodeApplyPatchTool {
             ));
         }
         let existing = verify_expected_digest(&path, expected_digest)?;
+        if let Some(edits) = input.edits {
+            let existing = existing.ok_or_else(|| {
+                StasisError::PortFailure("cannot batch edit a missing file".into())
+            })?;
+            let original = std::str::from_utf8(&existing)
+                .map_err(|_| StasisError::PortFailure("patch target is not UTF-8 text".into()))?;
+            let next = crate::code_edits::apply_edits(original, &edits, MAX_CODE_WRITE_BYTES)
+                .map_err(StasisError::PortFailure)?;
+            atomic_batch_write(&path, &existing, &next).await?;
+            return Ok(CodeApplyPatchOutput {
+                ok: true,
+                mode: CodeApplyMode::Batch,
+                applied_edits: Some(edits.len()),
+                path: path.display().to_string(),
+                root: root.display().to_string(),
+                bytes: next.len(),
+                digest: content_digest(next.as_bytes()),
+            });
+        }
         if let Some(content) = content {
             if content.len() > MAX_CODE_WRITE_BYTES {
                 return Err(StasisError::PortFailure(format!(
@@ -1253,6 +1339,7 @@ impl CognitionCodeApplyPatchTool {
             return Ok(CodeApplyPatchOutput {
                 ok: true,
                 mode: CodeApplyMode::Write,
+                applied_edits: None,
                 path: path.display().to_string(),
                 root: root.display().to_string(),
                 bytes: content.len(),
@@ -1289,6 +1376,7 @@ impl CognitionCodeApplyPatchTool {
         Ok(CodeApplyPatchOutput {
             ok: true,
             mode: CodeApplyMode::Patch,
+            applied_edits: None,
             path: path.display().to_string(),
             root: root.display().to_string(),
             bytes: next.len(),
@@ -2055,6 +2143,110 @@ pub fn register_coding_tools(
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn batch_tool_rejects_invalid_last_hunk_and_stale_replay_without_writing() {
+        let dir = tempfile::tempdir().unwrap();
+        crate::grapheme_script::store::set_test_grapheme_script_root_override(Some(
+            dir.path().to_path_buf(),
+        ));
+        struct ResetRoot;
+        impl Drop for ResetRoot {
+            fn drop(&mut self) {
+                crate::grapheme_script::store::set_test_grapheme_script_root_override(None);
+            }
+        }
+        let _reset = ResetRoot;
+        let path = dir.path().join("source.rs");
+        let original = "first\nsecond\n";
+        std::fs::write(&path, original).unwrap();
+        let digest = super::content_digest(original.as_bytes());
+        let input = |second: &str| {
+            serde_json::from_value::<super::CodeApplyPatchInput>(serde_json::json!({
+            "path": "source.rs", "expected_sha256": digest,
+            "edits": [{"find": "first", "replace": "FIRST"}, {"find": second, "replace": "SECOND"}]
+        })).unwrap()
+        };
+        assert!(
+            super::invoke_code_apply_patch(input("absent"))
+                .await
+                .is_err()
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+        let output = super::invoke_code_apply_patch(input("second"))
+            .await
+            .unwrap();
+        assert_eq!(output["mode"], "batch");
+        assert_eq!(output["applied_edits"], 2);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "FIRST\nSECOND\n");
+        assert!(
+            super::invoke_code_apply_patch(input("second"))
+                .await
+                .is_err()
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "FIRST\nSECOND\n");
+    }
+
+    #[tokio::test]
+    async fn batch_commit_preserves_contents_on_stale_revision_and_cleans_staging() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("code.rs");
+        std::fs::write(&path, "newer revision").unwrap();
+        assert!(
+            super::atomic_batch_write(&path, b"old revision", "replacement")
+                .await
+                .is_err()
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "newer revision");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        super::atomic_batch_write(&path, b"newer revision", "α\r\nnew\r\n")
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "α\r\nnew\r\n");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[tokio::test]
+    async fn concurrent_batch_commits_have_one_revision_winner() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("source");
+        std::fs::write(&path, "original").unwrap();
+        let (a, b) = tokio::join!(
+            super::atomic_batch_write(&path, b"original", "first"),
+            super::atomic_batch_write(&path, b"original", "second"),
+        );
+        assert_ne!(a.is_ok(), b.is_ok());
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            if a.is_ok() { "first" } else { "second" }
+        );
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn batch_commit_preserves_executable_mode_and_rejects_symlinks() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("script");
+        std::fs::write(&path, "original").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o751)).unwrap();
+        super::atomic_batch_write(&path, b"original", "updated")
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o751
+        );
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&path, &link).unwrap();
+        assert!(
+            super::atomic_batch_write(&link, b"updated", "bad")
+                .await
+                .is_err()
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "updated");
+    }
+
     use super::*;
 
     #[test]

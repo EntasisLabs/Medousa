@@ -45,6 +45,7 @@ const MAX_ENVIRONMENT_COMMAND_OUTPUT_BYTES: u64 = 1024 * 1024;
 pub const PORTABLE_CODER_TOOL_NAMES: &[&str] = &[
     "cognition_turn",
     "cognition_store_read",
+    "cognition_coder_read_batch",
     "cognition_store_write",
     "cognition_coder_shell_run",
     "cognition_coder_shell_status",

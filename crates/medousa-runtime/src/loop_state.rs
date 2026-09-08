@@ -46,6 +46,7 @@ pub fn append_tool_loop_policy(prompt: &str, max_tool_rounds: usize) -> String {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TurnLedgerEventKind {
+    Inference,
     ToolRound,
     TextOnlyContinue,
     GatekeeperContinue,
@@ -59,6 +60,8 @@ pub enum TurnLedgerEventKind {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TurnLedgerRecord {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inference: Option<crate::inference_usage::InferenceUsage>,
     pub timestamp: DateTime<Utc>,
     pub stream_turn_id: u64,
     pub kind: TurnLedgerEventKind,
@@ -206,6 +209,7 @@ pub fn record_fsm_continue(
     scratch: &TurnScratchpad,
 ) -> TurnLedgerRecord {
     TurnLedgerRecord {
+        inference: None,
         timestamp: Utc::now(),
         stream_turn_id,
         kind: TurnLedgerEventKind::TextOnlyContinue,
@@ -227,6 +231,7 @@ pub fn record_tool_round(
     scratch: &TurnScratchpad,
 ) -> TurnLedgerRecord {
     TurnLedgerRecord {
+        inference: None,
         timestamp: Utc::now(),
         stream_turn_id,
         kind: TurnLedgerEventKind::ToolRound,
@@ -248,6 +253,7 @@ pub fn record_finalized(
     tools_invoked: &[String],
 ) -> TurnLedgerRecord {
     TurnLedgerRecord {
+        inference: None,
         timestamp: Utc::now(),
         stream_turn_id,
         kind: TurnLedgerEventKind::Finalized,
@@ -269,6 +275,7 @@ pub fn record_stuck(
     text_only_limit: usize,
 ) -> TurnLedgerRecord {
     TurnLedgerRecord {
+        inference: None,
         timestamp: Utc::now(),
         stream_turn_id,
         kind: TurnLedgerEventKind::Stuck,
