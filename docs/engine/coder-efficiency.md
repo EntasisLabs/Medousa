@@ -231,3 +231,50 @@ governor. Progress guidance calls for new findings, blockers, or changed plans,
 so acknowledgments are not required on every tool round. Identical consecutive
 progress messages are delivered once within a loop; comparison uses the complete
 text so an update with new findings after the same opening is still delivered.
+
+
+## Runtime snapshots and delta reads
+
+Each native Coder user turn starts with a bounded shared-engineering snapshot
+containing an activity `epoch` and `revision`, alongside its repository and memory
+entry context. Native Coder peers use the same protocol. During the tool loop,
+one small system pointer replaces its predecessor at the transcript tail immediately
+before inference, including resumed and text-only rounds. It
+contains the latest and oldest retained revisions, latest peer/blocked revisions,
+and bounded overlap targets. It never acknowledges events or adds another full
+repository/activity frame. Tool receipts and the initial snapshot stay intact.
+
+Use `cognition_coder_context_read` only when announced changes matter:
+
+```json
+{
+  "intent": "Inspect peer changes before integration",
+  "mode": "delta",
+  "epoch": "<epoch from snapshot>",
+  "since_revision": 42,
+  "limit": 16
+}
+```
+
+Deltas read oldest-first. Continue from `next_since_revision`, preserving the
+returned `through_revision` and any `agent_id`, `target` (substring), or `kind`
+filters. Events arriving after that boundary belong to a later read. Cursors are
+explicit and replayable; reads and other agents' snapshots do not mutate them.
+A filtered cursor describes only that filter, not all activity. Pages contain at
+most 16 events and 24 KiB of event payload; oversized individual events carry an
+engineering pointer for focused retrieval. An empty matching page still advances
+through the scanned range.
+
+The store retains 400 events per undertaking. A retention gap, changed epoch, or
+revision discontinuity returns `snapshot_required`; it never silently skips the
+missing range. Call the same tool with only `mode: "snapshot"` and `intent` to
+establish a fresh bounded snapshot and repository observation. The next user turn
+also gets a new entry snapshot. Within a turn, ordinary receipts already describe
+the agent's own work: routine polling and pointer acknowledgments are unnecessary.
+Checkpoint resumes preserve the transcript marker and explicit cursors.
+
+Conflict notices remain in tool admission receipts and the compact pointer;
+lease/workspace checks and cancellation gates still enforce authority independently
+of model reads. The activity revision tracks governed engineering events, not
+arbitrary out-of-band filesystem changes. Request a snapshot or focused file read
+when those changes matter; digest preconditions still protect mutations.

@@ -38,6 +38,7 @@ pub const COGNITION_CODER_TOOLS_DISCOVER: &str = "cognition_coder_tools_discover
 pub const COGNITION_ENGINEERING_POINTERS: &str = "cognition_engineering_pointers";
 pub const COGNITION_ENGINEERING_POINTER_FOLLOW: &str = "cognition_engineering_pointer_follow";
 pub const COGNITION_ENGINEERING_HISTORY: &str = "cognition_engineering_history";
+pub const COGNITION_CODER_CONTEXT_READ: &str = "cognition_coder_context_read";
 pub const COGNITION_CODER_EVIDENCE_READ: &str = "cognition_coder_evidence_read";
 
 const COGNITION_ENGINEERING_POINTERS_ID: ToolId = ToolId::new(COGNITION_ENGINEERING_POINTERS);
@@ -152,6 +153,7 @@ const CODER_RUNTIME_TOOLS: &[&str] = &[
     COGNITION_ENGINEERING_POINTER_FOLLOW,
     COGNITION_ENGINEERING_HISTORY,
     COGNITION_CODER_EVIDENCE_READ,
+    COGNITION_CODER_CONTEXT_READ,
 ];
 
 const CODER_MEMORY_IO_TIMEOUT: Duration = Duration::from_secs(2);
@@ -1055,14 +1057,6 @@ impl CoderTurnLease {
         ))
     }
 
-    fn engineering_delta(&self) -> Result<Option<super::coder_activity::CoderEngineeringDelta>> {
-        self.activity
-            .observe_delta(&self.lease.work_id.to_string(), &self.identity.agent_id)
-            .map_err(|err| {
-                StasisError::PortFailure(format!("cannot observe Coder engineering delta: {err}"))
-            })
-    }
-
     fn begin_tool_activity(
         &self,
         tool_name: &str,
@@ -1150,9 +1144,24 @@ impl Drop for ClaimHeartbeatGuard {
 impl super::turn_context::ToolRoundContextProvider for CoderBoundToolRegistry {
     fn context_for_next_round(&self) -> Result<Option<String>> {
         let authority = self.authority()?;
-        let Some(delta) = authority.engineering_delta()? else {
-            return Ok(None);
-        };
+        // Invocation admission and the loop cancellation gate remain authoritative.
+        let pointer = authority
+            .activity
+            .context_pointer(&self.entry.work_id, &authority.identity.agent_id)
+            .map_err(StasisError::PortFailure)?;
+        Ok(Some(format!("Coder runtime context: {pointer}")))
+    }
+
+    fn replaces_previous_context(&self) -> bool {
+        true
+    }
+}
+
+impl CoderBoundToolRegistry {
+    /// Repository observations are paid for at entry or explicit refresh, never
+    /// regenerated into every tool round's transcript.
+    fn repository_observation(&self) -> Result<Value> {
+        let authority = self.authority()?;
         let pointers = self.ranked_pointers(super::coder_pointers::MAX_AMBIENT_POINTERS)?;
         let item = authority
             .forge
@@ -1184,7 +1193,7 @@ impl super::turn_context::ToolRoundContextProvider for CoderBoundToolRegistry {
             .git()
             .head_oid(&self.entry.worktree)
             .map_err(|err| StasisError::PortFailure(format!("cannot refresh Coder HEAD: {err}")))?;
-        let repository_observation = json!({
+        Ok(json!({
             "head_oid": head_oid.to_string(),
             "baseline_oid": self.entry.baseline_oid,
             "branch": self.entry.branch,
@@ -1202,13 +1211,7 @@ impl super::turn_context::ToolRoundContextProvider for CoderBoundToolRegistry {
                 "discover": COGNITION_CODER_TOOLS_DISCOVER,
             },
             "trust": "forge_and_worktree_observation",
-        });
-        Ok(Some(
-            super::coder_activity::engineering_delta_prompt_appendix(
-                &delta,
-                repository_observation,
-            ),
-        ))
+        }))
     }
 }
 
@@ -1522,6 +1525,49 @@ impl CoderBoundToolRegistry {
                 )
                 .map_err(StasisError::PortFailure)?;
                 Ok(json!({ "ok": true, "pointer": detail }))
+            }
+            COGNITION_CODER_CONTEXT_READ => {
+                let authority = self.authority()?;
+                let mut query = input.clone();
+                let fields = query.as_object_mut().ok_or_else(|| {
+                    StasisError::PortFailure("context input must be an object".into())
+                })?;
+                // Strict-schema providers can emit null for every unused optional.
+                fields.retain(|_, value| !value.is_null());
+                let mode = fields.remove("mode").unwrap_or_else(|| json!("delta"));
+                match mode.as_str() {
+                    Some("snapshot") => {
+                        if !query.as_object().is_some_and(|value| value.is_empty()) {
+                            return Err(StasisError::PortFailure(
+                                "snapshot accepts only mode (and intent)".into(),
+                            ));
+                        }
+                        let repository = self.repository_observation()?;
+                        let snapshot = authority
+                            .activity
+                            .observe_initial(&self.entry.work_id, &authority.identity.agent_id)
+                            .map_err(StasisError::PortFailure)?;
+                        Ok(
+                            json!({"ok": true, "status": "snapshot", "snapshot": snapshot,
+                            "repository_observation": repository}),
+                        )
+                    }
+                    Some("delta") => {
+                        let query: super::coder_activity::CoderDeltaQuery =
+                            serde_json::from_value(query).map_err(|err| {
+                                StasisError::PortFailure(format!(
+                                    "invalid context delta query: {err}"
+                                ))
+                            })?;
+                        authority
+                            .activity
+                            .read_delta(&self.entry.work_id, &query)
+                            .map_err(StasisError::PortFailure)
+                    }
+                    _ => Err(StasisError::PortFailure(
+                        "context mode must be delta or snapshot".into(),
+                    )),
+                }
             }
             COGNITION_ENGINEERING_HISTORY => {
                 let query = super::coder_pointers::CoderHistoryQuery {
@@ -2661,7 +2707,9 @@ impl ToolRegistry for CoderBoundToolRegistry {
             .get("worker_profile")
             .filter(|value| !value.is_null())
             .map(|value| {
-                let profile = value.as_str().ok_or_else(|| StasisError::PortFailure("worker_profile must be a string".into()))?;
+                let profile = value.as_str().ok_or_else(|| {
+                    StasisError::PortFailure("worker_profile must be a string".into())
+                })?;
                 crate::agent_runtime::turn_worker::TurnWorkerIntent::parse(profile).ok_or_else(
                     || StasisError::PortFailure(format!("unknown worker_profile: {profile}")),
                 )
@@ -2906,6 +2954,23 @@ fn coder_runtime_tool_definitions() -> Vec<Tool> {
                     "limit": { "type": "integer", "minimum": 1, "maximum": 50 }
                 }
             })),
+        Tool::new(COGNITION_CODER_CONTEXT_READ)
+            .with_description(
+                "Read runtime deltas only when relevant changes need detail. Delta requires epoch and since_revision; page with next_since_revision, fixed through_revision and unchanged filters. Snapshot refreshes full bounded context after gaps or when needed. Own receipts need no delta polling.",
+            )
+            .with_schema(json!({
+                "type": "object",
+                "properties": {
+                    "mode": { "type": "string", "enum": ["delta", "snapshot"] },
+                    "epoch": { "type": "string" },
+                    "since_revision": { "type": "integer", "minimum": 0 },
+                    "through_revision": { "type": "integer", "minimum": 0 },
+                    "agent_id": { "type": "string" },
+                    "target": { "type": "string", "description": "Target substring filter; this cursor covers only matching events." },
+                    "kind": { "type": "string", "enum": ["agent_joined", "tool_planned", "tool_blocked", "tool_completed", "tool_failed", "agent_left"] },
+                    "limit": { "type": "integer", "minimum": 1, "maximum": 16 }
+                }
+            })),
         Tool::new(COGNITION_CODER_EVIDENCE_READ)
             .with_description(
                 "Read one bounded byte range from a redacted ephemeral evidence receipt scoped to this undertaking.",
@@ -3099,6 +3164,7 @@ fn coder_initial_tool_ids() -> HashSet<ToolId> {
                 COGNITION_ENGINEERING_POINTERS,
                 COGNITION_ENGINEERING_POINTER_FOLLOW,
                 COGNITION_CODER_EVIDENCE_READ,
+                COGNITION_CODER_CONTEXT_READ,
                 super::coder_read_batch::TOOL_NAME,
             ]
             .iter(),
@@ -4847,12 +4913,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn round_context_reports_unseen_activity_and_fresh_repository_state_once() {
+    async fn round_context_is_small_repeatable_and_full_state_is_retrievable() {
+        use super::super::turn_context::ToolRoundContextProvider;
         let fixture = fixture();
         let authority = authority(&fixture);
-        authority
-            .shared_space_prompt_appendix()
-            .expect("initial observation");
+        let initial = authority
+            .activity
+            .observe_initial(&fixture.entry.work_id, &authority.identity.agent_id)
+            .unwrap();
         let registry = CoderBoundToolRegistry::new(
             Arc::new(RecordingRegistry::default()),
             &authority,
@@ -4870,29 +4938,64 @@ mod tests {
                 }),
             )
             .await
-            .expect("read");
+            .unwrap();
         std::fs::write(
             fixture.entry.worktree.join("src/lib.rs"),
             "pub fn demo() { println!(\"changed\"); }\n",
         )
-        .expect("external worktree change");
-
-        let context =
-            super::super::turn_context::ToolRoundContextProvider::context_for_next_round(&registry)
-                .expect("round context")
-                .expect("new delta");
-        assert!(context.contains("engineering_delta(.99)"));
-        assert!(context.contains("Inspect the implementation before changing it"));
-        assert!(context.contains("\"dirty\":true"));
-        assert!(context.contains("src/lib.rs"));
-        assert!(context.contains("engineering:call:"));
-        assert!(context.contains(COGNITION_ENGINEERING_POINTER_FOLLOW));
-        super::super::sttp::validate_canonical_sttp_node(&context).expect("canonical delta STTP");
-
+        .unwrap();
+        let context = registry.context_for_next_round().unwrap().unwrap();
+        assert!(context.len() < 1024);
+        assert!(context.contains("latest_revision"));
+        assert!(!context.contains("Inspect the implementation"));
+        assert!(!context.contains("repository_observation"));
+        assert_eq!(registry.context_for_next_round().unwrap().unwrap(), context);
+        assert!(registry.replaces_previous_context());
+        let query = json!({"intent": "Inspect relevant runtime changes", "epoch": initial.epoch, "since_revision": initial.revision});
+        let delta = registry
+            .invoke_tool(COGNITION_CODER_CONTEXT_READ, query)
+            .await
+            .unwrap();
+        assert_eq!(delta["status"], "delta");
         assert!(
-            super::super::turn_context::ToolRoundContextProvider::context_for_next_round(&registry)
-                .expect("second context")
-                .is_none()
+            delta["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|event| event["intent"] == "Inspect the implementation before changing it")
+        );
+        let snapshot = registry
+            .invoke_tool(
+                COGNITION_CODER_CONTEXT_READ,
+                json!({"intent": "Refresh repository after external changes", "mode": "snapshot", "epoch": null, "since_revision": null, "limit": null}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(snapshot["status"], "snapshot");
+        assert_eq!(snapshot["repository_observation"]["dirty"], true);
+        assert!(
+            snapshot["repository_observation"]["changed_paths"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("src/lib.rs"))
+        );
+        assert!(snapshot["snapshot"]["revision"].as_u64().unwrap() > initial.revision);
+        assert!(
+            registry
+                .list_tools()
+                .await
+                .unwrap()
+                .iter()
+                .any(|tool| tool.name.as_str() == COGNITION_CODER_CONTEXT_READ)
+        );
+        assert!(
+            registry
+                .invoke_tool(
+                    COGNITION_CODER_CONTEXT_READ,
+                    json!({"intent": "Read context", "since_revision": 0})
+                )
+                .await
+                .is_err()
         );
     }
 

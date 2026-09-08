@@ -127,6 +127,7 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
         | "cognition_workshop_query"
         | "cognition_store_read"
         | "cognition_coder_read_batch"
+        | "cognition_coder_context_read"
         | "cognition_runtime_query"
         | "cognition_schema"
         | "cognition_web_search" => StepExecutionClass::ReadOnly,
@@ -212,6 +213,14 @@ mod tests {
         let reads = vec![
             ("cognition_memory_query".to_string(), json!({})),
             ("cognition_store_read".to_string(), json!({})),
+            (
+                "cognition_coder_context_read".to_string(),
+                json!({"mode": "delta"}),
+            ),
+            (
+                "cognition_coder_context_read".to_string(),
+                json!({"mode": "snapshot"}),
+            ),
         ];
         assert!(parallel_tool_batch_allowed(&reads, &settings).is_ok());
 

@@ -175,11 +175,7 @@
   /** Stable principal — ignores temporary session swaps during background SSE. */
   const panelSessionId = $derived(chat.focusedSessionId);
   const panelBot = $derived(bots.forSession(panelSessionId));
-  const chatCodeProject = $derived.by(() => {
-    const active = undertakings.active;
-    if (!active?.boundChatSessionIds.includes(panelSessionId)) return null;
-    return active;
-  });
+  const chatCodeProject = $derived(undertakings.forChat(panelSessionId));
   const panelMessages = $derived(chat.messagesFor(panelSessionId));
 
   async function loadOlderMessages() {

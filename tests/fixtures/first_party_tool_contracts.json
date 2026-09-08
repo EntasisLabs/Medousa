@@ -750,6 +750,69 @@
     },
     {
       "registry": "coder_bound",
+      "name": "cognition_coder_context_read",
+      "description": "Read runtime deltas only when relevant changes need detail. Delta requires epoch and since_revision; page with next_since_revision, fixed through_revision and unchanged filters. Snapshot refreshes full bounded context after gaps or when needed. Own receipts need no delta polling.",
+      "input_schema": {
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "epoch": {
+            "type": "string"
+          },
+          "intent": {
+            "description": "Purpose, usually 4-8 words.",
+            "maxLength": 320,
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "agent_joined",
+              "agent_left",
+              "tool_blocked",
+              "tool_completed",
+              "tool_failed",
+              "tool_planned"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "maximum": 16,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "delta",
+              "snapshot"
+            ],
+            "type": "string"
+          },
+          "since_revision": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "target": {
+            "description": "Target substring filter; this cursor covers only matching events.",
+            "type": "string"
+          },
+          "through_revision": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "intent"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": false,
+      "placements": [
+        "coder:initial"
+      ]
+    },
+    {
+      "registry": "coder_bound",
       "name": "cognition_coder_evidence_read",
       "description": "Read one bounded byte range from a redacted ephemeral evidence receipt scoped to this undertaking.",
       "input_schema": {

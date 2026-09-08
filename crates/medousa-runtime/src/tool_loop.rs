@@ -52,7 +52,8 @@ use crate::ports::{
     ToolRunFinish, ToolRunStart, TurnBudgetApprovalRequest, TurnBudgetApprovalResolution,
 };
 use crate::turn_context::{
-    HostTurnContext, push_turn_scratch_message_with_budget, record_round_digest_from_invocations,
+    HostTurnContext, push_round_context, push_turn_scratch_message_with_budget,
+    record_round_digest_from_invocations,
 };
 use crate::turn_control::{
     ABSOLUTE_MAX_TOOL_ROUNDS, COGNITION_TURN, COGNITION_WORKSHOP_MUTATE,
@@ -438,6 +439,18 @@ impl MedousaToolLoopPipeline {
                     tool_rounds_remaining,
                 );
                 sync_scratch_snapshot(completion_gate.as_deref_mut(), &turn_ctx.scratchpad);
+                // Volatile pointers refresh immediately before inference, including
+                // checkpoint resumes and text-only continuations. Their predecessor
+                // is removed from the tail; durable provider events stay append-only.
+                if let Some(provider) = completion_gate
+                    .as_ref()
+                    .and_then(|gate| gate.round_context_provider.as_ref())
+                    && provider.replaces_previous_context()
+                    && let Some(context) = provider.context_for_next_round()?
+                {
+                    let context = perception_governor.observe_round_context(&context);
+                    push_round_context(&mut turn_ctx.tool_lane.messages, context, true);
+                }
                 perception_governor.compact_tool_history(&mut turn_ctx.tool_lane.messages);
                 let mut messages =
                     turn_ctx.build_model_messages(shared_inputs.system_prompt.as_deref());
@@ -903,13 +916,15 @@ impl MedousaToolLoopPipeline {
                 if let Some(provider) = completion_gate
                     .as_ref()
                     .and_then(|gate| gate.round_context_provider.as_ref())
+                    && !provider.replaces_previous_context()
                     && let Some(context) = provider.context_for_next_round()?
                 {
                     let context = perception_governor.observe_round_context(&context);
-                    turn_ctx
-                        .tool_lane
-                        .messages
-                        .push(ChatMessage::system(context));
+                    push_round_context(
+                        &mut turn_ctx.tool_lane.messages,
+                        context,
+                        provider.replaces_previous_context(),
+                    );
                 }
                 let perception_metrics = perception_governor.take_round_metrics();
                 if perception_metrics.has_governor_activity()

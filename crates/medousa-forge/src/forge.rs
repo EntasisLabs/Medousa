@@ -851,7 +851,9 @@ impl Forge {
         self.ensure_attached_checkout_available(&item.id, &worktree)?;
 
         let snapshot_ref = Self::attached_snapshot_ref(&item.id);
-        let attached_index_oid = self.git.index_tree_oid(&worktree)?;
+        let attached_index_oid = self
+            .git
+            .index_tree_oid_via_temporary_index(&worktree, &self.attached_index_path(&item.id))?;
         let initial_env = GovernedEnv {
             kind: crate::model::EnvironmentKind::AttachedCheckout,
             repo: self.git.repo_identity(&worktree)?,
@@ -1004,7 +1006,9 @@ impl Forge {
             )));
         }
         if let Some(expected_index) = environment.attached_index_oid.as_ref() {
-            let actual_index = self.git.index_tree_oid(&root)?;
+            let actual_index = self
+                .git
+                .index_tree_oid_via_temporary_index(&root, &self.attached_index_path(&item.id))?;
             if &actual_index != expected_index {
                 return Err(ForgeError::EnvironmentDrift(format!(
                     "attached checkout index changed: expected {}, found {}",
@@ -3227,6 +3231,48 @@ mod tests {
             fs::read_to_string(fx.repo.join("coder.txt")).unwrap(),
             "new from coder\n"
         );
+    }
+
+    #[test]
+    fn attached_checkout_ignores_the_principal_index_lock() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+
+        fs::write(fx.repo.join("app.txt"), "owner staged\n").unwrap();
+        fx.git.run(&fx.repo, &["add", "--", "app.txt"]).unwrap();
+        fs::write(fx.repo.join("owner.txt"), "owner untracked\n").unwrap();
+        let index_before = fx.git.index_tree_oid(&fx.repo).unwrap();
+        let index_lock = fx.repo.join(".git/index.lock");
+        fs::write(&index_lock, []).unwrap();
+
+        let item = forge
+            .register_with_workspace_mode(
+                "Help around a stale lock",
+                "continue from the principal's dirty checkout",
+                &fx.repo,
+                "main",
+                "user-1",
+                WorkspaceMode::AttachedCheckout,
+                &actor(),
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &actor()).unwrap();
+        let env = item.environment.clone().unwrap();
+
+        assert_eq!(env.attached_index_oid.as_ref(), Some(&index_before));
+        assert_eq!(forge.workspace_changed_files(&item, &env).unwrap(), vec![]);
+        let (_item, lease) = forge
+            .begin_workspace_attempt(&item.id, script_executor(), None, &actor())
+            .unwrap();
+        assert!(
+            index_lock.is_file(),
+            "Forge must not remove the principal's lock"
+        );
+
+        forge
+            .interrupt_attempt(&lease, RecoveryDisposition::RestartAllowed, &actor())
+            .unwrap();
+        fs::remove_file(index_lock).unwrap();
     }
 
     #[test]

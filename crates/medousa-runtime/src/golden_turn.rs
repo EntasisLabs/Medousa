@@ -315,6 +315,21 @@ impl super::turn_context::ToolRoundContextProvider for OneShotRoundContext {
     }
 }
 
+struct RevisionPointer(AtomicU64);
+
+impl super::turn_context::ToolRoundContextProvider for RevisionPointer {
+    fn context_for_next_round(&self) -> StasisResult<Option<String>> {
+        Ok(Some(format!(
+            "latest={}",
+            self.0.fetch_add(1, Ordering::SeqCst) + 1
+        )))
+    }
+
+    fn replaces_previous_context(&self) -> bool {
+        true
+    }
+}
+
 struct RevealingRegistry {
     revealed: AtomicBool,
 }
@@ -639,6 +654,59 @@ async fn golden_round_context_is_injected_before_the_next_inference() {
             .first_text()
             .is_some_and(|text| text.contains("[TEST_ENGINEERING_DELTA]"))
     }));
+}
+
+#[tokio::test]
+async fn golden_round_pointer_replaces_previous_without_replaying_context() {
+    let registry = InMemoryToolRegistry::default();
+    registry.register_tool(DataProbeTool).unwrap();
+    register_golden_turn_tool(&registry);
+    let client = Arc::new(ScriptedClient::new(vec![
+        tool_response(vec![tool_call("data_probe", json!({ "q": "state" }))]),
+        tool_response(vec![tool_call("data_probe", json!({ "q": "more" }))]),
+        tool_response(vec![finish_call("Done after observing the delta.")]),
+    ]));
+    let pipeline = MedousaToolLoopPipeline::new(
+        PromptExecutionPipeline::new(client.clone()),
+        Arc::new(registry),
+    );
+    let mut gate = ToolLoopCompletionGate::new_for_execution(1, RuntimePorts::new(), 4);
+    gate.round_context_provider = Some(Arc::new(RevisionPointer(AtomicU64::new(0))));
+    let request = ToolLoopExecutionRequest {
+        user_prompt: "probe then finish".to_string(),
+        system_prompt: None,
+        context: PromptExecutionContext::default(),
+        tool_name: String::new(),
+        tool_input: Value::Null,
+        tool_call_mode: ToolCallMode::Auto,
+    };
+
+    let response = with_turn_execution_boundary(
+        golden_execution_boundary(),
+        pipeline.execute_with_stream_prior_messages_max_rounds(
+            request,
+            Vec::new(),
+            None,
+            4,
+            Some(&mut gate),
+            None,
+        ),
+    )
+    .await
+    .expect("tool loop");
+    assert_eq!(response.termination_reason, "cognition_turn_finish");
+    let requests = client.requests();
+    assert_eq!(requests.len(), 3);
+    for (index, request) in requests.iter().enumerate() {
+        let pointers: Vec<_> = request
+            .messages
+            .iter()
+            .filter_map(|message| message.content.first_text())
+            .filter(|text| text.starts_with(super::turn_context::ROUND_CONTEXT_PREFIX))
+            .collect();
+        assert_eq!(pointers.len(), 1);
+        assert!(pointers[0].ends_with(&format!("latest={}", index + 1)));
+    }
 }
 
 #[tokio::test]

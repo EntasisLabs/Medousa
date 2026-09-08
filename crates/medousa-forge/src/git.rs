@@ -46,6 +46,23 @@ pub const FORGE_COMMITTER_NAME: &str = "Medousa Forge";
 pub const FORGE_COMMITTER_EMAIL: &str = "forge@medousa.local";
 static PORTABLE_BUNDLE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
+fn temporary_index_lock_path(index: &Path) -> PathBuf {
+    let mut lock = index.as_os_str().to_os_string();
+    lock.push(".lock");
+    PathBuf::from(lock)
+}
+
+fn clear_temporary_index(index: &Path) -> Result<()> {
+    for path in [index.to_path_buf(), temporary_index_lock_path(index)] {
+        match std::fs::remove_file(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(ForgeError::Io(error)),
+        }
+    }
+    Ok(())
+}
+
 /// Identity attributed as the *author* of a checkpoint commit.
 #[derive(Debug, Clone)]
 pub struct CheckpointAuthor {
@@ -1237,6 +1254,39 @@ impl GitEngine {
         Ok(GitOid::new(out.trim()))
     }
 
+    /// Fingerprint the checkout's real index through a Forge-owned copy.
+    ///
+    /// `git write-tree` takes the real index lock even though the operation is
+    /// observational from Forge's perspective. That makes attachment fail on
+    /// an otherwise harmless stale `.git/index.lock` left by another Git
+    /// process. Copying the atomically-published index first preserves its
+    /// exact staged tree while ensuring Git only locks Forge's scratch index.
+    pub fn index_tree_oid_via_temporary_index(
+        &self,
+        cwd: &Path,
+        temporary_index: &Path,
+    ) -> Result<GitOid> {
+        if let Some(parent_dir) = temporary_index.parent() {
+            std::fs::create_dir_all(parent_dir)?;
+        }
+        clear_temporary_index(temporary_index)?;
+
+        let index_path = self.run(cwd, &["rev-parse", "--git-path", "index"])?;
+        let index_path = PathBuf::from(index_path.trim());
+        let index_path = if index_path.is_absolute() {
+            index_path
+        } else {
+            cwd.join(index_path)
+        };
+        std::fs::copy(index_path, temporary_index)?;
+
+        let result = self
+            .run_with_index(cwd, temporary_index, &["write-tree"])
+            .map(|out| GitOid::new(out.trim()));
+        let _ = clear_temporary_index(temporary_index);
+        result
+    }
+
     /// Compare the working tree to an arbitrary tree through a temporary
     /// index. Unlike `git status`, this does not compare that temporary index
     /// to the checkout's real `HEAD`, and unlike `git add`, it does not write
@@ -1250,9 +1300,7 @@ impl GitEngine {
         if let Some(parent_dir) = temporary_index.parent() {
             std::fs::create_dir_all(parent_dir)?;
         }
-        if temporary_index.exists() {
-            std::fs::remove_file(temporary_index)?;
-        }
+        clear_temporary_index(temporary_index)?;
         let result = (|| {
             self.run_with_index(cwd, temporary_index, &["read-tree", baseline.as_str()])?;
             self.refresh_index(cwd, temporary_index)?;
@@ -1300,7 +1348,7 @@ impl GitEngine {
             entries.sort_by(|left, right| left.path.cmp(&right.path));
             Ok(entries)
         })();
-        let _ = std::fs::remove_file(temporary_index);
+        let _ = clear_temporary_index(temporary_index);
         result
     }
 
@@ -1317,9 +1365,7 @@ impl GitEngine {
         if let Some(parent_dir) = temporary_index.parent() {
             std::fs::create_dir_all(parent_dir)?;
         }
-        if temporary_index.exists() {
-            std::fs::remove_file(temporary_index)?;
-        }
+        clear_temporary_index(temporary_index)?;
         let result = (|| {
             self.run_with_index(cwd, temporary_index, &["read-tree", parent.as_str()])?;
             self.run_with_index(cwd, temporary_index, &["add", "-A"])?;
@@ -1331,7 +1377,7 @@ impl GitEngine {
             let tree = self.run_with_index(cwd, temporary_index, &["write-tree"])?;
             Ok(GitOid::new(tree.trim()))
         })();
-        let _ = std::fs::remove_file(temporary_index);
+        let _ = clear_temporary_index(temporary_index);
         result
     }
 

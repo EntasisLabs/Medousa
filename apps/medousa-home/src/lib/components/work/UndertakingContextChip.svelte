@@ -55,9 +55,7 @@
   let { chatOnly = false, header = false }: Props = $props();
   let chipMenuOpen = $state(false);
   const active = $derived(
-    chatOnly && !undertakings.active?.boundChatSessionIds.includes(chat.sessionId)
-      ? null
-      : undertakings.active,
+    chatOnly ? undertakings.forChat(chat.sessionId) : undertakings.active,
   );
   const review = $derived(
     active && undertakings.review?.work_id === active.workId ? undertakings.review : null,

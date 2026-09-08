@@ -103,6 +103,7 @@ pub fn infer_tool_claims(
         });
     }
     if tool_name.starts_with("cognition_engineering_")
+        || tool_name == super::coder_tools::COGNITION_CODER_CONTEXT_READ
         || tool_name == super::coder_tools::COGNITION_CODER_EVIDENCE_READ
         || tool_name == super::coder_causal::COGNITION_CODER_CAUSAL_QUERY
     {
