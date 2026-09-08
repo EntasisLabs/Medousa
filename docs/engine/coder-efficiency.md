@@ -278,3 +278,34 @@ lease/workspace checks and cancellation gates still enforce authority independen
 of model reads. The activity revision tracks governed engineering events, not
 arbitrary out-of-band filesystem changes. Request a snapshot or focused file read
 when those changes matter; digest preconditions still protect mutations.
+
+## Agent shell output
+
+On Unix, agent-created workshop sessions run a quiet POSIX shell with terminal
+echo and canonical line buffering disabled. Pagers and automatic color are
+disabled for both one-shot and sustained agent commands. Sessions initialize
+the configured Bash/Zsh login environment once to preserve tool and version-manager
+PATH entries, then switch to the quiet command shell. Other Unix shells use the
+daemon's inherited environment. Home's human-created Terminal sessions still
+use the configured login shell.
+
+One-shot commands execute in a child shell with explicit start/completion
+boundaries, so multiline scripts, quoted text, syntax errors, and `exit` cannot
+corrupt the persistent command shell. Coder can call the one-shot tool directly;
+a readiness tool call is not required. Its existing 15-second wait/interrupt
+bound remains; use session tools for sustained processes.
+
+The model receives plain text with terminal styling, titles and other control
+sequences removed. PTY responses retain at most 32 KiB of text (head and tail,
+plus an omission label), set `output_truncated` when text was omitted, and keep
+draining to the completion boundary or wait deadline. Reaching the text cap
+does not interrupt the command. Exit status is detected independently of the
+text cap, and the replay cursor advances through consumed frames. Raw PTY bytes
+remain in the existing session stream; this adds no receipt retrieval protocol.
+Portable execution uses the same plain-text projection within its host output
+limit and preserves that host's truncation flag.
+
+Prefer typed, ranged source reads and digest-fenced `code.write` edits, batching
+independent reads where useful. Shell remains available for builds, tests and
+commands. A truncated output is incomplete evidence: narrow subsequent reads
+instead of replaying the same large output.

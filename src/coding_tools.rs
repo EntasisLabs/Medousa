@@ -6,6 +6,10 @@
 //! library or an explicit `root` under the workshop; `shell_session_*` drive
 //! the workshop-owned PTY sessions on the daemon.
 
+mod shell_output;
+
+use shell_output::ShellOutput;
+
 use std::io::{BufRead, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
@@ -52,7 +56,7 @@ const MAX_CODE_RANGE_LINES: usize = 1_000;
 const DEFAULT_CODE_RANGE_LINES: usize = 200;
 const MAX_CODE_ORIENTATION_SCAN_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_CODE_WRITE_BYTES: usize = 4 * 1024 * 1024;
-const MAX_SHELL_OUTPUT_BYTES: usize = 1024 * 1024;
+const MAX_SHELL_OUTPUT_BYTES: usize = shell_output::OUTPUT_LIMIT;
 
 pub fn is_coding_cognition_tool(name: &str) -> bool {
     CODING_COGNITION_TOOLS.contains(&name)
@@ -155,15 +159,6 @@ fn content_digest(bytes: &[u8]) -> String {
     format!("sha256:{:x}", Sha256::digest(bytes))
 }
 
-fn append_shell_output(output: &mut String, bytes: &[u8]) -> bool {
-    let chunk = String::from_utf8_lossy(bytes);
-    if output.len().saturating_add(chunk.len()) > MAX_SHELL_OUTPUT_BYTES {
-        return false;
-    }
-    output.push_str(&chunk);
-    true
-}
-
 fn accept_shell_ready_watermark(next_sequence: &mut u64, sequence: u64) {
     // The host is authoritative here: a replacement may restart sequencing.
     *next_sequence = sequence;
@@ -256,7 +251,7 @@ async fn create_bound_shell_session(
     lease_generation: Option<u64>,
     attempt_id: Option<&str>,
 ) -> StasisResult<Value> {
-    daemon_post(
+    let mut created = daemon_post(
         "/v1/sessions/shell",
         json!({
             "work_id": work_id.filter(|value| !value.trim().is_empty()),
@@ -264,9 +259,66 @@ async fn create_bound_shell_session(
             "lease_generation": lease_generation,
             "attempt_id": attempt_id,
             "cwd": Value::Null,
+            "argv": agent_shell_argv(),
         }),
     )
-    .await
+    .await?;
+    if !cfg!(windows) {
+        // Transport readiness does not imply that stty has run. Wait inside
+        // this tool so the first large submission cannot hit the TTY line cap.
+        let session_id = daemon_session_id(&created)?;
+        let ready =
+            stream_session_input(&session_id, None, 5_000, None, Some(AGENT_SHELL_READY)).await;
+        match ready {
+            Ok(ready) if ready.completion_exit_code == Some(0) => {
+                created["next_sequence"] = Value::from(ready.next_sequence);
+            }
+            result => {
+                let _ = daemon_post(
+                    &format!("/v1/sessions/shell/{session_id}/signal"),
+                    json!({ "signal": "kill" }),
+                )
+                .await;
+                let detail = match result {
+                    Ok(_) => "quiet shell startup did not complete within 5 seconds".to_string(),
+                    Err(error) => error.to_string(),
+                };
+                return Err(StasisError::PortFailure(detail));
+            }
+        }
+    }
+    Ok(created)
+}
+
+// Only agent-created sessions use this profile. Home's human Terminal still
+// opens the configured login shell through the unchanged session API.
+const AGENT_SHELL_READY: &str = "__MEDOUSA_SHELL_READY__";
+
+fn agent_shell_argv() -> Vec<String> {
+    if cfg!(windows) {
+        return Vec::new();
+    }
+    // Match the human session's Bash/Zsh login initialization once so GUI
+    // launches retain version-manager PATH entries, then shed interactive hooks.
+    let shell = std::env::var("SHELL").unwrap_or_default();
+    let (program, flags) = if shell.ends_with("/bash") || shell.ends_with("/zsh") {
+        (shell.as_str(), "-lic")
+    } else {
+        ("/bin/sh", "-c")
+    };
+    let setup = concat!(
+        "stty -echo -icanon min 1 time 0 || exit 1; ",
+        "export PAGER=cat GIT_PAGER=cat SYSTEMD_PAGER=cat LESS=FRX ",
+        "TERM=dumb NO_COLOR=1 CLICOLOR=0 FORCE_COLOR=0 ",
+        "PS1='' PS2='' ENV=/dev/null BASH_ENV=/dev/null; "
+    );
+    vec![
+        program.into(),
+        flags.into(),
+        format!(
+            "{setup}printf '\\n%s:begin\\n%s:0\\n' '{AGENT_SHELL_READY}' '{AGENT_SHELL_READY}'; exec /bin/sh -i"
+        ),
+    ]
 }
 
 fn daemon_session_id(response: &Value) -> StasisResult<String> {
@@ -1562,7 +1614,7 @@ impl CognitionShellSessionRunTool {
         let command = input.command.into_option();
         let raw_input = input.input.into_option();
         let poll = input.poll.into_option().unwrap_or(false);
-        let after_sequence = input.after_sequence.into_option();
+        let mut after_sequence = input.after_sequence.into_option();
         let wait_ms = input
             .wait_ms
             .into_option()
@@ -1581,6 +1633,7 @@ impl CognitionShellSessionRunTool {
                     attempt_id.as_deref(),
                 )
                 .await?;
+                after_sequence = created.get("next_sequence").and_then(Value::as_u64);
                 daemon_session_id(&created)?
             }
         };
@@ -1678,12 +1731,10 @@ async fn stream_session_input(
         .to_string()
     });
 
-    let mut output = String::new();
+    let mut output = ShellOutput::new(completion_marker);
     let mut input_written = false;
     let mut next_sequence = after_sequence.unwrap_or(0);
     let mut replay_truncated = false;
-    let mut output_truncated = false;
-    let mut completion_exit_code = None;
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(wait_ms);
     while std::time::Instant::now() < deadline {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
@@ -1698,22 +1749,11 @@ async fn stream_session_input(
                                     data,
                                 )
                             {
-                                if !append_shell_output(&mut output, &bytes) {
-                                    output_truncated = true;
-                                    break;
-                                }
+                                output.push(&bytes);
                                 if let Some(sequence) = v.get("sequence").and_then(Value::as_u64) {
                                     next_sequence = next_sequence.max(sequence);
                                 }
-                                if output.len() >= MAX_SHELL_OUTPUT_BYTES {
-                                    output_truncated = true;
-                                    break;
-                                }
-                                if let Some(marker) = completion_marker
-                                    && let Some(exit_code) =
-                                        take_command_completion(&mut output, marker)
-                                {
-                                    completion_exit_code = Some(exit_code);
+                                if output.exit_code().is_some() {
                                     break;
                                 }
                             }
@@ -1739,16 +1779,8 @@ async fn stream_session_input(
                 }
             }
             Ok(Some(Ok(Message::Binary(bytes)))) => {
-                if !append_shell_output(&mut output, &bytes)
-                    || output.len() >= MAX_SHELL_OUTPUT_BYTES
-                {
-                    output_truncated = true;
-                    break;
-                }
-                if let Some(marker) = completion_marker
-                    && let Some(exit_code) = take_command_completion(&mut output, marker)
-                {
-                    completion_exit_code = Some(exit_code);
+                output.push(&bytes);
+                if output.exit_code().is_some() {
                     break;
                 }
             }
@@ -1759,6 +1791,8 @@ async fn stream_session_input(
         }
     }
     let _ = ws.close(None).await;
+    let completion_exit_code = output.exit_code();
+    let (output, output_truncated) = output.finish();
     Ok(SessionStreamOutput {
         output,
         input_written,
@@ -1774,44 +1808,13 @@ fn one_shot_completion_marker() -> String {
 }
 
 fn wrap_one_shot_command(command: &str, marker: &str) -> String {
+    // A child shell isolates syntax errors, `exit`, and shell state. Quote the
+    // script as data; never paste it as syntax into an interactive editor.
+    // CAN + ST close unfinished terminal escapes before the completion line.
+    let quoted = command.replace('\'', "'\"'\"'");
     format!(
-        "(\nexport PAGER=cat GIT_PAGER=cat SYSTEMD_PAGER=cat PAGERSECURE=0 LESS=FRX;\n{command}\n)\n__medousa_command_status=$?\nprintf '\\n%s:%d\\n' '{marker}' \"$__medousa_command_status\"\n"
+        "printf '\\n%s:begin\\n' '{marker}'; /bin/sh -c '{quoted}'; __medousa_command_status=$?; printf '\\030\\033\\\\\\n%s:%d\\n' '{marker}' \"$__medousa_command_status\"\n"
     )
-}
-
-fn take_command_completion(output: &mut String, marker: &str) -> Option<i32> {
-    let needle = format!("{marker}:");
-    let mut search_from = 0;
-    while let Some(relative) = output.get(search_from..)?.find(&needle) {
-        let marker_start = search_from + relative;
-        let code_start = marker_start + needle.len();
-        let suffix = output.get(code_start..)?;
-        let code_len = suffix.find(['\r', '\n']).unwrap_or(suffix.len());
-        let raw_code = suffix[..code_len].trim();
-        if !raw_code.is_empty()
-            && raw_code
-                .chars()
-                .enumerate()
-                .all(|(index, ch)| ch.is_ascii_digit() || (index == 0 && ch == '-'))
-            && let Ok(exit_code) = raw_code.parse::<i32>()
-        {
-            let line_start = output[..marker_start]
-                .rfind('\n')
-                .map_or(marker_start, |index| index + 1);
-            let mut line_end = code_start + code_len;
-            while output
-                .as_bytes()
-                .get(line_end)
-                .is_some_and(|byte| matches!(*byte, b'\r' | b'\n'))
-            {
-                line_end += 1;
-            }
-            output.replace_range(line_start..line_end, "");
-            return Some(exit_code);
-        }
-        search_from = code_start;
-    }
-    None
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1931,7 +1934,7 @@ impl CognitionCoderShellStatusTool {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct CoderShellRunInput {
-    /// Shell command line (newline appended)
+    /// POSIX shell script; quoting and completion are handled by the runtime.
     command: String,
     /// Reuse a turn-owned session when provided by the runtime
     #[serde(default)]
@@ -1995,7 +1998,7 @@ struct CoderShellRunOutput {
 
 #[medousa_tool(id = COGNITION_CODER_SHELL_RUN_ID)]
 impl CognitionCoderShellRunTool {
-    /// Run a one-shot shell command in the active Coder worktree. For interactive commands, use cognition_shell_session_*.
+    /// Run a bounded POSIX command in the Coder workspace; no preflight needed. Plain-text head/tail and exit status; session tools handle sustained commands.
     async fn invoke_typed(
         &self,
         input: CoderShellRunInput,
@@ -2030,6 +2033,9 @@ impl CognitionCoderShellRunTool {
                 }
                 output.push_str(&result.stderr);
             }
+            let mut projection = ShellOutput::new(None);
+            projection.push(output.as_bytes());
+            let (output, projection_truncated) = projection.finish();
             return Ok(CoderShellRunOutput {
                 ok: result.exit_code == Some(0),
                 surface: "work_environment".to_string(),
@@ -2039,7 +2045,7 @@ impl CognitionCoderShellRunTool {
                 input_written: true,
                 next_sequence: 0,
                 replay_truncated: false,
-                output_truncated: result.output_truncated,
+                output_truncated: result.output_truncated || projection_truncated,
                 completed: result.exit_code.is_some(),
                 exit_code: result.exit_code,
                 interrupted: false,
@@ -2050,7 +2056,7 @@ impl CognitionCoderShellRunTool {
         let lease_id = input.lease_id.into_option();
         let lease_generation = input.lease_generation.into_option();
         let attempt_id = input.attempt_id.into_option();
-        let after_sequence = input.after_sequence.into_option();
+        let mut after_sequence = input.after_sequence.into_option();
         let wait_ms = input
             .wait_ms
             .into_option()
@@ -2069,6 +2075,7 @@ impl CognitionCoderShellRunTool {
                     attempt_id.as_deref(),
                 )
                 .await?;
+                after_sequence = created.get("next_sequence").and_then(Value::as_u64);
                 daemon_session_id(&created)?
             }
         };
@@ -2290,38 +2297,45 @@ mod tests {
     }
 
     #[test]
-    fn shell_output_limit_never_partially_consumes_a_sequence_chunk() {
-        let mut output = "x".repeat(MAX_SHELL_OUTPUT_BYTES - 2);
-        let before = output.clone();
-        assert!(!append_shell_output(&mut output, b"tail"));
-        assert_eq!(output, before);
-    }
-
-    #[test]
     fn shell_ready_watermark_can_reset_a_stale_cursor() {
         let mut next_sequence = 42;
         accept_shell_ready_watermark(&mut next_sequence, 10);
         assert_eq!(next_sequence, 10);
     }
 
+    #[cfg(unix)]
     #[test]
-    fn one_shot_wrapper_scopes_noninteractive_pager_environment() {
-        let wrapped = wrap_one_shot_command("git log --oneline -3", "__DONE__");
-        assert!(wrapped.starts_with("(\nexport PAGER=cat GIT_PAGER=cat"));
-        assert!(wrapped.contains("git log --oneline -3"));
-        assert!(wrapped.contains("printf '\\n%s:%d\\n' '__DONE__'"));
-    }
-
-    #[test]
-    fn completion_parser_ignores_echoed_format_and_extracts_exit_code() {
-        let marker = "__MEDOUSA_COMMAND_DONE_test__";
-        let mut output = format!(
-            "printf '%s:%d' '{marker}' \"$status\"\r\ncommand output\r\n{marker}:7\r\nprompt% "
-        );
-        assert_eq!(take_command_completion(&mut output, marker), Some(7));
-        assert!(output.contains("command output"));
-        assert!(output.contains("prompt% "));
-        assert!(!output.contains(&format!("{marker}:7")));
+    fn one_shot_scripts_preserve_quoting_and_isolate_exit_and_syntax_errors() {
+        for (command, expected_code, expected_text) in [
+            ("printf '%s' \"quotes ' and $HOME\"", 0, "quotes ' and"),
+            (
+                "cat <<'EOF'\n$(not-a-command) ' \" λ\nEOF",
+                0,
+                "$(not-a-command) ' \" λ",
+            ),
+            ("printf 'before exit'; exit 7", 7, "before exit"),
+            ("if then", 2, ""),
+            ("printf '\\033]0;unfinished title'", 0, ""),
+            ("printf '\\033['", 0, ""),
+            (
+                "printf '%s' 'value with ) and ; and `literal`'",
+                0,
+                "value with ) and ; and `literal`",
+            ),
+        ] {
+            let marker = one_shot_completion_marker();
+            let raw = std::process::Command::new("/bin/sh")
+                .args(["-c", &wrap_one_shot_command(command, &marker)])
+                .output()
+                .unwrap();
+            assert!(raw.status.success(), "wrapper survives child: {command}");
+            let mut output = ShellOutput::new(Some(&marker));
+            for chunk in raw.stdout.chunks(3) {
+                output.push(chunk);
+            }
+            assert_eq!(output.exit_code(), Some(expected_code), "{command}");
+            assert!(output.finish().0.contains(expected_text), "{command}");
+        }
     }
 
     #[test]

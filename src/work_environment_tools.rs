@@ -225,6 +225,10 @@ pub(crate) async fn shell_exec(
         ("SYSTEMD_PAGER".to_string(), "cat".to_string()),
         ("PAGERSECURE".to_string(), "0".to_string()),
         ("LESS".to_string(), "FRX".to_string()),
+        ("TERM".to_string(), "dumb".to_string()),
+        ("NO_COLOR".to_string(), "1".to_string()),
+        ("CLICOLOR".to_string(), "0".to_string()),
+        ("FORCE_COLOR".to_string(), "0".to_string()),
     ]);
     exec(
         invocation,

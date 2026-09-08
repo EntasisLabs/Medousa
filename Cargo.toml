@@ -158,7 +158,8 @@ medousa-iroh-http = { path = "crates/medousa-iroh-http", optional = true }
 tower = { version = "0.5", features = ["util", "limit"], optional = true }
 tower-http = { version = "0.6", features = ["cors"], optional = true }
 tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "rustls-tls-webpki-roots"], optional = true }
-vte = { version = "0.15", optional = true }
+# Use the fixed OSC buffer so terminal metadata cannot grow without a bound.
+vte = { version = "0.15", default-features = false, optional = true }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"], optional = true }
 tracing-opentelemetry = { version = "0.28", optional = true }

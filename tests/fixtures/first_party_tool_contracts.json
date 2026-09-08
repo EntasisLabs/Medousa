@@ -1185,14 +1185,14 @@
     {
       "registry": "coder_bound",
       "name": "cognition_coder_shell_run",
-      "description": "Run a one-shot shell command in the active Coder worktree. For interactive commands, use cognition_shell_session_*.",
+      "description": "Run a bounded POSIX command in the Coder workspace; no preflight needed. Plain-text head/tail and exit status; session tools handle sustained commands.",
       "input_schema": {
         "properties": {
           "attempt_id": {
             "type": "string"
           },
           "command": {
-            "description": "Shell command line (newline appended)",
+            "description": "POSIX shell script; quoting and completion are handled by the runtime.",
             "type": "string"
           },
           "intent": {
@@ -2993,14 +2993,14 @@
     {
       "registry": "general_runtime",
       "name": "cognition_coder_shell_run",
-      "description": "Run a one-shot shell command in the active Coder worktree. For interactive commands, use cognition_shell_session_*.",
+      "description": "Run a bounded POSIX command in the Coder workspace; no preflight needed. Plain-text head/tail and exit status; session tools handle sustained commands.",
       "input_schema": {
         "properties": {
           "attempt_id": {
             "type": "string"
           },
           "command": {
-            "description": "Shell command line (newline appended)",
+            "description": "POSIX shell script; quoting and completion are handled by the runtime.",
             "type": "string"
           },
           "lease_generation": {
