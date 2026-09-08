@@ -276,7 +276,11 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if expectedFileCount > 0}
-  <section class="chat-change-receipt" aria-label={isReady ? "Ready for review" : "Working changes"}>
+  <section
+    class="chat-change-receipt"
+    class:chat-change-receipt--ready={isReady}
+    aria-label={isReady ? "Ready for review" : "Working changes"}
+  >
     <header class="chat-change-receipt-header">
       <span class="chat-change-receipt-icon" class:chat-change-receipt-icon--ready={isReady}>
         {#if isReady}
@@ -300,8 +304,13 @@
       {:else if loading}
         <LoaderCircle size={11} class="animate-spin chat-change-refreshing" aria-label="Refreshing changes" />
       {/if}
-      <button type="button" class="chat-change-review-button" onclick={() => (sheetOpen = true)}>
-        Review
+      <button
+        type="button"
+        class="chat-change-review-button"
+        aria-label={isReady ? "Review changes" : "View working changes"}
+        onclick={() => (sheetOpen = true)}
+      >
+        {isReady ? "Review" : "View"}
       </button>
     </header>
 
@@ -861,6 +870,51 @@
   }
 
   @media (max-width: 48rem) {
+    /* Working changes are ambient while the agent is still active. Keep the
+       receipt glanceable; the full file inventory lives in the Changes sheet. */
+    .chat-change-receipt:not(.chat-change-receipt--ready) {
+      border-color: rgb(var(--theme-border) / 0.18);
+      border-radius: calc(var(--theme-control-radius) + 0.35rem);
+      background: rgb(var(--theme-card) / 0.46);
+      box-shadow: none;
+    }
+
+    .chat-change-receipt:not(.chat-change-receipt--ready) .chat-change-receipt-header {
+      min-height: 2.9rem;
+      gap: 0.55rem;
+      padding: 0.45rem 0.55rem;
+    }
+
+    .chat-change-receipt:not(.chat-change-receipt--ready) .chat-change-receipt-icon {
+      width: 1.75rem;
+      height: 1.75rem;
+      background: rgb(var(--theme-pane-muted) / 0.48);
+    }
+
+    .chat-change-receipt:not(.chat-change-receipt--ready) .chat-change-receipt-heading {
+      display: flex;
+      align-items: baseline;
+      gap: 0.45rem;
+    }
+
+    .chat-change-receipt:not(.chat-change-receipt--ready) .chat-change-receipt-heading p {
+      font-size: 0.6875rem;
+    }
+
+    .chat-change-receipt:not(.chat-change-receipt--ready) .chat-change-files,
+    .chat-change-receipt:not(.chat-change-receipt--ready) .chat-change-receipt-footer {
+      display: none;
+    }
+
+    .chat-change-receipt:not(.chat-change-receipt--ready) .chat-change-review-button {
+      min-width: 2.75rem;
+      min-height: 2.75rem;
+      border-color: transparent;
+      padding-inline: 0.65rem;
+      background: transparent;
+      color: rgb(var(--theme-text-secondary));
+    }
+
     .chat-review-sheet {
       width: 100%;
       height: var(--mobile-layout-height, 100dvh);
