@@ -182,6 +182,19 @@ impl ForgeEventBus {
             .unwrap_or_default()
     }
 
+    /// Reconciliation barrier, also valid when a client cursor predates this daemon.
+    pub fn project_reconciliation(&self, work_id: &str) -> ForgeProjectEvent {
+        ForgeProjectEvent {
+            seq: self.latest_project_seq(),
+            work_id: work_id.to_owned(),
+            kind: ForgeProjectEventKind::Snapshot,
+            path: None,
+            old_path: None,
+            digest: None,
+            updated_at: Utc::now(),
+        }
+    }
+
     pub fn latest_project_seq(&self) -> u64 {
         self.next_seq.load(Ordering::Relaxed)
     }
@@ -190,6 +203,23 @@ impl ForgeEventBus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reconciliation_barrier_covers_empty_and_evicted_history() {
+        let bus = ForgeEventBus::new();
+        let initial = bus.project_reconciliation("work-a");
+        assert_eq!(initial.seq, 0);
+        assert_eq!(initial.kind, ForgeProjectEventKind::Snapshot);
+        for _ in 0..PROJECT_CAPACITY + 1 {
+            bus.publish_project("work-a", ForgeProjectEventKind::Changed, None, None, None);
+        }
+        let replay = bus.snapshot_project_since("work-a", 0);
+        assert!(replay[0].seq > 1);
+        let barrier = bus.project_reconciliation("work-a");
+        assert_eq!(barrier.seq, replay.last().unwrap().seq);
+        assert_eq!(barrier.work_id, "work-a");
+        assert!(bus.snapshot_project_since("work-a", barrier.seq).is_empty());
+    }
 
     #[test]
     fn project_journal_replays_from_cursor_for_one_work_item() {

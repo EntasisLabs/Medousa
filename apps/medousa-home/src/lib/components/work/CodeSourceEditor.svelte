@@ -32,7 +32,7 @@
     type CodeWorkspaceEditPlan,
   } from "$lib/code/codeWorkspaceEdit";
   import {
-    CodeProjectEventStream,
+    subscribeCodeProjectEvents,
     planOpenBufferAction,
     watchedFileChangesForProjectEvent,
     type ForgeProjectEvent,
@@ -183,7 +183,6 @@
     text: string;
   } | null>(null);
   let linePersistTimer: ReturnType<typeof setTimeout> | null = null;
-  let projectEventStream: CodeProjectEventStream | null = null;
   let treeRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
   let workbenchPrefsEpoch = $state(0);
@@ -1973,25 +1972,21 @@
   });
 
   $effect(() => {
-    if (!interactive) {
-      projectEventStream?.stop();
-      return;
-    }
+    if (!interactive) return;
     const id = workId;
-    if (!projectEventStream) {
-      projectEventStream = new CodeProjectEventStream({
-        onEvent: (event) => void handleProjectEvent(event),
-      });
-    }
-    projectEventStream.setWorkId(id || null);
+    if (!id) return;
+    return subscribeCodeProjectEvents(id, {
+      onEvent: (event) => void handleProjectEvent(event),
+      onResync: () => void handleProjectEvent({
+        work_id: id, seq: 0, kind: "snapshot", updated_at: new Date().toISOString(),
+      }),
+    });
   });
 
   onDestroy(() => {
     if (linePersistTimer) clearTimeout(linePersistTimer);
     if (treeRefreshTimer) clearTimeout(treeRefreshTimer);
     if (autosaveTimer) clearTimeout(autosaveTimer);
-    projectEventStream?.teardown();
-    projectEventStream = null;
     changes.dispose();
     tasks.dispose();
     save.dispose();

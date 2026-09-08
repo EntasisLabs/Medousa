@@ -4215,6 +4215,7 @@ fn build_changes_response(state: &AppState, work_id: &WorkId) -> ApiResult<Forge
             "prepare the governed workspace before reading changes",
         )
     })?;
+    remember_worktree(state, &item, &environment.worktree);
     let (tracking, entries) = forge
         .git()
         .status_porcelain_with_branch(&environment.worktree)
@@ -11061,21 +11062,22 @@ async fn forge_project_event_stream(
         },
     )
     .await?;
-    if let Some(env) = item
-        .attempts
-        .last()
-        .and_then(|attempt| item.environment_for_attempt(&attempt.id))
-    {
+    if let Some(env) = item.workspace_environment() {
         remember_worktree(&state, &item, &env.worktree);
     }
 
     let since = query.since.unwrap_or(0);
     // Subscribe before snapshot so live events cannot slip between the two.
     let receiver = state.forge_events.subscribe_project();
-    let pending: VecDeque<_> = state
+    let mut pending: VecDeque<_> = state
         .forge_events
         .snapshot_project_since(id.as_str(), since)
         .into();
+    // Always reconcile on attachment, including a daemon restart (sequence reset)
+    // or a cursor older than retained history. Subscribe above before this barrier.
+    let reconciliation = state.forge_events.project_reconciliation(id.as_str());
+    let barrier = reconciliation.seq;
+    pending.push_back(reconciliation);
     let work_id = id.as_str().to_owned();
 
     struct StreamState {
@@ -11090,14 +11092,14 @@ async fn forge_project_event_stream(
         work_id: work_id.clone(),
         receiver,
         pending,
-        last_seq: since,
+        last_seq: since.min(barrier),
         bus: state.forge_events.clone(),
     };
 
     let stream = unfold(initial, |mut state| async move {
         loop {
             if let Some(event) = state.pending.pop_front() {
-                if event.seq <= state.last_seq {
+                if event.kind != ForgeProjectEventKind::Snapshot && event.seq <= state.last_seq {
                     continue;
                 }
                 state.last_seq = event.seq;
@@ -11125,6 +11127,9 @@ async fn forge_project_event_stream(
                             .bus
                             .snapshot_project_since(&state.work_id, state.last_seq),
                     );
+                    state
+                        .pending
+                        .push_back(state.bus.project_reconciliation(&state.work_id));
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
             }

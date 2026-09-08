@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { untrack } from "svelte";
+  import { subscribeCodeProjectEvents } from "$lib/code/codeProjectEvents";
   import {
     ArrowUpRight,
     Check,
@@ -29,6 +31,7 @@
     phase: string;
     review?: ReviewProjection | null;
     eventRevision?: number;
+    activityRunning?: boolean;
     onOpenCode: (path?: string, line?: number) => void | Promise<void>;
     onRequestRevision: (prompt?: string) => void;
     onReviewChanged?: () => void | Promise<void>;
@@ -40,6 +43,7 @@
     phase,
     review = null,
     eventRevision = 0,
+    activityRunning = false,
     onOpenCode,
     onRequestRevision,
     onReviewChanged,
@@ -50,6 +54,18 @@
   let loadError = $state<string | null>(null);
   let sheetOpen = $state(false);
   let refreshAvailable = $state(false);
+  let projectRevision = $state(0);
+
+  $effect(() => {
+    const id = workId.trim();
+    if (!id) return;
+    const invalidate = () => { projectRevision += 1; };
+    return subscribeCodeProjectEvents(id, { onEvent: invalidate, onResync: invalidate });
+  });
+
+  $effect(() => {
+    if (!activityRunning) untrack(() => { projectRevision += 1; });
+  });
   let loadedEventRevision = $state(-1);
   let commentCompose = $state<{
     path: string;
@@ -148,7 +164,7 @@
   async function refreshWorkingSnapshot() {
     const id = workId.trim();
     if (!id) return;
-    await loadWorkingChanges(id, eventRevision);
+    await loadWorkingChanges(id, eventRevision + projectRevision);
   }
 
   function closeSheet() {
@@ -245,7 +261,7 @@
 
   $effect(() => {
     const id = workId.trim();
-    const revision = eventRevision;
+    const revision = eventRevision + projectRevision;
     const reviewReady = Boolean(sealedReview);
     if (!id || reviewReady) {
       snapshotRequestSerial += 1;
@@ -260,7 +276,11 @@
       return;
     }
     const timer = window.setTimeout(() => void loadWorkingChanges(id, revision), 220);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      snapshotRequestSerial += 1;
+      loading = false;
+    };
   });
 
   $effect(() => {

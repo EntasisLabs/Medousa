@@ -93,6 +93,7 @@ export function parseProjectEventPayload(raw: unknown): ForgeProjectEvent | null
 
 export type CodeProjectEventHandlers = {
   onEvent: (event: ForgeProjectEvent) => void;
+  onResync?: () => void;
   onUnavailable?: () => void;
 };
 
@@ -104,12 +105,16 @@ export class CodeProjectEventStream {
   private workId: string | null = null;
   private lastSeq = 0;
   private connecting = false;
+  private generation = 0;
   private readonly reconnect = new ReconnectScheduler({
     policy: DEFAULT_WORKSPACE_BACKOFF,
   });
   private readonly handlers: CodeProjectEventHandlers;
 
-  constructor(handlers: CodeProjectEventHandlers) {
+  constructor(
+    handlers: CodeProjectEventHandlers,
+    private readonly executionRuntimeId = getCoderExecutionTransport(),
+  ) {
     this.handlers = handlers;
   }
 
@@ -147,6 +152,7 @@ export class CodeProjectEventStream {
   }
 
   private stopSource() {
+    this.generation += 1;
     this.connecting = false;
     if (this.source) {
       this.source.close();
@@ -158,6 +164,8 @@ export class CodeProjectEventStream {
     const id = this.workId;
     if (!id || this.connecting) return;
     this.connecting = true;
+    const generation = ++this.generation;
+    const current = () => this.generation === generation && this.workId === id;
     if (this.source) {
       this.source.close();
       this.source = null;
@@ -165,40 +173,46 @@ export class CodeProjectEventStream {
     let source: DaemonEventConnection | null = null;
     try {
       source = await openDaemonEventStream<ForgeProjectEvent>({
-        executionRuntimeId: getCoderExecutionTransport(),
+        executionRuntimeId: this.executionRuntimeId,
         operation: "forge.items.by_work_id.project_events.get",
         pathParams: { work_id: id },
         query: this.lastSeq > 0 ? { since: String(this.lastSeq) } : undefined,
         browserUrl: () => forgeProjectEventsUrl(id, this.lastSeq),
         browserEvent: "project",
         onEvent: (payload) => {
+          if (!current()) return;
           const event = parseProjectEventPayload(payload);
           if (!event || event.work_id !== id) return;
-          if (event.seq <= this.lastSeq) return;
+          if (event.kind !== "snapshot" && event.seq <= this.lastSeq) return;
           this.lastSeq = event.seq;
           this.reconnect.noteSuccess();
           this.handlers.onEvent(event);
         },
         onOpen: () => {
+          if (!current()) return;
           this.connecting = false;
           this.reconnect.noteSuccess();
+          this.handlers.onResync?.();
         },
         onError: () => {
+          if (!current()) return;
           this.connecting = false;
+          source?.close();
           if (source && this.source === source) this.source = null;
           if (this.workId !== id) return;
+          this.handlers.onUnavailable?.();
           this.reconnect.schedule(() => void this.connect());
         },
       });
-      if (this.workId !== id) {
+      if (!current()) {
         source.close();
-        this.connecting = false;
         return;
       }
       if (source.closed) return;
       this.source = source;
     } catch {
       source?.close();
+      if (!current()) return;
       this.connecting = false;
       this.handlers.onUnavailable?.();
       if (this.workId === id) {
@@ -206,4 +220,60 @@ export class CodeProjectEventStream {
       }
     }
   }
+}
+
+// One stream per daemon/project, shared by Chat, Code, and mobile Changes.
+// Snapshot reads recover missed events; an unavailable stream gets bounded polling.
+const projectSubscriptions = new Map<string, {
+  listeners: Set<CodeProjectEventHandlers>;
+  stream: CodeProjectEventStream;
+  poll: ReturnType<typeof setInterval> | null;
+}>();
+
+export function subscribeCodeProjectEvents(
+  workId: string,
+  handlers: CodeProjectEventHandlers,
+): () => void {
+  const runtime = getCoderExecutionTransport();
+  const key = JSON.stringify([runtime, workId]);
+  let entry = projectSubscriptions.get(key);
+  if (!entry) {
+    const listeners = new Set<CodeProjectEventHandlers>();
+    const stopPolling = () => {
+      if (created.poll) clearInterval(created.poll);
+      created.poll = null;
+    };
+    const created = {
+      listeners,
+      poll: null as ReturnType<typeof setInterval> | null,
+      stream: new CodeProjectEventStream({
+        onEvent: (event) => { for (const listener of listeners) listener.onEvent(event); },
+        onResync: () => {
+          stopPolling();
+          for (const listener of listeners) listener.onResync?.();
+        },
+        onUnavailable: () => {
+          for (const listener of listeners) listener.onUnavailable?.();
+          if (!created.poll) created.poll = setInterval(() => {
+            for (const listener of listeners) listener.onResync?.();
+          }, 10_000);
+        },
+      }, runtime),
+    };
+    entry = created;
+    projectSubscriptions.set(key, entry);
+  }
+  const subscription = entry;
+  subscription.listeners.add(handlers);
+  subscription.stream.setWorkId(workId);
+  let disposed = false;
+  return () => {
+    if (disposed) return;
+    disposed = true;
+    subscription.listeners.delete(handlers);
+    if (subscription.listeners.size) return;
+    subscription.stream.teardown();
+    if (subscription.poll) clearInterval(subscription.poll);
+    projectSubscriptions.delete(key);
+  };
 }

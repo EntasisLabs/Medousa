@@ -1066,6 +1066,7 @@
             ? undertakings.review
             : null}
           eventRevision={undertakings.eventRevision}
+          activityRunning={Boolean(streamingMessage) || activeSubagentCount > 0}
           onOpenCode={openChatCodeReview}
           onRequestRevision={requestChatCodeRevision}
           onReviewChanged={() => undertakings.select(chatCodeProject.workId)}
