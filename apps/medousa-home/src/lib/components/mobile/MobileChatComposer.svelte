@@ -58,7 +58,7 @@
     mode: "interactive" | "background",
     codeProjectSetupAuthorized = false,
   ) {
-    const opts = buildInteractiveTurnOptions();
+    const opts = buildInteractiveTurnOptions(chat);
     const mediaRefs = [...chat.pendingMediaRefs];
     const voice = voicePresets.turnVoiceFields();
     const codeContext = activeCodeContext(chat.sessionId);

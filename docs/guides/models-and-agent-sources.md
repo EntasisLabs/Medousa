@@ -34,6 +34,14 @@ provider access first and then assign model roles:
 - **Dictation model** transcribes microphone input; it is a separate speech
   route rather than a property of the conversation model.
 
+Each Medousa chat remembers its composer provider, model, and stage routing on
+this device, separately for each workshop. Switching chats restores that chat's
+choice, including after restarting the app. New chats start from the workshop's
+settings; selecting a model in one chat leaves other chats and those defaults
+unchanged. Existing chats without a saved choice use their latest main-chat model
+receipt when available. Choosing a different model explicitly replaces the saved
+choice for that chat.
+
 Accounts, API keys, and custom endpoints live together under **Providers**.
 Each access method opens the same quiet detail sheet; model assignment stays
 under **Model roles**. Stage routing remains an advanced control for specialized

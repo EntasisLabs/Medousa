@@ -34,6 +34,7 @@ import {
   emptySessionRuntime,
 } from "$lib/chat/chatSessionRuntime";
 import { loadDraftForSession } from "$lib/chat/draftPersistence";
+import { sessionModelSelections } from "./sessionModelSelection.svelte";
 import type { ChatStoreHost } from "$lib/chat/chatStoreHost";
 import { workshopScopedStorageKey } from "$lib/utils/workshopLocality";
 
@@ -379,6 +380,7 @@ export async function deleteSession(
       `Session deletion ${deletionStatus}; retry ${deletion.deletion_id ?? trimmed}${failed ? ` (${failed})` : ""}`,
     );
   }
+  sessionModelSelections.clear({ sessionId: trimmed, workshopScopeId: host.workshopScopeId });
   host.sessions = host.sessions.filter((session) => session.session_id !== trimmed);
   host.pinnedIds = host.pinnedIds.filter((id) => id !== trimmed);
   localStorage.setItem(

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { composerModel } from "$lib/chat/composerModel";
   import { tick, untrack } from "svelte";
   import { ExternalLink, LoaderCircle } from "@lucide/svelte";
   import ChatAsyncToolsHint from "$lib/components/chat/ChatAsyncToolsHint.svelte";
@@ -89,6 +90,8 @@
   import type { ToolHistorySliceRef } from "$lib/types/toolHistory";
   import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
   import { isTauri, showChatPopout } from "$lib/window";
+
+  const chatModel = $derived(composerModel());
 
   interface Props {
     visible: boolean;
@@ -652,7 +655,7 @@
             chatAttachments.skillIds,
             chatAttachments.toolIds,
           ),
-          modelHint: runtime.model,
+          modelHint: chatModel.model,
         });
         chatAttachments.clear();
         chat.historyNotice = "Ask queued — watch Work for progress.";
@@ -1164,7 +1167,7 @@
           configOptions={agentSession.agentConfigOptions}
           pending={agentSession.preparingAgent}
           disabled={connection.offline || chat.composerBlocked}
-          model={`${runtime.provider}:${runtime.model}`}
+          model={`${chatModel.provider}:${chatModel.model}`}
           onChange={agentSession.onRuntimeChange}
           onConfigChange={agentSession.updateAgentConfig}
         />

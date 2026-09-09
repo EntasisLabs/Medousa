@@ -261,7 +261,7 @@
     const prompt = `Tell me about work card ${detail.card.id}: "${detail.card.title}". Status: ${detail.card.status_label}.`;
     onOpenChat();
     try {
-      const opts = buildInteractiveTurnOptions();
+      const opts = buildInteractiveTurnOptions(chat);
       const voice = voicePresets.turnVoiceFields();
       const accepted = await createTurnTicket({
         sessionId: chat.sessionId,

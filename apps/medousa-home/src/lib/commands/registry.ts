@@ -676,7 +676,7 @@ export function buildAskCommands(): WorkshopCommand[] {
           ctx.error("Describe what Medousa should work on.");
           return;
         }
-        const opts = buildInteractiveTurnOptions();
+        const opts = buildInteractiveTurnOptions(ctx.chat);
         const accepted = await createTurnTicket({
           sessionId: ctx.chat.sessionId,
           prompt: text,

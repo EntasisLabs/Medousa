@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { composerModel, composerSessionScope, selectComposerModel } from "$lib/chat/composerModel";
+  import type { SessionScope } from "$lib/chat/sessionModelSelection.svelte";
   import { onMount } from "svelte";
   import { fade } from "svelte/transition";
   import { cubicIn, cubicOut } from "svelte/easing";
@@ -43,6 +45,8 @@
   import { REASONING_EFFORT_OPTIONS, reasoningEffortLabel } from "$lib/types/reasoningEffort";
   import { fetchLocalModels } from "$lib/utils/localInferenceApi";
 
+  const chatModel = $derived(composerModel());
+
   type SheetView = "main" | "provider" | "model" | "voice" | "stance" | "reasoning";
 
   interface Props {
@@ -77,8 +81,8 @@
   let localInstallStateLoaded = $state(false);
   let modelLoadSeq = 0;
 
-  const activeKey = $derived(modelPickKey(runtime.provider, runtime.model));
-  const modelLabel = $derived(resolveModelDisplayLabel(runtime.provider, runtime.model));
+  const activeKey = $derived(modelPickKey(chatModel.provider, chatModel.model));
+  const modelLabel = $derived(resolveModelDisplayLabel(chatModel.provider, chatModel.model));
   const voiceLabel = $derived(voicePresets.activePreset.name);
   const depthLabel = $derived(
     DEPTH_CHARTER_OPTIONS.find((option) => option.id === runtime.depthMode)?.label ?? "Standard",
@@ -87,15 +91,15 @@
   const pickerDisabled = $derived(disabled || runtime.savingControls || voicePresets.saving);
   const favoriteModels = $derived(workshopDefaults.favoriteModels());
   const activeCatalogProviderId = $derived.by(() => {
-    if (!catalogSnapshot) return runtime.provider;
-    const activeProvider = runtime.provider.trim().toLowerCase();
+    if (!catalogSnapshot) return chatModel.provider;
+    const activeProvider = chatModel.provider.trim().toLowerCase();
     const direct = catalogSnapshot.providers.find(
       (entry) => entry.id.trim().toLowerCase() === activeProvider,
     );
     if (direct) return direct.id;
     return catalogSnapshot.providers.some((entry) => entry.id === CUSTOM_PROVIDER_CATALOG_ID)
       ? CUSTOM_PROVIDER_CATALOG_ID
-      : runtime.provider;
+      : chatModel.provider;
   });
   const filteredProviders = $derived(
     catalogSnapshot ? filterProviders(catalogSnapshot.providers, providerSearch) : [],
@@ -336,18 +340,15 @@
     }
   }
 
-  async function applyModel(provider: string, model: string) {
+  async function applyModel(provider: string, model: string, scope: SessionScope) {
     const nextProvider = provider.trim();
     const nextModel = model.trim();
     if (!nextProvider || !nextModel || runtime.savingControls) return;
     modelActionError = null;
     localModelRequiresSetup = false;
-    const nextKey = modelPickKey(nextProvider, nextModel);
-    if (nextKey !== activeKey) await runtime.applyModel(nextProvider, nextModel);
-    if (modelPickKey(runtime.provider, runtime.model) !== nextKey) {
-      modelActionError = runtime.controlsMessage ?? "That model could not be selected.";
-      return;
-    }
+    selectComposerModel(nextProvider, nextModel, scope);
+    const currentScope = composerSessionScope();
+    if (scope.sessionId !== currentScope.sessionId || scope.workshopScopeId !== currentScope.workshopScopeId) return;
     haptic("light");
     await transitionToView("main");
     resetModelDrillIn();
@@ -361,7 +362,8 @@
         return;
       }
     }
-    await applyModel(await resolveRuntimeProviderId(selectedProvider.id), record.modelId);
+    const scope = composerSessionScope();
+    await applyModel(await resolveRuntimeProviderId(selectedProvider.id), record.modelId, scope);
   }
 
   async function confirmManualModel() {
@@ -372,7 +374,9 @@
         return;
       }
     }
-    await applyModel(await resolveRuntimeProviderId(selectedProvider.id), manualModelId);
+    const scope = composerSessionScope();
+    const model = manualModelId;
+    await applyModel(await resolveRuntimeProviderId(selectedProvider.id), model, scope);
   }
 
   function showLocalModelSetup(modelId: string) {
@@ -558,7 +562,7 @@
                         type="button"
                         class="mobile-turn-sheet-row {index > 0 ? 'mobile-turn-sheet-row-divider' : ''}"
                         disabled={runtime.savingControls}
-                        onclick={() => void applyModel(favorite.provider, favorite.model)}
+                        onclick={() => void applyModel(favorite.provider, favorite.model, composerSessionScope())}
                       >
                         <span class="mobile-turn-sheet-provider-badge" aria-hidden="true">
                           {providerMonogram(favorite.provider)}

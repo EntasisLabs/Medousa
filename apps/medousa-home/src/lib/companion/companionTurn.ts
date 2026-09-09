@@ -21,6 +21,7 @@ export async function sendCompanionPrompt(
   }
   if (!sessionId) throw new Error("Could not create a conversation.");
 
+  const options = buildInteractiveTurnOptions(chat);
   let anotherTurnActive = chat.hasLiveInteractiveTurn();
   try {
     const active = await getActiveSessionTurn(sessionId);
@@ -29,7 +30,6 @@ export async function sendCompanionPrompt(
     // The create call below remains the authoritative availability check.
   }
 
-  const options = buildInteractiveTurnOptions();
   const voice = voicePresets.turnVoiceFields();
   const ticket = await createTurnTicket({
     sessionId,

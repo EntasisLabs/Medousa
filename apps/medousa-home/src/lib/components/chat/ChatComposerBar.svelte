@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { composerModel } from "$lib/chat/composerModel";
   import "$lib/styles/composer.postcss";
   import { onDestroy, onMount } from "svelte";
   import { LoaderCircle, Mic, Square } from "@lucide/svelte";
@@ -35,6 +36,8 @@
     composerSttStatus,
     transcribeComposerAudio,
   } from "$lib/utils/composerStt";
+
+  const chatModel = $derived(composerModel());
 
   interface Props {
     mobile?: boolean;
@@ -432,7 +435,7 @@
             showWorkshop={true}
             showStashes={mobile}
             mode={agentRuntime}
-            model={`${runtime.provider}:${runtime.model}`}
+            model={`${chatModel.provider}:${chatModel.model}`}
             onProfile={() => {
               agentOpen = false;
               profileOpen = true;
@@ -569,7 +572,7 @@
           disabled={blocked}
           showStashes={mobile}
           mode={agentRuntime}
-          model={`${runtime.provider}:${runtime.model}`}
+          model={`${chatModel.provider}:${chatModel.model}`}
           onProfile={() => {
             agentOpen = false;
             profileOpen = true;

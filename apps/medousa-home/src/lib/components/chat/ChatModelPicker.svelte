@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { composerModel, selectComposerModel } from "$lib/chat/composerModel";
   import { onMount, tick } from "svelte";
   import {
     ArrowUpRight,
@@ -55,6 +56,8 @@
     type ChatGptOAuthConnection,
   } from "$lib/utils/chatgptOAuth";
 
+  const chatModel = $derived(composerModel());
+
   interface Props {
     disabled?: boolean;
     readonly?: boolean;
@@ -90,7 +93,7 @@
   let highlightedKey = $state<string | null>(null);
   let canScrollProvidersBack = $state(false);
   let canScrollProvidersForward = $state(false);
-  let selectedNativeProvider = $state(runtime.provider);
+  let selectedNativeProvider = $state("");
   let chatGptConnection = $state<ChatGptOAuthConnection | null>(null);
   let chatGptConnectionLoading = $state(false);
   let chatGptConnectionError = $state(false);
@@ -99,14 +102,14 @@
   let capabilityMap = $state<Map<string, ModelCapabilityRecord>>(new Map());
   const displayName = $derived.by(() =>
     agentRuntime === "medousa"
-      ? resolveModelDisplayLabel(runtime.provider, runtime.model)
+      ? resolveModelDisplayLabel(chatModel.provider, chatModel.model)
       : agentModelDisplayLabel(agentRuntime, agentConfigOptions),
   );
   const externalModelOption = $derived(agentModelConfigOption(agentConfigOptions));
-  const activeKey = $derived(modelPickKey(runtime.provider, runtime.model));
+  const activeKey = $derived(modelPickKey(chatModel.provider, chatModel.model));
   const filtered = $derived(filterChatModelOptions(options, search));
   const groupedOptions = $derived(
-    groupChatModelOptions(filtered, catalogSnapshot, runtime.provider),
+    groupChatModelOptions(filtered, catalogSnapshot, chatModel.provider),
   );
   const visibleOptions = $derived.by(() => {
     if (search.trim()) return filtered;
@@ -207,7 +210,7 @@
   }
 
   $effect(() => {
-    if (agentRuntime === "medousa") selectedNativeProvider = runtime.provider;
+    if (agentRuntime === "medousa") selectedNativeProvider = chatModel.provider;
   });
 
   $effect(() => {
@@ -291,13 +294,13 @@
     probe: typeof probeSnapshot,
     nextFavorites: FavoriteModel[],
     liveModels: string[] = [],
-    liveProvider = runtime.provider,
+    liveProvider = chatModel.provider,
   ) {
     const base = buildChatModelOptions(
       catalog,
       probe,
-      runtime.provider,
-      runtime.model,
+      chatModel.provider,
+      chatModel.model,
       nextFavorites,
     );
     options = liveModels.length
@@ -344,9 +347,9 @@
       search = "";
       highlightedKey = activeKey;
       if (agentRuntime === "medousa") {
-        selectedNativeProvider = runtime.provider;
+        selectedNativeProvider = chatModel.provider;
         void refreshChatGptConnection();
-        void refreshLiveModelsForProvider(runtime.provider);
+        void refreshLiveModelsForProvider(chatModel.provider);
         await tick();
         updateProviderScrollState();
         searchInputEl?.focus();
@@ -354,13 +357,13 @@
     }
   }
 
-  async function selectOption(option: ChatModelPickOption) {
+  function selectOption(option: ChatModelPickOption) {
     if (option.key === activeKey) {
       open = false;
       return;
     }
     open = false;
-    await runtime.applyModel(option.provider, option.model);
+    selectComposerModel(option.provider, option.model);
   }
 
   function openExternalAgents() {
@@ -450,9 +453,9 @@
       search = "";
       highlightedKey = activeKey;
       if (agentRuntime === "medousa") {
-        selectedNativeProvider = runtime.provider;
+        selectedNativeProvider = chatModel.provider;
         void refreshChatGptConnection();
-        void refreshLiveModelsForProvider(runtime.provider);
+        void refreshLiveModelsForProvider(chatModel.provider);
         await tick();
         updateProviderScrollState();
         searchInputEl?.focus();
@@ -721,7 +724,7 @@
         {/if}
       {:else}
         <div class="composer-model-mobile-note">
-          <p class="composer-model-mobile-title">{runtime.modelLabel()}</p>
+          <p class="composer-model-mobile-title">{`${chatModel.provider}:${chatModel.model}`}</p>
           <p class="composer-model-mobile-copy">{workshopModelOnHostHint()}</p>
         </div>
       {/if}
