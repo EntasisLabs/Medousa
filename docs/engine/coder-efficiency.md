@@ -198,6 +198,26 @@ Coder intent metadata. Existing profile-valued intents remain accepted for old
 calls. Coder peers retain Forge admission, leases, and workspace placement rules;
 spawning does not grant permission for concurrent writers in an attached checkout.
 
+Native Coder file operations carry the selected Forge checkout root through the
+admitted tool invocation. This works for isolated worktrees and explicitly
+attached current checkouts outside Medousa's data directory. The grant is local
+to that invocation; knowing the filesystem path does not authorize an unbound
+tool. Existing path containment, symlink checks, mutation policy, and live Coder
+lease checks still apply.
+
+The shell host keeps scripts and managed worktrees on its existing root path.
+For an external attached checkout, session creation requires a matching open
+Forge project and revalidates its repository, branch, HEAD, index, and requested
+cwd. Newly attached projects are available without restarting the shell host;
+closed projects and changed checkout authority reject new sessions. Project
+roots are never added to the host's global allowlist. This admission check does
+not turn the native PTY into an OS filesystem sandbox.
+
+The daemon and `medousa-session` must be upgraded together for this behavior.
+Shell-host API revision 5 accepts `--forge-root` and reports that store path in
+`/health`; the daemon rejects a host using an older protocol or a different Forge
+store. Source builds must include both `engine` and `shell-session` components.
+
 Worker status and cancellation return compact `record`/`records` summaries:
 identity, profile, status, bounded task/result/error text, termination reason, and
 update time. Result text is paginated in 1,200-character slices: call
@@ -208,6 +228,23 @@ history. Session lookup
 uses the active execution context before the legacy host bus. Status is queried
 with `workshop.status`; cancellation uses `workshop.cancel` with the worker ID,
 not scheduler job cancellation or capability discovery.
+
+After a native Coder peer finishes or is cancelled, the runtime flushes its
+memory queue, interrupts its shell sessions, and releases its checkout authority
+before publishing the terminal result and resuming the host. The host acquires
+its own authority; peer edits remain in the attached checkout.
+
+Parallel results are grouped by session and parent turn correlation ID. Legacy
+records without that ID use the stream turn ID and do not join modern cohorts.
+An exclusive in-flight claim prevents simultaneous intake of the same cohort;
+results are marked delivered only after the resumed host produces a terminal
+response, input request, checkpoint, or further delegation. Failed or cancelled
+intake releases the claim and leaves the results pending. Durable worker jobs
+retry pending intake under their existing three-attempt policy without rerunning
+completed peer work. Waiting for siblings or an intake already in flight does
+not consume retries. Startup reconciliation can also recover pending results.
+A process interruption between host delivery and its persisted acknowledgment
+can cause redelivery; this is not an exactly-once delivery guarantee.
 
 ## Accumulated tool observations
 

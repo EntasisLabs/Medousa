@@ -1040,6 +1040,32 @@ impl Forge {
         self.verify_attached_checkout(item, environment)
     }
 
+    /// Resolve a shell cwd outside the managed-worktree roots only for an open,
+    /// explicitly attached project. The sidecar must read current Forge state,
+    /// rather than retaining a global allowlist of formerly attached folders.
+    pub fn attached_checkout_cwd(&self, work_id: &WorkId, cwd: &Path) -> Result<PathBuf> {
+        let item = self.load(work_id)?;
+        if !item.uses_attached_checkout()
+            || !matches!(item.state, WorkState::Ready | WorkState::Executing)
+        {
+            return Err(ForgeError::EnvironmentDrift(
+                "shell cwd requires an open attached-checkout project".into(),
+            ));
+        }
+        let environment = item.workspace_environment().ok_or_else(|| {
+            ForgeError::EnvironmentDrift("attached checkout is not provisioned".into())
+        })?;
+        self.verify_attached_checkout(&item, environment)?;
+        let root = environment.worktree.canonicalize()?;
+        let cwd = cwd.canonicalize()?;
+        if !cwd.is_dir() || !cwd.starts_with(&root) {
+            return Err(ForgeError::EnvironmentDrift(
+                "shell cwd escapes the attached checkout".into(),
+            ));
+        }
+        Ok(cwd)
+    }
+
     fn worktree_path(
         &self,
         repo_id: &crate::model::RepoId,

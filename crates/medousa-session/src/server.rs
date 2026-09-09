@@ -12,6 +12,10 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use base64::Engine as _;
 use futures_util::{SinkExt, StreamExt};
+use medousa_forge::{
+    execution::{ExecutionClass, ForgeExecutionService},
+    forge::Forge,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tower_http::cors::CorsLayer;
@@ -25,6 +29,8 @@ pub struct SessionHostConfig {
     pub workspace_root: PathBuf,
     /// Additional allowed cwd roots. The workspace root is always allowed.
     pub allowed_roots: Vec<PathBuf>,
+    /// Daemon-owned Forge store. Required only for attached-checkout sessions.
+    pub forge_root: Option<PathBuf>,
 }
 
 #[derive(Clone)]
@@ -32,6 +38,7 @@ pub struct SessionHostState {
     pub config: SessionHostConfig,
     pub manager: Arc<SessionManager>,
     pub started: Instant,
+    forge_execution: Arc<ForgeExecutionService>,
 }
 
 impl SessionHostState {
@@ -40,6 +47,7 @@ impl SessionHostState {
             manager: SessionManager::new(config.workspace_root.clone()),
             config,
             started: Instant::now(),
+            forge_execution: Arc::new(ForgeExecutionService::new()),
         }
     }
 
@@ -54,10 +62,36 @@ impl SessionHostState {
     }
 
     pub fn cwd_allowed(&self, path: &std::path::Path) -> bool {
-        let canon = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        let Ok(canon) = path.canonicalize() else {
+            return false;
+        };
         self.effective_allowed_roots()
             .iter()
+            .filter_map(|root| root.canonicalize().ok())
             .any(|root| canon.starts_with(root))
+    }
+
+    async fn resolve_session_cwd(
+        &self,
+        cwd: PathBuf,
+        work_id: Option<String>,
+    ) -> Result<PathBuf, String> {
+        let state = self.clone();
+        self.forge_execution
+            .run(ExecutionClass::RepositoryMetadata, 16 * 1024, move || {
+                if state.cwd_allowed(&cwd) {
+                    return Ok(cwd.canonicalize()?);
+                }
+                if let (Some(forge_root), Some(work_id)) = (&state.config.forge_root, work_id) {
+                    return Forge::open(forge_root)?.attached_checkout_cwd(&work_id.into(), &cwd);
+                }
+                Err(medousa_forge::error::ForgeError::EnvironmentDrift(format!(
+                    "cwd not allowed: {}",
+                    cwd.display()
+                )))
+            })
+            .await
+            .map_err(|error| error.to_string())
     }
 }
 
@@ -70,6 +104,7 @@ pub struct HealthResponse {
     pub active_sessions: usize,
     pub workspace_root: String,
     pub allowed_roots: Vec<String>,
+    pub forge_root: Option<PathBuf>,
 }
 
 #[derive(Deserialize)]
@@ -143,6 +178,7 @@ async fn health(State(state): State<Arc<SessionHostState>>) -> Json<HealthRespon
             .iter()
             .map(|p| p.display().to_string())
             .collect(),
+        forge_root: state.config.forge_root.clone(),
     })
 }
 
@@ -174,13 +210,13 @@ async fn create_session(
     } else {
         SessionRootKind::Scripts
     };
-    let cwd = cwd.unwrap_or_else(|| state.config.workspace_root.clone());
-    if !state.cwd_allowed(&cwd) {
-        return Err((
-            axum::http::StatusCode::FORBIDDEN,
-            format!("cwd not allowed: {}", cwd.display()),
-        ));
-    }
+    let cwd = state
+        .resolve_session_cwd(
+            cwd.unwrap_or_else(|| state.config.workspace_root.clone()),
+            body.work_id.clone(),
+        )
+        .await
+        .map_err(|error| (axum::http::StatusCode::FORBIDDEN, error))?;
     let argv = body.argv.unwrap_or_default();
     if argv.len() > 64
         || argv
@@ -551,24 +587,190 @@ async fn signal_session(
 mod tests {
     use super::{SessionAttachQuery, SessionHostConfig, SessionHostState, attach_replay};
     use crate::session::OutputChunk;
-    use std::path::PathBuf;
 
-    fn state() -> SessionHostState {
+    fn state(root: &std::path::Path) -> SessionHostState {
         SessionHostState::new(SessionHostConfig {
             bind: "127.0.0.1:0".parse().unwrap(),
-            workspace_root: PathBuf::from("medousa/scripts"),
-            allowed_roots: vec![PathBuf::from("medousa/forge/worktrees")],
+            workspace_root: root.join("scripts"),
+            allowed_roots: vec![root.join("forge/worktrees")],
+            forge_root: Some(root.join("forge")),
         })
     }
 
     #[test]
     fn workspace_and_future_forge_worktrees_are_allowed() {
-        let state = state();
-        assert!(state.cwd_allowed(std::path::Path::new("medousa/scripts")));
-        assert!(state.cwd_allowed(std::path::Path::new(
-            "medousa/forge/worktrees/repo/work-new"
-        )));
-        assert!(!state.cwd_allowed(std::path::Path::new("other")));
+        let root = tempfile::tempdir().unwrap();
+        let state = state(root.path());
+        std::fs::create_dir_all(root.path().join("scripts")).unwrap();
+        std::fs::create_dir_all(root.path().join("forge/worktrees/repo/work-new")).unwrap();
+        assert!(state.cwd_allowed(&root.path().join("scripts")));
+        assert!(state.cwd_allowed(&root.path().join("forge/worktrees/repo/work-new")));
+        assert!(!state.cwd_allowed(root.path()));
+        assert!(!state.cwd_allowed(&root.path().join("missing")));
+    }
+
+    #[tokio::test]
+    async fn attached_project_created_after_host_start_is_scoped_and_revocable() {
+        use medousa_forge::{
+            forge::Forge,
+            git::{CheckpointAuthor, GitEngine},
+            model::WorkspaceMode,
+        };
+        let root = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let state = state(root.path());
+        let git = GitEngine::detect().unwrap();
+        for args in [
+            vec!["init", "-b", "main", "--template="],
+            vec![
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "initial",
+            ],
+        ] {
+            let output = std::process::Command::new(git.binary())
+                .args(args)
+                .current_dir(repo.path())
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+        }
+        std::fs::create_dir(repo.path().join("src")).unwrap();
+        let forge = Forge::open(root.path().join("forge")).unwrap();
+        let actor = Forge::system_actor();
+        let item = forge
+            .register_with_workspace_mode(
+                "Selected checkout",
+                "Use this checkout",
+                repo.path(),
+                "main",
+                "user-1",
+                WorkspaceMode::AttachedCheckout,
+                &actor,
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &actor).unwrap();
+        let wid = Some(item.id.to_string());
+        let isolated = forge
+            .register_with_workspace_mode(
+                "Managed worktree",
+                "Keep work isolated",
+                repo.path(),
+                "main",
+                "user-1",
+                WorkspaceMode::Isolated,
+                &actor,
+            )
+            .unwrap();
+        let isolated = forge.provision(&isolated.id, &actor).unwrap();
+        let isolated_root = isolated.workspace_environment().unwrap().worktree.clone();
+        assert_eq!(
+            state
+                .resolve_session_cwd(isolated_root.clone(), Some(isolated.id.to_string()))
+                .await
+                .unwrap(),
+            isolated_root.canonicalize().unwrap(),
+        );
+        assert!(
+            state
+                .resolve_session_cwd(repo.path().to_owned(), Some(isolated.id.to_string()))
+                .await
+                .is_err(),
+            "an isolated project must not authorize its source checkout"
+        );
+        assert_eq!(
+            state
+                .resolve_session_cwd(repo.path().join("src"), wid.clone())
+                .await
+                .unwrap(),
+            repo.path().canonicalize().unwrap().join("src")
+        );
+        assert!(
+            !state.cwd_allowed(repo.path()),
+            "selected checkout never enters the global roots"
+        );
+        assert!(
+            state
+                .resolve_session_cwd(repo.path().to_owned(), None)
+                .await
+                .is_err()
+        );
+        assert!(
+            state
+                .resolve_session_cwd(repo.path().to_owned(), Some("unknown".into()))
+                .await
+                .is_err()
+        );
+        assert!(
+            state
+                .resolve_session_cwd(outside.path().to_owned(), wid.clone())
+                .await
+                .is_err()
+        );
+        assert!(
+            state
+                .resolve_session_cwd(repo.path().join("../"), wid.clone())
+                .await
+                .is_err()
+        );
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(outside.path(), repo.path().join("escape")).unwrap();
+            assert!(
+                state
+                    .resolve_session_cwd(repo.path().join("escape"), wid.clone())
+                    .await
+                    .is_err()
+            );
+            let response = super::create_session(
+                axum::extract::State(std::sync::Arc::new(state.clone())),
+                axum::Json(super::CreateSessionBody {
+                    work_id: wid.clone(),
+                    cwd: Some(repo.path().to_string_lossy().into_owned()),
+                    argv: Some(vec![
+                        "/bin/sh".into(),
+                        "-c".into(),
+                        "printf checkout-ok".into(),
+                    ]),
+                    cols: 80,
+                    rows: 24,
+                }),
+            )
+            .await
+            .unwrap()
+            .0;
+            assert_eq!(
+                response.cwd,
+                repo.path().canonicalize().unwrap().to_string_lossy()
+            );
+            state
+                .manager
+                .destroy(&crate::session::SessionId(response.session_id))
+                .await;
+        }
+        // A changed checkout is rejected even though its path is unchanged.
+        std::fs::write(repo.path().join("change.txt"), "new HEAD\n").unwrap();
+        git.commit_checkpoint(repo.path(), "changed HEAD", &CheckpointAuthor::default())
+            .unwrap();
+        assert!(
+            state
+                .resolve_session_cwd(repo.path().to_owned(), wid.clone())
+                .await
+                .is_err()
+        );
+        forge.discard(&item.id, &actor).unwrap();
+        assert!(
+            state
+                .resolve_session_cwd(repo.path().to_owned(), wid)
+                .await
+                .is_err()
+        );
     }
 
     fn chunks(sequences: impl IntoIterator<Item = u64>) -> Vec<OutputChunk> {

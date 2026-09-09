@@ -182,6 +182,16 @@ struct PreparedWorkerCoder {
     prompt_appendix: String,
 }
 
+/// Consume the worker authority before publishing a terminal result or resuming
+/// the host. Registries retain weak authority references and cannot prolong it.
+async fn release_worker_coder(coder: Option<PreparedWorkerCoder>) {
+    if let Some(coder) = coder {
+        let _ = coder.registry.flush_memory_queue().await;
+        coder.registry.interrupt_shell_sessions().await;
+        drop(coder);
+    }
+}
+
 async fn prepare_worker_coder(
     record: &TurnWorkRecord,
     stream_turn_id: u64,
@@ -1693,6 +1703,7 @@ async fn run_worker_turn_inner(
     };
 
     if store.is_work_cancelled(&work_id) {
+        release_worker_coder(prepared_coder).await;
         store.update(&work_id, |r| {
             r.status = TurnWorkStatus::Cancelled;
             r.termination_reason = Some("workshop_cancelled".to_string());
@@ -1730,10 +1741,7 @@ async fn run_worker_turn_inner(
     let result = fail_on_stream_overflow(result, chunk_stream.finish().await);
     chunk_bridge.drain().await;
 
-    if let Some(coder) = &prepared_coder {
-        let _ = coder.registry.flush_memory_queue().await;
-        coder.registry.interrupt_shell_sessions().await;
-    }
+    release_worker_coder(prepared_coder).await;
 
     match result {
         Ok(response) => {
@@ -2271,6 +2279,107 @@ mod tests {
     use medousa_engine::receipt::ArtifactReceiptMeta;
     use serde_json::Value;
     use stasis::application::orchestration::tool_registry::InMemoryToolRegistry;
+
+    #[tokio::test]
+    async fn coder_worker_releases_attached_checkout_before_host_intake() {
+        use crate::agent_runtime::{
+            coder_activity::{CoderActivityStore, CoderAgentIdentity},
+            coder_tools::{CoderBoundToolRegistry, CoderTurnLease},
+        };
+        use medousa_forge::{
+            forge::Forge,
+            git::{CheckpointAuthor, GitEngine},
+            model::{ExecutorDescriptor, WorkspaceMode},
+        };
+        let repo = tempfile::tempdir().unwrap();
+        let data = tempfile::tempdir().unwrap();
+        let git = GitEngine::detect().unwrap();
+        let run_git = |args: &[&str]| {
+            let output = std::process::Command::new(git.binary())
+                .current_dir(repo.path())
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{:?}", output);
+        };
+        run_git(&["init", "-b", "main", "--template="]);
+        std::fs::write(repo.path().join("app.txt"), "original\n").unwrap();
+        run_git(&["add", "-A"]);
+        git.commit_checkpoint(repo.path(), "initial", &CheckpointAuthor::default())
+            .unwrap();
+        let forge = Arc::new(Forge::open(data.path()).unwrap());
+        let actor = Forge::system_actor();
+        let item = forge
+            .register_with_workspace_mode(
+                "Handoff",
+                "Keep peer changes",
+                repo.path(),
+                "main",
+                "user-1",
+                WorkspaceMode::AttachedCheckout,
+                &actor,
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &actor).unwrap();
+        let executor = || ExecutorDescriptor {
+            kind: "test-coder".into(),
+            detail: Value::Null,
+        };
+        let entry = Arc::new(
+            crate::agent_runtime::coder_mode::compile_coder_entry(
+                &forge,
+                &crate::daemon_api::CodeIntentContext {
+                    work_id: Some(item.id.to_string()),
+                    ..Default::default()
+                },
+            )
+            .unwrap(),
+        );
+        let (_, lease) = forge
+            .begin_workspace_attempt(&item.id, executor(), None, &actor)
+            .unwrap();
+        let activity = Arc::new(CoderActivityStore::open(data.path().join("activity.json")));
+        let identity = CoderAgentIdentity::for_turn("handoff-test", 1, lease.attempt_id.as_str());
+        let authority =
+            Arc::new(CoderTurnLease::new(forge.clone(), lease, activity, identity).unwrap());
+        let weak_authority = Arc::downgrade(&authority);
+        let registry = Arc::new(CoderBoundToolRegistry::new(
+            Arc::new(InMemoryToolRegistry::default()),
+            &authority,
+            entry,
+            item.policy.clone(),
+        ));
+        let worker = PreparedWorkerCoder {
+            _authority: authority,
+            registry: registry.clone(),
+            prompt_appendix: String::new(),
+        };
+        std::fs::write(repo.path().join("app.txt"), "peer changes\n").unwrap();
+        assert!(
+            forge
+                .begin_workspace_attempt(&item.id, executor(), None, &actor)
+                .is_err()
+        );
+        release_worker_coder(Some(worker)).await;
+        assert!(
+            weak_authority.upgrade().is_none(),
+            "registry and completion providers must not retain worker authority"
+        );
+        let (_, host_lease) = forge
+            .begin_workspace_attempt(&item.id, executor(), None, &actor)
+            .expect("host can reacquire the attached checkout");
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join("app.txt")).unwrap(),
+            "peer changes\n"
+        );
+        forge
+            .interrupt_attempt(
+                &host_lease,
+                medousa_forge::model::RecoveryDisposition::RestartAllowed,
+                &actor,
+            )
+            .unwrap();
+    }
 
     struct NoopSink;
 

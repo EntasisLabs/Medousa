@@ -182,9 +182,12 @@ pub async fn maybe_resume_host_after_parallel_worker(
         .await;
         return;
     }
-    let Some(cohort) = turn_worker_store()
-        .try_claim_parallel_cohort_intake(&record.session_id, record.parent_stream_turn_id)
-    else {
+    let store = turn_worker_store();
+    let Some(cohort) = store.try_claim_parallel_cohort_intake(
+        &record.session_id,
+        record.parent_stream_turn_id,
+        record.parent_turn_correlation_id.as_deref(),
+    ) else {
         return;
     };
     sink.notice(format!(
@@ -194,7 +197,15 @@ pub async fn maybe_resume_host_after_parallel_worker(
         cohort.len()
     ))
     .await;
-    run_host_resume_turn(ctx, execution_registry, agent, &cohort, sink).await;
+    if run_host_resume_turn(ctx, execution_registry, agent, &cohort, sink.clone()).await {
+        cohort.acknowledge();
+    } else {
+        sink.notice(format!(
+            "◈ host_resume pending work_id={} (host intake did not complete)",
+            record.work_id
+        ))
+        .await;
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -204,9 +215,9 @@ async fn run_host_resume_turn(
     agent: &TuiRuntime,
     cohort: &[TurnWorkRecord],
     sink: SharedAgentStreamSink,
-) {
+) -> bool {
     let Some(primary) = cohort.first() else {
-        return;
+        return false;
     };
     let Some(identity_user_id) = primary
         .identity_user_id
@@ -217,15 +228,14 @@ async fn run_host_resume_turn(
             work_id = %primary.work_id,
             "refusing host resume without identity"
         );
-        deliver_fallback(cohort, sink).await;
-        return;
+        return false;
     };
     if !crate::session_catalog::session_visible_to_profile(&primary.session_id, &identity_user_id) {
         tracing::warn!(
             work_id = %primary.work_id,
             "refusing host resume after authority revocation"
         );
-        return;
+        return false;
     }
 
     let prompt = truncate_text_for_budget(&host_resume_prompt(cohort), MAX_REQUEST_PROMPT_CHARS);
@@ -285,16 +295,14 @@ async fn run_host_resume_turn(
         Ok(execution) => execution,
         Err(error) => {
             tracing::warn!(work_id = %primary.work_id, error = %error, "host resume execution context failed");
-            deliver_fallback(cohort, sink).await;
-            return;
+            return false;
         }
     };
     let execution_lease = match execution_registry.admit(execution) {
         Ok(lease) => lease,
         Err(error) => {
             tracing::warn!(work_id = %primary.work_id, error = %error, "host resume admission rejected");
-            deliver_fallback(cohort, sink).await;
-            return;
+            return false;
         }
     };
 
@@ -318,34 +326,11 @@ async fn run_host_resume_turn(
     .await;
     drop(execution_lease);
 
-    let delivered = captured
+    captured
         .lock()
         .expect("host resume capture")
         .as_ref()
-        .is_some_and(|text| !text.trim().is_empty());
-    if !delivered {
-        deliver_fallback(cohort, sink).await;
-    }
-}
-
-async fn deliver_fallback(cohort: &[TurnWorkRecord], sink: SharedAgentStreamSink) {
-    let Some(primary) = cohort.first() else {
-        return;
-    };
-    let text = fallback_host_resume_text(cohort);
-    let tool_names: Vec<String> = cohort
-        .iter()
-        .flat_map(|record| record.tool_names.iter().cloned())
-        .collect();
-    sink.reset_streamed_markdown().await;
-    sink.agent_response(
-        primary.parent_stream_turn_id,
-        text.clone(),
-        tool_names.clone(),
-    )
-    .await;
-    crate::turn_worker_notify::publish_worker_synthesis_to_parent_turn(primary, &text, &tool_names)
-        .await;
+        .is_some_and(|text| !text.trim().is_empty())
 }
 
 struct HostResumeSink {
@@ -427,6 +412,7 @@ impl AgentStreamSink for HostResumeSink {
         tool_names: Vec<String>,
         work_id: Option<String>,
     ) {
+        self.capture_delivery(&text);
         self.inner
             .agent_worker_ack(turn_id, text, tool_names, work_id)
             .await;
@@ -439,12 +425,14 @@ impl AgentStreamSink for HostResumeSink {
         tool_names: Vec<String>,
         work_id: Option<String>,
     ) {
+        self.capture_delivery(&text);
         self.inner
             .agent_workshop_ack(turn_id, text, tool_names, work_id)
             .await;
     }
 
     async fn agent_error(&self, turn_id: u64, message: String) {
+        *self.captured.lock().expect("host resume capture") = None;
         self.inner.agent_error(turn_id, message).await;
     }
 
@@ -548,6 +536,73 @@ mod tests {
     use super::*;
     use crate::agent_runtime::turn_worker::store::TurnWorkRecord;
     use chrono::Utc;
+
+    struct NoopSink;
+
+    #[async_trait]
+    impl AgentStreamSink for NoopSink {
+        async fn content_chunk(&self, _: u64, _: String) {}
+        async fn reasoning_chunk(&self, _: u64, _: String) {}
+        async fn agent_response(&self, _: u64, _: String, _: Vec<String>) {}
+        async fn agent_error(&self, _: u64, _: String) {}
+        async fn notice(&self, _: String) {}
+        async fn tool_invoked(&self, _: String, _: String) {}
+        async fn tool_payload(
+            &self,
+            _: String,
+            _: Value,
+            _: Value,
+            _: Option<ArtifactReceiptMeta>,
+            _: Option<ArtifactReceiptMeta>,
+        ) {
+        }
+    }
+
+    #[tokio::test]
+    async fn host_intake_requires_a_terminal_delivery_and_errors_clear_it() {
+        let captured = Arc::new(Mutex::new(None));
+        let sink = HostResumeSink {
+            inner: Arc::new(NoopSink),
+            primary: record(
+                "work-a",
+                TurnWorkStatus::Completed,
+                Some("peer result"),
+                None,
+            ),
+            captured: captured.clone(),
+        };
+        sink.content_chunk(1, "Reviewing results".into()).await;
+        sink.agent_turn_progress(1, "Checking edits".into(), vec![])
+            .await;
+        assert!(captured.lock().unwrap().is_none());
+
+        // A host can consume this cohort and delegate a distinct follow-up.
+        sink.agent_worker_ack(
+            1,
+            "Verify the changes".into(),
+            vec![],
+            Some("work-b".into()),
+        )
+        .await;
+        assert_eq!(
+            captured.lock().unwrap().as_deref(),
+            Some("Verify the changes")
+        );
+        sink.agent_error(1, "authority unavailable".into()).await;
+        assert!(captured.lock().unwrap().is_none());
+
+        sink.agent_workshop_ack(
+            1,
+            "Continue verification".into(),
+            vec![],
+            Some("work-c".into()),
+        )
+        .await;
+        assert_eq!(
+            captured.lock().unwrap().as_deref(),
+            Some("Continue verification")
+        );
+    }
 
     fn record(
         work_id: &str,

@@ -246,6 +246,11 @@ impl JobHandler for TurnWorkerJobHandler {
                 Some(self.agent.as_ref()),
             )
             .await;
+            if let Some(outcome) =
+                pending_parallel_intake_outcome(turn_worker_store().get(&payload.work_id).as_ref())
+            {
+                return Ok(outcome);
+            }
             return Ok(success_outcome(format!(
                 "work_id={} synthesis resumed",
                 payload.work_id
@@ -268,6 +273,9 @@ impl JobHandler for TurnWorkerJobHandler {
         .await;
 
         let final_record = turn_worker_store().get(&payload.work_id);
+        if let Some(outcome) = pending_parallel_intake_outcome(final_record.as_ref()) {
+            return Ok(outcome);
+        }
         match final_record.as_ref().map(|record| record.status) {
             Some(TurnWorkStatus::Completed) => Ok(success_outcome(format!(
                 "work_id={} completed",
@@ -637,6 +645,24 @@ fn truncate_line(value: &str, max: usize) -> String {
         return trimmed.to_string();
     }
     trimmed.chars().take(max).collect::<String>() + "…"
+}
+
+/// Stasis retries intake using the job's existing bounded retry policy. The
+/// terminal-record branch above prevents these retries from rerunning peer work.
+fn pending_parallel_intake_outcome(record: Option<&TurnWorkRecord>) -> Option<JobExecutionOutcome> {
+    let record = record?;
+    (record.disposition == crate::agent_runtime::turn_worker::TurnWorkDisposition::Parallel
+        && !record.synthesis_delivered
+        && matches!(
+            record.status,
+            TurnWorkStatus::Completed | TurnWorkStatus::Failed | TurnWorkStatus::Cancelled
+        )
+        && turn_worker_store().parallel_intake_needs_retry(record))
+    .then(|| JobExecutionOutcome::RetryableFailure {
+        message: format!("host intake pending for {}", record.work_id),
+        execution_id: None,
+        diagnostics: None,
+    })
 }
 
 fn success_outcome(summary: String) -> JobExecutionOutcome {

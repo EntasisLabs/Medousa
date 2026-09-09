@@ -14,6 +14,20 @@ WASM/script modules for automations and custom tools.
 | Env | `GRAPHEME_*`, `MEDOUSA_GRAPHEME_*` in [configuration-reference.md](../configuration-reference.md) |
 | Plan | [scripts-workbench-plan.md](../../architecture/scripts-workbench-plan.md) |
 
+Runtime-backed Grapheme calls, including `cognition_shell_run` and
+`grapheme.invoke`, submit a durable job to the shared default queue. They wait
+up to 60 seconds for that job's terminal attempt receipt. Processing another
+queued job, or observing a terminal state before its receipt is stored, does
+not count as an execution failure.
+
+Results include `job_id`, `completed`, and `succeeded`. If the receipt is still
+pending, `completed` is `false` and `succeeded` is `null`; diagnostics include
+`result_path` pointing to `GET /v1/jobs/{job_id}/result`. Inspect the existing
+job before resubmitting: ending the wait does not cancel execution. Scheduling
+preflight likewise returns `validated: null` while pending and does not approve
+the source for scheduling. A successful runtime receipt alone does not establish
+shell command success; check the shell result's exit code and diagnostics.
+
 ---
 
 ## Locus (semantic memory)

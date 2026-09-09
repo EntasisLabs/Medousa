@@ -2791,86 +2791,100 @@ impl ToolRegistry for CoderBoundToolRegistry {
             ));
             return Err(err);
         }
-        let result = if super::coder_memory::CODER_MEMORY_TOOL_NAMES.contains(&tool_name) {
-            self.invoke_coder_memory_tool(&authority, tool_name, &input)
-                .await
-        } else if tool_name == super::coder_experiments::COGNITION_CODER_EXPERIMENT_COMPARE {
-            super::coder_experiments::compare_sealed_candidates(
-                authority.forge.as_ref(),
-                self.inner.as_ref(),
-                &self.entry,
-                &input,
-            )
-            .await
-        } else if tool_name == super::coder_semantic_actions::COGNITION_CODER_SYMBOL_REFACTOR {
-            super::coder_semantic_actions::invoke_symbol_refactor(
-                authority.forge.as_ref(),
-                self.change_sets.as_ref(),
-                &self.entry,
-                authority.lease(),
-                &self.policy,
-                &input,
-            )
-            .await
-        } else if tool_name == super::coder_semantic_actions::COGNITION_CODER_CHANGE_SET_APPLY {
-            super::coder_semantic_actions::apply_change_set(
-                self.change_sets.as_ref(),
-                authority.lease(),
-                &input,
-            )
-            .await
-        } else if tool_name == super::coder_semantic_actions::COGNITION_CODER_AFFECTED_TESTS {
-            super::coder_semantic_actions::affected_tests(
-                authority.forge.as_ref(),
-                &self.entry,
-                authority.lease(),
-                &input,
-            )
-            .await
-        } else if tool_name == super::coder_causal::COGNITION_CODER_CAUSAL_QUERY {
-            super::coder_causal::invoke_causal_query(
-                authority.forge.as_ref(),
-                self.inner.as_ref(),
-                &self.entry,
-                &self.engineering_events()?,
-                &input,
-            )
-            .await
-        } else if tool_name == super::coder_read_batch::TOOL_NAME {
-            super::coder_read_batch::invoke(
-                self,
-                input.clone(),
-                intent.as_str(),
-                &crate::execution_policy::load_parallel_execution_settings(),
-            )
-            .await
-        } else if tool_name == crate::public_api::COGNITION_SCHEMA {
-            self.inner
-                .invoke_tool(tool_name, input.clone())
-                .await
-                .and_then(|mut output| {
-                    project_coder_action_schemas(&mut output)?;
-                    Ok(output)
-                })
-        } else if CODER_RUNTIME_TOOLS.contains(&tool_name) {
-            self.invoke_runtime_tool(tool_name, &input)
-        } else if crate::turn_control_tools::is_begin_work_tool_name(tool_name, &input) {
-            match remap_begin_work_to_spawn_input(&input, spawn_intent_hint) {
-                Ok(spawn_input) => {
-                    self.inner
-                        .invoke_tool(crate::public_api::COGNITION_WORKSHOP_MUTATE, spawn_input)
+        let result =
+            crate::coding_tools::with_coder_tool_root(self.entry.worktree.clone(), async {
+                if super::coder_memory::CODER_MEMORY_TOOL_NAMES.contains(&tool_name) {
+                    self.invoke_coder_memory_tool(&authority, tool_name, &input)
                         .await
+                } else if tool_name == super::coder_experiments::COGNITION_CODER_EXPERIMENT_COMPARE
+                {
+                    super::coder_experiments::compare_sealed_candidates(
+                        authority.forge.as_ref(),
+                        self.inner.as_ref(),
+                        &self.entry,
+                        &input,
+                    )
+                    .await
+                } else if tool_name
+                    == super::coder_semantic_actions::COGNITION_CODER_SYMBOL_REFACTOR
+                {
+                    super::coder_semantic_actions::invoke_symbol_refactor(
+                        authority.forge.as_ref(),
+                        self.change_sets.as_ref(),
+                        &self.entry,
+                        authority.lease(),
+                        &self.policy,
+                        &input,
+                    )
+                    .await
+                } else if tool_name
+                    == super::coder_semantic_actions::COGNITION_CODER_CHANGE_SET_APPLY
+                {
+                    super::coder_semantic_actions::apply_change_set(
+                        self.change_sets.as_ref(),
+                        authority.lease(),
+                        &input,
+                    )
+                    .await
+                } else if tool_name == super::coder_semantic_actions::COGNITION_CODER_AFFECTED_TESTS
+                {
+                    super::coder_semantic_actions::affected_tests(
+                        authority.forge.as_ref(),
+                        &self.entry,
+                        authority.lease(),
+                        &input,
+                    )
+                    .await
+                } else if tool_name == super::coder_causal::COGNITION_CODER_CAUSAL_QUERY {
+                    super::coder_causal::invoke_causal_query(
+                        authority.forge.as_ref(),
+                        self.inner.as_ref(),
+                        &self.entry,
+                        &self.engineering_events()?,
+                        &input,
+                    )
+                    .await
+                } else if tool_name == super::coder_read_batch::TOOL_NAME {
+                    super::coder_read_batch::invoke(
+                        self,
+                        input.clone(),
+                        intent.as_str(),
+                        &crate::execution_policy::load_parallel_execution_settings(),
+                    )
+                    .await
+                } else if tool_name == crate::public_api::COGNITION_SCHEMA {
+                    self.inner
+                        .invoke_tool(tool_name, input.clone())
+                        .await
+                        .and_then(|mut output| {
+                            project_coder_action_schemas(&mut output)?;
+                            Ok(output)
+                        })
+                } else if CODER_RUNTIME_TOOLS.contains(&tool_name) {
+                    self.invoke_runtime_tool(tool_name, &input)
+                } else if crate::turn_control_tools::is_begin_work_tool_name(tool_name, &input) {
+                    match remap_begin_work_to_spawn_input(&input, spawn_intent_hint) {
+                        Ok(spawn_input) => {
+                            self.inner
+                                .invoke_tool(
+                                    crate::public_api::COGNITION_WORKSHOP_MUTATE,
+                                    spawn_input,
+                                )
+                                .await
+                        }
+                        Err(err) => Err(err),
+                    }
+                } else if crate::agent_runtime::turn_worker_tools::is_workshop_spawn_call(
+                    tool_name, &input,
+                ) {
+                    let mut spawn_input = input.clone();
+                    ensure_spawn_worker_intent(&mut spawn_input, spawn_intent_hint);
+                    self.inner.invoke_tool(tool_name, spawn_input).await
+                } else {
+                    self.inner.invoke_tool(tool_name, input.clone()).await
                 }
-                Err(err) => Err(err),
-            }
-        } else if crate::agent_runtime::turn_worker_tools::is_workshop_spawn_call(tool_name, &input)
-        {
-            let mut spawn_input = input.clone();
-            ensure_spawn_worker_intent(&mut spawn_input, spawn_intent_hint);
-            self.inner.invoke_tool(tool_name, spawn_input).await
-        } else {
-            self.inner.invoke_tool(tool_name, input.clone()).await
-        };
+            })
+            .await;
         if let Ok(output) = &result {
             self.record_shell_session(tool_name, output).await;
         }
@@ -3545,8 +3559,10 @@ mod tests {
                 .lock()
                 .expect("invocations lock")
                 .push((tool_name.to_string(), input.clone()));
-            if tool_name == crate::public_api::COGNITION_STORE_READ
-                && let Some(registry) = &self.read_registry
+            if matches!(
+                tool_name,
+                crate::public_api::COGNITION_STORE_READ | crate::public_api::COGNITION_STORE_WRITE
+            ) && let Some(registry) = &self.read_registry
             {
                 return registry.invoke_tool(tool_name, input).await;
             }
@@ -3664,6 +3680,10 @@ mod tests {
     }
 
     fn fixture() -> Fixture {
+        fixture_with_workspace_mode(Default::default())
+    }
+
+    fn fixture_with_workspace_mode(workspace_mode: medousa_forge::model::WorkspaceMode) -> Fixture {
         let repo = TempDir::new().expect("repo");
         let forge_root = TempDir::new().expect("forge root");
         let git = GitEngine::detect().expect("git");
@@ -3686,13 +3706,14 @@ mod tests {
         let forge = Arc::new(Forge::open(forge_root.path()).expect("forge"));
         let policy = WorkPolicy::default();
         let item = forge
-            .register_with_policy(
+            .register_with_policy_and_workspace_mode(
                 "Demo",
                 "Repair demo",
                 repo.path(),
                 "main",
                 "user-1",
                 policy.clone(),
+                workspace_mode,
                 &Forge::system_actor(),
             )
             .expect("register");
@@ -4614,19 +4635,98 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn attached_checkout_uses_real_file_tools_without_global_root_access() {
+        let fixture =
+            fixture_with_workspace_mode(medousa_forge::model::WorkspaceMode::AttachedCheckout);
+        let authority = authority(&fixture);
+        let mut tools =
+            stasis::application::orchestration::tool_registry::InMemoryToolRegistry::default();
+        let (event_tx, _events) = tokio::sync::mpsc::channel(16);
+        crate::store_tools::register_store_tools(
+            &mut tools,
+            event_tx,
+            Default::default(),
+            "attached-test".into(),
+        )
+        .unwrap();
+        let tools: Arc<dyn ToolRegistry> = Arc::new(tools);
+        let registry = CoderBoundToolRegistry::new(
+            Arc::new(RecordingRegistry {
+                read_registry: Some(tools.clone()),
+                ..Default::default()
+            }),
+            &authority,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+        let read = json!({"action":"code.read", "path":"src/lib.rs", "intent":"Inspect selected checkout"});
+        let output = registry
+            .invoke_tool(crate::public_api::COGNITION_STORE_READ, read.clone())
+            .await
+            .unwrap();
+        assert!(output["content"].as_str().unwrap().contains("demo"));
+        registry
+            .invoke_tool(
+                crate::public_api::COGNITION_STORE_WRITE,
+                json!({
+                    "action":"code.write", "path":"src/lib.rs", "intent":"Update selected checkout",
+                    "expected_sha256": output["digest"], "find":"demo", "replace":"updated"
+                }),
+            )
+            .await
+            .unwrap();
+        assert!(
+            std::fs::read_to_string(fixture._repo.path().join("src/lib.rs"))
+                .unwrap()
+                .contains("updated")
+        );
+
+        // The task-local grant is gone when invocation returns. Knowledge of the
+        // root alone must not authorize an unbound tool or a different task.
+        assert!(
+            tools
+                .invoke_tool(
+                    crate::public_api::COGNITION_STORE_READ,
+                    json!({
+                        "action":"code.read", "path":"src/lib.rs", "root":fixture.entry.worktree
+                    })
+                )
+                .await
+                .is_err()
+        );
+        let outside = TempDir::new().unwrap();
+        assert!(registry.invoke_tool(crate::public_api::COGNITION_STORE_READ, json!({
+            "action":"code.read", "path":"src/lib.rs", "root":outside.path(), "intent":"Read unrelated root"
+        })).await.is_err());
+        #[cfg(unix)]
+        {
+            std::fs::write(outside.path().join("secret"), "outside").unwrap();
+            std::os::unix::fs::symlink(outside.path(), fixture.entry.worktree.join("escape"))
+                .unwrap();
+            assert!(registry.invoke_tool(crate::public_api::COGNITION_STORE_READ, json!({
+                "action":"code.read", "path":"escape/secret", "intent":"Check symlink boundary"
+            })).await.is_err());
+        }
+        fixture
+            .forge
+            .interrupt_attempt(
+                authority.lease(),
+                medousa_forge::model::RecoveryDisposition::RestartAllowed,
+                &Forge::system_actor(),
+            )
+            .unwrap();
+        assert!(
+            registry
+                .invoke_tool(crate::public_api::COGNITION_STORE_READ, read)
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
     async fn read_batch_uses_child_binding_and_preserves_each_activity() {
         let fixture = fixture();
         let authority = authority(&fixture);
-        crate::grapheme_script::store::set_test_grapheme_script_root_override(Some(
-            fixture.entry.worktree.clone(),
-        ));
-        struct RestoreRoot;
-        impl Drop for RestoreRoot {
-            fn drop(&mut self) {
-                crate::grapheme_script::store::set_test_grapheme_script_root_override(None);
-            }
-        }
-        let _root = RestoreRoot;
         let mut reads =
             stasis::application::orchestration::tool_registry::InMemoryToolRegistry::default();
         let (event_tx, _events) = tokio::sync::mpsc::channel(16);

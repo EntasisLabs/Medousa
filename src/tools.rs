@@ -17,7 +17,6 @@ use tokio::sync::{RwLock, mpsc};
 use uuid::Uuid;
 
 use stasis::application::orchestration::tool_registry::ToolRegistry;
-use stasis::domain::runtime::job_attempt::JobAttemptOutcome;
 #[cfg(feature = "full-daemon")]
 use stasis::ports::outbound::memory::identity_memory_store::IdentityMemoryStore;
 #[cfg(feature = "full-daemon")]
@@ -47,7 +46,6 @@ use crate::recurring_delivery::{
 use crate::recurring_feed::{RecurringFeedSpec, bind_recurring_feed_spec_for_registration};
 use crate::recurring_schedule::RecurringScheduleSpec;
 use crate::runtime_composition_ext::RuntimeCompositionExt;
-use crate::runtime_composition_ext::process_once;
 use crate::runtime_job_spec::ToolJobSpec;
 #[cfg(feature = "full-daemon")]
 use crate::tui::runtime_services::{
@@ -302,9 +300,9 @@ impl CognitionJobEnqueueTool {
             {
                 return Ok(JobEnqueueOutput::Rejected {
                     status: "rejected".to_string(),
-                    reason: "invalid_grapheme_source".to_string(),
+                    reason: crate::grapheme_runtime::preflight_rejection_reason(&validation).to_string(),
                     job_type: "workflow.grapheme.run".to_string(),
-                    policy_message: "Refused scheduling: Grapheme source failed runtime preflight."
+                    policy_message: "Refused scheduling: Grapheme source has not passed runtime preflight; inspect validation for its result or pending job ID."
                         .to_string(),
                     validation: ExternalJson::new(validation),
                     note: input.note.clone().unwrap_or_default(),
@@ -518,107 +516,33 @@ impl CognitionGraphemeRunTool {
             })
             .await;
 
-        let runtime_ref = Arc::clone(&self.runtime);
-        let mut raw_output = match process_once(&runtime_ref, "cognition_tui").await {
-            Ok(_) => {
-                let attempts = runtime_ref.list_job_attempts(&job_id).await;
-
-                match attempts {
-                    Ok(list) => {
-                        if let Some(last) = list.last() {
-                            let succeeded = last.outcome == JobAttemptOutcome::Succeeded;
-                            let execution_id = last.execution_id.clone();
-                            let diagnostics = last.diagnostics.as_deref().map(|d| {
-                                serde_json::from_str::<Value>(d)
-                                    .unwrap_or_else(|_| json!({ "raw": d }))
-                            });
-
-                            let _ = self
-                                .event_tx
-                                .send(TuiEvent::JobProcessed {
-                                    job_id: job_id.clone(),
-                                    succeeded,
-                                    execution_id: execution_id.clone(),
-                                })
-                                .await;
-
-                            if succeeded {
-                                let _ = turn_continuation::turn_continuation_store()
-                                    .mark_consumed(&job_id)
-                                    .await;
-                            }
-
-                            json!({
-                                "job_id": job_id,
-                                "status": if succeeded { "succeeded" } else { "failed" },
-                                "execution_id": execution_id,
-                                "attempt_outcome": format!("{:?}", last.outcome),
-                                "diagnostics": diagnostics,
-                            })
-                        } else {
-                            let _ = self
-                                .event_tx
-                                .send(TuiEvent::JobProcessed {
-                                    job_id: job_id.clone(),
-                                    succeeded: false,
-                                    execution_id: None,
-                                })
-                                .await;
-
-                            json!({
-                                "job_id": job_id,
-                                "status": "failed",
-                                "execution_id": Value::Null,
-                                "attempt_outcome": "NoAttempt",
-                                "diagnostics": {
-                                    "raw": "workflow.grapheme.run produced no job attempt; runtime may have failed before attempt persistence"
-                                },
-                            })
-                        }
-                    }
-                    Err(err) => {
-                        let _ = self
-                            .event_tx
-                            .send(TuiEvent::JobProcessed {
-                                job_id: job_id.clone(),
-                                succeeded: false,
-                                execution_id: None,
-                            })
-                            .await;
-
-                        json!({
-                            "job_id": job_id,
-                            "status": "failed",
-                            "execution_id": Value::Null,
-                            "attempt_outcome": "AttemptReadFailed",
-                            "diagnostics": {
-                                "raw": format!("failed to read runtime attempts: {err}")
-                            },
-                        })
-                    }
-                }
-            }
-            Err(err) => {
-                let _ = self
-                    .event_tx
-                    .send(TuiEvent::JobProcessed {
-                        job_id: job_id.clone(),
-                        succeeded: false,
-                        execution_id: None,
-                    })
-                    .await;
-
-                json!({
-                    "job_id": job_id,
-                    "status": "failed",
-                    "execution_id": Value::Null,
-                    "attempt_outcome": "RuntimeProcessFailed",
-                    "diagnostics": {
-                        "raw": format!("runtime process_once failed: {err}")
-                    },
+        let mut raw_output = crate::grapheme_runtime::wait_for_grapheme_job(
+            &self.runtime,
+            &job_id,
+            "cognition_tui",
+            secret_run.map(Arc::new),
+        )
+        .await?;
+        if raw_output.get("completed").and_then(Value::as_bool) == Some(true) {
+            let succeeded = raw_output.get("succeeded").and_then(Value::as_bool) == Some(true);
+            let execution_id = raw_output
+                .get("execution_id")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            let _ = self
+                .event_tx
+                .send(TuiEvent::JobProcessed {
+                    job_id: job_id.clone(),
+                    succeeded,
+                    execution_id,
                 })
+                .await;
+            if succeeded {
+                let _ = turn_continuation::turn_continuation_store()
+                    .mark_consumed(&job_id)
+                    .await;
             }
-        };
+        }
         if let Some(meta) = continuation_meta
             && let Some(obj) = raw_output.as_object_mut()
         {
@@ -1169,9 +1093,9 @@ impl CognitionGraphemePromoteToJobTool {
         {
             return Ok(GraphemePromoteToJobOutput::Rejected {
                 status: "rejected".to_string(),
-                reason: "invalid_grapheme_source".to_string(),
+                reason: crate::grapheme_runtime::preflight_rejection_reason(&validation).to_string(),
                 job_type: "workflow.grapheme.run".to_string(),
-                policy_message: "Refused promotion: Grapheme source failed runtime preflight."
+                policy_message: "Refused promotion: Grapheme source has not passed runtime preflight; inspect validation for its result or pending job ID."
                     .to_string(),
                 validation: ExternalJson::new(validation),
             });
@@ -1361,10 +1285,10 @@ impl CognitionGraphemePromoteToRecurringTool {
         {
             return Ok(GraphemePromoteToRecurringOutput::Rejected {
                 status: "rejected".to_string(),
-                reason: "invalid_grapheme_source".to_string(),
+                reason: crate::grapheme_runtime::preflight_rejection_reason(&validation).to_string(),
                 job_type: "workflow.grapheme.run".to_string(),
                 policy_message:
-                    "Refused recurring registration: Grapheme source failed runtime preflight."
+                    "Refused recurring registration: Grapheme source has not passed runtime preflight; inspect validation for its result or pending job ID."
                         .to_string(),
                 validation: ExternalJson::new(validation),
             });
@@ -1571,9 +1495,9 @@ impl CognitionGraphemePromoteLastRunToRecurringTool {
         {
             return Ok(GraphemePromoteLastRunOutput::Rejected {
                 status: "rejected".to_string(),
-                reason: "invalid_grapheme_source".to_string(),
+                reason: crate::grapheme_runtime::preflight_rejection_reason(&validation).to_string(),
                 job_type: "workflow.grapheme.run".to_string(),
-                policy_message: "Refused recurring registration from last run: Grapheme source failed runtime preflight."
+                policy_message: "Refused recurring registration from last run: Grapheme source has not passed runtime preflight; inspect validation for its result or pending job ID."
                     .to_string(),
                 used_remembered_source,
                 validation: ExternalJson::new(validation),

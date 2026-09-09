@@ -90,6 +90,19 @@ fn allowed_roots() -> Vec<PathBuf> {
     roots
 }
 
+tokio::task_local! {
+    // Set only by the native Coder registry after Forge admission. This is not
+    // model input and does not grant other sessions access to this checkout.
+    static CODER_TOOL_ROOT: PathBuf;
+}
+
+pub(crate) async fn with_coder_tool_root<T>(
+    root: PathBuf,
+    invocation: impl std::future::Future<Output = T>,
+) -> T {
+    CODER_TOOL_ROOT.scope(root, invocation).await
+}
+
 fn resolve_root(root: Option<&str>) -> StasisResult<PathBuf> {
     let base = match root.map(str::trim).filter(|s| !s.is_empty()) {
         Some(raw) => PathBuf::from(raw),
@@ -101,6 +114,18 @@ fn resolve_root(root: Option<&str>) -> StasisResult<PathBuf> {
             base.display()
         ))
     })?;
+    if let Ok(root) = CODER_TOOL_ROOT.try_with(Clone::clone) {
+        let root = root.canonicalize().map_err(|err| {
+            StasisError::PortFailure(format!("cannot resolve admitted Coder root: {err}"))
+        })?;
+        if !canon.starts_with(&root) {
+            return Err(StasisError::PortFailure(format!(
+                "root escapes admitted Coder checkout: {}",
+                canon.display()
+            )));
+        }
+        return Ok(canon);
+    }
     let allowed: Vec<PathBuf> = allowed_roots()
         .into_iter()
         .filter_map(|root| root.canonicalize().ok())

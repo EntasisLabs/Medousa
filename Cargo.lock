@@ -8028,6 +8028,7 @@ dependencies = [
  "base64 0.22.1",
  "clap",
  "futures-util",
+ "medousa-forge",
  "portable-pty",
  "serde",
  "serde_json",

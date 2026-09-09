@@ -29,7 +29,7 @@ use crate::grapheme_script::store::GraphemeScriptStore;
 use crate::paths::medousa_data_dir;
 
 const DEFAULT_BIND: &str = "127.0.0.1:7862";
-const EXPECTED_API_REVISION: u32 = 4;
+const EXPECTED_API_REVISION: u32 = 5;
 /// Windows Defender / cold start often exceeds the old 1s probe window.
 const HEALTH_WAIT_ATTEMPTS: u32 = 100;
 const HEALTH_WAIT_INTERVAL_MS: u64 = 50;
@@ -126,6 +126,8 @@ struct SessionHealth {
     name: String,
     api_revision: Option<u32>,
     allowed_roots: Vec<PathBuf>,
+    #[serde(default)]
+    forge_root: Option<PathBuf>,
 }
 
 enum HealthProbe {
@@ -134,7 +136,11 @@ enum HealthProbe {
     Incompatible(String),
 }
 
-async fn probe_health(health_url: &str, required_roots: &[PathBuf]) -> HealthProbe {
+async fn probe_health(
+    health_url: &str,
+    required_roots: &[PathBuf],
+    forge_root: &std::path::Path,
+) -> HealthProbe {
     let Ok(client) = reqwest::Client::builder()
         .timeout(std::time::Duration::from_millis(400))
         .build()
@@ -172,6 +178,11 @@ async fn probe_health(health_url: &str, required_roots: &[PathBuf]) -> HealthPro
             missing.display()
         ));
     }
+    if health.forge_root.as_deref() != Some(forge_root) {
+        return HealthProbe::Incompatible(
+            "attached-checkout authority uses a different or missing Forge store".into(),
+        );
+    }
     HealthProbe::Compatible
 }
 
@@ -182,6 +193,10 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
     let workspace_root = GraphemeScriptStore::root_dir();
     let workspace_str = workspace_root.to_string_lossy().into_owned();
     let required_roots = forge_worktree_roots();
+    let forge_root = medousa_data_dir().join("forge");
+    let forge_root = tokio::fs::canonicalize(&forge_root)
+        .await
+        .unwrap_or(forge_root);
 
     let info = |available: bool, message: String| ShellSessionInfo {
         available,
@@ -193,7 +208,7 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
         message,
     };
 
-    match probe_health(&health_url, &required_roots).await {
+    match probe_health(&health_url, &required_roots, &forge_root).await {
         HealthProbe::Compatible => return info(true, "session host reachable".into()),
         HealthProbe::Incompatible(reason) => {
             return info(
@@ -234,6 +249,8 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
                 .arg(&bind)
                 .arg("--workspace")
                 .arg(&workspace_root)
+                .arg("--forge-root")
+                .arg(&forge_root)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
@@ -256,7 +273,7 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
 
     for _ in 0..HEALTH_WAIT_ATTEMPTS {
         tokio::time::sleep(std::time::Duration::from_millis(HEALTH_WAIT_INTERVAL_MS)).await;
-        match probe_health(&health_url, &required_roots).await {
+        match probe_health(&health_url, &required_roots, &forge_root).await {
             HealthProbe::Compatible => return info(true, "session host started".into()),
             HealthProbe::Incompatible(reason) => {
                 return info(
