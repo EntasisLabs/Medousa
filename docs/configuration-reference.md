@@ -121,7 +121,7 @@ the secrets directory is mode `0700` and each secret file is mode `0600`.
 | `MEDOUSA_MCP_GATEWAY_URL` | Gateway base URL | `http://127.0.0.1:7420` |
 | `MEDOUSA_MCP_GATEWAY_TOKEN` | Daemon → gateway auth | open if unset |
 | `MEDOUSA_MCP_GATEWAY_ADMIN_TOKEN` | Admin API auth | open if unset |
-| `MEDOUSA_MCP_POLICY_TOKEN` | Gateway → daemon policy | open if unset |
+| `MEDOUSA_MCP_POLICY_TOKEN` | Gateway → daemon policy | optional override; local daemon creates a credential in its secret store when unset |
 | `MEDOUSA_MCP_TURN_TOKEN_SECRET` | Turn-scoped invoke HMAC | open if unset |
 
 Config file: `~/.config/medousa/mcp-gateway.toml` — see [mcp-gateway-setup.md](mcp-gateway-setup.md).

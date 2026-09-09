@@ -1490,7 +1490,7 @@ fn run_doctor(args: &[String]) -> Result<()> {
         .trim_start_matches("http://")
         .trim_start_matches("https://");
     let mcp_gateway_reachable = is_bind_reachable(mcp_gateway_bind);
-    let policy_token_configured = medousa::mcp_gateway::resolve_mcp_policy_token().is_some();
+    let policy_token_override = medousa::mcp_gateway::resolve_mcp_policy_token().is_some();
     let turn_token_configured = env::var("MEDOUSA_MCP_TURN_TOKEN_SECRET")
         .ok()
         .is_some_and(|value| !value.trim().is_empty());
@@ -1503,10 +1503,10 @@ fn run_doctor(args: &[String]) -> Result<()> {
         } else {
             "open"
         },
-        if policy_token_configured {
-            "configured"
+        if policy_token_override {
+            "explicit_override"
         } else {
-            "open"
+            "automatic_local"
         },
         if turn_token_configured {
             "configured"
@@ -1563,12 +1563,6 @@ fn run_doctor(args: &[String]) -> Result<()> {
                 capabilities.capabilities.len()
             );
         }
-    } else if medousa::gateway_auth_configured() && !policy_token_configured {
-        println!(
-            "{}",
-            "[hint] MEDOUSA_MCP_GATEWAY_TOKEN is set but MEDOUSA_MCP_POLICY_TOKEN is unset — gateway→daemon policy calls may fail if policy auth is required."
-                .blue()
-        );
     }
 
     if daemon_http.healthy {

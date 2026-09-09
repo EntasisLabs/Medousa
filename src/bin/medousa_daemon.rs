@@ -1012,11 +1012,19 @@ async fn start_daemon() -> Result<()> {
         local_device_id: share_api_state.local_device_id.clone(),
         local_peer_name: share_api_state.local_peer_name.clone(),
     };
+    let mcp_policy_token = tokio::task::spawn_blocking(|| {
+        medousa_mcp_gateway::mcp_gateway::policy_credentials::initialize_local_policy_token(
+            &medousa::paths::medousa_data_dir(),
+            medousa::mcp_gateway::resolve_mcp_policy_token(),
+        )
+    })
+    .await
+    .context("initialize MCP policy credential task")??;
     let daemon_access_state =
         medousa::peer_scope::DaemonAccessState::new(peer_message_state.pairing.clone())
             .with_local_credentials(local_credentials)
             .with_credential_lifecycle(credential_lifecycle)
-            .with_mcp_policy_token(medousa::mcp_gateway::resolve_mcp_policy_token());
+            .with_mcp_policy_token(Some(mcp_policy_token));
     let mesh_api_state = medousa::mesh::MeshApiState {
         pairing: peer_message_state.pairing.clone(),
         local_device_id: peer_message_state.local_device_id.clone(),

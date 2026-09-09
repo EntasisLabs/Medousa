@@ -449,10 +449,15 @@ impl ServerRegistry {
                 );
             }
             Err(error) => {
+                let auth_failed = error.is::<super::policy_client::PolicyAuthenticationError>();
                 return fail(
-                    "policy_unreachable",
+                    if auth_failed {
+                        "policy_authentication_failed"
+                    } else {
+                        "policy_unreachable"
+                    },
                     format!("daemon policy evaluate failed: {error:#}"),
-                    true,
+                    !auth_failed,
                 );
             }
         }
@@ -844,6 +849,53 @@ mod tests {
         registry.bootstrap().await;
         let tools = registry.discover("notion", None, 10).await;
         assert!(tools.iter().any(|tool| tool.tool_name == "search_pages"));
+    }
+
+    #[tokio::test]
+    async fn policy_auth_failure_is_not_a_retryable_tool_or_network_failure() {
+        struct RejectedCredential;
+        #[async_trait::async_trait]
+        impl McpPolicyEvaluator for RejectedCredential {
+            async fn evaluate(
+                &self,
+                _: &McpPolicyEvaluateRequest,
+            ) -> anyhow::Result<medousa_types::mcp_gateway_api::McpPolicyEvaluateResponse>
+            {
+                Err(super::super::policy_client::PolicyAuthenticationError.into())
+            }
+        }
+        let registry = ServerRegistry::with_policy_evaluator(
+            test_registry().config,
+            Arc::new(RejectedCredential),
+        );
+        registry.bootstrap().await;
+        let context = medousa_types::mcp_gateway_api::McpTurnContext {
+            turn_id: "turn-auth".into(),
+            session_id: "session-auth".into(),
+            user_id: "user".into(),
+            channel_id: "chat".into(),
+            lane: McpTurnLane::Interactive,
+            policy_profile: None,
+        };
+        let response = registry
+            .invoke(
+                McpInvokeRequest {
+                    server_id: "notion".into(),
+                    tool_name: "search_pages".into(),
+                    input: json!({}),
+                    turn_token: medousa_types::mcp_turn_token::mint_mcp_turn_token(&context)
+                        .unwrap(),
+                    turn_context: context,
+                    operator_approval_granted: None,
+                },
+                true,
+            )
+            .await;
+        assert!(!response.ok);
+        assert!(response.output.is_none());
+        let error = response.error.unwrap();
+        assert_eq!(error.code, "policy_authentication_failed");
+        assert_eq!(error.retryable, Some(false));
     }
 
     #[tokio::test]
