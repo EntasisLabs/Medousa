@@ -52,6 +52,12 @@ pub enum EventPayload {
     EnvironmentProvisioned {
         env: Box<crate::model::GovernedEnv>,
     },
+    /// A human explicitly committed reviewed files in an attached checkout.
+    ReviewCommitRecorded {
+        head: GitOid,
+        index: GitOid,
+        branch: String,
+    },
     /// A mutating operation with Git/filesystem side effects has begun. If the
     /// process crashes before `operation_committed`, reconciliation rolls this
     /// operation forward (or classifies it) from its recorded side effects.

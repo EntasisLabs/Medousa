@@ -41,7 +41,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Secure credential handoff](guides/secure-credential-handoff.md) | Give OpenShell or Grapheme an API key without putting it in chat |
 | [Desktop companion](guides/desktop-companion.md) | Floating pet for chat, approvals, notes, Web, and views |
 | [Drawing](guides/drawing.md) | Sketch inside notes or use a full drawing note |
-| [Undertakings & ForgeLens](guides/undertakings.md) | Governed work, seal, review, World |
+| [Undertakings & ForgeLens](guides/undertakings.md) | Governed work, chat review, comments, commits, pull requests |
 | Full index | [guides/README.md](guides/README.md) |
 
 ---

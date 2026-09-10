@@ -16811,6 +16811,66 @@
         }
       }
     },
+    "/v1/forge/items/{work_id}/changes/commit": {
+      "post": {
+        "operationId": "forge.items.by_work_id.changes.commit.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "FORGE_ITEMS_BY_WORK_ID_CHANGES_COMMIT_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "forge.items.by_work_id.changes.commit.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "forge.items.by_work_id.changes.commit.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "forge.items.by_work_id.changes.commit.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1048576,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
     "/v1/forge/items/{work_id}/changes/conflict": {
       "post": {
         "operationId": "forge.items.by_work_id.changes.conflict.post",
@@ -17109,6 +17169,66 @@
         }
       }
     },
+    "/v1/forge/items/{work_id}/changes/git": {
+      "get": {
+        "operationId": "forge.items.by_work_id.changes.git.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "FORGE_ITEMS_BY_WORK_ID_CHANGES_GIT_GETResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "forge.items.by_work_id.changes.git.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "forge.items.by_work_id.changes.git.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "forge.items.by_work_id.changes.git.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
     "/v1/forge/items/{work_id}/changes/history": {
       "get": {
         "operationId": "forge.items.by_work_id.changes.history.get",
@@ -17213,6 +17333,66 @@
               }
             },
             "description": "forge.items.by_work_id.changes.pull.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1048576,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/forge/items/{work_id}/changes/pull-request": {
+      "post": {
+        "operationId": "forge.items.by_work_id.changes.pull_request.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "FORGE_ITEMS_BY_WORK_ID_CHANGES_PULL_REQUEST_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "forge.items.by_work_id.changes.pull_request.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "forge.items.by_work_id.changes.pull_request.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "forge.items.by_work_id.changes.pull_request.post"
           }
         },
         "x-medousa-policy": {

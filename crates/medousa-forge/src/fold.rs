@@ -15,6 +15,33 @@ pub fn apply_payload(item: &mut WorkItem, event: &TransitionEvent) -> Result<()>
             item.environment = Some((**env).clone());
             Ok(())
         }
+        EventPayload::ReviewCommitRecorded {
+            head,
+            index,
+            branch,
+        } => {
+            let crate::model::WorkTarget::Git(target) = &mut item.target;
+            target.base_oid = head.clone();
+            if let Some(env) = &mut item.environment {
+                env.attached_index_oid = Some(index.clone());
+                env.branch = branch.clone();
+            }
+            let active = item
+                .active_attempt_ids()
+                .into_iter()
+                .cloned()
+                .collect::<Vec<_>>();
+            for attempt in &mut item.attempts {
+                if !active.contains(&attempt.id) {
+                    continue;
+                }
+                if let Some(env) = &mut attempt.environment {
+                    env.attached_index_oid = Some(index.clone());
+                    env.branch = branch.clone();
+                }
+            }
+            Ok(())
+        }
         EventPayload::StateChanged { to, .. } => {
             item.state = *to;
             item.updated_at = event.at;

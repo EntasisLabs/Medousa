@@ -774,7 +774,8 @@
   }
 
   .diff-line-comment {
-    display: none;
+    display: inline-flex;
+    opacity: 0;
     align-items: center;
     justify-content: center;
     width: 1.15rem;
@@ -786,9 +787,11 @@
     cursor: pointer;
   }
 
+  .diff-line:focus-within .diff-line-comment,
+  .diff-side-row:focus-within .diff-line-comment,
   .diff-line:hover .diff-line-comment,
   .diff-side-row:hover .diff-line-comment {
-    display: inline-flex;
+    opacity: 1;
   }
 
   .diff-line-comment:hover {
@@ -919,5 +922,10 @@
       border-top: 1px solid rgb(var(--color-surface-500) / 0.18);
       border-left: 0;
     }
+  }
+  @media (max-width: 767px), (pointer: coarse) {
+    .diff-line-comment { opacity: 1; width: 44px; height: 44px; background: transparent; }
+    .diff-line { grid-template-columns: 44px 24px 24px 12px minmax(0, 1fr); }
+    .diff-comment-slot { width: 44px; }
   }
 </style>

@@ -70,6 +70,7 @@
   h2 { margin: 0; font-size: 17px; font-weight: 600; text-align: center; }
   .heading button { display: grid; place-items: center; min-height: 44px; }
   .sheet-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 8px 16px 20px; }
+  .full .sheet-body { flex: 1; }
   footer { padding: 12px 16px; border-top: 1px solid rgb(var(--theme-border) / .25); }
   .sheet-body :global(.chat-runtime-option > span > span:first-child) { font-size: 15px; }
   .sheet-body :global(.composer-plus-menu-item), .sheet-body :global(.context-action), .sheet-body :global(.chat-runtime-option) { min-height: 48px; font-size: 15px; padding: 12px; }

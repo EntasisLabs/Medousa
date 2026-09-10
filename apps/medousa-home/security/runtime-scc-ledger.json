@@ -53,6 +53,10 @@
       "specifier": "$lib/styles/artifact.postcss"
     },
     {
+      "from": "src/lib/components/chat/ChatChangeReceipt.svelte",
+      "specifier": "$lib/styles/chat-review.postcss"
+    },
+    {
       "from": "src/lib/components/chat/ChatComposerBar.svelte",
       "specifier": "$lib/styles/composer.postcss"
     },

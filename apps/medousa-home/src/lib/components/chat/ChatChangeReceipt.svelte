@@ -1,4 +1,9 @@
 <script lang="ts">
+  import "$lib/styles/chat-review.postcss";
+  import MobileActionSheet from "$lib/components/mobile/MobileActionSheet.svelte";
+  import ReviewGitActions from "./ReviewGitActions.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
+  import { readReviewNotes, writeReviewNotes, reviewNotesKey, reviewNotesPrompt, type WorkingReviewNote, type WorkingReviewAnchor } from "$lib/chat/workingReviewNotes";
   import { untrack } from "svelte";
   import { subscribeCodeProjectEvents } from "$lib/code/codeProjectEvents";
   import {
@@ -48,6 +53,32 @@
     onRequestRevision,
     onReviewChanged,
   }: Props = $props();
+
+  let page = $state<"review" | "comment" | "notes" | "commit" | "pull-request">("review");
+  let gitBusy = $state(false);
+  let noteAnchor = $state<WorkingReviewAnchor | null>(null);
+  let notes = $state<WorkingReviewNote[]>([]);
+  let notesKey = $state("");
+  let selectedPath = $state<string | null>(null);
+  const sheetTitle = $derived({ review: "Changes", comment: "Add comment", notes: "Review notes", commit: "Commit changes", "pull-request": "Create pull request" }[page]);
+  $effect(() => {
+    const key = reviewNotesKey(workId);
+    notesKey = key; notes = readReviewNotes(key); sheetOpen = false; page = "review"; selectedPath = null;
+  });
+  function back() { if (page !== "review") page = "review"; else selectedPath = null; }
+  function openWorkingComment(anchor: WorkingReviewAnchor) {
+    noteAnchor = anchor; commentCompose = null; commentDraft = ""; commentError = null; page = "comment";
+  }
+  function saveNote() {
+    if (!noteAnchor || !commentDraft.trim()) return;
+    const next = [...notes, { ...noteAnchor, id: crypto.randomUUID(), body: commentDraft.trim() }];
+    try { writeReviewNotes(notesKey, next); notes = next; page = "review"; noteAnchor = null; }
+    catch { commentError = "Could not save this note on your device. Your comment is still here."; }
+  }
+  function removeNote(id: string) {
+    const next = notes.filter((note) => note.id !== id);
+    try { writeReviewNotes(notesKey, next); notes = next; } catch { commentError = "Could not remove this note."; }
+  }
 
   let changes = $state<ForgeChanges | null>(null);
   let loading = $state(false);
@@ -168,18 +199,20 @@
   }
 
   function closeSheet() {
+    if (gitBusy || commentBusy) return;
     sheetOpen = false;
+    page = "review";
   }
 
   function askForRevision() {
-    const notes = (sealedReview?.comments ?? [])
+    const sealedNotes = (sealedReview?.comments ?? [])
       .filter((comment) => !comment.resolved_at)
       .map((comment) => `- ${comment.path}:${comment.start_line} — ${comment.body}`)
       .join("\n");
     closeSheet();
     onRequestRevision(
-      notes
-        ? `Revise the current changes in ${projectTitle} using these review notes:\n\n${notes}`
+      notes.length ? reviewNotesPrompt(projectTitle, notes) + (sealedNotes ? `\n\nAdditional review notes:\n${sealedNotes}` : "") : sealedNotes
+        ? `Revise the current changes in ${projectTitle} using these review notes:\n\n${sealedNotes}`
         : undefined,
     );
   }
@@ -191,6 +224,8 @@
     content: string;
   }) {
     commentCompose = input;
+    noteAnchor = null;
+    page = "comment";
     commentDraft = "";
     commentError = null;
   }
@@ -216,6 +251,7 @@
         body: commentDraft.trim(),
       });
       commentCompose = null;
+      page = "review";
       commentDraft = "";
       await onReviewChanged?.();
     } catch (error) {
@@ -385,7 +421,15 @@
   </div>
 {/if}
 
-{#if sheetOpen}
+{#if sheetOpen && layout.isMobile}
+  <MobileActionSheet bind:open={sheetOpen} title={sheetTitle} footer={page === "review" ? actions : undefined} full busy={gitBusy || commentBusy} onclose={closeSheet}
+    onback={page !== "review" || selectedPath ? back : undefined}>
+    {#if refreshAvailable && page === "review"}
+      <div class="chat-review-update-bar"><span>Changes updated while you were reviewing.</span><button type="button" onclick={() => void refreshWorkingSnapshot()} disabled={loading}>Refresh</button></div>
+    {/if}
+    {@render body()}
+  </MobileActionSheet>
+{:else if sheetOpen}
   <BodyPortal>
     <div
       class="chat-review-backdrop"
@@ -401,7 +445,7 @@
       <section class="chat-review-sheet">
         <header class="chat-review-chrome">
           <div class="chat-review-title">
-            <span>{isReady ? "Ready for review" : "Working changes"}</span>
+            <span>{page !== "review" ? sheetTitle : isReady ? "Ready for review" : "Working changes"}</span>
             <h2>{projectTitle}</h2>
           </div>
           <div class="chat-review-summary">
@@ -438,6 +482,54 @@
           </div>
         {/if}
 
+        {#if page === "review"}
+          {@render body()}
+          {@render actions()}
+        {:else}
+          <div class="chat-review-page">{@render body()}</div>
+          <footer class="chat-review-actions"><button type="button" class="chat-review-action" disabled={gitBusy || commentBusy} onclick={back}>Back to changes</button></footer>
+        {/if}
+      </section>
+    </div>
+  </BodyPortal>
+{/if}
+
+
+
+{#snippet actions()}
+<footer class="chat-review-actions">
+  <button type="button" class="chat-review-action" onclick={() => page = "notes"}>Notes ({notes.length + (sealedReview?.comments?.length ?? 0)})</button>
+  <button type="button" class="chat-review-action" onclick={() => page = "commit"}>Commit</button>
+  <button type="button" class="chat-review-action chat-review-action--primary" onclick={() => page = "pull-request"}>Create PR</button>
+</footer>
+{/snippet}
+{#snippet body()}
+  {#if page === "commit" || page === "pull-request"}
+    <ReviewGitActions {workId} action={page} onbusy={(value) => gitBusy = value} ondone={() => { page = "review"; void refreshWorkingSnapshot(); void onReviewChanged?.(); }}/>
+  {:else if page === "comment"}
+    <form class="review-note-form" onsubmit={(event) => { event.preventDefault(); if (noteAnchor) saveNote(); else void submitComment(); }}>
+      <p>{noteAnchor?.path ?? commentCompose?.path}:{noteAnchor?.line ?? commentCompose?.line}</p>
+      <pre>{noteAnchor?.content ?? commentCompose?.content}</pre>
+      <label>Comment<textarea class="textarea" rows="5" bind:value={commentDraft} disabled={commentBusy} placeholder="What should change?"></textarea></label>
+      {#if noteAnchor}<p class="review-note-hint">Saved on this device with the version you reviewed. Send your notes to Medousa when ready.</p>{/if}
+      {#if commentError}<p role="alert">{commentError}</p>{/if}
+      <button type="submit" class="chat-review-action chat-review-action--primary" disabled={commentBusy || !commentDraft.trim()}>Save comment</button>
+    </form>
+  {:else if page === "notes"}
+    <div class="review-notes">
+      {#each notes as note (note.id)}
+        <article><strong>{note.path}:{note.line}</strong><p>{note.body}</p><small>Attached to the captured {note.side === "new" ? "working" : "original"} version</small><button type="button" onclick={() => removeNote(note.id)}>Remove note</button></article>
+      {/each}
+      {#if sealedReview}
+        <ReviewCommentRail comments={sealedReview.comments ?? []} compose={null} draft="" busy={commentBusy}
+          onDraftChange={() => {}} onSubmit={submitComment} onCancelCompose={() => {}}
+          onResolve={resolveComment} onDelete={removeComment} onJump={() => page = "review"}/>
+      {/if}
+      {#if !notes.length && !sealedReview?.comments?.length}<p>Select a line in the diff to leave a comment.</p>{/if}
+      {#if commentError}<p role="alert">{commentError}</p>{/if}
+      <button type="button" class="chat-review-action chat-review-action--primary" onclick={askForRevision}>Ask Medousa to revise</button>
+    </div>
+  {:else}
         <div class="chat-review-content">
           <div class="chat-review-body">
             {#if isReady && sealedReview}
@@ -451,6 +543,8 @@
               {#key `${workId}:${loadedEventRevision}`}
                 <WorkingChangesBrowser
                   {workId}
+                  bind:selectedPath
+                  onComment={openWorkingComment}
                   {changes}
                   {loading}
                   error={loadError}
@@ -460,7 +554,7 @@
               {/key}
             {/if}
           </div>
-          {#if isReady && sealedReview && (commentCompose || (sealedReview.comments?.length ?? 0) > 0)}
+          {#if !layout.isMobile && isReady && sealedReview && (commentCompose || (sealedReview.comments?.length ?? 0) > 0)}
             <div class="chat-review-comments">
               <ReviewCommentRail
                 comments={sealedReview.comments ?? []}
@@ -486,496 +580,5 @@
           {/if}
         </div>
 
-        <footer class="chat-review-actions">
-          <button
-            type="button"
-            class="chat-review-action chat-review-action--quiet"
-            onclick={() => void onOpenCode()}
-          >
-            <ArrowUpRight size={13} />
-            Open in Code
-          </button>
-          <button type="button" class="chat-review-action chat-review-action--primary" onclick={askForRevision}>
-            <MessageSquareText size={13} />
-            Ask Medousa to revise
-          </button>
-        </footer>
-      </section>
-    </div>
-  </BodyPortal>
-{/if}
-
-<style>
-  .chat-change-receipt {
-    width: min(46rem, calc(100% - 1rem));
-    margin: 0.35rem auto 0;
-    overflow: hidden;
-    border: 1px solid rgb(var(--theme-border) / 0.24);
-    border-radius: var(--theme-container-radius);
-    background: rgb(var(--theme-card) / 0.72);
-    box-shadow: 0 0.4rem 1.25rem rgb(var(--theme-shadow) / 0.08);
-    color: rgb(var(--theme-text));
-  }
-
-  .chat-change-receipt-header {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: 0.65rem;
-    padding: 0.7rem 0.75rem 0.55rem;
-  }
-
-  .chat-change-receipt-icon {
-    display: grid;
-    width: 1.9rem;
-    height: 1.9rem;
-    flex: 0 0 auto;
-    place-items: center;
-    border-radius: var(--theme-control-radius);
-    background: rgb(var(--theme-pane-muted) / 0.72);
-    color: rgb(var(--theme-text-secondary));
-  }
-
-  .chat-change-receipt-icon--ready {
-    background: rgb(var(--theme-success) / 0.12);
-    color: rgb(var(--theme-success));
-  }
-
-  .chat-change-receipt-heading {
-    min-width: 0;
-    flex: 1 1 auto;
-  }
-
-  .chat-change-receipt-heading p {
-    margin: 0;
-    font-size: 0.75rem;
-    font-weight: 600;
-  }
-
-  .chat-change-receipt-heading span,
-  .chat-change-receipt-footer,
-  .chat-change-loading {
-    color: rgb(var(--theme-text-tertiary));
-    font-size: 0.625rem;
-  }
-
-  .chat-change-receipt-stats,
-  .chat-change-file-stats,
-  .chat-review-summary {
-    display: inline-flex;
-    flex: 0 0 auto;
-    align-items: center;
-    gap: 0.35rem;
-    font-size: 0.625rem;
-    font-variant-numeric: tabular-nums;
-  }
-
-  :global(.chat-change-refreshing) {
-    flex: 0 0 auto;
-    color: rgb(var(--theme-text-tertiary));
-  }
-
-  .chat-change-file-status {
-    margin-left: auto;
-    color: rgb(var(--theme-text-tertiary));
-    font-size: 0.5625rem;
-  }
-
-  .chat-change-add {
-    color: rgb(var(--syn-addition-fg));
-  }
-
-  .chat-change-del {
-    color: rgb(var(--syn-deletion-fg));
-  }
-
-  .chat-change-review-button,
-  .chat-review-action {
-    display: inline-flex;
-    flex: 0 0 auto;
-    align-items: center;
-    justify-content: center;
-    gap: 0.35rem;
-    border-radius: var(--theme-control-radius);
-    font-size: 0.6875rem;
-    font-weight: 550;
-  }
-
-  .chat-change-review-button {
-    border: 1px solid rgb(var(--theme-border) / 0.32);
-    padding: 0.32rem 0.6rem;
-    background: rgb(var(--theme-pane-muted) / 0.55);
-    color: rgb(var(--theme-text));
-  }
-
-  .chat-change-review-button:hover,
-  .chat-change-review-button:focus-visible {
-    border-color: rgb(var(--theme-focus) / 0.48);
-    background: rgb(var(--theme-card-hover) / 0.72);
-  }
-
-  .chat-change-signals,
-  .chat-review-signal-bar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.45rem 0.8rem;
-    color: rgb(var(--theme-text-tertiary));
-    font-size: 0.625rem;
-  }
-
-  .chat-change-signals {
-    border-top: 1px solid rgb(var(--theme-border) / 0.14);
-    padding: 0.42rem 0.75rem;
-  }
-
-  .chat-change-signals span,
-  .chat-review-signal-bar span {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-  }
-
-  .chat-change-signal--success {
-    color: rgb(var(--theme-success));
-  }
-
-  .chat-change-signal--attention {
-    color: rgb(var(--theme-warning));
-  }
-
-  .chat-change-files {
-    margin: 0;
-    padding: 0;
-    border-top: 1px solid rgb(var(--theme-border) / 0.14);
-    list-style: none;
-  }
-
-  .chat-change-files li {
-    display: flex;
-    min-width: 0;
-    align-items: baseline;
-    gap: 0.45rem;
-    padding: 0.36rem 0.75rem;
-    border-bottom: 1px solid rgb(var(--theme-border) / 0.1);
-  }
-
-  .chat-change-files li:last-child {
-    border-bottom: 0;
-  }
-
-  .chat-change-file-name {
-    flex: 0 1 auto;
-    overflow: hidden;
-    color: rgb(var(--theme-text-secondary));
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: 0.6875rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .chat-change-file-parent {
-    min-width: 0;
-    flex: 1 1 auto;
-    overflow: hidden;
-    color: rgb(var(--theme-text-tertiary));
-    font-size: 0.5625rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .chat-change-file-stats {
-    margin-left: auto;
-  }
-
-  .chat-change-receipt-footer {
-    display: flex;
-    justify-content: space-between;
-    gap: 1rem;
-    border-top: 1px solid rgb(var(--theme-border) / 0.14);
-    padding: 0.4rem 0.75rem;
-  }
-
-  .chat-change-receipt-footer button:hover,
-  .chat-change-receipt-footer button:focus-visible {
-    color: rgb(var(--theme-link));
-  }
-
-  .chat-change-loading {
-    display: flex;
-    width: min(46rem, calc(100% - 1rem));
-    margin: 0.35rem auto 0;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.45rem 0.65rem;
-  }
-
-  .chat-review-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 125;
-    display: flex;
-    justify-content: flex-end;
-    background: rgb(var(--theme-shadow) / 0.42);
-    animation: chat-review-fade-in 150ms ease-out;
-  }
-
-  .chat-review-sheet {
-    display: flex;
-    box-sizing: border-box;
-    width: min(54rem, calc(100vw - 4rem));
-    min-width: 0;
-    height: 100%;
-    flex-direction: column;
-    overflow: hidden;
-    border-left: 1px solid rgb(var(--theme-border) / 0.3);
-    background: rgb(var(--theme-pane));
-    box-shadow: -1rem 0 3rem rgb(var(--theme-shadow) / 0.24);
-    color: rgb(var(--theme-text));
-    animation: chat-review-slide-in 220ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  .chat-review-chrome {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: 0.8rem;
-    border-bottom: 1px solid rgb(var(--theme-border) / 0.2);
-    padding: 0.7rem 0.85rem;
-  }
-
-  .chat-review-title {
-    min-width: 0;
-    flex: 1 1 auto;
-  }
-
-  .chat-review-title span {
-    color: rgb(var(--theme-text-tertiary));
-    font-size: 0.625rem;
-  }
-
-  .chat-review-title h2 {
-    margin: 0.08rem 0 0;
-    overflow: hidden;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .chat-review-summary {
-    color: rgb(var(--theme-text-tertiary));
-  }
-
-  .chat-review-close {
-    display: grid;
-    width: 1.8rem;
-    height: 1.8rem;
-    flex: 0 0 auto;
-    place-items: center;
-    border-radius: var(--theme-control-radius);
-    color: rgb(var(--theme-text-tertiary));
-  }
-
-  .chat-review-close:hover,
-  .chat-review-close:focus-visible {
-    background: rgb(var(--theme-card-hover) / 0.65);
-    color: rgb(var(--theme-text));
-  }
-
-  .chat-review-signal-bar {
-    border-bottom: 1px solid rgb(var(--theme-border) / 0.16);
-    padding: 0.5rem 0.9rem;
-  }
-
-  .chat-review-update-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    border-bottom: 1px solid rgb(var(--theme-focus) / 0.18);
-    padding: 0.48rem 0.9rem;
-    background: rgb(var(--theme-focus) / 0.06);
-    color: rgb(var(--theme-text-secondary));
-    font-size: 0.6875rem;
-  }
-
-  .chat-review-update-bar button {
-    display: inline-flex;
-    flex: 0 0 auto;
-    align-items: center;
-    gap: 0.3rem;
-    border-radius: var(--theme-control-radius);
-    padding: 0.25rem 0.4rem;
-    color: rgb(var(--theme-link));
-    font-size: 0.6875rem;
-  }
-
-  .chat-review-update-bar button:hover,
-  .chat-review-update-bar button:focus-visible {
-    background: rgb(var(--theme-card-hover) / 0.65);
-  }
-
-  .chat-review-update-bar button:disabled {
-    opacity: 0.55;
-  }
-
-  .chat-review-content {
-    display: flex;
-    min-width: 0;
-    min-height: 0;
-    flex: 1 1 auto;
-    overflow: hidden;
-  }
-
-  .chat-review-body {
-    min-width: 0;
-    min-height: 0;
-    flex: 1 1 auto;
-    overflow-y: auto;
-    padding: 0.9rem;
-  }
-
-  .chat-review-comments {
-    width: min(19rem, 34%);
-    flex: 0 0 auto;
-    overflow-y: auto;
-    border-left: 1px solid rgb(var(--theme-border) / 0.16);
-    padding: 0.75rem;
-  }
-
-  .chat-review-comments :global(.review-comment-rail) {
-    min-width: 0;
-    max-width: none;
-    border-left: 0;
-    padding-left: 0;
-  }
-
-  .chat-review-comment-error {
-    margin: 0.5rem 0 0;
-    color: rgb(var(--theme-error));
-    font-size: 0.625rem;
-  }
-
-  .chat-review-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    border-top: 1px solid rgb(var(--theme-border) / 0.2);
-    padding: 0.65rem 0.85rem max(0.65rem, env(safe-area-inset-bottom, 0px));
-  }
-
-  .chat-review-action {
-    padding: 0.42rem 0.7rem;
-  }
-
-  .chat-review-action--quiet {
-    color: rgb(var(--theme-text-secondary));
-  }
-
-  .chat-review-action--quiet:hover,
-  .chat-review-action--quiet:focus-visible {
-    background: rgb(var(--theme-card-hover) / 0.6);
-    color: rgb(var(--theme-text));
-  }
-
-  .chat-review-action--primary {
-    background: rgb(var(--theme-action));
-    color: rgb(var(--on-primary));
-  }
-
-  .chat-review-action--primary:hover,
-  .chat-review-action--primary:focus-visible {
-    filter: brightness(1.06);
-  }
-
-  @media (max-width: 48rem) {
-    /* Working changes are ambient while the agent is still active. Keep the
-       receipt glanceable; the full file inventory lives in the Changes sheet. */
-    .chat-change-receipt:not(.chat-change-receipt--ready) {
-      border-color: rgb(var(--theme-border) / 0.18);
-      border-radius: calc(var(--theme-control-radius) + 0.35rem);
-      background: rgb(var(--theme-card) / 0.46);
-      box-shadow: none;
-    }
-
-    .chat-change-receipt:not(.chat-change-receipt--ready) .chat-change-receipt-header {
-      min-height: 2.9rem;
-      gap: 0.55rem;
-      padding: 0.45rem 0.55rem;
-    }
-
-    .chat-change-receipt:not(.chat-change-receipt--ready) .chat-change-receipt-icon {
-      width: 1.75rem;
-      height: 1.75rem;
-      background: rgb(var(--theme-pane-muted) / 0.48);
-    }
-
-    .chat-change-receipt:not(.chat-change-receipt--ready) .chat-change-receipt-heading {
-      display: flex;
-      align-items: baseline;
-      gap: 0.45rem;
-    }
-
-    .chat-change-receipt:not(.chat-change-receipt--ready) .chat-change-receipt-heading p {
-      font-size: 0.6875rem;
-    }
-
-    .chat-change-receipt:not(.chat-change-receipt--ready) .chat-change-files,
-    .chat-change-receipt:not(.chat-change-receipt--ready) .chat-change-receipt-footer {
-      display: none;
-    }
-
-    .chat-change-receipt:not(.chat-change-receipt--ready) .chat-change-review-button {
-      min-width: 2.75rem;
-      min-height: 2.75rem;
-      border-color: transparent;
-      padding-inline: 0.65rem;
-      background: transparent;
-      color: rgb(var(--theme-text-secondary));
-    }
-
-    .chat-review-sheet {
-      width: 100%;
-      height: var(--mobile-layout-height, 100dvh);
-      border-left: 0;
-      padding-top: env(safe-area-inset-top, 0px);
-    }
-
-    .chat-change-file-parent {
-      display: none;
-    }
-
-    .chat-review-summary {
-      display: none;
-    }
-
-    .chat-review-content {
-      flex-direction: column;
-      overflow-y: auto;
-    }
-
-    .chat-review-body {
-      flex: 0 0 auto;
-      overflow: visible;
-      padding: 0.75rem;
-    }
-
-    .chat-review-comments {
-      width: auto;
-      overflow: visible;
-      border-top: 1px solid rgb(var(--theme-border) / 0.16);
-      border-left: 0;
-    }
-  }
-
-  @keyframes chat-review-fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
-  @keyframes chat-review-slide-in {
-    from { transform: translateX(1.5rem); opacity: 0; }
-    to { transform: translateX(0); opacity: 1; }
-  }
-</style>
+  {/if}
+{/snippet}

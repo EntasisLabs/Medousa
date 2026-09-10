@@ -574,3 +574,28 @@ lease to Codex or Cursor. The request includes `lease_id`, `generation`, and
 and leaves the same worktree Ready. Starting the provider is a separate,
 retryable operation: if provider startup fails, the user's files remain safe
 and no executor owns a stale lease.
+
+### Explicit Git actions from chat review
+
+Native authenticated clients can use `GET /v1/forge/items/{work_id}/changes/git`
+to obtain `head`, `branch`, `paths`, `base`, `can_branch`, and an opaque `snapshot`.
+The snapshot covers HEAD, branch, status, staging, and working file contents.
+Detached/unborn repositories, conflicts, submodule changes, and oversized review
+snapshots return a diagnostic instead of allowing an ambiguous mutation.
+
+`POST /v1/forge/items/{work_id}/changes/commit` accepts `lease_id`, `generation`,
+`snapshot`, `paths`, `message`, and optional `branch`. It requires the current
+human editing lease and no other active attempts. The server revalidates the
+workspace and snapshot under Forge execution admission. A temporary index
+commits selected files, runs ordinary hooks/signing, and preserves unrelated
+staging. The response contains `head` and optional `warning` if a successful
+commit could not refresh staging. Attached custody advances through a durable
+`ReviewCommitRecorded` event; evidence baselines remain unchanged.
+
+`POST /v1/forge/items/{work_id}/changes/pull-request` accepts the same lease and
+snapshot plus `title`, `body`, `base`, `draft`, and optional `branch`. It requires
+a clean feature branch, pushes the reviewed HEAD to origin without force, and
+uses the workshop's authenticated GitHub CLI. PR lookup/creation explicitly uses
+the origin push repository. A matching open PR is reused. The response contains
+`url` and `existing`; failures after pushing explicitly report that partial result.
+Both mutations retain the existing Forge native-client authorization policy.

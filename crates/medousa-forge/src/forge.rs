@@ -22,7 +22,7 @@ use crate::model::{
     AcceptedDisposition, ActorKind, ActorRef, Attempt, AttemptId, AttemptState, CaptureRisk,
     ChangeStatus, ChangedFile, ChangesRequested, ChangesRequestedId, CompactEvidenceReceipt,
     CompactEvidenceRetention, Digest, EvidenceId, EvidenceManifest, ExecutionLease,
-    ExecutorDescriptor, GitWorkTarget, GovernedEnv, IntegrationStrategy, LeaseId,
+    ExecutorDescriptor, GitOid, GitWorkTarget, GovernedEnv, IntegrationStrategy, LeaseId,
     MODEL_SCHEMA_VERSION, OperationId, PolicyReport, PolicyViolation, PortableForgeCheckpoint,
     RawEvidenceDisposition, RecoveryDisposition, RepoId, ReviewComment, ReviewCommentId,
     ReviewDecision, ReviewDecisionId, WorkId, WorkItem, WorkPolicy, WorkState, WorkTarget,
@@ -1027,6 +1027,47 @@ impl Forge {
                 "attached checkout entered a merge, rebase, or conflicted state".into(),
             ));
         }
+        Ok(())
+    }
+
+    /// Advance only the attached custody boundary after an explicit human commit.
+    /// Evidence baselines remain unchanged, so committed changes still appear in review.
+    pub fn record_review_commit(
+        &self,
+        work_id: &WorkId,
+        expected: &GitOid,
+        head: &GitOid,
+        branch: &str,
+        actor: &ActorRef,
+    ) -> Result<()> {
+        let _lock = self.store.lock_item(work_id)?;
+        let item = self.load(work_id)?;
+        let target = git_target(&item)?;
+        let env = item
+            .workspace_environment()
+            .ok_or_else(|| ForgeError::EnvironmentDrift("missing workspace".into()))?;
+        if !item.uses_attached_checkout()
+            || &target.base_oid != expected
+            || &self.git.head_oid(&env.worktree)? != head
+            || self.git.current_branch(&env.worktree)?.as_deref() != Some(branch)
+        {
+            return Err(ForgeError::EnvironmentDrift(
+                "checkout changed during review commit".into(),
+            ));
+        }
+        let index = self.git.index_tree_oid_via_temporary_index(
+            &env.worktree,
+            &self.attached_index_path(work_id),
+        )?;
+        self.commit_event(
+            work_id,
+            actor,
+            EventPayload::ReviewCommitRecorded {
+                head: head.clone(),
+                index,
+                branch: branch.to_owned(),
+            },
+        )?;
         Ok(())
     }
 
@@ -3141,6 +3182,52 @@ mod tests {
         let text = String::from_utf8_lossy(&patch);
         assert!(text.contains("app.txt"));
         assert!(text.contains("notes.md"));
+    }
+
+    #[test]
+    fn review_commit_advances_attached_custody_without_losing_evidence_baseline() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let item = forge
+            .register_with_workspace_mode(
+                "Review commit",
+                "commit from chat",
+                &fx.repo,
+                "main",
+                "user-1",
+                WorkspaceMode::AttachedCheckout,
+                &actor(),
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &actor()).unwrap();
+        let env = item.environment.clone().unwrap();
+        let before = fx.git.head_oid(&fx.repo).unwrap();
+        fs::write(fx.repo.join("app.txt"), "reviewed change\n").unwrap();
+        fx.git
+            .run(&fx.repo, &["switch", "-c", "review-branch"])
+            .unwrap();
+        fx.git.run(&fx.repo, &["add", "app.txt"]).unwrap();
+        fx.git.run(&fx.repo, &["commit", "-m", "reviewed"]).unwrap();
+        let head = fx.git.head_oid(&fx.repo).unwrap();
+        assert!(forge.verify_attached_checkout(&item, &env).is_err());
+        forge
+            .record_review_commit(&item.id, &before, &head, "review-branch", &actor())
+            .unwrap();
+        let updated = forge.load(&item.id).unwrap();
+        let next_env = updated.environment.as_ref().unwrap();
+        assert_eq!(next_env.baseline_oid, env.baseline_oid);
+        forge.verify_attached_checkout(&updated, next_env).unwrap();
+        assert!(
+            !forge
+                .workspace_changed_files(&updated, next_env)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            forge
+                .record_review_commit(&item.id, &before, &head, "review-branch", &actor())
+                .is_err()
+        );
     }
 
     #[test]

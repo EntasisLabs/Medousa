@@ -263,6 +263,13 @@
       "class": "feature",
       "path": "src/lib/styles/workshop-surfaces.postcss",
       "loadedBy": "WorkshopShell.svelte / EnvironmentPresetSwitcher.svelte / MobileWorkCard.svelte"
+    },
+    {
+      "id": "chat-review",
+      "class": "feature",
+      "path": "src/lib/styles/chat-review.postcss",
+      "loadedBy": "ChatChangeReceipt.svelte",
+      "layered": false
     }
   ]
 }

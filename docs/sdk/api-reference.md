@@ -534,3 +534,11 @@ See [python.md](python.md).
 - Tauri app uses bridge commands for SSE when `WorkshopTransport` cannot stream directly
 
 Track new wrappers in PRs that regenerate `sdk-contract/openapi.json` from the declared router.
+
+### Chat review Git actions
+
+The generated operation catalog includes Forge `changes/git` (GET),
+`changes/commit` (POST), and `changes/pull-request` (POST). These require native
+Forge authority; mutations additionally require a live human editing lease and
+the snapshot returned by `changes/git`. See [Forge](../engine/forge.md#explicit-git-actions-from-chat-review)
+for request fields, stale-snapshot behavior, and partial-success handling.

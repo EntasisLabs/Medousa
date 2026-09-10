@@ -3,6 +3,8 @@
 //! Distinct from `/v1/workspace/cards` (activity board) and vault Versions
 //! (material memory). Forge owns custody of intentional work episodes.
 
+mod chat_git;
+
 use std::ffi::OsStr;
 use std::io::Read as _;
 use std::path::{Component, Path as FsPath, PathBuf};
@@ -84,6 +86,18 @@ fn ok_item(state: &AppState, item: WorkItem, kind: &str) -> Json<ItemProjection>
 
 pub fn forge_surface() -> DeclaredRouter<AppState> {
     DeclaredRouter::default()
+        .route(
+            forge_read_policy("/v1/forge/items/{work_id}/changes/git"),
+            get(chat_git::state),
+        )
+        .route(
+            forge_post_policy("/v1/forge/items/{work_id}/changes/commit"),
+            post(chat_git::commit),
+        )
+        .route(
+            forge_post_policy("/v1/forge/items/{work_id}/changes/pull-request"),
+            post(chat_git::pull_request),
+        )
         .methods([
             (forge_read_policy("/v1/forge/items"), get(list_items)),
             (

@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { ArrowLeft, ArrowUpRight, ChevronRight, LoaderCircle } from "@lucide/svelte";
+  import { onMount } from "svelte";
+  import { ChevronLeft, ArrowLeft, ArrowUpRight, ChevronRight, LoaderCircle } from "@lucide/svelte";
+  import type { WorkingReviewAnchor } from "$lib/chat/workingReviewNotes";
   import DiffStack from "$lib/components/diff/DiffStack.svelte";
   import { countDiffStats, type DiffFileSection } from "$lib/diff/diffTypes";
   import {
@@ -16,6 +18,8 @@
     error?: string | null;
     onOpenFile: (path?: string, line?: number) => void | Promise<void>;
     onRefresh: () => void | Promise<void>;
+    onComment?: (anchor: WorkingReviewAnchor) => void;
+    selectedPath?: string | null;
   }
 
   let {
@@ -25,13 +29,16 @@
     error = null,
     onOpenFile,
     onRefresh,
+    onComment,
+    selectedPath = $bindable(null),
   }: Props = $props();
 
-  let selectedPath = $state<string | null>(null);
   let selectedDiff = $state<ChangesFileDiff | null>(null);
   let fileLoading = $state(false);
   let fileError = $state<string | null>(null);
   let requestSerial = 0;
+
+  onMount(() => { if (selectedPath) void selectFile(selectedPath); return () => { requestSerial += 1; }; });
 
   function basename(path: string): string {
     return path.replaceAll("\\", "/").split("/").at(-1) || path;
@@ -78,6 +85,11 @@
     };
   }
 
+  const selectedIndex = $derived(changes?.files.findIndex((file) => file.path === selectedPath) ?? -1);
+  function step(direction: number) {
+    const next = changes?.files[selectedIndex + direction];
+    if (next) void selectFile(next.path);
+  }
   const selectedFiles = $derived(selectedDiff ? [toStackFile(selectedDiff)] : []);
 
   function clearSelection() {
@@ -122,22 +134,24 @@
 {#if selectedPath}
   <div class="working-file-detail">
     <header class="working-file-detail-header">
-      <button type="button" class="working-file-back" onclick={clearSelection}>
+      {#if !layout.isMobile}<button type="button" class="working-file-back" onclick={clearSelection}>
         <ArrowLeft size={13} />
         Files
-      </button>
+      </button>{/if}
       <div class="working-file-identity">
-        <strong>{basename(selectedPath)}</strong>
-        {#if parentPath(selectedPath)}<span>{parentPath(selectedPath)}</span>{/if}
+        {#if layout.isMobile}<span class="file-position">File {selectedIndex + 1} of {changes?.files.length ?? 0}</span>{:else}<strong>{basename(selectedPath)}</strong>
+        {#if parentPath(selectedPath)}<span>{parentPath(selectedPath)}</span>{/if}{/if}
       </div>
-      <button
+      <button type="button" class="working-file-back" aria-label="Previous file" disabled={selectedIndex <= 0} onclick={() => step(-1)}><ChevronLeft size={18}/></button>
+      <button type="button" class="working-file-back" aria-label="Next file" disabled={selectedIndex >= (changes?.files.length ?? 0) - 1} onclick={() => step(1)}><ChevronRight size={18}/></button>
+      {#if !layout.isMobile}<button
         type="button"
         class="working-file-open"
         onclick={() => void onOpenFile(selectedPath ?? undefined)}
       >
         <ArrowUpRight size={12} />
         Open
-      </button>
+      </button>{/if}
     </header>
 
     {#if fileLoading}
@@ -161,8 +175,12 @@
       <DiffStack
         files={selectedFiles}
         density="compact"
-        chrome="prefs"
+        chrome={layout.isMobile ? "none" : "prefs"}
         wrap={layout.isMobile}
+        onComment={onComment && selectedDiff ? (line) => {
+          if (!selectedDiff) return;
+          onComment?.({ ...line, baselineOid: selectedDiff.baseline_oid, workingDigest: selectedDiff.working_digest ?? null });
+        } : undefined}
         onOpenFile={(path, line) => onOpenFile(path, line)}
       />
     {/if}
@@ -214,7 +232,7 @@
     display: grid;
     width: 100%;
     min-width: 0;
-    grid-template-columns: 5.25rem minmax(0, 1fr) auto;
+    grid-template-columns: 3.25rem minmax(0, 1fr) auto;
     align-items: center;
     gap: 0.7rem;
     padding: 0.58rem 0.7rem;
@@ -279,7 +297,7 @@
   .working-file-detail-header {
     display: grid;
     min-width: 0;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
     align-items: center;
     gap: 0.65rem;
     margin-bottom: 0.65rem;
@@ -353,5 +371,14 @@
       flex-direction: column;
       gap: 0.08rem;
     }
+  }
+
+  @media (max-width: 767px) {
+    .working-file-list button { min-height: 60px; padding: 10px 12px; }
+    .working-file-list-identity { flex-direction: column; align-items: flex-start; gap: 3px; }
+    .working-file-list-identity strong { font-size: 13px; }
+    .working-file-detail-header { grid-template-columns: minmax(0, 1fr) 44px 44px; gap: 4px; position: sticky; top: 0; z-index: 2; background: rgb(var(--theme-card)); }
+    .working-file-identity .file-position { font-size: 13px; }
+    .working-file-back, .working-file-open { min-width: 38px; min-height: 44px; }
   }
 </style>
