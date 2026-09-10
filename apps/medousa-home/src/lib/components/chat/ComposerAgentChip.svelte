@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MobileActionSheet from "$lib/components/mobile/MobileActionSheet.svelte";
   import BotAvatar from "./BotAvatar.svelte";
   import { tick } from "svelte";
   import { Bot, ChevronDown, X } from "@lucide/svelte";
@@ -48,7 +49,7 @@
   });
 
   $effect(() => {
-    if (!open || !menuEl) return;
+    if (layout.isMobile || !open || !menuEl) return;
     const anchor = (chipVisible ? triggerEl : null) ?? anchorEl ?? triggerEl;
     if (!anchor) return;
 
@@ -155,10 +156,18 @@
 {/if}
 
 {#if open}
-  <BodyPortal>
+  {#if layout.isMobile}
+    <MobileActionSheet bind:open title="Agent">{@render menuContent()}</MobileActionSheet>
+  {:else}
+    <BodyPortal>{@render menuContent()}</BodyPortal>
+  {/if}
+{/if}
+
+{#snippet menuContent()}
+
     <div
       bind:this={menuEl}
-      class="composer-anchored-menu"
+      class={layout.isMobile ? "" : "composer-anchored-menu"}
       role="dialog"
       aria-label="Choose agent"
     >
@@ -240,5 +249,5 @@
       {/if}
     </div>
     </div>
-  </BodyPortal>
-{/if}
+
+{/snippet}

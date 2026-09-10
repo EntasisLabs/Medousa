@@ -53,9 +53,12 @@
     header?: boolean;
     /** Show working-folder context without repeating the task status from the header. */
     composer?: boolean;
+    embedded?: boolean;
+    visible?: boolean;
+    onrequest?: () => void;
   }
 
-  let { chatOnly = false, header = false, composer = false }: Props = $props();
+  let { chatOnly = false, header = false, composer = false, embedded = false, visible = true, onrequest }: Props = $props();
   let chipMenuOpen = $state(false);
   const active = $derived(
     chatOnly ? undertakings.forChat(chat.sessionId) : undertakings.active,
@@ -217,6 +220,7 @@
     const open = () => {
       chooserOpen = true;
       creating = true;
+      onrequest?.();
     };
     window.addEventListener("medousa-open-code-project-chooser", open);
     const refreshMode = () => void hydrateSharedBinding(chat.sessionId);
@@ -359,11 +363,19 @@
   }
 </script>
 
-{#if active}
+{#if embedded}
+  {#if active}
+    {@render projectActions()}
+  {:else if visible}
+    <CodeProjectCreationFlow presentation="sheet" sessionId={chat.sessionId}
+      onCancel={closeChooser} onCreated={finishSharedCreation} onContinue={finishSharedCreation}/>
+  {/if}
+{:else if active}
   <div class={header ? "flex min-w-0 max-w-full items-center gap-2" : "flex max-w-full flex-col gap-1.5"}>
   {#if header}<span class="shrink-0 text-content-faint" aria-hidden="true">/</span>{/if}
   <OverflowMenu
     bind:open={chipMenuOpen}
+    mobileTitle="Project"
     align="left"
     class="max-w-full"
     panelClass="w-64 rounded-xl border border-surface-500/40 bg-surface-900/95 p-1.5 text-xs shadow-2xl backdrop-blur"
@@ -409,88 +421,7 @@
       </button>
     {/snippet}
 
-    <div class="px-2 py-1.5">
-      <p class="truncate font-medium text-surface-100">{active.title}</p>
-      <p class="mt-0.5 text-chrome-sm text-content-quiet">
-        {humanPhaseGuidance(active.humanPhase)}
-      </p>
-    </div>
-
-    <button type="button" role="menuitem" class="context-action" onclick={() => { chipMenuOpen = false; goDetail(); }}>
-      {#if active.humanPhase === "review"}
-        <GitPullRequestArrow size={14} />
-        Review changes
-      {:else}
-        <ExternalLink size={14} />
-        Open project
-      {/if}
-    </button>
-    <button
-      type="button"
-      role="menuitem"
-      class="context-action"
-      disabled={busy}
-      onclick={() => { chipMenuOpen = false; void withItem("terminal"); }}
-    >
-      <SquareTerminal size={14} />
-      Open Terminal here
-    </button>
-
-    {#if active.humanPhase === "work" || active.humanPhase === "prepare"}
-      <div class="my-1 border-t border-surface-500/25" role="separator"></div>
-      <button
-        type="button"
-        role="menuitem"
-        class="context-action"
-        disabled={busy}
-        onclick={() => { chipMenuOpen = false; void withItem("codex"); }}
-      >
-        <Bot size={14} />
-        Ask Codex to continue
-      </button>
-      <button
-        type="button"
-        role="menuitem"
-        class="context-action"
-        disabled={busy}
-        onclick={() => { chipMenuOpen = false; void withItem("cursor"); }}
-      >
-        <Bot size={14} />
-        Ask Cursor to continue
-      </button>
-      <button
-        type="button"
-        role="menuitem"
-        class="context-action"
-        disabled={busy}
-        onclick={() => { chipMenuOpen = false; void withItem("hermes"); }}
-      >
-        <Bot size={14} />
-        Ask Hermes to continue
-      </button>
-    {/if}
-
-    <div class="my-1 border-t border-surface-500/25" role="separator"></div>
-    <button type="button" role="menuitem" class="context-action text-content-tertiary" onclick={() => { chipMenuOpen = false; void detach(); }}>
-      <Link2Off size={14} />
-      Stop following this project
-    </button>
-    <button
-      type="button"
-      role="menuitem"
-      class="context-action text-content-tertiary"
-      disabled={busy}
-      onclick={() => void releaseActive()}
-    >
-      <HardDriveDownload size={14} />
-      Release project…
-    </button>
-
-    {#if error}
-      <p class="m-1.5 rounded-md bg-amber-950/60 px-2 py-1.5 text-chrome-sm text-amber-100">
-        {humanizeForgeMessage(error)}
-      </p>
-    {/if}
+    {@render projectActions()}
   </OverflowMenu>
   </div>
 {:else if activeMode === "coder"}
@@ -694,3 +625,90 @@
     padding-top: 0.25rem;
   }
 </style>
+
+{#snippet projectActions()}
+{#if active}
+    <div class="px-2 py-1.5">
+      <p class="truncate font-medium text-surface-100">{active.title}</p>
+      <p class="mt-0.5 text-chrome-sm text-content-quiet">
+        {humanPhaseGuidance(active.humanPhase)}
+      </p>
+    </div>
+
+    <button type="button" role="menuitem" class="context-action" onclick={() => { chipMenuOpen = false; goDetail(); }}>
+      {#if active.humanPhase === "review"}
+        <GitPullRequestArrow size={14} />
+        Review changes
+      {:else}
+        <ExternalLink size={14} />
+        Open project
+      {/if}
+    </button>
+    <button
+      type="button"
+      role="menuitem"
+      class="context-action"
+      disabled={busy}
+      onclick={() => { chipMenuOpen = false; void withItem("terminal"); }}
+    >
+      <SquareTerminal size={14} />
+      Open Terminal here
+    </button>
+
+    {#if active.humanPhase === "work" || active.humanPhase === "prepare"}
+      <div class="my-1 border-t border-surface-500/25" role="separator"></div>
+      <button
+        type="button"
+        role="menuitem"
+        class="context-action"
+        disabled={busy}
+        onclick={() => { chipMenuOpen = false; void withItem("codex"); }}
+      >
+        <Bot size={14} />
+        Ask Codex to continue
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        class="context-action"
+        disabled={busy}
+        onclick={() => { chipMenuOpen = false; void withItem("cursor"); }}
+      >
+        <Bot size={14} />
+        Ask Cursor to continue
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        class="context-action"
+        disabled={busy}
+        onclick={() => { chipMenuOpen = false; void withItem("hermes"); }}
+      >
+        <Bot size={14} />
+        Ask Hermes to continue
+      </button>
+    {/if}
+
+    <div class="my-1 border-t border-surface-500/25" role="separator"></div>
+    <button type="button" role="menuitem" class="context-action text-content-tertiary" onclick={() => { chipMenuOpen = false; void detach(); }}>
+      <Link2Off size={14} />
+      Stop following this project
+    </button>
+    <button
+      type="button"
+      role="menuitem"
+      class="context-action text-content-tertiary"
+      disabled={busy}
+      onclick={() => void releaseActive()}
+    >
+      <HardDriveDownload size={14} />
+      Release project…
+    </button>
+
+    {#if error}
+      <p class="m-1.5 rounded-md bg-amber-950/60 px-2 py-1.5 text-chrome-sm text-amber-100">
+        {humanizeForgeMessage(error)}
+      </p>
+    {/if}
+{/if}
+{/snippet}

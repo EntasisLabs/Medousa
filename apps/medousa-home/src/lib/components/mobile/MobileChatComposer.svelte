@@ -1,13 +1,11 @@
 <script lang="ts">
+  import MobileChatContext from "./MobileChatContext.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
   import ModeProposalBar from "$lib/components/chat/ModeProposalBar.svelte";
   import AgentPermissionBar from "$lib/components/chat/AgentPermissionBar.svelte";
   import AgentSecretBar from "$lib/components/chat/AgentSecretBar.svelte";
   import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
-  import ChatAgentModePicker from "$lib/components/chat/ChatAgentModePicker.svelte";
-  import ChatExecutionTargetPicker from "$lib/components/chat/ChatExecutionTargetPicker.svelte";
-  import UndertakingContextChip from "$lib/components/work/UndertakingContextChip.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
   import { applyActiveAgentPrompt } from "$lib/utils/activeAgentPrompt";
   import { prepareInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
@@ -218,19 +216,7 @@
   <AgentPermissionBar mobile />
   <AgentSecretBar mobile />
   <AgentBrowserPanel mobile />
-  <div class="composer-context-row composer-context-row--mobile">
-    <UndertakingContextChip chatOnly composer />
-    <ChatExecutionTargetPicker
-      sessionId={chat.focusedSessionId}
-      disabled={connection.offline || chat.composerBlocked || runtime.savingControls}
-    />
-  </div>
-  <div class="composer-mode-row">
-    <ChatAgentModePicker
-      sessionId={chat.focusedSessionId}
-      disabled={connection.offline || chat.composerBlocked || runtime.savingControls}
-    />
-  </div>
+  <MobileChatContext disabled={connection.offline || chat.composerBlocked || runtime.savingControls}/>
   <ChatComposerBar
     mobile
     disabled={connection.offline}

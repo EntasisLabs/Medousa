@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MobileActionSheet from "$lib/components/mobile/MobileActionSheet.svelte";
   import { tick } from "svelte";
   import { ChevronDown, X } from "@lucide/svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
@@ -44,7 +45,7 @@
   });
 
   $effect(() => {
-    if (!open || !menuEl) return;
+    if (layout.isMobile || !open || !menuEl) return;
     const anchor = (chipVisible || legacyPillVisible ? triggerEl : null) ?? anchorEl ?? triggerEl;
     if (!anchor) return;
 
@@ -162,10 +163,18 @@
 {/if}
 
 {#if open}
-  <BodyPortal>
+  {#if layout.isMobile}
+    <MobileActionSheet bind:open title="Profile">{@render menuContent()}</MobileActionSheet>
+  {:else}
+    <BodyPortal>{@render menuContent()}</BodyPortal>
+  {/if}
+{/if}
+
+{#snippet menuContent()}
+
     <div
       bind:this={menuEl}
-      class="composer-anchored-menu"
+      class={layout.isMobile ? "" : "composer-anchored-menu"}
       role="dialog"
       aria-label="Switch profile"
     >
@@ -213,5 +222,5 @@
       </button>
     </div>
     </div>
-  </BodyPortal>
-{/if}
+
+{/snippet}

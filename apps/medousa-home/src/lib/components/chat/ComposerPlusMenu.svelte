@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MobileActionSheet from "$lib/components/mobile/MobileActionSheet.svelte";
   import { canReadClipboardImages } from "$lib/utils/chatImagePaste";
   import { tick } from "svelte";
   import {
@@ -69,7 +70,7 @@
 
   $effect(() => {
     stashes.length;
-    if (!open || !triggerEl || !menuEl) return;
+    if (mobile || !open || !triggerEl || !menuEl) return;
     let frame = 0;
     const place = () => {
       if (!triggerEl || !menuEl) return;
@@ -230,11 +231,18 @@
 </button>
 
 {#if open}
-  <BodyPortal>
+  {#if mobile}
+    <MobileActionSheet bind:open title="Add to chat">{@render menuContent()}</MobileActionSheet>
+  {:else}
+    <BodyPortal>{@render menuContent()}</BodyPortal>
+  {/if}
+{/if}
+
+{#snippet menuContent()}
+
     <div
       bind:this={menuEl}
-      class="composer-anchored-menu composer-plus-menu-panel"
-      class:composer-plus-menu-panel-mobile={mobile}
+      class={mobile ? "" : "composer-anchored-menu composer-plus-menu-panel"}
       role="menu"
       aria-label="Composer actions"
     >
@@ -387,5 +395,5 @@
         {/if}
       {/if}
     </div>
-  </BodyPortal>
-{/if}
+
+{/snippet}

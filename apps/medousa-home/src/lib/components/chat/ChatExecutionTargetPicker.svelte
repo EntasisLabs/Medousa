@@ -17,9 +17,11 @@
   interface Props {
     sessionId: string;
     disabled?: boolean;
+    embedded?: boolean;
+    onchoose?: () => void;
   }
 
-  let { sessionId, disabled = false }: Props = $props();
+  let { sessionId, disabled = false, embedded = false, onchoose }: Props = $props();
   let open = $state(false);
   let triggerEl = $state<HTMLButtonElement | null>(null);
   let menuEl = $state<HTMLDivElement | null>(null);
@@ -58,6 +60,7 @@
     executionTargets.setSelection(sessionId, candidate);
     haptic("light");
     open = false;
+    onchoose?.();
   }
 
   function toggle() {
@@ -182,7 +185,9 @@
   </button>
 {/snippet}
 
-{#if visible}
+{#if embedded}
+  {@render options()}
+{:else if visible}
   <div class="chat-runtime-picker min-w-0">
     <button
       bind:this={triggerEl}
@@ -228,35 +233,7 @@
                   <button type="button" class="mobile-sheet-done" onclick={close}>Done</button>
                 </header>
               </div>
-              <div class="mobile-turn-sheet-body worker-target-sheet-body">
-                {#if unavailable}
-                  <p class="worker-target-notice" role="status">
-                    That workshop is no longer available. Choose another target before sending.
-                  </p>
-                {/if}
-                <p class="mobile-turn-sheet-section-label">Routing</p>
-                <div class="mobile-turn-sheet-group">
-                  {@render mobileOption(null, `Default · ${defaultLabel}`, "Follow the workshop's current worker destination", 0)}
-                  {#if parentTarget}
-                    {@render mobileOption({ kind: "same_as_parent" }, "This workshop", `Keep workers on ${parentTarget.label}`, 1)}
-                  {/if}
-                  {#if agentTargets.length > 0}
-                    {@render mobileOption({ kind: "auto" }, "Auto", `Let Medousa choose among ${agentTargets.length} authorized ${agentTargets.length === 1 ? "workshop" : "workshops"}`, parentTarget ? 2 : 1, "auto")}
-                  {/if}
-                </div>
-
-                <p class="mobile-turn-sheet-section-label mt-5">Pin a workshop</p>
-                <div class="mobile-turn-sheet-group">
-                  {#each userTargets as target, index (target.runtime_id)}
-                    {@render mobileOption({ kind: "exact", runtime_id: target.runtime_id }, target.label, targetDescription(target), index)}
-                  {/each}
-                </div>
-                {#if executionTargets.error}
-                  <p class="worker-target-error" role="status">
-                    Could not refresh workshops. Existing choices are shown.
-                  </p>
-                {/if}
-              </div>
+              {@render options()}
             </div>
           </div>
         {:else}
@@ -339,3 +316,35 @@
     margin-top: 0.75rem;
   }
 </style>
+
+{#snippet options()}
+              <div class="mobile-turn-sheet-body worker-target-sheet-body">
+                {#if unavailable}
+                  <p class="worker-target-notice" role="status">
+                    That workshop is no longer available. Choose another target before sending.
+                  </p>
+                {/if}
+                <p class="mobile-turn-sheet-section-label">Routing</p>
+                <div class="mobile-turn-sheet-group">
+                  {@render mobileOption(null, `Default · ${defaultLabel}`, "Follow the workshop's current worker destination", 0)}
+                  {#if parentTarget}
+                    {@render mobileOption({ kind: "same_as_parent" }, "This workshop", `Keep workers on ${parentTarget.label}`, 1)}
+                  {/if}
+                  {#if agentTargets.length > 0}
+                    {@render mobileOption({ kind: "auto" }, "Auto", `Let Medousa choose among ${agentTargets.length} authorized ${agentTargets.length === 1 ? "workshop" : "workshops"}`, parentTarget ? 2 : 1, "auto")}
+                  {/if}
+                </div>
+
+                <p class="mobile-turn-sheet-section-label mt-5">Pin a workshop</p>
+                <div class="mobile-turn-sheet-group">
+                  {#each userTargets as target, index (target.runtime_id)}
+                    {@render mobileOption({ kind: "exact", runtime_id: target.runtime_id }, target.label, targetDescription(target), index)}
+                  {/each}
+                </div>
+                {#if executionTargets.error}
+                  <p class="worker-target-error" role="status">
+                    Could not refresh workshops. Existing choices are shown.
+                  </p>
+                {/if}
+              </div>
+{/snippet}

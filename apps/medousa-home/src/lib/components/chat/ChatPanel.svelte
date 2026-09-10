@@ -776,7 +776,7 @@
         ? 'mobile-chat-panel'
         : 'chat-pane'}"
 >
-  {#if !embedded}
+  {#if !embedded && (!mobile || chat.streamErrorFor(panelSessionId))}
   <header class="{mobile ? 'mobile-chat-header' : 'workshop-header'}">
     <div class="flex w-full min-w-0 items-center gap-2">
       {#if !mobile}
@@ -793,30 +793,6 @@
           <h1 class="truncate text-sm font-semibold text-surface-50">{sessionLabel}</h1>
         </button>
         <UndertakingContextChip chatOnly header />
-      {:else}
-        <div class="min-w-0 py-1">
-          <div class="flex min-w-0 items-center gap-2">
-            <h1 class="truncate text-sm font-semibold text-surface-50">
-              {mobileChatTitle}
-            </h1>
-            <UndertakingContextChip chatOnly header />
-          </div>
-          <p class="text-content-tertiary truncate text-[11px]">{mobileChatSubtitle}</p>
-        </div>
-        {#if chat.hasTurnActivity}
-          <span
-            class="badge shrink-0 variant-soft-primary text-[10px] font-medium normal-case"
-            title={chat.liveStreamActive
-              ? "Live turn streaming"
-              : `${chat.backgroundActivity} background turn(s)`}
-          >
-            {#if chat.liveStreamActive}
-              Live
-            {:else}
-              {chat.backgroundActivity} active
-            {/if}
-          </span>
-        {/if}
       {/if}
       {#if !mobile && !popout && isTauri()}
         <button

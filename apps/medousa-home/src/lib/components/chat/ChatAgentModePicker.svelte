@@ -1,4 +1,6 @@
 <script lang="ts">
+  import MobileActionSheet from "$lib/components/mobile/MobileActionSheet.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { tick } from "svelte";
   import { Check, ChevronDown, Code2, GraduationCap, Sparkles, Zap } from "@lucide/svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
@@ -15,9 +17,12 @@
   interface Props {
     sessionId: string;
     disabled?: boolean;
+    embedded?: boolean;
+    label?: string;
+    onchoose?: () => void;
   }
 
-  let { sessionId, disabled = false }: Props = $props();
+  let { sessionId, disabled = false, embedded = false, label = $bindable("General"), onchoose }: Props = $props();
 
   const FALLBACK_MODES: AgentModeAvailability[] = [
     {
@@ -56,7 +61,7 @@
   let menuEl = $state<HTMLDivElement | null>(null);
 
   const active = $derived(modes.find((mode) => mode.mode === value) ?? modes[0]);
-  const label = $derived(active?.label ?? "General");
+  $effect(() => { label = active?.label ?? "General"; });
 
   function isAvailable(mode: AgentModeAvailability): boolean {
     return mode.available;
@@ -107,7 +112,7 @@
 
   async function pick(mode: AgentModeAvailability) {
     if (!isAvailable(mode) || mode.mode === value || loading) {
-      if (mode.mode === value) open = false;
+      if (mode.mode === value) { open = false; onchoose?.(); }
       return;
     }
     loading = true;
@@ -119,6 +124,7 @@
         detail: { sessionId: sessionId.trim() },
       }));
       open = false;
+      onchoose?.();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -127,7 +133,7 @@
   }
 
   $effect(() => {
-    if (!open || !menuEl || !triggerEl) return;
+    if (layout.isMobile || !open || !menuEl || !triggerEl) return;
     let frame = 0;
     const place = () => {
       if (!menuEl || !triggerEl) return;
@@ -166,6 +172,9 @@
   {/if}
 {/snippet}
 
+{#if embedded}
+  {@render options()}
+{:else}
 <div class="chat-runtime-picker">
   <button
     bind:this={triggerEl}
@@ -186,7 +195,9 @@
     <ChevronDown size={12} strokeWidth={2} class="chat-runtime-trigger-chevron shrink-0" />
   </button>
 
-  {#if open}
+  {#if open && layout.isMobile}
+    <MobileActionSheet bind:open title="Mode">{@render options()}</MobileActionSheet>
+  {:else if open}
     <BodyPortal>
       <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
       <div
@@ -201,6 +212,14 @@
             <p class="workshop-faint mt-0.5 text-xs">How Medousa approaches this chat</p>
           </div>
         </header>
+        {@render options()}
+      </div>
+    </BodyPortal>
+  {/if}
+</div>
+{/if}
+
+{#snippet options()}
         <div class="composer-anchored-menu-body space-y-0.5">
           {#each modes as mode (mode.mode)}
             {@const available = isAvailable(mode)}
@@ -241,7 +260,4 @@
             </p>
           {/if}
         </div>
-      </div>
-    </BodyPortal>
-  {/if}
-</div>
+{/snippet}

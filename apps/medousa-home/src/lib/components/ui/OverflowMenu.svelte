@@ -1,4 +1,6 @@
 <script lang="ts">
+  import MobileActionSheet from "$lib/components/mobile/MobileActionSheet.svelte";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { Ellipsis } from "@lucide/svelte";
   import type { Snippet } from "svelte";
   import { onDestroy, tick } from "svelte";
@@ -8,6 +10,7 @@
   interface Props {
     /** Controlled / bindable open state. */
     open?: boolean;
+    mobileTitle?: string;
     /** Align the panel to the trigger's left or right edge. */
     align?: "left" | "right";
     /** Extra classes on the floating panel (width, theme). */
@@ -29,6 +32,7 @@
 
   let {
     open = $bindable(false),
+    mobileTitle,
     align = "right",
     panelClass = "w-44 rounded-md border border-surface-500/40 bg-surface-900 p-1 shadow-xl",
     class: wrapperClass = "",
@@ -122,7 +126,7 @@
   }
 
   $effect(() => {
-    if (!open) return;
+    if (!open || (layout.isMobile && mobileTitle)) return;
     let frame = 0;
     const place = () => {
       placePanel();
@@ -139,7 +143,7 @@
   });
 
   $effect(() => {
-    if (!open) return;
+    if (!open || (layout.isMobile && mobileTitle)) return;
     const onKeydown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -185,7 +189,9 @@
     </button>
   {/if}
 
-  {#if open}
+  {#if open && layout.isMobile && mobileTitle}
+    <MobileActionSheet bind:open title={mobileTitle}>{@render children()}</MobileActionSheet>
+  {:else if open}
     <BodyPortal>
       <button
         type="button"
