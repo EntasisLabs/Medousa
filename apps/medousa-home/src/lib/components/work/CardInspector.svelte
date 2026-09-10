@@ -2,7 +2,7 @@
   import { workspace } from "$lib/stores/workspace.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { vault } from "$lib/stores/vault.svelte";
-  import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
+  import { prepareInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { voicePresets } from "$lib/stores/voicePresets.svelte";
   import {
     archiveAskJob,
@@ -261,7 +261,7 @@
     const prompt = `Tell me about work card ${detail.card.id}: "${detail.card.title}". Status: ${detail.card.status_label}.`;
     onOpenChat();
     try {
-      const opts = buildInteractiveTurnOptions(chat);
+      const opts = await prepareInteractiveTurnOptions(chat);
       const voice = voicePresets.turnVoiceFields();
       const accepted = await createTurnTicket({
         sessionId: chat.sessionId,

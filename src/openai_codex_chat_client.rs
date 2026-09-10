@@ -7,7 +7,6 @@ use genai::chat::{
 };
 use genai::resolver::AuthData;
 use genai::{Client, Headers};
-use stasis::application::runtime::chat_options_resolver::apply_model_reasoning_suffix;
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 #[cfg(feature = "full-daemon")]
 use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
@@ -125,20 +124,17 @@ impl OpenAiCodexChatClient {
     }
 
     fn stream_options(&self, options: Option<&ChatOptions>) -> ChatOptions {
-        let mut options =
-            apply_model_reasoning_suffix(&self.model, options.cloned().unwrap_or_default());
+        let mut options = crate::reasoning_effort::model_chat_options(
+            OPENAI_CODEX_PROVIDER_ID,
+            &self.model,
+            options,
+        );
         let (_, model) = ReasoningEffort::from_model_name(self.model.trim());
         if model == "gpt-6-astra" {
             // Astra accepts reasoning effort instead of sampling controls.
             // Preserve supported efforts and let an unset effort use its default.
             options.temperature = None;
             options.top_p = None;
-            if matches!(
-                options.reasoning_effort,
-                Some(ReasoningEffort::None | ReasoningEffort::Minimal)
-            ) {
-                options.reasoning_effort = Some(ReasoningEffort::Low);
-            }
         }
         options
             .with_capture_content(true)
@@ -302,7 +298,11 @@ impl AiChatClient for OpenAiCodexChatClient {
 
 #[cfg(feature = "full-daemon")]
 pub enum RoutedChatClient {
-    Provider(GenaiChatClient),
+    Provider {
+        client: GenaiChatClient,
+        provider: String,
+        model: String,
+    },
     ChatGpt(OpenAiCodexChatClient),
 }
 
@@ -312,10 +312,13 @@ impl RoutedChatClient {
         if provider.eq_ignore_ascii_case(OPENAI_CODEX_PROVIDER_ID) {
             Self::ChatGpt(OpenAiCodexChatClient::new(model))
         } else {
-            let target = crate::genai_model_target(provider, model, base_url);
-            Self::Provider(GenaiChatClient::from_provider_model_with_base_url(
-                None, &target, base_url,
-            ))
+            let (_, bare_model) = ReasoningEffort::from_model_name(model);
+            let target = crate::genai_model_target(provider, bare_model, base_url);
+            Self::Provider {
+                client: GenaiChatClient::from_provider_model_with_base_url(None, &target, base_url),
+                provider: provider.into(),
+                model: model.into(),
+            }
         }
     }
 }
@@ -331,7 +334,14 @@ impl AiChatClient for RoutedChatClient {
         match self {
             // Non-stream responses already carry tool_calls + reasoning_content on the
             // body; no capture flags required.
-            Self::Provider(client) => client.complete(request, options).await,
+            Self::Provider {
+                client,
+                provider,
+                model,
+            } => {
+                let options = crate::reasoning_effort::model_chat_options(provider, model, options);
+                client.complete(request, Some(&options)).await
+            }
             Self::ChatGpt(client) => client.complete(request, options).await,
         }
     }
@@ -347,8 +357,13 @@ impl AiChatClient for RoutedChatClient {
             // not tool-call capture. Without this, text+tools responses (common for
             // DeepSeek thinking mode) keep the preamble and drop tool_calls — then
             // the tool loop never stores a round-trippable assistant tool turn.
-            Self::Provider(client) => {
-                let options = provider_stream_options(options);
+            Self::Provider {
+                client,
+                provider,
+                model,
+            } => {
+                let options = crate::reasoning_effort::model_chat_options(provider, model, options);
+                let options = provider_stream_options(Some(&options));
                 client
                     .complete_stream(request, Some(&options), chunk_tx)
                     .await
@@ -422,7 +437,7 @@ mod tests {
     fn route_selection_keeps_api_key_and_chatgpt_clients_distinct() {
         assert!(matches!(
             RoutedChatClient::new("openai", "gpt-5.6-sol", None),
-            RoutedChatClient::Provider(_)
+            RoutedChatClient::Provider { .. }
         ));
         assert!(matches!(
             RoutedChatClient::new(OPENAI_CODEX_PROVIDER_ID, "gpt-5.6-sol", None),
@@ -476,14 +491,14 @@ mod tests {
     async fn astra_requests_use_supported_options_and_preserve_stream_content() {
         for (model, effort, expected_effort) in [
             ("gpt-6-astra", None, None),
-            ("gpt-6-astra", Some(ReasoningEffort::None), Some("low")),
-            ("gpt-6-astra", Some(ReasoningEffort::Minimal), Some("low")),
+            ("gpt-6-astra", Some(ReasoningEffort::None), None),
+            ("gpt-6-astra", Some(ReasoningEffort::Minimal), None),
             ("gpt-6-astra", Some(ReasoningEffort::Low), Some("low")),
             ("gpt-6-astra", Some(ReasoningEffort::Medium), Some("medium")),
             ("gpt-6-astra", Some(ReasoningEffort::High), Some("high")),
             ("gpt-6-astra", Some(ReasoningEffort::XHigh), Some("xhigh")),
             ("gpt-6-astra", Some(ReasoningEffort::Max), Some("max")),
-            ("gpt-6-astra-minimal", None, Some("low")),
+            ("gpt-6-astra-minimal", None, None),
             ("gpt-6-astra-max", None, Some("max")),
             ("gpt-6-astra-max", Some(ReasoningEffort::High), Some("high")),
         ] {

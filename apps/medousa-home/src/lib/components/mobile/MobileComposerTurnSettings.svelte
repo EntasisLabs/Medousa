@@ -1,6 +1,11 @@
 <script lang="ts">
+  import ReasoningOptions from "$lib/components/chat/ReasoningOptions.svelte";
+  import { composerReasoning, selectComposerReasoning } from "$lib/chat/composerModel";
+  import { trackReasoningCapabilities } from "$lib/chat/reasoningCapabilities.svelte";
+
   import { composerModel, composerSessionScope, selectComposerModel } from "$lib/chat/composerModel";
   import type { SessionScope } from "$lib/chat/sessionModelSelection.svelte";
+  import ChatNarrationToggle from "$lib/components/chat/ChatNarrationToggle.svelte";
   import { onMount } from "svelte";
   import { fade } from "svelte/transition";
   import { cubicIn, cubicOut } from "svelte/easing";
@@ -41,10 +46,11 @@
   import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
   import { haptic } from "$lib/haptics";
   import { DEPTH_CHARTER_OPTIONS } from "$lib/types/settings";
-  import type { DepthMode, ReasoningEffortMode } from "$lib/types/runtime";
-  import { REASONING_EFFORT_OPTIONS, reasoningEffortLabel } from "$lib/types/reasoningEffort";
+  import type { DepthMode } from "$lib/types/runtime";
+  import { reasoningEffortLabel } from "$lib/types/reasoningEffort";
   import { fetchLocalModels } from "$lib/utils/localInferenceApi";
 
+  const reasoning = $derived(composerReasoning());
   const chatModel = $derived(composerModel());
 
   type SheetView = "main" | "provider" | "model" | "voice" | "stance" | "reasoning";
@@ -87,7 +93,7 @@
   const depthLabel = $derived(
     DEPTH_CHARTER_OPTIONS.find((option) => option.id === runtime.depthMode)?.label ?? "Standard",
   );
-  const reasoningLabel = $derived(reasoningEffortLabel(runtime.reasoningEffort));
+  const reasoningLabel = $derived(reasoningEffortLabel(reasoning.value));
   const pickerDisabled = $derived(disabled || runtime.savingControls || voicePresets.saving);
   const favoriteModels = $derived(workshopDefaults.favoriteModels());
   const activeCatalogProviderId = $derived.by(() => {
@@ -143,9 +149,9 @@
         : sheetView === "model"
           ? selectedProvider?.label ?? "Models"
           : sheetView === "voice"
-            ? "Voice"
+            ? "Response style"
             : sheetView === "stance"
-              ? "Stance"
+              ? "Response depth"
               : "Reasoning",
   );
   const titleTransition = {
@@ -430,10 +436,7 @@
     await runtime.setDepthMode(mode);
   }
 
-  async function selectReasoning(mode: ReasoningEffortMode) {
-    if (mode === runtime.reasoningEffort || runtime.savingControls) return;
-    await runtime.setReasoningEffort(mode);
-  }
+
 
   function handleSheetKeydown(event: KeyboardEvent) {
     if (event.key === "Escape") {
@@ -441,6 +444,7 @@
       closeSheet();
     }
   }
+  trackReasoningCapabilities(() => ({ ...composerModel(), scope: composerSessionScope().workshopScopeId, refresh: open && displayView === "reasoning" }));
 </script>
 
 <div class="mobile-composer-turn" class:mobile-composer-turn-quiet={quiet}>
@@ -449,7 +453,7 @@
     class="mobile-composer-turn-trigger {quiet ? 'mobile-composer-turn-trigger--quiet' : ''} {open ? 'mobile-composer-turn-trigger-open' : ''}"
     aria-haspopup="dialog"
     aria-expanded={open}
-    aria-label="Model and turn settings: {modelLabel}, {depthLabel} stance, {voiceLabel} voice"
+    aria-label="Model and turn settings: {modelLabel}, {depthLabel} response depth, {voiceLabel} response style"
     disabled={pickerDisabled}
     onclick={openSheet}
   >
@@ -519,8 +523,8 @@
               <div class="mobile-turn-sheet-group">
                 {#each [
                   { label: "Model", value: modelLabel, view: "provider" as const },
-                  { label: "Voice", value: voiceLabel, view: "voice" as const },
-                  { label: "Stance", value: depthLabel, view: "stance" as const },
+                  { label: "Response style", value: voiceLabel, view: "voice" as const },
+                  { label: "Response depth", value: depthLabel, view: "stance" as const },
                   { label: "Reasoning", value: reasoningLabel, view: "reasoning" as const },
                 ] as item, index (item.label)}
                   <button
@@ -536,6 +540,10 @@
                     </span>
                   </button>
                 {/each}
+              </div>
+              <div class="mobile-turn-sheet-link-row mt-3">
+                <span class="mobile-turn-sheet-link-label">Read replies aloud</span>
+                <ChatNarrationToggle />
               </div>
             {:else if displayView === "provider"}
               <label class="mobile-turn-sheet-search">
@@ -767,7 +775,7 @@
                 </div>
               {/if}
             {:else if displayView === "voice"}
-              <div class="mobile-turn-sheet-group" role="listbox" aria-label="Voice">
+              <div class="mobile-turn-sheet-group" role="listbox" aria-label="Response style">
                 {#each voicePresets.allPresets as preset, index (preset.id)}
                   <button
                     type="button"
@@ -789,7 +797,7 @@
                 {/each}
               </div>
             {:else if displayView === "stance"}
-              <div class="mobile-turn-sheet-group" role="listbox" aria-label="Stance">
+              <div class="mobile-turn-sheet-group" role="listbox" aria-label="Response depth">
                 {#each DEPTH_CHARTER_OPTIONS as option, index (option.id)}
                   <button
                     type="button"
@@ -811,27 +819,7 @@
                 {/each}
               </div>
             {:else if displayView === "reasoning"}
-              <div class="mobile-turn-sheet-group" role="listbox" aria-label="Reasoning effort">
-                {#each REASONING_EFFORT_OPTIONS as option, index (option.id)}
-                  <button
-                    type="button"
-                    class="mobile-turn-sheet-row {index > 0 ? 'mobile-turn-sheet-row-divider' : ''}"
-                    role="option"
-                    aria-selected={runtime.reasoningEffort === option.id}
-                    disabled={runtime.savingControls}
-                    title={option.hint}
-                    onclick={() => void selectReasoning(option.id)}
-                  >
-                    <span class="mobile-turn-sheet-row-copy">
-                      <span class="mobile-turn-sheet-row-title">{option.label}</span>
-                      <span class="mobile-turn-sheet-row-subtitle">{option.hint}</span>
-                    </span>
-                    {#if runtime.reasoningEffort === option.id}
-                      <Check size={18} strokeWidth={2.5} class="mobile-turn-sheet-row-check" />
-                    {/if}
-                  </button>
-                {/each}
-              </div>
+              <ReasoningOptions {...reasoning} disabled={runtime.savingControls} onchange={selectComposerReasoning} />
             {/if}
           </div>
         {/if}

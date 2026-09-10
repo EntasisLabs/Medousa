@@ -122,6 +122,7 @@ import {
   pendingBudgetApprovals,
 } from "$lib/chat/turnSideEffectsAdapter";
 import {
+  attachClipboardImages,
   attachDroppedFiles,
   attachDroppedPaths,
   attachFilesFromPicker,
@@ -972,6 +973,10 @@ export class ChatStore implements ChatStoreHost {
 
   async attachFilesFromPicker(source: "all" | "photos" | "camera" = "all") {
     await attachFilesFromPicker(this, source);
+  }
+
+  async attachClipboardImages() {
+    await attachClipboardImages(this);
   }
 
   async attachDroppedFiles(files: File[]) {

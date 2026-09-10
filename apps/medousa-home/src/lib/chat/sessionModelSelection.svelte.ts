@@ -6,6 +6,7 @@ export interface ChatModelSelection {
   provider: string;
   model: string;
   stageRouting: StageRoutingMatrix;
+  reasoningByModel?: Record<string, string>;
 }
 
 export interface ChatModelContext {
@@ -36,7 +37,9 @@ function parseSelection(raw: string | null): ChatModelSelection | null {
         || !nonempty(route.policy_profile) || !Array.isArray(route.fallback_chain)
         || !route.fallback_chain.every(nonempty)) return null;
     }
-    return { provider: value.provider, model: value.model, stageRouting: routes };
+    const reasoningByModel = Object.fromEntries(Object.entries(value.reasoningByModel ?? {})
+      .filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+    return { provider: value.provider, model: value.model, stageRouting: routes, ...(Object.keys(reasoningByModel).length ? { reasoningByModel } : {}) };
   } catch {
     return null;
   }
@@ -56,7 +59,7 @@ export class SessionModelSelections {
     }
   }
 
-  resolve(context: ChatModelContext, defaults: ChatModelSelection | null): ChatModelSelection | null {
+  resolve(context: ChatModelContext, defaults: (ChatModelSelection & { reasoningEffort?: string }) | null): ChatModelSelection | null {
     const saved = this.get(context);
     if (saved) return saved;
     // Worker/ask receipts must not change the principal conversation's model.
@@ -77,6 +80,9 @@ export class SessionModelSelections {
       provider: defaults.provider,
       model: defaults.model,
       stageRouting: defaults.stageRouting,
+      ...(defaults.reasoningEffort ? { reasoningByModel: {
+        [JSON.stringify([defaults.provider, defaults.model])]: defaults.reasoningEffort,
+      } } : {}),
     } : null;
   }
 
@@ -85,12 +91,25 @@ export class SessionModelSelections {
     const key = storageKey(scope);
     // Detach from reactive shared defaults so subsequent settings changes cannot move this chat.
     const snapshot = JSON.parse(JSON.stringify(selection)) as ChatModelSelection;
+    const reasoning = { ...this.get(scope)?.reasoningByModel, ...snapshot.reasoningByModel };
+    if (Object.keys(reasoning).length) snapshot.reasoningByModel = reasoning;
     this.selections[key] = snapshot;
     try {
       localStorage.setItem(key, JSON.stringify({ version: 1, ...snapshot }));
     } catch {
       // Keep the selection for this app lifetime even when storage is unavailable.
     }
+  }
+
+  reasoning(scope: SessionScope, provider: string, model: string): string {
+    return this.get(scope)?.reasoningByModel?.[JSON.stringify([provider, model])] ?? "default";
+  }
+
+  setReasoning(scope: SessionScope, selection: ChatModelSelection, value: string): void {
+    this.set(scope, { ...selection, reasoningByModel: {
+      ...this.get(scope)?.reasoningByModel,
+      [JSON.stringify([selection.provider, selection.model])]: value,
+    } });
   }
 
   clear(scope: SessionScope): void {

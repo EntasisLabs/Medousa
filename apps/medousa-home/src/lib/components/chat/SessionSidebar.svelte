@@ -1,14 +1,14 @@
 <script lang="ts">
   import "$lib/styles/chat.postcss";
   import { onMount, untrack } from "svelte";
-  import { ChevronDown, ChevronRight, Plus, Search, Sparkles, Users, X } from "@lucide/svelte";
-  import BotBrowserContinuity from "$lib/components/chat/BotBrowserContinuity.svelte";
+  import { ChevronDown, ChevronRight, Plus, Search, Users, X } from "@lucide/svelte";
+  import BotEditor from "$lib/components/chat/BotEditor.svelte";
+  import { DEFAULT_BOT_AVATAR } from "$lib/utils/botAvatar";
   import BotRow from "$lib/components/chat/BotRow.svelte";
   import SessionRow from "$lib/components/chat/SessionRow.svelte";
   import { haptic } from "$lib/haptics";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { chat } from "$lib/stores/chat.svelte";
-  import { activeAgent } from "$lib/stores/activeAgent.svelte";
   import { bots } from "$lib/stores/bots.svelte";
   import { catalog } from "$lib/stores/catalog.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
@@ -53,14 +53,12 @@
   let editingBot = $state<BotProfile | null>(null);
   let botName = $state("");
   let botRole = $state("");
-  let botAvatar = $state("✨");
+  let botAvatar = $state<string>(DEFAULT_BOT_AVATAR);
   let botSpecialistId = $state("");
   let botWorldBinding = $state<BotWorldBinding | null>(null);
   let botSaving = $state(false);
   let botError = $state<string | null>(null);
   let botActionId = $state<string | null>(null);
-
-  const BOT_AVATARS = ["✨", "🧭", "🧠", "🛠️", "📚", "🔭", "🎨", "🌱"];
 
   const touchActions = $derived(variant === "sheet");
 
@@ -221,16 +219,15 @@
     }
   }
 
-  async function openCreateBot() {
+  function openCreateBot() {
     if (catalog.manuscripts.length === 0 && !catalog.loading) {
-      await catalog.refresh();
+      void catalog.refresh();
     }
     editingBot = null;
     botName = "";
     botRole = "";
-    botAvatar = "✨";
-    botSpecialistId =
-      activeAgent.selectedManuscriptId ?? catalog.manuscripts[0]?.id ?? "";
+    botAvatar = DEFAULT_BOT_AVATAR;
+    botSpecialistId = "";
     botWorldBinding = null;
     botError = null;
     botEditorOpen = true;
@@ -240,7 +237,7 @@
     editingBot = bot;
     botName = bot.display_name;
     botRole = bot.role_description ?? "";
-    botAvatar = bot.avatar_ref?.trim() || "✨";
+    botAvatar = bot.avatar_ref?.trim() || DEFAULT_BOT_AVATAR;
     botSpecialistId = bot.primary_manuscript_id;
     botWorldBinding = bot.world_binding ? { ...bot.world_binding } : null;
     botError = null;
@@ -597,14 +594,15 @@
         {:else if bots.loading}
           <p class="workshop-faint px-4 py-2 text-[11px]">Loading Bots…</p>
         {:else if !query.trim()}
-          <button
-            type="button"
-            class="bot-sidebar-empty-action"
-            onclick={() => void openCreateBot()}
-          >
-            <Sparkles size={13} strokeWidth={1.75} />
-            <span>Create a durable teammate</span>
-          </button>
+          <div class="session-row">
+            <button
+              type="button"
+              class="session-row-main"
+              onclick={() => void openCreateBot()}
+            >
+              <span class="session-row-title">Create a Bot</span>
+            </button>
+          </div>
         {/if}
       </li>
 
@@ -844,123 +842,9 @@
   {/if}
 
   {#if botEditorOpen}
-    <div
-      class="absolute inset-0 z-40 flex items-end bg-surface-950/70 p-3 sm:items-center sm:justify-center"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="bot-editor-title"
-    >
-      <form
-        class="card max-h-full w-full overflow-y-auto p-4 shadow-xl sm:max-w-md"
-        onsubmit={submitBot}
-      >
-        <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <p id="bot-editor-title" class="text-sm font-semibold text-surface-100">
-              {editingBot ? "Edit Bot" : "New Bot"}
-            </p>
-            <p class="workshop-faint mt-0.5 text-xs">
-              A named teammate with its own memory and conversation.
-            </p>
-          </div>
-          <button
-            type="button"
-            class="btn btn-sm shrink-0 variant-ghost-surface"
-            aria-label="Close Bot editor"
-            disabled={botSaving}
-            onclick={closeBotEditor}
-          >
-            <X size={16} strokeWidth={1.75} />
-          </button>
-        </div>
-
-        <div class="mt-4 space-y-4">
-          <fieldset>
-            <legend class="workshop-label mb-2">Avatar</legend>
-            <div class="flex flex-wrap gap-1.5">
-              {#each BOT_AVATARS as avatar (avatar)}
-                <button
-                  type="button"
-                  class="bot-avatar-option"
-                  class:bot-avatar-option--selected={botAvatar === avatar}
-                  aria-label="Use {avatar} avatar"
-                  aria-pressed={botAvatar === avatar}
-                  onclick={() => (botAvatar = avatar)}
-                >
-                  {avatar}
-                </button>
-              {/each}
-            </div>
-          </fieldset>
-
-          <label class="block">
-            <span class="workshop-label">Name</span>
-            <input
-              class="input mt-1.5 w-full text-sm"
-              type="text"
-              maxlength="80"
-              placeholder="Ada"
-              required
-              bind:value={botName}
-            />
-          </label>
-
-          <label class="block">
-            <span class="workshop-label">Job</span>
-            <textarea
-              class="textarea mt-1.5 min-h-20 w-full resize-y text-sm"
-              maxlength="500"
-              placeholder="Helps me understand systems and connect the concepts."
-              required
-              bind:value={botRole}
-            ></textarea>
-          </label>
-
-          <label class="block">
-            <span class="workshop-label">Specialist</span>
-            <select
-              class="select mt-1.5 w-full text-sm"
-              required
-              bind:value={botSpecialistId}
-            >
-              <option value="" disabled>Choose a Specialist</option>
-              {#each catalog.manuscripts as manuscript (manuscript.id)}
-                <option value={manuscript.id}>{manuscript.name}</option>
-              {/each}
-            </select>
-            <span class="workshop-faint mt-1.5 block text-[11px]">
-              Expertise stays reusable; this Bot keeps the relationship and memory.
-            </span>
-          </label>
-
-          <BotBrowserContinuity bind:binding={botWorldBinding} disabled={botSaving} />
-
-          {#if catalog.error}
-            <p class="text-xs text-content-error">{catalog.error}</p>
-          {/if}
-          {#if botError}
-            <p class="text-xs text-content-error" role="alert">{botError}</p>
-          {/if}
-        </div>
-
-        <div class="mt-5 flex justify-end gap-2">
-          <button
-            type="button"
-            class="btn btn-sm variant-ghost-surface"
-            disabled={botSaving}
-            onclick={closeBotEditor}
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            class="btn btn-sm variant-filled-primary"
-            disabled={botSaving || !botName.trim() || !botRole.trim() || !botSpecialistId}
-          >
-            {botSaving ? "Saving…" : editingBot ? "Save" : "Create Bot"}
-          </button>
-        </div>
-      </form>
-    </div>
+    <BotEditor bind:name={botName} bind:purpose={botRole} bind:avatar={botAvatar}
+      bind:archetypeId={botSpecialistId} bind:worldBinding={botWorldBinding}
+      editing={Boolean(editingBot)} saving={botSaving} error={botError}
+      onclose={closeBotEditor} onsubmit={submitBot} />
   {/if}
 {/snippet}

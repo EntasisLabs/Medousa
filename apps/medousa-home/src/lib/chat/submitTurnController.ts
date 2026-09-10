@@ -5,7 +5,7 @@
 
 import { createTurnTicket, promptAgentSession } from "$lib/daemon";
 import type { TurnTicketResponse } from "$lib/types/session";
-import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
+import { prepareInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
 import { chat } from "$lib/stores/chat.svelte";
 import { executionTargets } from "$lib/stores/executionTargets.svelte";
 import { userProfiles } from "$lib/stores/userProfiles.svelte";
@@ -79,7 +79,7 @@ export async function submitChatTurn(input: {
     return;
   }
 
-  const opts = buildInteractiveTurnOptions(chat);
+  const opts = await prepareInteractiveTurnOptions(chat);
   const mediaRefs = [...chat.pendingMediaRefs];
   const voice = voicePresets.turnVoiceFields();
   const codeContext = activeCodeContext(chat.sessionId);

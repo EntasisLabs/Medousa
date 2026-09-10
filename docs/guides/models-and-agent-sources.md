@@ -1,12 +1,13 @@
 # Models, providers, and runtimes
 
-The runtime control under the composer chooses who owns the agent loop:
-**Medousa**, **Codex**, **Cursor**, or **Hermes**. The model control inside the
-composer stays quiet and shows only the active model.
+The composer keeps the active mode and model visible. On desktop, open
+**Settings → Agent runtime** below the composer to choose **Medousa**, **Codex**,
+**Cursor**, or **Hermes**. When an external runtime is active, its name replaces
+the native mode control.
 
 ## Choose a runtime
 
-Use the runtime control under the composer:
+Open **Settings → Agent runtime** below the desktop composer:
 
 - **Medousa** uses Medousa's native agent loop with a configured model provider
   or local model.
@@ -20,6 +21,35 @@ Use the runtime control under the composer:
 If Codex, Cursor, or Hermes is not ready, its runtime option opens **Settings →
 External Agents** for installation or sign-in. Hermes can also be prepared from the
 terminal with `hermes acp --setup`.
+
+## Composer controls
+
+On desktop, the **Settings** control below the composer contains **Response
+style**, **Response depth**, **Reasoning**, automatic narration, the agent runtime,
+and saved drafts. External agents expose their supported reasoning controls in
+**Agent runtime**. On mobile, tap the model name to open turn settings.
+
+**Response style** changes how Medousa writes. **Response depth** controls answer
+detail; **Reasoning** controls how much the model thinks. **Read replies aloud**
+controls spoken narration separately. Response style, response depth, and narration remain workshop settings. The model
+and reasoning choice are remembered per chat.
+
+Reasoning choices follow the selected provider, model, and active runtime. Models
+with effort controls show their supported levels. Models with a thinking-token
+budget show a bounded numeric input. **Model default** leaves the override unset;
+**Off** explicitly disables reasoning and appears only where supported. Unknown
+models use their default until Medousa can confirm compatible controls.
+
+Each chat remembers reasoning separately for each provider/model on this device.
+Switching models and switching back restores that model's choice. A new chat can
+inherit the workshop reasoning default when supported; choosing a different model
+starts at its default. Changing reasoning in the composer leaves other chats and
+the workshop default unchanged.
+
+Coder shows its working folder separately from the mode controls. Tap it to
+inspect or open the project. **Worker workshop** selects the destination for
+delegated agents; it does not select the coding folder. Task status remains in
+the chat header.
 
 ## Choose a provider and model
 
@@ -76,8 +106,8 @@ Medousa's own app version is never sent as the Codex protocol version.
 Choose **GPT-6 Astra** under **OpenAI · ChatGPT account** when your account has
 access. Astra supports text and image input, streamed replies, and Medousa's
 tools. Its reasoning levels are **Low**, **Medium**, **High**, **Extra high**, and
-**Max**; **Default** lets the model decide. A saved **Minimal** setting uses
-**Low** for Astra. Medousa omits temperature and top-p sampling settings for
+**Max**; **Model default** lets the model decide. An incompatible saved setting
+uses **Model default**, with a notice in the reasoning picker. Medousa omits temperature and top-p sampling settings for
 Astra, as required by the [OpenAI model guide](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra).
 Selecting Astra does not change your other model assignments or grant account
 access; availability follows [OpenAI's account and rollout settings](https://learn.chatgpt.com/docs/models#gpt-6-astra).
@@ -87,7 +117,7 @@ the successful provider/model route observed by the daemon after fallback, so
 it can differ from the model that was initially requested.
 
 When Codex, Cursor, or Hermes owns the loop, the model picker contains only the
-choices advertised by that runtime. Runtime selection stays under the composer,
+choices advertised by that runtime. Runtime selection lives in the desktop composer settings,
 so it is not duplicated inside the model picker.
 
 ## Run a private model on iPhone or iPad

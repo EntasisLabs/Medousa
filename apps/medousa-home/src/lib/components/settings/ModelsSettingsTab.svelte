@@ -1,4 +1,7 @@
 <script lang="ts">
+  import ReasoningOptions from "$lib/components/chat/ReasoningOptions.svelte";
+  import { reasoningCapabilities, trackReasoningCapabilities } from "$lib/chat/reasoningCapabilities.svelte";
+  import { chat } from "$lib/stores/chat.svelte";
   import { ChevronDown, Minus, Plus } from "@lucide/svelte";
   import SettingsListRow from "$lib/components/settings/SettingsListRow.svelte";
   import ModelCatalogSheet from "$lib/components/settings/ModelCatalogSheet.svelte";
@@ -17,10 +20,9 @@
   } from "$lib/utils/modelAssignment";
   import { fallbackSummaryLabel } from "$lib/utils/modelsWorkshopStatus";
   import {
-    REASONING_EFFORT_OPTIONS,
+    compatibleReasoning,
     normalizeReasoningEffort,
     reasoningEffortLabel,
-    type ReasoningEffortMode,
   } from "$lib/types/reasoningEffort";
   import { runtime } from "$lib/stores/runtime.svelte";
 
@@ -53,10 +55,12 @@
       workshopDefaults.draft.reasoningEffort ?? runtime.reasoningEffort,
     ),
   );
-  const activeReasoningOption = $derived(
-    REASONING_EFFORT_OPTIONS.find((option) => option.id === activeReasoning) ??
-      REASONING_EFFORT_OPTIONS[0]!,
-  );
+  const conversationModel = $derived(profileForKind(workshopDefaults.draft, "main"));
+  const reasoningCapability = $derived(reasoningCapabilities.get(chat.workshopScopeId,
+    conversationModel?.provider ?? "", conversationModel?.model ?? ""));
+  const effectiveReasoning = $derived(compatibleReasoning(activeReasoning, reasoningCapability));
+  trackReasoningCapabilities(() => ({ scope: chat.workshopScopeId,
+    provider: conversationModel?.provider ?? "", model: conversationModel?.model ?? "", refresh: reasoningOpen }));
   const moreSummary = $derived.by(() => {
     const favCount = favorites.length;
     const bits: string[] = [];
@@ -69,8 +73,9 @@
     return bits.length > 0 ? bits.join(" · ") : "Favorites & backups";
   });
 
-  async function setReasoningEffort(mode: ReasoningEffortMode) {
+  async function setReasoningEffort(value: string) {
     if (disabled || workshopDefaults.saving) return;
+    const mode = compatibleReasoning(value, reasoningCapability);
     if (activeReasoning === mode) {
       reasoningOpen = false;
       return;
@@ -188,8 +193,8 @@
     >
       <span class="models-active-copy">
         <span class="models-active-kicker">Reasoning</span>
-        <span class="models-active-title">{reasoningEffortLabel(activeReasoning)}</span>
-        <span class="models-active-meta">{activeReasoningOption.hint}</span>
+        <span class="models-active-title">{reasoningEffortLabel(effectiveReasoning)}</span>
+        <span class="models-active-meta">Default for new chats using the conversation model</span>
       </span>
       <span class="models-active-action workshop-faint">
         {reasoningOpen ? "Close" : "Change"}
@@ -197,22 +202,10 @@
     </button>
 
     {#if reasoningOpen}
-      <div class="models-picker" role="listbox" aria-label="Choose reasoning effort">
-        {#each REASONING_EFFORT_OPTIONS as option (option.id)}
-          <button
-            type="button"
-            role="option"
-            class="models-choice"
-            class:models-choice-active={activeReasoning === option.id}
-            aria-selected={activeReasoning === option.id}
-            disabled={disabled || workshopDefaults.saving}
-            title={option.hint}
-            onclick={() => void setReasoningEffort(option.id)}
-          >
-            <span class="models-choice-label">{option.label}</span>
-            <span class="models-choice-hint">{option.hint}</span>
-          </button>
-        {/each}
+      <div class="models-picker">
+        <ReasoningOptions capability={reasoningCapability} value={effectiveReasoning}
+          adjusted={activeReasoning !== effectiveReasoning} disabled={disabled || workshopDefaults.saving}
+          onchange={(value) => void setReasoningEffort(value)} />
       </div>
     {/if}
   </div>
@@ -443,47 +436,11 @@
     }
   }
 
-  .models-choice {
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-    min-height: var(--models-min-h);
-    padding: var(--models-pad);
-    border-radius: var(--models-radius);
-    border: 1px solid var(--models-border);
-    background: var(--models-bg);
-    color: inherit;
-    text-align: left;
-    cursor: pointer;
-  }
 
-  .models-choice:hover:not(:disabled) {
-    border-color: rgb(var(--color-surface-500) / 0.48);
-    background: rgb(var(--color-surface-800) / 0.28);
-  }
 
-  .models-choice:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
 
-  .models-choice-active {
-    border-color: rgb(var(--color-primary-500) / 0.4);
-    background: rgb(var(--color-primary-500) / 0.1);
-    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-500) / 0.18);
-  }
 
-  .models-choice-label {
-    font-size: 0.8rem;
-    font-weight: 550;
-    color: rgb(var(--color-surface-100));
-  }
 
-  .models-choice-hint {
-    font-size: 0.68rem;
-    line-height: 1.3;
-    color: rgb(var(--theme-text-quiet));
-  }
 
   .models-more {
     margin-top: 0.75rem;

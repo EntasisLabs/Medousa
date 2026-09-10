@@ -1,302 +1,290 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
-  import { AudioLines, Brain, Check, ChevronDown, Compass } from "@lucide/svelte";
+  import { chat } from "$lib/stores/chat.svelte";
+  import { composerModel } from "$lib/chat/composerModel";
+  import ReasoningOptions from "$lib/components/chat/ReasoningOptions.svelte";
+  import { composerReasoning, selectComposerReasoning } from "$lib/chat/composerModel";
+  import { trackReasoningCapabilities } from "$lib/chat/reasoningCapabilities.svelte";
+
+  import { onMount, tick, type Snippet } from "svelte";
+  import { ArrowLeft, Check, ChevronRight, SlidersHorizontal, X } from "@lucide/svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
+  import ChatNarrationToggle from "$lib/components/chat/ChatNarrationToggle.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import { voicePresets } from "$lib/stores/voicePresets.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
-  import { depthModeLabel } from "$lib/utils/chatModelPicker";
   import { attachComposerMenuDismiss } from "$lib/utils/composerMenuDismiss";
   import { placeComposerPopover } from "$lib/utils/railPopover";
   import { DEPTH_CHARTER_OPTIONS } from "$lib/types/settings";
-  import {
-    REASONING_EFFORT_OPTIONS,
-    reasoningEffortLabel,
-  } from "$lib/types/reasoningEffort";
+  import { reasoningEffortLabel } from "$lib/types/reasoningEffort";
   import { allVoicePresets } from "$lib/types/voicePresets";
-  import type { DepthMode, ReasoningEffortMode } from "$lib/types/runtime";
+  import type { DepthMode } from "$lib/types/runtime";
 
-  type TurnMenu = "voice" | "stance" | "reasoning";
-
+  const reasoning = $derived(composerReasoning());
+  type View = "main" | "voice" | "depth" | "reasoning" | "agent" | "drafts";
   interface Props {
     disabled?: boolean;
+    sessionId: string;
     showNativeControls?: boolean;
+    runtimeLabel: string;
+    agentSettings: Snippet;
+    drafts: Snippet<[() => void]>;
   }
-
-  let { disabled = false, showNativeControls = true }: Props = $props();
-
-  let openMenu = $state<TurnMenu | null>(null);
-  let rootEl = $state<HTMLDivElement | null>(null);
-  let voiceTriggerEl = $state<HTMLButtonElement | null>(null);
-  let stanceTriggerEl = $state<HTMLButtonElement | null>(null);
-  let reasoningTriggerEl = $state<HTMLButtonElement | null>(null);
+  let {
+    disabled = false,
+    sessionId,
+    showNativeControls = true,
+    runtimeLabel,
+    agentSettings,
+    drafts,
+  }: Props = $props();
+  let open = $state(false);
+  let view = $state<View>("main");
+  let triggerEl = $state<HTMLButtonElement | null>(null);
   let menuEl = $state<HTMLDivElement | null>(null);
-
-  const voiceLabel = $derived(voicePresets.activePreset.name);
-  const depthLabel = $derived(depthModeLabel(runtime.depthMode));
-  const reasoningLabel = $derived(reasoningEffortLabel(runtime.reasoningEffort));
-  const voiceOptions = $derived(allVoicePresets(workshopDefaults.draft.customVoicePresets));
   const pickerDisabled = $derived(disabled || runtime.savingControls || voicePresets.saving);
-
-  const activeTrigger = $derived(
-    openMenu === "voice"
-      ? voiceTriggerEl
-      : openMenu === "stance"
-        ? stanceTriggerEl
-        : openMenu === "reasoning"
-          ? reasoningTriggerEl
-          : null,
+  const voiceOptions = $derived(allVoicePresets(workshopDefaults.draft.customVoicePresets));
+  const depthLabel = $derived(
+    DEPTH_CHARTER_OPTIONS.find((option) => option.id === runtime.depthMode)?.label ?? "Standard",
   );
+  const titles: Record<View, string> = {
+    main: "Turn settings",
+    voice: "Response style",
+    depth: "Response depth",
+    reasoning: "Reasoning",
+    agent: "Agent runtime",
+    drafts: "Saved drafts",
+  };
+  const title = $derived(titles[view]);
+  const choices = $derived(
+    view === "voice" ? voiceOptions.map((option) => ({ id: option.id, label: option.name, hint: option.description }))
+      : DEPTH_CHARTER_OPTIONS,
+  );
+  const selected = $derived(view === "voice" ? voicePresets.activeVoiceId : view === "depth" ? runtime.depthMode : reasoning.value);
 
   onMount(() => {
     void voicePresets.load();
   });
 
   $effect(() => {
-    if (!openMenu || !menuEl || !activeTrigger) return;
-
-    let frame = 0;
-    const place = () => {
-      if (!menuEl || !activeTrigger) return;
-      const placement = { maxHeightRatio: openMenu === "reasoning" ? 0.62 : 0.5 };
-      placeComposerPopover(activeTrigger, menuEl, placement);
-      frame = window.requestAnimationFrame(() => {
-        if (menuEl && activeTrigger) placeComposerPopover(activeTrigger, menuEl, placement);
-      });
-    };
-    void tick().then(place);
-    window.addEventListener("resize", place);
-    window.visualViewport?.addEventListener("resize", place);
-    window.visualViewport?.addEventListener("scroll", place);
-
-    const detachDismiss = attachComposerMenuDismiss({
-      isInside: (target) =>
-        Boolean(rootEl?.contains(target) || menuEl?.contains(target)),
-      onDismiss: () => {
-        openMenu = null;
-      },
-    });
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener("resize", place);
-      window.visualViewport?.removeEventListener("resize", place);
-      window.visualViewport?.removeEventListener("scroll", place);
-      detachDismiss();
-    };
+    sessionId;
+    open = false;
+    view = "main";
   });
 
-  function toggle(menu: TurnMenu) {
+  function close() {
+    open = false;
+    triggerEl?.focus();
+  }
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+      return;
+    }
+    if (event.key !== "Tab" || !menuEl) return;
+    const controls = [...menuEl.querySelectorAll<HTMLElement>(
+      "button:not(:disabled), select:not(:disabled), input:not(:disabled)",
+    )];
+    const first = controls[0];
+    const last = controls.at(-1);
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
+    }
+  }
+  async function navigate(next: View) {
+    view = next;
+    await tick();
+    menuEl?.querySelector<HTMLButtonElement>("button")?.focus();
+  }
+  async function select(id: string) {
     if (pickerDisabled) return;
-    openMenu = openMenu === menu ? null : menu;
+    if (view === "voice") {
+      await voicePresets.setActiveVoiceId(id);
+      if (workshopDefaults.loaded) {
+        workshopDefaults.draft = { ...workshopDefaults.draft, activeVoiceId: id };
+      }
+    } else if (view === "depth") {
+      await runtime.setDepthMode(id as DepthMode);
+    } else if (view === "reasoning") {
+      selectComposerReasoning(id);
+    }
+    await navigate("main");
   }
 
-  async function selectVoice(voiceId: string) {
-    if (voiceId === voicePresets.activeVoiceId || voicePresets.saving) {
-      openMenu = null;
-      return;
-    }
-    await voicePresets.setActiveVoiceId(voiceId);
-    if (workshopDefaults.loaded) {
-      workshopDefaults.draft = {
-        ...workshopDefaults.draft,
-        activeVoiceId: voiceId,
-      };
-    }
-    openMenu = null;
-  }
-
-  async function selectDepth(mode: DepthMode) {
-    if (mode === runtime.depthMode || runtime.savingControls) {
-      openMenu = null;
-      return;
-    }
-    await runtime.setDepthMode(mode);
-    openMenu = null;
-  }
-
-  async function selectReasoning(mode: ReasoningEffortMode) {
-    if (mode === runtime.reasoningEffort || runtime.savingControls) {
-      openMenu = null;
-      return;
-    }
-    await runtime.setReasoningEffort(mode);
-    openMenu = null;
-  }
+  $effect(() => {
+    if (!open || !menuEl || !triggerEl) return;
+    // Reposition as subviews change size without imposing a fixed-height panel.
+    const place = () => {
+      if (menuEl && triggerEl) {
+        placeComposerPopover(triggerEl, menuEl, { maxHeightRatio: 0.68 });
+      }
+    };
+    const observer = new ResizeObserver(place);
+    observer.observe(menuEl);
+    place();
+    window.addEventListener("resize", place);
+    window.visualViewport?.addEventListener("resize", place);
+    const detach = attachComposerMenuDismiss({
+      isInside: (target) => Boolean(menuEl?.contains(target) || triggerEl?.contains(target)),
+      onDismiss: () => { open = false; },
+    });
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", place);
+      window.visualViewport?.removeEventListener("resize", place);
+      detach();
+    };
+  });
+  trackReasoningCapabilities(() => ({ ...composerModel(), scope: chat.workshopScopeId, refresh: open && view === "reasoning" }));
 </script>
 
-<div bind:this={rootEl} class="composer-turn-controls">
-  <button
-    bind:this={voiceTriggerEl}
-    type="button"
-    class="composer-turn-trigger"
-    class:composer-turn-trigger-open={openMenu === "voice"}
-    disabled={pickerDisabled}
-    aria-haspopup="listbox"
-    aria-expanded={openMenu === "voice"}
-    aria-label="Voice — {voiceLabel}"
-    title="Voice — {voiceLabel}"
-    onclick={() => toggle("voice")}
-  >
-    <AudioLines size={13} strokeWidth={1.85} class="composer-turn-trigger-icon" />
-    <span class="composer-turn-trigger-label">{voiceLabel}</span>
-    <ChevronDown size={12} strokeWidth={2} class="composer-turn-trigger-chevron shrink-0" />
+<button bind:this={triggerEl} type="button" class="chat-runtime-trigger composer-settings-trigger"
+  aria-label="Turn settings" title="Turn settings" aria-haspopup="dialog" aria-expanded={open}
+  disabled={pickerDisabled}
+  onclick={async () => {
+    open = !open;
+    view = "main";
+    if (open) await navigate("main");
+  }}
+>
+  <SlidersHorizontal size={14} strokeWidth={1.8} />
+  <span>Settings</span>
+</button>
+
+{#snippet settingRow(label: string, value: string, next: View)}
+  <button type="button" class="composer-settings-row" onclick={() => void navigate(next)}>
+    <span>{label}</span>
+    <span class="composer-settings-value">{value}</span>
+    <ChevronRight size={14} />
   </button>
+{/snippet}
 
-  {#if showNativeControls}
-    <button
-      bind:this={stanceTriggerEl}
-      type="button"
-      class="composer-turn-trigger"
-      class:composer-turn-trigger-open={openMenu === "stance"}
-      disabled={pickerDisabled}
-      aria-haspopup="listbox"
-      aria-expanded={openMenu === "stance"}
-      aria-label="Stance — {depthLabel}"
-      title="Stance — {depthLabel}"
-      onclick={() => toggle("stance")}
-    >
-      <Compass size={13} strokeWidth={1.85} class="composer-turn-trigger-icon" />
-      <span class="composer-turn-trigger-label">{depthLabel}</span>
-      <ChevronDown size={12} strokeWidth={2} class="composer-turn-trigger-chevron shrink-0" />
-    </button>
+{#if open}
+  <BodyPortal>
+    <div bind:this={menuEl} class="composer-anchored-menu composer-settings-menu" role="dialog" tabindex="-1" aria-label={title} onkeydown={handleKeydown}>
+      <header class="composer-settings-header">
+        {#if view !== "main"}
+          <button type="button" aria-label="Back to turn settings" onclick={() => void navigate("main")}>
+            <ArrowLeft size={15} />
+          </button>
+        {/if}
+        <h2>{title}</h2>
+        <button type="button" aria-label="Close turn settings" onclick={close}><X size={15} /></button>
+      </header>
+      <div class="composer-anchored-menu-body">
+        {#if view === "main"}
+          {#if showNativeControls}
+            {@render settingRow("Response style", voicePresets.activePreset.name, "voice")}
+            {@render settingRow("Response depth", depthLabel, "depth")}
+            {@render settingRow("Reasoning", reasoningEffortLabel(reasoning.value), "reasoning")}
+          {/if}
+          <div class="composer-settings-audio">
+            <span>Read replies aloud</span>
+            <ChatNarrationToggle />
+          </div>
+          <div class="composer-settings-divider"></div>
+          {@render settingRow("Agent runtime", runtimeLabel, "agent")}
+          {@render settingRow("Saved drafts", "", "drafts")}
+        {:else if view === "agent"}
+          {@render agentSettings()}
+        {:else if view === "drafts"}
+          {@render drafts(close)}
+        {:else if view === "reasoning"}
+          <ReasoningOptions {...reasoning} disabled={pickerDisabled} onchange={(value) => { selectComposerReasoning(value); void navigate("main"); }} />
+        {:else}
+          <div role="group" aria-label={title}>
+            {#each choices as option (option.id)}
+              <button type="button" class="composer-turn-option" aria-pressed={selected === option.id}
+                disabled={pickerDisabled} onclick={() => void select(option.id)}>
+                <span class="composer-turn-option-copy"><span class="composer-turn-option-label">{option.label}</span>
+                  <span class="composer-turn-option-description">{option.hint}</span></span>
+                {#if selected === option.id}<Check size={14} class="composer-turn-option-check" />{/if}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    </div>
+  </BodyPortal>
+{/if}
 
-    <button
-      bind:this={reasoningTriggerEl}
-      type="button"
-      class="composer-turn-trigger"
-      class:composer-turn-trigger-open={openMenu === "reasoning"}
-      disabled={pickerDisabled}
-      aria-haspopup="listbox"
-      aria-expanded={openMenu === "reasoning"}
-      aria-label="Reasoning — {reasoningLabel}"
-      title="Reasoning — {reasoningLabel}"
-      onclick={() => toggle("reasoning")}
-    >
-      <Brain size={13} strokeWidth={1.85} class="composer-turn-trigger-icon" />
-      <span class="composer-turn-trigger-label">{reasoningLabel}</span>
-      <ChevronDown size={12} strokeWidth={2} class="composer-turn-trigger-chevron shrink-0" />
-    </button>
-  {/if}
+<style>
+  .composer-settings-trigger {
+    flex-shrink: 0;
+  }
 
-  {#if openMenu === "voice"}
-    <BodyPortal>
-      <div
-        bind:this={menuEl}
-        class="composer-anchored-menu composer-turn-menu"
-        role="listbox"
-        aria-label="Choose voice"
-      >
-        <header class="composer-anchored-menu-header">
-          <div class="min-w-0">
-            <h2 class="composer-turn-menu-title">Voice</h2>
-            <p class="composer-turn-menu-description">How Medousa sounds in this chat</p>
-          </div>
-        </header>
-        <div class="composer-anchored-menu-body space-y-0.5">
-          {#each voiceOptions as option (option.id)}
-            {@const active = voicePresets.activeVoiceId === option.id}
-            <button
-              type="button"
-              class="composer-turn-option"
-              class:composer-turn-option-active={active}
-              role="option"
-              aria-selected={active}
-              title={option.description}
-              onclick={() => void selectVoice(option.id)}
-            >
-              <AudioLines size={14} strokeWidth={1.8} class="composer-turn-option-icon" />
-              <span class="composer-turn-option-copy">
-                <span class="composer-turn-option-label">{option.name}</span>
-                {#if option.description}
-                  <span class="composer-turn-option-description">{option.description}</span>
-                {/if}
-              </span>
-              {#if active}
-                <Check size={14} strokeWidth={2} class="composer-turn-option-check" />
-              {/if}
-            </button>
-          {/each}
-        </div>
-      </div>
-    </BodyPortal>
-  {:else if showNativeControls && openMenu === "stance"}
-    <BodyPortal>
-      <div
-        bind:this={menuEl}
-        class="composer-anchored-menu composer-turn-menu"
-        role="listbox"
-        aria-label="Choose stance"
-      >
-        <header class="composer-anchored-menu-header">
-          <div class="min-w-0">
-            <h2 class="composer-turn-menu-title">Stance</h2>
-            <p class="composer-turn-menu-description">How much detail reaches the answer</p>
-          </div>
-        </header>
-        <div class="composer-anchored-menu-body space-y-0.5">
-          {#each DEPTH_CHARTER_OPTIONS as option (option.id)}
-            {@const active = runtime.depthMode === option.id}
-            <button
-              type="button"
-              class="composer-turn-option"
-              class:composer-turn-option-active={active}
-              role="option"
-              aria-selected={active}
-              title={option.hint}
-              onclick={() => void selectDepth(option.id)}
-            >
-              <Compass size={14} strokeWidth={1.8} class="composer-turn-option-icon" />
-              <span class="composer-turn-option-copy">
-                <span class="composer-turn-option-label">{option.label}</span>
-                <span class="composer-turn-option-description">{option.hint}</span>
-              </span>
-              {#if active}
-                <Check size={14} strokeWidth={2} class="composer-turn-option-check" />
-              {/if}
-            </button>
-          {/each}
-        </div>
-      </div>
-    </BodyPortal>
-  {:else if showNativeControls && openMenu === "reasoning"}
-    <BodyPortal>
-      <div
-        bind:this={menuEl}
-        class="composer-anchored-menu composer-turn-menu"
-        role="listbox"
-        aria-label="Choose reasoning"
-      >
-        <header class="composer-anchored-menu-header">
-          <div class="min-w-0">
-            <h2 class="composer-turn-menu-title">Reasoning</h2>
-            <p class="composer-turn-menu-description">How hard the model thinks before answering</p>
-          </div>
-        </header>
-        <div class="composer-anchored-menu-body space-y-0.5">
-          {#each REASONING_EFFORT_OPTIONS as option (option.id)}
-            {@const active = runtime.reasoningEffort === option.id}
-            <button
-              type="button"
-              class="composer-turn-option"
-              class:composer-turn-option-active={active}
-              role="option"
-              aria-selected={active}
-              title={option.hint}
-              onclick={() => void selectReasoning(option.id)}
-            >
-              <Brain size={14} strokeWidth={1.8} class="composer-turn-option-icon" />
-              <span class="composer-turn-option-copy">
-                <span class="composer-turn-option-label">{option.label}</span>
-                <span class="composer-turn-option-description">{option.hint}</span>
-              </span>
-              {#if active}
-                <Check size={14} strokeWidth={2} class="composer-turn-option-check" />
-              {/if}
-            </button>
-          {/each}
-        </div>
-      </div>
-    </BodyPortal>
-  {/if}
-</div>
+  .composer-settings-menu {
+    width: min(20rem, calc(100vw - 1rem));
+  }
+
+  .composer-settings-header {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .65rem .7rem;
+    border-bottom: 1px solid rgb(var(--theme-border) / .25);
+  }
+
+  .composer-settings-header h2 {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .composer-settings-header button {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: .4rem;
+    color: rgb(var(--theme-text-secondary));
+  }
+
+  .composer-settings-header button:hover {
+    background: rgb(var(--theme-border) / .2);
+  }
+
+  .composer-settings-row, .composer-settings-audio {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: .6rem;
+    min-height: 42px;
+    padding: .5rem .6rem;
+    font-size: 12px;
+    text-align: left;
+    border-radius: .5rem;
+  }
+
+  .composer-settings-row:hover {
+    background: rgb(var(--theme-border) / .15);
+  }
+
+  .composer-settings-value {
+    margin-left: auto;
+    max-width: 48%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: rgb(var(--theme-text-tertiary));
+  }
+
+  .composer-settings-audio {
+    justify-content: space-between;
+  }
+
+  .composer-settings-divider {
+    margin: .35rem .6rem;
+    border-top: 1px solid rgb(var(--theme-border) / .25);
+  }
+
+  .composer-settings-menu :global(button:focus-visible) {
+    outline: 2px solid currentColor;
+    outline-offset: -2px;
+  }
+
+</style>

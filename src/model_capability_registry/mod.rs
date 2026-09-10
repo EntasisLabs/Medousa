@@ -53,19 +53,48 @@ impl ModelCapabilityRegistry {
         }
     }
 
-    pub fn resolve(&self, provider: &str, model: &str) -> ModelCapabilitiesLookupResponse {
-        if let Some(record) = self.lookup_record(provider, model) {
-            return ModelCapabilitiesLookupResponse {
-                found: true,
-                model: Some(record),
-                heuristic: false,
-            };
+    pub fn reasoning(&self, provider: &str, model: &str) -> crate::reasoning_effort::ReasoningCapability {
+        let provider = provider.trim().to_ascii_lowercase();
+        // Catalog reasoning is only authoritative for its exact provider route.
+        if provider == "openai-codex" {
+            let snapshots = self.snapshots.read().expect("catalog snapshots lock");
+            if let Some(record) = snapshots.get(&provider).and_then(|snapshot| {
+                snapshot.models.iter().find(|record| record.model_id == model.trim())
+            }) && let Some(reasoning) = &record.reasoning {
+                return reasoning.clone();
+            }
         }
+        crate::reasoning_effort::reasoning_capability(&provider, model)
+    }
 
+    pub fn record_chatgpt_reasoning(
+        &self,
+        models: Vec<(String, Option<crate::reasoning_effort::ReasoningCapability>)>,
+    ) {
+        let records = models.into_iter().map(|(model, reasoning)| {
+            let mut record = infer_capability("openai-codex", &model);
+            record.reasoning = reasoning;
+            record.source = "chatgpt_account".into();
+            record
+        }).collect();
+        self.persist_snapshot(ProviderCatalogSnapshot {
+            provider: "openai-codex".into(),
+            fetched_at: Utc::now(),
+            source: "chatgpt_account".into(),
+            models: records,
+            error: None,
+        });
+    }
+
+    pub fn resolve(&self, provider: &str, model: &str) -> ModelCapabilitiesLookupResponse {
+        let record = self.lookup_record(provider, model);
+        let found = record.is_some();
+        let mut record = record.unwrap_or_else(|| infer_capability(provider, model));
+        record.reasoning = Some(self.reasoning(provider, model));
         ModelCapabilitiesLookupResponse {
-            found: false,
-            model: Some(infer_capability(provider, model)),
-            heuristic: true,
+            found,
+            model: Some(record),
+            heuristic: !found,
         }
     }
 
@@ -133,7 +162,11 @@ impl ModelCapabilityRegistry {
                         continue;
                     }
                 }
-                models.push(record.clone());
+                let mut record = record.clone();
+                if record.reasoning.is_none() {
+                    record.reasoning = Some(crate::reasoning_effort::reasoning_capability(provider, &record.model_id));
+                }
+                models.push(record);
             }
         }
         models.sort_by(|left, right| left.model_id.cmp(&right.model_id));
@@ -269,6 +302,11 @@ impl ModelCapabilityRegistry {
 
     fn persist_snapshot(&self, snapshot: ProviderCatalogSnapshot) {
         let provider = snapshot.provider.trim().to_ascii_lowercase();
+        // Generic API-key refreshes do not own the account catalog. In particular,
+        // a failed refresh must not erase its advertised reasoning capabilities.
+        if provider == "openai-codex" && snapshot.source != "chatgpt_account" {
+            return;
+        }
         if let Err(err) = save_provider_snapshot(&snapshot) {
             eprintln!("model catalog: failed to save {provider}: {err:#}");
         }
@@ -450,6 +488,28 @@ mod tests {
             snapshots: RwLock::new(HashMap::new()),
         };
         assert!(registry.supports_vision("openrouter", "openai/gpt-4o-mini"));
+    }
+
+    #[test]
+    fn generic_refresh_cannot_replace_account_reasoning_metadata() {
+        let reasoning = crate::reasoning_effort::ReasoningCapability::advertised(
+            &["low".into(), "high".into()], Some("high".into()),
+        );
+        let mut model = infer_capability("openai-codex", "account-model");
+        model.reasoning = Some(reasoning.clone());
+        let snapshot = ProviderCatalogSnapshot {
+            provider: "openai-codex".into(), fetched_at: Utc::now(),
+            source: "chatgpt_account".into(), models: vec![model], error: None,
+        };
+        let registry = ModelCapabilityRegistry {
+            index: RwLock::new(CatalogIndex::default()),
+            snapshots: RwLock::new(HashMap::from([("openai-codex".into(), snapshot.clone())])),
+        };
+        registry.persist_snapshot(ProviderCatalogSnapshot {
+            source: "openai_compatible".into(), models: vec![], error: Some("not authorized".into()),
+            ..snapshot
+        });
+        assert_eq!(registry.reasoning("openai-codex", "account-model"), reasoning);
     }
 
     #[test]

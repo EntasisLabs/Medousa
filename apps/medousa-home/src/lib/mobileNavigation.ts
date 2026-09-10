@@ -20,13 +20,15 @@ export const MOBILE_TAB_ORDER: MobileTab[] = MOBILE_TABS.map((tab) => tab.id);
 type MobileBackHandler = () => boolean;
 
 const mobileBackHandlers: MobileBackHandler[] = [];
+const modalBackHandlers: MobileBackHandler[] = [];
 
 /** Panels register nested back (e.g. Context detail). Last registered wins first. */
-export function registerMobileBackHandler(handler: MobileBackHandler): () => void {
-  mobileBackHandlers.push(handler);
+export function registerMobileBackHandler(handler: MobileBackHandler, priority: "default" | "modal" = "default"): () => void {
+  const handlers = priority === "modal" ? modalBackHandlers : mobileBackHandlers;
+  handlers.push(handler);
   return () => {
-    const index = mobileBackHandlers.indexOf(handler);
-    if (index >= 0) mobileBackHandlers.splice(index, 1);
+    const index = handlers.indexOf(handler);
+    if (index >= 0) handlers.splice(index, 1);
   };
 }
 
@@ -41,6 +43,10 @@ export function mobileOverlaysOpen(): boolean {
 }
 
 export function tryMobileBackNavigation(): boolean {
+  // A modal opened from a drawer consumes Back before its parent overlay.
+  for (let index = modalBackHandlers.length - 1; index >= 0; index -= 1) {
+    if (modalBackHandlers[index]()) return true;
+  }
   if (layout.mobileDestinationsMenuOpen) {
     layout.setMobileDestinationsMenuOpen(false);
     return true;

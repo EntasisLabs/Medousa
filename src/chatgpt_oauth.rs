@@ -540,6 +540,15 @@ impl ChatGptOAuthBroker {
             visibility: String,
             #[serde(default)]
             priority: i32,
+            #[serde(default)]
+            supported_reasoning_levels: Option<Vec<ReasoningLevel>>,
+            #[serde(default)]
+            default_reasoning_level: Option<String>,
+        }
+
+        #[derive(Deserialize)]
+        struct ReasoningLevel {
+            effort: String,
         }
 
         if !response.status().is_success() {
@@ -560,6 +569,27 @@ impl ChatGptOAuthBroker {
                 .then_with(|| left.slug.cmp(&right.slug))
         });
         models.dedup_by(|left, right| left.slug == right.slug);
+        let capabilities = models
+            .iter()
+            .map(|model| {
+                let capability = model.supported_reasoning_levels.as_ref().map(|levels| {
+                    crate::reasoning_effort::ReasoningCapability::advertised(
+                        &levels
+                            .iter()
+                            .map(|level| level.effort.clone())
+                            .collect::<Vec<_>>(),
+                        model.default_reasoning_level.clone(),
+                    )
+                });
+                (model.slug.trim().to_string(), capability)
+            })
+            .filter(|(slug, _)| !slug.is_empty())
+            .collect();
+        tokio::task::spawn_blocking(move || {
+            crate::model_capability_registry::registry().record_chatgpt_reasoning(capabilities);
+        })
+        .await
+        .map_err(|_| OAuthError::InvalidModelCatalogResponse)?;
         Ok(ChatGptModelListResponse {
             models: models
                 .into_iter()
@@ -1113,7 +1143,9 @@ mod tests {
                     { "slug": "gpt-6-astra", "visibility": "list", "priority": 30 },
                     { "slug": "gpt-visible-slow", "visibility": "list", "priority": 10 },
                     { "slug": "gpt-hidden", "visibility": "hide", "priority": 100 },
-                    { "slug": "gpt-visible-fast", "visibility": "list", "priority": 20 }
+                    { "slug": "gpt-visible-fast", "visibility": "list", "priority": 20,
+                      "supported_reasoning_levels": [{"effort":"low"}, {"effort":"high"}],
+                      "default_reasoning_level": "low" }
                 ]
             }))
         }
@@ -1140,6 +1172,10 @@ mod tests {
             result.models,
             vec!["gpt-6-astra", "gpt-visible-fast", "gpt-visible-slow"]
         );
+        let reasoning = crate::model_capability_registry::registry()
+            .reasoning("openai-codex", "gpt-visible-fast");
+        assert_eq!(reasoning.levels, ["low", "high"]);
+        assert_eq!(reasoning.default_level.as_deref(), Some("low"));
     }
 
     #[tokio::test]

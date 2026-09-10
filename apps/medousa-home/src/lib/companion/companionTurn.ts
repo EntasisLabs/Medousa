@@ -2,7 +2,7 @@ import {
   createTurnTicket,
   getActiveSessionTurn,
 } from "$lib/daemon";
-import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
+import { prepareInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
 import { chat } from "$lib/stores/chat.svelte";
 import { userProfiles } from "$lib/stores/userProfiles.svelte";
 import { voicePresets } from "$lib/stores/voicePresets.svelte";
@@ -21,7 +21,7 @@ export async function sendCompanionPrompt(
   }
   if (!sessionId) throw new Error("Could not create a conversation.");
 
-  const options = buildInteractiveTurnOptions(chat);
+  const options = await prepareInteractiveTurnOptions(chat);
   let anotherTurnActive = chat.hasLiveInteractiveTurn();
   try {
     const active = await getActiveSessionTurn(sessionId);

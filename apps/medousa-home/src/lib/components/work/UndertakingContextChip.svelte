@@ -6,6 +6,7 @@
     CircleDot,
     ExternalLink,
     FolderPlus,
+    FolderOpen,
     GitPullRequestArrow,
     HardDriveDownload,
     Link2Off,
@@ -50,9 +51,11 @@
   interface Props {
     chatOnly?: boolean;
     header?: boolean;
+    /** Show working-folder context without repeating the task status from the header. */
+    composer?: boolean;
   }
 
-  let { chatOnly = false, header = false }: Props = $props();
+  let { chatOnly = false, header = false, composer = false }: Props = $props();
   let chipMenuOpen = $state(false);
   const active = $derived(
     chatOnly ? undertakings.forChat(chat.sessionId) : undertakings.active,
@@ -368,14 +371,19 @@
     {#snippet trigger({ open, toggle })}
       <button
         type="button"
-        class={header
+        class={header || composer
           ? "flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-content-secondary transition hover:bg-surface-800/70 hover:text-surface-50"
           : "flex max-w-full cursor-pointer items-center gap-1.5 rounded-full border border-surface-500/35 bg-surface-900/75 px-2.5 py-1 text-chrome-md text-surface-200 transition hover:border-surface-400/60 hover:bg-surface-800/90"}
-        aria-label={`Current project: ${active.title}`}
+        title={composer ? active.worktree ?? active.title : undefined}
+        aria-label={composer ? `Working folder: ${active.worktree ?? active.title}` : `Current project: ${active.title}`}
         aria-expanded={open}
         aria-haspopup="menu"
         onclick={toggle}
       >
+        {#if composer}
+          <FolderOpen size={13} class="shrink-0 text-content-quiet" />
+          <span class="truncate font-medium text-content-secondary">{active.worktree?.split(/[\\/]/).filter(Boolean).at(-1) || active.title}</span>
+        {:else}
         <CircleDot
           size={12}
           class={active.humanPhase === "review" ? "text-amber-300" : "text-primary-400"}
@@ -391,6 +399,7 @@
         {/if}
         {#if active.executorKind}
           <span class="hidden shrink-0 text-content-quiet sm:inline">{humanExecutorLabel(active.executorKind)}</span>
+        {/if}
         {/if}
         <ChevronDown
           size={12}

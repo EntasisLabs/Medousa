@@ -83,7 +83,7 @@ export function companionTurnRoutingHint(): string {
 }
 
 export function mobileComposerRoutingHint(): string {
-  return `Model and stance update ${workshopHostPhrase()} — your next message uses what you pick here.`;
+  return "The model is saved for this chat. Response style, depth, and reasoning use your workshop settings.";
 }
 
 export function workshopPairingFromHostHint(): string {

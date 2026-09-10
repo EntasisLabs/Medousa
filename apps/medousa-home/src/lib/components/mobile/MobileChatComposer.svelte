@@ -7,11 +7,10 @@
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import ChatAgentModePicker from "$lib/components/chat/ChatAgentModePicker.svelte";
   import ChatExecutionTargetPicker from "$lib/components/chat/ChatExecutionTargetPicker.svelte";
-  import ChatNarrationToggle from "$lib/components/chat/ChatNarrationToggle.svelte";
   import UndertakingContextChip from "$lib/components/work/UndertakingContextChip.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
   import { applyActiveAgentPrompt } from "$lib/utils/activeAgentPrompt";
-  import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
+  import { prepareInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { chat } from "$lib/stores/chat.svelte";
   import { bots } from "$lib/stores/bots.svelte";
@@ -58,7 +57,7 @@
     mode: "interactive" | "background",
     codeProjectSetupAuthorized = false,
   ) {
-    const opts = buildInteractiveTurnOptions(chat);
+    const opts = await prepareInteractiveTurnOptions(chat);
     const mediaRefs = [...chat.pendingMediaRefs];
     const voice = voicePresets.turnVoiceFields();
     const codeContext = activeCodeContext(chat.sessionId);
@@ -101,7 +100,7 @@
 
   async function submit(event: Event) {
     event.preventDefault();
-    if (connection.offline || runtime.savingControls) return;
+    if (connection.offline || runtime.savingControls || chat.pendingMediaUploading) return;
     const basePrompt = ensureVaultSelectionInPrompt(
       chat.draft.trim(),
       chat.vaultNoteContext,
@@ -219,21 +218,18 @@
   <AgentPermissionBar mobile />
   <AgentSecretBar mobile />
   <AgentBrowserPanel mobile />
-  <div class="mb-1 flex items-center px-1">
+  <div class="composer-context-row composer-context-row--mobile">
+    <UndertakingContextChip chatOnly composer />
+    <ChatExecutionTargetPicker
+      sessionId={chat.focusedSessionId}
+      disabled={connection.offline || chat.composerBlocked || runtime.savingControls}
+    />
+  </div>
+  <div class="composer-mode-row">
     <ChatAgentModePicker
       sessionId={chat.focusedSessionId}
       disabled={connection.offline || chat.composerBlocked || runtime.savingControls}
     />
-    <div class="ml-1 min-w-0">
-      <ChatExecutionTargetPicker
-        sessionId={chat.focusedSessionId}
-        disabled={connection.offline || chat.composerBlocked || runtime.savingControls}
-      />
-    </div>
-    <div class="ml-1 shrink-0">
-      <ChatNarrationToggle />
-    </div>
-    <div class="ml-1 min-w-0"><UndertakingContextChip chatOnly /></div>
   </div>
   <ChatComposerBar
     mobile

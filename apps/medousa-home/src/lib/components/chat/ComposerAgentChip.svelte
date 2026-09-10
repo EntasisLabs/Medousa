@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BotAvatar from "./BotAvatar.svelte";
   import { tick } from "svelte";
   import { Bot, ChevronDown, X } from "@lucide/svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
@@ -173,9 +174,7 @@
       {#if activeBot}
         <div class="workshop-inset p-3">
           <div class="flex items-start gap-2.5">
-            <span class="bot-row-avatar" aria-hidden="true">
-              {activeBot.avatar_ref?.trim() || "✨"}
-            </span>
+            <BotAvatar reference={activeBot.avatar_ref} />
             <span class="min-w-0 flex-1">
               <span class="block text-sm font-medium text-surface-100">
                 {activeBot.display_name}

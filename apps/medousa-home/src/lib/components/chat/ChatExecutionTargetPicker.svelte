@@ -198,6 +198,7 @@
       onclick={toggle}
     >
       <Cpu size={13} strokeWidth={1.9} class="shrink-0 opacity-75" />
+      <span class="shrink-0 text-content-quiet" aria-hidden="true">Workers</span>
       <span class="chat-runtime-trigger-label truncate">{label}</span>
       <ChevronDown size={12} strokeWidth={2} class="chat-runtime-trigger-chevron shrink-0" />
     </button>
@@ -303,7 +304,7 @@
 
 <style>
   .worker-target-trigger {
-    max-width: 9.5rem;
+    max-width: min(14rem, 100%);
   }
 
   .worker-target-unavailable {

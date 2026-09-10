@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { canReadClipboardImages } from "$lib/utils/chatImagePaste";
   import { tick } from "svelte";
   import {
     ArchiveRestore,
     Bot,
     BookmarkPlus,
     Camera,
+    ClipboardPaste,
     Images,
     LoaderCircle,
     Paperclip,
@@ -273,6 +275,24 @@
           {usesNativeAttachmentSourceMenu ? "Add attachment" : mobile ? "Attach file" : "Attach"}
         </span>
       </button>
+      {#if canReadClipboardImages()}
+        <button
+          type="button"
+          class="composer-plus-menu-item"
+          role="menuitem"
+          disabled={disabled || chat.pendingMediaUploading}
+          onclick={() => {
+            // Start the read in this gesture; WebKit may present its Paste prompt.
+            void chat.attachClipboardImages();
+            open = false;
+          }}
+        >
+          <span class="composer-plus-menu-icon" aria-hidden="true">
+            <ClipboardPaste size={15} strokeWidth={1.75} />
+          </span>
+          <span>Paste image</span>
+        </button>
+      {/if}
       {#if showStashes}
         <button
           type="button"

@@ -104,3 +104,23 @@ describe("chat model selections", () => {
     expect(store.get(context())).toBeNull();
   });
 });
+
+it("remembers reasoning per chat, workshop, and model through switches and reload", () => {
+  const values = new Map<string, string>();
+  vi.stubGlobal("localStorage", { getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) });
+  const store = new SessionModelSelections();
+  const sol = selection("sol", "openai-codex");
+  const luna = selection("luna", "openai-codex");
+  store.setReasoning(context(), sol, "high");
+  store.setReasoning(context(), luna, "low");
+  store.set(context(), sol);
+  expect(store.reasoning(context(), sol.provider, sol.model)).toBe("high");
+  expect(store.reasoning(context("other"), sol.provider, sol.model)).toBe("default");
+  expect(store.reasoning(context("coder", "other-workshop"), sol.provider, sol.model)).toBe("default");
+  const reloaded = new SessionModelSelections();
+  expect(reloaded.reasoning(context(), luna.provider, luna.model)).toBe("low");
+  reloaded.clear(context());
+  expect(reloaded.reasoning(context(), sol.provider, sol.model)).toBe("default");
+  vi.unstubAllGlobals();
+});

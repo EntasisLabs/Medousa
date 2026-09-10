@@ -611,7 +611,7 @@
 
   async function submit(event: Event) {
     event.preventDefault();
-    if (connection.offline || runtime.savingControls) return;
+    if (connection.offline || runtime.savingControls || chat.pendingMediaUploading) return;
     const scopeForSend = chat.vaultNoteContext;
     const basePrompt = ensureVaultSelectionInPrompt(chat.draft.trim(), scopeForSend);
     const prompt = panelBot ? basePrompt : applyActiveAgentPrompt(basePrompt);

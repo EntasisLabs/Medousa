@@ -89,6 +89,28 @@ describe("chat media upload", () => {
     ]);
   });
 
+  it("does not upload bytes if the composer scope changed while reading the file", async () => {
+    let current = true;
+    const file = new File(["png"], "shot.png", { type: "image/png" });
+    vi.spyOn(file, "arrayBuffer").mockImplementation(async () => {
+      current = false;
+      return new ArrayBuffer(3);
+    });
+    await expect(uploadChatFiles("session-1", [file], () => current)).resolves.toEqual([]);
+    expect(uploadMediaBytes).not.toHaveBeenCalled();
+  });
+
+  it("stops a multi-image upload before sending the next file to a different workshop", async () => {
+    let current = true;
+    uploadMediaBytes.mockImplementation(async () => {
+      current = false;
+      return { media_id: "image", mime: "image/png", byte_size: 3 };
+    });
+    const file = new File(["png"], "shot.png", { type: "image/png" });
+    await expect(uploadChatFiles("session-1", [file, file], () => current)).resolves.toEqual([]);
+    expect(uploadMediaBytes).toHaveBeenCalledOnce();
+  });
+
   it("adds the filename to upload failures", async () => {
     uploadMediaBytes.mockRejectedValue(new Error("file too large"));
     const file = new File([new Uint8Array([1])], "huge.png", {

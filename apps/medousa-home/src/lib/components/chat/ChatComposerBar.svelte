@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { handleChatImagePaste } from "$lib/utils/chatImagePaste";
   import { composerModel } from "$lib/chat/composerModel";
   import "$lib/styles/composer.postcss";
   import { onDestroy, onMount } from "svelte";
@@ -128,7 +129,7 @@
   );
   const blocked = $derived(disabled || composerBlocked || runtime.savingControls);
   const canSend = $derived(
-    !blocked && (chat.draft.trim().length > 0 || chat.pendingMediaRefs.length > 0),
+    !blocked && !chat.pendingMediaUploading && (chat.draft.trim().length > 0 || chat.pendingMediaRefs.length > 0),
   );
 
   onMount(() => {
@@ -236,6 +237,13 @@
     if (blocked) return;
     const files = Array.from(event.dataTransfer?.files ?? []);
     if (files.length > 0) void chat.attachDroppedFiles(files);
+  }
+
+  function handlePaste(event: ClipboardEvent) {
+    handleChatImagePaste(event, {
+      blocked,
+      attach: (files) => void chat.attachDroppedFiles(files),
+    });
   }
 
   async function stopActiveTurn() {
@@ -417,6 +425,7 @@
         minHeight={34}
         class="mobile-composer-dock-input"
         enterkeyhint="enter"
+        onpaste={handlePaste}
         {onkeydown}
         {onfocus}
         {onblur}
@@ -555,6 +564,7 @@
       minHeight={36}
       class="composer-bar-stacked-input"
       enterkeyhint="send"
+      onpaste={handlePaste}
       {onkeydown}
       {onfocus}
       {onblur}

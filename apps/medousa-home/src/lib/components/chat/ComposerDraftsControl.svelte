@@ -20,12 +20,14 @@
   import { placeComposerPopover } from "$lib/utils/railPopover";
 
   interface Props {
+    inline?: boolean;
+    onRestore?: () => void;
     disabled?: boolean;
     mode?: string;
     model?: string;
   }
 
-  let { disabled = false, mode, model }: Props = $props();
+  let { disabled = false, mode, model, inline = false, onRestore }: Props = $props();
 
   let open = $state(false);
   let rootEl = $state<HTMLDivElement | null>(null);
@@ -45,7 +47,7 @@
     stashes.length;
     loading;
     error;
-    if (!open || !menuEl || !triggerEl) return;
+    if (inline || !open || !menuEl || !triggerEl) return;
     let frame = 0;
     const place = () => {
       if (!menuEl || !triggerEl) return;
@@ -75,7 +77,7 @@
   });
 
   $effect(() => {
-    if (!open) return;
+    if (!open && !inline) return;
     void refresh();
   });
 
@@ -170,6 +172,7 @@
   function applyStash(stash: PromptStash) {
     chat.prefillDraft(stash.draft.text);
     chat.pendingMediaRefs = [...(stash.draft.media_refs ?? [])];
+    onRestore?.();
     open = false;
   }
 
@@ -189,7 +192,8 @@
   }
 </script>
 
-<div bind:this={rootEl} class="composer-drafts-control">
+<div bind:this={rootEl} class:composer-drafts-control={!inline}>
+  {#if !inline}
   <button
     bind:this={triggerEl}
     type="button"
@@ -207,11 +211,12 @@
     <ChevronDown size={12} strokeWidth={2} class="composer-turn-trigger-chevron shrink-0" />
   </button>
 
-  {#if open}
-    <BodyPortal>
+  {/if}
+  {#if open || inline}
+    <BodyPortal enabled={!inline}>
       <div
         bind:this={menuEl}
-        class="composer-anchored-menu composer-turn-menu composer-drafts-menu"
+        class={inline ? "composer-settings-inline" : "composer-anchored-menu composer-turn-menu composer-drafts-menu"}
         role="menu"
         aria-label="Drafts"
       >
