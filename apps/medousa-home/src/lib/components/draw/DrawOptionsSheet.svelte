@@ -193,7 +193,7 @@
   .draw-sheet-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 130;
+    z-index: 290;
     width: 100%;
     height: 100%;
     border: 0;
@@ -207,7 +207,7 @@
     position: fixed;
     right: 0.65rem;
     bottom: 0.65rem;
-    z-index: 131;
+    z-index: 291;
     display: flex;
     width: min(30rem, calc(100% - 1.3rem));
     max-height: min(42rem, calc(100% - 1.3rem));
