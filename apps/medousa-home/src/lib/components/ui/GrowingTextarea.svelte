@@ -13,6 +13,7 @@
     oninput?: (event: Event) => void;
     onclick?: (event: MouseEvent) => void;
     onkeyup?: (event: KeyboardEvent) => void;
+    onpaste?: (event: ClipboardEvent) => void;
     onselect?: (event: Event) => void;
     enterkeyhint?: "enter" | "done" | "go" | "next" | "previous" | "search" | "send";
     "aria-label"?: string;
@@ -33,6 +34,7 @@
     onclick,
     onkeyup,
     onselect,
+    onpaste,
     enterkeyhint,
     "aria-label": ariaLabel,
   }: Props = $props();
@@ -76,6 +78,7 @@
   {onclick}
   {onkeyup}
   {onselect}
+  {onpaste}
   {enterkeyhint}
   aria-label={ariaLabel}
   rows="1"

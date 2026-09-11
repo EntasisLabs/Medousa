@@ -891,6 +891,17 @@ Setup: [mcp-gateway-setup.md](../mcp-gateway-setup.md)
 | GET | `/v1/stt/status` |
 | POST | `/v1/stt/transcribe` |
 
+Model capability records optionally include `reasoning`: `kind` (`effort`,
+`budget`, `unsupported`, or `unknown`), `levels`, nullable `budgetMin`/`budgetMax`,
+nullable `defaultLevel`, and `source`. These describe controls supported by the
+selected provider/model and the daemon's installed adapter. ChatGPT account
+catalog reasoning metadata takes precedence over verified fallback profiles.
+Older cached records and unknown routes resolve conservatively to model default.
+Interactive `reasoningEffort: "default"` omits the override; `"none"` means explicit
+Off when supported; `"budget:N"` supplies an integer thinking budget. The daemon
+omits incompatible inherited overrides before native inference.
+
+
 See [extensions.md](extensions.md).
 
 ---

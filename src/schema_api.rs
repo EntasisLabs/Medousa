@@ -158,6 +158,18 @@ fn dispatch(input: SchemaInput) -> stasis::prelude::Result<Value> {
     }))
 }
 
+#[cfg(test)]
+pub(crate) fn dispatch_for_coder_test() -> Value {
+    dispatch(SchemaInput {
+        domain: None,
+        types: catalog()
+            .iter()
+            .map(|entry| entry.name.to_string())
+            .collect(),
+    })
+    .unwrap()
+}
+
 fn catalog_entry(action: &CatalogItem) -> Value {
     json!({
         "name": action.name,
@@ -202,7 +214,10 @@ fn catalog() -> Vec<CatalogItem> {
             SchemaDomain::Identity,
             identity_type_schemas(),
         ))
-        .chain(generated_items(SchemaDomain::Runtime, runtime_type_schemas()))
+        .chain(generated_items(
+            SchemaDomain::Runtime,
+            runtime_type_schemas(),
+        ))
         .chain(generated_items(SchemaDomain::Turn, turn_type_schemas()))
         .collect::<Vec<_>>();
     #[cfg(any(feature = "full-daemon", feature = "embedded-daemon"))]

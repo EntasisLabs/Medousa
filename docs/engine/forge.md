@@ -115,14 +115,17 @@ Base path: `/v1/forge`. Types are `medousa-forge` serde models (`WorkItem`,
 ### Project event stream
 
 `GET /v1/forge/items/{id}/project-events?since=<seq>` is the authoritative
-cursor for Code buffer reconciliation. Each SSE `project` payload is a
+cursor for Code buffer reconciliation and live Changes in Chat and mobile. Each SSE `project` payload is a
 `ForgeProjectEvent` with monotonic `seq`, `work_id`, `kind`
 (`created` / `changed` / `renamed` / `deleted` / `git_status` / `snapshot`),
 optional `path` / `old_path` / `digest`, and `updated_at`.
 
 Reconnect with `?since=<last_seq>` to replay the bounded in-memory journal
-(`seq > since` for that work item), then tail live events. Lagged subscribers
-re-snapshot from the journal rather than inventing gaps. Events come from:
+(`seq > since` for that work item), then tail live events. Each connection and
+lag recovery includes a `snapshot` reconciliation barrier: refetch current state
+and accept its sequence even if it is equal to or below the previous cursor
+(the daemon may have restarted). This also covers evicted journal history.
+Events come from:
 
 - lease-fenced source create/save/batch/workspace-edit/rename/delete routes;
 - a debounced worktree filesystem watcher (ignores `.git/**`).
@@ -131,6 +134,14 @@ Home's Code editor consumes this stream for all open buffers: clean tabs accept
 the project version, dirty tabs keep the draft and offer compare/rebase,
 renames/deletes recover tab identity, and the language client receives
 `workspace/didChangeWatchedFiles` (plus create/rename/delete file notifications).
+
+Reading Changes or attaching the project stream registers observation of the
+current workspace, including attached checkouts with no attempt. Watcher
+attachment and overflow emit snapshot events to recover missed changes. Home
+shares one project stream per workshop/work item, debounces Changes refreshes,
+and polls every ten seconds while that stream is unavailable. Chat also
+refreshes when agent activity ends. An open chat diff stays pinned and offers
+Refresh when a newer snapshot is available.
 
 `GET /v1/forge/stream` remains the coarse undertaking list channel (work id,
 state, event kind). It does not carry paths or a replay cursor.
@@ -563,3 +574,28 @@ lease to Codex or Cursor. The request includes `lease_id`, `generation`, and
 and leaves the same worktree Ready. Starting the provider is a separate,
 retryable operation: if provider startup fails, the user's files remain safe
 and no executor owns a stale lease.
+
+### Explicit Git actions from chat review
+
+Native authenticated clients can use `GET /v1/forge/items/{work_id}/changes/git`
+to obtain `head`, `branch`, `paths`, `base`, `can_branch`, and an opaque `snapshot`.
+The snapshot covers HEAD, branch, status, staging, and working file contents.
+Detached/unborn repositories, conflicts, submodule changes, and oversized review
+snapshots return a diagnostic instead of allowing an ambiguous mutation.
+
+`POST /v1/forge/items/{work_id}/changes/commit` accepts `lease_id`, `generation`,
+`snapshot`, `paths`, `message`, and optional `branch`. It requires the current
+human editing lease and no other active attempts. The server revalidates the
+workspace and snapshot under Forge execution admission. A temporary index
+commits selected files, runs ordinary hooks/signing, and preserves unrelated
+staging. The response contains `head` and optional `warning` if a successful
+commit could not refresh staging. Attached custody advances through a durable
+`ReviewCommitRecorded` event; evidence baselines remain unchanged.
+
+`POST /v1/forge/items/{work_id}/changes/pull-request` accepts the same lease and
+snapshot plus `title`, `body`, `base`, `draft`, and optional `branch`. It requires
+a clean feature branch, pushes the reviewed HEAD to origin without force, and
+uses the workshop's authenticated GitHub CLI. PR lookup/creation explicitly uses
+the origin push repository. A matching open PR is reused. The response contains
+`url` and `existing`; failures after pushing explicitly report that partial result.
+Both mutations retain the existing Forge native-client authorization policy.

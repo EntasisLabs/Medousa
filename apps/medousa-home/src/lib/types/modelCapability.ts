@@ -18,6 +18,7 @@ export interface ModelCapabilityRecord {
   maxOutputTokens?: number | null;
   supportsToolCalling?: boolean | null;
   supportsVision: boolean;
+  reasoning?: import("./reasoningEffort").ReasoningCapability;
   pricing?: ModelPricing | null;
   source: string;
   fetchedAt: string;

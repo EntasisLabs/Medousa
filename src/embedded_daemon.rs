@@ -1539,10 +1539,12 @@ impl EmbeddedRoutedChatClient {
                 ),
             });
         }
-        let config = CredentialedAiChatConfig::new(provider, model, base_url)
+        let original_model = model.clone();
+        let (_, bare_model) = genai::chat::ReasoningEffort::from_model_name(&model);
+        let config = CredentialedAiChatConfig::new(provider, bare_model.to_string(), base_url)
             .context("invalid embedded inference configuration")?;
         let provider = config.provider().to_string();
-        let model = config.model().to_string();
+        let model = original_model;
         let client = Arc::new(
             CredentialedAiChatClient::new(config, credentials)
                 .context("initialize embedded inference client")?,
@@ -1614,7 +1616,13 @@ impl AiChatClient for EmbeddedRoutedChatClient {
         request: genai::chat::ChatRequest,
         options: Option<&genai::chat::ChatOptions>,
     ) -> StasisResult<genai::chat::ChatResponse> {
-        self.snapshot().client.complete(request, options).await
+        let snapshot = self.snapshot();
+        let options = crate::reasoning_effort::model_chat_options(
+            &snapshot.provider,
+            &snapshot.model,
+            options,
+        );
+        snapshot.client.complete(request, Some(&options)).await
     }
 
     async fn complete_stream(
@@ -1623,9 +1631,15 @@ impl AiChatClient for EmbeddedRoutedChatClient {
         options: Option<&genai::chat::ChatOptions>,
         chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
     ) -> StasisResult<genai::chat::ChatResponse> {
-        self.snapshot()
+        let snapshot = self.snapshot();
+        let options = crate::reasoning_effort::model_chat_options(
+            &snapshot.provider,
+            &snapshot.model,
+            options,
+        );
+        snapshot
             .client
-            .complete_stream(request, options, chunk_tx)
+            .complete_stream(request, Some(&options), chunk_tx)
             .await
     }
 }

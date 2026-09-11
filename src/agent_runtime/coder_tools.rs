@@ -38,6 +38,7 @@ pub const COGNITION_CODER_TOOLS_DISCOVER: &str = "cognition_coder_tools_discover
 pub const COGNITION_ENGINEERING_POINTERS: &str = "cognition_engineering_pointers";
 pub const COGNITION_ENGINEERING_POINTER_FOLLOW: &str = "cognition_engineering_pointer_follow";
 pub const COGNITION_ENGINEERING_HISTORY: &str = "cognition_engineering_history";
+pub const COGNITION_CODER_CONTEXT_READ: &str = "cognition_coder_context_read";
 pub const COGNITION_CODER_EVIDENCE_READ: &str = "cognition_coder_evidence_read";
 
 const COGNITION_ENGINEERING_POINTERS_ID: ToolId = ToolId::new(COGNITION_ENGINEERING_POINTERS);
@@ -68,7 +69,7 @@ impl<'de> Deserialize<'de> for CoderToolIntent {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct CoderCallMetadata {
-    /// Short purpose of this tool call.
+    /// Purpose, usually 4-8 words.
     #[schemars(length(max = 320))]
     intent: CoderToolIntent,
 }
@@ -152,6 +153,7 @@ const CODER_RUNTIME_TOOLS: &[&str] = &[
     COGNITION_ENGINEERING_POINTER_FOLLOW,
     COGNITION_ENGINEERING_HISTORY,
     COGNITION_CODER_EVIDENCE_READ,
+    COGNITION_CODER_CONTEXT_READ,
 ];
 
 const CODER_MEMORY_IO_TIMEOUT: Duration = Duration::from_secs(2);
@@ -940,11 +942,11 @@ impl ToolRegistry for PortableCoderToolRegistry {
                         "Read the portable /workspace using only action=code.read or action=code.search.",
                     ),
                     crate::public_api::COGNITION_STORE_WRITE => tool.with_description(
-                        "Write the portable /workspace using only action=code.write and a digest precondition.",
+                        "Write the portable /workspace using action=code.write with a digest precondition; use edits to batch replacements against one revision. Fetch fields with cognition_schema types=[\"code.write\"].",
                     ),
                     _ => tool,
                 };
-                with_required_coder_intent(tool).map_err(|error| {
+                with_required_coder_intent(with_coder_tool_advertisement(tool)).map_err(|error| {
                     StasisError::PortFailure(format!(
                         "cannot compile portable Coder tool surface: {error}"
                     ))
@@ -956,10 +958,25 @@ impl ToolRegistry for PortableCoderToolRegistry {
     async fn invoke_tool(&self, tool_name: &str, input: Value) -> Result<Value> {
         self.verify()?;
         let id = self.resolve(tool_name)?;
-        let (_, input) = take_coder_call(input)?;
+        let (metadata, input) = take_coder_call(input)?;
+        if id.as_str() == super::coder_read_batch::TOOL_NAME {
+            // A batch never expands the destination's admitted child tool set.
+            self.resolve(crate::public_api::COGNITION_STORE_READ)?;
+            return super::coder_read_batch::invoke(
+                self,
+                input,
+                metadata.intent.as_str(),
+                &crate::execution_policy::load_parallel_execution_settings(),
+            )
+            .await;
+        }
         let input = self.bind_input(id.as_str(), input)?;
         self.verify()?;
-        self.inner.invoke_tool(id.as_str(), input).await
+        let mut output = self.inner.invoke_tool(id.as_str(), input).await?;
+        if id.as_str() == crate::public_api::COGNITION_SCHEMA {
+            project_coder_action_schemas(&mut output)?;
+        }
+        Ok(output)
     }
 }
 
@@ -1038,14 +1055,6 @@ impl CoderTurnLease {
         Ok(super::coder_activity::shared_space_prompt_appendix(
             &snapshot,
         ))
-    }
-
-    fn engineering_delta(&self) -> Result<Option<super::coder_activity::CoderEngineeringDelta>> {
-        self.activity
-            .observe_delta(&self.lease.work_id.to_string(), &self.identity.agent_id)
-            .map_err(|err| {
-                StasisError::PortFailure(format!("cannot observe Coder engineering delta: {err}"))
-            })
     }
 
     fn begin_tool_activity(
@@ -1135,9 +1144,24 @@ impl Drop for ClaimHeartbeatGuard {
 impl super::turn_context::ToolRoundContextProvider for CoderBoundToolRegistry {
     fn context_for_next_round(&self) -> Result<Option<String>> {
         let authority = self.authority()?;
-        let Some(delta) = authority.engineering_delta()? else {
-            return Ok(None);
-        };
+        // Invocation admission and the loop cancellation gate remain authoritative.
+        let pointer = authority
+            .activity
+            .context_pointer(&self.entry.work_id, &authority.identity.agent_id)
+            .map_err(StasisError::PortFailure)?;
+        Ok(Some(format!("Coder runtime context: {pointer}")))
+    }
+
+    fn replaces_previous_context(&self) -> bool {
+        true
+    }
+}
+
+impl CoderBoundToolRegistry {
+    /// Repository observations are paid for at entry or explicit refresh, never
+    /// regenerated into every tool round's transcript.
+    fn repository_observation(&self) -> Result<Value> {
+        let authority = self.authority()?;
         let pointers = self.ranked_pointers(super::coder_pointers::MAX_AMBIENT_POINTERS)?;
         let item = authority
             .forge
@@ -1169,7 +1193,7 @@ impl super::turn_context::ToolRoundContextProvider for CoderBoundToolRegistry {
             .git()
             .head_oid(&self.entry.worktree)
             .map_err(|err| StasisError::PortFailure(format!("cannot refresh Coder HEAD: {err}")))?;
-        let repository_observation = json!({
+        Ok(json!({
             "head_oid": head_oid.to_string(),
             "baseline_oid": self.entry.baseline_oid,
             "branch": self.entry.branch,
@@ -1187,13 +1211,7 @@ impl super::turn_context::ToolRoundContextProvider for CoderBoundToolRegistry {
                 "discover": COGNITION_CODER_TOOLS_DISCOVER,
             },
             "trust": "forge_and_worktree_observation",
-        });
-        Ok(Some(
-            super::coder_activity::engineering_delta_prompt_appendix(
-                &delta,
-                repository_observation,
-            ),
-        ))
+        }))
     }
 }
 
@@ -1507,6 +1525,49 @@ impl CoderBoundToolRegistry {
                 )
                 .map_err(StasisError::PortFailure)?;
                 Ok(json!({ "ok": true, "pointer": detail }))
+            }
+            COGNITION_CODER_CONTEXT_READ => {
+                let authority = self.authority()?;
+                let mut query = input.clone();
+                let fields = query.as_object_mut().ok_or_else(|| {
+                    StasisError::PortFailure("context input must be an object".into())
+                })?;
+                // Strict-schema providers can emit null for every unused optional.
+                fields.retain(|_, value| !value.is_null());
+                let mode = fields.remove("mode").unwrap_or_else(|| json!("delta"));
+                match mode.as_str() {
+                    Some("snapshot") => {
+                        if !query.as_object().is_some_and(|value| value.is_empty()) {
+                            return Err(StasisError::PortFailure(
+                                "snapshot accepts only mode (and intent)".into(),
+                            ));
+                        }
+                        let repository = self.repository_observation()?;
+                        let snapshot = authority
+                            .activity
+                            .observe_initial(&self.entry.work_id, &authority.identity.agent_id)
+                            .map_err(StasisError::PortFailure)?;
+                        Ok(
+                            json!({"ok": true, "status": "snapshot", "snapshot": snapshot,
+                            "repository_observation": repository}),
+                        )
+                    }
+                    Some("delta") => {
+                        let query: super::coder_activity::CoderDeltaQuery =
+                            serde_json::from_value(query).map_err(|err| {
+                                StasisError::PortFailure(format!(
+                                    "invalid context delta query: {err}"
+                                ))
+                            })?;
+                        authority
+                            .activity
+                            .read_delta(&self.entry.work_id, &query)
+                            .map_err(StasisError::PortFailure)
+                    }
+                    _ => Err(StasisError::PortFailure(
+                        "context mode must be delta or snapshot".into(),
+                    )),
+                }
             }
             COGNITION_ENGINEERING_HISTORY => {
                 let query = super::coder_pointers::CoderHistoryQuery {
@@ -2642,8 +2703,22 @@ impl ToolRegistry for CoderBoundToolRegistry {
         authority.heartbeat()?;
         let (metadata, input) = take_coder_call(input)?;
         let intent = metadata.intent;
-        let spawn_intent_hint =
-            crate::agent_runtime::turn_worker::TurnWorkerIntent::parse(intent.as_str());
+        let spawn_intent_hint = input
+            .get("worker_profile")
+            .filter(|value| !value.is_null())
+            .map(|value| {
+                let profile = value.as_str().ok_or_else(|| {
+                    StasisError::PortFailure("worker_profile must be a string".into())
+                })?;
+                crate::agent_runtime::turn_worker::TurnWorkerIntent::parse(profile).ok_or_else(
+                    || StasisError::PortFailure(format!("unknown worker_profile: {profile}")),
+                )
+            })
+            .transpose()?
+            // Accept old calls that used intent as a profile; new calls use worker_profile.
+            .or_else(|| {
+                crate::agent_runtime::turn_worker::TurnWorkerIntent::parse(intent.as_str())
+            });
         let input = self.enrich_semantic_input(tool_name, input)?;
         let targets = tool_targets(tool_name, &input, authority.lease());
         let claims = super::coder_claims::infer_tool_claims(
@@ -2716,70 +2791,100 @@ impl ToolRegistry for CoderBoundToolRegistry {
             ));
             return Err(err);
         }
-        let result = if super::coder_memory::CODER_MEMORY_TOOL_NAMES.contains(&tool_name) {
-            self.invoke_coder_memory_tool(&authority, tool_name, &input)
-                .await
-        } else if tool_name == super::coder_experiments::COGNITION_CODER_EXPERIMENT_COMPARE {
-            super::coder_experiments::compare_sealed_candidates(
-                authority.forge.as_ref(),
-                self.inner.as_ref(),
-                &self.entry,
-                &input,
-            )
-            .await
-        } else if tool_name == super::coder_semantic_actions::COGNITION_CODER_SYMBOL_REFACTOR {
-            super::coder_semantic_actions::invoke_symbol_refactor(
-                authority.forge.as_ref(),
-                self.change_sets.as_ref(),
-                &self.entry,
-                authority.lease(),
-                &self.policy,
-                &input,
-            )
-            .await
-        } else if tool_name == super::coder_semantic_actions::COGNITION_CODER_CHANGE_SET_APPLY {
-            super::coder_semantic_actions::apply_change_set(
-                self.change_sets.as_ref(),
-                authority.lease(),
-                &input,
-            )
-            .await
-        } else if tool_name == super::coder_semantic_actions::COGNITION_CODER_AFFECTED_TESTS {
-            super::coder_semantic_actions::affected_tests(
-                authority.forge.as_ref(),
-                &self.entry,
-                authority.lease(),
-                &input,
-            )
-            .await
-        } else if tool_name == super::coder_causal::COGNITION_CODER_CAUSAL_QUERY {
-            super::coder_causal::invoke_causal_query(
-                authority.forge.as_ref(),
-                self.inner.as_ref(),
-                &self.entry,
-                &self.engineering_events()?,
-                &input,
-            )
-            .await
-        } else if CODER_RUNTIME_TOOLS.contains(&tool_name) {
-            self.invoke_runtime_tool(tool_name, &input)
-        } else if crate::turn_control_tools::is_begin_work_tool_name(tool_name, &input) {
-            match remap_begin_work_to_spawn_input(&input, spawn_intent_hint) {
-                Ok(spawn_input) => {
-                    self.inner
-                        .invoke_tool(crate::public_api::COGNITION_WORKSHOP_MUTATE, spawn_input)
+        let result =
+            crate::coding_tools::with_coder_tool_root(self.entry.worktree.clone(), async {
+                if super::coder_memory::CODER_MEMORY_TOOL_NAMES.contains(&tool_name) {
+                    self.invoke_coder_memory_tool(&authority, tool_name, &input)
                         .await
+                } else if tool_name == super::coder_experiments::COGNITION_CODER_EXPERIMENT_COMPARE
+                {
+                    super::coder_experiments::compare_sealed_candidates(
+                        authority.forge.as_ref(),
+                        self.inner.as_ref(),
+                        &self.entry,
+                        &input,
+                    )
+                    .await
+                } else if tool_name
+                    == super::coder_semantic_actions::COGNITION_CODER_SYMBOL_REFACTOR
+                {
+                    super::coder_semantic_actions::invoke_symbol_refactor(
+                        authority.forge.as_ref(),
+                        self.change_sets.as_ref(),
+                        &self.entry,
+                        authority.lease(),
+                        &self.policy,
+                        &input,
+                    )
+                    .await
+                } else if tool_name
+                    == super::coder_semantic_actions::COGNITION_CODER_CHANGE_SET_APPLY
+                {
+                    super::coder_semantic_actions::apply_change_set(
+                        self.change_sets.as_ref(),
+                        authority.lease(),
+                        &input,
+                    )
+                    .await
+                } else if tool_name == super::coder_semantic_actions::COGNITION_CODER_AFFECTED_TESTS
+                {
+                    super::coder_semantic_actions::affected_tests(
+                        authority.forge.as_ref(),
+                        &self.entry,
+                        authority.lease(),
+                        &input,
+                    )
+                    .await
+                } else if tool_name == super::coder_causal::COGNITION_CODER_CAUSAL_QUERY {
+                    super::coder_causal::invoke_causal_query(
+                        authority.forge.as_ref(),
+                        self.inner.as_ref(),
+                        &self.entry,
+                        &self.engineering_events()?,
+                        &input,
+                    )
+                    .await
+                } else if tool_name == super::coder_read_batch::TOOL_NAME {
+                    super::coder_read_batch::invoke(
+                        self,
+                        input.clone(),
+                        intent.as_str(),
+                        &crate::execution_policy::load_parallel_execution_settings(),
+                    )
+                    .await
+                } else if tool_name == crate::public_api::COGNITION_SCHEMA {
+                    self.inner
+                        .invoke_tool(tool_name, input.clone())
+                        .await
+                        .and_then(|mut output| {
+                            project_coder_action_schemas(&mut output)?;
+                            Ok(output)
+                        })
+                } else if CODER_RUNTIME_TOOLS.contains(&tool_name) {
+                    self.invoke_runtime_tool(tool_name, &input)
+                } else if crate::turn_control_tools::is_begin_work_tool_name(tool_name, &input) {
+                    match remap_begin_work_to_spawn_input(&input, spawn_intent_hint) {
+                        Ok(spawn_input) => {
+                            self.inner
+                                .invoke_tool(
+                                    crate::public_api::COGNITION_WORKSHOP_MUTATE,
+                                    spawn_input,
+                                )
+                                .await
+                        }
+                        Err(err) => Err(err),
+                    }
+                } else if crate::agent_runtime::turn_worker_tools::is_workshop_spawn_call(
+                    tool_name, &input,
+                ) {
+                    let mut spawn_input = input.clone();
+                    ensure_spawn_worker_intent(&mut spawn_input, spawn_intent_hint);
+                    self.inner.invoke_tool(tool_name, spawn_input).await
+                } else {
+                    self.inner.invoke_tool(tool_name, input.clone()).await
                 }
-                Err(err) => Err(err),
-            }
-        } else if crate::agent_runtime::turn_worker_tools::is_workshop_spawn_call(tool_name, &input)
-        {
-            let mut spawn_input = input.clone();
-            ensure_spawn_worker_intent(&mut spawn_input, spawn_intent_hint);
-            self.inner.invoke_tool(tool_name, spawn_input).await
-        } else {
-            self.inner.invoke_tool(tool_name, input.clone()).await
-        };
+            })
+            .await;
         if let Ok(output) = &result {
             self.record_shell_session(tool_name, output).await;
         }
@@ -2863,6 +2968,23 @@ fn coder_runtime_tool_definitions() -> Vec<Tool> {
                     "limit": { "type": "integer", "minimum": 1, "maximum": 50 }
                 }
             })),
+        Tool::new(COGNITION_CODER_CONTEXT_READ)
+            .with_description(
+                "Read runtime deltas only when relevant changes need detail. Delta requires epoch and since_revision; page with next_since_revision, fixed through_revision and unchanged filters. Snapshot refreshes full bounded context after gaps or when needed. Own receipts need no delta polling.",
+            )
+            .with_schema(json!({
+                "type": "object",
+                "properties": {
+                    "mode": { "type": "string", "enum": ["delta", "snapshot"] },
+                    "epoch": { "type": "string" },
+                    "since_revision": { "type": "integer", "minimum": 0 },
+                    "through_revision": { "type": "integer", "minimum": 0 },
+                    "agent_id": { "type": "string" },
+                    "target": { "type": "string", "description": "Target substring filter; this cursor covers only matching events." },
+                    "kind": { "type": "string", "enum": ["agent_joined", "tool_planned", "tool_blocked", "tool_completed", "tool_failed", "agent_left"] },
+                    "limit": { "type": "integer", "minimum": 1, "maximum": 16 }
+                }
+            })),
         Tool::new(COGNITION_CODER_EVIDENCE_READ)
             .with_description(
                 "Read one bounded byte range from a redacted ephemeral evidence receipt scoped to this undertaking.",
@@ -2880,6 +3002,7 @@ fn coder_runtime_tool_definitions() -> Vec<Tool> {
                 "required": ["reference"]
             })),
     ];
+    tools.push(super::coder_read_batch::tool_definition());
     tools.push(super::coder_experiments::tool_definition());
     tools.push(super::coder_causal::tool_definition());
     tools.extend(super::coder_semantic_actions::tool_definitions());
@@ -2893,7 +3016,18 @@ fn with_required_coder_intent(
     CODER_MODE_ADAPTER.compose_tool(tool)
 }
 
-fn with_coder_tool_advertisement(tool: Tool) -> Tool {
+fn with_coder_tool_advertisement(mut tool: Tool) -> Tool {
+    if tool.name.as_str() == crate::public_api::COGNITION_TURN {
+        if let Some(actions) = tool
+            .schema
+            .as_mut()
+            .and_then(|schema| schema.pointer_mut("/properties/action/enum"))
+            .and_then(Value::as_array_mut)
+        {
+            actions.retain(|action| action != "turn.begin_work");
+        }
+        return tool.with_description("Update progress, checkpoint, or finish the current turn. Use your own tools directly to work. To create a separate concurrent peer, use workshop.spawn.");
+    }
     match tool.name.as_str() {
         crate::public_api::COGNITION_WORKSHOP_MUTATE => tool.with_description(
             "Spawn, cancel, or steer a peer sub-agent. Use action=workshop.spawn for parallel work.",
@@ -2903,6 +3037,38 @@ fn with_coder_tool_advertisement(tool: Tool) -> Tool {
         }
         _ => tool,
     }
+}
+
+/// Project fetched action contracts through the same metadata adapter as advertised tools.
+fn project_coder_action_schemas(output: &mut Value) -> Result<()> {
+    let Some(types) = output.get_mut("types").and_then(Value::as_array_mut) else {
+        return Ok(());
+    };
+    types.retain(|entry| entry["name"] != "turn.begin_work");
+    for entry in types {
+        let spawn = entry["name"] == "workshop.spawn";
+        if spawn {
+            entry["summary"] = json!(
+                "Create a separate peer running concurrently. Assign a bounded task and expected result; continue only complementary work, then integrate the peer's result."
+            );
+        }
+        let Some(mut schema) = entry.get("parameters").cloned() else {
+            continue;
+        };
+        if spawn && let Some(props) = schema.get_mut("properties").and_then(Value::as_object_mut) {
+            props.remove("intent");
+            props.insert("worker_profile".into(), json!({"type":"string", "enum":["coder", "research", "general", "memory.avec_calibrate", "memory.context"], "default":"coder", "description":"Peer execution profile; independent of this call's intent. Coding tasks use coder."}));
+            props.insert("task".into(), json!({"type":"string", "minLength":1, "description":"Bounded assignment owned by the peer, including the result it must return. Avoid overlapping host edits."}));
+            props.insert("user_ack".into(), json!({"type":"string", "description":"Tell the user which task a separate peer is taking on."}));
+        }
+        let name = entry["tool"].as_str().unwrap_or("cognition_schema");
+        let projected =
+            with_required_coder_intent(Tool::new(name).with_schema(schema)).map_err(|error| {
+                StasisError::PortFailure(format!("cannot project Coder action schema: {error}"))
+            })?;
+        entry["parameters"] = projected.schema.unwrap_or(Value::Null);
+    }
+    Ok(())
 }
 
 pub(crate) fn register_catalog_placements(index: &mut ToolPlacementIndex) {
@@ -3012,6 +3178,8 @@ fn coder_initial_tool_ids() -> HashSet<ToolId> {
                 COGNITION_ENGINEERING_POINTERS,
                 COGNITION_ENGINEERING_POINTER_FOLLOW,
                 COGNITION_CODER_EVIDENCE_READ,
+                COGNITION_CODER_CONTEXT_READ,
+                super::coder_read_batch::TOOL_NAME,
             ]
             .iter(),
         )
@@ -3103,13 +3271,8 @@ pub(crate) fn remap_begin_work_to_spawn_input(
     Ok(out)
 }
 
-fn default_peer_spawn_intent(task: &str, user_ack: &str) -> String {
-    let hay = format!("{task}\n{user_ack}").to_ascii_lowercase();
-    if hay.contains("research") || hay.contains("investigate") || hay.contains("survey") {
-        "research".into()
-    } else {
-        "general".into()
-    }
+fn default_peer_spawn_intent(_task: &str, _user_ack: &str) -> String {
+    "coder".into()
 }
 
 fn ensure_spawn_worker_intent(
@@ -3128,6 +3291,7 @@ fn ensure_spawn_worker_intent(
         .map(|value| value.as_str().to_string())
         .unwrap_or_else(|| default_peer_spawn_intent(task, user_ack));
     if let Some(map) = input.as_object_mut() {
+        map.remove("worker_profile");
         map.insert("intent".into(), Value::String(intent));
     }
 }
@@ -3354,6 +3518,7 @@ mod tests {
         invocations: StdMutex<Vec<(String, Value)>>,
         memory_nodes: StdMutex<Vec<Value>>,
         memory_unavailable: AtomicBool,
+        read_registry: Option<Arc<dyn ToolRegistry>>,
     }
 
     #[async_trait]
@@ -3394,6 +3559,13 @@ mod tests {
                 .lock()
                 .expect("invocations lock")
                 .push((tool_name.to_string(), input.clone()));
+            if matches!(
+                tool_name,
+                crate::public_api::COGNITION_STORE_READ | crate::public_api::COGNITION_STORE_WRITE
+            ) && let Some(registry) = &self.read_registry
+            {
+                return registry.invoke_tool(tool_name, input).await;
+            }
             if tool_name.starts_with("cognition_memory_")
                 && self.memory_unavailable.load(Ordering::SeqCst)
             {
@@ -3508,6 +3680,10 @@ mod tests {
     }
 
     fn fixture() -> Fixture {
+        fixture_with_workspace_mode(Default::default())
+    }
+
+    fn fixture_with_workspace_mode(workspace_mode: medousa_forge::model::WorkspaceMode) -> Fixture {
         let repo = TempDir::new().expect("repo");
         let forge_root = TempDir::new().expect("forge root");
         let git = GitEngine::detect().expect("git");
@@ -3530,13 +3706,14 @@ mod tests {
         let forge = Arc::new(Forge::open(forge_root.path()).expect("forge"));
         let policy = WorkPolicy::default();
         let item = forge
-            .register_with_policy(
+            .register_with_policy_and_workspace_mode(
                 "Demo",
                 "Repair demo",
                 repo.path(),
                 "main",
                 "user-1",
                 policy.clone(),
+                workspace_mode,
                 &Forge::system_actor(),
             )
             .expect("register");
@@ -4458,6 +4635,248 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn attached_checkout_uses_real_file_tools_without_global_root_access() {
+        let fixture =
+            fixture_with_workspace_mode(medousa_forge::model::WorkspaceMode::AttachedCheckout);
+        let authority = authority(&fixture);
+        let mut tools =
+            stasis::application::orchestration::tool_registry::InMemoryToolRegistry::default();
+        let (event_tx, _events) = tokio::sync::mpsc::channel(16);
+        crate::store_tools::register_store_tools(
+            &mut tools,
+            event_tx,
+            Default::default(),
+            "attached-test".into(),
+        )
+        .unwrap();
+        let tools: Arc<dyn ToolRegistry> = Arc::new(tools);
+        let registry = CoderBoundToolRegistry::new(
+            Arc::new(RecordingRegistry {
+                read_registry: Some(tools.clone()),
+                ..Default::default()
+            }),
+            &authority,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+        let read = json!({"action":"code.read", "path":"src/lib.rs", "intent":"Inspect selected checkout"});
+        let output = registry
+            .invoke_tool(crate::public_api::COGNITION_STORE_READ, read.clone())
+            .await
+            .unwrap();
+        assert!(output["content"].as_str().unwrap().contains("demo"));
+        registry
+            .invoke_tool(
+                crate::public_api::COGNITION_STORE_WRITE,
+                json!({
+                    "action":"code.write", "path":"src/lib.rs", "intent":"Update selected checkout",
+                    "expected_sha256": output["digest"], "find":"demo", "replace":"updated"
+                }),
+            )
+            .await
+            .unwrap();
+        assert!(
+            std::fs::read_to_string(fixture._repo.path().join("src/lib.rs"))
+                .unwrap()
+                .contains("updated")
+        );
+
+        // The task-local grant is gone when invocation returns. Knowledge of the
+        // root alone must not authorize an unbound tool or a different task.
+        assert!(
+            tools
+                .invoke_tool(
+                    crate::public_api::COGNITION_STORE_READ,
+                    json!({
+                        "action":"code.read", "path":"src/lib.rs", "root":fixture.entry.worktree
+                    })
+                )
+                .await
+                .is_err()
+        );
+        let outside = TempDir::new().unwrap();
+        assert!(registry.invoke_tool(crate::public_api::COGNITION_STORE_READ, json!({
+            "action":"code.read", "path":"src/lib.rs", "root":outside.path(), "intent":"Read unrelated root"
+        })).await.is_err());
+        #[cfg(unix)]
+        {
+            std::fs::write(outside.path().join("secret"), "outside").unwrap();
+            std::os::unix::fs::symlink(outside.path(), fixture.entry.worktree.join("escape"))
+                .unwrap();
+            assert!(registry.invoke_tool(crate::public_api::COGNITION_STORE_READ, json!({
+                "action":"code.read", "path":"escape/secret", "intent":"Check symlink boundary"
+            })).await.is_err());
+        }
+        fixture
+            .forge
+            .interrupt_attempt(
+                authority.lease(),
+                medousa_forge::model::RecoveryDisposition::RestartAllowed,
+                &Forge::system_actor(),
+            )
+            .unwrap();
+        assert!(
+            registry
+                .invoke_tool(crate::public_api::COGNITION_STORE_READ, read)
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn read_batch_uses_child_binding_and_preserves_each_activity() {
+        let fixture = fixture();
+        let authority = authority(&fixture);
+        let mut reads =
+            stasis::application::orchestration::tool_registry::InMemoryToolRegistry::default();
+        let (event_tx, _events) = tokio::sync::mpsc::channel(16);
+        crate::store_tools::register_store_tools(
+            &mut reads,
+            event_tx,
+            Default::default(),
+            "batch-test".into(),
+        )
+        .unwrap();
+        let inner = Arc::new(RecordingRegistry {
+            read_registry: Some(Arc::new(reads)),
+            ..Default::default()
+        });
+        let registry = CoderBoundToolRegistry::new(
+            inner.clone(),
+            &authority,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+        let intent = "Locate affected callers";
+        let output = registry
+            .invoke_tool(
+                crate::agent_runtime::coder_read_batch::TOOL_NAME,
+                json!({
+                    "intent": intent, "operations": [
+                        {"action":"code.read", "path":"src/lib.rs"},
+                        {"action":"code.read", "path":"../escape"},
+                        {"action":"code.search", "query":"demo", "max_results":2}
+                    ]
+                }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(output["results"][0]["ok"], true);
+        assert_eq!(output["results"][1]["ok"], false);
+        assert_eq!(output["results"][2]["ok"], true);
+        let calls = inner.invocations.lock().unwrap();
+        assert_eq!(calls.len(), 3);
+        assert!(calls.iter().all(|(tool, input)| {
+            tool == crate::public_api::COGNITION_STORE_READ
+                && input["root"] == fixture.entry.worktree.to_string_lossy().as_ref()
+                && input.get("intent").is_none()
+        }));
+        let events = fixture
+            .activity
+            .events_for_work(&fixture.entry.work_id)
+            .unwrap();
+        let completed = events
+            .iter()
+            .filter(|event| {
+                event.tool.as_deref() == Some(crate::public_api::COGNITION_STORE_READ)
+                    && matches!(
+                        event.kind,
+                        super::super::coder_activity::CoderActivityKind::ToolCompleted
+                            | super::super::coder_activity::CoderActivityKind::ToolFailed
+                    )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(completed.len(), 3);
+        assert!(
+            completed
+                .iter()
+                .all(|event| event.intent.as_deref() == Some(intent))
+        );
+        let call_ids = completed
+            .iter()
+            .map(|event| &event.call_id)
+            .collect::<HashSet<_>>();
+        assert_eq!(call_ids.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn portable_read_batch_retains_admission_binding_and_revocation() {
+        struct RevokeAfterFirstChild(std::sync::atomic::AtomicUsize);
+        impl CoderExecutionGuard for RevokeAfterFirstChild {
+            fn verify(&self) -> Result<()> {
+                if self.0.fetch_add(1, Ordering::SeqCst) >= 3 {
+                    Err(StasisError::PortFailure("portable grant revoked".into()))
+                } else {
+                    Ok(())
+                }
+            }
+        }
+        let mut registrar = ToolRegistrar::new(crate::tool_catalog::first_party_placement_index());
+        for tool in [
+            crate::agent_runtime::coder_read_batch::tool_definition(),
+            Tool::new(crate::public_api::COGNITION_STORE_READ)
+                .with_schema(json!({"type":"object"})),
+        ] {
+            registrar
+                .register_runtime_adapter(
+                    resolve_known_coder_tool_id(tool.name.as_str()).unwrap(),
+                    tool.clone(),
+                    None,
+                )
+                .unwrap();
+        }
+        let (_, catalog) = registrar.finish();
+        for admit_read in [false, true] {
+            let inner = Arc::new(RecordingRegistry::default());
+            let mut allowed = vec![crate::agent_runtime::coder_read_batch::TOOL_NAME.to_owned()];
+            if admit_read {
+                allowed.push(crate::public_api::COGNITION_STORE_READ.to_owned());
+            }
+            let registry = PortableCoderToolRegistry::new(
+                inner.clone(),
+                catalog.clone(),
+                WorkPolicy::default(),
+                allowed,
+                Some(Arc::new(RevokeAfterFirstChild(
+                    std::sync::atomic::AtomicUsize::new(0),
+                ))),
+            )
+            .unwrap();
+            assert!(registry.list_tools().await.unwrap().iter().any(
+                |tool| tool.name.as_str() == crate::agent_runtime::coder_read_batch::TOOL_NAME
+            ));
+            // list_tools also verifies; use a fresh guard for the invocation count.
+            let registry = PortableCoderToolRegistry {
+                execution_guard: Some(Arc::new(RevokeAfterFirstChild(
+                    std::sync::atomic::AtomicUsize::new(0),
+                ))),
+                ..registry
+            };
+            let result = registry
+                .invoke_tool(
+                    crate::agent_runtime::coder_read_batch::TOOL_NAME,
+                    json!({"intent":"Inspect workspace callers", "operations":[
+                        {"action":"code.read", "path":"src/lib.rs"},
+                        {"action":"code.read", "path":"src/next.rs"}
+                    ]}),
+                )
+                .await;
+            let calls = inner.invocations.lock().unwrap();
+            if admit_read {
+                let output = result.unwrap();
+                assert_eq!(output["results"][0]["ok"], true);
+                assert_eq!(output["results"][1]["ok"], false);
+                assert_eq!(calls.len(), 1);
+                assert_eq!(calls[0].1["root"], "/workspace");
+                assert!(calls[0].1.get("intent").is_none());
+            } else {
+                assert!(result.is_err());
+                assert!(calls.is_empty());
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn surface_requires_intent_before_invoking_domain_tool() {
         let fixture = fixture();
         let authority = authority(&fixture);
@@ -4594,12 +5013,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn round_context_reports_unseen_activity_and_fresh_repository_state_once() {
+    async fn round_context_is_small_repeatable_and_full_state_is_retrievable() {
+        use super::super::turn_context::ToolRoundContextProvider;
         let fixture = fixture();
         let authority = authority(&fixture);
-        authority
-            .shared_space_prompt_appendix()
-            .expect("initial observation");
+        let initial = authority
+            .activity
+            .observe_initial(&fixture.entry.work_id, &authority.identity.agent_id)
+            .unwrap();
         let registry = CoderBoundToolRegistry::new(
             Arc::new(RecordingRegistry::default()),
             &authority,
@@ -4617,29 +5038,64 @@ mod tests {
                 }),
             )
             .await
-            .expect("read");
+            .unwrap();
         std::fs::write(
             fixture.entry.worktree.join("src/lib.rs"),
             "pub fn demo() { println!(\"changed\"); }\n",
         )
-        .expect("external worktree change");
-
-        let context =
-            super::super::turn_context::ToolRoundContextProvider::context_for_next_round(&registry)
-                .expect("round context")
-                .expect("new delta");
-        assert!(context.contains("engineering_delta(.99)"));
-        assert!(context.contains("Inspect the implementation before changing it"));
-        assert!(context.contains("\"dirty\":true"));
-        assert!(context.contains("src/lib.rs"));
-        assert!(context.contains("engineering:call:"));
-        assert!(context.contains(COGNITION_ENGINEERING_POINTER_FOLLOW));
-        super::super::sttp::validate_canonical_sttp_node(&context).expect("canonical delta STTP");
-
+        .unwrap();
+        let context = registry.context_for_next_round().unwrap().unwrap();
+        assert!(context.len() < 1024);
+        assert!(context.contains("latest_revision"));
+        assert!(!context.contains("Inspect the implementation"));
+        assert!(!context.contains("repository_observation"));
+        assert_eq!(registry.context_for_next_round().unwrap().unwrap(), context);
+        assert!(registry.replaces_previous_context());
+        let query = json!({"intent": "Inspect relevant runtime changes", "epoch": initial.epoch, "since_revision": initial.revision});
+        let delta = registry
+            .invoke_tool(COGNITION_CODER_CONTEXT_READ, query)
+            .await
+            .unwrap();
+        assert_eq!(delta["status"], "delta");
         assert!(
-            super::super::turn_context::ToolRoundContextProvider::context_for_next_round(&registry)
-                .expect("second context")
-                .is_none()
+            delta["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|event| event["intent"] == "Inspect the implementation before changing it")
+        );
+        let snapshot = registry
+            .invoke_tool(
+                COGNITION_CODER_CONTEXT_READ,
+                json!({"intent": "Refresh repository after external changes", "mode": "snapshot", "epoch": null, "since_revision": null, "limit": null}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(snapshot["status"], "snapshot");
+        assert_eq!(snapshot["repository_observation"]["dirty"], true);
+        assert!(
+            snapshot["repository_observation"]["changed_paths"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("src/lib.rs"))
+        );
+        assert!(snapshot["snapshot"]["revision"].as_u64().unwrap() > initial.revision);
+        assert!(
+            registry
+                .list_tools()
+                .await
+                .unwrap()
+                .iter()
+                .any(|tool| tool.name.as_str() == COGNITION_CODER_CONTEXT_READ)
+        );
+        assert!(
+            registry
+                .invoke_tool(
+                    COGNITION_CODER_CONTEXT_READ,
+                    json!({"intent": "Read context", "since_revision": 0})
+                )
+                .await
+                .is_err()
         );
     }
 
@@ -4952,6 +5408,57 @@ mod tests {
     }
 
     #[test]
+    fn coder_fetched_schema_matches_call_metadata_and_peer_semantics() {
+        let schemas = crate::schema_api::dispatch_for_coder_test();
+        let mut output = schemas;
+        project_coder_action_schemas(&mut output).unwrap();
+        let entries = output["types"].as_array().unwrap();
+        assert!(
+            entries
+                .iter()
+                .all(|entry| entry["name"] != "turn.begin_work")
+        );
+        for entry in entries {
+            let required = entry["parameters"]["required"].as_array().unwrap();
+            assert!(required.contains(&json!("intent")), "{}", entry["name"]);
+        }
+        let spawn = entries
+            .iter()
+            .find(|entry| entry["name"] == "workshop.spawn")
+            .unwrap();
+        assert_eq!(
+            spawn["parameters"]["properties"]["worker_profile"]["default"],
+            "coder"
+        );
+        assert!(spawn["summary"].as_str().unwrap().contains("separate peer"));
+    }
+
+    #[tokio::test]
+    async fn coder_spawn_profile_is_separate_from_call_purpose() {
+        let fixture = fixture();
+        let authority = authority(&fixture);
+        let inner = Arc::new(RecordingRegistry::default());
+        let registry = CoderBoundToolRegistry::new(
+            inner,
+            &authority,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+        for (profile, expected) in [(None, "coder"), (Some("research"), "research")] {
+            let mut input = json!({"action":"workshop.spawn", "intent":"Check the regression independently", "task":"Review the fix; return any uncovered cases", "user_ack":"A peer is reviewing the fix"});
+            if let Some(profile) = profile {
+                input["worker_profile"] = json!(profile);
+            }
+            let output = registry
+                .invoke_tool(crate::public_api::COGNITION_WORKSHOP_MUTATE, input)
+                .await
+                .unwrap();
+            assert_eq!(output["input"]["intent"], expected);
+        }
+        assert!(registry.invoke_tool(crate::public_api::COGNITION_WORKSHOP_MUTATE, json!({"action":"workshop.spawn", "intent":"Delegate review", "worker_profile":"typo"})).await.is_err());
+    }
+
+    #[test]
     fn begin_work_remap_builds_spawn_args() {
         let mapped = remap_begin_work_to_spawn_input(
             &json!({
@@ -4963,7 +5470,7 @@ mod tests {
         .expect("remap");
         assert_eq!(mapped["task"], "Survey related crates for the bug");
         assert_eq!(mapped["user_ack"], "Researching dependency graph");
-        assert_eq!(mapped["intent"], "research");
+        assert_eq!(mapped["intent"], "coder");
         assert_eq!(mapped["action"], "workshop.spawn");
 
         let goal_only =
@@ -4971,7 +5478,7 @@ mod tests {
                 .expect("goal only");
         assert_eq!(goal_only["task"], "Write a focused unit test");
         assert_eq!(goal_only["user_ack"], "Write a focused unit test");
-        assert_eq!(goal_only["intent"], "general");
+        assert_eq!(goal_only["intent"], "coder");
 
         let hinted = remap_begin_work_to_spawn_input(
             &json!({ "message": "Dig into memory nodes" }),
@@ -5020,7 +5527,7 @@ mod tests {
         let input = &out["input"];
         assert_eq!(input["task"], "Investigate failing CI flakes");
         assert_eq!(input["user_ack"], "Spinning a research peer");
-        assert_eq!(input["intent"], "research");
+        assert_eq!(input["intent"], "coder");
         assert_eq!(input["action"], "workshop.spawn");
     }
 

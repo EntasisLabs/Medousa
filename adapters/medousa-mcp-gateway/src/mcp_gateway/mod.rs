@@ -3,8 +3,10 @@
 mod auth;
 pub mod catalog;
 pub mod config;
+pub mod local_process;
 pub mod oauth;
 pub mod policy_client;
+pub mod policy_credentials;
 pub mod registry;
 mod remote_client;
 pub mod server_config;
@@ -76,16 +78,7 @@ pub async fn serve(config: McpGatewayFullConfig) -> anyhow::Result<()> {
         .map_err(|error| anyhow::anyhow!("invalid MCP gateway bind {}: {error}", config.bind))?;
 
     let config = Arc::new(config);
-    let data_dir = std::env::var("MEDOUSA_DATA_DIR")
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| {
-            dirs::data_dir()
-                .unwrap_or_else(|| std::path::PathBuf::from("."))
-                .join("medousa")
-        });
+    let data_dir = policy_credentials::data_dir();
     let oauth_store = SecureMcpOAuthBundleStore::new(data_dir).map_err(anyhow::Error::msg)?;
     let oauth = Arc::new(McpOAuthBroker::new(Arc::new(oauth_store)));
     let registry = Arc::new(ServerRegistry::new(config.clone()).with_oauth(oauth));

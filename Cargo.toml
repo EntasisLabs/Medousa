@@ -76,6 +76,7 @@ path = "examples/p06_vault_backend.rs"
 required-features = ["full-daemon"]
 
 [dependencies]
+tempfile = "3"
 medousa-types = { path = "crates/medousa-types" }
 medousa-api-contract = { path = "crates/medousa-api-contract", optional = true }
 medousa-tool-macros = { path = "crates/medousa-tool-macros", optional = true }
@@ -158,7 +159,8 @@ medousa-iroh-http = { path = "crates/medousa-iroh-http", optional = true }
 tower = { version = "0.5", features = ["util", "limit"], optional = true }
 tower-http = { version = "0.6", features = ["cors"], optional = true }
 tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "rustls-tls-webpki-roots"], optional = true }
-vte = { version = "0.15", optional = true }
+# Use the fixed OSC buffer so terminal metadata cannot grow without a bound.
+vte = { version = "0.15", default-features = false, optional = true }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"], optional = true }
 tracing-opentelemetry = { version = "0.28", optional = true }
@@ -296,7 +298,6 @@ iroh-transport = ["full-daemon", "dep:iroh", "dep:iroh-tickets", "dep:httparse",
 medousa-mcp-server = { path = "crates/medousa-mcp-server" }
 surrealdb-types = { version = "3.1.5" }
 surrealdb = { version = "3.1.5", default-features = false, features = ["kv-mem"] }
-tempfile = "3"
 zip = { version = "7.2", default-features = false, features = ["deflate-flate2"] }
 
 # --- Local iteration speed -------------------------------------------------

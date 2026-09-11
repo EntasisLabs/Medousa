@@ -22,6 +22,7 @@ pub fn infer_capability(provider: &str, model: &str) -> ModelCapabilityRecord {
         max_output_tokens: None,
         supports_tool_calling: None,
         supports_vision,
+        reasoning: None,
         pricing: None,
         source: "heuristic.fallback".to_string(),
         fetched_at: Utc::now(),

@@ -31,6 +31,8 @@ pub struct ModelCapabilityRecord {
     pub max_output_tokens: Option<u64>,
     pub supports_tool_calling: Option<bool>,
     pub supports_vision: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<crate::reasoning_effort::ReasoningCapability>,
     pub pricing: Option<ModelPricing>,
     pub source: String,
     pub fetched_at: DateTime<Utc>,

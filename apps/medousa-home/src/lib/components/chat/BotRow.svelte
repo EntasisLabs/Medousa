@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Archive, ArchiveRestore, Copy, Pencil, Sparkles } from "@lucide/svelte";
+  import { Archive, ArchiveRestore, Copy, Pencil } from "@lucide/svelte";
+  import BotAvatar from "./BotAvatar.svelte";
   import type { BotProfile } from "$lib/types/generated/daemon_api";
 
   interface Props {
@@ -24,7 +25,6 @@
     onArchive,
   }: Props = $props();
 
-  const avatar = $derived(bot.avatar_ref?.trim() || null);
 </script>
 
 <div
@@ -33,13 +33,7 @@
     : ''}"
 >
   <button type="button" class="session-row-main bot-row-main" onclick={onSelect}>
-    <span class="bot-row-avatar" aria-hidden="true">
-      {#if avatar}
-        {avatar}
-      {:else}
-        <Sparkles size={13} strokeWidth={1.8} />
-      {/if}
-    </span>
+    <BotAvatar reference={bot.avatar_ref} />
     <span class="min-w-0 flex-1">
       <span class="session-row-title">{bot.display_name}</span>
       <span class="bot-row-specialist truncate">{specialistLabel}</span>

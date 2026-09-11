@@ -55,6 +55,51 @@ export type ActiveUndertakingContext = {
   selectedText: string | null;
 };
 
+export function findChatUndertakingContext(
+  contexts: Readonly<Record<string, ActiveUndertakingContext | null>>,
+  sessionId: string,
+  preferredGroupId: string,
+): ActiveUndertakingContext | null {
+  const normalizedSessionId = sessionId.trim();
+  if (!normalizedSessionId) return null;
+  const preferred = contexts[preferredGroupId];
+  if (preferred?.boundChatSessionIds.includes(normalizedSessionId)) return preferred;
+  return (
+    Object.values(contexts).find((context) =>
+      context?.boundChatSessionIds.includes(normalizedSessionId),
+    ) ?? null
+  );
+}
+
+export function updateChatUndertakingBinding(
+  contexts: Readonly<Record<string, ActiveUndertakingContext | null>>,
+  sessionId: string,
+  groupId: string | null,
+): Record<string, ActiveUndertakingContext | null> {
+  const normalizedSessionId = sessionId.trim();
+  if (!normalizedSessionId) return contexts;
+  let changed = false;
+  const next = Object.fromEntries(
+    Object.entries(contexts).map(([key, context]) => {
+      if (!context) return [key, context];
+      const shouldBind = key === groupId;
+      const bound = context.boundChatSessionIds.includes(normalizedSessionId);
+      if (shouldBind === bound) return [key, context];
+      changed = true;
+      return [
+        key,
+        {
+          ...context,
+          boundChatSessionIds: shouldBind
+            ? [...context.boundChatSessionIds, normalizedSessionId]
+            : context.boundChatSessionIds.filter((id) => id !== normalizedSessionId),
+        },
+      ];
+    }),
+  );
+  return changed ? next : contexts;
+}
+
 function groupKey(): string {
   return currentUndertakingGroupId();
 }
@@ -182,28 +227,18 @@ function createUndertakingsStore() {
   }
 
   function bindChat(sessionId: string) {
-    const cur = contexts[groupKey()];
+    const key = groupKey();
+    const cur = contexts[key];
     if (!cur) return;
-    if (cur.boundChatSessionIds.includes(sessionId)) return;
-    contexts = {
-      ...contexts,
-      [groupKey()]: {
-        ...cur,
-        boundChatSessionIds: [...cur.boundChatSessionIds, sessionId],
-      },
-    };
+    contexts = updateChatUndertakingBinding(contexts, sessionId, key);
   }
 
   function detachChat(sessionId: string) {
-    const cur = contexts[groupKey()];
-    if (!cur) return;
-    contexts = {
-      ...contexts,
-      [groupKey()]: {
-        ...cur,
-        boundChatSessionIds: cur.boundChatSessionIds.filter((id) => id !== sessionId),
-      },
-    };
+    contexts = updateChatUndertakingBinding(contexts, sessionId, null);
+  }
+
+  function forChat(sessionId: string): ActiveUndertakingContext | null {
+    return findChatUndertakingContext(contexts, sessionId, groupKey());
   }
 
   function bindTerminal(sessionId: string) {
@@ -518,6 +553,7 @@ function createUndertakingsStore() {
     get active() {
       return active;
     },
+    forChat,
     /** Increments after coalesced Forge events so live change surfaces can refresh. */
     get eventRevision() {
       return eventRevision;

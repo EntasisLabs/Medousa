@@ -514,7 +514,7 @@ async fn invoke_grapheme_binding(
     {
         return Ok(json!({
             "ok": false,
-            "reason": "invalid_grapheme_source",
+            "reason": crate::grapheme_runtime::preflight_rejection_reason(&validation),
             "validation": validation
         }));
     }
@@ -1114,7 +1114,8 @@ impl CognitionGraphemeTemplateRunTool {
             return Ok(GraphemeTemplateRunOutput::Rejected {
                 template: template.to_string(),
                 status: "rejected".to_string(),
-                reason: "invalid_grapheme_source".to_string(),
+                reason: crate::grapheme_runtime::preflight_rejection_reason(&validation)
+                    .to_string(),
                 validation: ExternalJson::new(validation),
             });
         }

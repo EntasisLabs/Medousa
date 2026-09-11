@@ -142,6 +142,7 @@ fn parse_openrouter_model(entry: &Value) -> Option<ModelCapabilityRecord> {
             .and_then(|params| params.as_array())
             .map(|params| params.iter().any(|value| value.as_str() == Some("tools"))),
         supports_vision,
+        reasoning: None,
         pricing,
         source: "openrouter.models".to_string(),
         fetched_at: Utc::now(),
@@ -215,6 +216,7 @@ fn parse_anthropic_model(entry: &Value) -> Option<ModelCapabilityRecord> {
         max_output_tokens: entry.get("max_tokens").and_then(json_u64),
         supports_tool_calling: None,
         supports_vision: vision_supported,
+        reasoning: None,
         pricing: None,
         source: "anthropic.models".to_string(),
         fetched_at: Utc::now(),
@@ -294,6 +296,7 @@ fn parse_google_model(entry: &Value) -> Option<ModelCapabilityRecord> {
         max_output_tokens: entry.get("outputTokenLimit").and_then(json_u64),
         supports_tool_calling: None,
         supports_vision,
+        reasoning: None,
         pricing: None,
         source: "google.models".to_string(),
         fetched_at: Utc::now(),
@@ -352,6 +355,7 @@ fn parse_mistral_model(entry: &Value) -> Option<ModelCapabilityRecord> {
             .and_then(|caps| caps.get("function_calling"))
             .and_then(|value| value.as_bool()),
         supports_vision: vision_supported,
+        reasoning: None,
         pricing: None,
         source: "mistral.models".to_string(),
         fetched_at: Utc::now(),
@@ -394,6 +398,7 @@ async fn fetch_ollama(client: &Client) -> Result<(String, Vec<ModelCapabilityRec
                         max_output_tokens: None,
                         supports_tool_calling: None,
                         supports_vision,
+        reasoning: None,
                         pricing: None,
                         source: "ollama.tags".to_string(),
                         fetched_at: Utc::now(),
@@ -479,6 +484,7 @@ fn parse_openai_compatible_model(
         max_output_tokens: overlay.and_then(|record| record.max_output_tokens),
         supports_tool_calling: overlay.and_then(|record| record.supports_tool_calling),
         supports_vision,
+        reasoning: None,
         pricing: overlay.and_then(|record| record.pricing.clone()),
         source: overlay
             .map(|record| format!("{}+openrouter.overlay", record.source))

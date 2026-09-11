@@ -115,13 +115,12 @@
   {#each spans as span, i (`${i}:${span.text.slice(0, 8)}`)}
     {#if span.changed && tone}
       <span
-        class="diff-word-changed"
+        class="diff-word-changed {span.style ?? ''}"
         class:diff-word-changed--add={tone === "add"}
         class:diff-word-changed--del={tone === "del"}
-        style={span.style}
       >{span.text}</span>
     {:else if span.style}
-      <span style={span.style}>{span.text}</span>
+      <span class={span.style}>{span.text}</span>
     {:else}
       {span.text}
     {/if}

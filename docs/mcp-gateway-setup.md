@@ -165,11 +165,26 @@ medousa start mcp-gateway
 | `MEDOUSA_MCP_GATEWAY_URL` | Daemon / TUI (default `http://127.0.0.1:7420`) |
 | `MEDOUSA_MCP_GATEWAY_TOKEN` | Bearer on daemon → gateway requests |
 | `MEDOUSA_MCP_GATEWAY_ADMIN_TOKEN` | Admin routes (catalog refresh, invoke kill-switch) |
-| `MEDOUSA_MCP_POLICY_TOKEN` | Gateway → daemon policy callback |
+| `MEDOUSA_MCP_POLICY_TOKEN` | Optional override for gateway → daemon policy authentication |
 | `MEDOUSA_MCP_TURN_TOKEN_SECRET` | Turn-scoped invoke tokens (required for real invokes) |
 | `MEDOUSA_MCP_GATEWAY_BIN` | Override path to `medousa_mcp_gateway` binary |
 
-Set the same secrets on **daemon** and **gateway** when you enable auth.
+For the local policy callback, daemon startup creates an installation-scoped
+credential in Medousa's secret store. A gateway using the same data directory
+loads it automatically for a loopback IP URL at `/v1/mcp/policy/evaluate`.
+Discovery does not call this endpoint; successful discovery alone does not prove
+that invocation is authorized. Policy evaluation remains authenticated and the
+credential grants only the local policy capability.
+
+An explicit `MEDOUSA_MCP_POLICY_TOKEN` takes precedence. The daemon persists its
+configured value for local gateways launched by Medousa without shell environment
+variables. For separately configured gateways, set the same override on both
+processes. Automatic credential loading is restricted to the local policy URL,
+and policy requests do not follow redirects. A gateway refreshes its stored
+credential once on a 401; it never retries a remote tool as part of that refresh.
+
+Set matching gateway/admin and turn-token secrets on **daemon** and **gateway**
+when configuring those optional authentication layers.
 
 ## Background services (`medousa start`)
 
@@ -198,5 +213,12 @@ Processes detach into a new session (no `nohup` required) and append logs under 
 | Wizard says started but not reachable | `tail -f ~/.local/share/medousa/logs/mcp-gateway.log` |
 | Spawn uses `cargo run` and dies | Install release binaries next to `medousa`, or set `MEDOUSA_MCP_GATEWAY_BIN` |
 | No servers in catalog | `enabled = true` in TOML; mock servers need `use_mock = true` |
+| Discovery works, invocation returns policy 401 | Upgrade and restart the daemon and gateway together; verify they use the same data directory. Check explicit policy-token overrides if configured. |
+| Editing MCP tools or servers exits Medousa | Upgrade Medousa. Gateway restart now targets only the verified listener, excluding connected client processes. |
+
+An unrecovered policy 401 is reported as `policy_authentication_failed` with
+`retryable: false`, rather than a transient `policy_unreachable` error. On Unix,
+Medousa serializes gateway restarts, verifies listener ownership, and waits for
+the port to be released. It refuses to stop an unrelated or ambiguous listener.
 
 Architecture: [architecture/component-mcp-gateway.md](../architecture/component-mcp-gateway.md).

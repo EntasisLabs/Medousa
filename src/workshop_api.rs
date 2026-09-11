@@ -58,6 +58,9 @@ pub enum WorkshopMutateAction {
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 pub struct WorkshopStatus {
+    /// Character offset into a worker result; use result_next_offset to read more. Requires work_id when nonzero.
+    #[serde(default)]
+    pub(crate) result_offset: usize,
     #[serde(default)]
     pub(crate) work_id: Option<String>,
     #[serde(default)]
@@ -544,6 +547,7 @@ impl WorkshopExecutionTarget for LocalWorkshopExecution {
             .invoke_typed(TurnWorkerStatusInput {
                 work_id: CompatOption::from(input.work_id),
                 session_id: CompatOption::from(input.session_id),
+                result_offset: input.result_offset,
             })
             .await?;
         serialize_output(CognitionTurnWorkerStatusTool::tool_id(), output)

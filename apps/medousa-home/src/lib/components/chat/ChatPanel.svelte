@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { composerModel } from "$lib/chat/composerModel";
   import { tick, untrack } from "svelte";
   import { ExternalLink, LoaderCircle } from "@lucide/svelte";
   import ChatAsyncToolsHint from "$lib/components/chat/ChatAsyncToolsHint.svelte";
@@ -90,6 +91,8 @@
   import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
   import { isTauri, showChatPopout } from "$lib/window";
 
+  const chatModel = $derived(composerModel());
+
   interface Props {
     visible: boolean;
     mobile?: boolean;
@@ -175,11 +178,7 @@
   /** Stable principal — ignores temporary session swaps during background SSE. */
   const panelSessionId = $derived(chat.focusedSessionId);
   const panelBot = $derived(bots.forSession(panelSessionId));
-  const chatCodeProject = $derived.by(() => {
-    const active = undertakings.active;
-    if (!active?.boundChatSessionIds.includes(panelSessionId)) return null;
-    return active;
-  });
+  const chatCodeProject = $derived(undertakings.forChat(panelSessionId));
   const panelMessages = $derived(chat.messagesFor(panelSessionId));
 
   async function loadOlderMessages() {
@@ -612,7 +611,7 @@
 
   async function submit(event: Event) {
     event.preventDefault();
-    if (connection.offline || runtime.savingControls) return;
+    if (connection.offline || runtime.savingControls || chat.pendingMediaUploading) return;
     const scopeForSend = chat.vaultNoteContext;
     const basePrompt = ensureVaultSelectionInPrompt(chat.draft.trim(), scopeForSend);
     const prompt = panelBot ? basePrompt : applyActiveAgentPrompt(basePrompt);
@@ -656,7 +655,7 @@
             chatAttachments.skillIds,
             chatAttachments.toolIds,
           ),
-          modelHint: runtime.model,
+          modelHint: chatModel.model,
         });
         chatAttachments.clear();
         chat.historyNotice = "Ask queued — watch Work for progress.";
@@ -777,7 +776,7 @@
         ? 'mobile-chat-panel'
         : 'chat-pane'}"
 >
-  {#if !embedded}
+  {#if !embedded && (!mobile || chat.streamErrorFor(panelSessionId))}
   <header class="{mobile ? 'mobile-chat-header' : 'workshop-header'}">
     <div class="flex w-full min-w-0 items-center gap-2">
       {#if !mobile}
@@ -794,30 +793,6 @@
           <h1 class="truncate text-sm font-semibold text-surface-50">{sessionLabel}</h1>
         </button>
         <UndertakingContextChip chatOnly header />
-      {:else}
-        <div class="min-w-0 py-1">
-          <div class="flex min-w-0 items-center gap-2">
-            <h1 class="truncate text-sm font-semibold text-surface-50">
-              {mobileChatTitle}
-            </h1>
-            <UndertakingContextChip chatOnly header />
-          </div>
-          <p class="text-content-tertiary truncate text-[11px]">{mobileChatSubtitle}</p>
-        </div>
-        {#if chat.hasTurnActivity}
-          <span
-            class="badge shrink-0 variant-soft-primary text-[10px] font-medium normal-case"
-            title={chat.liveStreamActive
-              ? "Live turn streaming"
-              : `${chat.backgroundActivity} background turn(s)`}
-          >
-            {#if chat.liveStreamActive}
-              Live
-            {:else}
-              {chat.backgroundActivity} active
-            {/if}
-          </span>
-        {/if}
       {/if}
       {#if !mobile && !popout && isTauri()}
         <button
@@ -1070,6 +1045,7 @@
             ? undertakings.review
             : null}
           eventRevision={undertakings.eventRevision}
+          activityRunning={Boolean(streamingMessage) || activeSubagentCount > 0}
           onOpenCode={openChatCodeReview}
           onRequestRevision={requestChatCodeRevision}
           onReviewChanged={() => undertakings.select(chatCodeProject.workId)}
@@ -1167,7 +1143,7 @@
           configOptions={agentSession.agentConfigOptions}
           pending={agentSession.preparingAgent}
           disabled={connection.offline || chat.composerBlocked}
-          model={`${runtime.provider}:${runtime.model}`}
+          model={`${chatModel.provider}:${chatModel.model}`}
           onChange={agentSession.onRuntimeChange}
           onConfigChange={agentSession.updateAgentConfig}
         />

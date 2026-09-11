@@ -22,7 +22,7 @@ use crate::model::{
     AcceptedDisposition, ActorKind, ActorRef, Attempt, AttemptId, AttemptState, CaptureRisk,
     ChangeStatus, ChangedFile, ChangesRequested, ChangesRequestedId, CompactEvidenceReceipt,
     CompactEvidenceRetention, Digest, EvidenceId, EvidenceManifest, ExecutionLease,
-    ExecutorDescriptor, GitWorkTarget, GovernedEnv, IntegrationStrategy, LeaseId,
+    ExecutorDescriptor, GitOid, GitWorkTarget, GovernedEnv, IntegrationStrategy, LeaseId,
     MODEL_SCHEMA_VERSION, OperationId, PolicyReport, PolicyViolation, PortableForgeCheckpoint,
     RawEvidenceDisposition, RecoveryDisposition, RepoId, ReviewComment, ReviewCommentId,
     ReviewDecision, ReviewDecisionId, WorkId, WorkItem, WorkPolicy, WorkState, WorkTarget,
@@ -851,7 +851,9 @@ impl Forge {
         self.ensure_attached_checkout_available(&item.id, &worktree)?;
 
         let snapshot_ref = Self::attached_snapshot_ref(&item.id);
-        let attached_index_oid = self.git.index_tree_oid(&worktree)?;
+        let attached_index_oid = self
+            .git
+            .index_tree_oid_via_temporary_index(&worktree, &self.attached_index_path(&item.id))?;
         let initial_env = GovernedEnv {
             kind: crate::model::EnvironmentKind::AttachedCheckout,
             repo: self.git.repo_identity(&worktree)?,
@@ -1004,7 +1006,9 @@ impl Forge {
             )));
         }
         if let Some(expected_index) = environment.attached_index_oid.as_ref() {
-            let actual_index = self.git.index_tree_oid(&root)?;
+            let actual_index = self
+                .git
+                .index_tree_oid_via_temporary_index(&root, &self.attached_index_path(&item.id))?;
             if &actual_index != expected_index {
                 return Err(ForgeError::EnvironmentDrift(format!(
                     "attached checkout index changed: expected {}, found {}",
@@ -1026,6 +1030,47 @@ impl Forge {
         Ok(())
     }
 
+    /// Advance only the attached custody boundary after an explicit human commit.
+    /// Evidence baselines remain unchanged, so committed changes still appear in review.
+    pub fn record_review_commit(
+        &self,
+        work_id: &WorkId,
+        expected: &GitOid,
+        head: &GitOid,
+        branch: &str,
+        actor: &ActorRef,
+    ) -> Result<()> {
+        let _lock = self.store.lock_item(work_id)?;
+        let item = self.load(work_id)?;
+        let target = git_target(&item)?;
+        let env = item
+            .workspace_environment()
+            .ok_or_else(|| ForgeError::EnvironmentDrift("missing workspace".into()))?;
+        if !item.uses_attached_checkout()
+            || &target.base_oid != expected
+            || &self.git.head_oid(&env.worktree)? != head
+            || self.git.current_branch(&env.worktree)?.as_deref() != Some(branch)
+        {
+            return Err(ForgeError::EnvironmentDrift(
+                "checkout changed during review commit".into(),
+            ));
+        }
+        let index = self.git.index_tree_oid_via_temporary_index(
+            &env.worktree,
+            &self.attached_index_path(work_id),
+        )?;
+        self.commit_event(
+            work_id,
+            actor,
+            EventPayload::ReviewCommitRecorded {
+                head: head.clone(),
+                index,
+                branch: branch.to_owned(),
+            },
+        )?;
+        Ok(())
+    }
+
     /// Revalidate the durable workspace boundary before a lease-backed tool
     /// mutates files. This is a no-op for Forge-owned worktrees; attached
     /// checkouts must still be the exact branch and HEAD the user granted.
@@ -1034,6 +1079,32 @@ impl Forge {
             .environment_for_attempt(attempt_id)
             .ok_or_else(|| ForgeError::EnvironmentDrift("no governed environment".into()))?;
         self.verify_attached_checkout(item, environment)
+    }
+
+    /// Resolve a shell cwd outside the managed-worktree roots only for an open,
+    /// explicitly attached project. The sidecar must read current Forge state,
+    /// rather than retaining a global allowlist of formerly attached folders.
+    pub fn attached_checkout_cwd(&self, work_id: &WorkId, cwd: &Path) -> Result<PathBuf> {
+        let item = self.load(work_id)?;
+        if !item.uses_attached_checkout()
+            || !matches!(item.state, WorkState::Ready | WorkState::Executing)
+        {
+            return Err(ForgeError::EnvironmentDrift(
+                "shell cwd requires an open attached-checkout project".into(),
+            ));
+        }
+        let environment = item.workspace_environment().ok_or_else(|| {
+            ForgeError::EnvironmentDrift("attached checkout is not provisioned".into())
+        })?;
+        self.verify_attached_checkout(&item, environment)?;
+        let root = environment.worktree.canonicalize()?;
+        let cwd = cwd.canonicalize()?;
+        if !cwd.is_dir() || !cwd.starts_with(&root) {
+            return Err(ForgeError::EnvironmentDrift(
+                "shell cwd escapes the attached checkout".into(),
+            ));
+        }
+        Ok(cwd)
     }
 
     fn worktree_path(
@@ -3114,6 +3185,52 @@ mod tests {
     }
 
     #[test]
+    fn review_commit_advances_attached_custody_without_losing_evidence_baseline() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let item = forge
+            .register_with_workspace_mode(
+                "Review commit",
+                "commit from chat",
+                &fx.repo,
+                "main",
+                "user-1",
+                WorkspaceMode::AttachedCheckout,
+                &actor(),
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &actor()).unwrap();
+        let env = item.environment.clone().unwrap();
+        let before = fx.git.head_oid(&fx.repo).unwrap();
+        fs::write(fx.repo.join("app.txt"), "reviewed change\n").unwrap();
+        fx.git
+            .run(&fx.repo, &["switch", "-c", "review-branch"])
+            .unwrap();
+        fx.git.run(&fx.repo, &["add", "app.txt"]).unwrap();
+        fx.git.run(&fx.repo, &["commit", "-m", "reviewed"]).unwrap();
+        let head = fx.git.head_oid(&fx.repo).unwrap();
+        assert!(forge.verify_attached_checkout(&item, &env).is_err());
+        forge
+            .record_review_commit(&item.id, &before, &head, "review-branch", &actor())
+            .unwrap();
+        let updated = forge.load(&item.id).unwrap();
+        let next_env = updated.environment.as_ref().unwrap();
+        assert_eq!(next_env.baseline_oid, env.baseline_oid);
+        forge.verify_attached_checkout(&updated, next_env).unwrap();
+        assert!(
+            !forge
+                .workspace_changed_files(&updated, next_env)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            forge
+                .record_review_commit(&item.id, &before, &head, "review-branch", &actor())
+                .is_err()
+        );
+    }
+
+    #[test]
     fn attached_checkout_reviews_only_changes_made_after_attachment() {
         let fx = fixture();
         let forge = Forge::open(&fx.forge_root).unwrap();
@@ -3227,6 +3344,48 @@ mod tests {
             fs::read_to_string(fx.repo.join("coder.txt")).unwrap(),
             "new from coder\n"
         );
+    }
+
+    #[test]
+    fn attached_checkout_ignores_the_principal_index_lock() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+
+        fs::write(fx.repo.join("app.txt"), "owner staged\n").unwrap();
+        fx.git.run(&fx.repo, &["add", "--", "app.txt"]).unwrap();
+        fs::write(fx.repo.join("owner.txt"), "owner untracked\n").unwrap();
+        let index_before = fx.git.index_tree_oid(&fx.repo).unwrap();
+        let index_lock = fx.repo.join(".git/index.lock");
+        fs::write(&index_lock, []).unwrap();
+
+        let item = forge
+            .register_with_workspace_mode(
+                "Help around a stale lock",
+                "continue from the principal's dirty checkout",
+                &fx.repo,
+                "main",
+                "user-1",
+                WorkspaceMode::AttachedCheckout,
+                &actor(),
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &actor()).unwrap();
+        let env = item.environment.clone().unwrap();
+
+        assert_eq!(env.attached_index_oid.as_ref(), Some(&index_before));
+        assert_eq!(forge.workspace_changed_files(&item, &env).unwrap(), vec![]);
+        let (_item, lease) = forge
+            .begin_workspace_attempt(&item.id, script_executor(), None, &actor())
+            .unwrap();
+        assert!(
+            index_lock.is_file(),
+            "Forge must not remove the principal's lock"
+        );
+
+        forge
+            .interrupt_attempt(&lease, RecoveryDisposition::RestartAllowed, &actor())
+            .unwrap();
+        fs::remove_file(index_lock).unwrap();
     }
 
     #[test]

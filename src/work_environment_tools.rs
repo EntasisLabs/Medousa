@@ -23,6 +23,22 @@ const MAX_CODE_WRITE_BYTES: usize = MAX_WORK_ENVIRONMENT_STDIN_BYTES;
 const MAX_SEARCH_RESULTS: usize = 500;
 const MAX_TOOL_OUTPUT_BYTES: u64 = 1024 * 1024;
 
+const BATCH_EDIT_COMMIT_SCRIPT: &str = r#"set -eu
+path=$1
+expected=$2
+tmp=$(mktemp "${path}.medousa.XXXXXX")
+trap 'rm -f "$tmp"' EXIT HUP INT TERM
+[ -f "$path" ] && [ ! -L "$path" ] || { echo 'batch target is no longer a regular file' >&2; exit 1; }
+cp -p "$path" "$tmp"
+cat > "$tmp"
+if command -v sha256sum >/dev/null 2>&1; then actual=$(sha256sum "$path");
+elif command -v shasum >/dev/null 2>&1; then actual=$(shasum -a 256 "$path");
+else echo 'batch commit requires sha256sum or shasum' >&2; exit 1; fi
+actual=${actual%% *}
+[ "sha256:$actual" = "$expected" ] || { echo 'file changed during batch edit; read the current revision before retrying' >&2; exit 1; }
+mv "$tmp" "$path"
+trap - EXIT HUP INT TERM"#;
+
 #[derive(Clone)]
 pub(crate) struct EnvironmentToolInvocation {
     binding: WorkEnvironmentBinding,
@@ -66,6 +82,7 @@ pub(crate) struct EnvironmentCodeReadRequest {
 
 #[derive(Debug)]
 pub(crate) struct EnvironmentCodeWriteRequest {
+    pub edits: Option<Vec<crate::code_edits::CodeEdit>>,
     pub path: String,
     pub expected_sha256: String,
     pub content: Option<String>,
@@ -208,6 +225,10 @@ pub(crate) async fn shell_exec(
         ("SYSTEMD_PAGER".to_string(), "cat".to_string()),
         ("PAGERSECURE".to_string(), "0".to_string()),
         ("LESS".to_string(), "FRX".to_string()),
+        ("TERM".to_string(), "dumb".to_string()),
+        ("NO_COLOR".to_string(), "1".to_string()),
+        ("CLICOLOR".to_string(), "0".to_string()),
+        ("FORCE_COLOR".to_string(), "0".to_string()),
     ]);
     exec(
         invocation,
@@ -387,6 +408,13 @@ pub(crate) async fn code_write(
     request: EnvironmentCodeWriteRequest,
 ) -> StasisResult<Value> {
     ensure_governed_mutation(invocation)?;
+    crate::code_edits::validate_edit_mode(
+        request.edits.as_deref(),
+        request.content.as_deref(),
+        request.find.as_deref(),
+        request.replace.as_deref(),
+    )
+    .map_err(StasisError::PortFailure)?;
     let path = normalized_relative_path(&request.path)?;
     let expected = request.expected_sha256.trim();
     if expected.is_empty() {
@@ -431,7 +459,17 @@ pub(crate) async fn code_write(
         )));
     }
 
-    let (mode, next) = if let Some(content) = request.content {
+    let applied_edits = request.edits.as_ref().map(Vec::len);
+    let (mode, next) = if let Some(edits) = request.edits {
+        let original = existing
+            .as_deref()
+            .ok_or_else(|| StasisError::PortFailure("cannot batch edit a missing file".into()))?;
+        (
+            "batch",
+            crate::code_edits::apply_edits(original, &edits, MAX_CODE_WRITE_BYTES)
+                .map_err(StasisError::PortFailure)?,
+        )
+    } else if let Some(content) = request.content {
         ("write", content)
     } else {
         let find = request.find.ok_or_else(|| {
@@ -454,15 +492,19 @@ pub(crate) async fn code_write(
             "code.write content exceeds {MAX_CODE_WRITE_BYTES} bytes"
         )));
     }
+    // A batch must still address the observed revision at publication time.
+    // The temporary file remains in the destination directory for atomic rename.
+
     let result = exec(
         invocation,
         "code-write-commit",
         "/bin/sh",
         vec![
             "-c".to_string(),
-            "set -eu; path=$1; dir=${path%/*}; [ \"$dir\" = \"$path\" ] || mkdir -p \"$dir\"; tmp=\"${path}.medousa.$$\"; trap 'rm -f \"$tmp\"' EXIT HUP INT TERM; cat > \"$tmp\"; mv \"$tmp\" \"$path\"; trap - EXIT HUP INT TERM".to_string(),
+            if mode == "batch" { BATCH_EDIT_COMMIT_SCRIPT.to_string() } else { "set -eu; path=$1; dir=${path%/*}; [ \"$dir\" = \"$path\" ] || mkdir -p \"$dir\"; tmp=\"${path}.medousa.$$\"; trap 'rm -f \"$tmp\"' EXIT HUP INT TERM; cat > \"$tmp\"; mv \"$tmp\" \"$path\"; trap - EXIT HUP INT TERM".to_string() },
             "sh".to_string(),
             format!("./{path}"),
+            expected.to_string(),
         ],
         WORK_ENVIRONMENT_WORKSPACE_ROOT.to_string(),
         BTreeMap::new(),
@@ -477,6 +519,7 @@ pub(crate) async fn code_write(
     Ok(json!({
         "ok": true,
         "mode": mode,
+        "applied_edits": applied_edits,
         "path": path,
         "root": WORK_ENVIRONMENT_WORKSPACE_ROOT,
         "bytes": next.len(),
@@ -714,6 +757,45 @@ mod tests {
         assert!(workspace_directory(Some("/tmp/host-worktree")).is_err());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn batch_commit_script_checks_revision_and_preserves_mode() {
+        use std::io::Write;
+        use std::os::unix::fs::PermissionsExt;
+        use std::process::{Command, Stdio};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("source with spaces");
+        std::fs::write(&path, "original").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o751)).unwrap();
+        let digest = format!("sha256:{:x}", Sha256::digest(b"original"));
+        for expected in ["sha256:stale", digest.as_str()] {
+            let mut child = Command::new("/bin/sh")
+                .args(["-c", BATCH_EDIT_COMMIT_SCRIPT, "sh"])
+                .arg(&path)
+                .arg(expected)
+                .stdin(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap();
+            child.stdin.take().unwrap().write_all(b"updated").unwrap();
+            let output = child.wait_with_output().unwrap();
+            assert_eq!(output.status.success(), expected == digest);
+            assert_eq!(
+                std::fs::read_to_string(&path).unwrap(),
+                if expected == digest {
+                    "updated"
+                } else {
+                    "original"
+                }
+            );
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o751
+            );
+            assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        }
+    }
+
     #[tokio::test]
     async fn code_write_uses_fenced_environment_stdin_without_host_paths() {
         let port = RecordingPort::with_responses(vec![result("", 44), result("", 0)]);
@@ -721,6 +803,7 @@ mod tests {
         let output = code_write(
             &invocation,
             EnvironmentCodeWriteRequest {
+                edits: None,
                 path: "src/lib.rs".to_string(),
                 expected_sha256: "missing".to_string(),
                 content: Some("pub fn cooked() {}\n".to_string()),
@@ -740,6 +823,51 @@ mod tests {
         assert_eq!(requests[1].0.stdin.as_deref(), Some("pub fn cooked() {}\n"));
         assert!(!requests[1].0.args.join(" ").contains("/Users/"));
         assert_eq!(requests[1].1, invocation.binding.fence);
+    }
+
+    #[tokio::test]
+    async fn batch_edits_validate_every_hunk_before_requesting_commit() {
+        let original = "first\nsecond\n";
+        for valid in [false, true] {
+            let port = RecordingPort::with_responses(vec![result(original, 0), result("", 0)]);
+            let invocation = invocation(port.clone(), true);
+            let output = code_write(
+                &invocation,
+                EnvironmentCodeWriteRequest {
+                    path: "src/lib.rs".into(),
+                    expected_sha256: format!("sha256:{:x}", Sha256::digest(original.as_bytes())),
+                    content: None,
+                    find: None,
+                    replace: None,
+                    edits: Some(vec![
+                        crate::code_edits::CodeEdit {
+                            find: "first".into(),
+                            replace: "FIRST".into(),
+                        },
+                        crate::code_edits::CodeEdit {
+                            find: if valid { "second" } else { "absent" }.into(),
+                            replace: "SECOND".into(),
+                        },
+                    ]),
+                },
+            )
+            .await;
+            let requests = port.requests.lock().unwrap();
+            if valid {
+                assert_eq!(output.unwrap()["applied_edits"], 2);
+                assert_eq!(requests.len(), 2);
+                assert_eq!(requests[1].0.stdin.as_deref(), Some("FIRST\nSECOND\n"));
+                assert!(requests[1].0.args[1].contains("file changed during batch edit"));
+                assert_eq!(requests[1].1, invocation.binding.fence);
+            } else {
+                assert!(output.is_err());
+                assert_eq!(
+                    requests.len(),
+                    1,
+                    "invalid final hunk must never reach commit"
+                );
+            }
+        }
     }
 
     #[tokio::test]

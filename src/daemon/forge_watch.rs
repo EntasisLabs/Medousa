@@ -49,7 +49,7 @@ fn file_digest(path: &Path) -> Option<String> {
 pub fn spawn_forge_worktree_watcher(bus: ForgeEventBus, execution: Arc<ForgeExecutionService>) {
     tokio::spawn(async move {
         let (tx, mut rx) = mpsc::unbounded_channel::<(String, PathBuf, ForgeProjectEventKind)>();
-        let mut watchers: HashMap<String, RecommendedWatcher> = HashMap::new();
+        let mut watchers: HashMap<String, (PathBuf, RecommendedWatcher)> = HashMap::new();
         let mut refresh = tokio::time::interval(Duration::from_secs(2));
         let mut flush = tokio::time::interval(Duration::from_millis(250));
         let mut pending: HashMap<(String, String), ForgeProjectEventKind> = HashMap::new();
@@ -61,9 +61,11 @@ pub fn spawn_forge_worktree_watcher(bus: ForgeEventBus, execution: Arc<ForgeExec
                     let live: HashSet<String> = tracked.iter().map(|(id, _)| id.clone()).collect();
                     watchers.retain(|id, _| live.contains(id));
                     for (work_id, worktree) in tracked {
-                        if watchers.contains_key(&work_id) || !worktree.is_dir() {
+                        if watchers.get(&work_id).is_some_and(|(root, _)| root == &worktree) {
                             continue;
                         }
+                        watchers.remove(&work_id);
+                        if !worktree.is_dir() { continue; }
                         let tx = tx.clone();
                         let overflow_bus = bus.clone();
                         let watched_id = work_id.clone();
@@ -72,6 +74,7 @@ pub fn spawn_forge_worktree_watcher(bus: ForgeEventBus, execution: Arc<ForgeExec
                                 Ok(event) => {
                                     if event.need_rescan() {
                                         overflow_bus.mark_watcher_overflow();
+                                        overflow_bus.publish_project(&watched_id, ForgeProjectEventKind::Snapshot, None, None, None);
                                         return;
                                     }
                                     let Some(kind) = event_kind(&event.kind) else { return };
@@ -83,6 +86,7 @@ pub fn spawn_forge_worktree_watcher(bus: ForgeEventBus, execution: Arc<ForgeExec
                                     // Watcher loss / inotify exhaustion / backend errors are
                                     // never proof of cleanliness — mark overflow conservatively.
                                     overflow_bus.mark_watcher_overflow();
+                                    overflow_bus.publish_project(&watched_id, ForgeProjectEventKind::Snapshot, None, None, None);
                                     tracing::warn!(
                                         error = %err,
                                         work_id = %watched_id,
@@ -93,7 +97,9 @@ pub fn spawn_forge_worktree_watcher(bus: ForgeEventBus, execution: Arc<ForgeExec
                         }) {
                             Ok(mut watcher) => {
                                 if watcher.watch(&worktree, RecursiveMode::Recursive).is_ok() {
-                                    watchers.insert(work_id, watcher);
+                                    watchers.insert(work_id.clone(), (worktree, watcher));
+                                    // Close the window between first snapshot and OS watch admission.
+                                    bus.publish_project(&work_id, ForgeProjectEventKind::Snapshot, None, None, None);
                                 } else {
                                     bus.mark_watcher_overflow();
                                     tracing::warn!(%work_id, "forge worktree watch failed; marking overflow");

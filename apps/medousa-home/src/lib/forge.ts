@@ -478,7 +478,7 @@ export async function forgeProjectEventsUrl(
   return forgeUrl(path);
 }
 
-async function forgeFetch<T>(
+export async function forgeFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {

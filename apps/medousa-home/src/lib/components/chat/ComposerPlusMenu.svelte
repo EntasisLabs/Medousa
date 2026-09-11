@@ -1,10 +1,13 @@
 <script lang="ts">
+  import MobileActionSheet from "$lib/components/mobile/MobileActionSheet.svelte";
+  import { canReadClipboardImages } from "$lib/utils/chatImagePaste";
   import { tick } from "svelte";
   import {
     ArchiveRestore,
     Bot,
     BookmarkPlus,
     Camera,
+    ClipboardPaste,
     Images,
     LoaderCircle,
     Paperclip,
@@ -67,7 +70,7 @@
 
   $effect(() => {
     stashes.length;
-    if (!open || !triggerEl || !menuEl) return;
+    if (mobile || !open || !triggerEl || !menuEl) return;
     let frame = 0;
     const place = () => {
       if (!triggerEl || !menuEl) return;
@@ -228,11 +231,18 @@
 </button>
 
 {#if open}
-  <BodyPortal>
+  {#if mobile}
+    <MobileActionSheet bind:open title="Add to chat">{@render menuContent()}</MobileActionSheet>
+  {:else}
+    <BodyPortal>{@render menuContent()}</BodyPortal>
+  {/if}
+{/if}
+
+{#snippet menuContent()}
+
     <div
       bind:this={menuEl}
-      class="composer-anchored-menu composer-plus-menu-panel"
-      class:composer-plus-menu-panel-mobile={mobile}
+      class={mobile ? "" : "composer-anchored-menu composer-plus-menu-panel"}
       role="menu"
       aria-label="Composer actions"
     >
@@ -273,6 +283,24 @@
           {usesNativeAttachmentSourceMenu ? "Add attachment" : mobile ? "Attach file" : "Attach"}
         </span>
       </button>
+      {#if canReadClipboardImages()}
+        <button
+          type="button"
+          class="composer-plus-menu-item"
+          role="menuitem"
+          disabled={disabled || chat.pendingMediaUploading}
+          onclick={() => {
+            // Start the read in this gesture; WebKit may present its Paste prompt.
+            void chat.attachClipboardImages();
+            open = false;
+          }}
+        >
+          <span class="composer-plus-menu-icon" aria-hidden="true">
+            <ClipboardPaste size={15} strokeWidth={1.75} />
+          </span>
+          <span>Paste image</span>
+        </button>
+      {/if}
       {#if showStashes}
         <button
           type="button"
@@ -367,5 +395,5 @@
         {/if}
       {/if}
     </div>
-  </BodyPortal>
-{/if}
+
+{/snippet}

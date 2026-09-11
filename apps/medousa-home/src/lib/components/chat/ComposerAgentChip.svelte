@@ -1,4 +1,6 @@
 <script lang="ts">
+  import MobileActionSheet from "$lib/components/mobile/MobileActionSheet.svelte";
+  import BotAvatar from "./BotAvatar.svelte";
   import { tick } from "svelte";
   import { Bot, ChevronDown, X } from "@lucide/svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
@@ -47,7 +49,7 @@
   });
 
   $effect(() => {
-    if (!open || !menuEl) return;
+    if (layout.isMobile || !open || !menuEl) return;
     const anchor = (chipVisible ? triggerEl : null) ?? anchorEl ?? triggerEl;
     if (!anchor) return;
 
@@ -154,10 +156,18 @@
 {/if}
 
 {#if open}
-  <BodyPortal>
+  {#if layout.isMobile}
+    <MobileActionSheet bind:open title="Agent">{@render menuContent()}</MobileActionSheet>
+  {:else}
+    <BodyPortal>{@render menuContent()}</BodyPortal>
+  {/if}
+{/if}
+
+{#snippet menuContent()}
+
     <div
       bind:this={menuEl}
-      class="composer-anchored-menu"
+      class={layout.isMobile ? "" : "composer-anchored-menu"}
       role="dialog"
       aria-label="Choose agent"
     >
@@ -173,9 +183,7 @@
       {#if activeBot}
         <div class="workshop-inset p-3">
           <div class="flex items-start gap-2.5">
-            <span class="bot-row-avatar" aria-hidden="true">
-              {activeBot.avatar_ref?.trim() || "✨"}
-            </span>
+            <BotAvatar reference={activeBot.avatar_ref} />
             <span class="min-w-0 flex-1">
               <span class="block text-sm font-medium text-surface-100">
                 {activeBot.display_name}
@@ -241,5 +249,5 @@
       {/if}
     </div>
     </div>
-  </BodyPortal>
-{/if}
+
+{/snippet}

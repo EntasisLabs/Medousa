@@ -119,12 +119,10 @@ impl WorkerHandoffCapsule {
     }
 
     pub fn initial_worker_scratch(&self) -> TurnScratchpad {
-        let mut scratch = self.host_scratch.clone();
-        scratch.delegate = None;
+        // The handoff already carries host history. A peer starts its own task,
+        // without inheriting the host's step counter, tool debt, or delegation.
+        let mut scratch = TurnScratchpad::from_user_prompt(&self.task_prompt);
         scratch.phase = TurnScratchPhase::Execute;
-        if !self.task_prompt.trim().is_empty() {
-            scratch.set_goal(&self.task_prompt);
-        }
         scratch
     }
 
@@ -410,7 +408,9 @@ mod tests {
         let worker = cap.initial_worker_scratch();
         assert_eq!(worker.goal, "run full calibrate ritual");
         assert!(worker.delegate.is_none());
-        assert_eq!(worker.open_gaps.len(), 1);
+        assert!(worker.open_gaps.is_empty());
+        assert_eq!(worker.step, 0);
+        assert!(worker.round_digests.is_empty());
         assert!(
             cap.worker_tier_user_prompt("[POLICY]")
                 .contains(WORKER_HANDOFF_PREFIX)

@@ -108,8 +108,10 @@ pub struct CoderAgentPresence {
     pub observed_revision: u64,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct CoderWorkActivity {
+    #[serde(default = "new_activity_epoch")]
+    epoch: String,
     #[serde(default)]
     revision: u64,
     #[serde(default)]
@@ -118,6 +120,22 @@ struct CoderWorkActivity {
     events: Vec<CoderActivityEvent>,
     #[serde(default)]
     active_claims: HashMap<String, CoderActiveClaim>,
+}
+
+fn new_activity_epoch() -> String {
+    Uuid::new_v4().to_string()
+}
+
+impl Default for CoderWorkActivity {
+    fn default() -> Self {
+        Self {
+            epoch: new_activity_epoch(),
+            revision: 0,
+            agents: HashMap::new(),
+            events: Vec::new(),
+            active_claims: HashMap::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -180,6 +198,7 @@ struct CoderActivityIndex {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CoderSharedSpaceSnapshot {
+    pub epoch: String,
     pub work_id: String,
     pub self_agent_id: String,
     pub active_agent_count: usize,
@@ -191,20 +210,18 @@ pub struct CoderSharedSpaceSnapshot {
     pub revision: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct CoderEngineeringDelta {
-    pub work_id: String,
-    pub self_agent_id: String,
-    pub from_revision: u64,
-    pub to_revision: u64,
-    pub omitted_event_count: usize,
-    pub events: Vec<CoderActivityEvent>,
-    pub active_agent_count: usize,
-    pub concurrent_agent_count: usize,
-    pub other_agents: Vec<CoderAgentPresence>,
-    pub active_claims: Vec<CoderActiveClaim>,
-    pub overlaps: Vec<CoderClaimOverlap>,
-    pub latest_activity_age: Option<String>,
+/// Explicit cursors are independent of agent presence, so reads are retryable and
+/// a resumed agent cannot accidentally inherit another reader's progress.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoderDeltaQuery {
+    pub epoch: String,
+    pub since_revision: u64,
+    pub through_revision: Option<u64>,
+    pub agent_id: Option<String>,
+    pub target: Option<String>,
+    pub kind: Option<CoderActivityKind>,
+    pub limit: Option<usize>,
 }
 
 pub struct CoderActivityStore {
@@ -524,9 +541,7 @@ impl CoderActivityStore {
         let _guard = self.lock.lock().map_err(|err| err.to_string())?;
         let mut index = self.read_index();
         let now = Utc::now();
-        if let Some(work) = index.work.get_mut(work_id) {
-            prune_work(work, now);
-        }
+        prune_work(index.work.entry(work_id.to_string()).or_default(), now);
         let snapshot = snapshot_from_index(&index, work_id, self_agent_id, now);
         if let Some(presence) = index
             .work
@@ -539,68 +554,109 @@ impl CoderActivityStore {
         Ok(snapshot)
     }
 
-    /// Return unseen engineering events for one agent and atomically advance
-    /// its cursor. A bounded newest-event window is paired with an omitted
-    /// count so overload cannot silently masquerade as complete perception.
-    pub fn observe_delta(
-        &self,
-        work_id: &str,
-        self_agent_id: &str,
-    ) -> Result<Option<CoderEngineeringDelta>, String> {
+    /// A small current pointer, never an acknowledgement of unseen events.
+    pub fn context_pointer(&self, work_id: &str, self_agent_id: &str) -> Result<Value, String> {
         let _guard = self.lock.lock().map_err(|err| err.to_string())?;
-        let mut index = self.read_index();
-        let now = Utc::now();
-        let Some(work) = index.work.get_mut(work_id) else {
-            return Ok(None);
+        let index = self.read_index();
+        let Some(work) = index.work.get(work_id) else {
+            return Ok(json!({"status": "snapshot_required", "reason": "activity_unavailable"}));
         };
-        prune_work(work, now);
-        let from_revision = work
-            .agents
-            .get(self_agent_id)
-            .map(|presence| presence.observed_revision)
-            .unwrap_or(0);
-        let to_revision = work.revision;
-        if from_revision >= to_revision {
-            return Ok(None);
-        }
+        let overlaps = active_overlaps(work, Utc::now());
+        let mut overlap_targets: Vec<_> = overlaps
+            .iter()
+            .map(|overlap| overlap.target.chars().take(120).collect::<String>())
+            .collect();
+        overlap_targets.sort();
+        overlap_targets.dedup();
+        overlap_targets.truncate(3);
+        Ok(json!({
+            "epoch": work.epoch,
+            "latest_revision": work.revision,
+            "oldest_available_revision": oldest_revision(work),
+            "peer_revision": work.events.iter().rev()
+                .find(|event| event.agent_id != self_agent_id).map(|event| event.revision),
+            "blocked_revision": work.events.iter().rev()
+                .find(|event| event.kind == CoderActivityKind::ToolBlocked).map(|event| event.revision),
+            "overlap_targets": overlap_targets,
+            "overlap_count_at_least": overlaps.len(),
+        }))
+    }
 
-        let unseen: Vec<_> = work
+    /// Read oldest-first within an immutable high-water mark. Only scanned
+    /// revisions advance the returned cursor, including when filters match nothing.
+    /// No mutable observation cursor is advanced by this read.
+    pub fn read_delta(&self, work_id: &str, query: &CoderDeltaQuery) -> Result<Value, String> {
+        let limit = query.limit.unwrap_or(MAX_DELTA_EVENTS);
+        if !(1..=MAX_DELTA_EVENTS).contains(&limit) {
+            return Err(format!("limit must be between 1 and {MAX_DELTA_EVENTS}"));
+        }
+        let _guard = self.lock.lock().map_err(|err| err.to_string())?;
+        let index = self.read_index();
+        let Some(work) = index.work.get(work_id) else {
+            return Ok(
+                json!({"ok": false, "status": "snapshot_required", "reason": "activity_unavailable"}),
+            );
+        };
+        let through = query.through_revision.unwrap_or(work.revision);
+        let reason = if query.epoch != work.epoch {
+            Some("epoch_changed")
+        } else if query.since_revision > work.revision || through > work.revision {
+            Some("revision_discontinuity")
+        } else if query.since_revision < oldest_revision(work).saturating_sub(1) {
+            Some("retention_gap")
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            return Ok(
+                json!({"ok": false, "status": "snapshot_required", "reason": reason,
+                "epoch": work.epoch, "latest_revision": work.revision,
+                "next_decision": "Read cognition_coder_context_read with mode snapshot before relying on this context."}),
+            );
+        }
+        if through < query.since_revision {
+            return Err("through_revision must be at least since_revision".into());
+        }
+        let mut events = Vec::new();
+        let mut bytes = 0;
+        let mut to_revision = query.since_revision;
+        for event in work
             .events
             .iter()
-            .filter(|event| event.revision > from_revision)
-            .cloned()
-            .collect();
-        let omitted_event_count = unseen.len().saturating_sub(MAX_DELTA_EVENTS);
-        let events = unseen
-            .into_iter()
-            .skip(omitted_event_count)
-            .collect::<Vec<_>>();
-        let latest_activity_age = events
-            .last()
-            .map(|event| human_age(event.occurred_at_utc, now));
-        let (active_agent_count, concurrent_agent_count, other_agents) =
-            active_agents(work, self_agent_id, now);
-        if let Some(presence) = work.agents.get_mut(self_agent_id) {
-            presence.observed_revision = to_revision;
-            presence.heartbeat_at_utc = now;
+            .filter(|event| event.revision > query.since_revision && event.revision <= through)
+        {
+            let matches = query
+                .agent_id
+                .as_ref()
+                .is_none_or(|id| event.agent_id == *id)
+                && query.kind.is_none_or(|kind| event.kind == kind)
+                && query
+                    .target
+                    .as_ref()
+                    .is_none_or(|target| event.targets.iter().any(|path| path.contains(target)));
+            if matches {
+                let mut value = serde_json::to_value(event).map_err(|err| err.to_string())?;
+                if value.to_string().len() > 8 * 1024 {
+                    value = json!({"revision": event.revision, "kind": event.kind,
+                        "pointer_id": format!("engineering:event:{}", event.event_id),
+                        "detail_omitted": true,
+                        "next_decision": "Use cognition_engineering_pointer_follow if this event's full detail is needed."});
+                }
+                let size = value.to_string().len();
+                if events.len() == limit || bytes + size > 24 * 1024 {
+                    break;
+                }
+                bytes += size;
+                events.push(value);
+            }
+            to_revision = event.revision;
         }
-        refresh_agent_claims(work, self_agent_id, now);
-        let delta = CoderEngineeringDelta {
-            work_id: work_id.to_string(),
-            self_agent_id: self_agent_id.to_string(),
-            from_revision,
-            to_revision,
-            omitted_event_count,
-            events,
-            active_agent_count,
-            concurrent_agent_count,
-            other_agents,
-            active_claims: active_claims(work, now),
-            overlaps: active_overlaps(work, now),
-            latest_activity_age,
-        };
-        self.write_index(&index)?;
-        Ok(Some(delta))
+        Ok(json!({"ok": true, "status": "delta", "epoch": work.epoch,
+            "from_revision": query.since_revision, "to_revision": to_revision,
+            "through_revision": through, "latest_revision": work.revision,
+            "next_since_revision": (to_revision < through).then_some(to_revision),
+            "filters": {"agent_id": query.agent_id, "target": query.target, "kind": query.kind},
+            "events": events}))
     }
 
     fn mutate(
@@ -662,7 +718,7 @@ pub fn shared_space_prompt_appendix(snapshot: &CoderSharedSpaceSnapshot) -> Stri
     let _ = writeln!(out, "    shared_engineering_space(.99): {state},");
     let _ = writeln!(
         out,
-        "    coordination_contract(.99): \"Tool intent explains actions but does not grant authority; observe concurrent agents and recent causal changes before acting.\""
+        "    coordination_contract(.99): \"This bounded snapshot is pinned for this user turn. Runtime pointers announce revisions without consuming them. Use cognition_coder_context_read (mode delta, epoch, since_revision) only when changes matter; page using next_since_revision and the same through_revision and filters. Filtered reads only cover that filter. Use mode snapshot after a retention gap or epoch change, or when a fresh repository observation is necessary. Own tool receipts already describe your actions; do not poll or acknowledge pointers routinely. Peer activity, blocked actions and overlap targets need attention before related mutations. Tool intent does not grant authority.\""
     );
     let _ = writeln!(out, "}} ⟩");
     let _ = write!(
@@ -676,41 +732,10 @@ pub fn shared_space_prompt_appendix(snapshot: &CoderSharedSpaceSnapshot) -> Stri
     out
 }
 
-pub fn engineering_delta_prompt_appendix(
-    delta: &CoderEngineeringDelta,
-    repository_observation: Value,
-) -> String {
-    let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
-    let activity = serde_json::to_value(delta).unwrap_or_else(|_| json!({}));
-    let mut out = String::new();
-    let _ = writeln!(
-        out,
-        "⊕⟨ ⏣0{{ trigger: threshold, response_format: temporal_node, origin_session: \"medousa-coder-engineering-delta\", compression_depth: 1, parent_node: ref:⏣0, prime: {{ attractor_config: {{ stability: 0.96, friction: 0.12, logic: 0.99, autonomy: 0.84 }}, context_summary: \"Unseen causal engineering activity and freshly observed repository state since this agent's previous inference.\", relevant_tier: raw, retrieval_budget: 12 }} }} ⟩"
-    );
-    let _ = writeln!(
-        out,
-        "⦿⟨ ⏣0{{ timestamp: \"{timestamp}\", tier: raw, session_id: \"medousa-coder-engineering-delta\", schema_version: \"sttp-1.0\", user_avec: {{ stability: 0.90, friction: 0.20, logic: 0.96, autonomy: 0.84, psi: 2.90 }}, model_avec: {{ stability: 0.96, friction: 0.12, logic: 0.99, autonomy: 0.84, psi: 2.95 }} }} ⟩"
-    );
-    let _ = writeln!(out, "◈⟨ ⏣0{{");
-    let _ = writeln!(out, "    engineering_delta(.99): {activity},");
-    let _ = writeln!(
-        out,
-        "    repository_observation(.98): {repository_observation},"
-    );
-    let _ = writeln!(
-        out,
-        "    attention_contract(.99): \"Treat this as the current world delta, reconcile it with the preceding tool receipts, and investigate unresolved failures or concurrent changes before the next mutation.\""
-    );
-    let _ = writeln!(out, "}} ⟩");
-    let _ = write!(
-        out,
-        "⍉⟨ ⏣0{{ rho: 0.99, kappa: 0.99, psi: 2.95, compression_avec: {{ stability: 0.96, friction: 0.12, logic: 0.99, autonomy: 0.84, psi: 2.95 }} }} ⟩"
-    );
-    debug_assert!(
-        super::sttp::validate_canonical_sttp_node(&out).is_ok(),
-        "Coder engineering delta compiler emitted invalid STTP"
-    );
-    out
+fn oldest_revision(work: &CoderWorkActivity) -> u64 {
+    work.events
+        .first()
+        .map_or(work.revision.saturating_add(1), |event| event.revision)
 }
 
 fn presence_from_identity(identity: &CoderAgentIdentity, now: DateTime<Utc>) -> CoderAgentPresence {
@@ -830,6 +855,7 @@ fn snapshot_from_index(
 ) -> CoderSharedSpaceSnapshot {
     let Some(work) = index.work.get(work_id) else {
         return CoderSharedSpaceSnapshot {
+            epoch: String::new(),
             work_id: work_id.to_string(),
             self_agent_id: self_agent_id.to_string(),
             active_agent_count: 0,
@@ -852,6 +878,7 @@ fn snapshot_from_index(
         .cloned()
         .collect();
     CoderSharedSpaceSnapshot {
+        epoch: work.epoch.clone(),
         work_id: work_id.to_string(),
         self_agent_id: self_agent_id.to_string(),
         active_agent_count,
@@ -871,7 +898,12 @@ fn active_claims(work: &CoderWorkActivity, now: DateTime<Utc>) -> Vec<CoderActiv
         .filter(|claim| claim.expires_at_utc > now)
         .cloned()
         .collect::<Vec<_>>();
-    claims.sort_by_key(|claim| std::cmp::Reverse(claim.heartbeat_at_utc));
+    claims.sort_by(|left, right| {
+        right
+            .heartbeat_at_utc
+            .cmp(&left.heartbeat_at_utc)
+            .then_with(|| left.claim_id.cmp(&right.claim_id))
+    });
     claims.truncate(MAX_AMBIENT_OVERLAPS * 2);
     claims
 }
@@ -989,16 +1021,6 @@ fn active_agents(
         active_agent_count.saturating_sub(usize::from(self_is_active)),
         other_agents,
     )
-}
-
-fn human_age(then: DateTime<Utc>, now: DateTime<Utc>) -> String {
-    let seconds = (now - then).num_seconds().max(0);
-    match seconds {
-        0..=59 => format!("{seconds}s"),
-        60..=3_599 => format!("{}m", seconds / 60),
-        3_600..=86_399 => format!("{}h", seconds / 3_600),
-        _ => format!("{}d", seconds / 86_400),
-    }
 }
 
 fn effect_summary(output: &Value) -> String {
@@ -1198,83 +1220,189 @@ mod tests {
     }
 
     #[test]
-    fn observation_cursor_returns_each_event_once_per_agent() {
-        let temp = TempDir::new().expect("temp");
-        let store = store(&temp);
+    fn delta_pages_pin_boundary_and_survive_reopen_without_consuming_other_readers() {
+        let temp = TempDir::new().unwrap();
+        let activity = store(&temp);
         let a = identity("session-a", 1);
-        let b = identity("session-b", 2);
-        store.register_agent("work-1", &a).expect("register a");
-        store.register_agent("work-1", &b).expect("register b");
-        store
-            .observe_initial("work-1", &a.agent_id)
-            .expect("initial a");
-        store
-            .observe_initial("work-1", &b.agent_id)
-            .expect("initial b");
+        activity.register_agent("work-1", &a).unwrap();
+        let snapshot = activity.observe_initial("work-1", &a.agent_id).unwrap();
+        activity
+            .mutate(|index, _| {
+                for _ in 0..5 {
+                    append_event(
+                        index.work.get_mut("work-1").unwrap(),
+                        event("work-1", &a, CoderActivityKind::ToolCompleted),
+                    );
+                }
+            })
+            .unwrap();
+        let mut query = CoderDeltaQuery {
+            epoch: snapshot.epoch,
+            since_revision: snapshot.revision,
+            limit: Some(2),
+            ..Default::default()
+        };
+        let first = activity.read_delta("work-1", &query).unwrap();
+        assert_eq!(first["events"].as_array().unwrap().len(), 2);
+        assert_eq!(first["to_revision"], 3);
+        assert_eq!(first["through_revision"], 6);
+        activity
+            .register_agent("work-1", &identity("peer", 2))
+            .unwrap();
+        // Another snapshot/read must not acknowledge this reader's pending events.
+        activity.observe_initial("work-1", &a.agent_id).unwrap();
+        query.through_revision = first["through_revision"].as_u64();
+        let reopened = store(&temp);
+        assert_eq!(
+            reopened.read_delta("work-1", &query).unwrap()["events"],
+            first["events"]
+        );
+        query.since_revision = first["next_since_revision"].as_u64().unwrap();
+        let second = reopened.read_delta("work-1", &query).unwrap();
+        assert_eq!(second["to_revision"], 5);
+        query.since_revision = second["next_since_revision"].as_u64().unwrap();
+        let third = reopened.read_delta("work-1", &query).unwrap();
+        assert_eq!(third["to_revision"], 6);
+        assert_eq!(third["next_since_revision"], Value::Null);
+        assert_eq!(third["latest_revision"], 7);
+        query.since_revision = 6;
+        query.through_revision = None;
+        let pending = reopened.read_delta("work-1", &query).unwrap();
+        assert_eq!(pending["events"][0]["revision"], 7);
+        query.agent_id = Some("absent".into());
+        let filtered = reopened.read_delta("work-1", &query).unwrap();
+        assert_eq!(filtered["events"], json!([]));
+        assert_eq!(filtered["to_revision"], 7);
+        query.agent_id = None;
+        query.target = Some("no-match".into());
+        assert_eq!(
+            reopened.read_delta("work-1", &query).unwrap()["events"],
+            json!([])
+        );
+        query.target = None;
+        query.kind = Some(CoderActivityKind::AgentJoined);
+        assert_eq!(
+            reopened.read_delta("work-1", &query).unwrap()["events"][0]["revision"],
+            7
+        );
+    }
 
-        let call_id = store
-            .begin_tool(
-                "work-1",
-                &a,
-                "cognition_code_apply_patch",
-                "Update the focused implementation without changing its contract",
-                vec!["file://src/lib.rs".into()],
-                vec![CoderClaimScope {
-                    target: "file://src/lib.rs".into(),
-                    mode: CoderClaimMode::Write,
-                    hazardous: false,
-                    reason: "test".into(),
-                }],
-            )
-            .expect("begin")
-            .call_id;
-        store
-            .finish_tool(
-                "work-1",
-                &a,
-                &call_id,
-                "cognition_code_apply_patch",
-                "Update the focused implementation without changing its contract",
-                vec!["file://src/lib.rs".into()],
-                Ok(&json!({ "ok": true, "path": "src/lib.rs", "digest": "sha256:new" })),
-            )
-            .expect("finish");
+    #[test]
+    fn delta_retention_and_epoch_gaps_require_explicit_snapshot() {
+        let temp = TempDir::new().unwrap();
+        let activity = store(&temp);
+        let a = identity("a", 1);
+        activity.register_agent("work-1", &a).unwrap();
+        let snapshot = activity.observe_initial("work-1", &a.agent_id).unwrap();
+        activity
+            .mutate(|index, _| {
+                for _ in 0..=MAX_EVENTS_PER_WORK {
+                    append_event(
+                        index.work.get_mut("work-1").unwrap(),
+                        event("work-1", &a, CoderActivityKind::ToolCompleted),
+                    );
+                }
+            })
+            .unwrap();
+        let mut query = CoderDeltaQuery {
+            epoch: snapshot.epoch.clone(),
+            since_revision: snapshot.revision,
+            ..Default::default()
+        };
+        assert_eq!(
+            activity.read_delta("work-1", &query).unwrap()["reason"],
+            "retention_gap"
+        );
+        query.since_revision = 2;
+        assert_eq!(
+            activity.read_delta("work-1", &query).unwrap()["events"][0]["revision"],
+            3
+        );
+        query.since_revision = 999;
+        assert_eq!(
+            activity.read_delta("work-1", &query).unwrap()["reason"],
+            "revision_discontinuity"
+        );
+        std::fs::write(&activity.path, "corrupted").unwrap();
+        assert_eq!(
+            activity.read_delta("work-1", &query).unwrap()["reason"],
+            "activity_unavailable"
+        );
+        let refreshed = activity.observe_initial("work-1", &a.agent_id).unwrap();
+        assert_ne!(refreshed.epoch, snapshot.epoch);
+        assert!(!refreshed.epoch.is_empty());
+        assert_eq!(
+            activity.read_delta("work-1", &query).unwrap()["reason"],
+            "epoch_changed"
+        );
+        query.epoch = refreshed.epoch;
+        query.since_revision = 0;
+        assert_eq!(
+            activity.read_delta("work-1", &query).unwrap()["next_since_revision"],
+            Value::Null
+        );
+    }
 
-        let delta_a = store
-            .observe_delta("work-1", &a.agent_id)
-            .expect("delta a")
-            .expect("new events a");
-        let delta_b = store
-            .observe_delta("work-1", &b.agent_id)
-            .expect("delta b")
-            .expect("new events b");
-        assert_eq!(delta_a.events.len(), 2);
-        assert_eq!(delta_b.events.len(), 2);
-        assert!(
-            delta_a
-                .events
-                .iter()
-                .all(|event| event.call_id.as_deref() == Some(&call_id))
+    #[test]
+    fn legacy_activity_gets_a_persisted_epoch_on_entry() {
+        let temp = TempDir::new().unwrap();
+        let activity = store(&temp);
+        let a = identity("a", 1);
+        activity.register_agent("work-1", &a).unwrap();
+        let mut legacy: Value =
+            serde_json::from_slice(&std::fs::read(&activity.path).unwrap()).unwrap();
+        legacy["work"]["work-1"]
+            .as_object_mut()
+            .unwrap()
+            .remove("epoch");
+        std::fs::write(&activity.path, legacy.to_string()).unwrap();
+        let snapshot = activity.observe_initial("work-1", &a.agent_id).unwrap();
+        assert!(!snapshot.epoch.is_empty());
+        assert_eq!(
+            activity.context_pointer("work-1", &a.agent_id).unwrap()["epoch"],
+            snapshot.epoch
         );
-        assert!(
-            store
-                .observe_delta("work-1", &a.agent_id)
-                .expect("second delta a")
-                .is_none()
+        assert_eq!(
+            store(&temp).snapshot("work-1", &a.agent_id).unwrap().epoch,
+            snapshot.epoch
         );
-        assert!(
-            store
-                .observe_delta("work-1", &b.agent_id)
-                .expect("second delta b")
-                .is_none()
-        );
+    }
 
-        let appendix = engineering_delta_prompt_appendix(
-            &delta_b,
-            json!({ "changed_paths": ["src/lib.rs"], "dirty": true }),
+    #[test]
+    fn delta_payload_is_bounded_without_skipping_large_events() {
+        let temp = TempDir::new().unwrap();
+        let activity = store(&temp);
+        let a = identity("a", 1);
+        activity.register_agent("work-1", &a).unwrap();
+        let snapshot = activity.observe_initial("work-1", &a.agent_id).unwrap();
+        activity
+            .mutate(|index, _| {
+                for size in [50_000, 6_000, 6_000, 6_000, 6_000, 6_000] {
+                    let mut ev = event("work-1", &a, CoderActivityKind::ToolCompleted);
+                    ev.targets = vec!["x".repeat(size)];
+                    append_event(index.work.get_mut("work-1").unwrap(), ev);
+                }
+            })
+            .unwrap();
+        let query = CoderDeltaQuery {
+            epoch: snapshot.epoch,
+            since_revision: snapshot.revision,
+            ..Default::default()
+        };
+        let page = activity.read_delta("work-1", &query).unwrap();
+        assert!(page.to_string().len() < 25 * 1024);
+        assert_eq!(page["events"][0]["detail_omitted"], true);
+        assert!(
+            page["events"][0]["pointer_id"]
+                .as_str()
+                .unwrap()
+                .starts_with("engineering:event:")
         );
-        super::super::sttp::validate_canonical_sttp_node(&appendix).expect("canonical STTP");
-        assert!(appendix.contains("sha256:new"));
+        assert!(page["next_since_revision"].is_number());
+        assert_eq!(
+            page["to_revision"],
+            page["events"].as_array().unwrap().last().unwrap()["revision"]
+        );
     }
 
     #[test]
@@ -1384,11 +1512,12 @@ mod tests {
         assert_eq!(conflict["conflicts"][0]["holder_agent_id"], a.agent_id);
         assert!(conflict["retry_after_utc"].is_string());
 
-        let a_delta = store
-            .observe_delta("work-1", &a.agent_id)
-            .expect("delta")
-            .expect("new blocked event");
-        assert!(a_delta.events.iter().any(|event| {
+        let pointer = store.context_pointer("work-1", &a.agent_id).unwrap();
+        assert!(pointer["blocked_revision"].is_number());
+        assert!(pointer["peer_revision"].is_number());
+        assert!(pointer.to_string().len() < 1024);
+        let events = store.events_for_work("work-1").unwrap();
+        assert!(events.iter().any(|event| {
             event.kind == CoderActivityKind::ToolBlocked
                 && event.agent_id == b.agent_id
                 && event.overlaps.iter().any(|overlap| overlap.blocked)

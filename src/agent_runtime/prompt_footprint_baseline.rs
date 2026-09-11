@@ -121,7 +121,7 @@ fn current_baseline() -> PromptFootprintBaseline {
     );
     let coder_worker = worker_system_prompt_for_parent_mode(
         "baseline-session",
-        TurnWorkerIntent::General,
+        TurnWorkerIntent::Coder,
         None,
         false,
         false,

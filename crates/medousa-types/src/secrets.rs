@@ -286,6 +286,9 @@ pub struct IntegrationSecretWriteResponse {
 /// Daemon-owned keyring account path (`secrets.daemon` service).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DaemonSecretPath {
+    McpPolicy {
+        installation_id: InstallationId,
+    },
     SurrealPassword {
         installation_id: InstallationId,
     },
@@ -308,6 +311,9 @@ pub enum DaemonSecretPath {
 impl DaemonSecretPath {
     pub fn account(&self) -> String {
         match self {
+            Self::McpPolicy { installation_id } => {
+                format!("v1/{}/runtime/mcp/policy", installation_id.as_str())
+            }
             Self::SurrealPassword { installation_id } => {
                 format!("v1/{}/runtime/surreal/password", installation_id.as_str())
             }
@@ -356,6 +362,9 @@ impl DaemonSecretPath {
             ));
         }
         match parts.as_slice() {
+            ["v1", installation, "runtime", "mcp", "policy"] => Ok(Self::McpPolicy {
+                installation_id: InstallationId::parse(installation)?,
+            }),
             ["v1", installation, "runtime", "surreal", "password"] => Ok(Self::SurrealPassword {
                 installation_id: InstallationId::parse(installation)?,
             }),

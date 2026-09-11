@@ -7,13 +7,14 @@
   import type { AgentSessionConfigOption } from "$lib/daemon";
 
   interface Props {
+    inline?: boolean;
     options: AgentSessionConfigOption[];
     disabled?: boolean;
     includeModel?: boolean;
     onChange?: (configId: string, value: unknown) => void | Promise<void>;
   }
 
-  let { options, disabled = false, includeModel = true, onChange }: Props = $props();
+  let { options, disabled = false, includeModel = true, onChange, inline = false }: Props = $props();
   let openId = $state<string | null>(null);
   let savingId = $state<string | null>(null);
   let rootEl = $state<HTMLDivElement | null>(null);
@@ -83,6 +84,18 @@
   }
 </script>
 
+{#if inline}
+  {#each visibleOptions as option (option.id)}
+    <label class="composer-agent-setting">
+      <span>{option.name}</span>
+      <select disabled={disabled || savingId !== null}
+        value={option.options?.findIndex((choice) => choice.value === option.currentValue) ?? -1}
+        onchange={(event) => { const choice = option.options?.[Number(event.currentTarget.value)]; if (choice) void select(option, choice.value); }}>
+        {#each option.options ?? [] as choice, index}<option value={index}>{choice.name}</option>{/each}
+      </select>
+    </label>
+  {/each}
+{:else}
 <div bind:this={rootEl} class="composer-turn-controls">
   {#each visibleOptions as option (option.id)}
     {@const Icon = iconFor(option)}
@@ -140,3 +153,9 @@
     </BodyPortal>
   {/if}
 </div>
+
+{/if}
+<style>
+  .composer-agent-setting { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .6rem; font-size: 12px; }
+  .composer-agent-setting select { max-width: 60%; padding: .4rem; border: 1px solid rgb(var(--theme-border) / .4); border-radius: .4rem; background: rgb(var(--theme-card)); }
+</style>

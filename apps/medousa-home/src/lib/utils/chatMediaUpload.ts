@@ -56,15 +56,18 @@ export async function pickChatAttachmentFiles(
 export async function uploadChatFiles(
   sessionId: string,
   files: File[],
+  isCurrent: () => boolean = () => true,
 ): Promise<MediaRef[]> {
   const refs: MediaRef[] = [];
   for (const file of files) {
+    if (!isCurrent()) return [];
     try {
       if (file.size > MAX_MEDIA_UPLOAD_BYTES) {
         throw new Error("file exceeds max size");
       }
       const normalized = await normalizeUploadFile(file);
       const bytes = new Uint8Array(await normalized.arrayBuffer());
+      if (!isCurrent()) return [];
       const response = await uploadMediaBytes(
         sessionId,
         normalized.name,
@@ -89,9 +92,11 @@ function fileNameFromPath(path: string): string {
 export async function uploadChatPaths(
   sessionId: string,
   paths: string[],
+  isCurrent: () => boolean = () => true,
 ): Promise<MediaRef[]> {
   const refs: MediaRef[] = [];
   for (const path of paths) {
+    if (!isCurrent()) return [];
     const label = fileNameFromPath(path);
     if (nativePathNeedsImageNormalization(path)) {
       try {
@@ -99,7 +104,7 @@ export async function uploadChatPaths(
         const file = new File([payload.bytes], payload.filename, {
           type: payload.mime,
         });
-        refs.push(...(await uploadChatFiles(sessionId, [file])));
+        refs.push(...(await uploadChatFiles(sessionId, [file], isCurrent)));
       } catch (err) {
         const raw = err instanceof Error ? err.message : String(err);
         throw new Error(friendlyMediaUploadError(raw, label));

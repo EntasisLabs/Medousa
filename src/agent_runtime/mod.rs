@@ -37,6 +37,7 @@ pub mod coder_experiments;
 pub mod coder_memory;
 pub mod coder_mode;
 pub mod coder_pointers;
+pub mod coder_read_batch;
 pub mod coder_semantic_actions;
 pub mod coder_setup_tools;
 pub mod coder_tools;
@@ -81,8 +82,8 @@ pub use ambient_context::{
     resolve_operator_timezone_label,
 };
 pub use coder_activity::{
-    CoderActivityStore, CoderAgentIdentity, CoderEngineeringDelta, CoderSharedSpaceSnapshot,
-    coder_activity_store, engineering_delta_prompt_appendix, shared_space_prompt_appendix,
+    CoderActivityStore, CoderAgentIdentity, CoderDeltaQuery, CoderSharedSpaceSnapshot,
+    coder_activity_store, shared_space_prompt_appendix,
 };
 pub use coder_claims::{CoderClaimMode, CoderClaimScope};
 pub use coder_mode::{CoderEntryContext, CoderEntryError, compile_coder_entry};

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { onMount, tick } from "svelte";
   import { Check, ChevronDown, LogIn } from "@lucide/svelte";
   import ExternalAgentLogo from "$lib/components/brand/ExternalAgentLogo.svelte";
   import MedousaMark from "$lib/components/brand/MedousaMark.svelte";
@@ -16,12 +16,13 @@
   import { accountIdForRuntime } from "$lib/utils/accountConnections";
 
   interface Props {
+    inline?: boolean;
     value: ChatAgentRuntime;
     disabled?: boolean;
     onChange?: (value: ChatAgentRuntime) => void;
   }
 
-  let { value, disabled = false, onChange }: Props = $props();
+  let { value, disabled = false, onChange, inline = false }: Props = $props();
 
   const OPTIONS: {
     id: ChatAgentRuntime;
@@ -33,7 +34,7 @@
     { id: "hermes", hint: "External Hermes agent" },
   ];
 
-  $effect(() => {
+  onMount(() => {
     void accountConnections.refresh();
   });
 
@@ -71,7 +72,7 @@
   const label = $derived(agentRuntimeLabel(value));
 
   $effect(() => {
-    if (!open || !menuEl || !triggerEl) return;
+    if (inline || !open || !menuEl || !triggerEl) return;
 
     let frame = 0;
     const place = () => {
@@ -144,7 +145,8 @@
   </span>
 {/snippet}
 
-<div class="chat-runtime-picker">
+<div class:chat-runtime-picker={!inline}>
+  {#if !inline}
   <button
     bind:this={triggerEl}
     type="button"
@@ -164,22 +166,23 @@
     <ChevronDown size={12} strokeWidth={2} class="chat-runtime-trigger-chevron shrink-0" />
   </button>
 
-  {#if open}
+  {/if}
+  {#if open || inline}
     <!-- Portal out of the presence-dock transform / overflow stack so fixed placement is viewport-true. -->
-    <BodyPortal>
+    <BodyPortal enabled={!inline}>
       <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
       <div
         bind:this={menuEl}
-        class="composer-anchored-menu chat-runtime-menu"
+        class={inline ? "composer-settings-inline" : "composer-anchored-menu chat-runtime-menu"}
         role="listbox"
         aria-label="Choose agent runtime"
       >
-        <header class="composer-anchored-menu-header">
+        {#if !inline}<header class="composer-anchored-menu-header">
           <div class="min-w-0">
             <h2 class="text-sm font-semibold text-surface-50">Runtime</h2>
             <p class="workshop-faint mt-0.5 text-xs">Who runs this turn</p>
           </div>
-        </header>
+        </header>{/if}
         <div class="composer-anchored-menu-body space-y-0.5">
           {#each OPTIONS as option (option.id)}
             {@const locked = lockedFor(option.id)}
@@ -190,6 +193,7 @@
               class:chat-runtime-option-locked={locked}
               role="option"
               aria-selected={value === option.id}
+              disabled={disabled}
               aria-disabled={locked}
               onclick={() => {
                 if (locked) {

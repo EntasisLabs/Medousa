@@ -27,6 +27,7 @@ pub mod calendar;
 pub mod calendar_api;
 pub mod calendar_tools;
 pub mod capability_tools;
+pub mod code_edits;
 pub mod cognitive_identity;
 pub mod cognitive_identity_writer;
 pub mod component_runtime_diagnostics;

@@ -27,6 +27,10 @@ struct Args {
     /// Extra allowed cwd roots (repeatable), e.g. Forge worktree paths.
     #[arg(long = "allow-root")]
     allow_roots: Vec<PathBuf>,
+
+    /// Daemon-owned Forge store used to authorize attached-checkout projects.
+    #[arg(long)]
+    forge_root: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -52,6 +56,10 @@ async fn main() -> anyhow::Result<()> {
         bind: args.bind,
         workspace_root: workspace,
         allowed_roots: allowed,
+        forge_root: match args.forge_root {
+            Some(root) => Some(tokio::fs::canonicalize(root).await?),
+            None => None,
+        },
     };
     serve(SessionHostState::new(config)).await
 }

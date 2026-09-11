@@ -1,3 +1,4 @@
+import { StyleModule } from "style-mod";
 import { highlightTree } from "@lezer/highlight";
 import type { LanguageSupport } from "@codemirror/language";
 import { javascript } from "@codemirror/lang-javascript";
@@ -96,7 +97,7 @@ function escapePlain(text: string): DiffHighlightSpan[] {
 
 /**
  * Highlight a single source line with the same Lezer style map as the editor.
- * Returns style+text spans suitable for rendering without an EditorView.
+ * Returns CSS class+text spans (the `style` field holds class names) suitable for rendering without an EditorView.
  * Memoized per (language, line).
  */
 export function highlightDiffLine(
@@ -109,6 +110,8 @@ export function highlightDiffLine(
   if (line.length > MAX_HIGHLIGHT_LINE_LENGTH) return escapePlain(line);
   const languageId = resolveCodeEditorLanguage(languageHint);
   const themeId = readCodeEditorSyntaxTheme();
+  const highlighter = activeCodeSyntaxHighlightStyle();
+  if (typeof document !== "undefined" && highlighter.module) StyleModule.mount(document, highlighter.module);
   const cacheKey = `${themeId}\0${languageId}\0${line}`;
   const cached = lineCache.get(cacheKey);
   if (cached) return cached;

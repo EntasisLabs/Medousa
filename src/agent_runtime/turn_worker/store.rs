@@ -1,6 +1,6 @@
 //! Durable turn work records (host/worker bus).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -268,6 +268,78 @@ impl TurnWorkRecord {
 pub struct TurnWorkerStore {
     records: Mutex<HashMap<String, TurnWorkRecord>>,
     live_cancellations: Mutex<HashMap<String, Arc<CancellationToken>>>,
+    parallel_intakes: Mutex<HashSet<ParallelCohortKey>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct ParallelCohortKey {
+    session_id: String,
+    parent_turn_id: Option<String>,
+    legacy_stream_turn_id: u64,
+}
+
+impl ParallelCohortKey {
+    fn new(session_id: &str, stream_turn_id: u64, parent_turn_id: Option<&str>) -> Self {
+        let parent_turn_id = parent_turn_id
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map(str::to_string);
+        Self {
+            session_id: session_id.into(),
+            legacy_stream_turn_id: if parent_turn_id.is_some() {
+                0
+            } else {
+                stream_turn_id
+            },
+            parent_turn_id,
+        }
+    }
+
+    fn matches(&self, record: &TurnWorkRecord) -> bool {
+        !record.archived
+            && record.disposition == TurnWorkDisposition::Parallel
+            && *self
+                == Self::new(
+                    &record.session_id,
+                    record.parent_stream_turn_id,
+                    record.parent_turn_correlation_id.as_deref(),
+                )
+    }
+}
+
+/// Process-local exclusion is separate from durable delivery acknowledgement.
+/// Dropping an unfinished intake (including cancellation) leaves results pending;
+/// after restart there are no stale in-flight claims to suppress recovery.
+pub struct ParallelCohortIntake<'a> {
+    store: &'a TurnWorkerStore,
+    key: ParallelCohortKey,
+    records: Vec<TurnWorkRecord>,
+}
+
+impl std::ops::Deref for ParallelCohortIntake<'_> {
+    type Target = [TurnWorkRecord];
+    fn deref(&self) -> &Self::Target {
+        &self.records
+    }
+}
+
+impl ParallelCohortIntake<'_> {
+    pub fn acknowledge(self) {
+        for record in &self.records {
+            self.store
+                .update(&record.work_id, |worker| worker.synthesis_delivered = true);
+        }
+    }
+}
+
+impl Drop for ParallelCohortIntake<'_> {
+    fn drop(&mut self) {
+        self.store
+            .parallel_intakes
+            .lock()
+            .expect("parallel intakes")
+            .remove(&self.key);
+    }
 }
 
 pub struct WorkerExecutionLease {
@@ -352,6 +424,7 @@ impl TurnWorkerStore {
         let store = Self {
             records: Mutex::new(HashMap::new()),
             live_cancellations: Mutex::new(HashMap::new()),
+            parallel_intakes: Mutex::new(HashSet::new()),
         };
         store.reload_from_disk();
         store
@@ -362,6 +435,7 @@ impl TurnWorkerStore {
         Self {
             records: Mutex::new(HashMap::new()),
             live_cancellations: Mutex::new(HashMap::new()),
+            parallel_intakes: Mutex::new(HashSet::new()),
         }
     }
 
@@ -622,18 +696,15 @@ impl TurnWorkerStore {
         &self,
         session_id: &str,
         parent_stream_turn_id: u64,
+        parent_turn_id: Option<&str>,
     ) -> Vec<TurnWorkRecord> {
+        let key = ParallelCohortKey::new(session_id, parent_stream_turn_id, parent_turn_id);
         let mut records = self
             .records
             .lock()
             .expect("turn worker records")
             .values()
-            .filter(|record| {
-                !record.archived
-                    && record.disposition == TurnWorkDisposition::Parallel
-                    && record.session_id == session_id
-                    && record.parent_stream_turn_id == parent_stream_turn_id
-            })
+            .filter(|record| key.matches(record))
             .cloned()
             .collect::<Vec<_>>();
         records.sort_by(|left, right| {
@@ -644,68 +715,78 @@ impl TurnWorkerStore {
         records
     }
 
-    /// Atomically claim a finished parallel spawn cohort for one host-resume turn.
-    ///
-    /// Returns `None` while any sibling is still pending/running, when the cohort
-    /// is empty, or when every member is already marked delivered.
+    /// Claim only a terminal, undelivered cohort. Success must be acknowledged
+    /// after host intake; claiming alone never changes durable delivery state.
     pub fn try_claim_parallel_cohort_intake(
         &self,
         session_id: &str,
         parent_stream_turn_id: u64,
-    ) -> Option<Vec<TurnWorkRecord>> {
-        let mut guard = self.records.lock().expect("turn worker records");
-        let ids: Vec<String> = guard
+        parent_turn_id: Option<&str>,
+    ) -> Option<ParallelCohortIntake<'_>> {
+        let key = ParallelCohortKey::new(session_id, parent_stream_turn_id, parent_turn_id);
+        let guard = self.records.lock().expect("turn worker records");
+        let mut records: Vec<_> = guard
             .values()
-            .filter(|record| {
-                !record.archived
-                    && record.disposition == TurnWorkDisposition::Parallel
-                    && record.session_id == session_id
-                    && record.parent_stream_turn_id == parent_stream_turn_id
-            })
-            .map(|record| record.work_id.clone())
+            .filter(|record| key.matches(record))
+            .cloned()
             .collect();
-        if ids.is_empty() {
-            return None;
-        }
-        let terminal = |status: TurnWorkStatus| {
-            matches!(
-                status,
-                TurnWorkStatus::Completed | TurnWorkStatus::Failed | TurnWorkStatus::Cancelled
-            )
-        };
-        if ids
-            .iter()
-            .any(|id| guard.get(id).is_none_or(|record| !terminal(record.status)))
+        if records.is_empty()
+            || records.iter().any(|record| {
+                matches!(
+                    record.status,
+                    TurnWorkStatus::Pending | TurnWorkStatus::Running
+                )
+            })
+            || records.iter().all(|record| record.synthesis_delivered)
         {
             return None;
         }
-        if ids.iter().all(|id| {
-            guard
-                .get(id)
-                .is_some_and(|record| record.synthesis_delivered)
-        }) {
+        if !self
+            .parallel_intakes
+            .lock()
+            .expect("parallel intakes")
+            .insert(key.clone())
+        {
             return None;
         }
-        let now = Utc::now();
-        let mut claimed = Vec::new();
-        for id in &ids {
-            let Some(record) = guard.get_mut(id) else {
-                continue;
-            };
-            record.synthesis_delivered = true;
-            record.updated_at = now;
-            claimed.push(record.clone());
-        }
-        drop(guard);
-        claimed.sort_by(|left, right| {
+        records.sort_by(|left, right| {
             left.created_at
                 .cmp(&right.created_at)
                 .then(left.work_id.cmp(&right.work_id))
         });
-        for record in &claimed {
-            self.persist(&record.work_id, record.stasis_job_id.as_deref());
-        }
-        Some(claimed)
+        Some(ParallelCohortIntake {
+            store: self,
+            key,
+            records,
+        })
+    }
+
+    /// Only the job responsible for an available intake needs a retry. Siblings
+    /// still executing, or the job already running intake, will drive completion.
+    pub fn parallel_intake_needs_retry(&self, record: &TurnWorkRecord) -> bool {
+        let key = ParallelCohortKey::new(
+            &record.session_id,
+            record.parent_stream_turn_id,
+            record.parent_turn_correlation_id.as_deref(),
+        );
+        let guard = self.records.lock().expect("turn worker records");
+        let cohort: Vec<_> = guard
+            .values()
+            .filter(|worker| key.matches(worker))
+            .collect();
+        !cohort.is_empty()
+            && cohort.iter().any(|worker| !worker.synthesis_delivered)
+            && cohort.iter().all(|worker| {
+                !matches!(
+                    worker.status,
+                    TurnWorkStatus::Pending | TurnWorkStatus::Running
+                )
+            })
+            && !self
+                .parallel_intakes
+                .lock()
+                .expect("parallel intakes")
+                .contains(&key)
     }
 
     pub fn list_incomplete(&self) -> Vec<TurnWorkRecord> {
@@ -1141,6 +1222,7 @@ mod tests {
         let store = TurnWorkerStore {
             records: Mutex::new(HashMap::new()),
             live_cancellations: Mutex::new(HashMap::new()),
+            parallel_intakes: Mutex::new(HashSet::new()),
         };
 
         store.reload_from_paths(&canonical, &legacy);
@@ -1252,10 +1334,11 @@ mod tests {
         );
         assert!(
             store
-                .try_claim_parallel_cohort_intake("sess-c", 7)
+                .try_claim_parallel_cohort_intake("sess-c", 7, None)
                 .is_none()
         );
-        assert_eq!(store.parallel_cohort("sess-c", 7).len(), 2);
+        assert_eq!(store.parallel_cohort("sess-c", 7, None).len(), 2);
+        assert!(!store.parallel_intake_needs_retry(&store.get("work-a").unwrap()));
     }
 
     #[test]
@@ -1270,13 +1353,85 @@ mod tests {
             test_record("work-b", "sess-c", 9, TurnWorkStatus::Completed),
         );
         let claimed = store
-            .try_claim_parallel_cohort_intake("sess-c", 9)
+            .try_claim_parallel_cohort_intake("sess-c", 9, None)
             .expect("claim");
         assert_eq!(claimed.len(), 2);
-        assert!(claimed.iter().all(|record| record.synthesis_delivered));
+        assert!(claimed.iter().all(|record| !record.synthesis_delivered));
         assert!(
             store
-                .try_claim_parallel_cohort_intake("sess-c", 9)
+                .try_claim_parallel_cohort_intake("sess-c", 9, None)
+                .is_none()
+        );
+        claimed.acknowledge();
+        assert!(store.get("work-a").unwrap().synthesis_delivered);
+        assert!(
+            store
+                .try_claim_parallel_cohort_intake("sess-c", 9, None)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn failed_or_cancelled_intake_can_be_claimed_again_without_reexecuting_peer() {
+        let store = TurnWorkerStore::empty_for_tests();
+        seed(
+            &store,
+            test_record("peer", "sess-c", 1, TurnWorkStatus::Completed),
+        );
+        let claim = store
+            .try_claim_parallel_cohort_intake("sess-c", 1, None)
+            .unwrap();
+        assert!(
+            store
+                .try_claim_parallel_cohort_intake("sess-c", 1, None)
+                .is_none()
+        );
+        assert!(!store.get("peer").unwrap().synthesis_delivered);
+        assert!(!store.parallel_intake_needs_retry(&store.get("peer").unwrap()));
+        drop(claim); // includes cancellation/unwind of the host-resume future
+        assert!(store.parallel_intake_needs_retry(&store.get("peer").unwrap()));
+        let retry = store
+            .try_claim_parallel_cohort_intake("sess-c", 1, None)
+            .unwrap();
+        assert_eq!(retry[0].status, TurnWorkStatus::Completed);
+        assert!(!retry[0].synthesis_delivered);
+        drop(retry);
+        // Durable state survives a restart; process-local claims do not.
+        let reopened = TurnWorkerStore::empty_for_tests();
+        seed(&reopened, store.get("peer").unwrap());
+        assert!(
+            reopened
+                .try_claim_parallel_cohort_intake("sess-c", 1, None)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn correlated_parents_do_not_share_intake_when_stream_ids_repeat() {
+        let store = TurnWorkerStore::empty_for_tests();
+        let mut first = test_record("peer-a", "sess-c", 1, TurnWorkStatus::Completed);
+        first.parent_turn_correlation_id = Some("parent-a".into());
+        seed(&store, first);
+        let mut next = test_record("peer-b", "sess-c", 1, TurnWorkStatus::Running);
+        next.parent_turn_correlation_id = Some("parent-b".into());
+        seed(&store, next);
+        seed(
+            &store,
+            test_record("legacy", "sess-c", 1, TurnWorkStatus::Running),
+        );
+        let intake = store
+            .try_claim_parallel_cohort_intake("sess-c", 1, Some("parent-a"))
+            .unwrap();
+        assert_eq!(intake.len(), 1);
+        assert_eq!(intake[0].work_id, "peer-a");
+        assert!(
+            store
+                .try_claim_parallel_cohort_intake("sess-c", 1, Some("parent-b"))
+                .is_none()
+        );
+        assert!(
+            store
+                .try_claim_parallel_cohort_intake("sess-c", 1, None)
                 .is_none()
         );
     }
@@ -1292,7 +1447,7 @@ mod tests {
             test_record("work-p", "sess-c", 3, TurnWorkStatus::Completed),
         );
         let claimed = store
-            .try_claim_parallel_cohort_intake("sess-c", 3)
+            .try_claim_parallel_cohort_intake("sess-c", 3, None)
             .expect("claim");
         assert_eq!(claimed.len(), 1);
         assert_eq!(claimed[0].work_id, "work-p");

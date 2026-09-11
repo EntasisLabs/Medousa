@@ -126,6 +126,8 @@ pub fn classify_tool_call(tool_name: &str, input: &Value) -> StepExecutionClass 
         | "cognition_calendar_query"
         | "cognition_workshop_query"
         | "cognition_store_read"
+        | "cognition_coder_read_batch"
+        | "cognition_coder_context_read"
         | "cognition_runtime_query"
         | "cognition_schema"
         | "cognition_web_search" => StepExecutionClass::ReadOnly,
@@ -148,6 +150,14 @@ pub fn parallel_tool_batch_allowed(
     }
     if calls.len() <= 1 {
         return Ok(());
+    }
+    // This tool owns a bounded inner fan-out. Do not multiply that limit by
+    // running it beside other calls, even when mutating parallelism is enabled.
+    if calls
+        .iter()
+        .any(|(name, _)| name == "cognition_coder_read_batch")
+    {
+        return Err("workspace read batches execute separately from other tool calls".into());
     }
     if calls.len() > settings.max_parallel_tool_calls {
         return Err(format!(
@@ -181,11 +191,36 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn inner_read_batches_cannot_multiply_outer_parallelism() {
+        assert_eq!(
+            classify_tool_call("cognition_coder_read_batch", &serde_json::json!({})),
+            StepExecutionClass::ReadOnly
+        );
+        let settings = ParallelExecutionSettings {
+            allow_mutating_parallel: true,
+            ..Default::default()
+        };
+        let calls = vec![
+            ("cognition_coder_read_batch".into(), serde_json::json!({})),
+            ("cognition_store_read".into(), serde_json::json!({})),
+        ];
+        assert!(parallel_tool_batch_allowed(&calls, &settings).is_err());
+    }
+
+    #[test]
     fn read_only_batches_are_portable_but_mutations_remain_sequential() {
         let settings = ParallelExecutionSettings::default();
         let reads = vec![
             ("cognition_memory_query".to_string(), json!({})),
             ("cognition_store_read".to_string(), json!({})),
+            (
+                "cognition_coder_context_read".to_string(),
+                json!({"mode": "delta"}),
+            ),
+            (
+                "cognition_coder_context_read".to_string(),
+                json!({"mode": "snapshot"}),
+            ),
         ];
         assert!(parallel_tool_batch_allowed(&reads, &settings).is_ok());
 

@@ -7,6 +7,8 @@ This folder is for **engineers, operators, and teams** who want the same runtime
 
 Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 
+Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
+
 ## The two-layer product
 
 | Layer | Audience | What you get |
@@ -23,7 +25,7 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 | Guide | You want to… |
 |-------|----------------|
 | [Getting started](guides/getting-started.md) | Download → welcome → first chat |
-| [Models and agent sources](guides/models-and-agent-sources.md) | Choose runtimes, models, modes, and reply narration in chat |
+| [Models and agent sources](guides/models-and-agent-sources.md) | Choose runtimes, models, Teacher learning actions, and reply narration in chat |
 | [Bots](guides/bots.md) | Create durable named teammates with their own memory and conversation |
 | [Packages](guides/packages.md) | Optional computer, coding, model, channel, and MCP capabilities |
 | [Workshop & Automations](guides/workshop-and-automations.md) | Flows, schedules, specialists |
@@ -39,7 +41,7 @@ Doc conventions: [CONTRIBUTING-DOCS.md](CONTRIBUTING-DOCS.md)
 | [Secure credential handoff](guides/secure-credential-handoff.md) | Give OpenShell or Grapheme an API key without putting it in chat |
 | [Desktop companion](guides/desktop-companion.md) | Floating pet for chat, approvals, notes, Web, and views |
 | [Drawing](guides/drawing.md) | Sketch inside notes or use a full drawing note |
-| [Undertakings & ForgeLens](guides/undertakings.md) | Governed work, seal, review, World |
+| [Undertakings & ForgeLens](guides/undertakings.md) | Governed work, chat review, comments, commits, pull requests |
 | Full index | [guides/README.md](guides/README.md) |
 
 ---

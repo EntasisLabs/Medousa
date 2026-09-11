@@ -234,6 +234,8 @@ pub enum DaemonOperation {
     ForgeItemsByWorkIdChangesBlameGet,
     #[serde(rename = "forge.items.by_work_id.changes.checkpoint.post")]
     ForgeItemsByWorkIdChangesCheckpointPost,
+    #[serde(rename = "forge.items.by_work_id.changes.commit.post")]
+    ForgeItemsByWorkIdChangesCommitPost,
     #[serde(rename = "forge.items.by_work_id.changes.conflict.post")]
     ForgeItemsByWorkIdChangesConflictPost,
     #[serde(rename = "forge.items.by_work_id.changes.fetch.post")]
@@ -246,10 +248,14 @@ pub enum DaemonOperation {
     ForgeItemsByWorkIdChangesFilePost,
     #[serde(rename = "forge.items.by_work_id.changes.get")]
     ForgeItemsByWorkIdChangesGet,
+    #[serde(rename = "forge.items.by_work_id.changes.git.get")]
+    ForgeItemsByWorkIdChangesGitGet,
     #[serde(rename = "forge.items.by_work_id.changes.history.get")]
     ForgeItemsByWorkIdChangesHistoryGet,
     #[serde(rename = "forge.items.by_work_id.changes.pull.post")]
     ForgeItemsByWorkIdChangesPullPost,
+    #[serde(rename = "forge.items.by_work_id.changes.pull_request.post")]
+    ForgeItemsByWorkIdChangesPullRequestPost,
     #[serde(rename = "forge.items.by_work_id.changes.push.post")]
     ForgeItemsByWorkIdChangesPushPost,
     #[serde(rename = "forge.items.by_work_id.changes.sync.post")]
@@ -1012,14 +1018,17 @@ impl DaemonOperation {
             Self::ForgeItemsByWorkIdAttemptsPost => "forge.items.by_work_id.attempts.post",
             Self::ForgeItemsByWorkIdChangesBlameGet => "forge.items.by_work_id.changes.blame.get",
             Self::ForgeItemsByWorkIdChangesCheckpointPost => "forge.items.by_work_id.changes.checkpoint.post",
+            Self::ForgeItemsByWorkIdChangesCommitPost => "forge.items.by_work_id.changes.commit.post",
             Self::ForgeItemsByWorkIdChangesConflictPost => "forge.items.by_work_id.changes.conflict.post",
             Self::ForgeItemsByWorkIdChangesFetchPost => "forge.items.by_work_id.changes.fetch.post",
             Self::ForgeItemsByWorkIdChangesFileGet => "forge.items.by_work_id.changes.file.get",
             Self::ForgeItemsByWorkIdChangesFileHunkPost => "forge.items.by_work_id.changes.file.hunk.post",
             Self::ForgeItemsByWorkIdChangesFilePost => "forge.items.by_work_id.changes.file.post",
             Self::ForgeItemsByWorkIdChangesGet => "forge.items.by_work_id.changes.get",
+            Self::ForgeItemsByWorkIdChangesGitGet => "forge.items.by_work_id.changes.git.get",
             Self::ForgeItemsByWorkIdChangesHistoryGet => "forge.items.by_work_id.changes.history.get",
             Self::ForgeItemsByWorkIdChangesPullPost => "forge.items.by_work_id.changes.pull.post",
+            Self::ForgeItemsByWorkIdChangesPullRequestPost => "forge.items.by_work_id.changes.pull_request.post",
             Self::ForgeItemsByWorkIdChangesPushPost => "forge.items.by_work_id.changes.push.post",
             Self::ForgeItemsByWorkIdChangesSyncPost => "forge.items.by_work_id.changes.sync.post",
             Self::ForgeItemsByWorkIdDecisionsPost => "forge.items.by_work_id.decisions.post",

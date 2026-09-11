@@ -296,3 +296,12 @@ terminal detection therefore follow the same SDK state machine as integrators.
 ## Local model download SSE
 
 Both SDKs: `local_models().download_events(job_id)` streams `ModelDownloadProgress` events (separate from interactive turns).
+
+### Native reasoning options
+
+`reasoningEffort` accepts `default` (no override), a supported effort keyword
+(including `none` for explicit Off), or `budget:N` for an integer thinking budget.
+Use the selected provider/model's `reasoning` capability from
+`GET /v1/models/capabilities` to determine supported choices and budget bounds.
+An absent capability on an older daemon is unknown, not support for every level.
+See the [model capability contract](../engine/http-api.md) for the response fields.

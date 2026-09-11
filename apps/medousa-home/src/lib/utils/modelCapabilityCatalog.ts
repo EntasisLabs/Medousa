@@ -1,3 +1,4 @@
+import { normalizeReasoningCapability } from "$lib/types/reasoningEffort";
 import { isTauri } from "$lib/window";
 import type {
   Modality,
@@ -115,6 +116,7 @@ export function normalizeModelCapabilityRecord(raw: unknown): ModelCapabilityRec
       readOptionalBoolean(record.supportsToolCalling) ??
       readOptionalBoolean(record.supports_tool_calling),
     supportsVision: Boolean(supportsVisionRaw),
+    reasoning: normalizeReasoningCapability(record.reasoning),
     pricing: normalizePricing(record.pricing),
     source: readString(record.source) || "catalog",
     fetchedAt:

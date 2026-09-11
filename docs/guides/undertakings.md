@@ -95,9 +95,10 @@ Medousa stops with that state instead of silently running on the Home device.
   content, Medousa refuses to attach before making the snapshot. Clean those
   paths or use **Isolated copy**.
 - The checked-out branch, `HEAD`, and real Git index stay principal-owned and
-  pinned for the attachment. Fetch remains available, but Pull, Push, and Sync
-  are disabled until the project is closed; use Terminal afterward when you
-  intentionally want to commit or change repository history.
+  pinned for the attachment. Fetch remains available; generic Pull, Push, and
+  Sync stay disabled. The explicit **Commit** and **Create PR** actions in chat
+  can advance the checkout boundary while preserving the original review baseline.
+  External branch switches or commits still require reattaching the project.
 - If active Medousa work already targets the repository, choose **Continue**
   that project or explicitly **Start another change**.
 - Manual path entry remains under the advanced disclosure for unusual mounts.
@@ -474,3 +475,28 @@ Repository inspection distinguishes a branch name from a usable commit. Empty
 repositories must receive an initial commit before Code can create its isolated
 working copy; if a saved starting branch was renamed or deleted, choose an
 existing branch and retry.
+
+## Review and ship from chat
+
+Open **View** or **Review** on a chat's changes card. On mobile, review opens in
+a full-height sheet; selecting a file shows its syntax-highlighted diff with
+previous/next file navigation. Back returns to the file list without leaving chat.
+
+Select a diff line to leave a comment. Comments on working changes are saved on
+this device with the original line and version you reviewed. **Notes → Ask
+Medousa to revise** puts those notes into the chat composer for you to send.
+Comments on a sealed review remain attached to that review.
+
+**Commit** lets you choose files and enter a message. It commits the entire
+current contents of each selected file, including its staged and unstaged edits;
+this is a file-level selection, not hunk staging. Unselected staging is preserved.
+A current-checkout project can create a new branch by entering a new branch name.
+Git hooks and configured signing still run on the workshop. Finish or stop active
+agent work first; changes that move after the form loads require a refresh.
+
+**Create PR** lets you enter the base branch, title, description, and draft status.
+Commit remaining working changes first. Submitting **Push & create PR** pushes the
+reviewed commit to origin without force, then creates a GitHub PR against that
+same repository. GitHub CLI must already be installed and signed in on the
+workshop. Retrying reuses an existing open PR for the same head and base. These
+operations use the workshop's repository, including when you are on a phone.

@@ -132,6 +132,8 @@ fn add_effects_and_capabilities(index: &mut ToolPlacementIndex) {
         crate::public_api::COGNITION_STORE_READ,
         #[cfg(feature = "full-daemon")]
         crate::agent_runtime::coder_tools::COGNITION_ENGINEERING_POINTERS,
+        #[cfg(feature = "full-daemon")]
+        crate::agent_runtime::coder_read_batch::TOOL_NAME,
         crate::public_api::COGNITION_RUNTIME_QUERY,
         crate::public_api::COGNITION_SCHEMA,
         crate::public_api::COGNITION_MEMORY_QUERY,

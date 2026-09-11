@@ -38,10 +38,14 @@ pub fn worker_system_prompt_for_parent_mode(
     supports_liquid_markdown: bool,
     parent_agent_mode: Option<&str>,
 ) -> String {
-    let policy_mode = match parent_agent_mode {
-        Some("coder") => crate::agent_runtime::prompt_policy::SttpPolicyMode::CoderWork,
-        Some("teacher") => crate::agent_runtime::prompt_policy::SttpPolicyMode::Teacher,
-        _ => crate::agent_runtime::prompt_policy::SttpPolicyMode::General,
+    let policy_mode = if intent == TurnWorkerIntent::Coder {
+        crate::agent_runtime::prompt_policy::SttpPolicyMode::CoderWork
+    } else if parent_agent_mode == Some("teacher") {
+        crate::agent_runtime::prompt_policy::SttpPolicyMode::Teacher
+    } else {
+        // The parent's mode does not confer its Forge/tool authority on a
+        // research or general peer. Match the worker's actual environment.
+        crate::agent_runtime::prompt_policy::SttpPolicyMode::General
     };
     let policy = crate::agent_runtime::prompt_policy::compile_sttp_policy(
         crate::agent_runtime::prompt_policy::SttpPolicySelection::new(
@@ -232,10 +236,10 @@ mod tests {
     }
 
     #[test]
-    fn coder_parent_selects_coder_work_with_the_exact_actor() {
+    fn coder_worker_selects_coder_work_with_the_exact_actor() {
         let worker = worker_system_prompt_for_parent_mode(
             "sess-1",
-            TurnWorkerIntent::General,
+            TurnWorkerIntent::Coder,
             None,
             false,
             false,
@@ -246,6 +250,20 @@ mod tests {
         let host = host_system_prompt_for_parent_mode(Some("coder"));
         assert!(host.contains("p2_mode_coder_work(.99)"));
         assert!(host.contains("p3_actor_host(.99)"));
+    }
+
+    #[test]
+    fn research_peer_does_not_claim_parent_coder_authority() {
+        let worker = worker_system_prompt_for_parent_mode(
+            "session",
+            TurnWorkerIntent::Research,
+            None,
+            false,
+            false,
+            Some("coder"),
+        );
+        assert!(worker.contains("p2_mode_general(.99)"));
+        assert!(!worker.contains("p2_mode_coder_work(.99)"));
     }
 
     #[test]

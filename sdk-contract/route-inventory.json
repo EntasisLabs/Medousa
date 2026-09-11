@@ -2175,6 +2175,22 @@
       ],
       "feature_profile": "core",
       "method": "POST",
+      "operation_id": "forge.items.by_work_id.changes.commit.post",
+      "path": "/v1/forge/items/{work_id}/changes/commit",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 1048576,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
       "operation_id": "forge.items.by_work_id.changes.conflict.post",
       "path": "/v1/forge/items/{work_id}/changes/conflict",
       "rate_limit_class": "administration",
@@ -2255,6 +2271,22 @@
       ],
       "feature_profile": "core",
       "method": "GET",
+      "operation_id": "forge.items.by_work_id.changes.git.get",
+      "path": "/v1/forge/items/{work_id}/changes/git",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
       "operation_id": "forge.items.by_work_id.changes.history.get",
       "path": "/v1/forge/items/{work_id}/changes/history",
       "rate_limit_class": "administration",
@@ -2273,6 +2305,22 @@
       "method": "POST",
       "operation_id": "forge.items.by_work_id.changes.pull.post",
       "path": "/v1/forge/items/{work_id}/changes/pull",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 1048576,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "forge.items.by_work_id.changes.pull_request.post",
+      "path": "/v1/forge/items/{work_id}/changes/pull-request",
       "rate_limit_class": "administration",
       "stream_transport": null,
       "streaming": false,

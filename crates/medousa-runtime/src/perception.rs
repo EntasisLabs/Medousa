@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock};
 
+use genai::chat::{ChatMessage, ContentPart, MessageContent};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
@@ -175,6 +176,108 @@ impl ToolPerceptionGovernor {
         Self {
             evidence_port,
             ..Default::default()
+        }
+    }
+
+    /// Reclaim cold observations in batches, preserving call/response pairing and
+    /// all assistant arguments, user guidance, errors, and the four newest results.
+    /// Never discard a non-queryable observation without a retrievable receipt.
+    pub fn compact_tool_history(&mut self, messages: &mut [ChatMessage]) {
+        const HIGH_WATER: usize = 256 * 1024;
+        const LOW_WATER: usize = 128 * 1024;
+        const COLD_RESULT: usize = 2048;
+        let mut calls = HashMap::new();
+        let mut count = 0usize;
+        let mut total = 0usize;
+        for message in messages.iter() {
+            for part in message.content.parts() {
+                match part {
+                    ContentPart::ToolCall(call) => {
+                        calls.insert(call.call_id.clone(), call.fn_name.clone());
+                    }
+                    ContentPart::ToolResponse(response) => {
+                        count += 1;
+                        total += response.content.len();
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if total <= HIGH_WATER {
+            return;
+        }
+        let cold_count = count.saturating_sub(4);
+        let mut index = 0usize;
+        for message in messages.iter_mut() {
+            if total <= LOW_WATER {
+                break;
+            }
+            let mut parts = message.content.parts().to_vec();
+            let mut changed = false;
+            for part in &mut parts {
+                let ContentPart::ToolResponse(response) = part else {
+                    continue;
+                };
+                index += 1;
+                if index > cold_count || response.content.len() <= COLD_RESULT {
+                    continue;
+                }
+                let Ok(output) = serde_json::from_str::<Value>(&response.content) else {
+                    continue;
+                };
+                if is_failure(&output)
+                    || output.get("history_compacted") == Some(&Value::Bool(true))
+                {
+                    continue;
+                }
+                let Some(tool) = calls.get(&response.call_id) else {
+                    continue;
+                };
+                let existing = output
+                    .get("ephemeral_evidence")
+                    .filter(|value| !value.is_null());
+                let receipt = match existing {
+                    Some(receipt) => Some(receipt.clone()),
+                    None => self
+                        .evidence_port
+                        .as_ref()
+                        .and_then(|port| {
+                            port.persist(PerceptionEvidenceRequest {
+                                tool_name: tool,
+                                source_call_id: Some(&response.call_id),
+                                output: &output,
+                                failed: false,
+                            })
+                            .ok()
+                        })
+                        .map(|stored| stored.receipt),
+                };
+                if receipt.is_none()
+                    && evidence_class(tool, &output) == EvidenceClass::NonReplayable
+                {
+                    continue;
+                }
+                let mut bounded = fit_bounded_observation(
+                    tool,
+                    &output,
+                    response.content.clone(),
+                    COLD_RESULT,
+                    receipt.as_ref(),
+                );
+                bounded["history_compacted"] = json!(true);
+                bounded["next_decision"] = json!(
+                    "Older observation compacted. Read ephemeral_evidence with its indicated tool for exact historical output; a new query reflects current state. Do not rerun mutations to recover output."
+                );
+                let compact = bounded.to_string();
+                if compact.len() < response.content.len() {
+                    total -= response.content.len() - compact.len();
+                    response.content = compact;
+                    changed = true;
+                }
+            }
+            if changed {
+                message.content = MessageContent::from_parts(parts);
+            }
         }
     }
 
@@ -507,7 +610,7 @@ fn minimal_observation(tool_name: &str, output: &Value, max_chars: usize) -> Val
 
 fn is_failure(output: &Value) -> bool {
     matches!(output.get("ok").and_then(Value::as_bool), Some(false))
-        || output.get("error").is_some()
+        || output.get("error").is_some_and(|error| !error.is_null())
 }
 
 fn failure_signature(tool_name: &str, output: &Value) -> String {
@@ -688,6 +791,128 @@ fn take_last_chars(value: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn history(tool: &str, fail: bool) -> Vec<ChatMessage> {
+        use genai::chat::{ToolCall, ToolResponse};
+        let mut messages = vec![ChatMessage::user("Preserve the existing API")];
+        for i in 0..20 {
+            let call = ToolCall {
+                call_id: format!("call-{i}"),
+                fn_name: tool.into(),
+                fn_arguments: json!({"path":"src/lib.rs", "revision":i}),
+                thought_signatures: None,
+            };
+            messages.push(ChatMessage::assistant(MessageContent::from_parts(vec![
+                ContentPart::ToolCall(call.clone()),
+            ])));
+            messages.push(ChatMessage::from(ToolResponse::from_tool_call(
+                &call,
+                json!({"ok":!fail,"path":"src/lib.rs","content":"x".repeat(20000)}).to_string(),
+            )));
+        }
+        messages
+    }
+
+    #[test]
+    fn cold_history_compacts_without_breaking_pairs_or_recent_results() {
+        let mut messages = history("cognition_store_read", false);
+        let original = messages.clone();
+        let mut governor = ToolPerceptionGovernor::default();
+        governor.compact_tool_history(&mut messages);
+        assert_eq!(messages.len(), original.len());
+        assert_eq!(
+            messages[0].content.first_text(),
+            Some("Preserve the existing API")
+        );
+        for i in 0..20 {
+            assert_eq!(
+                serde_json::to_value(&messages[1 + i * 2]).unwrap(),
+                serde_json::to_value(&original[1 + i * 2]).unwrap()
+            );
+        }
+        for i in 33..41 {
+            assert_eq!(
+                serde_json::to_value(&messages[i]).unwrap(),
+                serde_json::to_value(&original[i]).unwrap()
+            );
+        }
+        let size = |messages: &[ChatMessage]| {
+            messages
+                .iter()
+                .flat_map(|m| m.content.parts())
+                .filter_map(|p| match p {
+                    ContentPart::ToolResponse(r) => Some(r.content.len()),
+                    _ => None,
+                })
+                .sum::<usize>()
+        };
+        assert!(size(&messages) < 128 * 1024);
+        let compacted = serde_json::to_value(&messages).unwrap();
+        governor.compact_tool_history(&mut messages);
+        assert_eq!(serde_json::to_value(&messages).unwrap(), compacted);
+    }
+
+    #[test]
+    fn history_preserves_errors_and_nonreplayable_results_without_storage() {
+        for (tool, fail) in [
+            ("cognition_store_read", true),
+            ("cognition_store_write", false),
+        ] {
+            let mut messages = history(tool, fail);
+            let original = serde_json::to_value(&messages).unwrap();
+            ToolPerceptionGovernor::default().compact_tool_history(&mut messages);
+            assert_eq!(serde_json::to_value(&messages).unwrap(), original);
+        }
+    }
+
+    struct HistoryEvidence {
+        fail: bool,
+        outputs: std::sync::Mutex<Vec<Value>>,
+    }
+    impl PerceptionEvidencePort for HistoryEvidence {
+        fn persist(
+            &self,
+            request: PerceptionEvidenceRequest<'_>,
+        ) -> Result<crate::ports::PersistedPerceptionEvidence, String> {
+            if self.fail {
+                return Err("storage unavailable".into());
+            }
+            self.outputs.lock().unwrap().push(request.output.clone());
+            Ok(crate::ports::PersistedPerceptionEvidence {
+                receipt: json!({"reference":"evidence:exact-output", "tool":"cognition_coder_evidence_read"}),
+                logical_bytes: request.output.to_string().len() as u64,
+                durable_receipt_staged: true,
+                receipt_stage_error: None,
+            })
+        }
+    }
+
+    #[test]
+    fn nonreplayable_history_requires_successful_evidence_storage() {
+        for fail in [true, false] {
+            let port = Arc::new(HistoryEvidence {
+                fail,
+                outputs: Default::default(),
+            });
+            let mut messages = history("cognition_store_write", false);
+            let original = serde_json::to_value(&messages).unwrap();
+            ToolPerceptionGovernor::new(Some(port.clone())).compact_tool_history(&mut messages);
+            let compacted = serde_json::to_value(&messages).unwrap();
+            if fail {
+                assert_eq!(compacted, original);
+            } else {
+                assert_ne!(compacted, original);
+                assert!(compacted.to_string().contains("evidence:exact-output"));
+                assert_eq!(
+                    port.outputs.lock().unwrap()[0]["content"]
+                        .as_str()
+                        .unwrap()
+                        .len(),
+                    20000
+                );
+            }
+        }
+    }
 
     #[test]
     fn small_observation_is_unchanged() {

@@ -814,6 +814,13 @@ pub const FORGE_ITEMS_BY_WORK_ID_CHANGES_CHECKPOINT_POST: Operation = Operation 
     streaming: false,
 };
 
+pub const FORGE_ITEMS_BY_WORK_ID_CHANGES_COMMIT_POST: Operation = Operation {
+    id: "forge.items.by_work_id.changes.commit.post",
+    method: "POST",
+    path: "/v1/forge/items/{work_id}/changes/commit",
+    streaming: false,
+};
+
 pub const FORGE_ITEMS_BY_WORK_ID_CHANGES_CONFLICT_POST: Operation = Operation {
     id: "forge.items.by_work_id.changes.conflict.post",
     method: "POST",
@@ -856,6 +863,13 @@ pub const FORGE_ITEMS_BY_WORK_ID_CHANGES_GET: Operation = Operation {
     streaming: false,
 };
 
+pub const FORGE_ITEMS_BY_WORK_ID_CHANGES_GIT_GET: Operation = Operation {
+    id: "forge.items.by_work_id.changes.git.get",
+    method: "GET",
+    path: "/v1/forge/items/{work_id}/changes/git",
+    streaming: false,
+};
+
 pub const FORGE_ITEMS_BY_WORK_ID_CHANGES_HISTORY_GET: Operation = Operation {
     id: "forge.items.by_work_id.changes.history.get",
     method: "GET",
@@ -867,6 +881,13 @@ pub const FORGE_ITEMS_BY_WORK_ID_CHANGES_PULL_POST: Operation = Operation {
     id: "forge.items.by_work_id.changes.pull.post",
     method: "POST",
     path: "/v1/forge/items/{work_id}/changes/pull",
+    streaming: false,
+};
+
+pub const FORGE_ITEMS_BY_WORK_ID_CHANGES_PULL_REQUEST_POST: Operation = Operation {
+    id: "forge.items.by_work_id.changes.pull_request.post",
+    method: "POST",
+    path: "/v1/forge/items/{work_id}/changes/pull-request",
     streaming: false,
 };
 
@@ -3233,14 +3254,17 @@ pub static ALL: &[Operation] = &[
     FORGE_ITEMS_BY_WORK_ID_ATTEMPTS_POST,
     FORGE_ITEMS_BY_WORK_ID_CHANGES_BLAME_GET,
     FORGE_ITEMS_BY_WORK_ID_CHANGES_CHECKPOINT_POST,
+    FORGE_ITEMS_BY_WORK_ID_CHANGES_COMMIT_POST,
     FORGE_ITEMS_BY_WORK_ID_CHANGES_CONFLICT_POST,
     FORGE_ITEMS_BY_WORK_ID_CHANGES_FETCH_POST,
     FORGE_ITEMS_BY_WORK_ID_CHANGES_FILE_GET,
     FORGE_ITEMS_BY_WORK_ID_CHANGES_FILE_HUNK_POST,
     FORGE_ITEMS_BY_WORK_ID_CHANGES_FILE_POST,
     FORGE_ITEMS_BY_WORK_ID_CHANGES_GET,
+    FORGE_ITEMS_BY_WORK_ID_CHANGES_GIT_GET,
     FORGE_ITEMS_BY_WORK_ID_CHANGES_HISTORY_GET,
     FORGE_ITEMS_BY_WORK_ID_CHANGES_PULL_POST,
+    FORGE_ITEMS_BY_WORK_ID_CHANGES_PULL_REQUEST_POST,
     FORGE_ITEMS_BY_WORK_ID_CHANGES_PUSH_POST,
     FORGE_ITEMS_BY_WORK_ID_CHANGES_SYNC_POST,
     FORGE_ITEMS_BY_WORK_ID_DECISIONS_POST,

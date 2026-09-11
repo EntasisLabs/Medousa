@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { subscribeCodeProjectEvents } from "$lib/code/codeProjectEvents";
   import DiffStack from "$lib/components/diff/DiffStack.svelte";
   import CodeFileIcon from "$lib/components/lme/explorers/CodeFileIcon.svelte";
   import { countDiffStats, type DiffFileSection } from "$lib/diff/diffTypes";
@@ -25,12 +26,30 @@
   let loading = $state(false);
   let fileLoading = $state(false);
   let error = $state<string | null>(null);
+  let snapshotSerial = 0;
+  let diffSerial = 0;
 
   const selectedPath = $derived(mobileCodeWorkspaceState.presentation?.changesPath ?? null);
 
   $effect(() => {
-    void workId;
+    const id = workId.trim();
+    if (!id) return;
+    snapshot = null;
+    fileDiff = null;
+    fileLoading = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => void refresh(), 220);
+    };
+    const unsubscribe = subscribeCodeProjectEvents(id, { onEvent: schedule, onResync: schedule });
     void refresh();
+    return () => {
+      unsubscribe();
+      if (timer) clearTimeout(timer);
+      snapshotSerial += 1;
+      diffSerial += 1;
+    };
   });
 
   $effect(() => {
@@ -43,29 +62,39 @@
   });
 
   async function refresh() {
+    const serial = ++snapshotSerial;
+    const id = workId;
     loading = true;
     error = null;
     try {
-      snapshot = await getForgeChanges(workId);
+      const next = await getForgeChanges(id);
+      if (serial !== snapshotSerial || workId !== id) return;
+      snapshot = next;
     } catch (err) {
+      if (serial !== snapshotSerial || workId !== id) return;
       snapshot = null;
       error = humanizeForgeMessage(err instanceof Error ? err.message : String(err));
     } finally {
-      loading = false;
+      if (serial === snapshotSerial) loading = false;
     }
   }
 
   async function openDiff(path: string) {
+    const serial = ++diffSerial;
+    const id = workId;
     haptic("light");
     mobileCodeWorkspaceState.setChangesPath(path);
     fileLoading = true;
     try {
-      fileDiff = await getChangesFile(workId, path);
+      const next = await getChangesFile(id, path);
+      if (serial !== diffSerial || workId !== id || selectedPath !== path) return;
+      fileDiff = next;
     } catch (err) {
+      if (serial !== diffSerial || workId !== id) return;
       fileDiff = null;
       error = humanizeForgeMessage(err instanceof Error ? err.message : String(err));
     } finally {
-      fileLoading = false;
+      if (serial === diffSerial) fileLoading = false;
     }
   }
 

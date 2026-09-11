@@ -5,6 +5,8 @@ use medousa_engine::TurnScratchpad;
 use serde_json::Value;
 use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 
+pub const ROUND_CONTEXT_PREFIX: &str = "[MEDOUSA_ROUND_CONTEXT]";
+
 pub const SCRATCH_PREFIX: &str = "[MEDOUSA_SCRATCH]";
 
 /// Record one Stasis invocation batch into the portable scratch DTO.
@@ -33,9 +35,16 @@ pub struct ToolLaneState {
     pub messages: Vec<ChatMessage>,
 }
 
-/// Optional mode-owned context refresh compiled after a completed tool batch.
+/// Optional mode-owned context: durable events after tool batches, or a
+/// replaceable pointer refreshed immediately before each inference.
 pub trait ToolRoundContextProvider: Send + Sync {
     fn context_for_next_round(&self) -> stasis::prelude::Result<Option<String>>;
+
+    /// Replace a volatile tail pointer instead of retaining refresh history.
+    /// Defaults to append for providers whose messages carry durable events.
+    fn replaces_previous_context(&self) -> bool {
+        false
+    }
 }
 
 /// Fixed principal-visible prefix plus the growing tool/control lane.
@@ -75,6 +84,25 @@ impl HostTurnContext {
         messages.extend(self.user_lane_prefix.clone());
         messages.extend(self.tool_lane.messages.clone());
         messages
+    }
+}
+
+/// Keep replaceable context at the tail, leaving receipts and the fixed prefix intact.
+/// The marker lives in the transcript so replacement also works after checkpoint restore.
+pub fn push_round_context(messages: &mut Vec<ChatMessage>, context: String, replace: bool) {
+    if replace {
+        messages.retain(|message| {
+            message.role != genai::chat::ChatRole::System
+                || message
+                    .content
+                    .first_text()
+                    .is_none_or(|text| !text.starts_with(ROUND_CONTEXT_PREFIX))
+        });
+        messages.push(ChatMessage::system(format!(
+            "{ROUND_CONTEXT_PREFIX}\n{context}"
+        )));
+    } else {
+        messages.push(ChatMessage::system(context));
     }
 }
 
@@ -301,6 +329,64 @@ mod tests {
         assert_eq!(context.build_model_messages(Some("sys")).len(), 4);
         assert_eq!(context.user_lane_prefix.len(), 2);
         assert_eq!(context.tool_lane.messages.len(), 1);
+    }
+
+    #[test]
+    fn replaceable_pointer_stays_at_tail_across_rounds_and_restore() {
+        use genai::chat::{ContentPart, MessageContent, ToolCall, ToolResponse};
+        let mut context = HostTurnContext::new(Vec::new(), "Current goal".into());
+        let user_marker = ChatMessage::user(format!("{ROUND_CONTEXT_PREFIX} user quotation"));
+        context.tool_lane.messages.push(user_marker);
+        let mut receipts = Vec::new();
+        for revision in 1..=20 {
+            let call = ToolCall {
+                call_id: format!("call-{revision}"),
+                fn_name: "read".into(),
+                fn_arguments: json!({}),
+                thought_signatures: None,
+            };
+            let pair = vec![
+                ChatMessage::assistant(MessageContent::from_parts(vec![ContentPart::ToolCall(
+                    call.clone(),
+                )])),
+                ChatMessage::from(ToolResponse::from_tool_call(&call, "ok")),
+            ];
+            receipts.extend(pair.clone());
+            context.tool_lane.messages.extend(pair);
+            push_round_context(
+                &mut context.tool_lane.messages,
+                format!("latest={revision}"),
+                true,
+            );
+            let model = context.build_model_messages(Some("fixed snapshot"));
+            assert_eq!(model[0].content.first_text(), Some("fixed snapshot"));
+            assert_eq!(model[1].content.first_text(), Some("Current goal"));
+            assert_eq!(context.tool_lane.messages.len(), receipts.len() + 2);
+        }
+        // Checkpoint restoration needs only the existing transcript, no cursor sidecar.
+        let mut restored = context.tool_lane.messages.clone();
+        push_round_context(&mut restored, "latest=21".into(), true);
+        assert_eq!(
+            serde_json::to_value(&restored[1..restored.len() - 1]).unwrap(),
+            serde_json::to_value(&receipts).unwrap()
+        );
+        assert!(
+            restored
+                .last()
+                .unwrap()
+                .content
+                .first_text()
+                .unwrap()
+                .ends_with("latest=21")
+        );
+        push_round_context(&mut restored, "durable notice".into(), false);
+        push_round_context(&mut restored, "latest=22".into(), true);
+        assert!(
+            restored
+                .iter()
+                .any(|message| message.content.first_text() == Some("durable notice"))
+        );
+        assert_eq!(restored.len(), receipts.len() + 3);
     }
 
     #[test]

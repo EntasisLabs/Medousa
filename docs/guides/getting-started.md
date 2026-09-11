@@ -74,8 +74,19 @@ Connection**.
 Send a normal message. Medousa keeps work durable on the engine — closing the
 window does not throw away an accepted job.
 
+To include an image, copy it and paste into the message field (**⌘V** on Mac,
+**Ctrl+V** on Windows/Linux, or touch and hold → **Paste** on your phone).
+You can also choose **+ → Paste image** when clipboard access is available;
+accept the system Paste prompt if it appears. The image uploads and appears as
+an attachment preview before you send. Remove it with **×** to leave it out.
+If the clipboard has only a link, it pastes as text; use **+ → Add attachment**
+or the photo/file picker to attach the actual image instead.
+
 The mode control beside the composer shows how Medousa will approach this
-conversation. **General** is the everyday life, planning, and research mode.
+conversation. On your phone, tap the compact context row above the message field
+(for example, **Coder · hashmap**) to change Mode, Project, or Workers. These
+controls open in a sheet with Back and Close controls; the conversation stays
+in place. The **+** menu and profile/agent choices also use sheets on mobile. **General** is the everyday life, planning, and research mode.
 **Coder** can be selected before a project is bound. Chat then offers ready
 projects, blank project creation, or a least-authority setup turn where Medousa
 can choose or create the project from an explicit request. Once bound, Coder

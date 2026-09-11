@@ -74,8 +74,8 @@ export function setActiveCodeInsights(workId: string, insights: ActiveCodeInsigh
 }
 
 export function activeCodeContext(sessionId: string): CodeIntentContext | null {
-  const active = undertakings.active;
-  if (!active || !active.boundChatSessionIds.includes(sessionId)) return null;
+  const active = undertakings.forChat(sessionId);
+  if (!active) return null;
   const detail = undertakings.detail?.id === active.workId ? undertakings.detail : null;
   const openFiles = codeWorkspace.tabsFor(active.workId).map((tab) => tab.path).slice(0, 12);
   const insights = codeInsightsByWorkId.get(active.workId);

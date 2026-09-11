@@ -1,17 +1,14 @@
 <script lang="ts">
+  import MobileChatContext from "./MobileChatContext.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
   import ModeProposalBar from "$lib/components/chat/ModeProposalBar.svelte";
   import AgentPermissionBar from "$lib/components/chat/AgentPermissionBar.svelte";
   import AgentSecretBar from "$lib/components/chat/AgentSecretBar.svelte";
   import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
-  import ChatAgentModePicker from "$lib/components/chat/ChatAgentModePicker.svelte";
-  import ChatExecutionTargetPicker from "$lib/components/chat/ChatExecutionTargetPicker.svelte";
-  import ChatNarrationToggle from "$lib/components/chat/ChatNarrationToggle.svelte";
-  import UndertakingContextChip from "$lib/components/work/UndertakingContextChip.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
   import { applyActiveAgentPrompt } from "$lib/utils/activeAgentPrompt";
-  import { buildInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
+  import { prepareInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
   import { haptic } from "$lib/haptics";
   import { chat } from "$lib/stores/chat.svelte";
   import { bots } from "$lib/stores/bots.svelte";
@@ -58,7 +55,7 @@
     mode: "interactive" | "background",
     codeProjectSetupAuthorized = false,
   ) {
-    const opts = buildInteractiveTurnOptions();
+    const opts = await prepareInteractiveTurnOptions(chat);
     const mediaRefs = [...chat.pendingMediaRefs];
     const voice = voicePresets.turnVoiceFields();
     const codeContext = activeCodeContext(chat.sessionId);
@@ -101,7 +98,7 @@
 
   async function submit(event: Event) {
     event.preventDefault();
-    if (connection.offline || runtime.savingControls) return;
+    if (connection.offline || runtime.savingControls || chat.pendingMediaUploading) return;
     const basePrompt = ensureVaultSelectionInPrompt(
       chat.draft.trim(),
       chat.vaultNoteContext,
@@ -219,22 +216,7 @@
   <AgentPermissionBar mobile />
   <AgentSecretBar mobile />
   <AgentBrowserPanel mobile />
-  <div class="mb-1 flex items-center px-1">
-    <ChatAgentModePicker
-      sessionId={chat.focusedSessionId}
-      disabled={connection.offline || chat.composerBlocked || runtime.savingControls}
-    />
-    <div class="ml-1 min-w-0">
-      <ChatExecutionTargetPicker
-        sessionId={chat.focusedSessionId}
-        disabled={connection.offline || chat.composerBlocked || runtime.savingControls}
-      />
-    </div>
-    <div class="ml-1 shrink-0">
-      <ChatNarrationToggle />
-    </div>
-    <div class="ml-1 min-w-0"><UndertakingContextChip chatOnly /></div>
-  </div>
+  <MobileChatContext disabled={connection.offline || chat.composerBlocked || runtime.savingControls}/>
   <ChatComposerBar
     mobile
     disabled={connection.offline}

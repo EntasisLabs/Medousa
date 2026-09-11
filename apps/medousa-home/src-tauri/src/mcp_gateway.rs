@@ -568,37 +568,14 @@ async fn reload_embedded_mcp(
         .map_err(|error| format!("reindex embedded MCP capabilities: {error:#}"))
 }
 
-fn bind_port(bind: &str) -> Option<u16> {
-    bind.rsplit(':').next()?.parse().ok()
+async fn is_bind_reachable(bind: &str) -> bool {
+    tokio::time::timeout(
+        Duration::from_millis(250),
+        tokio::net::TcpStream::connect(bind),
+    )
+    .await
+    .is_ok_and(|result| result.is_ok())
 }
-
-fn is_bind_reachable(bind: &str) -> bool {
-    use std::net::{TcpStream, ToSocketAddrs};
-    if let Ok(mut addrs) = bind.to_socket_addrs() {
-        if let Some(addr) = addrs.next() {
-            return TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok();
-        }
-    }
-    false
-}
-
-#[cfg(unix)]
-fn kill_process_on_port(port: u16) {
-    let output = Command::new("lsof")
-        .args(["-ti", &format!(":{port}")])
-        .output();
-    if let Ok(output) = output {
-        if output.status.success() {
-            let pids = String::from_utf8_lossy(&output.stdout);
-            for pid in pids.lines().map(str::trim).filter(|line| !line.is_empty()) {
-                let _ = Command::new("kill").arg(pid).status();
-            }
-        }
-    }
-}
-
-#[cfg(not(unix))]
-fn kill_process_on_port(_port: u16) {}
 
 fn resolve_gateway_binary() -> Result<crate::workshop_runtime::ComponentCommand, String> {
     if let Ok(explicit) = std::env::var("MEDOUSA_MCP_GATEWAY_BIN") {
@@ -693,7 +670,7 @@ async fn wait_for_gateway(bind: &str, timeout_seconds: u64) -> bool {
     let base_url = resolve_gateway_url();
     let deadline = Instant::now() + Duration::from_secs(timeout_seconds.max(1));
     while Instant::now() < deadline {
-        if is_bind_reachable(bind) && gateway_http_healthy(&base_url).await {
+        if is_bind_reachable(bind).await && gateway_http_healthy(&base_url).await {
             return true;
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -1109,38 +1086,48 @@ fn servers_from_local_config(
 }
 
 async fn perform_mcp_gateway_restart() -> Result<(McpGatewayRestartResult, bool), String> {
+    // Every caller (server edits, tool edits, and explicit restart) shares this
+    // exclusion so two requests cannot stop each other's newly started gateway.
+    static RESTART_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _restart = RESTART_LOCK.lock().await;
     let (config, _, _) = load_file_config()?;
     let bind = config.gateway.bind.trim();
     let log_path = gateway_log_path();
     let base_url = resolve_gateway_url();
-
-    if gateway_http_healthy(&base_url).await {
-        if let Some(port) = bind_port(bind) {
-            kill_process_on_port(port);
-            tokio::time::sleep(Duration::from_millis(750)).await;
-        }
+    let address: std::net::SocketAddr = bind
+        .parse()
+        .map_err(|_| "Invalid MCP gateway bind address")?;
+    let url = reqwest::Url::parse(&base_url).map_err(|error| error.to_string())?;
+    let url_ip = url.host_str().and_then(|host| {
+        host.trim_matches(['[', ']'])
+            .parse::<std::net::IpAddr>()
+            .ok()
+    });
+    if !address.ip().is_loopback()
+        || url_ip != Some(address.ip())
+        || url.port_or_known_default() != Some(address.port())
+    {
+        return Err("MCP restart requires the gateway URL and local bind address to match".into());
     }
 
     if gateway_http_healthy(&base_url).await {
-        return Ok((
-            McpGatewayRestartResult {
-                started: false,
-                already_running: true,
-                log_path: log_path.display().to_string(),
-                message: format!("MCP gateway already running at {base_url}"),
-            },
-            true,
-        ));
+        medousa_mcp_gateway::mcp_gateway::local_process::stop_local_gateway(bind)
+            .await
+            .map_err(|error| error.to_string())?;
     }
 
-    if is_bind_reachable(bind) {
+    if is_bind_reachable(bind).await {
         return Err(format!(
             "Port {bind} is open but the MCP gateway is not responding — check {}",
             log_path.display()
         ));
     }
 
-    let (pid, log_path) = spawn_gateway_background(bind)?;
+    let owned_bind = bind.to_string();
+    let (pid, log_path) =
+        tokio::task::spawn_blocking(move || spawn_gateway_background(&owned_bind))
+            .await
+            .map_err(|error| error.to_string())??;
     let ready = wait_for_gateway(bind, 15).await;
     Ok((
         McpGatewayRestartResult {

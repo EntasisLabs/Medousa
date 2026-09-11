@@ -458,9 +458,9 @@ pub struct WorkshopSpawn {
     /// Worker profile: memory.avec_calibrate | memory.context | research | general
     #[serde(default)]
     pub(crate) intent: Option<String>,
-    /// Focused task for the worker
+    /// Bounded assignment owned by a separate concurrent peer, including the expected result
     pub(crate) task: String,
-    /// Short message for the user while the worker runs
+    /// Tell the user which task a separate peer is taking on
     pub(crate) user_ack: String,
     /// Optional YAML specialty
     #[serde(default)]
@@ -484,7 +484,7 @@ pub fn workshop_spawn_type_schema() -> TypedActionSchema {
     typed_action_schema::<WorkshopSpawn>(
         WORKSHOP_MUTATE_ID,
         "workshop.spawn",
-        "Delegate heavy work to a background turn worker",
+        "Spawn a separate concurrent peer with a bounded assignment and expected result",
     )
 }
 
@@ -612,8 +612,16 @@ mod tests {
                 ..ExecutionTargetRequirements::default()
             },
         };
-        let forward = vec![candidate("runtime-c"), candidate("runtime-a"), candidate("runtime-b")];
-        let reverse = vec![candidate("runtime-b"), candidate("runtime-c"), candidate("runtime-a")];
+        let forward = vec![
+            candidate("runtime-c"),
+            candidate("runtime-a"),
+            candidate("runtime-b"),
+        ];
+        let reverse = vec![
+            candidate("runtime-b"),
+            candidate("runtime-c"),
+            candidate("runtime-a"),
+        ];
         let first = resolve_execution_target(requested.clone(), "runtime-parent", &forward)
             .expect("forward auto");
         let second = resolve_execution_target(requested, "runtime-parent", &reverse)
