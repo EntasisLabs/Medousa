@@ -119,3 +119,4 @@ proven.
 - Neovim native surface: [`integrations/neovim/`](../../../integrations/neovim/)
 - Obsidian native surface: [`integrations/obsidian/`](../../../integrations/obsidian/)
 - Daemon HTTP contract: [`docs/engine/http-api.md`](../../engine/http-api.md)
+- Ambient sensor surfaces (watch / glasses): [`adr-021-ambient-sensor-surfaces.md`](adr-021-ambient-sensor-surfaces.md)
