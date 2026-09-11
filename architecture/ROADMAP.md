@@ -19,6 +19,7 @@ residual polish, and [Medousa Anywhere](medousa-anywhere-plan.md), but must not
 weaken or bypass hardening release gates.
 
 Full active plans: **[hardening/README.md](hardening/README.md)** ·
+**[expressive-chat-media-ink-liquid-epic.md](expressive-chat-media-ink-liquid-epic.md)** ·
 **[human-code-workbench-plan.md](human-code-workbench-plan.md)** ·
 **[home-code-vscode-parity-plan.md](home-code-vscode-parity-plan.md)** ·
 **[mobile-code-workspace-plan.md](mobile-code-workspace-plan.md)** ·
@@ -194,6 +195,23 @@ Full plan: [workshop-and-automations-plan.md](workshop-and-automations-plan.md) 
 | P5a text extract (PDF/xlsx/csv) | ✅ |
 | P5b vision (uses **vision** profile + registry) | ✅ |
 | Epic polish — catalog badges + TUI profiles | ✅ |
+
+### Expressive Chat — active
+
+**Goal:** Pressure-first drawing on pen/touch devices, editable drawings in chat,
+first-class generated images, and durable interactive Liquid experiences.
+
+Living epic: [expressive-chat-media-ink-liquid-epic.md](expressive-chat-media-ink-liquid-epic.md)
+
+| Slice | Status |
+|-------|--------|
+| S0 — plan and contract lock | ✅ |
+| S1 — ink document and input foundation | ⬜ |
+| S2 — ink engine v2 experience + physical-device checkpoint A | ⬜ |
+| S3 — drawing in chat and rich-media contracts | ⬜ |
+| S4 — generated images + physical-device checkpoint B | ⬜ |
+| S5 — Liquid activation and durable interaction loop | ⬜ |
+| S6 — recipe/procedure and durable timers + physical-device checkpoint C | ⬜ |
 
 ---
 
