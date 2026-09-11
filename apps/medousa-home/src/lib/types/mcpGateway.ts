@@ -47,6 +47,7 @@ export interface McpServerRuntime {
   connected: boolean;
   toolCount: number;
   allowedLanes: string[];
+  lastError?: string | null;
 }
 
 export interface McpGatewayStatusResult {

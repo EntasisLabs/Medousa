@@ -37,6 +37,7 @@ pub struct McpServerRuntimeDto {
     pub connected: bool,
     pub tool_count: u32,
     pub allowed_lanes: Vec<String>,
+    pub last_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -532,6 +533,8 @@ async fn fetch_runtime_servers(base_url: &str) -> Result<Vec<McpServerRuntimeDto
         connected: bool,
         tool_count: u32,
         allowed_lanes: Vec<String>,
+        #[serde(default)]
+        last_error: Option<String>,
     }
     let payload = response
         .json::<ServersPayload>()
@@ -547,6 +550,7 @@ async fn fetch_runtime_servers(base_url: &str) -> Result<Vec<McpServerRuntimeDto
             connected: server.connected,
             tool_count: server.tool_count,
             allowed_lanes: server.allowed_lanes,
+            last_error: server.last_error,
         })
         .collect())
 }
@@ -766,6 +770,7 @@ pub async fn mcp_gateway_status(
                     connected: server.connected,
                     tool_count: count_u32(server.tool_count),
                     allowed_lanes: server.allowed_lanes,
+                    last_error: server.last_error,
                 })
                 .collect(),
             config_path: path.display().to_string(),
@@ -1083,6 +1088,7 @@ fn merge_daemon_gateway_status(
                 connected: server.connected,
                 tool_count: server.tool_count,
                 allowed_lanes: server.allowed_lanes,
+                last_error: None,
             })
             .collect()
     };
@@ -1125,6 +1131,7 @@ fn servers_from_local_config(
             connected,
             tool_count: 0,
             allowed_lanes: server.allowed_lanes.clone(),
+            last_error: None,
         })
         .collect()
 }
@@ -1482,7 +1489,10 @@ pub async fn mcp_gateway_apply_server(
                         runtime.title, runtime.tool_count
                     )
                 } else {
-                    format!("{} saved but did not connect", runtime.title)
+                    runtime
+                        .last_error
+                        .clone()
+                        .unwrap_or_else(|| format!("{} saved but did not connect", runtime.title))
                 },
             },
             None => McpGatewayTestResult {
@@ -1533,6 +1543,8 @@ pub async fn mcp_gateway_apply_server(
                 )
             } else if request.use_mock {
                 "Mock server registered — tools appear after catalog refresh".to_string()
+            } else if let Some(error) = runtime.last_error.as_deref() {
+                error.to_string()
             } else {
                 format!(
                     "{} saved but not connected — check URL, auth token, transport, and {}",

@@ -1,6 +1,6 @@
 # Web MCP and MCP Apps epic
 
-Status: active  
+Status: active — Slices 0–4 implemented; checkpoint 2 awaiting device validation
 Branch: `codex/web-mcp`  
 Owner: Medousa MCP gateway + chat surfaces
 

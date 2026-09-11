@@ -161,6 +161,18 @@ allowed_lanes = ["interactive"]
 allowed_effect_classes = ["external_read"]
 ```
 
+Medousa keeps one live connection per enabled server and shares it between tool
+discovery and invocation. This preserves server-side session state and avoids a
+new handshake for every tool call. Connections are discarded when credentials
+change and reconnect with bounded backoff after transport failures. Catalog
+refresh still runs periodically, and servers that advertise
+`notifications/tools/list_changed` can request an earlier refresh.
+
+Tool-call failures are not automatically replayed because a write may have
+reached the server before the connection failed. Discovery results include the
+server's idempotence and open-world annotations as explicitly untrusted planning
+guidance, along with Medousa's conservative effect classification.
+
 After editing config, restart the gateway:
 
 ```bash
@@ -222,6 +234,10 @@ Processes detach into a new session (no `nohup` required) and append logs under 
 | Wizard says started but not reachable | `tail -f ~/.local/share/medousa/logs/mcp-gateway.log` |
 | Spawn uses `cargo run` and dies | Install release binaries next to `medousa`, or set `MEDOUSA_MCP_GATEWAY_BIN` |
 | No servers in catalog | `enabled = true` in TOML; mock servers need `use_mock = true` |
+| `mcp_authentication_required` | Sign in again or replace the saved bearer token in **Settings → MCP servers**. |
+| `mcp_scope_denied` | Reconnect and grant the scopes required by the selected tool. |
+| `mcp_protocol_incompatible` | Verify the endpoint is an MCP endpoint and that its selected transport matches. |
+| `mcp_timeout` / `mcp_transport_unavailable` | Check server/network availability; Medousa reconnects with bounded backoff. |
 | Discovery works, invocation returns policy 401 | Upgrade and restart the daemon and gateway together; verify they use the same data directory. Check explicit policy-token overrides if configured. |
 | Editing MCP tools or servers exits Medousa | Upgrade Medousa. Gateway restart now targets only the verified listener, excluding connected client processes. |
 

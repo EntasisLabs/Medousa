@@ -4,11 +4,13 @@ use std::collections::BTreeMap;
 use std::process::Stdio;
 
 use anyhow::{Context, Result, bail};
+use rmcp::handler::client::ClientHandler;
 use rmcp::model::{CallToolRequestParams, ClientInfo, Implementation, Tool};
-use rmcp::service::RunningService;
+use rmcp::service::{NotificationContext, RunningService};
 use rmcp::transport::{ConfigureCommandExt, TokioChildProcess};
 use rmcp::{RoleClient, ServiceExt};
 use serde_json::{Map, Value};
+use tokio::sync::mpsc;
 use tokio::time::{Duration, timeout};
 
 #[derive(Debug, Clone, Default)]
@@ -32,22 +34,30 @@ pub struct McpToolDefinition {
 }
 
 pub struct StdioMcpSession {
-    client: RunningService<RoleClient, ClientInfo>,
+    client: RunningService<RoleClient, MedousaClientHandler>,
     request_timeout: Duration,
 }
 
 impl StdioMcpSession {
-    pub async fn spawn(command: &str, args: &[String], request_timeout: Duration) -> Result<Self> {
+    pub async fn spawn_with_events(
+        command: &str,
+        args: &[String],
+        request_timeout: Duration,
+        tool_list_changed: Option<mpsc::UnboundedSender<()>>,
+    ) -> Result<Self> {
         let transport =
             TokioChildProcess::new(tokio::process::Command::new(command).configure(|child| {
                 child.args(args).stderr(Stdio::null()).kill_on_drop(true);
             }))
             .with_context(|| format!("failed to spawn MCP server command '{command}'"))?;
 
-        let client = timeout(request_timeout, medousa_client_info().serve(transport))
-            .await
-            .context("MCP initialize timed out")?
-            .context("MCP initialize failed")?;
+        let client = timeout(
+            request_timeout,
+            MedousaClientHandler::new(tool_list_changed).serve(transport),
+        )
+        .await
+        .context("MCP initialize timed out")?
+        .context("MCP initialize failed")?;
         Ok(Self {
             client,
             request_timeout,
@@ -77,6 +87,43 @@ impl StdioMcpSession {
         .context("MCP tools/call timed out")?
         .context("MCP tools/call failed")?;
         serde_json::to_value(result).context("failed to encode MCP tool result")
+    }
+
+    pub async fn close(&mut self) {
+        let _ = self.client.close_with_timeout(Duration::from_secs(1)).await;
+    }
+}
+
+#[derive(Clone)]
+pub(super) struct MedousaClientHandler {
+    tool_list_changed: Option<mpsc::UnboundedSender<()>>,
+}
+
+impl MedousaClientHandler {
+    pub(super) fn new(tool_list_changed: Option<mpsc::UnboundedSender<()>>) -> Self {
+        Self { tool_list_changed }
+    }
+
+    fn signal_tool_list_changed(&self) {
+        if let Some(sender) = &self.tool_list_changed {
+            let _ = sender.send(());
+        }
+    }
+}
+
+impl ClientHandler for MedousaClientHandler {
+    fn get_info(&self) -> ClientInfo {
+        medousa_client_info()
+    }
+
+    fn on_tool_list_changed(
+        &self,
+        _context: NotificationContext<RoleClient>,
+    ) -> impl Future<Output = ()> + Send + '_ {
+        let handler = self.clone();
+        async move {
+            handler.signal_tool_list_changed();
+        }
     }
 }
 
@@ -175,7 +222,14 @@ mod tests {
     use rmcp::model::{MetaObject, Tool, ToolAnnotations};
     use serde_json::{Map, Value, json};
 
-    use super::tool_definition_from_sdk;
+    use super::{MedousaClientHandler, tool_definition_from_sdk};
+
+    #[tokio::test]
+    async fn client_handler_forwards_tool_list_changes() {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        MedousaClientHandler::new(Some(sender)).signal_tool_list_changed();
+        receiver.recv().await.expect("tool-list change event");
+    }
 
     #[test]
     fn sdk_tool_conversion_preserves_annotations_schemas_and_app_metadata() {

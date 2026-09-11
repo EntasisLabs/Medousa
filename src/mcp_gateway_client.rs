@@ -49,6 +49,7 @@ impl InProcessMcpGateway {
         self.initialized
             .get_or_init(|| async {
                 self.registry.bootstrap().await;
+                self.registry.clone().spawn_refresh_loop();
             })
             .await;
     }

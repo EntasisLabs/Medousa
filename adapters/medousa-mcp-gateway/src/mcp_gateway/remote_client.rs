@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 use futures_util::StreamExt;
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use reqwest::{Client, Response, Url};
-use rmcp::model::{CallToolRequestParams, ClientInfo};
+use rmcp::model::CallToolRequestParams;
 use rmcp::service::RunningService;
 use rmcp::transport::{
     StreamableHttpClientTransport, streamable_http_client::StreamableHttpClientTransportConfig,
@@ -16,7 +16,7 @@ use tokio::time::{Duration, timeout};
 
 use super::server_config::validate_remote_server_url;
 use super::stdio_client::{
-    McpToolDefinition, medousa_client_info, parse_tool_list, tool_definition_from_sdk,
+    McpToolDefinition, MedousaClientHandler, parse_tool_list, tool_definition_from_sdk,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,18 +43,19 @@ pub struct RemoteMcpSession {
 
 enum RemoteMcpSessionInner {
     StreamableHttp {
-        client: RunningService<RoleClient, ClientInfo>,
+        client: RunningService<RoleClient, MedousaClientHandler>,
         request_timeout: Duration,
     },
     LegacySse(LegacySseMcpSession),
 }
 
 impl RemoteMcpSession {
-    pub async fn connect(
+    pub async fn connect_with_events(
         url: &str,
         transport: RemoteTransport,
         bearer_token: Option<String>,
         request_timeout: Duration,
+        tool_list_changed: Option<mpsc::UnboundedSender<()>>,
     ) -> Result<Self> {
         let _ =
             validate_remote_server_url(url, bearer_token.is_some()).map_err(anyhow::Error::msg)?;
@@ -67,17 +68,21 @@ impl RemoteMcpSession {
                     config = config.auth_header(token);
                 }
                 let transport = StreamableHttpClientTransport::from_config(config);
-                let client = timeout(request_timeout, medousa_client_info().serve(transport))
-                    .await
-                    .context("MCP initialize timed out")?
-                    .context("MCP initialize failed")?;
+                let client = timeout(
+                    request_timeout,
+                    MedousaClientHandler::new(tool_list_changed.clone()).serve(transport),
+                )
+                .await
+                .context("MCP initialize timed out")?
+                .context("MCP initialize failed")?;
                 RemoteMcpSessionInner::StreamableHttp {
                     client,
                     request_timeout,
                 }
             }
             RemoteTransport::Sse => RemoteMcpSessionInner::LegacySse(
-                LegacySseMcpSession::connect(url, bearer_token, request_timeout).await?,
+                LegacySseMcpSession::connect(url, bearer_token, request_timeout, tool_list_changed)
+                    .await?,
             ),
         };
         Ok(Self { inner })
@@ -124,6 +129,15 @@ impl RemoteMcpSession {
             RemoteMcpSessionInner::LegacySse(session) => session.call_tool(name, arguments).await,
         }
     }
+
+    pub async fn close(&mut self) {
+        match &mut self.inner {
+            RemoteMcpSessionInner::StreamableHttp { client, .. } => {
+                let _ = client.close_with_timeout(Duration::from_secs(1)).await;
+            }
+            RemoteMcpSessionInner::LegacySse(session) => session.close(),
+        }
+    }
 }
 
 struct LegacySseMcpSession {
@@ -134,6 +148,7 @@ struct LegacySseMcpSession {
     next_id: u64,
     request_timeout: Duration,
     inbound: mpsc::UnboundedReceiver<Value>,
+    tool_list_changed: Option<mpsc::UnboundedSender<()>>,
     _sse_task: tokio::task::JoinHandle<()>,
 }
 
@@ -142,6 +157,7 @@ impl LegacySseMcpSession {
         url: &str,
         bearer_token: Option<String>,
         request_timeout: Duration,
+        tool_list_changed: Option<mpsc::UnboundedSender<()>>,
     ) -> Result<Self> {
         let base_url = Url::parse(url.trim()).context("invalid MCP server URL")?;
         let client = Client::builder()
@@ -181,6 +197,7 @@ impl LegacySseMcpSession {
             next_id: 1,
             request_timeout,
             inbound: inbound_rx,
+            tool_list_changed,
             _sse_task: sse_task,
         };
         session.initialize().await?;
@@ -300,6 +317,14 @@ impl LegacySseMcpSession {
                 .recv()
                 .await
                 .context("MCP response channel closed before reply")?;
+            if message.get("method").and_then(Value::as_str)
+                == Some("notifications/tools/list_changed")
+            {
+                if let Some(sender) = &self.tool_list_changed {
+                    let _ = sender.send(());
+                }
+                continue;
+            }
             if message.get("method").is_some() {
                 continue;
             }
@@ -332,6 +357,16 @@ impl LegacySseMcpSession {
             headers.insert("mcp-session-id", value);
         }
         headers
+    }
+
+    fn close(&mut self) {
+        self._sse_task.abort();
+    }
+}
+
+impl Drop for LegacySseMcpSession {
+    fn drop(&mut self) {
+        self.close();
     }
 }
 
@@ -599,11 +634,12 @@ mod tests {
             .await
         });
 
-        let mut session = RemoteMcpSession::connect(
+        let mut session = RemoteMcpSession::connect_with_events(
             &format!("http://{address}/mcp"),
             RemoteTransport::Http,
             None,
             Duration::from_secs(5),
+            None,
         )
         .await
         .expect("connect fixture");

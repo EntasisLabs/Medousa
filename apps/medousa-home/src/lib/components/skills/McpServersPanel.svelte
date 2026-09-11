@@ -656,6 +656,9 @@
                       {server.toolCount} tool{server.toolCount === 1 ? "" : "s"}
                     </span>
                   </span>
+                  {#if server.lastError}
+                    <span class="mt-1 block text-xs text-content-warning">{server.lastError}</span>
+                  {/if}
                 </span>
                 <label class="mcp-server-switch" title={server.enabled ? "Disable server" : "Enable server"}>
                   <span class="sr-only">{server.enabled ? "Disable" : "Enable"} {server.title}</span>
