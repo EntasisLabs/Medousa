@@ -57,6 +57,7 @@ interface McpGatewayConfigWire {
       args?: string[];
       url?: string | null;
       bearer_token?: string | null;
+      bearer_token_configured?: boolean;
       allowed_lanes?: string[];
       allowed_effect_classes?: string[];
       tool_tags?: Record<string, string[]>;
@@ -95,6 +96,7 @@ export async function loadMcpGatewayConfig(): Promise<McpGatewayConfigLoadResult
         args: server.args ?? [],
         url: server.url,
         bearerToken: server.bearer_token,
+        bearerTokenConfigured: server.bearer_token_configured ?? false,
         allowedLanes: server.allowed_lanes ?? [],
         allowedEffectClasses: server.allowed_effect_classes ?? [],
         toolTags: server.tool_tags ?? {},

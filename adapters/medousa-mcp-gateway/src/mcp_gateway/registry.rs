@@ -23,7 +23,7 @@ use medousa_types::mcp_gateway_api::{
     BeginMcpOAuthRequest, BeginMcpOAuthResponse, CompleteMcpOAuthResponse,
     DisconnectMcpOAuthResponse, McpEffectClass, McpInvokeError, McpInvokeRequest,
     McpInvokeResponse, McpOAuthStatusResponse, McpPolicyEvaluateRequest, McpServerSummary,
-    McpServersResponse, McpToolCatalogEntry, McpTurnLane,
+    McpServersResponse, McpToolAnnotations, McpToolCatalogEntry, McpTurnLane,
 };
 use medousa_types::mcp_gateway_api::{McpCatalogSyncEntry, McpCatalogSyncResponse};
 use medousa_types::mcp_turn_token::verify_mcp_turn_token;
@@ -272,6 +272,9 @@ impl ServerRegistry {
         request: BeginMcpOAuthRequest,
     ) -> Result<BeginMcpOAuthResponse, McpOAuthError> {
         let server_url = self.server_url(&request.server_id)?.to_string();
+        crate::mcp_gateway::server_config::validate_remote_server_url(&server_url, true).map_err(
+            |error| McpOAuthError::OAuth(rmcp::transport::AuthError::AuthorizationFailed(error)),
+        )?;
         self.oauth_broker()?
             .begin(crate::mcp_gateway::oauth::McpOAuthBeginRequest {
                 server_id: request.server_id,
@@ -524,6 +527,18 @@ impl ServerRegistry {
             return Ok(Some(token.to_string()));
         }
 
+        if server.bearer_token_configured {
+            let oauth = self
+                .oauth
+                .as_ref()
+                .context("MCP credential store unavailable")?;
+            return oauth
+                .bearer_token(&server.id)
+                .map_err(anyhow::Error::from)
+                .and_then(|token| token.context("configured MCP bearer token is missing"))
+                .map(Some);
+        }
+
         let Some(oauth) = self.oauth.as_ref() else {
             return Ok(None);
         };
@@ -612,8 +627,28 @@ fn tool_entry_from_definition(
     server: &McpServerConfig,
     tool: crate::mcp_gateway::stdio_client::McpToolDefinition,
 ) -> McpToolCatalogEntry {
-    let effect_class = infer_effect_class(&tool.name, tool.description.as_deref());
+    let effect_class = infer_effect_class_with_annotations(
+        &tool.name,
+        tool.description.as_deref(),
+        tool.annotations.as_ref(),
+    );
     let capability_ids = auto_tag_capabilities(&tool.name, tool.description.as_deref());
+    let ui_resource_uri = tool
+        .meta
+        .as_ref()
+        .and_then(|meta| meta.get("ui"))
+        .and_then(|ui| ui.get("resourceUri"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let annotations = tool.annotations.map(|annotations| McpToolAnnotations {
+        read_only_hint: annotations.read_only_hint,
+        destructive_hint: annotations.destructive_hint,
+        idempotent_hint: annotations.idempotent_hint,
+        open_world_hint: annotations.open_world_hint,
+    });
+    let meta = tool
+        .meta
+        .map(|meta| Value::Object(meta.into_iter().collect()));
     configure_tool_entry(
         server,
         McpToolCatalogEntry {
@@ -623,6 +658,11 @@ fn tool_entry_from_definition(
             title: tool.title,
             description: tool.description,
             input_schema_summary: tool.input_schema.as_ref().map(|schema| schema.to_string()),
+            output_schema_summary: tool.output_schema.as_ref().map(|schema| schema.to_string()),
+            annotations,
+            icons: tool.icons,
+            meta,
+            ui_resource_uri,
             effect_class,
             capability_ids,
             stability: "live".to_string(),
@@ -777,6 +817,27 @@ pub fn infer_effect_class(tool_name: &str, description: Option<&str>) -> McpEffe
     McpEffectClass::ExternalRead
 }
 
+fn infer_effect_class_with_annotations(
+    tool_name: &str,
+    description: Option<&str>,
+    annotations: Option<&crate::mcp_gateway::stdio_client::McpToolAnnotations>,
+) -> McpEffectClass {
+    let inferred = infer_effect_class(tool_name, description);
+    let Some(annotations) = annotations else {
+        return inferred;
+    };
+
+    // Server annotations are untrusted hints. They may promote Medousa's
+    // conservative classification, but never lower it.
+    if annotations.destructive_hint == Some(true) {
+        return McpEffectClass::ExternalSideEffect;
+    }
+    if annotations.read_only_hint == Some(false) && inferred == McpEffectClass::ExternalRead {
+        return McpEffectClass::ExternalWrite;
+    }
+    inferred
+}
+
 fn dedupe_tools(tools: &mut Vec<McpToolCatalogEntry>) {
     let mut seen = HashSet::new();
     tools.retain(|tool| seen.insert(format!("{}.{}", tool.server_id, tool.tool_name)));
@@ -833,6 +894,7 @@ mod tests {
                 args: Vec::new(),
                 url: None,
                 bearer_token: None,
+                bearer_token_configured: false,
                 allowed_lanes: vec!["interactive".to_string()],
                 allowed_effect_classes: vec!["external_read".to_string()],
                 tool_tags: Default::default(),
@@ -990,5 +1052,41 @@ mod tests {
         };
 
         assert_eq!(registry.remote_bearer_token(&server).await.unwrap(), None);
+    }
+
+    #[test]
+    fn untrusted_annotations_only_promote_effect_risk() {
+        use crate::mcp_gateway::stdio_client::McpToolAnnotations;
+
+        let claims_read_only = McpToolAnnotations {
+            read_only_hint: Some(true),
+            ..Default::default()
+        };
+        assert_eq!(
+            infer_effect_class_with_annotations(
+                "delete_message",
+                Some("Deletes a message"),
+                Some(&claims_read_only),
+            ),
+            McpEffectClass::ExternalSideEffect,
+        );
+
+        let claims_write = McpToolAnnotations {
+            read_only_hint: Some(false),
+            ..Default::default()
+        };
+        assert_eq!(
+            infer_effect_class_with_annotations("lookup", None, Some(&claims_write)),
+            McpEffectClass::ExternalWrite,
+        );
+
+        let claims_destructive = McpToolAnnotations {
+            destructive_hint: Some(true),
+            ..Default::default()
+        };
+        assert_eq!(
+            infer_effect_class_with_annotations("lookup", None, Some(&claims_destructive)),
+            McpEffectClass::ExternalSideEffect,
+        );
     }
 }

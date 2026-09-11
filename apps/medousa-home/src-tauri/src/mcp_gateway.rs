@@ -77,6 +77,8 @@ pub struct McpServerUpsertRequest {
     #[serde(default)]
     pub bearer_token: Option<String>,
     #[serde(default)]
+    pub clear_bearer_token: bool,
+    #[serde(default)]
     pub tool_tags: Option<HashMap<String, Vec<String>>>,
     #[serde(default)]
     pub disabled_tools: Option<Vec<String>>,
@@ -249,8 +251,28 @@ fn load_file_config() -> Result<(medousa_mcp_gateway::McpGatewayFileConfig, Path
 {
     let path = install_starter_if_missing()?;
     let raw = fs::read_to_string(&path).map_err(|err| err.to_string())?;
-    let config = toml::from_str::<medousa_mcp_gateway::McpGatewayFileConfig>(&raw)
+    let mut config = toml::from_str::<medousa_mcp_gateway::McpGatewayFileConfig>(&raw)
         .map_err(|err| format!("failed to parse {}: {err}", path.display()))?;
+    let credentials = medousa_mcp_gateway::SecureMcpOAuthBundleStore::new(medousa_data_dir())
+        .map_err(|error| format!("initialize MCP credential storage: {error}"))?;
+    let mut migrated = false;
+    for server in &mut config.servers {
+        let Some(token) = server
+            .bearer_token
+            .take()
+            .map(|token| token.trim().to_string())
+            .filter(|token| !token.is_empty())
+        else {
+            continue;
+        };
+        credentials.save_bearer_token(&server.id, Some(&token))?;
+        server.bearer_token_configured = true;
+        migrated = true;
+    }
+    if migrated {
+        let encoded = toml::to_string_pretty(&config).map_err(|err| err.to_string())?;
+        fs::write(&path, encoded).map_err(|err| err.to_string())?;
+    }
     Ok((config, path, true))
 }
 
@@ -326,6 +348,7 @@ fn validate_server(
             args: Vec::new(),
             url: None,
             bearer_token: None,
+            bearer_token_configured: false,
             allowed_lanes: default_allowed_lanes(),
             allowed_effect_classes: default_allowed_effects(),
             tool_tags,
@@ -345,15 +368,13 @@ fn validate_server(
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| "URL is required for remote MCP servers".to_string())?;
-        if !url.starts_with("http://") && !url.starts_with("https://") {
-            return Err("Remote MCP URL must start with http:// or https://".to_string());
-        }
         let bearer_token = request
             .bearer_token
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string);
+        medousa_mcp_gateway::validate_remote_server_url(url, bearer_token.is_some())?;
         return Ok(medousa_mcp_gateway::McpServerConfig {
             id,
             title: title.to_string(),
@@ -366,7 +387,8 @@ fn validate_server(
             command: None,
             args: Vec::new(),
             url: Some(url.to_string()),
-            bearer_token,
+            bearer_token: None,
+            bearer_token_configured: bearer_token.is_some(),
             allowed_lanes: default_allowed_lanes(),
             allowed_effect_classes: default_allowed_effects(),
             tool_tags,
@@ -397,6 +419,7 @@ fn validate_server(
             .collect(),
         url: None,
         bearer_token: None,
+        bearer_token_configured: false,
         allowed_lanes: default_allowed_lanes(),
         allowed_effect_classes: default_allowed_effects(),
         tool_tags,
@@ -409,22 +432,43 @@ fn server_from_request(
     request: &McpServerUpsertRequest,
 ) -> Result<medousa_mcp_gateway::McpServerConfig, String> {
     let mut server = validate_server(request)?;
-    if request.tool_tags.is_some() && request.disabled_tools.is_some() {
-        return Ok(server);
-    }
-
     let (config, _, _) = load_file_config()?;
-    if let Some(existing) = config
+    let existing = config
         .servers
         .iter()
-        .find(|entry| entry.id.eq_ignore_ascii_case(&server.id))
-    {
+        .find(|entry| entry.id.eq_ignore_ascii_case(&server.id));
+    if let Some(existing) = existing {
         if request.tool_tags.is_none() {
             server.tool_tags = existing.tool_tags.clone();
         }
         if request.disabled_tools.is_none() {
             server.disabled_tools = existing.disabled_tools.clone();
         }
+    }
+
+    if matches!(server.transport.as_str(), "http" | "sse") && !server.use_mock {
+        let credentials = medousa_mcp_gateway::SecureMcpOAuthBundleStore::new(medousa_data_dir())
+            .map_err(|error| format!("initialize MCP credential storage: {error}"))?;
+        let requested = request
+            .bearer_token
+            .as_deref()
+            .map(str::trim)
+            .filter(|token| !token.is_empty());
+        if request.clear_bearer_token {
+            credentials.save_bearer_token(&server.id, None)?;
+            server.bearer_token_configured = false;
+        } else if let Some(token) = requested {
+            credentials.save_bearer_token(&server.id, Some(token))?;
+            server.bearer_token_configured = true;
+        } else {
+            server.bearer_token_configured =
+                existing.is_some_and(|existing| existing.bearer_token_configured);
+        }
+        server.bearer_token = None;
+    } else if existing.is_some_and(|existing| existing.bearer_token_configured) {
+        let credentials = medousa_mcp_gateway::SecureMcpOAuthBundleStore::new(medousa_data_dir())
+            .map_err(|error| format!("initialize MCP credential storage: {error}"))?;
+        credentials.save_bearer_token(&server.id, None)?;
     }
     Ok(server)
 }
@@ -1233,6 +1277,9 @@ pub async fn mcp_gateway_remove_server(
     if config.servers.len() == before {
         return Err(format!("unknown MCP server '{id}'"));
     }
+    let credentials = medousa_mcp_gateway::SecureMcpOAuthBundleStore::new(medousa_data_dir())
+        .map_err(|error| format!("initialize MCP credential storage: {error}"))?;
+    credentials.save_bearer_token(&id, None)?;
     let path = persist_file_config(&config)?;
     #[cfg(any(target_os = "ios", target_os = "android"))]
     {

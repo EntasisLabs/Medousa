@@ -1,6 +1,8 @@
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::path::PathBuf;
 
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,6 +55,10 @@ pub struct McpServerConfig {
     pub url: Option<String>,
     #[serde(default)]
     pub bearer_token: Option<String>,
+    /// Whether a bearer token exists in the typed secret store. The value is
+    /// deliberately never serialized into this configuration object.
+    #[serde(default)]
+    pub bearer_token_configured: bool,
     #[serde(default = "default_allowed_lanes")]
     pub allowed_lanes: Vec<String>,
     #[serde(default = "default_allowed_effects")]
@@ -139,6 +145,56 @@ impl McpGatewayFullConfig {
     }
 }
 
+/// Validate a remote MCP endpoint before any credentials are attached.
+///
+/// Plain HTTP is supported for local development and unauthenticated private
+/// network servers. Credentials are never sent over plaintext outside the
+/// loopback interface.
+pub fn validate_remote_server_url(raw: &str, has_bearer: bool) -> Result<Url, String> {
+    let url = Url::parse(raw.trim()).map_err(|error| format!("Invalid remote MCP URL: {error}"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err("Remote MCP URL must use http:// or https://".to_string());
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err("Remote MCP credentials must not be embedded in the URL".to_string());
+    }
+    if url.fragment().is_some() {
+        return Err("Remote MCP URL must not contain a fragment".to_string());
+    }
+
+    if url.scheme() == "http" {
+        let host = url
+            .host_str()
+            .ok_or_else(|| "Remote MCP URL must include a host".to_string())?;
+        if !is_local_or_private_host(host) {
+            return Err("Remote MCP servers outside the local network must use HTTPS".to_string());
+        }
+        if has_bearer && !is_loopback_host(host) {
+            return Err(
+                "Bearer and OAuth credentials require HTTPS except on loopback".to_string(),
+            );
+        }
+    }
+    Ok(url)
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<IpAddr>()
+            .is_ok_and(|address| address.is_loopback())
+}
+
+fn is_local_or_private_host(host: &str) -> bool {
+    if is_loopback_host(host) || host.ends_with(".local") {
+        return true;
+    }
+    host.parse::<IpAddr>().is_ok_and(|address| match address {
+        IpAddr::V4(address) => address.is_private() || address.is_link_local(),
+        IpAddr::V6(address) => address.is_unique_local() || address.is_unicast_link_local(),
+    })
+}
+
 pub fn gateway_config_path() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -216,7 +272,7 @@ fn find_arg_value(args: &[String], flag: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::McpGatewayFileConfig;
+    use super::{McpGatewayFileConfig, validate_remote_server_url};
 
     #[test]
     fn tool_discovery_hints_and_disabled_tools_round_trip() {
@@ -246,5 +302,17 @@ search_web = ["web_research", "internet"]
             reparsed.servers[0].tool_tags.get("search_web"),
             Some(&vec!["web_research".to_string(), "internet".to_string()])
         );
+    }
+
+    #[test]
+    fn remote_urls_require_https_outside_local_networks() {
+        assert!(validate_remote_server_url("https://mcp.example.com/mcp", true).is_ok());
+        assert!(validate_remote_server_url("http://127.0.0.1:8000/mcp", true).is_ok());
+        assert!(validate_remote_server_url("http://192.168.1.40/mcp", false).is_ok());
+        assert!(validate_remote_server_url("http://192.168.1.40/mcp", true).is_err());
+        assert!(validate_remote_server_url("http://mcp.example.com/mcp", false).is_err());
+        assert!(validate_remote_server_url("ftp://mcp.example.com", false).is_err());
+        assert!(validate_remote_server_url("https://token@mcp.example.com/mcp", false).is_err());
+        assert!(validate_remote_server_url("https://mcp.example.com/mcp#tools", false).is_err());
     }
 }

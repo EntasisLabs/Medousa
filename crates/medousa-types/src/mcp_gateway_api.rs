@@ -68,6 +68,18 @@ impl McpEffectClass {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpToolAnnotations {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_only_hint: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub destructive_hint: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idempotent_hint: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub open_world_hint: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpToolCatalogEntry {
     pub server_id: String,
     pub server_title: String,
@@ -77,6 +89,16 @@ pub struct McpToolCatalogEntry {
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_schema_summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_schema_summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<McpToolAnnotations>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icons: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ui_resource_uri: Option<String>,
     pub effect_class: McpEffectClass,
     #[serde(default)]
     pub capability_ids: Vec<String>,
