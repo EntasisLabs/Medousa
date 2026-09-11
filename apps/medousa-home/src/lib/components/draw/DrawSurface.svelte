@@ -1,12 +1,6 @@
 <script lang="ts">
-  import Eraser from "@lucide/svelte/icons/eraser";
-  import Hand from "@lucide/svelte/icons/hand";
-  import MousePointer2 from "@lucide/svelte/icons/mouse-pointer-2";
-  import PenLine from "@lucide/svelte/icons/pen-line";
-  import Redo2 from "@lucide/svelte/icons/redo-2";
-  import SlidersHorizontal from "@lucide/svelte/icons/sliders-horizontal";
-  import Undo2 from "@lucide/svelte/icons/undo-2";
   import DrawOptionsSheet from "$lib/components/draw/DrawOptionsSheet.svelte";
+  import DrawToolbar from "$lib/components/draw/DrawToolbar.svelte";
   import {
     cloneDrawDocument,
     createDrawBrush,
@@ -128,6 +122,7 @@
   let redoStack = $state.raw<DrawPatch[]>([]);
   let svgEl = $state<SVGSVGElement | null>(null);
   let stageEl = $state<HTMLDivElement | null>(null);
+  let toolbarEl = $state<ReturnType<typeof DrawToolbar> | null>(null);
 
   const touchPointers = new Map<number, DrawVector>();
   const penPointers = new Set<number>();
@@ -376,6 +371,7 @@
     event.stopPropagation();
     focusStage();
     capturePointer(event);
+    toolbarEl?.activateMobileControls();
     setPersistenceHold(true);
 
     if (event.pointerType === "pen") {
@@ -712,43 +708,17 @@
   data-draw-surface=""
 >
   {#if editable}
-    <div class="medousa-draw-toolbar" role="toolbar" aria-label="Drawing tools">
-      <div class="medousa-draw-tools" role="group" aria-label="Active tool">
-        <button type="button" class:active={tool === "ink"} aria-pressed={tool === "ink"} onclick={() => chooseTool("ink")}>
-          <PenLine size={18} strokeWidth={2} aria-hidden="true" />
-          <span>Draw</span>
-        </button>
-        <button type="button" class:active={tool === "eraser"} aria-pressed={tool === "eraser"} onclick={() => chooseTool("eraser")}>
-          <Eraser size={18} strokeWidth={2} aria-hidden="true" />
-          <span>Erase</span>
-        </button>
-        <button type="button" class:active={tool === "select"} aria-pressed={tool === "select"} onclick={() => chooseTool("select")}>
-          <MousePointer2 size={18} strokeWidth={2} aria-hidden="true" />
-          <span>Select</span>
-        </button>
-        <button type="button" class:active={tool === "hand"} aria-pressed={tool === "hand"} onclick={() => chooseTool("hand")}>
-          <Hand size={18} strokeWidth={2} aria-hidden="true" />
-          <span>Move</span>
-        </button>
-      </div>
-      <div class="medousa-draw-quick-actions" role="group" aria-label="Drawing actions">
-        <button
-          type="button"
-          class:active={optionsOpen}
-          aria-label="Drawing options"
-          aria-expanded={optionsOpen}
-          onclick={() => (optionsOpen = !optionsOpen)}
-        >
-          <SlidersHorizontal size={19} strokeWidth={2} aria-hidden="true" />
-        </button>
-        <button type="button" aria-label="Undo" disabled={undoStack.length === 0} onclick={undo}>
-          <Undo2 size={19} strokeWidth={2} aria-hidden="true" />
-        </button>
-        <button type="button" aria-label="Redo" disabled={redoStack.length === 0} onclick={redo}>
-          <Redo2 size={19} strokeWidth={2} aria-hidden="true" />
-        </button>
-      </div>
-    </div>
+    <DrawToolbar
+      bind:this={toolbarEl}
+      {tool}
+      {optionsOpen}
+      canUndo={undoStack.length > 0}
+      canRedo={redoStack.length > 0}
+      onTool={chooseTool}
+      onOptions={() => (optionsOpen = !optionsOpen)}
+      onUndo={undo}
+      onRedo={redo}
+    />
   {/if}
 
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -872,66 +842,6 @@
     border-radius: 0;
   }
 
-  .medousa-draw-toolbar {
-    z-index: 10;
-    display: flex;
-    flex: 0 0 auto;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    min-height: 3.5rem;
-    padding: 0.4rem max(0.45rem, env(safe-area-inset-left, 0px));
-    border-bottom: 1px solid rgb(var(--color-surface-500) / 0.22);
-    background: rgb(var(--color-surface-900) / 0.94);
-    backdrop-filter: blur(18px);
-  }
-
-  .medousa-draw-tools,
-  .medousa-draw-quick-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.2rem;
-  }
-
-  .medousa-draw-tools {
-    min-width: 0;
-  }
-
-  .medousa-draw-toolbar button {
-    display: inline-flex;
-    min-width: 2.75rem;
-    height: 2.65rem;
-    align-items: center;
-    justify-content: center;
-    gap: 0.35rem;
-    padding: 0 0.65rem;
-    border-radius: 0.75rem;
-    color: rgb(var(--theme-text-secondary));
-    font-size: 0.72rem;
-    font-weight: 600;
-    white-space: nowrap;
-  }
-
-  .medousa-draw-toolbar button:hover:not(:disabled),
-  .medousa-draw-toolbar button.active {
-    color: rgb(var(--color-surface-50));
-    background: rgb(var(--color-surface-500) / 0.28);
-  }
-
-  .medousa-draw-toolbar button.active {
-    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-400) / 0.42);
-  }
-
-  .medousa-draw-toolbar button:disabled {
-    opacity: 0.3;
-  }
-
-  .medousa-draw-quick-actions {
-    flex: 0 0 auto;
-    padding-left: 0.35rem;
-    border-left: 1px solid rgb(var(--color-surface-500) / 0.2);
-  }
-
   .medousa-draw-stage {
     display: block;
     width: 100%;
@@ -980,17 +890,4 @@
   .medousa-draw-selection { fill: none; stroke: rgb(var(--color-primary-300) / 0.95); stroke-dasharray: 7 4; pointer-events: none; }
   .medousa-draw-eraser-cursor { fill: rgb(var(--color-surface-50) / 0.08); stroke: rgb(var(--color-surface-50) / 0.72); pointer-events: none; }
 
-  @container (max-width: 640px) {
-    .medousa-draw-toolbar {
-      gap: 0.25rem;
-      padding-right: max(0.35rem, env(safe-area-inset-right, 0px));
-      padding-left: max(0.35rem, env(safe-area-inset-left, 0px));
-    }
-
-    .medousa-draw-tools { flex: 1 1 auto; justify-content: space-between; }
-    .medousa-draw-tools button { min-width: 2.55rem; padding: 0 0.5rem; }
-    .medousa-draw-tools button span { display: none; }
-    .medousa-draw-quick-actions { gap: 0; padding-left: 0.2rem; }
-    .medousa-draw-quick-actions button { min-width: 2.5rem; padding: 0; }
-  }
 </style>

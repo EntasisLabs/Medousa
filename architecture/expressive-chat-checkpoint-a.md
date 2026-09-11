@@ -1,6 +1,6 @@
 # Expressive Chat Checkpoint A — physical ink validation
 
-> **Status:** Round 2 feedback remediated; physical performance retest pending
+> **Status:** Round 3 mobile chrome remediated; physical UI retest pending
 > **Implementation:** Slices 1–2 complete in the commit containing this record
 > **App version:** `medousa-home` 0.10.3
 > **Prepared:** 2026-09-11
@@ -14,9 +14,9 @@ accepted below with named follow-ups.
 
 | Gate | Result |
 |------|--------|
-| Drawing-focused Vitest suite | Pass — 5 files, 28 tests |
+| Drawing + mobile chrome focused Vitest suite | Pass — 7 files, 37 tests |
 | Medousa Svelte/TypeScript check | Pass — 0 errors, 0 warnings |
-| Full Medousa Home Vitest suite | Pass — 301 files, 1,571 tests |
+| Full Medousa Home Vitest suite | Pass — 302 files, 1,572 tests |
 | Strict documentation verification | Pass |
 
 Covered automation includes version-1 migration, version-2 round trips,
@@ -82,6 +82,21 @@ save cannot interrupt a stylus gesture. New Apple Pencil samples use an
 expanded pressure response curve, and the pressure-sensitive pen and pencil
 defaults have stronger thinning.
 
+## Round 3 — 2026-09-10 TestFlight findings
+
+The performance and pressure remediation was reported as a major improvement.
+The remaining usability issue was vertical space: iPhone and iPad still showed
+a dedicated drawing action bar below the main note header, even though the note
+header already owned the primary actions for every other note mode.
+
+The third remediation removes that second bar on mobile while preserving the
+desktop toolbar. The active drawing mode now occupies one top-bar slot and opens
+a compact **Draw**, **Erase**, **Select**, or **Move** menu. **Drawing options**,
+**Undo**, and **Redo** occupy the remaining slots. The controls follow the
+active drawing surface, update their enabled state with drawing history, and
+return to the normal note actions in Preview. This gives the canvas all
+available space immediately below the note header on both phone and tablet.
+
 ## Test procedure
 
 For each device, create a full drawing note, run the applicable scenarios, save,
@@ -120,6 +135,7 @@ tracked follow-up before this gate can close._
 | Long press invokes native WebView selection/callout behavior | iPad + iPhone | Critical | Canvas is no longer a button; native selection/callout/drag/context menu suppressed; retest | No |
 | Per-stroke note updates and full-path partial erasing cause visible latency | iPad + iPhone | Critical | Remediated with burst persistence, autosave hold, shallow state, incremental erase, bounds caching, and structural sharing; retest | No |
 | Normal Apple Pencil pressure produces width changes that are too subtle | iPad | High | Remediated with expanded pressure response and stronger pen/pencil thinning; retest | No |
+| Dedicated mobile drawing bar consumes canvas height and duplicates note chrome | iPad + iPhone | High | Removed on mobile; mode dropdown, options, undo, and redo now live in the main note top bar; retest | No |
 
 ## Sign-off
 

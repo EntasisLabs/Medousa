@@ -1131,7 +1131,7 @@
         {:else if showDrawSurface}
           <DrawNoteEditor
             content={displayContent}
-            disabled={!interactive || vault.saving}
+            disabled={!interactive || vault.saving || vault.editorMode === "preview"}
             onchange={(next) => vault.markDirty(next, { path: notePath })}
           />
         {:else if showMarkdownEditor}

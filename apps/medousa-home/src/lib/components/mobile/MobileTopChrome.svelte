@@ -8,7 +8,9 @@
     CalendarClock,
     ChevronDown,
     ChevronLeft,
+    Eraser,
     Eye,
+    Hand,
     History,
     Home,
     Layers,
@@ -18,16 +20,21 @@
     MessageCircle,
     MessagesSquare,
     MoreHorizontal,
+    MousePointer2,
     OctagonX,
     Pencil,
+    PenLine,
     Play,
     Plus,
     RefreshCw,
+    Redo2,
     Save,
     Search,
     Sparkles,
+    SlidersHorizontal,
     Square,
     Upload,
+    Undo2,
     UserRound,
     Users,
     Wrench,
@@ -65,9 +72,14 @@
   import {
     workshopBrandCssVars,
   } from "$lib/types/workshopRegistry";
+  import {
+    mobileDrawControls,
+    type MobileDrawTool,
+  } from "$lib/draw/mobileDrawControls.svelte";
 
   let sessionsMenuOpen = $state(false);
   let homeWorkshopSheetOpen = $state(false);
+  let drawModeMenuOpen = $state(false);
 
   const surface = $derived(
     resolveMobileChromeSurface(
@@ -101,6 +113,9 @@
       automationsMode,
       mobileCodeWorkspaceState.chromeMode,
     ),
+  );
+  const drawControls = $derived(
+    surface === "notes-reader" ? mobileDrawControls.current : null,
   );
   const brandStyle = $derived(workshopBrandCssVars(workshops.activeWorkshop?.brandColor));
   const HomeWorkshopIcon = $derived.by(() => {
@@ -168,6 +183,23 @@
     calendarSearch: Search,
     calendarNew: Plus,
   };
+  const drawTools: { tool: MobileDrawTool; label: string; icon: Component }[] = [
+    { tool: "ink", label: "Draw", icon: PenLine },
+    { tool: "eraser", label: "Erase", icon: Eraser },
+    { tool: "select", label: "Select", icon: MousePointer2 },
+    { tool: "hand", label: "Move", icon: Hand },
+  ];
+
+  $effect(() => {
+    if (!drawControls && drawModeMenuOpen) drawModeMenuOpen = false;
+  });
+
+  function selectDrawTool(tool: MobileDrawTool) {
+    if (!drawControls) return;
+    haptic("light");
+    drawControls.setTool(tool);
+    drawModeMenuOpen = false;
+  }
 
   function openMenu() {
     haptic("light");
@@ -648,6 +680,77 @@
           {/if}
         </button>
       {/each}
+    </div>
+  {:else if drawControls}
+    {@const controls = drawControls}
+    {@const ActiveDrawIcon = drawTools.find((option) => option.tool === controls.tool)?.icon ?? PenLine}
+    <div class="mobile-chrome-actions">
+      <OverflowMenu
+        bind:open={drawModeMenuOpen}
+        align="right"
+        label="Drawing mode"
+        title="Drawing mode"
+        panelWidth={14 * 16}
+        panelClass="w-56 max-w-[calc(100vw-1rem)] rounded-2xl border border-surface-500/40 bg-surface-900/95 p-1.5 shadow-xl backdrop-blur"
+      >
+        {#snippet trigger({ open, toggle })}
+          <button
+            type="button"
+            class="mobile-chrome-icon relative"
+            class:mobile-chrome-icon-active={open}
+            aria-label="Drawing mode — {drawTools.find((option) => option.tool === controls.tool)?.label ?? 'Draw'}"
+            aria-expanded={open}
+            aria-haspopup="menu"
+            onclick={toggle}
+          >
+            <ActiveDrawIcon size={18} strokeWidth={1.85} />
+            <ChevronDown size={9} strokeWidth={2.25} class="absolute bottom-1 right-1" aria-hidden="true" />
+          </button>
+        {/snippet}
+        {#each drawTools as option (option.tool)}
+          {@const DrawToolIcon = option.icon}
+          <button
+            type="button"
+            role="menuitemradio"
+            aria-checked={controls.tool === option.tool}
+            class="mobile-sessions-menu-item {controls.tool === option.tool ? 'bg-surface-700/45 text-surface-50' : ''}"
+            onclick={() => selectDrawTool(option.tool)}
+          >
+            <span class="mobile-sessions-menu-icon" aria-hidden="true">
+              <DrawToolIcon size={18} strokeWidth={1.85} />
+            </span>
+            <span>{option.label}</span>
+          </button>
+        {/each}
+      </OverflowMenu>
+      <button
+        type="button"
+        class="mobile-chrome-icon"
+        class:mobile-chrome-icon-active={controls.optionsOpen}
+        aria-label="Drawing options"
+        aria-expanded={controls.optionsOpen}
+        onclick={() => controls.openOptions()}
+      >
+        <SlidersHorizontal size={18} strokeWidth={1.85} />
+      </button>
+      <button
+        type="button"
+        class="mobile-chrome-icon"
+        aria-label="Undo drawing"
+        disabled={!controls.canUndo}
+        onclick={() => controls.undo()}
+      >
+        <Undo2 size={18} strokeWidth={1.85} />
+      </button>
+      <button
+        type="button"
+        class="mobile-chrome-icon"
+        aria-label="Redo drawing"
+        disabled={!controls.canRedo}
+        onclick={() => controls.redo()}
+      >
+        <Redo2 size={18} strokeWidth={1.85} />
+      </button>
     </div>
   {:else}
     <div class="mobile-chrome-actions">

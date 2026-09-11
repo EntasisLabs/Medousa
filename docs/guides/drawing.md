@@ -7,10 +7,14 @@ Medousa drawings are vault-native Markdown. They can live inside an ordinary not
 Open a note in **Live**, type `/draw`, and choose **Drawing**. The same drawing
 surface is also used by full drawing notes.
 
-- Use the compact bar to switch between **Draw**, **Erase**, **Select**, and
-  **Move**. Open **Drawing options** (the sliders button) for brushes, color,
-  size, eraser mode, touch behavior, view controls, and document actions. On a
-  phone these controls open as a bottom sheet instead of a scrolling toolbar.
+- On desktop, use the compact drawing bar to switch between **Draw**, **Erase**,
+  **Select**, and **Move**. On iPhone and iPad, drawing controls live in the
+  note's top bar instead: tap the current tool to choose another mode, then use
+  the adjacent buttons for **Drawing options**, **Undo**, and **Redo**. This
+  leaves the full height below the note header available to the canvas.
+- Open **Drawing options** (the sliders button) for brushes, color, size, eraser
+  mode, touch behavior, view controls, and document actions. On a phone these
+  controls open as a bottom sheet instead of a scrolling toolbar.
 - Choose **Pen**, **Pencil**, **Marker**, or **Highlighter** in the options sheet.
   Pen-capable devices use an expressive curve over the stylus pressure supplied
   by the device, making ordinary light-to-firm Apple Pencil input visibly change
@@ -40,7 +44,9 @@ back into the note after a short pause and holds vault autosave while a stylus
 is active, keeping persistence work off the live input path without risking an
 unfinished drawing when the surface closes.
 
-In Preview, the same block renders as a clean, read-only canvas. In Build, it remains a normal fenced Markdown block:
+In Preview, the same block renders as a clean, read-only canvas and the normal
+note actions return to the mobile top bar. In Build, it remains a normal fenced
+Markdown block:
 
 ````markdown
 ```draw
