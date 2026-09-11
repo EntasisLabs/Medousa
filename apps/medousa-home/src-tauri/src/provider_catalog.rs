@@ -425,6 +425,7 @@ pub fn providers_catalog_for_embedded() -> ProvidersListResult {
     let mut catalog = providers_catalog();
     catalog.providers.retain(|entry| {
         entry.id == "custom"
+            || entry.id == "openai-codex"
             || (cfg!(target_os = "ios") && entry.id == "medousa-local")
             || medousa_runtime::CredentialedAiChatConfig::new(
                 entry.id.clone(),
@@ -476,6 +477,7 @@ mod tests {
         let catalog = providers_catalog_for_embedded();
         for provider in [
             "openai",
+            "openai-codex",
             "anthropic",
             "google",
             "deepseek",
@@ -490,7 +492,7 @@ mod tests {
                 "missing embedded provider {provider}"
             );
         }
-        for provider in ["openai-codex", "medousa-local", "replicate", "bedrock"] {
+        for provider in ["medousa-local", "replicate", "bedrock"] {
             assert!(
                 !catalog.providers.iter().any(|entry| entry.id == provider),
                 "host-only provider leaked into embedded catalog: {provider}"
