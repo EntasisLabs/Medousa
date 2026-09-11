@@ -1061,6 +1061,11 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                     );
                 }
             }
+            if tool_name == crate::image_generation::COGNITION_IMAGE_GENERATE {
+                parts.push_generated_media_parts(
+                    crate::image_generation::generated_media_from_tool_output(&tool_output),
+                );
+            }
         }
         if tool_name == crate::ui_present_tools::COGNITION_UI_PRESENT
             && let Some(ui_artifact) =

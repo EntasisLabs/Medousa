@@ -638,6 +638,13 @@ impl EmbeddedChronologicalTurn {
                     );
                 }
             }
+            if invocation.tool_name == crate::image_generation::COGNITION_IMAGE_GENERATE {
+                parts.push_generated_media_parts(
+                    crate::image_generation::generated_media_from_tool_output(
+                        &invocation.tool_output,
+                    ),
+                );
+            }
         }
         if let Some(artifact) = ui_artifact {
             if let Some(previous_artifact_id) = previous_artifact_id {

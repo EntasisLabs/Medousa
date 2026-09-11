@@ -45,6 +45,7 @@
     variant?: "embedded" | "full";
     onchange?: (document: DrawDocument) => void;
     oninteractionchange?: (active: boolean) => void;
+    mobileToolbar?: boolean;
   }
 
   let {
@@ -53,6 +54,7 @@
     variant = "embedded",
     onchange = () => undefined,
     oninteractionchange = () => undefined,
+    mobileToolbar = false,
   }: Props = $props();
 
   type Tool = "ink" | "eraser" | "select" | "hand";
@@ -697,6 +699,11 @@
     redoStack = [];
     camera = fitDrawCamera(combinedDrawBounds(scene.strokes), viewport);
   }
+
+  export function currentDocument(): DrawDocument {
+    flushSceneEmission(true);
+    return cloneDrawDocument(scene);
+  }
 </script>
 
 <svelte:window onkeydown={handleWindowKeydown} />
@@ -718,6 +725,7 @@
       onOptions={() => (optionsOpen = !optionsOpen)}
       onUndo={undo}
       onRedo={redo}
+      mobileVisible={mobileToolbar}
     />
   {/if}
 

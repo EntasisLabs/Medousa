@@ -265,27 +265,21 @@ class BotId(RootModel[str]):
     )
 
 
-class BotProfile(MedousaModel):
-    additional_manuscript_ids: list[str] | None = None
-    archived: bool | None = False
-    avatar_ref: str | None = None
-    bot_id: BotId
-    created_at: AwareDatetime
-    default_mode: AgentModeId | None = None
-    display_name: str
-    memory_scope_id: str
-    owner_profile_id: str
-    primary_manuscript_id: str
-    primary_session_id: str | None = None
-    revision: int = Field(..., ge=0)
-    role_description: str | None = None
-    schema_version: int = Field(..., ge=0)
-    updated_at: AwareDatetime
+class BotWorldBindingKind(Enum):
+    persistent_browser = 'persistent_browser'
 
 
 class BotSessionKind(Enum):
     primary = 'primary'
     secondary = 'secondary'
+
+
+class BrowserPresentationViewport(MedousaModel):
+    device_scale_factor: float
+    height: int = Field(..., ge=0)
+    scroll_x: int
+    scroll_y: int
+    width: int = Field(..., ge=0)
 
 
 class CalendarAlarm(MedousaModel):
@@ -424,10 +418,15 @@ class AgentSessionConfigOption(MedousaModel):
 
 
 class MediaRef(MedousaModel):
-    kind: str = Field(..., description='image | document | spreadsheet | audio')
+    generation_id: str | None = None
+    kind: str = Field(..., description='image | drawing | document | spreadsheet | audio')
     label: str | None = None
     media_id: str
     mime: str
+    parent_generation_id: str | None = None
+    source_media_id: str | None = Field(
+        None, description='Editable vector source paired with a raster drawing preview.'
+    )
 
 
 class PromptStashDraft(MedousaModel):
@@ -1326,29 +1325,60 @@ class TurnPart7(MedousaModel):
 
 
 class Kind10(Enum):
-    host_context = 'host_context'
+    user_drawing = 'user_drawing'
+
+
+class TurnPart8(MedousaModel):
+    byte_size: int | None = Field(None, ge=0)
+    kind: Kind10
+    label: str | None = None
+    media_id: str
+    mime: str
+    preview_media_id: str
 
 
 class Kind11(Enum):
-    attachment_ref = 'attachment_ref'
+    generated_media = 'generated_media'
 
 
 class TurnPart9(MedousaModel):
+    byte_size: int | None = Field(None, ge=0)
+    generation_id: str
+    height_px: int | None = Field(None, ge=0)
+    kind: Kind11
+    label: str
+    media_id: str
+    mime: str
+    model: str | None = None
+    parent_generation_id: str | None = None
+    provider: str | None = None
+    width_px: int | None = Field(None, ge=0)
+
+
+class Kind12(Enum):
+    host_context = 'host_context'
+
+
+class Kind13(Enum):
+    attachment_ref = 'attachment_ref'
+
+
+class TurnPart11(MedousaModel):
     artifact_id: str
     byte_size: int | None = Field(None, ge=0)
     height_px: int | None = Field(None, ge=0)
-    kind: Kind11
+    kind: Kind13
     label: str
     mime: str
     presentation: str | None = None
 
 
-class Kind12(Enum):
+class Kind14(Enum):
     unknown = 'unknown'
 
 
-class TurnPart10(MedousaModel):
-    kind: Kind12
+class TurnPart12(MedousaModel):
+    kind: Kind14
 
 
 class TurnSliceSummary(MedousaModel):
@@ -2307,6 +2337,224 @@ class WorkspaceEventRef(MedousaModel):
     ref_type: str
 
 
+class WorldTimelineCheckpoint(MedousaModel):
+    admitted_at_ms: int = Field(..., ge=0)
+    control_generation: int | None = Field(None, ge=0)
+    permit_expires_at_ms: int = Field(..., ge=0)
+    surface: str
+    world_revision: int = Field(..., ge=0)
+
+
+class WorldTimelineCompensation(MedousaModel):
+    automatic_dispatch_allowed: bool
+    requires_new_intent: bool
+    strategy: str
+
+
+class WorldTimelineRecovery(MedousaModel):
+    compensation: WorldTimelineCompensation | None = Field(
+        None,
+        description='Absent only when reading a legacy durable record that predated an explicit compensation boundary.',
+    )
+    requires_fresh_admission: bool
+    strategy: str
+
+
+class WorldEvidenceRecord(MedousaModel):
+    action_elapsed_ms: int | None = Field(None, ge=0)
+    authority_id: str
+    checkpoint: WorldTimelineCheckpoint | None = None
+    driver_id: str
+    durability_latency_us: int | None = Field(None, ge=0)
+    effect_class: str | None = None
+    event_type: str
+    evidence_id: str
+    intent_id: str | None = None
+    ledger_sequence: int = Field(..., ge=0)
+    ownership: str
+    principal_id: str | None = None
+    principal_kind: str | None = None
+    promoted_at_ms: int = Field(..., ge=0)
+    reasons: list[str]
+    recovery: WorldTimelineRecovery | None = None
+    resource_id: str | None = None
+    schema_version: int = Field(..., ge=0)
+    status: str | None = None
+    surface: str
+    trace_id: str | None = None
+    world_id: str
+
+
+class WorldRecipeInputKind(Enum):
+    text = 'text'
+    selection = 'selection'
+    key = 'key'
+    scroll_delta = 'scroll_delta'
+    wait_duration = 'wait_duration'
+
+
+class WorldRecipeOperation(MedousaModel):
+    input_kind: WorldRecipeInputKind | None = None
+    requires_operator_confirmation: bool
+    target_name: str | None = None
+    target_role: str | None = None
+    verb: str
+
+
+class WorldRecipeStep(MedousaModel):
+    effect_class: str
+    operations: list[WorldRecipeOperation]
+    ordinal: int = Field(..., ge=0)
+    requires_fresh_admission: bool
+    requires_fresh_observation: bool
+    requires_operator_confirmation: bool
+    source_admission_sequence: int = Field(..., ge=0)
+    source_completion_sequence: int = Field(..., ge=0)
+    source_intent_id: str
+    surface: str
+
+
+class WorldRecipe(MedousaModel):
+    automatic_dispatch_allowed: bool
+    carries_authority: bool
+    execution_model: str
+    recipe_id: str
+    schema_version: int = Field(..., ge=0)
+    source_end_sequence: int = Field(..., ge=0)
+    source_start_sequence: int = Field(..., ge=0)
+    source_trace_id: str
+    steps: list[WorldRecipeStep]
+
+
+class Kind15(Enum):
+    text = 'text'
+
+
+class WorldRecipeRunInputValue1(MedousaModel):
+    kind: Kind15
+    text: str
+
+
+class Kind16(Enum):
+    selection = 'selection'
+
+
+class WorldRecipeRunInputValue2(MedousaModel):
+    kind: Kind16
+    value: str
+
+
+class Kind17(Enum):
+    key = 'key'
+
+
+class WorldRecipeRunInputValue3(MedousaModel):
+    key: str
+    kind: Kind17
+
+
+class Kind18(Enum):
+    scroll_delta = 'scroll_delta'
+
+
+class WorldRecipeRunInputValue4(MedousaModel):
+    delta_y: int
+    kind: Kind18
+
+
+class Kind19(Enum):
+    wait_duration = 'wait_duration'
+
+
+class WorldRecipeRunInputValue5(MedousaModel):
+    kind: Kind19
+    milliseconds: int = Field(..., ge=0)
+
+
+class WorldRecipeRunInputValue(
+    RootModel[
+        WorldRecipeRunInputValue1
+        | WorldRecipeRunInputValue2
+        | WorldRecipeRunInputValue3
+        | WorldRecipeRunInputValue4
+        | WorldRecipeRunInputValue5
+    ]
+):
+    root: (
+        WorldRecipeRunInputValue1
+        | WorldRecipeRunInputValue2
+        | WorldRecipeRunInputValue3
+        | WorldRecipeRunInputValue4
+        | WorldRecipeRunInputValue5
+    ) = Field(..., description='Fresh operator-provided material for one semantic operation. These values are never copied into a recipe, receipt, timeline summary, or run response.', title='WorldRecipeRunInputValue')
+
+
+class WorldRecipeRunConfirmation(MedousaModel):
+    operation_index: int = Field(
+        ..., description='Zero-based operation index within the recipe step.', ge=0
+    )
+    step_ordinal: int = Field(..., ge=0)
+
+
+class WorldRecipeRunInput(MedousaModel):
+    input: WorldRecipeRunInputValue
+    operation_index: int = Field(
+        ..., description='Zero-based operation index within the recipe step.', ge=0
+    )
+    step_ordinal: int = Field(..., ge=0)
+
+
+class WorldRecipeRunTarget(MedousaModel):
+    step_ordinal: int = Field(..., ge=0)
+    world_id: str
+
+
+class WorldRecipeRunStatus(Enum):
+    completed = 'completed'
+    stopped = 'stopped'
+
+
+class WorldRecipeRunStepResult(MedousaModel):
+    committed_revision: int = Field(..., ge=0)
+    completion_sequence: int = Field(..., ge=0)
+    intent_id: str
+    operation_count: int = Field(..., ge=0)
+    step_ordinal: int = Field(..., ge=0)
+    surface: str
+    world_id: str
+
+
+class WorldRecipeRunStop(MedousaModel):
+    code: str
+    effect_may_have_applied: bool
+    reason: str
+    step_ordinal: int = Field(..., ge=0)
+
+
+class WorldTimelineEvent(MedousaModel):
+    authority_id: str
+    checkpoint: WorldTimelineCheckpoint | None = None
+    driver_id: str
+    effect_class: str | None = None
+    event_type: str
+    intent_id: str | None = None
+    occurred_at_ms: int = Field(..., ge=0)
+    ownership: str
+    principal_id: str | None = None
+    principal_kind: str | None = None
+    recorded_at_ms: int = Field(..., ge=0)
+    recovery: WorldTimelineRecovery | None = None
+    resource_id: str | None = None
+    schema_version: int = Field(..., ge=0)
+    sequence: int = Field(..., ge=0)
+    status: str | None = None
+    summary: str | None = None
+    surface: str
+    trace_id: str | None = None
+    world_id: str
+    world_revision: int = Field(..., ge=0)
+
+
 class AgentModeTransitionPolicy(MedousaModel):
     auto_accept: AgentModeAutoAccept | None = 'never'
     proposal_ttl_seconds: int = Field(..., ge=0)
@@ -2449,10 +2697,6 @@ class BeginMcpOAuthResponse(MedousaModel):
     authorization_url: str
     login_id: str
     server_id: str
-
-
-class BotListResponse(MedousaModel):
-    bots: list[BotProfile]
 
 
 class CalendarDeleteResponse(MedousaModel):
@@ -2613,15 +2857,6 @@ class CreateAgentSessionResponse(MedousaModel):
     stream_ready: bool
     stream_url: str
     work_id: str | None = None
-
-
-class CreateBotRequest(MedousaModel):
-    additional_manuscript_ids: list[str] | None = None
-    avatar_ref: str | None = None
-    default_mode: AgentModeId | None = None
-    display_name: str
-    primary_manuscript_id: str
-    role_description: str | None = None
 
 
 class CreateIntegrationConnectionRequest(MedousaModel):
@@ -3286,16 +3521,6 @@ class TurnTicketRecord(MedousaModel):
     workspace_card_id: str | None = None
 
 
-class UpdateBotRequest(MedousaModel):
-    additional_manuscript_ids: list[str] | None = None
-    avatar_ref: str | None = None
-    default_mode: AgentModeId | None = None
-    display_name: str
-    expected_revision: int = Field(..., ge=0)
-    primary_manuscript_id: str
-    role_description: str | None = None
-
-
 class UpdateRecurringRequest(MedousaModel):
     cron_expr: str | None = None
     delivery: Any | None = Field(
@@ -3424,6 +3649,43 @@ class WorkspaceLinkVaultRequest(MedousaModel):
     vault_path: str
 
 
+class WorldEvidenceResponse(MedousaModel):
+    evidence: list[WorldEvidenceRecord]
+    has_more: bool
+    next_sequence: int = Field(..., ge=0)
+
+
+class WorldRecipeDeriveResponse(MedousaModel):
+    recipe: WorldRecipe
+
+
+class WorldRecipeRunRequest(MedousaModel):
+    confirmations: list[WorldRecipeRunConfirmation] | None = None
+    inputs: list[WorldRecipeRunInput] | None = None
+    operator_approved: bool
+    recipe_id: str
+    run_id: str
+    source_trace_id: str
+    targets: list[WorldRecipeRunTarget]
+
+
+class WorldRecipeRunResponse(MedousaModel):
+    completed_steps: int = Field(..., ge=0)
+    recipe_id: str
+    run_id: str
+    schema_version: int = Field(..., ge=0)
+    status: WorldRecipeRunStatus
+    steps: list[WorldRecipeRunStepResult]
+    stop: WorldRecipeRunStop | None = None
+    trace_id: str
+
+
+class WorldTimelineResponse(MedousaModel):
+    events: list[WorldTimelineEvent]
+    has_more: bool
+    next_sequence: int = Field(..., ge=0)
+
+
 class AgentModeAvailability(MedousaModel):
     available: bool
     contract_revision: str | None = None
@@ -3477,12 +3739,53 @@ class AgentSecretRequestRecord(MedousaModel):
     updated_at_utc: AwareDatetime
 
 
+class BotWorldBinding(MedousaModel):
+    execution_runtime_id: str
+    kind: BotWorldBindingKind
+    world_id: str
+
+
 class BotSessionBinding(MedousaModel):
     bot_id: BotId
     bot_revision_at_bind: int = Field(..., ge=0)
     created_at: AwareDatetime
     kind: BotSessionKind
     session_id: str
+
+
+class BrowserPresentationObservation(MedousaModel):
+    base_revision: int | None = Field(None, ge=0)
+    captured_at_ms: int = Field(..., ge=0)
+    document_id: str
+    full: bool
+    revision: int = Field(..., ge=0)
+    schema_version: int = Field(..., ge=0)
+    tab_id: str
+    title: str
+    truncated: bool
+    untrusted_content: bool
+    url: str
+    viewport: BrowserPresentationViewport
+
+
+class BrowserPresentationScreenshot(MedousaModel):
+    byte_size: int = Field(..., ge=0)
+    captured_at_ms: int = Field(..., ge=0)
+    coordinate_frame: str
+    document_id: str
+    image_base64: str
+    image_height: int = Field(..., ge=0)
+    image_width: int = Field(..., ge=0)
+    mime: str
+    observation_revision: int = Field(..., ge=0)
+    schema_version: int = Field(..., ge=0)
+    sensitive_regions_redacted: int = Field(..., ge=0)
+    sha256: str
+    tab_id: str
+    title: str
+    untrusted_content: bool
+    url: str
+    viewport: BrowserPresentationViewport
 
 
 class ConversationRangeSelection(MedousaModel):
@@ -3646,9 +3949,9 @@ class RuntimeConfigCommandSpec(
     root: RuntimeConfigCommandSpec1 | RuntimeConfigCommandSpec2 | RuntimeConfigCommandSpec3 | RuntimeConfigCommandSpec4
 
 
-class TurnPart8(MedousaModel):
+class TurnPart10(MedousaModel):
     context: HostTurnContext
-    kind: Kind10
+    kind: Kind12
 
 
 class TurnPart(
@@ -3663,9 +3966,11 @@ class TurnPart(
         | TurnPart8
         | TurnPart9
         | TurnPart10
+        | TurnPart11
+        | TurnPart12
     ]
 ):
-    root: TurnPart1 | TurnPart2 | TurnPart3 | TurnPart4 | TurnPart5 | TurnPart6 | TurnPart7 | TurnPart8 | TurnPart9 | TurnPart10
+    root: TurnPart1 | TurnPart2 | TurnPart3 | TurnPart4 | TurnPart5 | TurnPart6 | TurnPart7 | TurnPart8 | TurnPart9 | TurnPart10 | TurnPart11 | TurnPart12
 
 
 class TranscriptEntry(MedousaModel):
@@ -3834,9 +4139,11 @@ class AgentSecretResolveResponse(MedousaModel):
     request: AgentSecretRequestRecord
 
 
-class BotOpenResponse(MedousaModel):
-    binding: BotSessionBinding
-    bot: BotProfile
+class BrowserPresentationFrame(MedousaModel):
+    observation: BrowserPresentationObservation
+    schema_version: int = Field(..., ge=0)
+    screenshot: BrowserPresentationScreenshot
+    world_id: str
 
 
 class CreateAgentSessionRequest(MedousaModel):
@@ -3857,6 +4164,18 @@ class CreateAgentSessionRequest(MedousaModel):
     work_id: str | None = Field(
         None,
         description='Optional Forge undertaking binding (`/v1/forge/items/{id}`). When set, the ACP session runs inside the governed worktree and reports leases.',
+    )
+
+
+class CreateBotRequest(MedousaModel):
+    additional_manuscript_ids: list[str] | None = None
+    avatar_ref: str | None = None
+    default_mode: AgentModeId | None = None
+    display_name: str
+    primary_manuscript_id: str
+    role_description: str | None = None
+    world_binding: BotWorldBinding | None = Field(
+        None, description='Opt-in durable world continuity. Omission grants no world.'
     )
 
 
@@ -3964,12 +4283,6 @@ class RuntimeConfigCommandRequest(MedousaModel):
     draft_provider: str
 
 
-class SessionBotResponse(MedousaModel):
-    binding: BotSessionBinding | None = None
-    bot: BotProfile | None = None
-    session_id: str
-
-
 class SessionHistoryResponse(MedousaModel):
     authority_id: AuthorityId
     next_cursor: str | None = None
@@ -3986,6 +4299,24 @@ class TurnStreamEnvelopeV2(MedousaModel):
     schema_version: int = Field(..., ge=2, le=2)
     seq: int = Field(..., ge=1)
     turn_id: str
+
+
+class UpdateBotRequest(MedousaModel):
+    additional_manuscript_ids: list[str] | None = None
+    avatar_ref: str | None = None
+    clear_world_binding: bool | None = Field(
+        None,
+        description='Explicitly clear durable continuity. This cannot be combined with `world_binding`.',
+    )
+    default_mode: AgentModeId | None = None
+    display_name: str
+    expected_revision: int = Field(..., ge=0)
+    primary_manuscript_id: str
+    role_description: str | None = None
+    world_binding: BotWorldBinding | None = Field(
+        None,
+        description='Set or replace durable world continuity. Omission preserves the current binding for compatibility with clients predating schema v2.',
+    )
 
 
 class WorkspaceCardsResponse(MedousaModel):
@@ -4005,6 +4336,25 @@ class WorkspaceStreamEvent(MedousaModel):
         description='Live subagent progress rides along with `card_upserted` for turn-worker cards so chat can tick without a detail round trip.',
     )
     workspace_revision: int = Field(..., ge=0)
+
+
+class BotProfile(MedousaModel):
+    additional_manuscript_ids: list[str] | None = None
+    archived: bool | None = False
+    avatar_ref: str | None = None
+    bot_id: BotId
+    created_at: AwareDatetime
+    default_mode: AgentModeId | None = None
+    display_name: str
+    memory_scope_id: str
+    owner_profile_id: str
+    primary_manuscript_id: str
+    primary_session_id: str | None = None
+    revision: int = Field(..., ge=0)
+    role_description: str | None = None
+    schema_version: int = Field(..., ge=0)
+    updated_at: AwareDatetime
+    world_binding: BotWorldBinding | None = None
 
 
 class ShellChromeDef(MedousaModel):
@@ -4056,6 +4406,15 @@ class ConversationTurn(MedousaModel):
     tool_names: list[str]
 
 
+class BotListResponse(MedousaModel):
+    bots: list[BotProfile]
+
+
+class BotOpenResponse(MedousaModel):
+    binding: BotSessionBinding
+    bot: BotProfile
+
+
 class LocalBenchmarkManifest(MedousaModel):
     admission: LocalResourceAdmission
     engine: LocalBenchmarkEngineIdentity
@@ -4072,6 +4431,12 @@ class LocalBenchmarkManifest(MedousaModel):
 
 class SessionAppendTurnRequest(MedousaModel):
     turn: ConversationTurn
+
+
+class SessionBotResponse(MedousaModel):
+    binding: BotSessionBinding | None = None
+    bot: BotProfile | None = None
+    session_id: str
 
 
 class LayoutPreset(MedousaModel):

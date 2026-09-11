@@ -66,6 +66,25 @@ pub fn persist_user_media(
     mime: &str,
     label: Option<&str>,
 ) -> Result<MediaUploadResponse, String> {
+    persist_media(session_id, bytes, mime, label, "usr")
+}
+
+pub fn persist_generated_media(
+    session_id: &str,
+    bytes: &[u8],
+    mime: &str,
+    label: Option<&str>,
+) -> Result<MediaUploadResponse, String> {
+    persist_media(session_id, bytes, mime, label, "gen")
+}
+
+fn persist_media(
+    session_id: &str,
+    bytes: &[u8],
+    mime: &str,
+    label: Option<&str>,
+    origin: &str,
+) -> Result<MediaUploadResponse, String> {
     let (session_id, _mutation) = crate::session_deletion::acquire_mutation_for_str(session_id)?;
 
     let byte_size = bytes.len() as u64;
@@ -85,7 +104,7 @@ pub fn persist_user_media(
     }
 
     let media_id = format!(
-        "usr:{}:{}",
+        "{origin}:{}:{}",
         short_session(session_id.as_str()),
         Uuid::new_v4().simple()
     );
@@ -176,6 +195,9 @@ pub fn media_ref_from_record(record: &MediaRecord) -> MediaRef {
         kind: record.kind.clone(),
         mime: record.mime.clone(),
         label: record.label.clone(),
+        source_media_id: None,
+        generation_id: None,
+        parent_generation_id: None,
     }
 }
 
@@ -216,6 +238,17 @@ pub fn validate_media_refs(session_id: &str, refs: &[MediaRef]) -> Result<(), St
         }
         if get_media_record(session_id, media_id).is_none() {
             return Err(format!("unknown media_id '{media_id}' for session"));
+        }
+        if let Some(source_media_id) = media_ref
+            .source_media_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            && get_media_record(session_id, source_media_id).is_none()
+        {
+            return Err(format!(
+                "unknown drawing source media_id '{source_media_id}' for session"
+            ));
         }
     }
     Ok(())
@@ -294,6 +327,20 @@ pub fn merge_media_refs_into_prompt(
             "- {name} ({}, kind={}, id={})\n",
             media_ref.mime, media_ref.kind, media_ref.media_id
         ));
+        if let Some(generation_id) = media_ref
+            .generation_id
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            block.push_str(&format!("  generation_id={generation_id}\n"));
+        }
+        if let Some(parent_generation_id) = media_ref
+            .parent_generation_id
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            block.push_str(&format!("  parent_generation_id={parent_generation_id}\n"));
+        }
 
         let is_image = media_ref.kind == "image"
             || media_ref
@@ -475,6 +522,7 @@ fn mime_allowed(mime: &str) -> bool {
             | "application/vnd.ms-excel"
             | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            | "application/vnd.medousa.draw+json"
     ) || mime.starts_with("image/")
 }
 
@@ -497,6 +545,7 @@ fn extension_for_mime(mime: &str) -> &'static str {
         "application/vnd.ms-excel" => "xls",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => "xlsx",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => "docx",
+        "application/vnd.medousa.draw+json" => "draw.json",
         _ => "",
     }
 }
@@ -683,10 +732,15 @@ mod tests {
                 kind: "image".into(),
                 mime: "image/png".into(),
                 label: Some("shot.png".into()),
+                source_media_id: None,
+                generation_id: Some("img:2".into()),
+                parent_generation_id: Some("img:1".into()),
             }],
             &MediaPromptMergeOptions::default(),
         );
         assert!(merged.contains("[Attachments]"));
         assert!(merged.contains("shot.png"));
+        assert!(merged.contains("generation_id=img:2"));
+        assert!(merged.contains("parent_generation_id=img:1"));
     }
 }

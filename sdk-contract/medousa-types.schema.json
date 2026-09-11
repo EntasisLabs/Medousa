@@ -5079,8 +5079,14 @@
           "mime"
         ],
         "properties": {
+          "generation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "kind": {
-            "description": "image | document | spreadsheet | audio",
+            "description": "image | drawing | document | spreadsheet | audio",
             "type": "string"
           },
           "label": {
@@ -5094,6 +5100,19 @@
           },
           "mime": {
             "type": "string"
+          },
+          "parent_generation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_media_id": {
+            "description": "Editable vector source paired with a raster drawing preview.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -12988,8 +13007,14 @@
           "mime"
         ],
         "properties": {
+          "generation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "kind": {
-            "description": "image | document | spreadsheet | audio",
+            "description": "image | drawing | document | spreadsheet | audio",
             "type": "string"
           },
           "label": {
@@ -13003,6 +13028,19 @@
           },
           "mime": {
             "type": "string"
+          },
+          "parent_generation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_media_id": {
+            "description": "Editable vector source paired with a raster drawing preview.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -16217,8 +16255,14 @@
           "mime"
         ],
         "properties": {
+          "generation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "kind": {
-            "description": "image | document | spreadsheet | audio",
+            "description": "image | drawing | document | spreadsheet | audio",
             "type": "string"
           },
           "label": {
@@ -16232,6 +16276,19 @@
           },
           "mime": {
             "type": "string"
+          },
+          "parent_generation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_media_id": {
+            "description": "Editable vector source paired with a raster drawing preview.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -16330,8 +16387,14 @@
           "mime"
         ],
         "properties": {
+          "generation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "kind": {
-            "description": "image | document | spreadsheet | audio",
+            "description": "image | drawing | document | spreadsheet | audio",
             "type": "string"
           },
           "label": {
@@ -16345,6 +16408,19 @@
           },
           "mime": {
             "type": "string"
+          },
+          "parent_generation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_media_id": {
+            "description": "Editable vector source paired with a raster drawing preview.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       }
@@ -16386,8 +16462,14 @@
           "mime"
         ],
         "properties": {
+          "generation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "kind": {
-            "description": "image | document | spreadsheet | audio",
+            "description": "image | drawing | document | spreadsheet | audio",
             "type": "string"
           },
           "label": {
@@ -16401,6 +16483,19 @@
           },
           "mime": {
             "type": "string"
+          },
+          "parent_generation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_media_id": {
+            "description": "Editable vector source paired with a raster drawing preview.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -17799,6 +17894,118 @@
               },
               "mime": {
                 "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "media_id",
+              "mime",
+              "preview_media_id"
+            ],
+            "properties": {
+              "byte_size": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "user_drawing"
+                ]
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "media_id": {
+                "type": "string"
+              },
+              "mime": {
+                "type": "string"
+              },
+              "preview_media_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "generation_id",
+              "kind",
+              "label",
+              "media_id",
+              "mime"
+            ],
+            "properties": {
+              "byte_size": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "generation_id": {
+                "type": "string"
+              },
+              "height_px": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint32",
+                "minimum": 0.0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "generated_media"
+                ]
+              },
+              "label": {
+                "type": "string"
+              },
+              "media_id": {
+                "type": "string"
+              },
+              "mime": {
+                "type": "string"
+              },
+              "model": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "parent_generation_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "provider": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "width_px": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint32",
+                "minimum": 0.0
               }
             }
           },
@@ -19315,6 +19522,118 @@
           {
             "type": "object",
             "required": [
+              "kind",
+              "media_id",
+              "mime",
+              "preview_media_id"
+            ],
+            "properties": {
+              "byte_size": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "user_drawing"
+                ]
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "media_id": {
+                "type": "string"
+              },
+              "mime": {
+                "type": "string"
+              },
+              "preview_media_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "generation_id",
+              "kind",
+              "label",
+              "media_id",
+              "mime"
+            ],
+            "properties": {
+              "byte_size": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "generation_id": {
+                "type": "string"
+              },
+              "height_px": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint32",
+                "minimum": 0.0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "generated_media"
+                ]
+              },
+              "label": {
+                "type": "string"
+              },
+              "media_id": {
+                "type": "string"
+              },
+              "mime": {
+                "type": "string"
+              },
+              "model": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "parent_generation_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "provider": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "width_px": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
               "context",
               "kind"
             ],
@@ -20726,6 +21045,118 @@
               },
               "mime": {
                 "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "media_id",
+              "mime",
+              "preview_media_id"
+            ],
+            "properties": {
+              "byte_size": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "user_drawing"
+                ]
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "media_id": {
+                "type": "string"
+              },
+              "mime": {
+                "type": "string"
+              },
+              "preview_media_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "generation_id",
+              "kind",
+              "label",
+              "media_id",
+              "mime"
+            ],
+            "properties": {
+              "byte_size": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "generation_id": {
+                "type": "string"
+              },
+              "height_px": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint32",
+                "minimum": 0.0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "generated_media"
+                ]
+              },
+              "label": {
+                "type": "string"
+              },
+              "media_id": {
+                "type": "string"
+              },
+              "mime": {
+                "type": "string"
+              },
+              "model": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "parent_generation_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "provider": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "width_px": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint32",
+                "minimum": 0.0
               }
             }
           },

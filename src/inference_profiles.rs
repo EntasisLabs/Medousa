@@ -10,6 +10,7 @@ pub const MAX_FALLBACKS: usize = 2;
 pub enum InferenceProfileKind {
     Main,
     Vision,
+    ImageGeneration,
     Stt,
 }
 
@@ -83,6 +84,13 @@ pub fn normalize_tui_defaults(defaults: &mut TuiDefaults) {
             *vision = trimmed;
         } else {
             profiles.vision = None;
+        }
+    }
+    if let Some(image_generation) = profiles.image_generation.as_mut() {
+        if let Some(trimmed) = image_generation.trimmed() {
+            *image_generation = trimmed;
+        } else {
+            profiles.image_generation = None;
         }
     }
     if let Some(stt) = profiles.stt.as_mut()
@@ -265,6 +273,13 @@ pub fn validate_profiles(profiles: &InferenceProfilesConfig) -> Result<(), Strin
         .and_then(|profile| profile.trimmed())
     {
         validate_fallbacks("vision", &vision.fallbacks)?;
+    }
+    if let Some(image_generation) = profiles
+        .image_generation
+        .as_ref()
+        .and_then(|profile| profile.trimmed())
+    {
+        validate_fallbacks("image_generation", &image_generation.fallbacks)?;
     }
     Ok(())
 }

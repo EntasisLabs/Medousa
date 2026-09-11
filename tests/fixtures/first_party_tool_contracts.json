@@ -4206,6 +4206,101 @@
     },
     {
       "registry": "general_runtime",
+      "name": "cognition_image_generate",
+      "description": "Generate one or more images when a user explicitly asks to create or revise visual media. For an attached-image revision, pass its attachment id in reference_media_ids and its generation_id as parent_generation_id. Results are persisted by the workshop and appear directly in chat.",
+      "input_schema": {
+        "properties": {
+          "aspect": {
+            "anyOf": [
+              {
+                "enum": [
+                  "landscape",
+                  "portrait",
+                  "square"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "background": {
+            "anyOf": [
+              {
+                "enum": [
+                  "auto",
+                  "opaque",
+                  "transparent"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "count": {
+            "default": null,
+            "format": "uint8",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "parent_generation_id": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prompt": {
+            "description": "A concise visual prompt describing the desired image.",
+            "type": "string"
+          },
+          "quality": {
+            "anyOf": [
+              {
+                "enum": [
+                  "high",
+                  "low",
+                  "medium"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "reference_media_ids": {
+            "default": [],
+            "description": "Session media ids to edit or use as visual references.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "prompt"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:bootstrap",
+        "general:domain:media"
+      ]
+    },
+    {
+      "registry": "general_runtime",
       "name": "cognition_intent_resolve",
       "description": "Resolve an operator intent or fuzzy query to capabilities with suggested feed ids and component templates.",
       "input_schema": {

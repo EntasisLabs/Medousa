@@ -156,6 +156,7 @@ pub mod identity_write_policy;
 pub mod inference_profiles;
 pub mod inference_profiles_handlers;
 pub mod inference_router;
+pub mod image_generation;
 pub mod install;
 pub mod integration_connection;
 pub mod integration_handlers;

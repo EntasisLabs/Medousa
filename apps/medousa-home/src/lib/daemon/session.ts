@@ -525,6 +525,7 @@ export async function sendInteractiveTurn(
     channelSurface: options?.channelSurface,
     browserDriverId: options?.browserDriverId,
     selectedWorlds: invokePlain(options?.selectedWorlds ?? null),
+    mediaRefs: invokePlain(options?.mediaRefs ?? null),
   });
 }
 

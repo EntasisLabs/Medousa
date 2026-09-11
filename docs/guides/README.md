@@ -23,6 +23,7 @@ Integrator / self-host cookbooks: [../cookbook/README.md](../cookbook/README.md)
 | [Secure credential handoff](secure-credential-handoff.md) | Give OpenShell or Grapheme an API key without putting it in chat |
 | [Desktop companion](desktop-companion.md) | Keep chat, approvals, notes, and views in a floating pet |
 | [Drawing](drawing.md) | Sketch inside notes or use a full drawing note |
+| [Chat drawings and generated images](chat-media-and-images.md) | Draw in chat, generate images, refine them, and save or share the result |
 | [Undertakings & ForgeLens](undertakings.md) | Governed work, seal, review, World observe |
 
 Also useful from the cookbook (app-user tagged):

@@ -14,11 +14,12 @@ export interface InferenceProfile {
 export interface InferenceProfiles {
   main?: InferenceProfile | null;
   vision?: InferenceProfile | null;
+  imageGeneration?: InferenceProfile | null;
   stt?: InferenceProfile | null;
 }
 
 export function emptyInferenceProfiles(): InferenceProfiles {
-  return { main: null, vision: null, stt: null };
+  return { main: null, vision: null, imageGeneration: null, stt: null };
 }
 
 export function profileReady(profile?: InferenceProfile | null): boolean {
@@ -79,7 +80,16 @@ export function normalizeInferenceProfiles(
       }
     : null;
 
-  return { main, vision, stt };
+  const imageGeneration = profileReady(raw?.imageGeneration)
+    ? {
+        provider: raw!.imageGeneration!.provider.trim(),
+        model: raw!.imageGeneration!.model.trim(),
+        baseUrl: raw!.imageGeneration!.baseUrl?.trim() || null,
+        fallbacks: raw!.imageGeneration!.fallbacks ?? [],
+      }
+    : null;
+
+  return { main, vision, imageGeneration, stt };
 }
 
 export function syncFlatFieldsFromProfiles(

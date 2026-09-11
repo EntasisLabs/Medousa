@@ -228,6 +228,22 @@ export function decodeDrawDocument(payload: string): DrawDocument {
   return normalizeDocument(JSON.parse(json));
 }
 
+export function serializeDrawDocumentJson(document: DrawDocument): string {
+  const normalized = normalizeDocument(document);
+  const json = JSON.stringify(normalized);
+  if (new TextEncoder().encode(json).length > MAX_DRAW_PAYLOAD_BYTES) {
+    throw new Error("Drawing is too large");
+  }
+  return json;
+}
+
+export function parseDrawDocumentJson(json: string): DrawDocument {
+  if (!json.trim() || new TextEncoder().encode(json).length > MAX_DRAW_PAYLOAD_BYTES) {
+    throw new Error(json.trim() ? "Drawing is too large" : "Drawing payload is empty");
+  }
+  return normalizeDocument(JSON.parse(json));
+}
+
 export function serializeDrawFenceBody(document: DrawDocument): string {
   const payload = encodeDrawDocument(document);
   const lines = payload.match(new RegExp(`.{1,${PAYLOAD_LINE_WIDTH}}`, "g")) ?? [];

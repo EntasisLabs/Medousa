@@ -5,6 +5,7 @@ import {
   composeTurnMarkdown,
   hostContextFromParts,
   hostContextLabel,
+  mediaFromParts,
   modelReceiptFromParts,
   progressFromParts,
   toolRunsFromParts,
@@ -142,6 +143,42 @@ describe("turnParts", () => {
         byteSize: 1200,
         heightPx: 480,
       },
+    ]);
+  });
+
+  it("keeps editable drawings and generated image lineage distinct", () => {
+    const media = mediaFromParts([
+      {
+        kind: "user_drawing",
+        media_id: "usr:session:source",
+        preview_media_id: "usr:session:preview",
+        mime: "application/vnd.medousa.draw+json",
+        label: "Sketch",
+      },
+      {
+        kind: "generated_media",
+        media_id: "gen:session:image",
+        mime: "image/png",
+        label: "Generated image",
+        generation_id: "img:2",
+        parent_generation_id: "img:1",
+        width_px: 1024,
+        height_px: 1536,
+      },
+    ]);
+
+    expect(media).toEqual([
+      expect.objectContaining({
+        mediaId: "usr:session:preview",
+        editableSourceId: "usr:session:source",
+        origin: "drawing",
+      }),
+      expect.objectContaining({
+        mediaId: "gen:session:image",
+        generationId: "img:2",
+        parentGenerationId: "img:1",
+        origin: "generated",
+      }),
     ]);
   });
 

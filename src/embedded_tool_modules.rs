@@ -80,6 +80,7 @@ pub mod manuscript_handlers;
 pub mod manuscript_overlay_tools;
 pub mod mcp_turn_token;
 pub mod media_store;
+pub mod image_generation;
 pub mod media_text_extract;
 pub mod media_vision;
 pub mod memory_api;

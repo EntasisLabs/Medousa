@@ -3,6 +3,9 @@ export interface MediaRef {
   kind: string;
   mime: string;
   label?: string | null;
+  source_media_id?: string | null;
+  generation_id?: string | null;
+  parent_generation_id?: string | null;
 }
 
 export interface MediaUploadResponse {
@@ -36,6 +39,12 @@ export interface ChatMediaAttachment {
   kind: string;
   mime: string;
   label: string;
+  origin?: "user" | "drawing" | "generated";
+  editableSourceId?: string | null;
+  generationId?: string | null;
+  parentGenerationId?: string | null;
+  widthPx?: number | null;
+  heightPx?: number | null;
 }
 
 export function mediaKindFromMime(mime: string): string {

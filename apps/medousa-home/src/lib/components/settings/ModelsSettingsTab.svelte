@@ -65,7 +65,7 @@
     const favCount = favorites.length;
     const bits: string[] = [];
     if (favCount > 0) bits.push(`${favCount} favorite${favCount === 1 ? "" : "s"}`);
-    const hasFallback = (["main", "vision", "stt"] as ProfileKind[]).some((profile) => {
+    const hasFallback = (["main", "vision", "imageGeneration", "stt"] as ProfileKind[]).some((profile) => {
       const summary = fallbackSummaryLabel(workshopDefaults.draft, profile, catalog);
       return summary !== "Optional";
     });
@@ -159,8 +159,8 @@
     <div class="models-section-head">
       <h4 class="settings-native-heading">Model roles</h4>
       <p class="settings-native-footnote">
-        The conversation model handles text and images when it can. Add an image backup only when
-        you want a different vision route.
+        Chat and Vision understand content. Image generation creates new visual media through its
+        own credential and billing lane.
       </p>
     </div>
     <div class="settings-native-group models-primary">
@@ -259,13 +259,15 @@
       <section class="mt-4">
         <h4 class="models-more-heading">Fallbacks</h4>
         <div class="settings-native-group">
-          {#each (["main", "vision", "stt"] as ProfileKind[]) as profile (profile)}
+          {#each (["main", "vision", "imageGeneration", "stt"] as ProfileKind[]) as profile (profile)}
             {@const summary = fallbackSummaryLabel(workshopDefaults.draft, profile, catalog)}
             <SettingsListRow
               label="{profile === 'main'
                 ? 'Chat'
                 : profile === 'vision'
-                  ? 'Image'
+                  ? 'Vision'
+                  : profile === 'imageGeneration'
+                    ? 'Image generation'
                   : 'Dictation'} fallbacks"
               value={summary}
               expanded={expandedFallback === profile}

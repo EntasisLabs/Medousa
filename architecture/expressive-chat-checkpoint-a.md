@@ -1,6 +1,6 @@
 # Expressive Chat Checkpoint A — physical ink validation
 
-> **Status:** Round 3 mobile chrome remediated; physical UI retest pending
+> **Status:** Accepted to proceed after Round 3; cross-device matrix remains a named follow-up
 > **Implementation:** Slices 1–2 complete in the commit containing this record
 > **App version:** `medousa-home` 0.10.3
 > **Prepared:** 2026-09-11
@@ -137,9 +137,15 @@ tracked follow-up before this gate can close._
 | Normal Apple Pencil pressure produces width changes that are too subtle | iPad | High | Remediated with expanded pressure response and stronger pen/pencil thinning; retest | No |
 | Dedicated mobile drawing bar consumes canvas height and duplicates note chrome | iPad + iPhone | High | Removed on mobile; mode dropdown, options, undo, and redo now live in the main note top bar; retest | No |
 
+On 2026-09-10 the product owner accepted the remediated iPad/iPhone experience
+and explicitly authorized starting Slices 3–4. The unfilled Android stylus,
+desktop, and touch-only rows remain release-validation follow-ups; they are not
+being represented as physically tested.
+
 ## Sign-off
 
-- Overall result: **🔄 Retest required**
-- Tested by: _Pending_
-- Date: _Pending_
-- Notes: _Pending_
+- Overall result: **✅ Accepted to proceed with named cross-device follow-ups**
+- Tested by: Product owner (iPad/iPhone); broader matrix pending
+- Date: 2026-09-10
+- Notes: Drawing performance, pressure response, and mobile chrome were accepted
+  after three physical TestFlight feedback/remediation rounds.

@@ -203,6 +203,18 @@ fn turn_text_line(turn: &ConversationTurn, max_chars: usize) -> Option<String> {
                 TurnPart::UserMedia {
                     label, media_id, ..
                 } => label.as_deref().unwrap_or(media_id.as_str()),
+                TurnPart::UserDrawing {
+                    label, media_id, ..
+                } => label.as_deref().unwrap_or(media_id.as_str()),
+                TurnPart::GeneratedMedia {
+                    label, media_id, ..
+                } => {
+                    if label.is_empty() {
+                        media_id.as_str()
+                    } else {
+                        label.as_str()
+                    }
+                }
                 TurnPart::AttachmentRef { label, .. } => label.as_str(),
                 TurnPart::HostContext { .. }
                 | TurnPart::ModelReceipt { .. }

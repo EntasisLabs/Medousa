@@ -21,9 +21,10 @@
     onOptions: () => void;
     onUndo: () => void;
     onRedo: () => void;
+    mobileVisible?: boolean;
   }
 
-  let { tool, optionsOpen, canUndo, canRedo, onTool, onOptions, onUndo, onRedo }: Props = $props();
+  let { tool, optionsOpen, canUndo, canRedo, onTool, onOptions, onUndo, onRedo, mobileVisible = false }: Props = $props();
   const owner = {};
 
   $effect(() => {
@@ -47,7 +48,7 @@
   }
 </script>
 
-<div class="medousa-draw-toolbar" role="toolbar" aria-label="Drawing tools">
+<div class="medousa-draw-toolbar" class:mobile-visible={mobileVisible} role="toolbar" aria-label="Drawing tools">
   <div class="medousa-draw-tools" role="group" aria-label="Active tool">
     <button type="button" class:active={tool === "ink"} aria-pressed={tool === "ink"} onclick={() => onTool("ink")}>
       <PenLine size={18} strokeWidth={2} aria-hidden="true" />
@@ -130,7 +131,7 @@
     border-left: 1px solid rgb(var(--color-surface-500) / 0.2);
   }
 
-  :global(.mobile-shell) .medousa-draw-toolbar { display: none; }
+  :global(.mobile-shell) .medousa-draw-toolbar:not(.mobile-visible) { display: none; }
 
   @container (max-width: 640px) {
     .medousa-draw-toolbar {

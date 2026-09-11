@@ -61,6 +61,8 @@ pub struct InferenceProfilesDto {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vision: Option<InferenceProfileDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_generation: Option<InferenceProfileDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stt: Option<InferenceProfileDto>,
 }
 

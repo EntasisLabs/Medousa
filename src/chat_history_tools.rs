@@ -104,6 +104,8 @@ fn visible_turn_text(turn: &ConversationTurn) -> Option<String> {
             | TurnPart::ModelReceipt { .. }
             | TurnPart::ToolRun { .. }
             | TurnPart::UserMedia { .. }
+            | TurnPart::UserDrawing { .. }
+            | TurnPart::GeneratedMedia { .. }
             | TurnPart::HostContext { .. }
             | TurnPart::AttachmentRef { .. }
             | TurnPart::Unknown => None,

@@ -48,12 +48,28 @@ export function mergeTranscript(
     }
     if (!message.turnId && message.role === "assistant" && message.content.trim()) {
       const normalized = normalizeForCompare(message.content);
-      const duplicate = merged.some(
+      const duplicateIndex = merged.findIndex(
         (existing) =>
           existing.role === "assistant" &&
           normalizeForCompare(existing.content) === normalized,
       );
-      if (duplicate) continue;
+      if (duplicateIndex >= 0) {
+        const existing = merged[duplicateIndex];
+        merged[duplicateIndex] = {
+          ...existing,
+          mediaAttachments: message.mediaAttachments ?? existing.mediaAttachments,
+          transcript: message.transcript ?? existing.transcript,
+          answerState: message.answerState ?? existing.answerState,
+          tools: message.tools ?? existing.tools,
+          toolRuns: message.toolRuns ?? existing.toolRuns,
+          segments: message.segments ?? existing.segments,
+          uiArtifacts: message.uiArtifacts ?? existing.uiArtifacts,
+          reasoning: message.reasoning ?? existing.reasoning,
+          responseProvider: message.responseProvider ?? existing.responseProvider,
+          responseModel: message.responseModel ?? existing.responseModel,
+        };
+        continue;
+      }
     }
     merged.push(message);
   }

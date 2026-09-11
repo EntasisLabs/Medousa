@@ -1,6 +1,6 @@
 # Expressive Chat — generated media, ink, and interactive Liquid
 
-> **Status:** Slices 0–2 implemented; Checkpoint A physical validation pending (2026-09-11)
+> **Status:** Slices 0–4 implemented; stopped at Checkpoint B for validation (2026-09-11)
 > **Scope:** Daemon-owned media generation, ink-first drawing, drawing in chat,
 > and durable interactive Liquid experiences  
 > **Checkpoints:** Stop for physical-device validation after Slices 2, 4, and 6  
@@ -190,7 +190,7 @@ enum TurnPart {
         byte_size: Option<u64>,
     },
     GeneratedMedia {
-        artifact_id: String,
+        media_id: String,
         mime: String,
         label: String,
         width_px: Option<u32>,
@@ -319,6 +319,8 @@ explicitly accepted follow-ups.
 **Outcome:** A drawing can be authored in the composer, sent through the daemon,
 seen by a vision model, replayed from history, and reopened for editing.
 
+**Status:** Implemented.
+
 Deliverables:
 
 - **Draw** action in desktop/mobile composer menus.
@@ -334,6 +336,9 @@ Deliverables:
 
 **Outcome:** Medousa can generate and refine images as first-class daemon-owned
 tool output in chat.
+
+**Status:** Implemented; live-provider and device validation is tracked in
+[Checkpoint B](expressive-chat-checkpoint-b.md).
 
 Deliverables:
 
@@ -353,6 +358,8 @@ Deliverables:
 #### Checkpoint B — generated and chat media validation
 
 Stop after Slice 4.
+
+Validation record: [expressive-chat-checkpoint-b.md](expressive-chat-checkpoint-b.md).
 
 Validate on desktop, iPad, Android, local workshop, and remote workshop:
 

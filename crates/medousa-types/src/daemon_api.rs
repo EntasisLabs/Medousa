@@ -1798,11 +1798,18 @@ pub struct InteractiveTurnRequest {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct MediaRef {
     pub media_id: String,
-    /// image | document | spreadsheet | audio
+    /// image | drawing | document | spreadsheet | audio
     pub kind: String,
     pub mime: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    /// Editable vector source paired with a raster drawing preview.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_media_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generation_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_generation_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

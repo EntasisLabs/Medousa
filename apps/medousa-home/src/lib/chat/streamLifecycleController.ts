@@ -519,6 +519,10 @@ async function reconcileTurnFromHistory(host: ChatStoreHost, turnId: string) {
       message.failed ||
       !message.content.trim() ||
       isEngineTelemetryText(message.content),
+  ) || assistants.some(
+    (message) =>
+      message.tools?.includes("cognition_image_generate") ||
+      message.toolRuns?.some((run) => run.toolName === "cognition_image_generate"),
   );
   if (!needsMerge) return;
 
