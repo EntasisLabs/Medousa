@@ -12,6 +12,11 @@ export function drawInputKind(pointerType: string): DrawInputKind {
   return "unknown";
 }
 
+export function expressivePenPressure(pressure: number): number {
+  const normalized = Math.max(0, Math.min(1, (pressure - 0.08) / 0.62));
+  return normalized * normalized * (3 - 2 * normalized);
+}
+
 export function coalescedPointerSamples(event: PointerEvent): PointerEvent[] {
   let samples: PointerEvent[] = [];
   try {
@@ -34,7 +39,9 @@ export function drawPointFromPointer(
   const mapped = mapClientPoint(event.clientX, event.clientY);
   if (!mapped) return null;
   const input = drawInputKind(event.pointerType);
-  const pressure = input === "pen" && event.pressure > 0 ? event.pressure : undefined;
+  const pressure = input === "pen" && event.pressure > 0
+    ? expressivePenPressure(event.pressure)
+    : undefined;
   return {
     x: Math.round(mapped.x * 100) / 100,
     y: Math.round(mapped.y * 100) / 100,

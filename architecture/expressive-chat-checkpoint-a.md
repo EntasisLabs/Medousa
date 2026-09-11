@@ -1,6 +1,6 @@
 # Expressive Chat Checkpoint A — physical ink validation
 
-> **Status:** Round 1 failed; remediation implemented, physical retest pending
+> **Status:** Round 2 feedback remediated; physical performance retest pending
 > **Implementation:** Slices 1–2 complete in the commit containing this record
 > **App version:** `medousa-home` 0.10.3
 > **Prepared:** 2026-09-11
@@ -14,9 +14,9 @@ accepted below with named follow-ups.
 
 | Gate | Result |
 |------|--------|
-| Drawing-focused Vitest suite | Pass — 5 files, 25 tests |
+| Drawing-focused Vitest suite | Pass — 5 files, 28 tests |
 | Medousa Svelte/TypeScript check | Pass — 0 errors, 0 warnings |
-| Full Medousa Home Vitest suite | Pass — 301 files, 1,568 tests |
+| Full Medousa Home Vitest suite | Pass — 301 files, 1,571 tests |
 | Strict documentation verification | Pass |
 
 Covered automation includes version-1 migration, version-2 round trips,
@@ -61,6 +61,27 @@ zoom, keeps pinch ownership until every participating touch ends, removes the
 grid/paper boundary, and suppresses native selection, drag, and context-menu
 gestures on the canvas.
 
+## Round 2 — 2026-09-10 TestFlight findings
+
+The compact controls, blank responsive canvas, and gesture remediation were
+reported as working well. The remaining device blockers were drawing latency,
+especially during partial erasing, and Apple Pencil pressure whose width change
+was technically present but too subtle during normal use.
+
+Profiling the interaction path showed that note persistence ran after every
+completed stroke, while partial erase rebuilt the document from the gesture's
+original scene and rechecked every stroke against the entire accumulated path
+on every pointer move.
+
+The second remediation keeps drawing documents in shallow reactive state,
+applies only the newest coalesced eraser segment to the current preview, caches
+immutable stroke bounds, rejects untouched strokes before detailed geometry,
+and structurally shares them instead of cloning them. Note and Markdown updates
+now settle as a short drawing burst, and active ink holds vault autosave so a
+save cannot interrupt a stylus gesture. New Apple Pencil samples use an
+expanded pressure response curve, and the pressure-sensitive pen and pencil
+defaults have stronger thinning.
+
 ## Test procedure
 
 For each device, create a full drawing note, run the applicable scenarios, save,
@@ -97,6 +118,8 @@ tracked follow-up before this gate can close._
 | Pinch can strand the remaining touch and appear stuck | iPad + iPhone | Critical | Remediated by retaining pinch ownership until all touches end; retest | No |
 | Grid and paper boundary make low zoom visually nested | iPad + iPhone | High | Removed; retest blank canvas | No |
 | Long press invokes native WebView selection/callout behavior | iPad + iPhone | Critical | Canvas is no longer a button; native selection/callout/drag/context menu suppressed; retest | No |
+| Per-stroke note updates and full-path partial erasing cause visible latency | iPad + iPhone | Critical | Remediated with burst persistence, autosave hold, shallow state, incremental erase, bounds caching, and structural sharing; retest | No |
+| Normal Apple Pencil pressure produces width changes that are too subtle | iPad | High | Remediated with expanded pressure response and stronger pen/pencil thinning; retest | No |
 
 ## Sign-off
 

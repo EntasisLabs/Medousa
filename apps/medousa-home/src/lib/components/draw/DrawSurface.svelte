@@ -9,7 +9,6 @@
   import DrawOptionsSheet from "$lib/components/draw/DrawOptionsSheet.svelte";
   import {
     cloneDrawDocument,
-    cloneDrawStroke,
     createDrawBrush,
     encodeDrawDocument,
     type DrawBrushKind,
@@ -30,8 +29,7 @@
   import {
     combinedDrawBounds,
     drawStrokeOutlinePath,
-    eraseDrawStrokeByPath,
-    hitTestDrawStroke,
+    eraseDrawDocumentByPath,
     moveDrawStroke,
     selectDrawStrokesInLasso,
     simplifyDrawPoints,
@@ -52,6 +50,7 @@
     editable?: boolean;
     variant?: "embedded" | "full";
     onchange?: (document: DrawDocument) => void;
+    oninteractionchange?: (active: boolean) => void;
   }
 
   let {
@@ -59,6 +58,7 @@
     editable = false,
     variant = "embedded",
     onchange = () => undefined,
+    oninteractionchange = () => undefined,
   }: Props = $props();
 
   type Tool = "ink" | "eraser" | "select" | "hand";
@@ -106,7 +106,9 @@
     startDistance: number;
   };
 
-  let scene = $state<DrawDocument>(untrack(() => cloneDrawDocument(document)));
+  const DRAW_CHANGE_SETTLE_MS = 650;
+
+  let scene = $state.raw<DrawDocument>(untrack(() => cloneDrawDocument(document)));
   let syncedFingerprint = $state(untrack(() => encodeDrawDocument(document)));
   let observedExternalFingerprint = $state(untrack(() => encodeDrawDocument(document)));
   let tool = $state<Tool>("ink");
@@ -116,14 +118,14 @@
   let eraserMode = $state<EraserMode>("partial");
   let fingerDraw = $state(false);
   let optionsOpen = $state(false);
-  let camera = $state<DrawCamera>(createDrawCamera());
-  let viewport = $state({ width: 1200, height: 720 });
-  let gesture = $state<DrawGesture | null>(null);
-  let pinch = $state<PinchGesture | null>(null);
-  let selectedIds = $state<string[]>([]);
-  let cursorScene = $state<DrawVector | null>(null);
-  let undoStack = $state<DrawPatch[]>([]);
-  let redoStack = $state<DrawPatch[]>([]);
+  let camera = $state.raw<DrawCamera>(createDrawCamera());
+  let viewport = $state.raw({ width: 1200, height: 720 });
+  let gesture = $state.raw<DrawGesture | null>(null);
+  let pinch = $state.raw<PinchGesture | null>(null);
+  let selectedIds = $state.raw<string[]>([]);
+  let cursorScene = $state.raw<DrawVector | null>(null);
+  let undoStack = $state.raw<DrawPatch[]>([]);
+  let redoStack = $state.raw<DrawPatch[]>([]);
   let svgEl = $state<SVGSVGElement | null>(null);
   let stageEl = $state<HTMLDivElement | null>(null);
 
@@ -132,6 +134,9 @@
   let pendingInkPoints: DrawPoint[] = [];
   let inkFrame = 0;
   let lastPenActivity = Number.NEGATIVE_INFINITY;
+  let pendingScene: DrawDocument | null = null;
+  let changeTimer: ReturnType<typeof setTimeout> | null = null;
+  let persistenceHeld = false;
 
   const selectedStrokes = $derived(scene.strokes.filter((stroke) => selectedIds.includes(stroke.id)));
   const selectionBounds = $derived(combinedDrawBounds(selectedStrokes));
@@ -146,7 +151,7 @@
       observedExternalFingerprint = fingerprint;
       return;
     }
-    if (gesture != null || pinch != null) return;
+    if (gesture != null || pinch != null || pendingScene != null) return;
     observedExternalFingerprint = fingerprint;
     scene = cloneDrawDocument(document);
     syncedFingerprint = fingerprint;
@@ -158,6 +163,8 @@
 
   onDestroy(() => {
     if (inkFrame) cancelAnimationFrame(inkFrame);
+    flushSceneEmission(true);
+    setPersistenceHold(false);
   });
 
   onMount(() => {
@@ -229,16 +236,53 @@
     }
   }
 
+  function setPersistenceHold(active: boolean) {
+    if (persistenceHeld === active) return;
+    persistenceHeld = active;
+    oninteractionchange(active);
+  }
+
+  function releasePersistenceIfIdle() {
+    if (gesture == null && pinch == null && pendingScene == null) setPersistenceHold(false);
+  }
+
+  function flushSceneEmission(force = false) {
+    if (changeTimer) {
+      clearTimeout(changeTimer);
+      changeTimer = null;
+    }
+    if (!force && (gesture != null || pinch != null)) {
+      changeTimer = setTimeout(() => {
+        changeTimer = null;
+        flushSceneEmission();
+      }, DRAW_CHANGE_SETTLE_MS);
+      return;
+    }
+    if (pendingScene) {
+      const next = pendingScene;
+      pendingScene = null;
+      syncedFingerprint = encodeDrawDocument(next);
+      onchange(cloneDrawDocument(next));
+    }
+    releasePersistenceIfIdle();
+  }
+
   function emitScene(next: DrawDocument) {
-    scene = cloneDrawDocument(next);
-    syncedFingerprint = encodeDrawDocument(scene);
-    onchange(cloneDrawDocument(scene));
+    scene = next;
+    pendingScene = next;
+    setPersistenceHold(true);
+    if (changeTimer) clearTimeout(changeTimer);
+    changeTimer = setTimeout(() => {
+      changeTimer = null;
+      flushSceneEmission();
+    }, DRAW_CHANGE_SETTLE_MS);
   }
 
   function commitScene(base: DrawDocument, next: DrawDocument, label: string) {
     const patch = createDrawPatch(base, next, label);
     if (!patch) {
-      scene = cloneDrawDocument(base);
+      scene = base;
+      releasePersistenceIfIdle();
       return;
     }
     undoStack = [...undoStack.slice(-99), patch];
@@ -286,25 +330,14 @@
 
   function erasePreview(base: DrawDocument, path: DrawVector[]): DrawDocument {
     const radius = Math.max(8, size * 1.1) / camera.zoom;
-    if (eraserMode === "stroke") {
-      return {
-        ...cloneDrawDocument(base),
-        strokes: base.strokes
-          .filter((stroke) => !path.some((point) => hitTestDrawStroke(stroke, point, radius)))
-          .map(cloneDrawStroke),
-      };
-    }
-    return {
-      ...cloneDrawDocument(base),
-      strokes: base.strokes.flatMap((stroke) => eraseDrawStrokeByPath(stroke, path, radius)),
-    };
+    return eraseDrawDocumentByPath(base, path, radius, eraserMode);
   }
 
   function startPinch() {
     const entries = [...touchPointers.entries()].slice(0, 2);
     if (entries.length < 2) return;
     if (gesture?.pointerType === "touch") {
-      if (gesture.kind === "erase" || gesture.kind === "move") scene = cloneDrawDocument(gesture.base);
+      if (gesture.kind === "erase" || gesture.kind === "move") scene = gesture.base;
       gesture = null;
       pendingInkPoints = [];
     }
@@ -343,6 +376,7 @@
     event.stopPropagation();
     focusStage();
     capturePointer(event);
+    setPersistenceHold(true);
 
     if (event.pointerType === "pen") {
       penPointers.add(event.pointerId);
@@ -351,6 +385,7 @@
     if (event.pointerType === "touch") {
       if (penPointers.size > 0 || event.timeStamp - lastPenActivity < 650) {
         releasePointer(event.pointerId);
+        releasePersistenceIfIdle();
         return;
       }
       touchPointers.set(event.pointerId, view);
@@ -375,7 +410,7 @@
           kind: "move",
           pointerId: event.pointerId,
           pointerType: event.pointerType,
-          base: cloneDrawDocument(scene),
+          base: scene,
           start: scenePoint,
         };
       } else {
@@ -386,7 +421,7 @@
     }
 
     if (tool === "eraser") {
-      const base = cloneDrawDocument(scene);
+      const base = scene;
       gesture = {
         kind: "erase",
         pointerId: event.pointerId,
@@ -399,10 +434,14 @@
     }
 
     if (!shouldDrawWithPointer(event.pointerType, fingerDraw, penPointers.size > 0 && event.pointerType !== "pen")) {
+      releasePersistenceIfIdle();
       return;
     }
     const point = scenePointFromEvent(event, event.timeStamp);
-    if (!point) return;
+    if (!point) {
+      releasePersistenceIfIdle();
+      return;
+    }
     gesture = {
       kind: "ink",
       pointerId: event.pointerId,
@@ -452,9 +491,14 @@
 
     const scenePoint = viewToScene(camera, view);
     if (gesture.kind === "erase") {
-      const path = [...gesture.path, scenePoint];
-      gesture = { ...gesture, path };
-      scene = erasePreview(gesture.base, path);
+      const previous = gesture.path[gesture.path.length - 1];
+      const points = coalescedPointerSamples(event).flatMap((sample) => {
+        const sampleView = viewPointFromClient(sample.clientX, sample.clientY);
+        return sampleView ? [viewToScene(camera, sampleView)] : [];
+      });
+      const segment = [previous, ...points];
+      gesture = { ...gesture, path: [...gesture.path, ...points] };
+      scene = erasePreview(scene, segment);
       return;
     }
     if (gesture.kind === "lasso") {
@@ -467,9 +511,9 @@
     if (gesture.kind === "move") {
       const delta = { x: scenePoint.x - gesture.start.x, y: scenePoint.y - gesture.start.y };
       scene = {
-        ...cloneDrawDocument(gesture.base),
+        ...gesture.base,
         strokes: gesture.base.strokes.map((stroke) =>
-          selectedIds.includes(stroke.id) ? moveDrawStroke(stroke, delta) : cloneDrawStroke(stroke),
+          selectedIds.includes(stroke.id) ? moveDrawStroke(stroke, delta) : stroke,
         ),
       };
     }
@@ -481,10 +525,12 @@
     if (pinch) {
       if (pinch.ids.includes(event.pointerId) && touchPointers.size === 0) pinch = null;
       releasePointer(event.pointerId);
+      releasePersistenceIfIdle();
       return;
     }
     if (!gesture || gesture.pointerId !== event.pointerId) {
       releasePointer(event.pointerId);
+      releasePersistenceIfIdle();
       return;
     }
     event.preventDefault();
@@ -496,7 +542,7 @@
       const finalStroke = gesture?.kind === "ink" ? gesture.stroke : completed.stroke;
       gesture = null;
       const simplified = { ...finalStroke, points: simplifyDrawPoints(finalStroke.points) };
-      const base = cloneDrawDocument(scene);
+      const base = scene;
       commitScene(base, { ...base, strokes: [...base.strokes, simplified] }, "Draw stroke");
       releasePointer(event.pointerId);
       return;
@@ -511,18 +557,23 @@
       selectedIds = selectDrawStrokesInLasso(scene.strokes, completed.path);
     }
     releasePointer(event.pointerId);
+    releasePersistenceIfIdle();
   }
 
   function cancelGesture(event: PointerEvent) {
     if (event.pointerType === "touch") touchPointers.delete(event.pointerId);
     if (event.pointerType === "pen") penPointers.delete(event.pointerId);
     if (pinch?.ids.includes(event.pointerId) && touchPointers.size === 0) pinch = null;
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
-    if (gesture.kind === "erase" || gesture.kind === "move") scene = cloneDrawDocument(gesture.base);
+    if (!gesture || gesture.pointerId !== event.pointerId) {
+      releasePersistenceIfIdle();
+      return;
+    }
+    if (gesture.kind === "erase" || gesture.kind === "move") scene = gesture.base;
     gesture = null;
     pendingInkPoints = [];
     if (inkFrame) cancelAnimationFrame(inkFrame);
     inkFrame = 0;
+    releasePersistenceIfIdle();
   }
 
   function undo() {
@@ -545,7 +596,7 @@
 
   function deleteSelection() {
     if (!editable || selectedIds.length === 0) return;
-    const base = cloneDrawDocument(scene);
+    const base = scene;
     const next = { ...base, strokes: base.strokes.filter((stroke) => !selectedIds.includes(stroke.id)) };
     selectedIds = [];
     commitScene(base, next, "Delete selection");
@@ -553,7 +604,7 @@
 
   function duplicateSelection() {
     if (!editable || selectedIds.length === 0) return;
-    const base = cloneDrawDocument(scene);
+    const base = scene;
     const copies = base.strokes
       .filter((stroke) => selectedIds.includes(stroke.id))
       .map((stroke) => ({ ...moveDrawStroke(stroke, { x: 18 / camera.zoom, y: 18 / camera.zoom }), id: randomUuid() }));
@@ -565,7 +616,7 @@
 
   function clear() {
     if (!editable || scene.strokes.length === 0) return;
-    const base = cloneDrawDocument(scene);
+    const base = scene;
     selectedIds = [];
     commitScene(base, { ...base, strokes: [] }, "Clear drawing");
     camera = createDrawCamera();
@@ -641,7 +692,7 @@
 
   export function applyDocument(next: DrawDocument) {
     const fingerprint = encodeDrawDocument(next);
-    if (fingerprint === syncedFingerprint || gesture != null || pinch != null) return;
+    if (fingerprint === syncedFingerprint || gesture != null || pinch != null || pendingScene != null) return;
     scene = cloneDrawDocument(next);
     syncedFingerprint = fingerprint;
     observedExternalFingerprint = fingerprint;

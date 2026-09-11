@@ -14,6 +14,7 @@ export type DrawPatch = {
 };
 
 function sameStroke(left: DrawStroke | undefined, right: DrawStroke | undefined): boolean {
+  if (left === right) return left != null;
   return left != null && right != null && JSON.stringify(left) === JSON.stringify(right);
 }
 

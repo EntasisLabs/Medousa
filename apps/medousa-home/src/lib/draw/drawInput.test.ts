@@ -3,6 +3,7 @@ import {
   coalescedPointerSamples,
   drawInputKind,
   drawPointFromPointer,
+  expressivePenPressure,
   shouldDrawWithPointer,
 } from "./drawInput";
 
@@ -13,7 +14,13 @@ describe("draw input", () => {
       (x, y) => ({ x: x * 2, y: y * 2 }),
       100,
     );
-    expect(point).toEqual({ x: 20, y: 40, pressure: 0.735, elapsedMs: 12, tiltX: 15, tiltY: -12 });
+    expect(point).toEqual({ x: 20, y: 40, pressure: 1, elapsedMs: 12, tiltX: 15, tiltY: -12 });
+  });
+
+  it("expands ordinary Apple Pencil pressure into a visible expressive range", () => {
+    expect(expressivePenPressure(0.15)).toBeLessThan(0.05);
+    expect(expressivePenPressure(0.5)).toBeGreaterThan(0.7);
+    expect(expressivePenPressure(0.7)).toBe(1);
   });
 
   it("leaves fake mouse pressure for velocity fallback", () => {

@@ -4,6 +4,7 @@ import {
   combinedDrawBounds,
   drawStrokeOutlinePath,
   drawStrokeRadius,
+  eraseDrawDocumentByPath,
   eraseDrawStrokeByPath,
   hitTestDrawStroke,
   moveDrawStroke,
@@ -86,6 +87,26 @@ describe("draw geometry", () => {
     expect(parts).toHaveLength(2);
     expect(parts[0].points.at(-1)?.x).toBeLessThan(50);
     expect(parts[1].points[0].x).toBeGreaterThan(50);
+  });
+
+  it("skips stroke cloning when an eraser segment is outside its bounds", () => {
+    const ink = stroke([{ x: 0, y: 0 }, { x: 100, y: 0 }]);
+    const parts = eraseDrawStrokeByPath(ink, [{ x: 400, y: 400 }, { x: 420, y: 420 }], 8);
+    expect(parts).toEqual([ink]);
+    expect(parts[0]).toBe(ink);
+  });
+
+  it("structurally shares an unchanged document during incremental erasing", () => {
+    const document = createEmptyDrawDocument();
+    document.strokes.push(stroke([{ x: 0, y: 0 }, { x: 100, y: 0 }]));
+    const unchanged = eraseDrawDocumentByPath(
+      document,
+      [{ x: 400, y: 400 }, { x: 420, y: 420 }],
+      8,
+      "partial",
+    );
+    expect(unchanged).toBe(document);
+    expect(eraseDrawDocumentByPath(document, [{ x: 50, y: 0 }], 8, "partial")).not.toBe(document);
   });
 
   it("does not mutate source strokes", () => {

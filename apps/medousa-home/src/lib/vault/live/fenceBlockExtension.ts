@@ -104,6 +104,7 @@ export type LiveFenceResolveContext = {
 export type FenceBlockOptions = {
   getLiquidContext?: () => LiquidRenderContext;
   getResolveContext?: () => LiveFenceResolveContext;
+  onDrawInteractionChange?: (active: boolean) => void;
 };
 
 declare module "@tiptap/core" {
@@ -151,6 +152,7 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
     return {
       getLiquidContext: undefined,
       getResolveContext: undefined,
+      onDrawInteractionChange: undefined,
     };
   },
 
@@ -306,9 +308,12 @@ export const FenceBlock = Node.create<FenceBlockOptions>({
 
         if (lang === "draw") {
           try {
-            draw = mountDrawSurface(dom, nextAttrs.raw, (updatedRaw) => {
-              applyRawUpdate(updatedRaw);
-            });
+            draw = mountDrawSurface(
+              dom,
+              nextAttrs.raw,
+              (updatedRaw) => applyRawUpdate(updatedRaw),
+              opts.onDrawInteractionChange,
+            );
           } catch {
             mountPlainFence(dom, lang, fenceBody(nextAttrs.raw), enterRawEdit);
           }

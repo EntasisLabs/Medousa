@@ -55,8 +55,8 @@ export type ParsedDrawFence = {
 };
 
 const BRUSH_DEFAULTS: Record<DrawBrushKind, Omit<DrawBrush, "kind" | "size"> & { size: number }> = {
-  pen: { size: 6, thinning: 0.62, smoothing: 0.55, streamline: 0.5, opacity: 1 },
-  pencil: { size: 5, thinning: 0.48, smoothing: 0.42, streamline: 0.38, opacity: 0.82 },
+  pen: { size: 6, thinning: 0.68, smoothing: 0.55, streamline: 0.5, opacity: 1 },
+  pencil: { size: 5, thinning: 0.58, smoothing: 0.42, streamline: 0.38, opacity: 0.82 },
   marker: { size: 14, thinning: 0.24, smoothing: 0.62, streamline: 0.55, opacity: 0.92 },
   highlighter: { size: 24, thinning: 0.08, smoothing: 0.7, streamline: 0.58, opacity: 0.3 },
 };

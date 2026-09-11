@@ -1,7 +1,15 @@
-import { cloneDrawStroke, type DrawBrush, type DrawPoint, type DrawStroke } from "./drawDocument";
+import {
+  cloneDrawStroke,
+  type DrawBrush,
+  type DrawDocument,
+  type DrawPoint,
+  type DrawStroke,
+} from "./drawDocument";
 import type { DrawVector } from "./drawCamera";
 
 export type DrawBounds = { x: number; y: number; width: number; height: number };
+
+const strokeBoundsCache = new WeakMap<DrawStroke, DrawBounds>();
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -110,6 +118,8 @@ export function simplifyDrawPoints(points: DrawPoint[], tolerance = 0.7): DrawPo
 }
 
 export function drawStrokeBounds(stroke: DrawStroke): DrawBounds {
+  const cached = strokeBoundsCache.get(stroke);
+  if (cached) return cached;
   if (stroke.points.length === 0) return { x: 0, y: 0, width: 0, height: 0 };
   let minX = Number.POSITIVE_INFINITY;
   let minY = Number.POSITIVE_INFINITY;
@@ -122,7 +132,9 @@ export function drawStrokeBounds(stroke: DrawStroke): DrawBounds {
     maxX = Math.max(maxX, point.x + radius);
     maxY = Math.max(maxY, point.y + radius);
   });
-  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  const bounds = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  strokeBoundsCache.set(stroke, bounds);
+  return bounds;
 }
 
 export function combinedDrawBounds(strokes: DrawStroke[]): DrawBounds | null {
@@ -144,6 +156,13 @@ function pointToSegmentDistance(point: DrawVector, start: DrawVector, end: DrawV
 }
 
 export function hitTestDrawStroke(stroke: DrawStroke, point: DrawVector, padding = 6): boolean {
+  const bounds = drawStrokeBounds(stroke);
+  if (
+    point.x < bounds.x - padding ||
+    point.y < bounds.y - padding ||
+    point.x > bounds.x + bounds.width + padding ||
+    point.y > bounds.y + bounds.height + padding
+  ) return false;
   if (stroke.points.length === 1) {
     return distance(stroke.points[0], point) <= drawStrokeRadius(stroke, 0) + padding;
   }
@@ -231,7 +250,18 @@ export function eraseDrawStrokeByPath(
   eraserPath: DrawVector[],
   radius: number,
 ): DrawStroke[] {
-  if (stroke.points.length === 0 || eraserPath.length === 0) return [cloneDrawStroke(stroke)];
+  if (stroke.points.length === 0 || eraserPath.length === 0) return [stroke];
+  const strokeBounds = drawStrokeBounds(stroke);
+  const pathMinX = Math.min(...eraserPath.map((point) => point.x)) - radius;
+  const pathMinY = Math.min(...eraserPath.map((point) => point.y)) - radius;
+  const pathMaxX = Math.max(...eraserPath.map((point) => point.x)) + radius;
+  const pathMaxY = Math.max(...eraserPath.map((point) => point.y)) + radius;
+  if (
+    strokeBounds.x > pathMaxX ||
+    strokeBounds.y > pathMaxY ||
+    strokeBounds.x + strokeBounds.width < pathMinX ||
+    strokeBounds.y + strokeBounds.height < pathMinY
+  ) return [stroke];
   const points = densifyDrawPoints(stroke.points, Math.max(1, radius * 0.5));
   const groups: DrawPoint[][] = [];
   let active: DrawPoint[] = [];
@@ -247,7 +277,7 @@ export function eraseDrawStrokeByPath(
     }
   });
   if (active.length > 0) groups.push(active);
-  if (groups.length === 1 && groups[0].length === points.length) return [cloneDrawStroke(stroke)];
+  if (groups.length === 1 && groups[0].length === points.length) return [stroke];
   return groups
     .filter((points) => points.length > 0)
     .map((points, index) => ({
@@ -255,6 +285,27 @@ export function eraseDrawStrokeByPath(
       id: `part:${index}:${Math.round(points[0].x * 10)}:${Math.round(points[0].y * 10)}:${stroke.id}`.slice(0, 128),
       points: simplifyDrawPoints(points, 0.5),
     }));
+}
+
+export function eraseDrawDocumentByPath(
+  document: DrawDocument,
+  eraserPath: DrawVector[],
+  radius: number,
+  mode: "partial" | "stroke",
+): DrawDocument {
+  if (mode === "stroke") {
+    const strokes = document.strokes.filter(
+      (stroke) => !eraserPath.some((point) => hitTestDrawStroke(stroke, point, radius)),
+    );
+    return strokes.length === document.strokes.length ? document : { ...document, strokes };
+  }
+  let changed = false;
+  const strokes = document.strokes.flatMap((stroke) => {
+    const parts = eraseDrawStrokeByPath(stroke, eraserPath, radius);
+    if (parts.length !== 1 || parts[0] !== stroke) changed = true;
+    return parts;
+  });
+  return changed ? { ...document, strokes } : document;
 }
 
 function interpolateOptional(left: number | undefined, right: number | undefined, t: number): number | undefined {

@@ -12,8 +12,9 @@ surface is also used by full drawing notes.
   size, eraser mode, touch behavior, view controls, and document actions. On a
   phone these controls open as a bottom sheet instead of a scrolling toolbar.
 - Choose **Pen**, **Pencil**, **Marker**, or **Highlighter** in the options sheet.
-  Pen-capable devices use the stylus pressure supplied by the device; mouse and
-  touch input use a stable speed-sensitive fallback.
+  Pen-capable devices use an expressive curve over the stylus pressure supplied
+  by the device, making ordinary light-to-firm Apple Pencil input visibly change
+  the stroke width. Mouse and touch input use a stable speed-sensitive fallback.
 - **Erase → Partial** removes only the ink under the eraser path. **Stroke**
   removes each complete stroke the path touches.
 - **Select** and draw a lasso around or across ink. Drag selected ink to move
@@ -33,6 +34,11 @@ tilt, and coalesced samples when the device WebView supplies them. While a pen
 gesture is active, incidental touch input is ignored to reduce palm marks.
 Medousa also suppresses the WebView's long-press selection and callout gestures
 inside the canvas so a pressure hold remains drawing input.
+
+Ink and erasing render locally during the gesture. Medousa batches the drawing
+back into the note after a short pause and holds vault autosave while a stylus
+is active, keeping persistence work off the live input path without risking an
+unfinished drawing when the surface closes.
 
 In Preview, the same block renders as a clean, read-only canvas. In Build, it remains a normal fenced Markdown block:
 
