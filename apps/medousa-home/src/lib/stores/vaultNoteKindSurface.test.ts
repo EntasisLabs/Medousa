@@ -117,7 +117,7 @@ describe("vault note kind surfaces (sheet / workbook / slides / draw)", () => {
     store.setNoteKind("draw");
     expect(store.selectedKind).toBe("draw");
     expect(store.content).toMatch(/kind:\s*draw/);
-    expect(store.content).toContain("```draw\nversion: 1");
+    expect(store.content).toContain("```draw\nversion: 2");
   });
 
   it("does not wipe an existing sheet table when re-applying kind", async () => {

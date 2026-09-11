@@ -206,8 +206,8 @@ Living epic: [expressive-chat-media-ink-liquid-epic.md](expressive-chat-media-in
 | Slice | Status |
 |-------|--------|
 | S0 — plan and contract lock | ✅ |
-| S1 — ink document and input foundation | ⬜ |
-| S2 — ink engine v2 experience + physical-device checkpoint A | ⬜ |
+| S1 — ink document and input foundation | ✅ |
+| S2 — ink engine v2 experience + physical-device checkpoint A | 🔄 implementation complete; [physical validation pending](expressive-chat-checkpoint-a.md) |
 | S3 — drawing in chat and rich-media contracts | ⬜ |
 | S4 — generated images + physical-device checkpoint B | ⬜ |
 | S5 — Liquid activation and durable interaction loop | ⬜ |

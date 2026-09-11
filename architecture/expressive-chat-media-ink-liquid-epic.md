@@ -1,6 +1,6 @@
 # Expressive Chat — generated media, ink, and interactive Liquid
 
-> **Status:** Slice 0 locked (2026-09-11)  
+> **Status:** Slices 0–2 implemented; Checkpoint A physical validation pending (2026-09-11)
 > **Scope:** Daemon-owned media generation, ink-first drawing, drawing in chat,
 > and durable interactive Liquid experiences  
 > **Checkpoints:** Stop for physical-device validation after Slices 2, 4, and 6  
@@ -310,7 +310,9 @@ Scenarios:
 
 Record device/OS/app build, pass/fail, latency/feel notes, and any WebView
 capability gaps. Add a narrow native bridge only if the device evidence requires
-one.
+one. Use the checked-in [Checkpoint A test record](expressive-chat-checkpoint-a.md)
+for the physical-device pass; S3 remains closed until that record passes or has
+explicitly accepted follow-ups.
 
 ### Slice 3 — drawing in chat and rich-media contracts
 
