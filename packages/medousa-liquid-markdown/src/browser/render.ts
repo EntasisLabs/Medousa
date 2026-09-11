@@ -19,6 +19,7 @@ import type {
   LiquidMediaProps,
   LiquidPlanProps,
   LiquidReportProps,
+  LiquidRecipeProps,
   LiquidSectionProps,
   LiquidShortlistProps,
   LiquidSlidesProps,
@@ -378,6 +379,16 @@ function renderSteps(props: LiquidStepsProps): string | null {
   }).join("")}</div></section>`;
 }
 
+function renderRecipe(props: LiquidRecipeProps): string | null {
+  if (!props?.title || !props.steps?.length) return null;
+  const resources = props.ingredients?.length
+    ? ["Ingredients", props.ingredients]
+    : props.resources?.length
+      ? ["What you need", props.resources]
+      : null;
+  return `<article class="medousa-liquid__surface medousa-liquid__recipe">${header(props.title, props.subtitle, props.yield)}${resources ? `<section><h4>${resources[0]}</h4><ul>${(resources[1] as string[]).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></section>` : ""}<ol class="medousa-liquid__recipe-steps">${props.steps.map((step) => `<li><div><strong>${escapeHtml(step.label)}</strong>${step.durationLabel ? `<span class="medousa-liquid__badge">${escapeHtml(step.durationLabel)}</span>` : ""}</div>${markdown(step.body)}</li>`).join("")}</ol>${props.notes ? `<aside class="medousa-liquid__callout">${markdown(props.notes)}</aside>` : ""}${props.actions?.length ? renderActions({ actions: props.actions }, {}) ?? "" : ""}</article>`;
+}
+
 function renderAccordion(props: LiquidAccordionProps): string | null {
   if (!props?.items?.length) return null;
   return `<section class="medousa-liquid__surface">${header(props.title, props.subtitle)}<div class="medousa-liquid__accordion" data-liquid-accordion data-liquid-accordion-multiple="${props.multiple === true ? "true" : "false"}">${props.items.map((item) => `<details class="medousa-liquid__accordion-item" data-liquid-accordion-item${item.open ? " open" : ""}><summary>${item.emoji ? `${escapeHtml(item.emoji)} ` : item.icon ? `${renderLiquidIconHtml(item.icon) ?? ""} ` : ""}${escapeHtml(item.label)}</summary><div class="medousa-liquid__accordion-body">${markdown(item.body)}</div></details>`).join("")}</div></section>`;
@@ -443,6 +454,7 @@ function renderKind(
     case "slides": return renderSlides(payload as LiquidSlidesProps, options);
     case "tabs": return renderTabs(payload as LiquidTabsProps);
     case "steps": return renderSteps(payload as LiquidStepsProps);
+    case "recipe": return renderRecipe(payload as LiquidRecipeProps);
     case "accordion": return renderAccordion(payload as LiquidAccordionProps);
     case "code": return renderCode(payload as LiquidCodeProps);
     case "tree": return renderTree(payload as LiquidTreeProps);

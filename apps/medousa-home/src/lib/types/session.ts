@@ -120,6 +120,7 @@ export interface CreateTurnTicketRequest {
   browserDriverId?: string;
   selectedWorlds?: TurnWorldSelection[];
   mediaRefs?: import("$lib/types/media").MediaRef[];
+  liquidInteractions?: import("$lib/liquid/core").LiquidInteractionEnvelope[];
   voicePresetId?: string;
   voiceAppendix?: string;
   identityUserId?: string;

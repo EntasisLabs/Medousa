@@ -2543,6 +2543,20 @@ pub const SESSIONS_BY_SESSION_ID_HISTORY_GET: Operation = Operation {
     streaming: false,
 };
 
+pub const SESSIONS_BY_SESSION_ID_LIQUID_STATE_BY_MESSAGE_ID_BY_NODE_ID_BY_INSTANCE_ID_GET: Operation = Operation {
+    id: "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.get",
+    method: "GET",
+    path: "/v1/sessions/{session_id}/liquid-state/{message_id}/{node_id}/{instance_id}",
+    streaming: false,
+};
+
+pub const SESSIONS_BY_SESSION_ID_LIQUID_STATE_BY_MESSAGE_ID_BY_NODE_ID_BY_INSTANCE_ID_PUT: Operation = Operation {
+    id: "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.put",
+    method: "PUT",
+    path: "/v1/sessions/{session_id}/liquid-state/{message_id}/{node_id}/{instance_id}",
+    streaming: false,
+};
+
 pub const SESSIONS_BY_SESSION_ID_NAME_PUT: Operation = Operation {
     id: "sessions.by_session_id.name.put",
     method: "PUT",
@@ -3501,6 +3515,8 @@ pub static ALL: &[Operation] = &[
     SESSIONS_BY_SESSION_ID_CODE_PROJECT_POST,
     SESSIONS_BY_SESSION_ID_DELETE,
     SESSIONS_BY_SESSION_ID_HISTORY_GET,
+    SESSIONS_BY_SESSION_ID_LIQUID_STATE_BY_MESSAGE_ID_BY_NODE_ID_BY_INSTANCE_ID_GET,
+    SESSIONS_BY_SESSION_ID_LIQUID_STATE_BY_MESSAGE_ID_BY_NODE_ID_BY_INSTANCE_ID_PUT,
     SESSIONS_BY_SESSION_ID_NAME_PUT,
     SESSIONS_BY_SESSION_ID_TURNS_GET,
     SESSIONS_BY_SESSION_ID_TURNS_POST,

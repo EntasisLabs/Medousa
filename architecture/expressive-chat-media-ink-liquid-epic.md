@@ -1,6 +1,6 @@
 # Expressive Chat — generated media, ink, and interactive Liquid
 
-> **Status:** Slices 0–4 implemented; stopped at Checkpoint B for validation (2026-09-11)
+> **Status:** Slices 0–6 implemented; stopped at Checkpoint C for validation (2026-09-11)
 > **Scope:** Daemon-owned media generation, ink-first drawing, drawing in chat,
 > and durable interactive Liquid experiences  
 > **Checkpoints:** Stop for physical-device validation after Slices 2, 4, and 6  
@@ -416,6 +416,8 @@ Deliverables:
 #### Checkpoint C — interactive Liquid validation
 
 Stop after Slice 6.
+
+Validation record: [expressive-chat-checkpoint-c.md](expressive-chat-checkpoint-c.md).
 
 Validate on desktop, iPad, Android, portable renderers, and remote workshop:
 

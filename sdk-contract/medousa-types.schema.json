@@ -5255,6 +5255,816 @@
       }
     }
   },
+  "CreateTurnTicketRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreateTurnTicketRequest",
+    "description": "Unified turn ticket — interactive chat or background `/ask` on the same SSE contract.",
+    "type": "object",
+    "required": [
+      "prompt",
+      "session_id"
+    ],
+    "properties": {
+      "additional_manuscript_ids": {
+        "default": null,
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "string"
+        }
+      },
+      "agent_mode": {
+        "description": "Per-turn behavioral mode override; independent of delivery mode.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/AgentModeId"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "code_context": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/CodeIntentContext"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "code_project_setup_authorized": {
+        "description": "Structured principal authorization from a project-setup surface action.",
+        "default": false,
+        "type": "boolean"
+      },
+      "host_context": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/HostTurnContext"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "identity_user_id": {
+        "description": "Optional identity principal override (debug/internal). Default: active workshop profile.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "liquid_interactions": {
+        "description": "Message-associated Liquid events accumulated since the previous accepted turn.",
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/LiquidInteractionEnvelope"
+        }
+      },
+      "manuscript_id": {
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "media_refs": {
+        "description": "User media uploaded to local medousa/media/ before this turn (P5a).",
+        "default": [],
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/MediaRef"
+        }
+      },
+      "mode": {
+        "default": "interactive",
+        "allOf": [
+          {
+            "$ref": "#/definitions/TurnTicketMode"
+          }
+        ]
+      },
+      "model": {
+        "default": "",
+        "type": "string"
+      },
+      "model_hint": {
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "persist_user_turn": {
+        "default": true,
+        "type": "boolean"
+      },
+      "prompt": {
+        "type": "string"
+      },
+      "provider": {
+        "default": "",
+        "type": "string"
+      },
+      "reasoning_effort": {
+        "default": "",
+        "type": "string"
+      },
+      "response_depth_mode": {
+        "default": "standard",
+        "type": "string"
+      },
+      "session_id": {
+        "type": "string"
+      },
+      "stage_routing": {
+        "default": null,
+        "anyOf": [
+          {
+            "$ref": "#/definitions/StageRoutingMatrix"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "suggested_capability_ids": {
+        "default": null,
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "string"
+        }
+      },
+      "surface": {
+        "default": null,
+        "anyOf": [
+          {
+            "$ref": "#/definitions/TurnSurfaceContext"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "voice_appendix": {
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "voice_preset_id": {
+        "description": "Composer voice stance — short appendix block (not a manuscript specialty).",
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "worker_execution_target": {
+        "description": "User-selected default workshop for workers created during this turn.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ExecutionTargetSelection"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "definitions": {
+      "AgentModeId": {
+        "description": "Behavioral runtime profile for an agent turn.\n\nThis is distinct from [`TurnTicketMode`], which selects interactive versus background delivery. Agent modes preserve one Medousa identity while changing context, tools, lane policy, and completion behavior.",
+        "type": "string",
+        "enum": [
+          "general",
+          "teacher",
+          "instant",
+          "coder"
+        ]
+      },
+      "CodeIntentContext": {
+        "description": "Bounded, user-intent-oriented context carried from the permanent Code workspace into an external coding-agent prompt. Paths are relative to the governed Forge worktree; the daemon remains authoritative for the cwd.",
+        "type": "object",
+        "properties": {
+          "active_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "containing_symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cursor_line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "last_verification": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "open_files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selected_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selection_end_line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "selection_start_line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "work_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ExecutionTargetRequirements": {
+        "description": "Location-neutral requirements used when a turn asks Medousa to choose a worker workshop. `selection_key` makes Auto placement stable for the same eligible target set without exposing transport details to the client.",
+        "type": "object",
+        "properties": {
+          "architecture": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "platform": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "region": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "required_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "selection_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ExecutionTargetSelection": {
+        "description": "User-facing placement preference for workers spawned during a turn. Agent-authored worker requests use the same wire shape, but are admitted against the stricter agent-selectable inventory.",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "same_as_parent"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "runtime_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "exact"
+                ]
+              },
+              "runtime_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "auto"
+                ]
+              },
+              "requirements": {
+                "default": {},
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/ExecutionTargetRequirements"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "HostContextDiagnostic": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "HostContextPosition": {
+        "type": "object",
+        "required": [
+          "character",
+          "line"
+        ],
+        "properties": {
+          "character": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "line": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      "HostContextSelection": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "HostTurnContext": {
+        "description": "Bounded, advisory context captured by an editor, notes app, or browser. This never grants filesystem or vault authority to the sending client.",
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/HostContextDiagnostic"
+            }
+          },
+          "document_excerpt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "related_resources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resource_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resource_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selection": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HostContextSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "workspace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "LiquidEventDisposition": {
+        "description": "What the client expects the daemon to do with a Liquid scene interaction.",
+        "type": "string",
+        "enum": [
+          "local_state",
+          "context_only",
+          "submit_turn",
+          "navigation",
+          "privileged_action"
+        ]
+      },
+      "LiquidInteractionEnvelope": {
+        "description": "Bounded, inert interaction context associated with the message that emitted it.",
+        "type": "object",
+        "required": [
+          "disposition",
+          "event_type",
+          "instance_id",
+          "message_id",
+          "node_id",
+          "occurred_at_utc",
+          "session_id",
+          "version"
+        ],
+        "properties": {
+          "disposition": {
+            "$ref": "#/definitions/LiquidEventDisposition"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "expected_state_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "instance_id": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "occurred_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "payload": true,
+          "session_id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          }
+        }
+      },
+      "MediaRef": {
+        "description": "Reference to a user file stored locally under medousa/media/ (not inline bytes).",
+        "type": "object",
+        "required": [
+          "kind",
+          "media_id",
+          "mime"
+        ],
+        "properties": {
+          "generation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "description": "image | drawing | document | spreadsheet | audio",
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "media_id": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "parent_generation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_media_id": {
+            "description": "Editable vector source paired with a raster drawing preview.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "StageRoute": {
+        "type": "object",
+        "required": [
+          "fallback_chain",
+          "model",
+          "policy_profile",
+          "provider",
+          "role"
+        ],
+        "properties": {
+          "fallback_chain": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "model": {
+            "type": "string"
+          },
+          "policy_profile": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        }
+      },
+      "StageRoutingMatrix": {
+        "type": "object",
+        "required": [
+          "chunker",
+          "extractor",
+          "final_response",
+          "orchestrator",
+          "packer",
+          "summarizer",
+          "verifier"
+        ],
+        "properties": {
+          "chunker": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "extractor": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "final_response": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "orchestrator": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "packer": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "summarizer": {
+            "$ref": "#/definitions/StageRoute"
+          },
+          "verifier": {
+            "$ref": "#/definitions/StageRoute"
+          }
+        }
+      },
+      "TurnSurfaceContext": {
+        "type": "object",
+        "properties": {
+          "browser_driver_id": {
+            "description": "Exact registered browser driver instance selected for this turn.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "channel_id": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "channel_surface": {
+            "description": "Adapter surface: telegram, discord, slack, home-desktop, home-ios, tui, api, …",
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selected_worlds": {
+            "description": "Exact worlds selected by the user for this turn. The daemon validates, bounds, and freezes these bindings before any model or worker runs.",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/TurnWorldSelection"
+            }
+          },
+          "supports_browser_host": {
+            "description": "When true, the connected client can run Agent Browser (local BrowserHost or client WebView). Telegram/TUI/ingest leave this false; Home desktop/iOS set true when browser is available.",
+            "default": false,
+            "type": "boolean"
+          },
+          "supports_liquid_markdown": {
+            "description": "When true, the connected client can parse and hydrate Medousa Liquid Markdown embeds. This does not imply support for HTML artifacts, scenes, canvas, or UI authoring tools.",
+            "default": false,
+            "type": "boolean"
+          },
+          "supports_ui_artifacts": {
+            "description": "When true, the connected client can render sandboxed HTML UI artifacts (`cognition_ui_present`). Channel adapters and clients set this — the daemon does not infer it from channel name.",
+            "default": false,
+            "type": "boolean"
+          },
+          "user_id": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "TurnTicketMode": {
+        "type": "string",
+        "enum": [
+          "interactive",
+          "background"
+        ]
+      },
+      "TurnWorldSelection": {
+        "description": "One user-selected world and the workshop that currently owns it.\n\nClients carry placement only to the daemon admission boundary. Agent and worker prompts receive the opaque `world_id` alone; driver and transport details never enter model-authored requests.",
+        "type": "object",
+        "required": [
+          "execution_runtime_id",
+          "world_id"
+        ],
+        "properties": {
+          "execution_runtime_id": {
+            "type": "string"
+          },
+          "world_id": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
   "DaemonRuntimeDescriptor": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "DaemonRuntimeDescriptor",
@@ -12509,6 +13319,13 @@
           "null"
         ]
       },
+      "liquid_interactions": {
+        "description": "Message-associated Liquid events that should become advisory context for this turn.",
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/LiquidInteractionEnvelope"
+        }
+      },
       "manuscript_id": {
         "description": "YAML manuscript specialty for ranked digest + scheduled tool allowlist.",
         "default": null,
@@ -12995,6 +13812,69 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "LiquidEventDisposition": {
+        "description": "What the client expects the daemon to do with a Liquid scene interaction.",
+        "type": "string",
+        "enum": [
+          "local_state",
+          "context_only",
+          "submit_turn",
+          "navigation",
+          "privileged_action"
+        ]
+      },
+      "LiquidInteractionEnvelope": {
+        "description": "Bounded, inert interaction context associated with the message that emitted it.",
+        "type": "object",
+        "required": [
+          "disposition",
+          "event_type",
+          "instance_id",
+          "message_id",
+          "node_id",
+          "occurred_at_utc",
+          "session_id",
+          "version"
+        ],
+        "properties": {
+          "disposition": {
+            "$ref": "#/definitions/LiquidEventDisposition"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "expected_state_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "instance_id": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "occurred_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "payload": true,
+          "session_id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
           }
         }
       },
@@ -13924,6 +14804,199 @@
       },
       "status": {
         "type": "string"
+      }
+    }
+  },
+  "LiquidComponentStateRecord": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "LiquidComponentStateRecord",
+    "type": "object",
+    "required": [
+      "component_type",
+      "instance_id",
+      "message_id",
+      "node_id",
+      "revision",
+      "schema_version",
+      "session_id",
+      "state",
+      "updated_at_utc"
+    ],
+    "properties": {
+      "component_type": {
+        "type": "string"
+      },
+      "instance_id": {
+        "type": "string"
+      },
+      "message_id": {
+        "type": "string"
+      },
+      "node_id": {
+        "type": "string"
+      },
+      "revision": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "schema_version": {
+        "type": "integer",
+        "format": "uint8",
+        "minimum": 0.0
+      },
+      "session_id": {
+        "type": "string"
+      },
+      "state": true,
+      "updated_at_utc": {
+        "type": "string",
+        "format": "date-time"
+      }
+    }
+  },
+  "LiquidComponentStateResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "LiquidComponentStateResponse",
+    "type": "object",
+    "properties": {
+      "state": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/LiquidComponentStateRecord"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "definitions": {
+      "LiquidComponentStateRecord": {
+        "type": "object",
+        "required": [
+          "component_type",
+          "instance_id",
+          "message_id",
+          "node_id",
+          "revision",
+          "schema_version",
+          "session_id",
+          "state",
+          "updated_at_utc"
+        ],
+        "properties": {
+          "component_type": {
+            "type": "string"
+          },
+          "instance_id": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "state": true,
+          "updated_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  },
+  "LiquidEventDisposition": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "LiquidEventDisposition",
+    "description": "What the client expects the daemon to do with a Liquid scene interaction.",
+    "type": "string",
+    "enum": [
+      "local_state",
+      "context_only",
+      "submit_turn",
+      "navigation",
+      "privileged_action"
+    ]
+  },
+  "LiquidInteractionEnvelope": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "LiquidInteractionEnvelope",
+    "description": "Bounded, inert interaction context associated with the message that emitted it.",
+    "type": "object",
+    "required": [
+      "disposition",
+      "event_type",
+      "instance_id",
+      "message_id",
+      "node_id",
+      "occurred_at_utc",
+      "session_id",
+      "version"
+    ],
+    "properties": {
+      "disposition": {
+        "$ref": "#/definitions/LiquidEventDisposition"
+      },
+      "event_type": {
+        "type": "string"
+      },
+      "expected_state_revision": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "instance_id": {
+        "type": "string"
+      },
+      "message_id": {
+        "type": "string"
+      },
+      "node_id": {
+        "type": "string"
+      },
+      "occurred_at_utc": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "payload": true,
+      "session_id": {
+        "type": "string"
+      },
+      "version": {
+        "type": "integer",
+        "format": "uint8",
+        "minimum": 0.0
+      }
+    },
+    "definitions": {
+      "LiquidEventDisposition": {
+        "description": "What the client expects the daemon to do with a Liquid scene interaction.",
+        "type": "string",
+        "enum": [
+          "local_state",
+          "context_only",
+          "submit_turn",
+          "navigation",
+          "privileged_action"
+        ]
       }
     }
   },
@@ -16608,6 +17681,35 @@
           }
         }
       }
+    }
+  },
+  "PutLiquidComponentStateRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "PutLiquidComponentStateRequest",
+    "type": "object",
+    "required": [
+      "component_type",
+      "schema_version",
+      "state"
+    ],
+    "properties": {
+      "component_type": {
+        "type": "string"
+      },
+      "expected_revision": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "schema_version": {
+        "type": "integer",
+        "format": "uint8",
+        "minimum": 0.0
+      },
+      "state": true
     }
   },
   "RecurringDeliveryResponse": {
@@ -25489,6 +26591,78 @@
       "updated_at": {
         "type": "string",
         "format": "date-time"
+      },
+      "workspace_card_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "definitions": {
+      "TurnTicketMode": {
+        "type": "string",
+        "enum": [
+          "interactive",
+          "background"
+        ]
+      },
+      "TurnTicketPhase": {
+        "type": "string",
+        "enum": [
+          "accepted",
+          "streaming",
+          "worker_handoff",
+          "workshop_handoff",
+          "budget_blocked",
+          "done",
+          "error",
+          "cancelled"
+        ]
+      }
+    }
+  },
+  "TurnTicketResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "TurnTicketResponse",
+    "type": "object",
+    "required": [
+      "accepted_at_utc",
+      "mode",
+      "phase",
+      "session_id",
+      "stream_ready",
+      "stream_url",
+      "turn_id"
+    ],
+    "properties": {
+      "accepted_at_utc": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "daemon_notice": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "mode": {
+        "$ref": "#/definitions/TurnTicketMode"
+      },
+      "phase": {
+        "$ref": "#/definitions/TurnTicketPhase"
+      },
+      "session_id": {
+        "type": "string"
+      },
+      "stream_ready": {
+        "type": "boolean"
+      },
+      "stream_url": {
+        "type": "string"
+      },
+      "turn_id": {
+        "type": "string"
       },
       "workspace_card_id": {
         "type": [

@@ -374,6 +374,8 @@ OPERATIONS: dict[str, Operation] = {
     "sessions.by_session_id.code_project.post": Operation("sessions.by_session_id.code_project.post", "POST", "/v1/sessions/{session_id}/code-project", False),
     "sessions.by_session_id.delete": Operation("sessions.by_session_id.delete", "DELETE", "/v1/sessions/{session_id}", False),
     "sessions.by_session_id.history.get": Operation("sessions.by_session_id.history.get", "GET", "/v1/sessions/{session_id}/history", False),
+    "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.get": Operation("sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.get", "GET", "/v1/sessions/{session_id}/liquid-state/{message_id}/{node_id}/{instance_id}", False),
+    "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.put": Operation("sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.put", "PUT", "/v1/sessions/{session_id}/liquid-state/{message_id}/{node_id}/{instance_id}", False),
     "sessions.by_session_id.name.put": Operation("sessions.by_session_id.name.put", "PUT", "/v1/sessions/{session_id}/name", False),
     "sessions.by_session_id.turns.get": Operation("sessions.by_session_id.turns.get", "GET", "/v1/sessions/{session_id}/turns", False),
     "sessions.by_session_id.turns.post": Operation("sessions.by_session_id.turns.post", "POST", "/v1/sessions/{session_id}/turns", False),

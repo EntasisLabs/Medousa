@@ -848,6 +848,8 @@ fn run_home() {
             daemon::session::session_steer_bound_workshop,
             daemon::session::turn_create,
             daemon::session::turn_list_session,
+            daemon::liquid_state::liquid_state_get,
+            daemon::liquid_state::liquid_state_put,
             daemon::media::media_upload,
             daemon::media::media_upload_path,
             daemon::media::media_read,

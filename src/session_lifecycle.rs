@@ -205,6 +205,7 @@ enum LocalSessionSurface {
     Extractions,
     Verifications,
     ContextPacks,
+    LiquidState,
     ToolSurface,
     BotBinding,
     #[cfg(feature = "full-daemon")]
@@ -215,7 +216,7 @@ enum LocalSessionSurface {
 
 impl LocalSessionSurface {
     #[cfg(feature = "full-daemon")]
-    const ALL: [Self; 14] = [
+    const ALL: [Self; 15] = [
         Self::Transcript,
         Self::Catalog,
         Self::SharedCatalog,
@@ -226,6 +227,7 @@ impl LocalSessionSurface {
         Self::Extractions,
         Self::Verifications,
         Self::ContextPacks,
+        Self::LiquidState,
         Self::ToolSurface,
         Self::BotBinding,
         Self::TurnLedger,
@@ -233,7 +235,7 @@ impl LocalSessionSurface {
     ];
 
     #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
-    const ALL: [Self; 12] = [
+    const ALL: [Self; 13] = [
         Self::Transcript,
         Self::Catalog,
         Self::SharedCatalog,
@@ -244,6 +246,7 @@ impl LocalSessionSurface {
         Self::Extractions,
         Self::Verifications,
         Self::ContextPacks,
+        Self::LiquidState,
         Self::ToolSurface,
         Self::BotBinding,
     ];
@@ -260,6 +263,7 @@ impl LocalSessionSurface {
             Self::Extractions => "extractions",
             Self::Verifications => "verifications",
             Self::ContextPacks => "context_packs",
+            Self::LiquidState => "liquid_state",
             Self::ToolSurface => "tool_surface",
             Self::BotBinding => "bot_binding",
             #[cfg(feature = "full-daemon")]
@@ -284,6 +288,7 @@ impl LocalSessionSurface {
                 crate::verification_store::delete_verifications_for_session(text)
             }
             Self::ContextPacks => crate::context_pack::delete_context_packs_for_session(text),
+            Self::LiquidState => crate::liquid_state::delete_for_session(text),
             Self::ToolSurface => crate::tool_bootstrap::delete_session_tool_surface(text),
             Self::BotBinding => {
                 crate::bot_profiles::BotProfileStore::daemon_default().remove_session_binding(text)

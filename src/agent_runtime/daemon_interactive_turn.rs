@@ -1804,6 +1804,11 @@ async fn run_agent_turn_inner(
         &effective_prompt,
         host_context.as_ref(),
     );
+    let effective_prompt = crate::liquid_interactions::append_to_prompt(
+        &effective_prompt,
+        &session_id,
+        &request.liquid_interactions,
+    );
     let effective_prompt = if request.code_project_setup_authorized
         && agent_mode.id == crate::daemon_api::AgentModeId::Coder
         && agent_mode.coder_phase == Some(super::modes::CoderRuntimePhase::Setup)

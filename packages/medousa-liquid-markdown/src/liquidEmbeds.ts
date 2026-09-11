@@ -38,6 +38,8 @@ export const LIQUID_FENCE_LANGS = new Set([
   "slides",
   "tabs",
   "steps",
+  "recipe",
+  "procedure",
   "accordion",
   "code",
   "tree",
@@ -72,6 +74,7 @@ export type LiquidEmbedKind =
   | "slides"
   | "tabs"
   | "steps"
+  | "recipe"
   | "accordion"
   | "code"
   | "tree"
@@ -460,6 +463,25 @@ export interface LiquidStepsProps {
   title?: string;
   subtitle?: string;
   steps: LiquidStepItem[];
+}
+
+export interface LiquidRecipeStep {
+  id: string;
+  label: string;
+  body?: string;
+  durationMs?: number;
+  durationLabel?: string;
+}
+
+export interface LiquidRecipeProps {
+  title: string;
+  subtitle?: string;
+  yield?: string;
+  ingredients?: string[];
+  resources?: string[];
+  steps: LiquidRecipeStep[];
+  notes?: string;
+  actions?: LiquidActionProps[];
 }
 
 export interface LiquidAccordionItem {
@@ -1839,6 +1861,99 @@ function parseStepsBody(body: string): LiquidStepsProps | null {
   return out;
 }
 
+function parseDurationMs(raw: string | undefined): number | undefined {
+  if (!raw?.trim()) return undefined;
+  const source = raw.trim().toLowerCase();
+  let total = 0;
+  let matched = 0;
+  const pattern = /(\d+(?:\.\d+)?)\s*(h(?:ours?)?|m(?:in(?:utes?)?)?|s(?:ec(?:onds?)?)?)/g;
+  for (const part of source.matchAll(pattern)) {
+    const value = Number(part[1]);
+    const unit = part[2]?.[0];
+    if (!Number.isFinite(value) || !unit) continue;
+    total += value * (unit === "h" ? 3_600_000 : unit === "m" ? 60_000 : 1_000);
+    matched += part[0].length;
+  }
+  if (matched === 0 || source.replace(pattern, "").trim()) return undefined;
+  return total >= 1_000 && total <= 24 * 3_600_000 ? Math.round(total) : undefined;
+}
+
+function recipePreambleList(preamble: string, heading: "ingredients" | "resources"): string[] {
+  const lines = preamble.replace(/\r\n/g, "\n").split("\n");
+  const values: string[] = [];
+  let active = false;
+  for (const raw of lines) {
+    const line = raw.trim();
+    const section = line.match(/^([a-zA-Z][\w-]*)\s*:\s*$/)?.[1]?.toLowerCase();
+    if (section) {
+      active = section === heading;
+      continue;
+    }
+    const repeated = line.match(new RegExp(`^${heading.slice(0, -1)}\\s*:\\s*(.+)$`, "i"));
+    if (repeated?.[1]) {
+      values.push(repeated[1].trim());
+      active = false;
+      continue;
+    }
+    if (active && /^[-*+]\s+/.test(line)) values.push(line.replace(/^[-*+]\s+/, "").trim());
+    else if (line && !/^[-*+]\s+/.test(line)) active = false;
+  }
+  return values.filter(Boolean).slice(0, 64);
+}
+
+function recipeActions(preamble: string): LiquidActionProps[] {
+  const actions: LiquidActionProps[] = [];
+  for (const raw of preamble.replace(/\r\n/g, "\n").split("\n")) {
+    const match = raw.trim().match(/^(?:[-*+]\s*)?action\s*:\s*(.+)$/i);
+    if (!match?.[1]) continue;
+    const [label, intent] = match[1].split("|").map((value) => value.trim());
+    if (label) actions.push({ label, intent: intent || label });
+  }
+  return actions.slice(0, 3);
+}
+
+function parseRecipeBody(body: string): LiquidRecipeProps | null {
+  const normalized = body.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return null;
+  const parts = normalized.split(/^---[ \t]*$/m);
+  const preamble = parts.shift() ?? "";
+  const fields = parseKvBlock(preamble);
+  const title = (fields.title ?? fields.name)?.trim();
+  if (!title) return null;
+  const seenIds = new Map<string, number>();
+  const steps: LiquidRecipeStep[] = [];
+  for (const block of parts) {
+    const stepFields = parseKvBlock(block);
+    const label = (stepFields.label ?? stepFields.title)?.trim();
+    if (!label) continue;
+    const step: LiquidRecipeStep = {
+      id: slugCompareId(label, "step", steps.length, seenIds),
+      label,
+    };
+    const stepBody = (stepFields.body ?? stepFields.summary)?.trim();
+    if (stepBody) step.body = stepBody;
+    const durationLabel = (stepFields.duration ?? stepFields.timer)?.trim();
+    const durationMs = parseDurationMs(durationLabel);
+    if (durationLabel && durationMs) {
+      step.durationLabel = durationLabel;
+      step.durationMs = durationMs;
+    }
+    steps.push(step);
+  }
+  if (steps.length === 0) return null;
+  const recipe: LiquidRecipeProps = { title, steps };
+  if (fields.subtitle) recipe.subtitle = fields.subtitle;
+  if (fields.yield ?? fields.servings) recipe.yield = fields.yield ?? fields.servings;
+  if (fields.notes ?? fields.note) recipe.notes = fields.notes ?? fields.note;
+  const ingredients = recipePreambleList(preamble, "ingredients");
+  const resources = recipePreambleList(preamble, "resources");
+  const actions = recipeActions(preamble);
+  if (ingredients.length) recipe.ingredients = ingredients;
+  if (resources.length) recipe.resources = resources;
+  if (actions.length) recipe.actions = actions;
+  return recipe;
+}
+
 function parseBoolLoose(raw: string | undefined): boolean | undefined {
   if (!raw) return undefined;
   const v = raw.trim().toLowerCase();
@@ -2628,6 +2743,12 @@ function replaceLiquidFenceMatch(
     const steps = parseStepsBody(body);
     if (!steps) return match;
     return `\n${placeholder("steps", steps)}\n`;
+  }
+
+  if (lang === "recipe" || lang === "procedure") {
+    const recipe = parseRecipeBody(body);
+    if (!recipe) return match;
+    return `\n${placeholder("recipe", recipe)}\n`;
   }
 
   if (lang === "accordion") {

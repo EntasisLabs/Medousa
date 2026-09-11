@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 #[cfg(test)]
 use stasis::application::orchestration::tool_registry::StasisTool;
@@ -180,6 +180,7 @@ impl BuildSession {
                 "add_section",
                 "add_card",
                 "add_actions",
+                "add_component",
                 "done",
             ],
         }
@@ -494,6 +495,38 @@ impl CognitionUiBuildTool {
         .await
     }
 
+    async fn add_component(&self, command: &UiBuildCommand) -> StasisResult<Value> {
+        let component = command.component.as_ref().ok_or_else(|| {
+            StasisError::PortFailure("add_component requires a typed component".to_string())
+        })?;
+        let (kind, props) = component.to_node()?;
+        let parent_arg = command
+            .parent
+            .as_ref()
+            .map(TrimmedText::as_str)
+            .map(str::to_string);
+        self.with_open_session(|session| {
+            let parent_id = parent_arg.unwrap_or_else(|| session.body_id.clone());
+            Self::require_parent(session, &parent_id)?;
+            let id = session.next_id(kind);
+            session.add_child(NodeSnap {
+                id: id.clone(),
+                ty: kind.into(),
+                props,
+                parent: parent_id.clone(),
+            });
+            let ops = vec![session.fill_op(&parent_id).expect("parent exists")];
+            Ok(session.ok_response(
+                "add_component",
+                ops,
+                json!({ "nodeId": id, "parentId": parent_id, "kind": kind }),
+                &parent_id,
+                "Added typed Liquid component",
+            ))
+        })
+        .await
+    }
+
     async fn done(&self) -> StasisResult<Value> {
         self.with_open_session(|session| {
             session.sealed = true;
@@ -523,7 +556,236 @@ enum UiBuildVerbSchema {
     AddSection,
     AddCard,
     AddActions,
+    AddComponent,
     Done,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct UiRecipeStepInput {
+    label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    body: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    duration_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct UiCompareAxisInput {
+    id: String,
+    label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct UiCompareEntityInput {
+    id: String,
+    label: String,
+    values: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct UiMetricInput {
+    label: String,
+    value: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    trend: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct UiPlanSegmentInput {
+    label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    time: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    body: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct UiComponentActionInput {
+    label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    intent: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct UiDecisionOptionInput {
+    label: String,
+    #[serde(default)]
+    pros: Vec<String>,
+    #[serde(default)]
+    cons: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    score: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct UiTimelineEventInput {
+    label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ts: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum UiBuildComponentInput {
+    Recipe {
+        title: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        subtitle: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        r#yield: Option<String>,
+        #[serde(default)]
+        ingredients: Vec<String>,
+        #[serde(default)]
+        resources: Vec<String>,
+        steps: Vec<UiRecipeStepInput>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        notes: Option<String>,
+        #[serde(default)]
+        actions: Vec<UiComponentActionInput>,
+    },
+    Compare {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        axes: Vec<UiCompareAxisInput>,
+        entities: Vec<UiCompareEntityInput>,
+    },
+    Dashboard {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        metrics: Vec<UiMetricInput>,
+    },
+    Plan {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        segments: Vec<UiPlanSegmentInput>,
+    },
+    Decision {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        recommendation: Option<String>,
+        options: Vec<UiDecisionOptionInput>,
+    },
+    Timeline {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        events: Vec<UiTimelineEventInput>,
+    },
+    Media {
+        src: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        alt: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        caption: Option<String>,
+    },
+}
+
+impl UiBuildComponentInput {
+    fn to_node(&self) -> StasisResult<(&'static str, Value)> {
+        let kind = match self {
+            Self::Recipe { steps, .. } if steps.is_empty() => {
+                return Err(StasisError::PortFailure(
+                    "recipe requires steps".to_string(),
+                ));
+            }
+            Self::Recipe { .. } => "recipe",
+            Self::Compare { axes, entities, .. } if axes.is_empty() || entities.len() < 2 => {
+                return Err(StasisError::PortFailure(
+                    "compare requires axes and at least two entities".to_string(),
+                ));
+            }
+            Self::Compare { .. } => "compare",
+            Self::Dashboard { metrics, .. } if metrics.is_empty() => {
+                return Err(StasisError::PortFailure(
+                    "dashboard requires metrics".to_string(),
+                ));
+            }
+            Self::Dashboard { .. } => "dashboard",
+            Self::Plan { segments, .. } if segments.is_empty() => {
+                return Err(StasisError::PortFailure(
+                    "plan requires segments".to_string(),
+                ));
+            }
+            Self::Plan { .. } => "plan",
+            Self::Decision { options, .. } if options.len() < 2 => {
+                return Err(StasisError::PortFailure(
+                    "decision requires at least two options".to_string(),
+                ));
+            }
+            Self::Decision { .. } => "decision",
+            Self::Timeline { events, .. } if events.is_empty() => {
+                return Err(StasisError::PortFailure(
+                    "timeline requires events".to_string(),
+                ));
+            }
+            Self::Timeline { .. } => "timeline",
+            Self::Media { src, .. } if src.trim().is_empty() => {
+                return Err(StasisError::PortFailure("media requires src".to_string()));
+            }
+            Self::Media { .. } => "media",
+        };
+        let mut props = serde_json::to_value(self)
+            .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+        if let Some(props) = props.as_object_mut() {
+            props.remove("kind");
+        }
+        if let Some(steps) = props.get_mut("steps").and_then(Value::as_array_mut) {
+            for (index, step) in steps.iter_mut().enumerate() {
+                if let Some(step) = step.as_object_mut() {
+                    step.insert("id".to_string(), json!(format!("step-{}", index + 1)));
+                    if let Some(duration) = step.remove("duration_ms") {
+                        step.insert("durationMs".to_string(), duration);
+                    }
+                }
+            }
+        }
+        if let Some(metrics) = props
+            .as_object_mut()
+            .and_then(|props| props.remove("metrics"))
+        {
+            let tiles = metrics
+                .as_array()
+                .into_iter()
+                .flatten()
+                .enumerate()
+                .map(|(index, metric)| {
+                    let mut tile = metric.clone();
+                    if let Some(tile) = tile.as_object_mut() {
+                        tile.insert("id".to_string(), json!(format!("metric-{}", index + 1)));
+                        if let Some(trend) = tile.remove("trend") {
+                            tile.insert("delta".to_string(), trend);
+                        }
+                    }
+                    tile
+                })
+                .collect::<Vec<_>>();
+            props["tiles"] = json!(tiles);
+        }
+        if let Some(segments) = props.get_mut("segments").and_then(Value::as_array_mut) {
+            for (index, segment) in segments.iter_mut().enumerate() {
+                if let Some(segment) = segment.as_object_mut() {
+                    segment.insert("id".to_string(), json!(format!("segment-{}", index + 1)));
+                }
+            }
+        }
+        for collection in ["options", "events"] {
+            if let Some(items) = props.get_mut(collection).and_then(Value::as_array_mut) {
+                for (index, item) in items.iter_mut().enumerate() {
+                    if let Some(item) = item.as_object_mut() {
+                        item.insert(
+                            "id".to_string(),
+                            json!(format!("{collection}-{}", index + 1)),
+                        );
+                    }
+                }
+            }
+        }
+        Ok((kind, props))
+    }
 }
 
 #[derive(Debug, JsonSchema)]
@@ -552,6 +814,7 @@ struct UiBuildCommand {
     body: Option<TrimmedText>,
     actions: Option<Vec<UiBuildActionCommand>>,
     surface_id: Option<TrimmedText>,
+    component: Option<UiBuildComponentInput>,
 }
 
 impl From<UiBuildInput> for UiBuildCommand {
@@ -576,6 +839,7 @@ impl From<UiBuildInput> for UiBuildCommand {
                     .collect()
             }),
             surface_id: normalize(input.surface_id),
+            component: input.component,
         }
     }
 }
@@ -620,6 +884,9 @@ pub struct UiBuildInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     surface_id: Option<String>,
+    /// For add_component: a discriminated inert recipe/compare/dashboard/plan/media payload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    component: Option<UiBuildComponentInput>,
 }
 
 impl<'de> Deserialize<'de> for UiBuildInput {
@@ -654,13 +921,17 @@ impl<'de> Deserialize<'de> for UiBuildInput {
             body: string("body"),
             actions,
             surface_id: string("surface_id"),
+            component: value
+                .get("component")
+                .cloned()
+                .and_then(|component| serde_json::from_value(component).ok()),
         })
     }
 }
 
 #[medousa_tool(id = COGNITION_UI_BUILD_ID)]
 impl CognitionUiBuildTool {
-    /// Build a streaming interactive Liquid UI with chained verbs. Call begin first, then set_prose, add_section, add_card, or add_actions using returned handles; call done to finish.
+    /// Build a streaming interactive Liquid UI with chained verbs. Call begin first, then set_prose, add_section, add_card, add_actions, or add_component using returned handles; call done to finish.
     async fn invoke_typed(&self, input: UiBuildInput) -> stasis::prelude::Result<ExternalJson> {
         if !self.supports_ui().await {
             return Ok(ExternalJson::new(json!({
@@ -688,9 +959,10 @@ impl CognitionUiBuildTool {
             "add_section" => self.add_section(&command).await,
             "add_card" => self.add_card(&command).await,
             "add_actions" => self.add_actions(&command).await,
+            "add_component" => self.add_component(&command).await,
             "done" => self.done().await,
             other => Err(StasisError::PortFailure(format!(
-                "unknown verb `{other}` — use begin|set_prose|add_section|add_card|add_actions|done"
+                "unknown verb `{other}` — use begin|set_prose|add_section|add_card|add_actions|add_component|done"
             ))),
         }?;
         Ok(ExternalJson::new(output))
@@ -817,6 +1089,48 @@ mod tests {
         let done = tool.invoke(json!({ "verb": "done" })).await.expect("done");
         assert_eq!(done.get("ok").and_then(Value::as_bool), Some(true));
         assert!(done["ops"][0]["op"].as_str() == Some("set_fill_state"));
+    }
+
+    #[tokio::test]
+    async fn add_component_accepts_a_typed_recipe_without_executable_fields() {
+        let tool = tool(true);
+        let begin = tool
+            .invoke(json!({ "verb": "begin" }))
+            .await
+            .expect("begin");
+        let body_id = begin["handles"]["bodyId"].as_str().unwrap();
+        let recipe = tool
+            .invoke(json!({
+                "verb": "add_component",
+                "parent": body_id,
+                "component": {
+                    "kind": "recipe",
+                    "title": "Tea",
+                    "subtitle": "A calmer cup",
+                    "yield": "1 cup",
+                    "ingredients": ["Tea", "Water"],
+                    "steps": [{ "label": "Steep", "duration_ms": 240000 }],
+                    "actions": [{ "label": "Make two cups", "intent": "Scale this recipe to two cups" }],
+                    "onClick": "arbitrary code"
+                }
+            }))
+            .await
+            .expect("recipe");
+        assert_eq!(recipe["handles"]["kind"], "recipe");
+        assert_eq!(recipe["ops"][0]["nodes"][0]["type"], "recipe");
+        assert_eq!(
+            recipe["ops"][0]["nodes"][0]["props"]["steps"][0]["durationMs"],
+            240000
+        );
+        assert_eq!(
+            recipe["ops"][0]["nodes"][0]["props"]["actions"][0]["intent"],
+            "Scale this recipe to two cups"
+        );
+        assert!(
+            recipe["ops"][0]["nodes"][0]["props"]
+                .get("onClick")
+                .is_none()
+        );
     }
 
     #[tokio::test]

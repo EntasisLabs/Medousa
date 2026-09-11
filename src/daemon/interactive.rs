@@ -94,6 +94,7 @@ pub fn build_interactive_request_from_ticket(
         voice_preset_id: request.voice_preset_id.clone(),
         voice_appendix: request.voice_appendix.clone(),
         media_refs: request.media_refs.clone(),
+        liquid_interactions: request.liquid_interactions.clone(),
         identity_user_id: request.identity_user_id.clone(),
     }
 }
@@ -577,6 +578,7 @@ pub async fn start_interactive_turn(
         voice_preset_id: request.voice_preset_id.clone(),
         voice_appendix: request.voice_appendix.clone(),
         media_refs: request.media_refs.clone(),
+        liquid_interactions: request.liquid_interactions.clone(),
         identity_user_id,
     };
 

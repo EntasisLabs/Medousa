@@ -3,3 +3,4 @@
 export * from "./binding";
 export * from "./renderer";
 export * from "./eventSink";
+export * from "./componentState";

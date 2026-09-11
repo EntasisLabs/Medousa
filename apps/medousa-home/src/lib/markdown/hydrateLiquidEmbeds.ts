@@ -13,6 +13,7 @@ import {
   type LiquidEmbedKind,
 } from "./liquidEmbeds";
 import LiquidMdHost from "./LiquidMdHost.svelte";
+import { recordLiquidMetric } from "$lib/liquid/observability";
 
 type MountHandle = { destroy: () => void };
 
@@ -89,15 +90,20 @@ export function hydrateLiquidEmbeds(
     const encoded = el.dataset.liquidProps;
     if (!kind || !encoded) continue;
     const payload = decodeLiquidProps(encoded);
-    if (payload == null) continue;
+    if (payload == null) {
+      recordLiquidMetric("parseFailures");
+      continue;
+    }
     el.dataset.liquidHydrated = "1";
     try {
       handles.push(mountHost(el, kind, payload, context, animate));
+      recordLiquidMetric("renderedEmbeds");
     } catch (err) {
       // One bad embed (e.g. duplicate Svelte keys) must not abort later mounts.
       console.warn("[liquid] embed mount failed", kind, err);
       delete el.dataset.liquidHydrated;
       el.classList.add("liquid-md-embed--error");
+      recordLiquidMetric("fallbackRenders");
       el.textContent = el.textContent || `[${kind} failed to render]`;
     }
   }

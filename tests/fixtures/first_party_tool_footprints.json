@@ -4,11 +4,16 @@
     {
       "id": "general",
       "tool_count": 81,
-      "total_chars": 49222,
-      "tokens_estimate": 12306,
+      "total_chars": 52356,
+      "tokens_estimate": 13089,
       "tools_over_1000_chars": 11,
       "largest_tools_share_bps": 0,
       "largest_tools": [
+        {
+          "name": "cognition_ui_build",
+          "chars": 4412,
+          "tokens_estimate": 1103
+        },
         {
           "name": "cognition_browser_act",
           "chars": 2619,
@@ -38,11 +43,6 @@
           "name": "cognition_ui_present",
           "chars": 1450,
           "tokens_estimate": 363
-        },
-        {
-          "name": "cognition_ui_build",
-          "chars": 1278,
-          "tokens_estimate": 320
         },
         {
           "name": "cognition_openshell_sandbox_run",
@@ -154,11 +154,16 @@
     {
       "id": "workshop_general_bound",
       "tool_count": 55,
-      "total_chars": 34804,
-      "tokens_estimate": 8701,
+      "total_chars": 37938,
+      "tokens_estimate": 9485,
       "tools_over_1000_chars": 8,
       "largest_tools_share_bps": 0,
       "largest_tools": [
+        {
+          "name": "cognition_ui_build",
+          "chars": 4412,
+          "tokens_estimate": 1103
+        },
         {
           "name": "cognition_browser_act",
           "chars": 2619,
@@ -188,11 +193,6 @@
           "name": "cognition_ui_present",
           "chars": 1450,
           "tokens_estimate": 363
-        },
-        {
-          "name": "cognition_ui_build",
-          "chars": 1278,
-          "tokens_estimate": 320
         },
         {
           "name": "cognition_custom_view_compose",

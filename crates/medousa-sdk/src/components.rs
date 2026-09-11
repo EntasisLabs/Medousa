@@ -3,7 +3,7 @@ use medousa_types::{
     ComponentRuntimeEventsRequest, ComponentRuntimeEventsResponse,
     ComponentRuntimeEventsTailResponse, ComponentRuntimeProbeResult, ComponentStoreDeleteResponse,
     ComponentStoreGetResponse, ComponentStoreListResponse, ComponentStoreSetRequest,
-    ComponentStoreSetResponse,
+    ComponentStoreSetResponse, LiquidComponentStateResponse, PutLiquidComponentStateRequest,
 };
 
 #[cfg(feature = "async")]
@@ -40,6 +40,45 @@ fn component_profile_query(profile_id: Option<&str>) -> Vec<(&'static str, Strin
 
 #[cfg(feature = "async")]
 impl ComponentsApi<'_> {
+    pub async fn liquid_state_get(
+        &self,
+        session_id: &str,
+        message_id: &str,
+        node_id: &str,
+        instance_id: &str,
+    ) -> Result<LiquidComponentStateResponse, crate::SdkError> {
+        let path = op_path(
+            &ops::SESSIONS_BY_SESSION_ID_LIQUID_STATE_BY_MESSAGE_ID_BY_NODE_ID_BY_INSTANCE_ID_GET,
+            &[
+                ("session_id", session_id.trim()),
+                ("message_id", message_id.trim()),
+                ("node_id", node_id.trim()),
+                ("instance_id", instance_id.trim()),
+            ],
+        )?;
+        self.client.http().get(&path).await
+    }
+
+    pub async fn liquid_state_put(
+        &self,
+        session_id: &str,
+        message_id: &str,
+        node_id: &str,
+        instance_id: &str,
+        request: &PutLiquidComponentStateRequest,
+    ) -> Result<LiquidComponentStateResponse, crate::SdkError> {
+        let path = op_path(
+            &ops::SESSIONS_BY_SESSION_ID_LIQUID_STATE_BY_MESSAGE_ID_BY_NODE_ID_BY_INSTANCE_ID_PUT,
+            &[
+                ("session_id", session_id.trim()),
+                ("message_id", message_id.trim()),
+                ("node_id", node_id.trim()),
+                ("instance_id", instance_id.trim()),
+            ],
+        )?;
+        self.client.http().put(&path, request).await
+    }
+
     pub async fn store_get(
         &self,
         component_id: &str,

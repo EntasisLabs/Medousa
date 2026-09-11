@@ -5883,6 +5883,38 @@
       "trust_group": "portal"
     },
     {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.get",
+      "path": "/v1/sessions/{session_id}/liquid-state/{message_id}/{node_id}/{instance_id}",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 65536,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "PUT",
+      "operation_id": "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.put",
+      "path": "/v1/sessions/{session_id}/liquid-state/{message_id}/{node_id}/{instance_id}",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
       "body_limit": 65536,
       "bootstrap_public": false,
       "browser_policy": "native_only",

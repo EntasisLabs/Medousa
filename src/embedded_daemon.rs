@@ -5217,6 +5217,7 @@ impl EmbeddedDaemonClient {
             "standard".to_string(),
             "default".to_string(),
             Vec::new(),
+            Vec::new(),
             None,
         )
         .await
@@ -5234,6 +5235,7 @@ impl EmbeddedDaemonClient {
         response_depth_mode: String,
         reasoning_effort: String,
         media_refs: Vec<medousa_types::daemon_api::MediaRef>,
+        liquid_interactions: Vec<medousa_types::LiquidInteractionEnvelope>,
         worker_execution_target: Option<crate::workshop_contract::ExecutionTargetSelection>,
     ) -> Result<InteractiveTurnResponse> {
         self.require(Capability::WorkshopInteract)?;
@@ -5264,6 +5266,11 @@ impl EmbeddedDaemonClient {
             session_id.as_str(),
             &media_refs,
             &vision_plan.merge_options,
+        );
+        let effective_prompt = crate::liquid_interactions::append_to_prompt(
+            &effective_prompt,
+            session_id.as_str(),
+            &liquid_interactions,
         );
         let compiled_prompt = crate::engine_context::compile_context_prompt(
             crate::engine_context::ContextCompilerInput {

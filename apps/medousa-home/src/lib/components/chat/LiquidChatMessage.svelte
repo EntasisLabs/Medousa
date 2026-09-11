@@ -13,6 +13,7 @@
   import { createChatEventSink } from "$lib/liquid/surfaces/chat/chatEventSink";
   import { chatInteractions } from "$lib/liquid/surfaces/chat/chatInteractions";
   import { settings } from "$lib/stores/settings.svelte";
+  import { daemonLiquidComponentState } from "$lib/daemon/liquidState";
   import { visibleChatStatusLine } from "$lib/utils/chatStreamDisplay";
   import type { ChatMessage } from "$lib/types/chat";
   import type { ToolHistorySliceRef } from "$lib/types/toolHistory";
@@ -73,6 +74,8 @@
   const context = $derived<LiquidRenderContext>({
     sink,
     sessionId,
+    messageId: message.id,
+    componentState: daemonLiquidComponentState,
     mobile,
     compact,
     openLinksInWeb: true,

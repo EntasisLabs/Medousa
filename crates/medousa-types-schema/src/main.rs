@@ -224,6 +224,25 @@ fn main() {
     export_type!(schemas, IngestRequest, "IngestRequest");
     export_type!(schemas, IngestResponse, "IngestResponse");
     export_type!(schemas, InteractiveTurnRequest, "InteractiveTurnRequest");
+    export_type!(schemas, CreateTurnTicketRequest, "CreateTurnTicketRequest");
+    export_type!(schemas, TurnTicketResponse, "TurnTicketResponse");
+    export_type!(schemas, LiquidEventDisposition, "LiquidEventDisposition");
+    export_type!(schemas, LiquidInteractionEnvelope, "LiquidInteractionEnvelope");
+    export_type!(
+        schemas,
+        LiquidComponentStateRecord,
+        "LiquidComponentStateRecord"
+    );
+    export_type!(
+        schemas,
+        LiquidComponentStateResponse,
+        "LiquidComponentStateResponse"
+    );
+    export_type!(
+        schemas,
+        PutLiquidComponentStateRequest,
+        "PutLiquidComponentStateRequest"
+    );
     export_type!(schemas, TurnTicketRecord, "TurnTicketRecord");
     export_type!(schemas, InteractiveTurnResponse, "InteractiveTurnResponse");
     export_type!(

@@ -140,6 +140,8 @@
     "daemon::jobs::job_complete_actions",
     "daemon::jobs::job_enqueue_ask",
     "daemon::jobs::job_get_result",
+    "daemon::liquid_state::liquid_state_get",
+    "daemon::liquid_state::liquid_state_put",
     "daemon::local_inference::local_inference_catalog",
     "daemon::local_inference::local_inference_download_status",
     "daemon::local_inference::local_inference_engine_status",

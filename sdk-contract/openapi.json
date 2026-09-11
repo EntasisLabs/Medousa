@@ -2292,6 +2292,191 @@
         "title": "CreateSessionResponse",
         "type": "object"
       },
+      "CreateTurnTicketRequest": {
+        "description": "Unified turn ticket — interactive chat or background `/ask` on the same SSE contract.",
+        "properties": {
+          "additional_manuscript_ids": {
+            "default": null,
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "agent_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentModeId"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Per-turn behavioral mode override; independent of delivery mode."
+          },
+          "code_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CodeIntentContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "code_project_setup_authorized": {
+            "default": false,
+            "description": "Structured principal authorization from a project-setup surface action.",
+            "type": "boolean"
+          },
+          "host_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HostTurnContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "identity_user_id": {
+            "description": "Optional identity principal override (debug/internal). Default: active workshop profile.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "liquid_interactions": {
+            "description": "Message-associated Liquid events accumulated since the previous accepted turn.",
+            "items": {
+              "$ref": "#/components/schemas/LiquidInteractionEnvelope"
+            },
+            "type": "array"
+          },
+          "manuscript_id": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "media_refs": {
+            "default": [],
+            "description": "User media uploaded to local medousa/media/ before this turn (P5a).",
+            "items": {
+              "$ref": "#/components/schemas/MediaRef"
+            },
+            "type": "array"
+          },
+          "mode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TurnTicketMode"
+              }
+            ],
+            "default": "interactive"
+          },
+          "model": {
+            "default": "",
+            "type": "string"
+          },
+          "model_hint": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "persist_user_turn": {
+            "default": true,
+            "type": "boolean"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "provider": {
+            "default": "",
+            "type": "string"
+          },
+          "reasoning_effort": {
+            "default": "",
+            "type": "string"
+          },
+          "response_depth_mode": {
+            "default": "standard",
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "stage_routing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StageRoutingMatrix"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "suggested_capability_ids": {
+            "default": null,
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "surface": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TurnSurfaceContext"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "voice_appendix": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "voice_preset_id": {
+            "default": null,
+            "description": "Composer voice stance — short appendix block (not a manuscript specialty).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "worker_execution_target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionTargetSelection"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "User-selected default workshop for workers created during this turn."
+          }
+        },
+        "required": [
+          "prompt",
+          "session_id"
+        ],
+        "title": "CreateTurnTicketRequest",
+        "type": "object"
+      },
       "CustomViewComponentStatus": {
         "properties": {
           "artifactId": {
@@ -3992,6 +4177,13 @@
               "null"
             ]
           },
+          "liquid_interactions": {
+            "description": "Message-associated Liquid events that should become advisory context for this turn.",
+            "items": {
+              "$ref": "#/components/schemas/LiquidInteractionEnvelope"
+            },
+            "type": "array"
+          },
           "manuscript_id": {
             "default": null,
             "description": "YAML manuscript specialty for ranked digest + scheduled tool allowlist.",
@@ -4394,6 +4586,131 @@
           "id",
           "label",
           "surfaces"
+        ],
+        "type": "object"
+      },
+      "LiquidComponentStateRecord": {
+        "properties": {
+          "component_type": {
+            "type": "string"
+          },
+          "instance_id": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "schema_version": {
+            "format": "uint8",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "state": true,
+          "updated_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "component_type",
+          "instance_id",
+          "message_id",
+          "node_id",
+          "revision",
+          "schema_version",
+          "session_id",
+          "state",
+          "updated_at_utc"
+        ],
+        "type": "object"
+      },
+      "LiquidComponentStateResponse": {
+        "properties": {
+          "state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LiquidComponentStateRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "LiquidComponentStateResponse",
+        "type": "object"
+      },
+      "LiquidEventDisposition": {
+        "description": "What the client expects the daemon to do with a Liquid scene interaction.",
+        "enum": [
+          "local_state",
+          "context_only",
+          "submit_turn",
+          "navigation",
+          "privileged_action"
+        ],
+        "type": "string"
+      },
+      "LiquidInteractionEnvelope": {
+        "description": "Bounded, inert interaction context associated with the message that emitted it.",
+        "properties": {
+          "disposition": {
+            "$ref": "#/components/schemas/LiquidEventDisposition"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "expected_state_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "instance_id": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "occurred_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "payload": true,
+          "session_id": {
+            "type": "string"
+          },
+          "version": {
+            "format": "uint8",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "disposition",
+          "event_type",
+          "instance_id",
+          "message_id",
+          "node_id",
+          "occurred_at_utc",
+          "session_id",
+          "version"
         ],
         "type": "object"
       },
@@ -4835,6 +5152,34 @@
           "stashes"
         ],
         "title": "PromptStashListResponse",
+        "type": "object"
+      },
+      "PutLiquidComponentStateRequest": {
+        "properties": {
+          "component_type": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "schema_version": {
+            "format": "uint8",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "state": true
+        },
+        "required": [
+          "component_type",
+          "schema_version",
+          "state"
+        ],
+        "title": "PutLiquidComponentStateRequest",
         "type": "object"
       },
       "RefreshMcpOAuthRequest": {
@@ -7541,6 +7886,75 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "TurnTicketMode": {
+        "enum": [
+          "interactive",
+          "background"
+        ],
+        "type": "string"
+      },
+      "TurnTicketPhase": {
+        "enum": [
+          "accepted",
+          "streaming",
+          "worker_handoff",
+          "workshop_handoff",
+          "budget_blocked",
+          "done",
+          "error",
+          "cancelled"
+        ],
+        "type": "string"
+      },
+      "TurnTicketResponse": {
+        "properties": {
+          "accepted_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "daemon_notice": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mode": {
+            "$ref": "#/components/schemas/TurnTicketMode"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/TurnTicketPhase"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "stream_ready": {
+            "type": "boolean"
+          },
+          "stream_url": {
+            "type": "string"
+          },
+          "turn_id": {
+            "type": "string"
+          },
+          "workspace_card_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "accepted_at_utc",
+          "mode",
+          "phase",
+          "session_id",
+          "stream_ready",
+          "stream_url",
+          "turn_id"
+        ],
+        "title": "TurnTicketResponse",
         "type": "object"
       },
       "TurnWorldSelection": {
@@ -30255,6 +30669,180 @@
         }
       }
     },
+    "/v1/sessions/{session_id}/liquid-state/{message_id}/{node_id}/{instance_id}": {
+      "get": {
+        "operationId": "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiquidComponentStateResponse"
+                }
+              }
+            },
+            "description": "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      },
+      "put": {
+        "operationId": "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutLiquidComponentStateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiquidComponentStateResponse"
+                }
+              }
+            },
+            "description": "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.put"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.put"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.put"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
     "/v1/sessions/{session_id}/name": {
       "put": {
         "operationId": "sessions.by_session_id.name.put",
@@ -31074,13 +31662,22 @@
       "post": {
         "operationId": "turns.post",
         "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTurnTicketRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "TURNS_POSTResponse",
-                  "x-medousa-opaque": true
+                  "$ref": "#/components/schemas/TurnTicketResponse"
                 }
               }
             },

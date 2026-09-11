@@ -40,6 +40,7 @@ const factories: ReadonlyArray<[
   ["document", () => import("./organisms/document/Document.svelte")],
   ["feed", () => import("./organisms/feed/Feed.svelte")],
   ["plan", () => import("./organisms/plan/Plan.svelte")],
+  ["recipe", () => import("./organisms/recipe/Recipe.svelte")],
   ["report", () => import("./organisms/report/Report.svelte")],
   ["shortlist", () => import("./organisms/shortlist/Shortlist.svelte")],
   ["slides", () => import("./organisms/slides/Slides.svelte")],

@@ -436,6 +436,104 @@ class PromptStashDraft(MedousaModel):
     text: str
 
 
+class ExecutionTargetRequirements(MedousaModel):
+    architecture: str | None = None
+    platform: str | None = None
+    region: str | None = None
+    required_capabilities: list[str] | None = None
+    selection_key: str | None = None
+
+
+class Kind(Enum):
+    same_as_parent = 'same_as_parent'
+
+
+class ExecutionTargetSelection1(MedousaModel):
+    kind: Kind
+
+
+class Kind1(Enum):
+    exact = 'exact'
+
+
+class ExecutionTargetSelection2(MedousaModel):
+    kind: Kind1
+    runtime_id: str
+
+
+class Kind2(Enum):
+    auto = 'auto'
+
+
+class ExecutionTargetSelection3(MedousaModel):
+    kind: Kind2
+    requirements: ExecutionTargetRequirements | None = Field({}, validate_default=True)
+
+
+class ExecutionTargetSelection(
+    RootModel[ExecutionTargetSelection1 | ExecutionTargetSelection2 | ExecutionTargetSelection3]
+):
+    root: ExecutionTargetSelection1 | ExecutionTargetSelection2 | ExecutionTargetSelection3 = Field(
+        ...,
+        description='User-facing placement preference for workers spawned during a turn. Agent-authored worker requests use the same wire shape, but are admitted against the stricter agent-selectable inventory.',
+    )
+
+
+class HostContextPosition(MedousaModel):
+    character: int = Field(..., ge=0)
+    line: int = Field(..., ge=0)
+
+
+class HostContextSelection(MedousaModel):
+    end: HostContextPosition | None = None
+    start: HostContextPosition | None = None
+    text: str
+
+
+class LiquidEventDisposition(Enum):
+    local_state = 'local_state'
+    context_only = 'context_only'
+    submit_turn = 'submit_turn'
+    navigation = 'navigation'
+    privileged_action = 'privileged_action'
+
+
+class LiquidInteractionEnvelope(MedousaModel):
+    disposition: LiquidEventDisposition
+    event_type: str
+    expected_state_revision: int | None = Field(None, ge=0)
+    instance_id: str
+    message_id: str
+    node_id: str
+    occurred_at_utc: AwareDatetime
+    payload: Any | None = None
+    session_id: str
+    version: int = Field(..., ge=0)
+
+
+class StageRoute(MedousaModel):
+    fallback_chain: list[str]
+    model: str
+    policy_profile: str
+    provider: str
+    role: str
+
+
+class StageRoutingMatrix(MedousaModel):
+    chunker: StageRoute
+    extractor: StageRoute
+    final_response: StageRoute
+    orchestrator: StageRoute
+    packer: StageRoute
+    summarizer: StageRoute
+    verifier: StageRoute
+
+
+class TurnTicketMode(Enum):
+    interactive = 'interactive'
+    background = 'background'
+
+
 class PromptStashId(RootModel[str]):
     root: str = Field(..., title='PromptStashId')
 
@@ -729,78 +827,6 @@ class IntegrationSecretSlot(Enum):
     auth_key = 'auth_key'
 
 
-class ExecutionTargetRequirements(MedousaModel):
-    architecture: str | None = None
-    platform: str | None = None
-    region: str | None = None
-    required_capabilities: list[str] | None = None
-    selection_key: str | None = None
-
-
-class Kind(Enum):
-    same_as_parent = 'same_as_parent'
-
-
-class ExecutionTargetSelection1(MedousaModel):
-    kind: Kind
-
-
-class Kind1(Enum):
-    exact = 'exact'
-
-
-class ExecutionTargetSelection2(MedousaModel):
-    kind: Kind1
-    runtime_id: str
-
-
-class Kind2(Enum):
-    auto = 'auto'
-
-
-class ExecutionTargetSelection3(MedousaModel):
-    kind: Kind2
-    requirements: ExecutionTargetRequirements | None = Field({}, validate_default=True)
-
-
-class ExecutionTargetSelection(
-    RootModel[ExecutionTargetSelection1 | ExecutionTargetSelection2 | ExecutionTargetSelection3]
-):
-    root: ExecutionTargetSelection1 | ExecutionTargetSelection2 | ExecutionTargetSelection3 = Field(
-        ...,
-        description='User-facing placement preference for workers spawned during a turn. Agent-authored worker requests use the same wire shape, but are admitted against the stricter agent-selectable inventory.',
-    )
-
-
-class HostContextPosition(MedousaModel):
-    character: int = Field(..., ge=0)
-    line: int = Field(..., ge=0)
-
-
-class HostContextSelection(MedousaModel):
-    end: HostContextPosition | None = None
-    start: HostContextPosition | None = None
-    text: str
-
-
-class StageRoute(MedousaModel):
-    fallback_chain: list[str]
-    model: str
-    policy_profile: str
-    provider: str
-    role: str
-
-
-class StageRoutingMatrix(MedousaModel):
-    chunker: StageRoute
-    extractor: StageRoute
-    final_response: StageRoute
-    orchestrator: StageRoute
-    packer: StageRoute
-    summarizer: StageRoute
-    verifier: StageRoute
-
-
 class ContextUsageLayer(MedousaModel):
     chars: int = Field(..., ge=0)
     id: str = Field(..., description='Stable machine id, e.g. `system_prompt`, `tool_definitions`.')
@@ -877,6 +903,18 @@ class JobEvidenceReportResponse(MedousaModel):
     total_claims: int = Field(..., ge=0)
     verification_id: str | None = None
     verification_state: str
+
+
+class LiquidComponentStateRecord(MedousaModel):
+    component_type: str
+    instance_id: str
+    message_id: str
+    node_id: str
+    revision: int = Field(..., ge=0)
+    schema_version: int = Field(..., ge=0)
+    session_id: str
+    state: Any
+    updated_at_utc: AwareDatetime
 
 
 class GpuBackend(Enum):
@@ -2222,11 +2260,6 @@ class TurnStreamEventV3(
     ) = Field(..., description='Chronological turn facts. Visible prose is addressed by `segment_id`, tool receipts update by `tool_run_id`, and terminal settlement never replaces the preceding timeline.', title='TurnStreamEventV3')
 
 
-class TurnTicketMode(Enum):
-    interactive = 'interactive'
-    background = 'background'
-
-
 class TurnTicketPhase(Enum):
     accepted = 'accepted'
     streaming = 'streaming'
@@ -3202,6 +3235,10 @@ class JobResultResponse(MedousaModel):
     status: str
 
 
+class LiquidComponentStateResponse(MedousaModel):
+    state: LiquidComponentStateRecord | None = None
+
+
 class LocalCatalogResponse(MedousaModel):
     familyDefault: str
     models: list[CatalogModelEntry]
@@ -3265,6 +3302,13 @@ class PatchIntegrationConnectionRequest(MedousaModel):
 
 class PromptStashListResponse(MedousaModel):
     stashes: list[PromptStash]
+
+
+class PutLiquidComponentStateRequest(MedousaModel):
+    component_type: str
+    expected_revision: int | None = Field(None, ge=0)
+    schema_version: int = Field(..., ge=0)
+    state: Any
 
 
 class RecurringDeliveryResponse(MedousaModel):
@@ -3518,6 +3562,18 @@ class TurnTicketRecord(MedousaModel):
     stream_url: str
     turn_id: str
     updated_at: AwareDatetime
+    workspace_card_id: str | None = None
+
+
+class TurnTicketResponse(MedousaModel):
+    accepted_at_utc: AwareDatetime
+    daemon_notice: str | None = None
+    mode: TurnTicketMode
+    phase: TurnTicketPhase
+    session_id: str
+    stream_ready: bool
+    stream_url: str
+    turn_id: str
     workspace_card_id: str | None = None
 
 
@@ -3827,6 +3883,29 @@ class TurnSurfaceContext(MedousaModel):
     user_id: str | None = None
 
 
+class HostContextDiagnostic(MedousaModel):
+    end: HostContextPosition | None = None
+    message: str
+    severity: str | None = None
+    source: str | None = None
+    start: HostContextPosition | None = None
+
+
+class HostTurnContext(MedousaModel):
+    cursor: HostContextPosition | None = None
+    diagnostics: list[HostContextDiagnostic] | None = None
+    document_excerpt: str | None = None
+    language: str | None = None
+    related_resources: list[str] | None = None
+    resource_kind: str | None = None
+    resource_path: str | None = None
+    resource_title: str | None = None
+    resource_url: str | None = None
+    selection: HostContextSelection | None = None
+    source: str
+    workspace: str | None = None
+
+
 class ContextManifest(MedousaModel):
     created_at: AwareDatetime
     created_by: str
@@ -3880,29 +3959,6 @@ class FeedEvent(MedousaModel):
     refs: list[FeedRef] | None = Field([], validate_default=True)
     source: str
     summary: str
-
-
-class HostContextDiagnostic(MedousaModel):
-    end: HostContextPosition | None = None
-    message: str
-    severity: str | None = None
-    source: str | None = None
-    start: HostContextPosition | None = None
-
-
-class HostTurnContext(MedousaModel):
-    cursor: HostContextPosition | None = None
-    diagnostics: list[HostContextDiagnostic] | None = None
-    document_excerpt: str | None = None
-    language: str | None = None
-    related_resources: list[str] | None = None
-    resource_kind: str | None = None
-    resource_path: str | None = None
-    resource_title: str | None = None
-    resource_url: str | None = None
-    selection: HostContextSelection | None = None
-    source: str
-    workspace: str | None = None
 
 
 class LocalDeviceTelemetrySnapshot(MedousaModel):
@@ -4179,6 +4235,54 @@ class CreateBotRequest(MedousaModel):
     )
 
 
+class CreateTurnTicketRequest(MedousaModel):
+    additional_manuscript_ids: list[str] | None = None
+    agent_mode: AgentModeId | None = Field(
+        None, description='Per-turn behavioral mode override; independent of delivery mode.'
+    )
+    code_context: CodeIntentContext | None = None
+    code_project_setup_authorized: (
+        bool | None
+    ) = (
+        Field(False, description='Structured principal authorization from a project-setup surface action.')
+    )
+    host_context: HostTurnContext | None = None
+    identity_user_id: str | None = Field(
+        None,
+        description='Optional identity principal override (debug/internal). Default: active workshop profile.',
+    )
+    liquid_interactions: list[LiquidInteractionEnvelope] | None = Field(
+        None,
+        description='Message-associated Liquid events accumulated since the previous accepted turn.',
+    )
+    manuscript_id: str | None = None
+    media_refs: list[MediaRef] | None = Field(
+        [],
+        description='User media uploaded to local medousa/media/ before this turn (P5a).',
+        validate_default=True,
+    )
+    mode: TurnTicketMode | None = 'interactive'
+    model: str | None = ''
+    model_hint: str | None = None
+    persist_user_turn: bool | None = True
+    prompt: str
+    provider: str | None = ''
+    reasoning_effort: str | None = ''
+    response_depth_mode: str | None = 'standard'
+    session_id: str
+    stage_routing: StageRoutingMatrix | None = None
+    suggested_capability_ids: list[str] | None = None
+    surface: TurnSurfaceContext | None = None
+    voice_appendix: str | None = None
+    voice_preset_id: str | None = Field(
+        None,
+        description='Composer voice stance — short appendix block (not a manuscript specialty).',
+    )
+    worker_execution_target: ExecutionTargetSelection | None = Field(
+        None, description='User-selected default workshop for workers created during this turn.'
+    )
+
+
 class DeriveSessionRequest(MedousaModel):
     intent: str = Field(
         ...,
@@ -4234,6 +4338,10 @@ class InteractiveTurnRequest(MedousaModel):
     identity_user_id: str | None = Field(
         None,
         description='Optional identity principal override (debug/internal). Default: active workshop profile.',
+    )
+    liquid_interactions: list[LiquidInteractionEnvelope] | None = Field(
+        None,
+        description='Message-associated Liquid events that should become advisory context for this turn.',
     )
     manuscript_id: str | None = Field(
         None, description='YAML manuscript specialty for ranked digest + scheduled tool allowlist.'

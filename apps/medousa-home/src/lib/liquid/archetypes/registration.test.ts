@@ -35,6 +35,7 @@ const ALL_IDS = [
   "document",
   "compare",
   "plan",
+  "recipe",
   "timeline",
   "shortlist",
   "decision",

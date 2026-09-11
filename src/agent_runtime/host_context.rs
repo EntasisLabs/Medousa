@@ -141,4 +141,5 @@ mod tests {
         assert!(result.starts_with("Summarize this\n\n[MEDOUSA_HOST_CONTEXT]"));
         assert!(result.contains("https://example.com"));
     }
+
 }

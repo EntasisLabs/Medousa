@@ -56,4 +56,24 @@ describe("chatInteractions", () => {
     chatInteractions.record("", "m1", createSceneEvent("a", "select"));
     expect(chatInteractions.peek("")).toHaveLength(0);
   });
+
+  it("produces bounded message-associated envelopes and acknowledges after admission", () => {
+    chatInteractions.record("s1", "m1", {
+      ...createSceneEvent("recipe", "edit", { action: "timer_start" }, 1_000),
+      instanceId: "step-1",
+      disposition: "local_state",
+    });
+    const envelopes = chatInteractions.envelopes("s1");
+    expect(envelopes).toEqual([expect.objectContaining({
+      version: 1,
+      session_id: "s1",
+      message_id: "m1",
+      node_id: "recipe",
+      instance_id: "step-1",
+      disposition: "local_state",
+      occurred_at_utc: new Date(1_000).toISOString(),
+    })]);
+    chatInteractions.ack("s1", 1);
+    expect(chatInteractions.peek("s1")).toEqual([]);
+  });
 });

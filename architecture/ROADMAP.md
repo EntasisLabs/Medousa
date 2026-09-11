@@ -210,8 +210,8 @@ Living epic: [expressive-chat-media-ink-liquid-epic.md](expressive-chat-media-in
 | S2 — ink engine v2 experience + physical-device checkpoint A | ✅ [accepted after iPad/iPhone remediation; cross-device follow-ups recorded](expressive-chat-checkpoint-a.md) |
 | S3 — drawing in chat and rich-media contracts | ✅ |
 | S4 — generated images + physical-device checkpoint B | 🔄 implementation complete; [validation pending](expressive-chat-checkpoint-b.md) |
-| S5 — Liquid activation and durable interaction loop | ⬜ |
-| S6 — recipe/procedure and durable timers + physical-device checkpoint C | ⬜ |
+| S5 — Liquid activation and durable interaction loop | ✅ |
+| S6 — recipe/procedure and durable timers + physical-device checkpoint C | 🔄 implementation complete; [validation pending](expressive-chat-checkpoint-c.md) |
 
 ---
 

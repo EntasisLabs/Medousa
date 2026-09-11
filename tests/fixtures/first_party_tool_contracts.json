@@ -5423,7 +5423,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_ui_build",
-      "description": "Build a streaming interactive Liquid UI with chained verbs. Call begin first, then set_prose, add_section, add_card, or add_actions using returned handles; call done to finish.",
+      "description": "Build a streaming interactive Liquid UI with chained verbs. Call begin first, then set_prose, add_section, add_card, add_actions, or add_component using returned handles; call done to finish.",
       "input_schema": {
         "properties": {
           "actions": {
@@ -5447,6 +5447,419 @@
           "body": {
             "description": "Optional body text for add_card.",
             "type": "string"
+          },
+          "component": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "properties": {
+                      "actions": {
+                        "default": [],
+                        "items": {
+                          "properties": {
+                            "intent": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "label": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "label"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "ingredients": {
+                        "default": [],
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "kind": {
+                        "enum": [
+                          "recipe"
+                        ],
+                        "type": "string"
+                      },
+                      "notes": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "resources": {
+                        "default": [],
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "steps": {
+                        "items": {
+                          "properties": {
+                            "body": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "duration_ms": {
+                              "format": "uint64",
+                              "minimum": 0,
+                              "type": [
+                                "integer",
+                                "null"
+                              ]
+                            },
+                            "label": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "label"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "subtitle": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "yield": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "steps",
+                      "title"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "properties": {
+                      "axes": {
+                        "items": {
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "label"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "entities": {
+                        "items": {
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": "string"
+                            },
+                            "values": {
+                              "additionalProperties": {
+                                "type": "string"
+                              },
+                              "type": "object"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "label",
+                            "values"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "kind": {
+                        "enum": [
+                          "compare"
+                        ],
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "axes",
+                      "entities",
+                      "kind"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "dashboard"
+                        ],
+                        "type": "string"
+                      },
+                      "metrics": {
+                        "items": {
+                          "properties": {
+                            "label": {
+                              "type": "string"
+                            },
+                            "trend": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "value": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "label",
+                            "value"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "title": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "metrics"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "plan"
+                        ],
+                        "type": "string"
+                      },
+                      "segments": {
+                        "items": {
+                          "properties": {
+                            "body": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "label": {
+                              "type": "string"
+                            },
+                            "time": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "label"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "title": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "segments"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "decision"
+                        ],
+                        "type": "string"
+                      },
+                      "options": {
+                        "items": {
+                          "properties": {
+                            "cons": {
+                              "default": [],
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "label": {
+                              "type": "string"
+                            },
+                            "pros": {
+                              "default": [],
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "score": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "summary": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "label"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "recommendation": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "title": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "options"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "properties": {
+                      "events": {
+                        "items": {
+                          "properties": {
+                            "detail": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "label": {
+                              "type": "string"
+                            },
+                            "ts": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "label"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "kind": {
+                        "enum": [
+                          "timeline"
+                        ],
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "events",
+                      "kind"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "properties": {
+                      "alt": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "caption": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "kind": {
+                        "enum": [
+                          "media"
+                        ],
+                        "type": "string"
+                      },
+                      "src": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "src"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For add_component: a discriminated inert recipe/compare/dashboard/plan/media payload."
           },
           "markdown": {
             "description": "Prose markdown for set_prose.",
@@ -5477,6 +5890,7 @@
             "enum": [
               "add_actions",
               "add_card",
+              "add_component",
               "add_section",
               "begin",
               "done",

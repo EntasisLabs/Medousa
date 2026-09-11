@@ -1788,6 +1788,9 @@ pub struct InteractiveTurnRequest {
     /// User media uploaded to local medousa/media/ before this turn (P5a).
     #[serde(default)]
     pub media_refs: Vec<MediaRef>,
+    /// Message-associated Liquid events that should become advisory context for this turn.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub liquid_interactions: Vec<crate::liquid::LiquidInteractionEnvelope>,
     /// Optional identity principal override (debug/internal). Default: active workshop profile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity_user_id: Option<String>,
@@ -1888,6 +1891,9 @@ pub struct CreateTurnTicketRequest {
     /// User media uploaded to local medousa/media/ before this turn (P5a).
     #[serde(default)]
     pub media_refs: Vec<MediaRef>,
+    /// Message-associated Liquid events accumulated since the previous accepted turn.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub liquid_interactions: Vec<crate::liquid::LiquidInteractionEnvelope>,
     /// Optional identity principal override (debug/internal). Default: active workshop profile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity_user_id: Option<String>,

@@ -308,6 +308,7 @@ export async function createTurnTicket(
     browserDriverId: request.browserDriverId ?? null,
     selectedWorlds: invokePlain(request.selectedWorlds ?? null),
     mediaRefs: invokePlain(request.mediaRefs ?? null),
+    liquidInteractions: invokePlain(request.liquidInteractions ?? null),
     voicePresetId: request.voicePresetId ?? null,
     voiceAppendix: request.voiceAppendix ?? null,
     identityUserId: request.identityUserId ?? null,
