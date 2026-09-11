@@ -118,7 +118,7 @@ function normalizeBrush(value: unknown, legacyWidth?: unknown, migratingLegacy =
       : "pen";
   const defaults = createDrawBrush(
     kind,
-    clamp(finite(input.size ?? legacyWidth, BRUSH_DEFAULTS[kind].size), 1, 80),
+    clamp(finite(input.size ?? legacyWidth, BRUSH_DEFAULTS[kind].size), 0.25, 160),
   );
   return {
     kind,

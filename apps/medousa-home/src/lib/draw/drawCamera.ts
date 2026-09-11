@@ -1,4 +1,6 @@
 export type DrawVector = { x: number; y: number };
+export type DrawSize = { width: number; height: number };
+export type DrawRect = DrawVector & DrawSize;
 
 export type DrawCamera = {
   panX: number;
@@ -33,6 +35,38 @@ export function viewToScene(camera: DrawCamera, point: DrawVector): DrawVector {
 
 export function panDrawCamera(camera: DrawCamera, delta: DrawVector): DrawCamera {
   return { ...camera, panX: camera.panX + delta.x, panY: camera.panY + delta.y };
+}
+
+export function fitDrawCamera(
+  bounds: DrawRect | null,
+  viewport: DrawSize,
+  padding = 32,
+): DrawCamera {
+  if (!bounds || bounds.width <= 0 || bounds.height <= 0) return createDrawCamera();
+  const availableWidth = Math.max(1, viewport.width - padding * 2);
+  const availableHeight = Math.max(1, viewport.height - padding * 2);
+  const zoom = clampDrawZoom(Math.min(availableWidth / bounds.width, availableHeight / bounds.height));
+  return {
+    zoom,
+    panX: viewport.width / 2 - (bounds.x + bounds.width / 2) * zoom,
+    panY: viewport.height / 2 - (bounds.y + bounds.height / 2) * zoom,
+  };
+}
+
+export function resizeDrawCamera(
+  camera: DrawCamera,
+  previousViewport: DrawSize,
+  nextViewport: DrawSize,
+): DrawCamera {
+  const sceneCenter = viewToScene(camera, {
+    x: previousViewport.width / 2,
+    y: previousViewport.height / 2,
+  });
+  return {
+    ...camera,
+    panX: nextViewport.width / 2 - sceneCenter.x * camera.zoom,
+    panY: nextViewport.height / 2 - sceneCenter.y * camera.zoom,
+  };
 }
 
 export function zoomDrawCameraAt(

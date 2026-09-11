@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   createDrawCamera,
+  fitDrawCamera,
   panDrawCamera,
+  resizeDrawCamera,
   sceneToView,
   viewToScene,
   zoomDrawCameraAt,
@@ -26,5 +28,25 @@ describe("draw camera", () => {
     const zoomed = zoomDrawCameraAt(camera, anchor, 99);
     expect(zoomed.zoom).toBe(8);
     expect(sceneToView(zoomed, sceneAnchor)).toEqual(anchor);
+  });
+
+  it("fits content into a real viewport", () => {
+    const fitted = fitDrawCamera(
+      { x: 100, y: 200, width: 800, height: 400 },
+      { width: 400, height: 700 },
+      20,
+    );
+    expect(fitted.zoom).toBe(0.45);
+    expect(sceneToView(fitted, { x: 100, y: 200 })).toEqual({ x: 20, y: 260 });
+    expect(sceneToView(fitted, { x: 900, y: 600 })).toEqual({ x: 380, y: 440 });
+  });
+
+  it("keeps the viewed scene center through a viewport resize", () => {
+    const camera = { panX: -50, panY: 80, zoom: 1.5 };
+    const previous = { width: 400, height: 700 };
+    const center = viewToScene(camera, { x: previous.width / 2, y: previous.height / 2 });
+    const next = { width: 900, height: 500 };
+    const resized = resizeDrawCamera(camera, previous, next);
+    expect(sceneToView(resized, center)).toEqual({ x: 450, y: 250 });
   });
 });

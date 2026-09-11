@@ -1,4 +1,12 @@
 <script lang="ts">
+  import Eraser from "@lucide/svelte/icons/eraser";
+  import Hand from "@lucide/svelte/icons/hand";
+  import MousePointer2 from "@lucide/svelte/icons/mouse-pointer-2";
+  import PenLine from "@lucide/svelte/icons/pen-line";
+  import Redo2 from "@lucide/svelte/icons/redo-2";
+  import SlidersHorizontal from "@lucide/svelte/icons/sliders-horizontal";
+  import Undo2 from "@lucide/svelte/icons/undo-2";
+  import DrawOptionsSheet from "$lib/components/draw/DrawOptionsSheet.svelte";
   import {
     cloneDrawDocument,
     cloneDrawStroke,
@@ -11,7 +19,9 @@
   } from "$lib/draw/drawDocument";
   import {
     createDrawCamera,
+    fitDrawCamera,
     panDrawCamera,
+    resizeDrawCamera,
     viewToScene,
     zoomDrawCameraAt,
     type DrawCamera,
@@ -35,7 +45,7 @@
     shouldDrawWithPointer,
   } from "$lib/draw/drawInput";
   import { randomUuid } from "$lib/utils/randomUuid";
-  import { onDestroy, untrack } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
 
   interface Props {
     document: DrawDocument;
@@ -96,25 +106,18 @@
     startDistance: number;
   };
 
-  const COLORS = ["#e7e5e4", "#f87171", "#fb923c", "#facc15", "#4ade80", "#38bdf8", "#a78bfa"];
-  const SIZES = [3, 6, 12, 24];
-  const BRUSHES: { kind: DrawBrushKind; label: string }[] = [
-    { kind: "pen", label: "Pen" },
-    { kind: "pencil", label: "Pencil" },
-    { kind: "marker", label: "Marker" },
-    { kind: "highlighter", label: "Highlighter" },
-  ];
-
   let scene = $state<DrawDocument>(untrack(() => cloneDrawDocument(document)));
   let syncedFingerprint = $state(untrack(() => encodeDrawDocument(document)));
   let observedExternalFingerprint = $state(untrack(() => encodeDrawDocument(document)));
   let tool = $state<Tool>("ink");
   let brushKind = $state<DrawBrushKind>("pen");
-  let color = $state(COLORS[0]);
+  let color = $state("#e7e5e4");
   let size = $state(6);
   let eraserMode = $state<EraserMode>("partial");
   let fingerDraw = $state(false);
+  let optionsOpen = $state(false);
   let camera = $state<DrawCamera>(createDrawCamera());
+  let viewport = $state({ width: 1200, height: 720 });
   let gesture = $state<DrawGesture | null>(null);
   let pinch = $state<PinchGesture | null>(null);
   let selectedIds = $state<string[]>([]);
@@ -122,7 +125,7 @@
   let undoStack = $state<DrawPatch[]>([]);
   let redoStack = $state<DrawPatch[]>([]);
   let svgEl = $state<SVGSVGElement | null>(null);
-  let stageEl = $state<HTMLButtonElement | null>(null);
+  let stageEl = $state<HTMLDivElement | null>(null);
 
   const touchPointers = new Map<number, DrawVector>();
   const penPointers = new Set<number>();
@@ -139,17 +142,48 @@
   $effect(() => {
     const fingerprint = encodeDrawDocument(document);
     if (fingerprint === observedExternalFingerprint) return;
+    if (fingerprint === syncedFingerprint) {
+      observedExternalFingerprint = fingerprint;
+      return;
+    }
+    if (gesture != null || pinch != null) return;
     observedExternalFingerprint = fingerprint;
-    if (fingerprint === syncedFingerprint || gesture != null || pinch != null) return;
     scene = cloneDrawDocument(document);
     syncedFingerprint = fingerprint;
     selectedIds = [];
     undoStack = [];
     redoStack = [];
+    camera = fitDrawCamera(combinedDrawBounds(scene.strokes), viewport);
   });
 
   onDestroy(() => {
     if (inkFrame) cancelAnimationFrame(inkFrame);
+  });
+
+  onMount(() => {
+    if (!svgEl) return;
+    let initialized = false;
+    const updateViewport = () => {
+      if (!svgEl) return;
+      const bounds = svgEl.getBoundingClientRect();
+      const next = {
+        width: Math.max(1, Math.round(bounds.width)),
+        height: Math.max(1, Math.round(bounds.height)),
+      };
+      if (initialized && next.width === viewport.width && next.height === viewport.height) return;
+      if (!initialized) {
+        viewport = next;
+        camera = fitDrawCamera(combinedDrawBounds(scene.strokes), next);
+        initialized = true;
+        return;
+      }
+      camera = resizeDrawCamera(camera, viewport, next);
+      viewport = next;
+    };
+    const observer = new ResizeObserver(updateViewport);
+    observer.observe(svgEl);
+    updateViewport();
+    return () => observer.disconnect();
   });
 
   function viewPointFromClient(clientX: number, clientY: number): DrawVector | null {
@@ -378,7 +412,7 @@
         id: randomUuid(),
         color,
         input: drawInputKind(event.pointerType),
-        brush: createDrawBrush(brushKind, size),
+        brush: createDrawBrush(brushKind, size / camera.zoom),
         points: [point],
       },
     };
@@ -445,7 +479,7 @@
     if (event.pointerType === "touch") touchPointers.delete(event.pointerId);
     if (event.pointerType === "pen") penPointers.delete(event.pointerId);
     if (pinch) {
-      if (pinch.ids.includes(event.pointerId)) pinch = null;
+      if (pinch.ids.includes(event.pointerId) && touchPointers.size === 0) pinch = null;
       releasePointer(event.pointerId);
       return;
     }
@@ -482,7 +516,7 @@
   function cancelGesture(event: PointerEvent) {
     if (event.pointerType === "touch") touchPointers.delete(event.pointerId);
     if (event.pointerType === "pen") penPointers.delete(event.pointerId);
-    if (pinch?.ids.includes(event.pointerId)) pinch = null;
+    if (pinch?.ids.includes(event.pointerId) && touchPointers.size === 0) pinch = null;
     if (!gesture || gesture.pointerId !== event.pointerId) return;
     if (gesture.kind === "erase" || gesture.kind === "move") scene = cloneDrawDocument(gesture.base);
     gesture = null;
@@ -534,14 +568,33 @@
     const base = cloneDrawDocument(scene);
     selectedIds = [];
     commitScene(base, { ...base, strokes: [] }, "Clear drawing");
-  }
-
-  function resetCamera() {
     camera = createDrawCamera();
   }
 
-  function zoomBy(factor: number, anchor: DrawVector = { x: scene.width / 2, y: scene.height / 2 }) {
+  function resetCamera() {
+    camera = fitDrawCamera(combinedDrawBounds(scene.strokes), viewport);
+  }
+
+  function zoomBy(
+    factor: number,
+    anchor: DrawVector = { x: viewport.width / 2, y: viewport.height / 2 },
+  ) {
     camera = zoomDrawCameraAt(camera, anchor, camera.zoom * factor);
+  }
+
+  function chooseTool(next: Tool) {
+    tool = next;
+  }
+
+  function suppressNativeGesture(event: Event) {
+    if (editable) event.preventDefault();
+  }
+
+  function handleWindowKeydown(event: KeyboardEvent) {
+    if (optionsOpen && event.key === "Escape") {
+      event.preventDefault();
+      optionsOpen = false;
+    }
   }
 
   function handleWheel(event: WheelEvent) {
@@ -595,8 +648,11 @@
     selectedIds = [];
     undoStack = [];
     redoStack = [];
+    camera = fitDrawCamera(combinedDrawBounds(scene.strokes), viewport);
   }
 </script>
+
+<svelte:window onkeydown={handleWindowKeydown} />
 
 <div
   class="medousa-draw-surface"
@@ -605,74 +661,54 @@
   data-draw-surface=""
 >
   {#if editable}
-    <div class="medousa-draw-toolbar" role="toolbar" tabindex="-1" aria-label="Drawing tools">
-      <div class="medousa-draw-tool-group" role="group" aria-label="Tool">
-        <button type="button" class:active={tool === "ink"} aria-pressed={tool === "ink"} onclick={() => (tool = "ink")}>Draw</button>
-        <button type="button" class:active={tool === "eraser"} aria-pressed={tool === "eraser"} onclick={() => (tool = "eraser")}>Erase</button>
-        <button type="button" class:active={tool === "select"} aria-pressed={tool === "select"} onclick={() => (tool = "select")}>Select</button>
-        <button type="button" class:active={tool === "hand"} aria-pressed={tool === "hand"} onclick={() => (tool = "hand")}>Hand</button>
+    <div class="medousa-draw-toolbar" role="toolbar" aria-label="Drawing tools">
+      <div class="medousa-draw-tools" role="group" aria-label="Active tool">
+        <button type="button" class:active={tool === "ink"} aria-pressed={tool === "ink"} onclick={() => chooseTool("ink")}>
+          <PenLine size={18} strokeWidth={2} aria-hidden="true" />
+          <span>Draw</span>
+        </button>
+        <button type="button" class:active={tool === "eraser"} aria-pressed={tool === "eraser"} onclick={() => chooseTool("eraser")}>
+          <Eraser size={18} strokeWidth={2} aria-hidden="true" />
+          <span>Erase</span>
+        </button>
+        <button type="button" class:active={tool === "select"} aria-pressed={tool === "select"} onclick={() => chooseTool("select")}>
+          <MousePointer2 size={18} strokeWidth={2} aria-hidden="true" />
+          <span>Select</span>
+        </button>
+        <button type="button" class:active={tool === "hand"} aria-pressed={tool === "hand"} onclick={() => chooseTool("hand")}>
+          <Hand size={18} strokeWidth={2} aria-hidden="true" />
+          <span>Move</span>
+        </button>
       </div>
-
-      {#if tool === "ink"}
-        <div class="medousa-draw-tool-group" role="group" aria-label="Brush">
-          {#each BRUSHES as brush (brush.kind)}
-            <button type="button" class:active={brushKind === brush.kind} aria-pressed={brushKind === brush.kind} onclick={() => updateBrush(brush.kind)}>{brush.label}</button>
-          {/each}
-        </div>
-        <div class="medousa-draw-tool-group medousa-draw-colors" role="group" aria-label="Color">
-          {#each COLORS as swatch (swatch)}
-            <button
-              type="button"
-              class="medousa-draw-color"
-              class:active={color === swatch}
-              style={`--draw-color: ${swatch}`}
-              aria-label={`Use ${swatch}`}
-              aria-pressed={color === swatch}
-              onclick={() => { color = swatch; tool = "ink"; }}
-            ></button>
-          {/each}
-        </div>
-        <div class="medousa-draw-tool-group" role="group" aria-label="Brush size">
-          {#each SIZES as brushSize (brushSize)}
-            <button type="button" class:active={size === brushSize} aria-pressed={size === brushSize} onclick={() => (size = brushSize)}>{brushSize}</button>
-          {/each}
-        </div>
-      {:else if tool === "eraser"}
-        <div class="medousa-draw-tool-group" role="group" aria-label="Eraser mode">
-          <button type="button" class:active={eraserMode === "partial"} aria-pressed={eraserMode === "partial"} onclick={() => (eraserMode = "partial")}>Partial</button>
-          <button type="button" class:active={eraserMode === "stroke"} aria-pressed={eraserMode === "stroke"} onclick={() => (eraserMode = "stroke")}>Stroke</button>
-        </div>
-      {:else if tool === "select" && selectedIds.length > 0}
-        <div class="medousa-draw-tool-group" role="group" aria-label="Selection actions">
-          <button type="button" onclick={duplicateSelection}>Duplicate</button>
-          <button type="button" onclick={deleteSelection}>Delete</button>
-        </div>
-      {/if}
-
-      <div class="medousa-draw-tool-group" role="group" aria-label="Touch input">
-        <button type="button" class:active={fingerDraw} aria-pressed={fingerDraw} onclick={() => (fingerDraw = !fingerDraw)}>Finger draws</button>
-      </div>
-      <div class="medousa-draw-tool-group" role="group" aria-label="View">
-        <button type="button" aria-label="Zoom out" onclick={() => zoomBy(1 / 1.2)}>−</button>
-        <button type="button" class="medousa-draw-zoom" title="Reset view" onclick={resetCamera}>{zoomLabel}</button>
-        <button type="button" aria-label="Zoom in" onclick={() => zoomBy(1.2)}>+</button>
-      </div>
-      <div class="medousa-draw-tool-group medousa-draw-history" role="group" aria-label="History">
-        <button type="button" disabled={undoStack.length === 0} onclick={undo}>Undo</button>
-        <button type="button" disabled={redoStack.length === 0} onclick={redo}>Redo</button>
-        <button type="button" disabled={scene.strokes.length === 0} onclick={clear}>Clear</button>
+      <div class="medousa-draw-quick-actions" role="group" aria-label="Drawing actions">
+        <button
+          type="button"
+          class:active={optionsOpen}
+          aria-label="Drawing options"
+          aria-expanded={optionsOpen}
+          onclick={() => (optionsOpen = !optionsOpen)}
+        >
+          <SlidersHorizontal size={19} strokeWidth={2} aria-hidden="true" />
+        </button>
+        <button type="button" aria-label="Undo" disabled={undoStack.length === 0} onclick={undo}>
+          <Undo2 size={19} strokeWidth={2} aria-hidden="true" />
+        </button>
+        <button type="button" aria-label="Redo" disabled={redoStack.length === 0} onclick={redo}>
+          <Redo2 size={19} strokeWidth={2} aria-hidden="true" />
+        </button>
       </div>
     </div>
   {/if}
 
-  <button
-    type="button"
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+  <div
     bind:this={stageEl}
     class="medousa-draw-stage"
     class:tool-eraser={tool === "eraser"}
     class:tool-select={tool === "select"}
     class:tool-hand={tool === "hand"}
     aria-label={editable ? "Editable drawing canvas" : "Drawing"}
+    role={editable ? "application" : "img"}
     tabindex={editable ? 0 : -1}
     onpointerdown={beginGesture}
     onpointermove={continueGesture}
@@ -682,23 +718,19 @@
     onpointerleave={() => (cursorScene = null)}
     onwheel={handleWheel}
     onkeydown={handleKeydown}
+    oncontextmenu={suppressNativeGesture}
+    onselectstart={suppressNativeGesture}
+    ondragstart={suppressNativeGesture}
   >
     <svg
       bind:this={svgEl}
-      viewBox={`0 0 ${scene.width} ${scene.height}`}
-      preserveAspectRatio="xMidYMid meet"
-      role="img"
+      viewBox={`0 0 ${viewport.width} ${viewport.height}`}
+      preserveAspectRatio="none"
+      role="presentation"
       aria-hidden="true"
     >
-      <defs>
-        <pattern id="draw-grid" width="40" height="40" patternUnits="userSpaceOnUse">
-          <path d="M 40 0 L 0 0 0 40" fill="none" stroke="currentColor"></path>
-        </pattern>
-      </defs>
-      <rect class="medousa-draw-viewport" width={scene.width} height={scene.height}></rect>
+      <rect class="medousa-draw-viewport" width={viewport.width} height={viewport.height}></rect>
       <g transform={`translate(${camera.panX} ${camera.panY}) scale(${camera.zoom})`}>
-        <rect class="medousa-draw-paper" width={scene.width} height={scene.height} fill={scene.background === "transparent" ? "transparent" : scene.background}></rect>
-        <rect class="medousa-draw-grid" width={scene.width} height={scene.height} fill="url(#draw-grid)"></rect>
         {#each scene.strokes as stroke (stroke.id)}
           <path
             class="medousa-draw-stroke"
@@ -737,43 +769,177 @@
         {/if}
       </g>
     </svg>
-  </button>
+  </div>
+
+  <DrawOptionsSheet
+    open={editable && optionsOpen}
+    {tool}
+    {brushKind}
+    {color}
+    {size}
+    {eraserMode}
+    {fingerDraw}
+    {zoomLabel}
+    canUndo={undoStack.length > 0}
+    canRedo={redoStack.length > 0}
+    hasSelection={selectedIds.length > 0}
+    hasInk={scene.strokes.length > 0}
+    onClose={() => (optionsOpen = false)}
+    onBrush={updateBrush}
+    onColor={(next) => (color = next)}
+    onSize={(next) => (size = next)}
+    onEraserMode={(next) => (eraserMode = next)}
+    onFingerDraw={() => (fingerDraw = !fingerDraw)}
+    onZoomOut={() => zoomBy(1 / 1.2)}
+    onZoomIn={() => zoomBy(1.2)}
+    onFit={resetCamera}
+    onUndo={undo}
+    onRedo={redo}
+    onDuplicate={duplicateSelection}
+    onDelete={deleteSelection}
+    onClear={clear}
+  />
 </div>
 
 <style>
-  .medousa-draw-surface { display: flex; min-width: 0; flex-direction: column; overflow: hidden; border: 1px solid rgb(var(--color-surface-500) / .35); border-radius: .8rem; background: rgb(var(--color-surface-900) / .72); }
-  .medousa-draw-surface--full { min-height: 0; flex: 1; border: 0; border-radius: 0; background: rgb(var(--color-surface-950)); }
-  .medousa-draw-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .55rem .65rem; border-bottom: 1px solid rgb(var(--color-surface-500) / .3); background: rgb(var(--color-surface-900) / .94); }
-  .medousa-draw-tool-group { display: flex; align-items: center; gap: .2rem; padding-right: .5rem; border-right: 1px solid rgb(var(--color-surface-500) / .25); }
-  .medousa-draw-history { margin-left: auto; padding-right: 0; border-right: 0; }
-  .medousa-draw-toolbar button { min-width: 2rem; height: 1.9rem; padding: 0 .55rem; border-radius: .45rem; color: rgb(var(--theme-text-secondary)); font-size: .72rem; white-space: nowrap; }
-  .medousa-draw-toolbar button:hover:not(:disabled), .medousa-draw-toolbar button.active { color: rgb(var(--color-surface-50)); background: rgb(var(--color-surface-500) / .3); }
-  .medousa-draw-toolbar button:disabled { opacity: .35; }
-  .medousa-draw-toolbar .medousa-draw-zoom { min-width: 3.4rem; font-variant-numeric: tabular-nums; }
-  .medousa-draw-color { min-width: 1.45rem; width: 1.45rem; height: 1.45rem; padding: 0; border: 2px solid transparent; border-radius: 999px; background: var(--draw-color); box-shadow: inset 0 0 0 1px rgb(0 0 0 / .25); }
-  .medousa-draw-color.active { border-color: rgb(var(--color-primary-400)); outline: 1px solid rgb(var(--color-surface-950)); }
-  .medousa-draw-stage { display: block; width: 100%; min-height: 0; flex: 1; padding: .65rem; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: initial; }
-  svg { display: block; width: 100%; height: auto; max-height: 100%; aspect-ratio: 5 / 3; overflow: hidden; border-radius: .45rem; background: rgb(var(--color-surface-950)); box-shadow: inset 0 0 0 1px rgb(var(--color-surface-500) / .28); }
-  .medousa-draw-surface--full svg { height: 100%; min-height: 16rem; }
-  .medousa-draw-surface--editable .medousa-draw-stage { cursor: crosshair; touch-action: none; overscroll-behavior: contain; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  .medousa-draw-surface {
+    position: relative;
+    container-type: inline-size;
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid rgb(var(--color-surface-500) / 0.3);
+    border-radius: 0.8rem;
+    background: rgb(var(--color-surface-950));
+  }
+
+  .medousa-draw-surface--full {
+    min-height: 0;
+    flex: 1;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .medousa-draw-toolbar {
+    z-index: 10;
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-height: 3.5rem;
+    padding: 0.4rem max(0.45rem, env(safe-area-inset-left, 0px));
+    border-bottom: 1px solid rgb(var(--color-surface-500) / 0.22);
+    background: rgb(var(--color-surface-900) / 0.94);
+    backdrop-filter: blur(18px);
+  }
+
+  .medousa-draw-tools,
+  .medousa-draw-quick-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+  }
+
+  .medousa-draw-tools {
+    min-width: 0;
+  }
+
+  .medousa-draw-toolbar button {
+    display: inline-flex;
+    min-width: 2.75rem;
+    height: 2.65rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    padding: 0 0.65rem;
+    border-radius: 0.75rem;
+    color: rgb(var(--theme-text-secondary));
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .medousa-draw-toolbar button:hover:not(:disabled),
+  .medousa-draw-toolbar button.active {
+    color: rgb(var(--color-surface-50));
+    background: rgb(var(--color-surface-500) / 0.28);
+  }
+
+  .medousa-draw-toolbar button.active {
+    box-shadow: inset 0 0 0 1px rgb(var(--color-primary-400) / 0.42);
+  }
+
+  .medousa-draw-toolbar button:disabled {
+    opacity: 0.3;
+  }
+
+  .medousa-draw-quick-actions {
+    flex: 0 0 auto;
+    padding-left: 0.35rem;
+    border-left: 1px solid rgb(var(--color-surface-500) / 0.2);
+  }
+
+  .medousa-draw-stage {
+    display: block;
+    width: 100%;
+    min-height: 16rem;
+    flex: 1;
+    overflow: hidden;
+    outline: none;
+    background: rgb(var(--color-surface-950));
+  }
+
+  .medousa-draw-surface:not(.medousa-draw-surface--full) .medousa-draw-stage {
+    aspect-ratio: 5 / 3;
+  }
+
+  svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .medousa-draw-surface--editable .medousa-draw-stage {
+    cursor: crosshair;
+    touch-action: none;
+    overscroll-behavior: contain;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-user-drag: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .medousa-draw-surface--editable .medousa-draw-stage:focus-visible {
+    box-shadow: inset 0 0 0 2px rgb(var(--color-primary-400) / 0.72);
+  }
+
   .medousa-draw-surface--editable .medousa-draw-stage.tool-eraser { cursor: none; }
   .medousa-draw-surface--editable .medousa-draw-stage.tool-select { cursor: default; }
   .medousa-draw-surface--editable .medousa-draw-stage.tool-hand { cursor: grab; }
   .medousa-draw-surface--editable .medousa-draw-stage.tool-hand:active { cursor: grabbing; }
   .medousa-draw-viewport { fill: rgb(var(--color-surface-950)); pointer-events: all; }
-  .medousa-draw-paper { pointer-events: all; }
-  .medousa-draw-grid { color: rgb(var(--color-surface-500) / .12); stroke: currentColor; stroke-width: 1; pointer-events: none; }
   .medousa-draw-stroke { pointer-events: none; }
   .medousa-draw-stroke.highlighter { mix-blend-mode: normal; }
-  .medousa-draw-stroke.selected { filter: drop-shadow(0 0 2px rgb(var(--color-primary-400) / .85)); }
-  .medousa-draw-lasso { fill: rgb(var(--color-primary-400) / .08); stroke: rgb(var(--color-primary-300) / .9); stroke-width: 1.5; stroke-dasharray: 7 5; vector-effect: non-scaling-stroke; pointer-events: none; }
-  .medousa-draw-selection { fill: none; stroke: rgb(var(--color-primary-300) / .95); stroke-dasharray: 7 4; pointer-events: none; }
-  .medousa-draw-eraser-cursor { fill: rgb(var(--color-surface-50) / .08); stroke: rgb(var(--color-surface-50) / .72); pointer-events: none; }
-  @media (max-width: 640px) {
-    .medousa-draw-toolbar { flex-wrap: nowrap; gap: .35rem; overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
-    .medousa-draw-toolbar::-webkit-scrollbar { display: none; }
-    .medousa-draw-tool-group { flex: 0 0 auto; }
-    .medousa-draw-history { margin-left: 0; }
-    .medousa-draw-stage { padding: .35rem; }
+  .medousa-draw-stroke.selected { filter: drop-shadow(0 0 2px rgb(var(--color-primary-400) / 0.85)); }
+  .medousa-draw-lasso { fill: rgb(var(--color-primary-400) / 0.08); stroke: rgb(var(--color-primary-300) / 0.9); stroke-width: 1.5; stroke-dasharray: 7 5; vector-effect: non-scaling-stroke; pointer-events: none; }
+  .medousa-draw-selection { fill: none; stroke: rgb(var(--color-primary-300) / 0.95); stroke-dasharray: 7 4; pointer-events: none; }
+  .medousa-draw-eraser-cursor { fill: rgb(var(--color-surface-50) / 0.08); stroke: rgb(var(--color-surface-50) / 0.72); pointer-events: none; }
+
+  @container (max-width: 640px) {
+    .medousa-draw-toolbar {
+      gap: 0.25rem;
+      padding-right: max(0.35rem, env(safe-area-inset-right, 0px));
+      padding-left: max(0.35rem, env(safe-area-inset-left, 0px));
+    }
+
+    .medousa-draw-tools { flex: 1 1 auto; justify-content: space-between; }
+    .medousa-draw-tools button { min-width: 2.55rem; padding: 0 0.5rem; }
+    .medousa-draw-tools button span { display: none; }
+    .medousa-draw-quick-actions { gap: 0; padding-left: 0.2rem; }
+    .medousa-draw-quick-actions button { min-width: 2.5rem; padding: 0; }
   }
 </style>

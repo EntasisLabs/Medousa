@@ -73,6 +73,18 @@ describe("drawDocument", () => {
     expect(noteHasDraw(fence)).toBe(true);
   });
 
+  it("preserves subpixel scene widths used to keep brushes stable while zoomed in", () => {
+    const document = createEmptyDrawDocument();
+    document.strokes.push({
+      id: "zoomed-ink",
+      color: "#fff",
+      input: "pen",
+      brush: createDrawBrush("pen", 0.375),
+      points: [{ x: 4, y: 8 }],
+    });
+    expect(decodeDrawDocument(encodeDrawDocument(document)).strokes[0].brush.size).toBe(0.375);
+  });
+
   it("replaces only the drawing fence and preserves the surrounding note", () => {
     const initial = `# Idea\n\nBefore\n\n${serializeDrawFence(createEmptyDrawDocument())}\n\nAfter\n`;
     const document = drawDocumentFromContent(initial);

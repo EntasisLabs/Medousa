@@ -7,22 +7,32 @@ Medousa drawings are vault-native Markdown. They can live inside an ordinary not
 Open a note in **Live**, type `/draw`, and choose **Drawing**. The same drawing
 surface is also used by full drawing notes.
 
-- Choose **Pen**, **Pencil**, **Marker**, or **Highlighter**, then select a color
-  and size. Pen-capable devices use the stylus pressure supplied by the device;
-  mouse and touch input use a stable speed-sensitive fallback.
+- Use the compact bar to switch between **Draw**, **Erase**, **Select**, and
+  **Move**. Open **Drawing options** (the sliders button) for brushes, color,
+  size, eraser mode, touch behavior, view controls, and document actions. On a
+  phone these controls open as a bottom sheet instead of a scrolling toolbar.
+- Choose **Pen**, **Pencil**, **Marker**, or **Highlighter** in the options sheet.
+  Pen-capable devices use the stylus pressure supplied by the device; mouse and
+  touch input use a stable speed-sensitive fallback.
 - **Erase → Partial** removes only the ink under the eraser path. **Stroke**
   removes each complete stroke the path touches.
 - **Select** and draw a lasso around or across ink. Drag selected ink to move
   it, or use **Duplicate** and **Delete**.
-- **Hand** pans with a mouse or stylus. One-finger touch pans by default and two
+- **Move** pans with a mouse or stylus. One-finger touch pans by default and two
   fingers pan or pinch-zoom. Turn on **Finger draws** when you intentionally
   want one-finger ink.
-- Use the zoom percentage to reset the view, or the adjacent minus and plus
-  buttons to zoom. **Undo**, **Redo**, and **Clear** apply to the active drawing.
+- Use **Fit drawing** to recover the view, or the adjacent minus and plus buttons
+  to zoom. **Undo**, **Redo**, and **Clear drawing** apply to the active drawing.
+
+The canvas is intentionally blank and edge-to-edge. It has no paper boundary or
+grid, and it adapts its coordinate viewport to the available screen instead of
+letterboxing a landscape canvas on portrait devices.
 
 Apple Pencil and Android active styluses use Pointer Events, including pressure,
 tilt, and coalesced samples when the device WebView supplies them. While a pen
 gesture is active, incidental touch input is ignored to reduce palm marks.
+Medousa also suppresses the WebView's long-press selection and callout gestures
+inside the canvas so a pressure hold remains drawing input.
 
 In Preview, the same block renders as a clean, read-only canvas. In Build, it remains a normal fenced Markdown block:
 
