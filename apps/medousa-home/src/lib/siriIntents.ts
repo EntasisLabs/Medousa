@@ -1,16 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createTurnTicket } from "$lib/daemon";
 import { chat } from "$lib/stores/chat.svelte";
+import { workshops } from "$lib/stores/workshops.svelte";
 import { classifySiriAskFailure } from "$lib/siriIntentErrors";
 
 type PendingSiriAsk = {
   requestId: string;
   prompt: string;
+  workshopId: string;
   createdAt: number;
 };
 
 export async function startPendingSiriAsk(requestId: string): Promise<void> {
-  const workshopEpoch = chat.workshopEpoch;
   if (!chat.workshopScopeId) {
     throw new Error(classifySiriAskFailure("Workshop is switching").message);
   }
@@ -25,6 +26,23 @@ export async function startPendingSiriAsk(requestId: string): Promise<void> {
   } catch (error) {
     throw new Error(classifySiriAskFailure(error).message);
   }
+
+  if (!pending.workshopId) {
+    chat.prefillDraft(pending.prompt);
+    throw new Error("Choose a workshop in Medousa, then ask Siri again.");
+  }
+  if (pending.workshopId !== workshops.activeWorkshopId) {
+    try {
+      await workshops.selectWorkshop(pending.workshopId, { force: true });
+      if (workshops.activeWorkshopId !== pending.workshopId) {
+        throw new Error("The selected workshop could not be activated");
+      }
+    } catch (error) {
+      chat.prefillDraft(pending.prompt);
+      throw new Error(classifySiriAskFailure(error).message);
+    }
+  }
+  const workshopEpoch = chat.workshopEpoch;
 
   let accepted;
   try {

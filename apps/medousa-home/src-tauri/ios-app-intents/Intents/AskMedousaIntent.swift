@@ -17,15 +17,21 @@ struct AskMedousaIntent: AppIntent {
     )
     var prompt: String
 
+    @Parameter(title: "Workshop")
+    var workshop: WorkshopEntity?
+
     static var parameterSummary: some ParameterSummary {
-        Summary("Ask Medousa \(\.$prompt)")
+        Summary("Ask Medousa \(\.$prompt) in \(\.$workshop)")
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog & OpensIntent {
         let requestId = UUID().uuidString.lowercased()
+        let workshopId = workshop?.id
+            ?? WorkshopEntitySnapshot.load().first(where: \.isActive)?.id
         let payload: [String: Any] = [
             "requestId": requestId,
             "prompt": prompt,
+            "workshopId": workshopId ?? "",
             "createdAt": Date().timeIntervalSince1970,
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: payload),

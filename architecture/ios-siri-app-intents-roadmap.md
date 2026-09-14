@@ -246,6 +246,11 @@ and Shortcuts without the webview already running.
   gateway distinguishes busy, expired, authentication, offline, unavailable-
   workshop, and unknown failures; if admission fails after receipt consumption,
   it preserves the prompt in the composer for a safe manual retry.
+- Added `WorkshopEntity` backed by an App Group snapshot containing only stable
+  IDs, display names, and the active flag—never URLs or credentials. Siri defaults
+  to the active workshop and can expose the available portal workshops. An
+  explicit alternate choice runs Medousa's existing guarded workshop switch and
+  must become active before the turn is admitted.
 - Canonical mobile plist ownership now guarantees `medousa://` registration in
   intermediate Xcode archives as well as Tauri's final bundle.
 - The normal simulator build and metadata verifier pass with both intents; the

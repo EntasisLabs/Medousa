@@ -58,11 +58,17 @@ ask_intent_id = "AskMedousaIntent"
 ask_intent = metadata.get("actions", {}).get(ask_intent_id)
 if ask_intent is None or not ask_intent.get("isDiscoverable"):
     raise SystemExit(f"missing discoverable intent: {ask_intent_id}")
-if "prompt" not in {parameter.get("name") for parameter in ask_intent.get("parameters", [])}:
-    raise SystemExit(f"missing prompt parameter: {ask_intent_id}")
+ask_parameters = {
+    parameter.get("name") for parameter in ask_intent.get("parameters", [])
+}
+for parameter_name in ("prompt", "workshop"):
+    if parameter_name not in ask_parameters:
+        raise SystemExit(f"missing {parameter_name} parameter: {ask_intent_id}")
+if not any("WorkshopEntity" in identifier for identifier in metadata.get("entities", {})):
+    raise SystemExit("missing WorkshopEntity metadata")
 if not any(
     entry.get("actionIdentifier") == ask_intent_id for entry in shortcuts
 ):
     raise SystemExit(f"missing App Shortcut for intent: {ask_intent_id}")
-print(f"verified {ask_intent_id}: discoverable with prompt parameter")
+print(f"verified {ask_intent_id}: discoverable with prompt and workshop parameters")
 PY

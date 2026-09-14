@@ -5,7 +5,40 @@ use serde::{Deserialize, Serialize};
 pub struct PendingSiriAsk {
     pub request_id: String,
     pub prompt: String,
+    pub workshop_id: String,
     pub created_at: f64,
+}
+
+#[cfg(target_os = "ios")]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SiriWorkshopSummary {
+    id: String,
+    name: String,
+    is_active: bool,
+}
+
+#[tauri::command]
+pub fn siri_sync_workshop_snapshot() -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        let registry = crate::workshop_registry::ensure_migrated()?;
+        let active_workshop_id = registry.active_workshop_id.clone();
+        let summaries = registry
+            .workshops
+            .into_iter()
+            .filter(|workshop| crate::workshop_registry::is_portal_kind(&workshop.kind))
+            .map(|workshop| SiriWorkshopSummary {
+                is_active: workshop.id == active_workshop_id,
+                id: workshop.id,
+                name: workshop.label,
+            })
+            .collect::<Vec<_>>();
+        return ios::store_workshops(&summaries);
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    Ok(())
 }
 
 #[tauri::command]
@@ -33,6 +66,7 @@ mod ios {
     #[cfg(live_activity_native)]
     unsafe extern "C" {
         fn medousa_siri_consume_pending_ask(request_id: *const c_char) -> *mut c_char;
+        fn medousa_siri_store_workshops(json: *const c_char) -> bool;
         fn medousa_live_activity_free_string(ptr: *mut c_char);
     }
 
@@ -63,6 +97,22 @@ mod ios {
                 prompt: prompt.to_string(),
                 ..pending
             });
+        }
+
+        #[cfg(not(live_activity_native))]
+        Err("Siri native bridge is unavailable".into())
+    }
+
+    pub fn store_workshops(summaries: &[super::SiriWorkshopSummary]) -> Result<(), String> {
+        #[cfg(live_activity_native)]
+        {
+            let encoded = serde_json::to_string(summaries).map_err(|error| error.to_string())?;
+            let encoded = CString::new(encoded)
+                .map_err(|_| "Workshop snapshot contained a null byte".to_string())?;
+            if unsafe { medousa_siri_store_workshops(encoded.as_ptr()) } {
+                return Ok(());
+            }
+            return Err("Could not store the Siri workshop snapshot".into());
         }
 
         #[cfg(not(live_activity_native))]

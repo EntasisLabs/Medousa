@@ -482,6 +482,7 @@ fn run_home() {
             push::push_register_apns_token,
             push::push_clear_apns_token,
             siri_intents::siri_consume_pending_ask,
+            siri_intents::siri_sync_workshop_snapshot,
             pairing::bonjour_status,
             lan_share::lan_pairing_status,
             lan_share::set_lan_pairing_enabled,
