@@ -195,6 +195,23 @@ contract.
 **Exit:** the intent appears in Shortcuts and invokes reproducibly from an
 archive produced by the normal build script.
 
+**Evidence (2026-09-14):**
+
+- `MEDOUSA_LIVE_ACTIVITY=1 npm run tauri -- ios build --debug --target
+  aarch64-sim --no-sign --ci` completed through the normal Tauri/Xcode path.
+- The resulting `Medousa.app` contains
+  `Metadata.appintents/extract.actionsdata`; the generated metadata declares
+  `MedousaIntegrationProbeIntent` as discoverable and includes both committed
+  App Shortcut phrases.
+- The exact bundle installed and launched on an iPhone 17 simulator as
+  `com.entasislabs.medousa-home`.
+- `npm run ios:verify-app-intents -- /path/to/Medousa.app` provides a repeatable
+  metadata assertion for simulator bundles and signed device archives.
+- Still required for S0 exit: run the verifier against a signed device archive,
+  confirm Shortcuts presentation, and record foreground/background/suspended/
+  terminated invocation results. iOS 27-only guards also remain pending an
+  installed iOS 27 SDK; the current probe is guarded at iOS 16.
+
 ### S1 — Ask Medousa MVP
 
 **Goal:** Ship the highest-value action without waiting on semantic indexing.
@@ -363,4 +380,3 @@ These do not block S0, but must be answered before their dependent phase:
 - [Providing contextual cues to Apple Intelligence and Siri](https://developer.apple.com/documentation/appintents/providing-contextual-cues-to-apple-intelligence-and-siri)
 - [Integrating your app with Visual Intelligence](https://developer.apple.com/documentation/visualintelligence/integrating-your-app-with-visual-intelligence)
 - [Launching a conversational app from the iPhone side button](https://developer.apple.com/documentation/appintents/launching-your-voice-based-conversational-app-from-the-side-button-of-iphone)
-
