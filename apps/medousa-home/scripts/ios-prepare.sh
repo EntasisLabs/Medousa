@@ -109,6 +109,16 @@ for stale in (
 ):
     text = text.replace(stale, "")
 
+# App Intent declarations must be visible to Xcode's metadata processor. Keep them
+# in the application target rather than the Rust-linked static Swift archive.
+app_intents_source = "      - path: ../../ios-app-intents\n"
+if app_intents_source not in text and "      - path: medousa-home_iOS\n" in text:
+    text = text.replace(
+        "      - path: medousa-home_iOS\n",
+        "      - path: medousa-home_iOS\n" + app_intents_source,
+        1,
+    )
+
 text = re.sub(r"iOS: 16\.1", "iOS: 16.2", text)
 text = re.sub(r"iOS: 15\.0", "iOS: 16.2", text)
 # Stale typo from older patches / hand edits — drop it (correct key is NSSupportsLiveActivities).
