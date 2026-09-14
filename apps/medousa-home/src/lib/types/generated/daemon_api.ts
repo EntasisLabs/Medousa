@@ -117,7 +117,7 @@ export interface TurnArtifactRef {
   role: string;
 }
 
-export type TurnPart = { kind: "model_receipt"; model: string; provider: string } | { kind: "text"; markdown: string; model_round?: number | null; segment_id?: string | null } | { kind: "progress"; markdown: string } | { kind: "reasoning"; markdown: string } | { artifact_refs?: TurnArtifactRef[]; finished_at?: string | null; input_params?: ToolInputParam[]; input_summary: string; kind: "tool_run"; output_summary?: string | null; run_id: string; started_at: string; status: string; tool_name: string; tool_round?: number | null } | { handoff_kind: string; kind: "handoff"; text: string; work_id?: string | null } | { byte_size?: number | null; kind: "user_media"; label?: string | null; media_id: string; mime: string } | { context: HostTurnContext; kind: "host_context" } | { artifact_id: string; byte_size?: number | null; height_px?: number | null; kind: "attachment_ref"; label: string; mime: string; presentation?: string | null } | { kind: "unknown" };
+export type TurnPart = { kind: "model_receipt"; model: string; provider: string } | { kind: "text"; markdown: string; model_round?: number | null; segment_id?: string | null } | { kind: "progress"; markdown: string } | { kind: "reasoning"; markdown: string } | { artifact_refs?: TurnArtifactRef[]; finished_at?: string | null; input_params?: ToolInputParam[]; input_summary: string; kind: "tool_run"; output_summary?: string | null; run_id: string; started_at: string; status: string; tool_name: string; tool_round?: number | null } | { handoff_kind: string; kind: "handoff"; text: string; work_id?: string | null } | { byte_size?: number | null; kind: "user_media"; label?: string | null; media_id: string; mime: string } | { byte_size?: number | null; kind: "user_drawing"; label?: string | null; media_id: string; mime: string; preview_media_id: string } | { byte_size?: number | null; generation_id: string; height_px?: number | null; kind: "generated_media"; label: string; media_id: string; mime: string; model?: string | null; parent_generation_id?: string | null; provider?: string | null; width_px?: number | null } | { context: HostTurnContext; kind: "host_context" } | { artifact_id: string; byte_size?: number | null; height_px?: number | null; kind: "attachment_ref"; label: string; mime: string; presentation?: string | null } | { kind: "unknown" };
 
 export interface TurnSliceSummary {
   delegate_intent?: string | null;
@@ -304,10 +304,13 @@ export interface ExecutionTargetRequirements {
 export type ExecutionTargetSelection = { kind: "same_as_parent" } | { kind: "exact"; runtime_id: string } | { kind: "auto"; requirements?: ExecutionTargetRequirements };
 
 export interface MediaRef {
+  generation_id?: string | null;
   kind: string;
   label?: string | null;
   media_id: string;
   mime: string;
+  parent_generation_id?: string | null;
+  source_media_id?: string | null;
 }
 
 export interface StageRoute {

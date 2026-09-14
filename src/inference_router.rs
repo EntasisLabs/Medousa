@@ -60,6 +60,10 @@ pub fn profile_targets_from_defaults(
             .inference_profiles
             .as_ref()
             .and_then(|profiles| profiles.vision.clone()),
+        InferenceProfileKind::ImageGeneration => defaults
+            .inference_profiles
+            .as_ref()
+            .and_then(|profiles| profiles.image_generation.clone()),
         InferenceProfileKind::Stt => defaults
             .inference_profiles
             .as_ref()
@@ -273,6 +277,7 @@ impl InferenceProfileKind {
         match self {
             Self::Main => "main",
             Self::Vision => "vision",
+            Self::ImageGeneration => "image_generation",
             Self::Stt => "stt",
         }
     }
@@ -481,6 +486,7 @@ mod tests {
                     }],
                 }),
                 vision: None,
+                image_generation: None,
                 stt: None,
             }),
             ..Default::default()
@@ -503,6 +509,7 @@ mod tests {
                     base_url: None,
                     fallbacks: Vec::new(),
                 }),
+                image_generation: None,
                 stt: None,
             }),
             ..Default::default()
@@ -540,6 +547,7 @@ mod tests {
                     base_url: None,
                     fallbacks: Vec::new(),
                 }),
+                image_generation: None,
                 stt: None,
             }),
             ..Default::default()
@@ -563,6 +571,7 @@ mod tests {
                     }],
                 }),
                 vision: None,
+                image_generation: None,
                 stt: None,
             }),
             ..Default::default()

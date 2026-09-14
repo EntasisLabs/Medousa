@@ -10,20 +10,22 @@ Paste-first UI blocks for **chat** and **vault** notes. The client turns fenced 
 | Vault preview | Same Home hydrate pipeline (charts, cards, Mermaid, code) |
 | VS Code chat | Shared portable renderer for Liquid embeds, SVG charts, nested Markdown, actions, links, and copy controls |
 | Obsidian chat | Obsidian-native Markdown plus the shared portable renderer; vault-relative media resolves through the active vault |
-| Vault slash (`/`) | Insert starters for the full Liquid catalog: Callout, Card, Carousel, Actions, Section, Chips, Media, Citation, Compare, Plan, Timeline, Shortlist, Decision, Brief, Chart, Dashboard, Report, Slides, Tabs, Steps, Accordion, Code, File tree, Mini board — plus embed / TOC / query view / kanban board / table |
+| Vault slash (`/`) | Insert starters for the editor-supported catalog; generated chat may additionally use `recipe` with durable Home timers |
 | PDF export | Hydrates then captures (charts render as painted DOM) |
 
 Live gallery (dev): `/dev/liquid` in medousa-home.
 
 ## Fence catalog
 
-Supported langs: `card`, `carousel`, `actions`, `callout`, `section`, `chips`, `media`, `cite`, `compare`, `plan`, `timeline`, `feed`, `shortlist`, `decision`, `brief`, `dashboard`, `chart`, `report`, `slides`, `tabs`, `steps`, `accordion`, `code`, `tree`, plus `mermaid` and `{{icon:name}}`.
+Supported langs: `card`, `carousel`, `actions`, `callout`, `section`, `chips`, `media`, `cite`, `compare`, `plan`, `timeline`, `feed`, `shortlist`, `decision`, `brief`, `dashboard`, `chart`, `report`, `slides`, `tabs`, `steps`, `recipe`/`procedure`, `accordion`, `code`, `tree`, plus `mermaid` and `{{icon:name}}`.
 
 **Lucide glyphs:** use inline `{{icon:sparkles}}` in prose, or fence `icon: plane` (same allowlist) on timeline / plan / card / shortlist / dashboard / tabs / steps / accordion / actions. Prefer `icon:` over `emoji:` when both are set.
 
-Agents on clients advertising `supports_liquid_markdown` get recipes from
-`[MEDOUSA_PRESENTATION]`. HTML/scene tools remain separately gated by
-`supports_ui_artifacts`.
+Agents on clients advertising `supports_liquid_markdown` receive the compact
+STTP presentation policy. It maps procedure, comparison/decision, metrics,
+plan/timeline, actions, and media intents while retaining prose as the default.
+HTML/scene tools remain separately gated by `supports_ui_artifacts`. Liquid is
+baseline chat behavior; there is no experimental renderer preference.
 
 The grammar and inert placeholder contract live in
 `@medousa/liquid-markdown`; its browser entry point supplies the shared DOM/SVG
@@ -250,6 +252,41 @@ body: medousa up
 - **tabs:** ≥2 panels; optional `default:` (label, id, or 1-based index)
 - **steps:** ≥2 steps; optional per-step `status:` `done`|`current`|`pending`
 - **accordion:** ≥1 item; optional `multiple: true`, per-item `open: true`
+
+## Recipe / procedure
+
+Use `recipe` for cooking and `procedure` for other guided work. Both parse to the
+same portable schema. Step timers are interactive in Medousa and render as
+static duration badges in portable clients and exports.
+
+````md
+```recipe
+title: Weeknight pasta
+servings: 4 servings
+notes: Salt the pasta water generously.
+ingredients:
+- 400 g spaghetti
+- 2 tbsp olive oil
+action: Scale to 2 | Scale this recipe to 2 servings
+action: Substitute dairy | Suggest dairy-free substitutions
+
+---
+label: Boil the pasta
+duration: 10m
+body: Cook until al dente.
+---
+label: Finish the sauce
+duration: 1m 30s
+body: Toss over medium heat.
+```
+````
+
+- Header: required `title`; optional `subtitle`, `yield`/`servings`, `notes`
+- Resources: an `ingredients:` or `resources:` bullet list
+- Steps: one or more `---` blocks with `label`, optional `body`, and optional
+  `duration`/`timer` (`30s`, `8m`, `1h 15m`; maximum 24 hours)
+- Follow-ups: up to three `action: label | prompt` lines; these create explicit
+  new turns, while timer controls remain local state
 
 ## Timeline
 

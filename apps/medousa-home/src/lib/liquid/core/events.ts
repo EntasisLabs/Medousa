@@ -22,11 +22,37 @@ export type SceneEventType =
   | "dismiss"
   | "scroll_end";
 
+export type LiquidEventDisposition =
+  | "local_state"
+  | "context_only"
+  | "submit_turn"
+  | "navigation"
+  | "privileged_action";
+
 export interface SceneEvent {
   nodeId: string;
   type: SceneEventType;
   payload?: unknown;
   ts: number;
+  /** Stable child instance inside a node (for example a recipe step timer). */
+  instanceId?: string;
+  /** Explicit routing; inferred from event type when omitted. */
+  disposition?: LiquidEventDisposition;
+  /** Component-state revision observed when this event was produced. */
+  expectedStateRevision?: number;
+}
+
+export interface LiquidInteractionEnvelope {
+  version: 1;
+  session_id: string;
+  message_id: string;
+  node_id: string;
+  instance_id: string;
+  event_type: string;
+  disposition: LiquidEventDisposition;
+  payload?: unknown;
+  occurred_at_utc: string;
+  expected_state_revision?: number;
 }
 
 /** Build a scene event, defaulting the timestamp to now. */

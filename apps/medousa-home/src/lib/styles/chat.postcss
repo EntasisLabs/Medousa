@@ -492,6 +492,18 @@
     @apply max-w-[88vw] truncate border-t border-surface-600/35 px-3 py-2 text-xs text-content-tertiary;
   }
 
+  .chat-media-preview-actions {
+    @apply flex flex-wrap items-center gap-1.5 border-t border-surface-600/35 px-2 py-2;
+  }
+
+  .chat-media-preview-actions button {
+    @apply inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-surface-200 transition-colors hover:bg-surface-800 disabled:opacity-40;
+  }
+
+  .chat-media-preview-status {
+    @apply border-t border-surface-600/35 px-3 py-2 text-xs text-content-quiet;
+  }
+
   .chat-media-preview-close {
     @apply absolute right-2 top-2 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full border border-surface-500/45 text-surface-200 shadow-md transition hover:bg-surface-800;
     background: rgb(var(--color-surface-950) / 0.8);

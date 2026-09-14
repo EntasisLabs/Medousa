@@ -62,6 +62,7 @@ Source: `src/tool_bootstrap.rs`
 | Browser act | `cognition_browser_act` — revisioned opaque refs or guarded batches through the exact selected driver |
 | Computer snapshot | `cognition_computer_snapshot` — bounded, untrusted accessibility state from the daemon-owned native driver, with an optional redacted focused-window screenshot artifact |
 | Computer act | `cognition_computer_act` — one capability-advertised action against an exact generation/revision/ref; re-observe after each admitted action, and require explicit operator intent for high-risk targets |
+| Image generation | `cognition_image_generate` — bounded daemon-owned image generation/editing with configured route fallbacks and persisted generation lineage |
 | Shell | `cognition_shell_status` / `cognition_shell_run` — direct on the host for short diagnostics; opt-in and bounded by Runtime Controls → Shell |
 | OpenShell secrets | `cognition_openshell_request_secret` — trusted UI prompt; returns an opaque one-use grant, never the credential value |
 | Grapheme secrets | `cognition_grapheme_request_secret` — trusted UI prompt; authorizes an ephemeral credential capability for one native run |

@@ -1061,6 +1061,11 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                     );
                 }
             }
+            if tool_name == crate::image_generation::COGNITION_IMAGE_GENERATE {
+                parts.push_generated_media_parts(
+                    crate::image_generation::generated_media_from_tool_output(&tool_output),
+                );
+            }
         }
         if tool_name == crate::ui_present_tools::COGNITION_UI_PRESENT
             && let Some(ui_artifact) =
@@ -1798,6 +1803,11 @@ async fn run_agent_turn_inner(
     let effective_prompt = crate::agent_runtime::host_context::append_host_context(
         &effective_prompt,
         host_context.as_ref(),
+    );
+    let effective_prompt = crate::liquid_interactions::append_to_prompt(
+        &effective_prompt,
+        &session_id,
+        &request.liquid_interactions,
     );
     let effective_prompt = if request.code_project_setup_authorized
         && agent_mode.id == crate::daemon_api::AgentModeId::Coder

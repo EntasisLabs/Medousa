@@ -27,6 +27,12 @@ pub struct InferenceProfilesConfig {
     pub main: Option<InferenceProfile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vision: Option<InferenceProfile>,
+    #[serde(
+        default,
+        alias = "imageGeneration",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub image_generation: Option<InferenceProfile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stt: Option<InferenceProfile>,
 }

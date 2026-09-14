@@ -17,6 +17,7 @@ pub mod identity;
 pub mod iroh_hook;
 pub mod jobs;
 pub mod local_inference;
+pub mod liquid_state;
 pub mod locus;
 pub mod maintenance;
 pub mod media;
@@ -549,6 +550,7 @@ pub async fn interactive_turn_send(
         voice_appendix: None,
         scheduled_tool_allowlist: None,
         media_refs: Vec::new(),
+        liquid_interactions: Vec::new(),
         identity_user_id: None,
     };
 

@@ -88,6 +88,7 @@ pub const HOST_BOOTSTRAP_TOOLS: &[&str] = &[
     "cognition_ui_present",
     "cognition_ui_build",
     "cognition_ui_scene",
+    "cognition_image_generate",
 ];
 
 /// Always-visible worker workshop tools.
@@ -217,6 +218,11 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                     "cognition_store_read",
                     "cognition_store_write",
                 ],
+            },
+            ToolDomainCatalogEntry {
+                domain: "media",
+                summary: "Generate daemon-owned images for explicit visual creation requests",
+                tools: &["cognition_image_generate"],
             },
             ToolDomainCatalogEntry {
                 domain: "history",

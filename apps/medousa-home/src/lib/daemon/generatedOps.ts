@@ -371,6 +371,8 @@ export const OPERATIONS = {
   "sessions.by_session_id.code_project.post": { id: "sessions.by_session_id.code_project.post", method: "POST", path: "/v1/sessions/{session_id}/code-project", streaming: false },
   "sessions.by_session_id.delete": { id: "sessions.by_session_id.delete", method: "DELETE", path: "/v1/sessions/{session_id}", streaming: false },
   "sessions.by_session_id.history.get": { id: "sessions.by_session_id.history.get", method: "GET", path: "/v1/sessions/{session_id}/history", streaming: false },
+  "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.get": { id: "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.get", method: "GET", path: "/v1/sessions/{session_id}/liquid-state/{message_id}/{node_id}/{instance_id}", streaming: false },
+  "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.put": { id: "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.put", method: "PUT", path: "/v1/sessions/{session_id}/liquid-state/{message_id}/{node_id}/{instance_id}", streaming: false },
   "sessions.by_session_id.name.put": { id: "sessions.by_session_id.name.put", method: "PUT", path: "/v1/sessions/{session_id}/name", streaming: false },
   "sessions.by_session_id.turns.get": { id: "sessions.by_session_id.turns.get", method: "GET", path: "/v1/sessions/{session_id}/turns", streaming: false },
   "sessions.by_session_id.turns.post": { id: "sessions.by_session_id.turns.post", method: "POST", path: "/v1/sessions/{session_id}/turns", streaming: false },

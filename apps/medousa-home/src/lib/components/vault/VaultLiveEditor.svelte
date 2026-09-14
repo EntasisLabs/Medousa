@@ -610,7 +610,6 @@
     boundKeyRef.current = contentSyncKey;
     applyingExternal = true;
     ready = false;
-
     editor = new Editor({
       element: hostEl,
       extensions: createLiveExtensions({
@@ -618,6 +617,7 @@
         fence: {
           getLiquidContext: liquidContext,
           getResolveContext: resolveContext,
+          onDrawInteractionChange: (active) => vault.setCompositionHold(active),
         },
         embed: {
           getLiquidContext: liquidContext,

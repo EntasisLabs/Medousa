@@ -31,7 +31,12 @@ CLI/TUI: `src/bin/medousa_tui/daemon_commands.rs`
 
 ## Inference profiles
 
-`PUT /v1/runtime/inference-profiles` sets provider/model/fallback chains per task kind.
+`PUT /v1/runtime/inference-profiles` sets provider/model/fallback chains for
+`main`, `vision`, `image_generation`, and `stt`. Image generation is intentionally
+separate from vision: vision consumes images as model input, while image
+generation creates daemon-owned media. The initial adapter is OpenAI's Image API
+and requires an OpenAI API key; `openai-codex` ChatGPT sign-in is not reused as
+an Image API credential.
 
 Env vars: [configuration-reference.md](../configuration-reference.md)  
 Plan: [inference-profiles-and-model-catalog-plan.md](../../architecture/inference-profiles-and-model-catalog-plan.md)

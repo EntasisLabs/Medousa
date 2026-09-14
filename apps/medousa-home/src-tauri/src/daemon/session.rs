@@ -709,6 +709,8 @@ struct CreateTurnTicketBody {
     #[serde(default)]
     media_refs: Vec<MediaRef>,
     #[serde(default)]
+    liquid_interactions: Vec<medousa_types::LiquidInteractionEnvelope>,
+    #[serde(default)]
     voice_preset_id: Option<String>,
     #[serde(default)]
     voice_appendix: Option<String>,
@@ -745,6 +747,7 @@ pub async fn turn_create(
     browser_driver_id: Option<String>,
     selected_worlds: Option<Vec<TurnWorldSelection>>,
     media_refs: Option<Vec<MediaRef>>,
+    liquid_interactions: Option<Vec<medousa_types::LiquidInteractionEnvelope>>,
     voice_preset_id: Option<String>,
     voice_appendix: Option<String>,
     identity_user_id: Option<String>,
@@ -855,6 +858,7 @@ pub async fn turn_create(
                 embedded_response_depth,
                 embedded_reasoning_effort,
                 media_refs.clone().unwrap_or_default(),
+                liquid_interactions.clone().unwrap_or_default(),
                 worker_execution_target.clone(),
             )
             .await
@@ -922,6 +926,7 @@ pub async fn turn_create(
         stage_routing: Some(stage_routing),
         surface: Some(surface),
         media_refs: media_refs.unwrap_or_default(),
+        liquid_interactions: liquid_interactions.unwrap_or_default(),
         voice_preset_id: voice_preset_id
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty()),

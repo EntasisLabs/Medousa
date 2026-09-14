@@ -308,6 +308,7 @@ export async function createTurnTicket(
     browserDriverId: request.browserDriverId ?? null,
     selectedWorlds: invokePlain(request.selectedWorlds ?? null),
     mediaRefs: invokePlain(request.mediaRefs ?? null),
+    liquidInteractions: invokePlain(request.liquidInteractions ?? null),
     voicePresetId: request.voicePresetId ?? null,
     voiceAppendix: request.voiceAppendix ?? null,
     identityUserId: request.identityUserId ?? null,
@@ -525,6 +526,7 @@ export async function sendInteractiveTurn(
     channelSurface: options?.channelSurface,
     browserDriverId: options?.browserDriverId,
     selectedWorlds: invokePlain(options?.selectedWorlds ?? null),
+    mediaRefs: invokePlain(options?.mediaRefs ?? null),
   });
 }
 

@@ -152,5 +152,7 @@ export function chatMediaAttachmentsFromRefs(refs: MediaRef[]) {
     kind: ref.kind || mediaKindFromMime(ref.mime),
     mime: ref.mime,
     label: ref.label?.trim() || ref.media_id,
+    origin: ref.kind === "drawing" ? ("drawing" as const) : ("user" as const),
+    editableSourceId: ref.source_media_id ?? null,
   }));
 }

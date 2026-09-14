@@ -1,5 +1,6 @@
 <script lang="ts">
   import DrawSurface from "$lib/components/draw/DrawSurface.svelte";
+  import { vault } from "$lib/stores/vault.svelte";
   import { untrack } from "svelte";
   import {
     drawDocumentFromContent,
@@ -36,7 +37,13 @@
 </script>
 
 <div class="draw-note-editor" data-draw-fingerprint={encodeDrawDocument(document)}>
-  <DrawSurface {document} editable={!disabled} variant="full" onchange={handleChange} />
+  <DrawSurface
+    {document}
+    editable={!disabled}
+    variant="full"
+    onchange={handleChange}
+    oninteractionchange={(active) => vault.setCompositionHold(active)}
+  />
 </div>
 
 <style>

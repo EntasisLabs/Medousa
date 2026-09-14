@@ -48,6 +48,27 @@ export type TurnPart =
       byte_size?: number | null;
     }
   | {
+      kind: "user_drawing";
+      media_id: string;
+      preview_media_id: string;
+      mime: string;
+      label?: string | null;
+      byte_size?: number | null;
+    }
+  | {
+      kind: "generated_media";
+      media_id: string;
+      mime: string;
+      label: string;
+      generation_id: string;
+      parent_generation_id?: string | null;
+      width_px?: number | null;
+      height_px?: number | null;
+      byte_size?: number | null;
+      provider?: string | null;
+      model?: string | null;
+    }
+  | {
       kind: "host_context";
       context: HostTurnContext;
     }
@@ -227,20 +248,46 @@ export function progressFromParts(parts?: TurnPart[] | null): string | null {
   return chunks[chunks.length - 1] ?? null;
 }
 
-export function userMediaFromParts(parts?: TurnPart[] | null): ChatMediaAttachment[] | undefined {
+export function mediaFromParts(parts?: TurnPart[] | null): ChatMediaAttachment[] | undefined {
   if (!parts?.length) return undefined;
   const attachments = parts
-    .filter((part): part is Extract<TurnPart, { kind: "user_media" }> => part.kind === "user_media")
-    .map(
-      (part): ChatMediaAttachment => ({
+    .filter((part) => part.kind === "user_media" || part.kind === "user_drawing" || part.kind === "generated_media")
+    .map((part): ChatMediaAttachment => {
+      if (part.kind === "user_drawing") {
+        return {
+          mediaId: part.preview_media_id,
+          kind: "drawing",
+          mime: "image/png",
+          label: part.label?.trim() || "Drawing",
+          origin: "drawing",
+          editableSourceId: part.media_id,
+        };
+      }
+      if (part.kind === "generated_media") {
+        return {
+          mediaId: part.media_id,
+          kind: "image",
+          mime: part.mime,
+          label: part.label,
+          origin: "generated",
+          generationId: part.generation_id,
+          parentGenerationId: part.parent_generation_id ?? null,
+          widthPx: part.width_px ?? null,
+          heightPx: part.height_px ?? null,
+        };
+      }
+      return {
         mediaId: part.media_id,
         kind: part.mime.startsWith("image/") ? "image" : "document",
         mime: part.mime,
         label: part.label?.trim() || part.media_id,
-      }),
-    );
+        origin: "user",
+      };
+    });
   return attachments.length > 0 ? attachments : undefined;
 }
+
+export const userMediaFromParts = mediaFromParts;
 
 export function hostContextFromParts(parts?: TurnPart[] | null): HostTurnContext | null {
   if (!parts?.length) return null;
@@ -341,6 +388,16 @@ export function composeTurnMarkdown(
       case "user_media":
         sections.push(
           `> [!note] Attachment: ${part.label ?? "attachment"} (${part.mime})\n> \`media:${part.media_id}\``,
+        );
+        break;
+      case "user_drawing":
+        sections.push(
+          `> [!note] Drawing: ${part.label ?? "drawing"} (${part.mime})\n> \`media:${part.media_id}\` · \`preview:${part.preview_media_id}\``,
+        );
+        break;
+      case "generated_media":
+        sections.push(
+          `> [!note] Generated image: ${part.label} (${part.mime})\n> \`media:${part.media_id}\` · \`generation:${part.generation_id}\``,
         );
         break;
       case "attachment_ref":

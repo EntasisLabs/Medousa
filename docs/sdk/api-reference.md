@@ -454,6 +454,8 @@ Incremental patch ops (`remove_custom_surface`, `remove_component`, etc.) are ag
 
 | Method | HTTP | Types |
 |--------|------|-------|
+| `liquid_state_get(session_id, message_id, node_id, instance_id)` | `GET /v1/sessions/{session_id}/liquid-state/{message_id}/{node_id}/{instance_id}` | `LiquidComponentStateResponse` |
+| `liquid_state_put(session_id, message_id, node_id, instance_id, request)` | `PUT /v1/sessions/{session_id}/liquid-state/{message_id}/{node_id}/{instance_id}` | `PutLiquidComponentStateRequest` → `LiquidComponentStateResponse` |
 | `store_get(component_id, ...)` | `GET /v1/components/{id}/store` | `ComponentStoreGetResponse` |
 | `store_set(component_id, key, request)` | `PUT /v1/components/{id}/store?key=` | `ComponentStoreSetRequest` |
 | `store_list_keys(component_id, ...)` | `GET /v1/components/{id}/store/keys` | `ComponentStoreListResponse` |
@@ -463,6 +465,10 @@ Incremental patch ops (`remove_custom_surface`, `remove_component`, etc.) are ag
 | `runtime_tail_events(component_id, ...)` | `GET /v1/components/{id}/runtime/events` | `ComponentRuntimeEventsTailResponse` |
 | `runtime_append_events(component_id, request)` | `POST /v1/components/{id}/runtime/events` | `ComponentRuntimeEventsRequest` |
 | `runtime_complete_probe(component_id, probe_id, request)` | `POST .../probe/{probe_id}/result` | `ComponentRuntimeProbeResult` |
+
+Liquid instance writes use optimistic revisions. Create with
+`expected_revision: 0`; subsequent writes must supply the last returned
+revision. A stale write receives `409 Conflict` and should reload before retrying.
 
 ---
 

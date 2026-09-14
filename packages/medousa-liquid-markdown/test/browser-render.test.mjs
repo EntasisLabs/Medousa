@@ -59,6 +59,7 @@ test("has a portable rendering path for every Liquid embed kind", () => {
     slides: { slides: [{ id: "a", label: "Opening", body: "Hello" }] },
     tabs: { panels: [{ id: "a", label: "A", body: "One" }, { id: "b", label: "B", body: "Two" }] },
     steps: { steps: [{ id: "a", label: "First" }, { id: "b", label: "Second" }] },
+    recipe: { title: "Pasta", yield: "2 servings", ingredients: ["200 g pasta"], steps: [{ id: "boil", label: "Boil", durationLabel: "8m", durationMs: 480000 }] },
     accordion: { items: [{ id: "a", label: "Question", body: "Answer" }] },
     code: { source: "const shared = true;", lang: "ts" },
     tree: { nodes: [{ id: "a", name: "src", kind: "folder", children: [{ id: "b", name: "index.ts", kind: "file" }] }] },
@@ -68,6 +69,18 @@ test("has a portable rendering path for every Liquid embed kind", () => {
   for (const [kind, payload] of Object.entries(payloads)) {
     assert.ok(renderLiquidEmbedHtml(kind, payload), `expected ${kind} to render`);
   }
+});
+
+test("renders recipe timers as useful static instructions", () => {
+  const html = renderLiquidEmbedHtml("recipe", {
+    title: "Tea",
+    resources: ["Kettle", "Mug"],
+    steps: [{ id: "steep", label: "Steep", body: "Remove the leaves.", durationLabel: "4m", durationMs: 240000 }],
+  });
+  assert.match(html, /Tea/);
+  assert.match(html, /What you need/);
+  assert.match(html, /4m/);
+  assert.match(html, /Remove the leaves/);
 });
 
 test("escapes model text and rejects unsafe media protocols", () => {

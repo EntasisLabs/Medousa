@@ -132,6 +132,33 @@ pub enum TurnPart {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         byte_size: Option<u64>,
     },
+    UserDrawing {
+        media_id: String,
+        preview_media_id: String,
+        mime: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        byte_size: Option<u64>,
+    },
+    GeneratedMedia {
+        media_id: String,
+        mime: String,
+        label: String,
+        generation_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent_generation_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        width_px: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        height_px: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        byte_size: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+    },
     HostContext {
         context: HostTurnContext,
     },

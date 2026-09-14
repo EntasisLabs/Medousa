@@ -1,0 +1,14 @@
+[
+  { "prompt": "Give me a weeknight pasta recipe for four people", "eligible": true, "expected": "recipe" },
+  { "prompt": "Walk me through changing a bicycle tire and time the glue cure", "eligible": true, "expected": "recipe" },
+  { "prompt": "Compare these two health plans by premium, deductible, and network", "eligible": true, "expected": "compare" },
+  { "prompt": "Help me decide between renting and buying", "eligible": true, "expected": "decision" },
+  { "prompt": "Show this month's signups, churn, and revenue trend", "eligible": true, "expected": "dashboard" },
+  { "prompt": "Make a three-day launch plan", "eligible": true, "expected": "plan" },
+  { "prompt": "Put the history of the Apollo program in order", "eligible": true, "expected": "timeline" },
+  { "prompt": "Give me three useful next actions", "eligible": true, "expected": "actions" },
+  { "prompt": "Show the generated cover and explain the composition", "eligible": true, "expected": "media" },
+  { "prompt": "What is mise en place?", "eligible": false, "expected": "prose" },
+  { "prompt": "Say thanks in Japanese", "eligible": false, "expected": "prose" },
+  { "prompt": "Why is the sky blue?", "eligible": false, "expected": "prose" }
+]

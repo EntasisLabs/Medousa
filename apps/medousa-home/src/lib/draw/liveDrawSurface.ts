@@ -22,6 +22,7 @@ export function mountDrawSurface(
   host: HTMLElement,
   raw: string,
   onChange: (raw: string) => void,
+  onInteractionChange: (active: boolean) => void = () => undefined,
 ): DrawSurfaceHandles {
   const target = document.createElement("div");
   target.className = "vault-live-draw";
@@ -34,6 +35,7 @@ export function mountDrawSurface(
       editable: true,
       variant: "embedded",
       onchange: (next: DrawDocument) => onChange(serializeDrawFence(next)),
+      oninteractionchange: onInteractionChange,
     },
   }) as unknown as { applyDocument?: (document: DrawDocument) => void };
 

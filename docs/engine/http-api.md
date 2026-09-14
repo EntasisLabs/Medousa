@@ -152,6 +152,8 @@ for the protocol and surface-scoping rules.
 | DELETE | `/v1/sessions/{session_id}/code-binding` | Clear shared undertaking binding | `sessions().clear_code_binding` |
 | POST | `/v1/sessions/{session_id}/code-project` | `StartSessionCodeProjectRequest` → create, provision, and bind | `sessions().start_code_project` |
 | DELETE | `/v1/sessions/{session_id}` | `SessionDeleteResponse` | `sessions().delete` |
+| GET | `/v1/sessions/{session_id}/liquid-state/{message_id}/{node_id}/{instance_id}` | `LiquidComponentStateResponse` | `components().liquid_state_get` |
+| PUT | `/v1/sessions/{session_id}/liquid-state/{message_id}/{node_id}/{instance_id}` | `PutLiquidComponentStateRequest` → `LiquidComponentStateResponse` | `components().liquid_state_put` |
 | GET | `/v1/session-deletions/{deletion_id}` | `SessionDeleteResponse` | `http().get` |
 | POST | `/v1/sessions/{session_id}/turns` | `SessionAppendTurnRequest` | `sessions().append_turn` |
 
@@ -229,6 +231,13 @@ source-session reference never grants access by itself.
 | POST | `/v1/sessions/{session_id}/workshop/steer` | steer one exact bound-workshop generation (`work_id`, `message`) | `http().post` |
 | POST | `/v1/turns` | create turn ticket | `http().post` |
 | GET | `/v1/turns/{turn_id}` | turn ticket | `http().get` |
+
+Liquid component state is daemon-owned and deleted with its session. Writes
+use `expected_revision` optimistic concurrency: creation expects revision `0`,
+and updates must match the latest returned revision. Turn creation can carry a
+bounded `liquid_interactions` array. These typed, message-associated events are
+advisory context only; local-state events do not create a turn, and privileged
+events are rejected from this context lane.
 
 Transcript search is scoped to sessions visible to the authenticated profile. It indexes
 user/assistant-visible prose only; reasoning traces and raw tool receipts are excluded.

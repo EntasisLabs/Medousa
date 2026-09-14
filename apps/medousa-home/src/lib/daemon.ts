@@ -25,3 +25,4 @@ export * from "./daemon/calendar";
 export * from "./daemon/misc";
 export * from "./daemon/computer";
 export * from "./daemon/worldActivity";
+export * from "./daemon/liquidState";

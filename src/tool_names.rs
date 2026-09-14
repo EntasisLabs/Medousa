@@ -46,6 +46,7 @@ pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
     "cognition_grapheme_request_secret",
     "cognition_identity_mutate",
     "cognition_identity_query",
+    "cognition_image_generate",
     "cognition_intent_resolve",
     "cognition_layout_apply",
     "cognition_layout_get",

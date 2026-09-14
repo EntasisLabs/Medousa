@@ -79,6 +79,10 @@ pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
             request: Some("InteractiveTurnRequest"),
             response: "InteractiveTurnResponse",
         },
+        "turns.post" => WireBinding {
+            request: Some("CreateTurnTicketRequest"),
+            response: "TurnTicketResponse",
+        },
         "vault.roots.get" => WireBinding {
             request: None,
             response: "VaultRootsResponse",
@@ -195,6 +199,18 @@ pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
             request: None,
             response: "SessionHistoryResponse",
         },
+        "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.get" => {
+            WireBinding {
+                request: None,
+                response: "LiquidComponentStateResponse",
+            }
+        }
+        "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.put" => {
+            WireBinding {
+                request: Some("PutLiquidComponentStateRequest"),
+                response: "LiquidComponentStateResponse",
+            }
+        }
         "sessions.by_session_id.turns.post" => WireBinding {
             request: Some("SessionAppendTurnRequest"),
             response: "SessionAppendTurnResponse",

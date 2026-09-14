@@ -201,6 +201,9 @@ mod tests {
             kind: "document".to_string(),
             mime: "application/pdf".to_string(),
             label: Some("report.pdf".to_string()),
+            source_media_id: None,
+            generation_id: None,
+            parent_generation_id: None,
         }];
         assert!(!has_vision_media(&refs));
         assert!(has_document_media(&refs));
@@ -214,12 +217,18 @@ mod tests {
                 kind: "image".to_string(),
                 mime: "image/png".to_string(),
                 label: None,
+                source_media_id: None,
+                generation_id: None,
+                parent_generation_id: None,
             },
             MediaRef {
                 media_id: "usr:s1:pdf".to_string(),
                 kind: "document".to_string(),
                 mime: "application/pdf".to_string(),
                 label: Some("notes.pdf".to_string()),
+                source_media_id: None,
+                generation_id: None,
+                parent_generation_id: None,
             },
         ];
         assert!(has_vision_media(&refs));
@@ -236,6 +245,9 @@ mod tests {
             kind: "spreadsheet".to_string(),
             mime: "text/csv".to_string(),
             label: None,
+            source_media_id: None,
+            generation_id: None,
+            parent_generation_id: None,
         }];
         let plan = plan_turn_media("session-1", &refs, "openai", "gpt-4o-mini").expect("plan");
         assert_eq!(plan.vision_image_count, 0);

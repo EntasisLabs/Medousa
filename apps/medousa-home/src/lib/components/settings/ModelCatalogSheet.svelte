@@ -106,6 +106,23 @@
 
   const canUseManualModel = $derived(manualModelId.trim().length > 0);
 
+  function isImageGenerationTarget(): boolean {
+    return target?.type !== "favorite-add" && target?.profile === "imageGeneration";
+  }
+
+  function imageGenerationModels(entry: ProviderCatalogEntry): ModelCapabilityRecord[] {
+    return [{
+      provider: entry.id,
+      modelId: "gpt-image-2",
+      displayName: "GPT Image 2",
+      inputModalities: ["text", "image"],
+      outputModalities: ["image"],
+      supportsVision: true,
+      source: "medousa-curated",
+      fetchedAt: new Date().toISOString(),
+    }];
+  }
+
   function targetKey(value: ModelPickerTarget): string {
     return JSON.stringify(value);
   }
@@ -143,6 +160,10 @@
     loading = true;
     needsProviderSetup = false;
     try {
+      if (isImageGenerationTarget()) {
+        models = imageGenerationModels(entry);
+        return;
+      }
       if (entry.id === CUSTOM_PROVIDER_CATALOG_ID && !(await isCustomProviderReady())) {
         needsProviderSetup = true;
         models = [];
@@ -167,7 +188,9 @@
     manualModelId =
       current?.provider?.trim().toLowerCase() === runtimeId.toLowerCase()
         ? current.model.trim()
-        : entry.defaultModel.trim();
+        : isImageGenerationTarget()
+          ? "gpt-image-2"
+          : entry.defaultModel.trim();
     void loadProviderModels(entry);
   }
 
@@ -382,7 +405,9 @@
               <input
                 type="text"
                 class="model-catalog-manual-input"
-                placeholder={selectedProvider.defaultModel || "e.g. gpt-4o-mini"}
+                placeholder={isImageGenerationTarget()
+                  ? "gpt-image-2"
+                  : selectedProvider.defaultModel || "e.g. gpt-4o-mini"}
                 bind:value={manualModelId}
                 onkeydown={(event) => {
                   if (event.key === "Enter" && canUseManualModel) {

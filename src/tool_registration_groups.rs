@@ -176,6 +176,9 @@ pub fn register_portable_interactive_tools(
     crate::calendar_api::register_calendar_tools(registry, bindings.event_tx.clone())?;
     crate::ui_scene_tools::register_ui_scene_tools(registry, bindings.turn_scope.clone())?;
     crate::ui_build_tools::register_ui_build_tools(registry, bindings.turn_scope.clone())?;
+    registry.register_typed_tool(crate::image_generation::CognitionImageGenerateTool::new(
+        bindings.session_id.clone(),
+    ))?;
     crate::grapheme_script_tools::register_grapheme_script_tools(
         registry,
         bindings.event_tx.clone(),

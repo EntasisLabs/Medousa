@@ -350,6 +350,9 @@ pub fn media_ref_from_upload(response: &MediaUploadResponse, kind_hint: Option<&
             .unwrap_or_else(|| media_kind_from_mime(&response.mime).to_string()),
         mime: response.mime.clone(),
         label: response.label.clone(),
+        source_media_id: None,
+        generation_id: None,
+        parent_generation_id: None,
     }
 }
 

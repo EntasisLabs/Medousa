@@ -229,6 +229,7 @@ impl JobHandler for RecurringAgentTurnJobHandler {
             voice_preset_id: None,
             voice_appendix: None,
             media_refs: Vec::new(),
+            liquid_interactions: Vec::new(),
             identity_user_id: Some(identity_user_id.clone()),
         };
 

@@ -403,9 +403,18 @@ fn presentation_slice() -> Result<SttpContentSlice, SttpDocumentBuildError> {
         "p5_presentation",
         0.96,
         json!({
-            "x1_rule(.99)": "structure only when comprehension gains",
-            "x2_default(.98)": "natural prose",
-            "x3_schema(.97)": "typed interface owns syntax"
+            "x1_gate(.99)": "use Liquid only when HUD liquid_markdown=true and interaction or scanning materially helps; otherwise natural prose",
+            "x2_intent(.98)": {
+                "i1_procedure(.99)": "recipe/procedure with ingredients or resources + ordered timed steps -> one recipe fence",
+                "i2_decide(.98)": "comparison or choice with stable criteria -> compare or decision",
+                "i3_metrics(.98)": "several related measures or a trend -> dashboard or chart",
+                "i4_sequence(.98)": "schedule, plan, or chronology -> plan or timeline",
+                "i5_actions(.98)": "1-3 useful explicit follow-ups -> actions; local controls never submit turns",
+                "i6_media(.97)": "visual evidence or generated media -> media with honest origin context"
+            },
+            "x3_restraint(.99)": "one smallest fitting component; never decorate ordinary prose or repeat the same facts outside it",
+            "x4_schema(.99)": "typed inert fences or cognition_ui_build add_component own syntax; never HTML, JavaScript, or model-authored handlers",
+            "x5_recipe(.98)": "recipe durations are compact values such as 8m or 1h 15m; scale/substitute actions are explicit prompt intents"
         }),
     )
 }
@@ -509,6 +518,47 @@ mod tests {
             .expect("compile General policy");
             assert!(!general.rendered.contains("teacher.try_example"));
         }
+    }
+
+    #[test]
+    fn presentation_policy_maps_intents_and_gates_liquid() {
+        let policy = compile_shadow_sttp_policy(SttpPolicySelection::new(
+            SttpPolicyMode::General,
+            SttpPolicyActor::Host,
+        ))
+        .expect("compile policy");
+        for marker in [
+            "liquid_markdown=true",
+            "recipe/procedure",
+            "compare or decision",
+            "dashboard or chart",
+            "plan or timeline",
+            "local controls never submit turns",
+            "one smallest fitting component",
+        ] {
+            assert!(policy.rendered.contains(marker), "missing {marker}");
+        }
+    }
+
+    #[test]
+    fn presentation_eval_set_covers_rich_intents_and_prose_restraint() {
+        let evals: serde_json::Value = serde_json::from_str(include_str!(
+            "testdata/liquid_presentation_eval.json"
+        ))
+        .expect("presentation eval json");
+        let rows = evals.as_array().expect("eval array");
+        assert!(rows.len() >= 10);
+        let expected = rows
+            .iter()
+            .filter_map(|row| row["expected"].as_str())
+            .collect::<std::collections::HashSet<_>>();
+        for kind in [
+            "recipe", "compare", "decision", "dashboard", "plan", "timeline", "actions",
+            "media", "prose",
+        ] {
+            assert!(expected.contains(kind), "missing {kind} eval");
+        }
+        assert!(rows.iter().any(|row| row["eligible"] == false));
     }
 
     #[test]

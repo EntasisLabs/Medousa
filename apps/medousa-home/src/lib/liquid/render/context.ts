@@ -8,6 +8,7 @@
 
 import { getContext, setContext, type Component } from "svelte";
 import type { EventSink } from "$lib/liquid/ports";
+import type { LiquidComponentStatePort } from "$lib/liquid/ports";
 import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
 
 export type LiquidMarkdownViewProps = {
@@ -26,6 +27,10 @@ export interface LiquidRenderContext {
   openLinksInWeb?: boolean;
   /** Session id for media / artifact binding fetches. */
   sessionId?: string;
+  /** Durable transcript message coordinate for component instance state. */
+  messageId?: string;
+  /** Daemon-owned state adapter; absent on static/non-chat surfaces. */
+  componentState?: LiquidComponentStatePort;
   /** Denser presentation (mobile threads / ask lane). */
   compact?: boolean;
   /** Mobile shell. */

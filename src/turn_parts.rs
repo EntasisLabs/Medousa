@@ -214,6 +214,10 @@ impl TurnPartsAccumulator {
         });
     }
 
+    pub fn push_generated_media_parts(&mut self, parts: Vec<TurnPart>) {
+        self.parts.extend(parts);
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn replace_attachment_ref(
         &mut self,
@@ -454,12 +458,24 @@ pub fn user_conversation_turn_with_media(
     let content = content.into();
     let mut parts = Vec::new();
     for media_ref in media_refs {
-        parts.push(TurnPart::UserMedia {
-            media_id: media_ref.media_id.clone(),
-            mime: media_ref.mime.clone(),
-            label: media_ref.label.clone(),
-            byte_size: None,
-        });
+        if media_ref.kind == "drawing"
+            && let Some(source_media_id) = media_ref.source_media_id.as_deref()
+        {
+            parts.push(TurnPart::UserDrawing {
+                media_id: source_media_id.to_string(),
+                preview_media_id: media_ref.media_id.clone(),
+                mime: "application/vnd.medousa.draw+json".to_string(),
+                label: media_ref.label.clone(),
+                byte_size: None,
+            });
+        } else {
+            parts.push(TurnPart::UserMedia {
+                media_id: media_ref.media_id.clone(),
+                mime: media_ref.mime.clone(),
+                label: media_ref.label.clone(),
+                byte_size: None,
+            });
+        }
     }
     if !content.trim().is_empty() {
         parts.push(TurnPart::Text {
@@ -618,6 +634,29 @@ pub fn compose_parts_markdown(parts: &[TurnPart]) -> String {
                     "\n\n> [!note] Attachment: {name} ({mime})\n> `media:{media_id}`"
                 ));
             }
+            TurnPart::UserDrawing {
+                media_id,
+                preview_media_id,
+                mime,
+                label,
+                ..
+            } => {
+                let name = label.as_deref().unwrap_or("drawing");
+                out.push_str(&format!(
+                    "\n\n> [!note] Drawing: {name} ({mime})\n> `media:{media_id}` · `preview:{preview_media_id}`"
+                ));
+            }
+            TurnPart::GeneratedMedia {
+                media_id,
+                mime,
+                label,
+                generation_id,
+                ..
+            } => {
+                out.push_str(&format!(
+                    "\n\n> [!note] Generated image: {label} ({mime})\n> `media:{media_id}` · `generation:{generation_id}`"
+                ));
+            }
             TurnPart::AttachmentRef {
                 artifact_id,
                 mime,
@@ -638,6 +677,40 @@ pub fn compose_parts_markdown(parts: &[TurnPart]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn user_drawing_keeps_editable_source_and_vision_preview() {
+        let turn = user_conversation_turn_with_media(
+            "What does this sketch communicate?",
+            &[crate::daemon_api::MediaRef {
+                media_id: "usr:session:preview".to_string(),
+                kind: "drawing".to_string(),
+                mime: "image/png".to_string(),
+                label: Some("Flow sketch".to_string()),
+                source_media_id: Some("usr:session:source".to_string()),
+                generation_id: None,
+                parent_generation_id: None,
+            }],
+        );
+        let parts = turn.parts.expect("parts");
+
+        assert!(matches!(
+            &parts[0],
+            TurnPart::UserDrawing {
+                media_id,
+                preview_media_id,
+                mime,
+                ..
+            } if media_id == "usr:session:source"
+                && preview_media_id == "usr:session:preview"
+                && mime == "application/vnd.medousa.draw+json"
+        ));
+        assert!(matches!(
+            &parts[1],
+            TurnPart::Text { markdown, .. }
+                if markdown == "What does this sketch communicate?"
+        ));
+    }
 
     #[test]
     fn push_attachment_ref_finalize_includes_attachment_before_text() {

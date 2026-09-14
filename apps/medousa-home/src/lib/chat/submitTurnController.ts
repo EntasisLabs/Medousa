@@ -8,6 +8,8 @@ import type { TurnTicketResponse } from "$lib/types/session";
 import { prepareInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
 import { chat } from "$lib/stores/chat.svelte";
 import { executionTargets } from "$lib/stores/executionTargets.svelte";
+import { chatInteractions } from "$lib/liquid/surfaces/chat/chatInteractions";
+import { recordLiquidMetric, recordLiquidPresentationOpportunity } from "$lib/liquid/observability";
 import { userProfiles } from "$lib/stores/userProfiles.svelte";
 import { voicePresets } from "$lib/stores/voicePresets.svelte";
 import { activeCodeContext } from "$lib/utils/undertakingWorkspace";
@@ -83,6 +85,8 @@ export async function submitChatTurn(input: {
   const mediaRefs = [...chat.pendingMediaRefs];
   const voice = voicePresets.turnVoiceFields();
   const codeContext = activeCodeContext(chat.sessionId);
+  const liquidInteractions = chatInteractions.envelopes(chat.sessionId);
+  recordLiquidPresentationOpportunity(input.prompt);
   const accepted = await createTurnTicket({
     sessionId: chat.sessionId,
     prompt: input.prompt,
@@ -99,6 +103,7 @@ export async function submitChatTurn(input: {
     browserDriverId: opts.browserDriverId,
     selectedWorlds: opts.selectedWorlds,
     mediaRefs,
+    liquidInteractions,
     voicePresetId: voice.voicePresetId,
     voiceAppendix: voice.voiceAppendix,
     identityUserId: opts.identityUserId,
@@ -106,6 +111,8 @@ export async function submitChatTurn(input: {
   if (chat.workshopEpoch !== workshopEpoch) {
     throw new Error("Workshop changed while the turn was being admitted");
   }
+  chatInteractions.ack(chat.sessionId, liquidInteractions.length);
+  recordLiquidMetric("interactionsDelivered", liquidInteractions.length);
   chat.beginTurn(
     input.userContent,
     accepted,

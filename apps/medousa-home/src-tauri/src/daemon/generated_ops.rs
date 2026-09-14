@@ -728,6 +728,10 @@ pub enum DaemonOperation {
     SessionsBySessionIdDelete,
     #[serde(rename = "sessions.by_session_id.history.get")]
     SessionsBySessionIdHistoryGet,
+    #[serde(rename = "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.get")]
+    SessionsBySessionIdLiquidStateByMessageIdByNodeIdByInstanceIdGet,
+    #[serde(rename = "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.put")]
+    SessionsBySessionIdLiquidStateByMessageIdByNodeIdByInstanceIdPut,
     #[serde(rename = "sessions.by_session_id.name.put")]
     SessionsBySessionIdNamePut,
     #[serde(rename = "sessions.by_session_id.turns.get")]
@@ -1265,6 +1269,8 @@ impl DaemonOperation {
             Self::SessionsBySessionIdCodeProjectPost => "sessions.by_session_id.code_project.post",
             Self::SessionsBySessionIdDelete => "sessions.by_session_id.delete",
             Self::SessionsBySessionIdHistoryGet => "sessions.by_session_id.history.get",
+            Self::SessionsBySessionIdLiquidStateByMessageIdByNodeIdByInstanceIdGet => "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.get",
+            Self::SessionsBySessionIdLiquidStateByMessageIdByNodeIdByInstanceIdPut => "sessions.by_session_id.liquid_state.by_message_id.by_node_id.by_instance_id.put",
             Self::SessionsBySessionIdNamePut => "sessions.by_session_id.name.put",
             Self::SessionsBySessionIdTurnsGet => "sessions.by_session_id.turns.get",
             Self::SessionsBySessionIdTurnsPost => "sessions.by_session_id.turns.post",

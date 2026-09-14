@@ -1,5 +1,6 @@
 <script lang="ts">
   import MobileActionSheet from "$lib/components/mobile/MobileActionSheet.svelte";
+  import ChatDrawingDialog from "$lib/components/chat/ChatDrawingDialog.svelte";
   import { canReadClipboardImages } from "$lib/utils/chatImagePaste";
   import { tick } from "svelte";
   import {
@@ -11,6 +12,7 @@
     Images,
     LoaderCircle,
     Paperclip,
+    PenLine,
     Plus,
     Trash2,
     UserRound,
@@ -26,6 +28,7 @@
   import type { PromptStash, SessionRef } from "$lib/types/generated/daemon_api";
   import { attachComposerMenuDismiss } from "$lib/utils/composerMenuDismiss";
   import { placeComposerPopover } from "$lib/utils/railPopover";
+  import { MAX_MEDIA_REFS_PER_TURN } from "$lib/utils/normieErrors";
 
   interface Props {
     disabled?: boolean;
@@ -62,6 +65,7 @@
   let stashSaving = $state(false);
   let deletingStashId = $state<string | null>(null);
   let stashError = $state<string | null>(null);
+  let drawingOpen = $state(false);
 
   const canStash = $derived(
     !disabled && (chat.draft.trim().length > 0 || chat.pendingMediaRefs.length > 0),
@@ -197,6 +201,16 @@
     void chat.attachFilesFromPicker(source);
   }
 
+  function draw() {
+    if (chat.pendingMediaRefs.length >= MAX_MEDIA_REFS_PER_TURN) {
+      chat.streamError = `You can attach up to ${MAX_MEDIA_REFS_PER_TURN} files per message. Remove one and try again.`;
+      open = false;
+      return;
+    }
+    open = false;
+    drawingOpen = true;
+  }
+
   function pickProfile() {
     open = false;
     window.setTimeout(() => onProfile?.(), 0);
@@ -282,6 +296,18 @@
         <span>
           {usesNativeAttachmentSourceMenu ? "Add attachment" : mobile ? "Attach file" : "Attach"}
         </span>
+      </button>
+      <button
+        type="button"
+        class="composer-plus-menu-item"
+        role="menuitem"
+        disabled={disabled || chat.pendingMediaUploading || chat.pendingMediaRefs.length >= MAX_MEDIA_REFS_PER_TURN}
+        onclick={draw}
+      >
+        <span class="composer-plus-menu-icon" aria-hidden="true">
+          <PenLine size={15} strokeWidth={1.75} />
+        </span>
+        <span>Draw</span>
       </button>
       {#if canReadClipboardImages()}
         <button
@@ -397,3 +423,13 @@
     </div>
 
 {/snippet}
+
+<ChatDrawingDialog
+  open={drawingOpen}
+  onclose={() => (drawingOpen = false)}
+  onattach={(media) => {
+    if (chat.pendingMediaRefs.length >= MAX_MEDIA_REFS_PER_TURN) return;
+    chat.pendingMediaRefs = [...chat.pendingMediaRefs, media];
+    chat.streamError = null;
+  }}
+/>

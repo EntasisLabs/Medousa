@@ -25,6 +25,7 @@
     LiquidFeedProps,
     LiquidChartProps,
     LiquidReportProps,
+    LiquidRecipeProps,
     LiquidSlidesProps,
     LiquidDecisionProps,
     LiquidEmbedKind,
@@ -505,6 +506,27 @@
     });
   });
 
+  const recipe = $derived.by(() => {
+    if (kind !== "recipe") return null;
+    const props = payload as LiquidRecipeProps;
+    if (!props?.title || !props?.steps?.length) return null;
+    return createNode({
+      id: "md-recipe",
+      type: "recipe",
+      props: {
+        title: props.title,
+        ...(props.subtitle ? { subtitle: props.subtitle } : {}),
+        ...(props.yield ? { yield: props.yield } : {}),
+        ...(props.ingredients?.length ? { ingredients: props.ingredients } : {}),
+        ...(props.resources?.length ? { resources: props.resources } : {}),
+        steps: props.steps,
+        ...(props.notes ? { notes: props.notes } : {}),
+        ...(props.actions?.length ? { actions: props.actions } : {}),
+      },
+      fillState: "ready",
+    });
+  });
+
   const accordion = $derived.by(() => {
     if (kind !== "accordion") return null;
     const props = payload as LiquidAccordionProps;
@@ -660,6 +682,10 @@
 {:else if kind === "steps" && steps}
   <div class="{hostClass} liquid-md-host-steps">
     <SceneRenderer node={steps} />
+  </div>
+{:else if kind === "recipe" && recipe}
+  <div class="{hostClass} liquid-md-host-recipe">
+    <SceneRenderer node={recipe} />
   </div>
 {:else if kind === "accordion" && accordion}
   <div class="{hostClass} liquid-md-host-accordion">

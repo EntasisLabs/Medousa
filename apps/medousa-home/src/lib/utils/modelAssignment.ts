@@ -8,7 +8,7 @@ import { customProviderHint } from "$lib/utils/customProvider";
 import { alignStageRoutingWithHost } from "$lib/utils/stageRouting";
 import type { ProvidersListResult } from "$lib/types/providers";
 
-export type ProfileKind = "main" | "vision" | "stt";
+export type ProfileKind = "main" | "vision" | "imageGeneration" | "stt";
 
 export type ModelPickerTarget =
   | { type: "favorite-add" }
@@ -21,7 +21,8 @@ export function pickerTitle(target: ModelPickerTarget): string {
       return "Add favorite";
     case "primary":
       if (target.profile === "main") return "Conversation model";
-      if (target.profile === "vision") return "Image backup";
+      if (target.profile === "vision") return "Vision model";
+      if (target.profile === "imageGeneration") return "Image generation";
       return "Dictation model";
     case "fallback":
       return `${profileLabel(target.profile)} backup ${target.index + 1}`;
@@ -37,7 +38,8 @@ export function pickerRequiresVision(target: ModelPickerTarget): boolean {
 export function pickerAllowsClear(target: ModelPickerTarget): boolean {
   return (
     target.type === "fallback" ||
-    (target.type === "primary" && target.profile === "vision")
+    (target.type === "primary" &&
+      (target.profile === "vision" || target.profile === "imageGeneration"))
   );
 }
 
@@ -45,12 +47,16 @@ export function pickerClearHint(target: ModelPickerTarget): string {
   if (target.type === "primary" && target.profile === "vision") {
     return "Use the conversation model first and clear the dedicated image backup";
   }
+  if (target.type === "primary" && target.profile === "imageGeneration") {
+    return "Turn off image generation";
+  }
   return "Clear this backup slot";
 }
 
 function profileLabel(profile: ProfileKind): string {
   if (profile === "main") return "Chat";
-  if (profile === "vision") return "Image";
+  if (profile === "vision") return "Vision";
+  if (profile === "imageGeneration") return "Image generation";
   return "Dictation";
 }
 
@@ -61,6 +67,7 @@ function mergeProfiles(
   return {
     main: draft.inferenceProfiles?.main ?? null,
     vision: draft.inferenceProfiles?.vision ?? null,
+    imageGeneration: draft.inferenceProfiles?.imageGeneration ?? null,
     stt: draft.inferenceProfiles?.stt ?? null,
     ...patch,
   };
@@ -84,6 +91,7 @@ export function profileForKind(
   if (kind === "vision") {
     return profiles?.vision ?? null;
   }
+  if (kind === "imageGeneration") return profiles?.imageGeneration ?? null;
   return (
     profiles?.stt ?? {
       provider: draft.sttProvider ?? "openai",
@@ -154,10 +162,10 @@ export function applyModelSelection(
 
   if (target.type === "primary") {
     if (!selection) {
-      if (target.profile !== "vision") return draft;
+      if (target.profile !== "vision" && target.profile !== "imageGeneration") return draft;
       return syncFlatFieldsFromProfiles({
         ...draft,
-        inferenceProfiles: mergeProfiles(draft, { vision: null }),
+        inferenceProfiles: mergeProfiles(draft, target.profile === "vision" ? { vision: null } : { imageGeneration: null }),
       });
     }
     const nextProfile: InferenceProfile = {
@@ -171,7 +179,9 @@ export function applyModelSelection(
         ? { main: nextProfile }
         : target.profile === "vision"
           ? { vision: nextProfile }
-          : { stt: nextProfile };
+          : target.profile === "imageGeneration"
+            ? { imageGeneration: nextProfile }
+            : { stt: nextProfile };
     return syncFlatFieldsFromProfiles({
       ...draft,
       inferenceProfiles: mergeProfiles(draft, patch),
@@ -206,7 +216,9 @@ export function applyModelSelection(
       ? { main: nextProfile }
       : target.profile === "vision"
         ? { vision: nextProfile }
-        : { stt: nextProfile };
+        : target.profile === "imageGeneration"
+          ? { imageGeneration: nextProfile }
+          : { stt: nextProfile };
   return syncFlatFieldsFromProfiles({
     ...draft,
     inferenceProfiles: mergeProfiles(draft, patch),
@@ -216,6 +228,7 @@ export function applyModelSelection(
 export const PRIMARY_TARGETS: ModelPickerTarget[] = [
   { type: "primary", profile: "main" },
   { type: "primary", profile: "vision" },
+  { type: "primary", profile: "imageGeneration" },
   { type: "primary", profile: "stt" },
 ];
 
@@ -227,6 +240,9 @@ export function fallbackTargets(profile: ProfileKind): ModelPickerTarget[] {
 }
 
 export function providerIdsForTarget(target: ModelPickerTarget): string[] | null {
+  if (target.type !== "favorite-add" && target.profile === "imageGeneration") {
+    return ["openai"];
+  }
   if (target.type === "primary" && target.profile === "stt") {
     return ["openai", "groq"];
   }

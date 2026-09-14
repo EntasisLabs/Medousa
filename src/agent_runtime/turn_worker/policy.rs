@@ -18,6 +18,7 @@ pub const MOBILE_FOREGROUND_TOOL_CEILING: &[&str] = &[
     "cognition_utility_day_of_week",
     "cognition_utility_time_now",
     "cognition_utility_uuid",
+    "cognition_image_generate",
 ];
 
 /// Exact ceiling for work admitted from another authenticated daemon.
@@ -268,6 +269,7 @@ pub fn host_bus_tool_names() -> HashSet<String> {
             "cognition_browser_act",
             "cognition_computer_snapshot",
             "cognition_computer_act",
+            "cognition_image_generate",
         ],
     );
 
