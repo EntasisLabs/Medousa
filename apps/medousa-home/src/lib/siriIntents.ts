@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createTurnTicket } from "$lib/daemon";
 import { chat } from "$lib/stores/chat.svelte";
+import { classifySiriAskFailure } from "$lib/siriIntentErrors";
 
 type PendingSiriAsk = {
   requestId: string;
@@ -11,18 +12,32 @@ type PendingSiriAsk = {
 export async function startPendingSiriAsk(requestId: string): Promise<void> {
   const workshopEpoch = chat.workshopEpoch;
   if (!chat.workshopScopeId) {
-    throw new Error("Workshop is switching; wait for it to reconnect");
+    throw new Error(classifySiriAskFailure("Workshop is switching").message);
   }
-  const pending = await invoke<PendingSiriAsk>("siri_consume_pending_ask", {
-    requestId,
-  });
+  if (chat.hasLiveInteractiveTurn()) {
+    throw new Error(classifySiriAskFailure("Medousa is already working").message);
+  }
+  let pending: PendingSiriAsk;
+  try {
+    pending = await invoke<PendingSiriAsk>("siri_consume_pending_ask", {
+      requestId,
+    });
+  } catch (error) {
+    throw new Error(classifySiriAskFailure(error).message);
+  }
 
-  const accepted = await createTurnTicket({
-    sessionId: chat.sessionId,
-    prompt: pending.prompt,
-    mode: "interactive",
-    channelSurface: "home-ios-siri",
-  });
+  let accepted;
+  try {
+    accepted = await createTurnTicket({
+      sessionId: chat.sessionId,
+      prompt: pending.prompt,
+      mode: "interactive",
+      channelSurface: "home-ios-siri",
+    });
+  } catch (error) {
+    chat.prefillDraft(pending.prompt);
+    throw new Error(classifySiriAskFailure(error).message);
+  }
   if (chat.workshopEpoch !== workshopEpoch) {
     throw new Error("Workshop changed while the Siri request was being admitted");
   }

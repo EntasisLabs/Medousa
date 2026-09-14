@@ -242,6 +242,10 @@ and Shortcuts without the webview already running.
 - After receipt validation, the trusted shell admits a normal interactive turn
   through the existing selected-workshop path with `home-ios-siri` attribution,
   registers it in the current chat, and attaches the standard durable stream.
+- Siri gives a bounded “Starting your request” acknowledgment. The foreground
+  gateway distinguishes busy, expired, authentication, offline, unavailable-
+  workshop, and unknown failures; if admission fails after receipt consumption,
+  it preserves the prompt in the composer for a safe manual retry.
 - Canonical mobile plist ownership now guarantees `medousa://` registration in
   intermediate Xcode archives as well as Tauri's final bundle.
 - The normal simulator build and metadata verifier pass with both intents; the

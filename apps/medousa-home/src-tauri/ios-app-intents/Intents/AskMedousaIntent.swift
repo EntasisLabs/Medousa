@@ -1,9 +1,8 @@
 import AppIntents
 import Foundation
 
-/// S1 foreground continuation. The durable native gateway will replace this
-/// route once it can capture and authenticate one workshop authority without a
-/// running webview.
+/// S1 foreground gateway. Prompt contents remain in the shared App Group; the
+/// deep link contains only a short-lived, one-time receipt consumed by Rust.
 @available(iOS 18.0, *)
 struct AskMedousaIntent: AppIntent {
     static let title: LocalizedStringResource = "Ask Medousa"
@@ -22,7 +21,7 @@ struct AskMedousaIntent: AppIntent {
         Summary("Ask Medousa \(\.$prompt)")
     }
 
-    func perform() async throws -> some IntentResult & OpensIntent {
+    func perform() async throws -> some IntentResult & ProvidesDialog & OpensIntent {
         let requestId = UUID().uuidString.lowercased()
         let payload: [String: Any] = [
             "requestId": requestId,
@@ -45,7 +44,10 @@ struct AskMedousaIntent: AppIntent {
         guard let url = components.url else {
             throw AskMedousaError.invalidPrompt
         }
-        return .result(opensIntent: OpenURLIntent(url))
+        return .result(
+            opensIntent: OpenURLIntent(url),
+            dialog: "Starting your request in Medousa."
+        )
     }
 }
 
