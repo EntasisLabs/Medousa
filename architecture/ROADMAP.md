@@ -23,6 +23,7 @@ Full active plans: **[hardening/README.md](hardening/README.md)** ·
 **[human-code-workbench-plan.md](human-code-workbench-plan.md)** ·
 **[home-code-vscode-parity-plan.md](home-code-vscode-parity-plan.md)** ·
 **[mobile-code-workspace-plan.md](mobile-code-workspace-plan.md)** ·
+**[ios-siri-app-intents-roadmap.md](ios-siri-app-intents-roadmap.md)** ·
 **[v0.7.0-forge-plan.md](v0.7.0-forge-plan.md)** ·
 **[tui-home-workspace-parity-plan.md](tui-home-workspace-parity-plan.md)** ·
 **[medousa-anywhere-plan.md](medousa-anywhere-plan.md)**
