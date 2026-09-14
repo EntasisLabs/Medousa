@@ -490,20 +490,25 @@ mod tests {
             .await
             .unwrap();
 
-        for _ in 0..50 {
-            if session.exited() {
+        let mut output = String::new();
+        for _ in 0..100 {
+            let bytes = session
+                .output_snapshot()
+                .into_iter()
+                .flat_map(|chunk| chunk.bytes)
+                .collect::<Vec<_>>();
+            output = String::from_utf8_lossy(&bytes).into_owned();
+            if output.contains("task-ready") && session.exited() {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
 
-        let output = session
-            .output_snapshot()
-            .into_iter()
-            .flat_map(|chunk| chunk.bytes)
-            .collect::<Vec<_>>();
         assert_eq!(session.meta.argv, argv);
         assert_eq!(session.exit_code(), Some(0));
-        assert!(String::from_utf8_lossy(&output).contains("task-ready"));
+        assert!(
+            output.contains("task-ready"),
+            "direct PTY host lost command output: {output:?}"
+        );
     }
 }
