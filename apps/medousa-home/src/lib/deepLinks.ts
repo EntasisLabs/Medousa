@@ -18,10 +18,16 @@ export type UndertakingLocationDeepLink = {
   entityId: string | null;
 };
 
+export type AskDeepLink = {
+  kind: "ask";
+  prompt: string;
+};
+
 export type DeepLink =
   | WorkDeepLink
   | VaultDeepLink
-  | UndertakingLocationDeepLink;
+  | UndertakingLocationDeepLink
+  | AskDeepLink;
 
 const WORK_PATH = /^\/work\/([^/?#]+)\/?$/i;
 
@@ -65,6 +71,11 @@ export function parseDeepLink(raw: string): DeepLink | null {
       const url = new URL(trimmed);
       const host = url.hostname.toLowerCase();
       const pathSegment = url.pathname.replace(/^\/+/, "");
+      if (host === "ask") {
+        const prompt = url.searchParams.get("prompt")?.trim() ?? "";
+        if (!prompt || prompt.length > 4_000) return null;
+        return { kind: "ask", prompt };
+      }
       if (host === "work" && pathSegment) {
         return { kind: "work", cardId: decodeURIComponent(pathSegment) };
       }

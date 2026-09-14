@@ -229,6 +229,23 @@ archive produced by the normal build script.
 **Exit:** a TestFlight build can start and resume a real Medousa turn from Siri
 and Shortcuts without the webview already running.
 
+**Progress (2026-09-14):**
+
+- Added an iOS 18-guarded `AskMedousaIntent` with required free-text input and
+  the supported “Ask Medousa” / “Talk to Medousa” invocation phrases. Siri asks
+  for the request through the parameter dialog; Apple does not permit a raw
+  `String` parameter inside an App Shortcut phrase.
+- The initial safe continuation opens `medousa://ask?prompt=…`; the app validates
+  the bounded prompt, activates the current chat, and prefills the composer for
+  review. It deliberately does not start durable work without the native
+  authority-aware gateway.
+- Canonical mobile plist ownership now guarantees `medousa://` registration in
+  intermediate Xcode archives as well as Tauri's final bundle.
+- The normal simulator build and metadata verifier pass with both intents, and
+  CoreSimulator accepts the Ask deep link. Remaining S1 work is the background-
+  safe native/Rust gateway, workshop selection, durable turn receipt/result,
+  error states, and cancellation behavior.
+
 ### S2 — search, entities, and deep links
 
 **Goal:** Let the system find and open Medousa content.

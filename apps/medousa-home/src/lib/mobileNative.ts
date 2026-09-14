@@ -9,9 +9,11 @@ import { isTauri } from "$lib/window";
 export type OpenWorkHandler = (cardId: string) => void | Promise<void>;
 export type OpenVaultNoteHandler = (notePath: string) => void | Promise<void>;
 export type OpenPairHandler = (pairUrl: string) => void;
+export type AskHandler = (prompt: string) => void | Promise<void>;
 
 let workHandler: OpenWorkHandler | null = null;
 let vaultHandler: OpenVaultNoteHandler | null = null;
+let askHandler: AskHandler | null = null;
 /** Temporary override (e.g. onboarding wizard). */
 let pairHandler: OpenPairHandler | null = null;
 /** App-wide handler for medousa://pair/… after onboarding. */
@@ -43,6 +45,10 @@ function handleUrls(urls: string[]) {
       void dispatchWorkLink(link);
       return;
     }
+    if (link?.kind === "ask") {
+      void askHandler?.(link.prompt);
+      return;
+    }
     if (link?.kind === "vault") {
       void dispatchVaultLink(link.notePath);
       return;
@@ -69,6 +75,10 @@ export function setWorkDeepLinkHandler(handler: OpenWorkHandler | null) {
   workHandler = handler;
 }
 
+export function setAskDeepLinkHandler(handler: AskHandler | null) {
+  askHandler = handler;
+}
+
 export function initMobileNative(
   handler: OpenWorkHandler,
   vaultNoteHandler?: OpenVaultNoteHandler,
@@ -76,12 +86,14 @@ export function initMobileNative(
     onPairLink?: OpenPairHandler;
     onOpenPeer?: import("$lib/notifications").OpenPeerHandler;
     onOpenCalendar?: import("$lib/notifications").OpenCalendarHandler;
+    onAsk?: AskHandler;
   },
 ): () => void {
   setWorkDeepLinkHandler(handler);
   setVaultDeepLinkHandler(vaultNoteHandler ?? null);
   // Install default pair handler synchronously so cold-start deep links are not dropped.
   defaultPairHandler = options?.onPairLink ?? null;
+  setAskDeepLinkHandler(options?.onAsk ?? null);
 
   const cleanups: Array<() => void> = [];
 
@@ -131,6 +143,7 @@ export function initMobileNative(
     setWorkDeepLinkHandler(null);
     setVaultDeepLinkHandler(null);
     setPairDeepLinkHandler(null);
+    setAskDeepLinkHandler(null);
     defaultPairHandler = null;
     for (const cleanup of cleanups) cleanup();
   };

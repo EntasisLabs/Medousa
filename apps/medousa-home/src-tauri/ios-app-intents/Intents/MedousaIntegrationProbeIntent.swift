@@ -14,9 +14,18 @@ struct MedousaIntegrationProbeIntent: AppIntent {
     }
 }
 
-@available(iOS 16.0, *)
+@available(iOS 18.0, *)
 struct MedousaAppShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
+        AppShortcut(
+            intent: AskMedousaIntent(),
+            phrases: [
+                "Ask \(.applicationName)",
+                "Talk to \(.applicationName)",
+            ],
+            shortTitle: "Ask Medousa",
+            systemImageName: "sparkles"
+        )
         AppShortcut(
             intent: MedousaIntegrationProbeIntent(),
             phrases: [

@@ -31,6 +31,15 @@ describe("deepLinks", () => {
     });
   });
 
+  it("parses Ask Medousa deeplinks", () => {
+    expect(parseDeepLink("medousa://ask?prompt=Plan%20my%20afternoon")).toEqual({
+      kind: "ask",
+      prompt: "Plan my afternoon",
+    });
+    expect(parseDeepLink("medousa://ask?prompt=%20%20")).toBe(null);
+    expect(parseDeepLink(`medousa://ask?prompt=${"x".repeat(4_001)}`)).toBe(null);
+  });
+
   it("round-trips undertaking locations", () => {
     const url = undertakingLocationDeepLinkUrl({
       workId: "work-1",

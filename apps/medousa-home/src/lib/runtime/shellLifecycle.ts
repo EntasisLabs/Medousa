@@ -155,6 +155,11 @@ export function startShellRootResources(): () => void {
       },
       onOpenPeer: openPeerThread,
       onOpenCalendar: openCalendarEvent,
+      onAsk: (prompt) => {
+        shellTabs.openChat(chat.sessionId, { activate: true });
+        chat.prefillDraft(prompt);
+        window.dispatchEvent(new CustomEvent("medousa-chat-composer-focus"));
+      },
     }),
   );
   const stopPeerNotifications = bindRootResource(
