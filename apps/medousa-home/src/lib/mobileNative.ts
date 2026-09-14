@@ -9,7 +9,7 @@ import { isTauri } from "$lib/window";
 export type OpenWorkHandler = (cardId: string) => void | Promise<void>;
 export type OpenVaultNoteHandler = (notePath: string) => void | Promise<void>;
 export type OpenPairHandler = (pairUrl: string) => void;
-export type AskHandler = (prompt: string) => void | Promise<void>;
+export type AskHandler = (requestId: string) => void | Promise<void>;
 
 let workHandler: OpenWorkHandler | null = null;
 let vaultHandler: OpenVaultNoteHandler | null = null;
@@ -46,7 +46,7 @@ function handleUrls(urls: string[]) {
       return;
     }
     if (link?.kind === "ask") {
-      void askHandler?.(link.prompt);
+      void askHandler?.(link.requestId);
       return;
     }
     if (link?.kind === "vault") {

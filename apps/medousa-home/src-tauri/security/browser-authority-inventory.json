@@ -432,6 +432,7 @@
     "providers::providers_validate_key",
     "push::push_clear_apns_token",
     "push::push_register_apns_token",
+    "siri_intents::siri_consume_pending_ask",
     "terminal::terminal_attach",
     "terminal::terminal_create",
     "terminal::terminal_detach",

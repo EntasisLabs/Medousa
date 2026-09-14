@@ -87,6 +87,27 @@ public func medousa_home_widget_sync(_ json: UnsafePointer<CChar>?) -> UnsafeMut
     return strdup(text)
 }
 
+@_cdecl("medousa_siri_consume_pending_ask")
+public func medousa_siri_consume_pending_ask(
+    _ requestIdPointer: UnsafePointer<CChar>?
+) -> UnsafeMutablePointer<CChar>? {
+    guard let requestIdPointer else { return nil }
+    let requestId = String(cString: requestIdPointer)
+    guard let defaults = UserDefaults(suiteName: "group.com.entasislabs.medousa-home"),
+          let encoded = defaults.string(forKey: "siri.pendingAsk.v1"),
+          let data = encoded.data(using: .utf8),
+          let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          payload["requestId"] as? String == requestId,
+          let createdAt = payload["createdAt"] as? TimeInterval,
+          createdAt <= Date().timeIntervalSince1970 + 60,
+          Date().timeIntervalSince1970 - createdAt < 600
+    else {
+        return nil
+    }
+    defaults.removeObject(forKey: "siri.pendingAsk.v1")
+    return strdup(encoded)
+}
+
 @_cdecl("medousa_live_activity_free_string")
 public func medousa_live_activity_free_string(_ ptr: UnsafeMutablePointer<CChar>?) {
     guard let ptr else { return }

@@ -32,12 +32,11 @@ describe("deepLinks", () => {
   });
 
   it("parses Ask Medousa deeplinks", () => {
-    expect(parseDeepLink("medousa://ask?prompt=Plan%20my%20afternoon")).toEqual({
+    expect(parseDeepLink("medousa://ask?request=550e8400-e29b-41d4-a716-446655440000")).toEqual({
       kind: "ask",
-      prompt: "Plan my afternoon",
+      requestId: "550e8400-e29b-41d4-a716-446655440000",
     });
-    expect(parseDeepLink("medousa://ask?prompt=%20%20")).toBe(null);
-    expect(parseDeepLink(`medousa://ask?prompt=${"x".repeat(4_001)}`)).toBe(null);
+    expect(parseDeepLink("medousa://ask?request=not-a-receipt")).toBe(null);
   });
 
   it("round-trips undertaking locations", () => {

@@ -23,10 +23,24 @@ struct AskMedousaIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult & OpensIntent {
+        let requestId = UUID().uuidString.lowercased()
+        let payload: [String: Any] = [
+            "requestId": requestId,
+            "prompt": prompt,
+            "createdAt": Date().timeIntervalSince1970,
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let encoded = String(data: data, encoding: .utf8),
+              let defaults = UserDefaults(suiteName: "group.com.entasislabs.medousa-home")
+        else {
+            throw AskMedousaError.unavailable
+        }
+        defaults.set(encoded, forKey: "siri.pendingAsk.v1")
+
         var components = URLComponents()
         components.scheme = "medousa"
         components.host = "ask"
-        components.queryItems = [URLQueryItem(name: "prompt", value: prompt)]
+        components.queryItems = [URLQueryItem(name: "request", value: requestId)]
 
         guard let url = components.url else {
             throw AskMedousaError.invalidPrompt
@@ -38,4 +52,5 @@ struct AskMedousaIntent: AppIntent {
 @available(iOS 18.0, *)
 private enum AskMedousaError: Error {
     case invalidPrompt
+    case unavailable
 }

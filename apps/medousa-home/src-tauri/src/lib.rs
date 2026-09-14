@@ -58,6 +58,7 @@ mod power_events;
 mod provider_catalog;
 mod providers;
 mod push;
+mod siri_intents;
 mod terminal;
 mod tray;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -480,6 +481,7 @@ fn run_home() {
             pairing::pairing_send_heartbeat,
             push::push_register_apns_token,
             push::push_clear_apns_token,
+            siri_intents::siri_consume_pending_ask,
             pairing::bonjour_status,
             lan_share::lan_pairing_status,
             lan_share::set_lan_pairing_enabled,

@@ -235,16 +235,20 @@ and Shortcuts without the webview already running.
   the supported “Ask Medousa” / “Talk to Medousa” invocation phrases. Siri asks
   for the request through the parameter dialog; Apple does not permit a raw
   `String` parameter inside an App Shortcut phrase.
-- The initial safe continuation opens `medousa://ask?prompt=…`; the app validates
-  the bounded prompt, activates the current chat, and prefills the composer for
-  review. It deliberately does not start durable work without the native
-  authority-aware gateway.
+- The native intent writes a bounded request into the shared App Group and opens
+  `medousa://ask?request=…` with an opaque UUID receipt. Rust atomically consumes
+  the matching receipt within ten minutes, so an unrelated app cannot forge an
+  auto-run URL or recover the prompt from the URL.
+- After receipt validation, the trusted shell admits a normal interactive turn
+  through the existing selected-workshop path with `home-ios-siri` attribution,
+  registers it in the current chat, and attaches the standard durable stream.
 - Canonical mobile plist ownership now guarantees `medousa://` registration in
   intermediate Xcode archives as well as Tauri's final bundle.
-- The normal simulator build and metadata verifier pass with both intents, and
-  CoreSimulator accepts the Ask deep link. Remaining S1 work is the background-
-  safe native/Rust gateway, workshop selection, durable turn receipt/result,
-  error states, and cancellation behavior.
+- The normal simulator build and metadata verifier pass with both intents; the
+  final iOS executable exports the Swift receipt-consumer C ABI used by Rust.
+  Remaining S1 work is direct background execution, an optional workshop
+  picker, bounded Siri result dialogue, explicit error states, and cancellation
+  behavior.
 
 ### S2 — search, entities, and deep links
 

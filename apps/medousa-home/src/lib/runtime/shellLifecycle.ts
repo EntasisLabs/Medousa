@@ -155,10 +155,16 @@ export function startShellRootResources(): () => void {
       },
       onOpenPeer: openPeerThread,
       onOpenCalendar: openCalendarEvent,
-      onAsk: (prompt) => {
+      onAsk: async (requestId) => {
         shellTabs.openChat(chat.sessionId, { activate: true });
-        chat.prefillDraft(prompt);
-        window.dispatchEvent(new CustomEvent("medousa-chat-composer-focus"));
+        try {
+          const { startPendingSiriAsk } = await import("$lib/siriIntents");
+          await startPendingSiriAsk(requestId);
+        } catch (error) {
+          toast.show(error instanceof Error ? error.message : String(error), {
+            durationMs: 4500,
+          });
+        }
       },
     }),
   );

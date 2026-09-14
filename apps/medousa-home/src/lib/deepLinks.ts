@@ -20,7 +20,7 @@ export type UndertakingLocationDeepLink = {
 
 export type AskDeepLink = {
   kind: "ask";
-  prompt: string;
+  requestId: string;
 };
 
 export type DeepLink =
@@ -72,9 +72,11 @@ export function parseDeepLink(raw: string): DeepLink | null {
       const host = url.hostname.toLowerCase();
       const pathSegment = url.pathname.replace(/^\/+/, "");
       if (host === "ask") {
-        const prompt = url.searchParams.get("prompt")?.trim() ?? "";
-        if (!prompt || prompt.length > 4_000) return null;
-        return { kind: "ask", prompt };
+        const requestId = url.searchParams.get("request")?.trim().toLowerCase() ?? "";
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestId)) {
+          return null;
+        }
+        return { kind: "ask", requestId };
       }
       if (host === "work" && pathSegment) {
         return { kind: "work", cardId: decodeURIComponent(pathSegment) };
