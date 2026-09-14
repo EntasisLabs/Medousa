@@ -5559,7 +5559,7 @@ dependencies = [
 
 [[package]]
 name = "medousa"
-version = "0.10.3"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5611,7 +5611,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-api-contract"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5621,7 +5621,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-browser-bridge"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "medousa-browser-lite",
  "once_cell",
@@ -5632,7 +5632,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-browser-lite"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "chrono",
  "once_cell",
@@ -5647,7 +5647,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-engine"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "async-trait",
  "cap-fs-ext",
@@ -5665,7 +5665,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-home"
-version = "0.10.3"
+version = "0.11.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -5732,7 +5732,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-host"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "dirs 5.0.1",
  "libc",
@@ -5743,7 +5743,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-install-support"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "cap-fs-ext",
  "cap-std",
@@ -5764,7 +5764,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-iroh-http"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "httparse",
@@ -5775,7 +5775,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-local-credential"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -5792,7 +5792,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-local-inference"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "ash",
@@ -5816,7 +5816,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-mcp-gateway"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5837,7 +5837,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-runtime"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -5860,7 +5860,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-sdk"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "bytes",
  "eventsource-stream",
@@ -5877,7 +5877,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-sdk-iroh"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "bytes",
  "futures-util",
@@ -5891,7 +5891,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-secrets"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "keyring",
@@ -5904,7 +5904,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-store"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "cap-fs-ext",
  "cap-std",
@@ -5917,7 +5917,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-tool-macros"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5926,7 +5926,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-types"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -5940,7 +5940,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-world"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "serde",
  "thiserror 2.0.18",

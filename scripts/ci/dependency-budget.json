@@ -68,6 +68,15 @@
       "oldNew": "900->940 default; 981->1020 iroh; 491->850 home-tauri; duplicate counts +3/+57 respectively",
       "evidence": "PR cursor/hermes-acp-runtime-74ae / docs/cookbook/acp-external-agents.md",
       "revisit": "2026-11-01"
+    },
+    {
+      "date": "2026-09-14",
+      "workload": "P09 medousa-default, medousa-iroh-transport, Home Tauri for 0.11.0",
+      "owner": "worlds/computer-use / expressive-chat",
+      "reason": "Governed browser/computer worlds (medousa-world, medousa-computer*) and expressive-chat liquid/media surfaces pull five additional unique transitive crates into the default daemon and Home Tauri closures. Duplicate-version counts unchanged.",
+      "oldNew": "932->937 default; 1007->1012 iroh; 840->845 home-tauri; duplicate-version counts unchanged",
+      "evidence": "architecture/expressive-chat-media-ink-liquid-epic.md; docs/releases/v0.11.0.md; PR cursor/prep-0-11-0-release-1de0",
+      "revisit": "2026-11-01"
     }
   ],
   "profiles": {
@@ -76,7 +85,7 @@
       "package": "medousa",
       "features": [],
       "forbidAdapterFrameworks": true,
-      "uniqueNameVersionPairs": 932,
+      "uniqueNameVersionPairs": 937,
       "duplicateVersionNames": 92
     },
     "medousa-iroh-transport": {
@@ -86,7 +95,7 @@
         "iroh-transport"
       ],
       "forbidAdapterFrameworks": true,
-      "uniqueNameVersionPairs": 1007,
+      "uniqueNameVersionPairs": 1012,
       "duplicateVersionNames": 99
     },
     "medousa-runtime-portable": {
@@ -112,7 +121,7 @@
       "kind": "manifest",
       "manifestPath": "apps/medousa-home/src-tauri/Cargo.toml",
       "forbidAdapterFrameworks": true,
-      "uniqueNameVersionPairs": 840,
+      "uniqueNameVersionPairs": 845,
       "duplicateVersionNames": 87
     }
   },

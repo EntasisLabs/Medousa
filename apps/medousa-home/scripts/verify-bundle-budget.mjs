@@ -1,8 +1,13 @@
 /**
- * H09 FRONT-001: Vite client manifest inventory for each startup closure.
+ * H09 FRONT-001: Vite client manifest inventory for the packaged startup payload.
  *
  * Requires a production build (`npm run build`) so `.svelte-kit/output/client`
  * exists. Regenerating ceilings: npm run check:bundle-budget -- --write
+ *
+ * Home uses `kit.output.bundleStrategy = "single"` so Tauri packaged WebViews
+ * do not late-fetch feature CSS over the custom protocol. Under that strategy
+ * the client Vite manifest collapses to one entry (`…/bundle.js`); platform
+ * shell isolation stays enforced by source-level H09 tests, not chunk walks.
  */
 import assert from "node:assert/strict";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
@@ -14,30 +19,12 @@ const homeRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const clientRoot = join(homeRoot, ".svelte-kit", "output", "client");
 const manifestPath = join(clientRoot, ".vite", "manifest.json");
 const budgetPath = join(homeRoot, "security", "bundle-budget.json");
+const svelteConfigPath = join(homeRoot, "svelte.config.js");
 
 const EAGER_SHELLS = {
   desktop: "src/lib/components/layout/WorkshopShell.svelte",
   mobile: "src/lib/components/mobile/MobileShell.svelte",
 };
-
-function loadManifest() {
-  try {
-    return JSON.parse(readFileSync(manifestPath, "utf8"));
-  } catch (error) {
-    throw new Error(
-      `Vite client manifest missing at ${manifestPath}. Run npm run build first. (${error.message})`,
-    );
-  }
-}
-
-function isRootEntry(key) {
-  return (
-    /\/client-optimized\/app\.js$/.test(key) ||
-    key.endsWith("runtime/client/entry.js") ||
-    /\/nodes\/0\.js$/.test(key) ||
-    /\/nodes\/2\.js$/.test(key)
-  );
-}
 
 const DORMANT_OVERLAYS = [
   "CommandSpotlight",
@@ -52,6 +39,35 @@ const DORMANT_OVERLAYS = [
   "ShellContextMenu",
   "VaultAttachmentPanel",
 ];
+
+function loadManifest() {
+  try {
+    return JSON.parse(readFileSync(manifestPath, "utf8"));
+  } catch (error) {
+    throw new Error(
+      `Vite client manifest missing at ${manifestPath}. Run npm run build first. (${error.message})`,
+    );
+  }
+}
+
+function readBundleStrategy() {
+  const source = readFileSync(svelteConfigPath, "utf8");
+  const match = source.match(/bundleStrategy\s*:\s*["'](\w+)["']/);
+  return match?.[1] ?? "split";
+}
+
+function isLegacyRootEntry(key) {
+  return (
+    /\/client-optimized\/app\.js$/.test(key) ||
+    key.endsWith("runtime/client/entry.js") ||
+    /\/nodes\/0\.js$/.test(key) ||
+    /\/nodes\/2\.js$/.test(key)
+  );
+}
+
+function isSingleBundleEntry(key) {
+  return /\/runtime\/client\/bundle\.js$/.test(key);
+}
 
 function assertPlatformClosure(manifest, jsFiles, platform) {
   const staticFiles = new Set(jsFiles);
@@ -135,13 +151,41 @@ function measurePlatformClosure(manifest, rootKeys, platform) {
   };
 }
 
-export function measureStartupClosures(manifest = loadManifest()) {
-  const rootEntries = Object.keys(manifest).filter((key) => isRootEntry(key)).sort();
-  assert.ok(rootEntries.length > 0, "no root Vite entries found in client manifest");
+function measureSingleBundle(manifest, rootKeys) {
+  assert.equal(rootKeys.length, 1, `expected one single-bundle root, got ${rootKeys.join(", ")}`);
+  const { js, css } = walkStatic(manifest, rootKeys);
+  const measured = measureFiles(js, css);
+  // Same packaged payload for every platform under bundleStrategy=single.
   return {
-    rootEntries,
-    desktop: measurePlatformClosure(manifest, rootEntries, "desktop"),
-    mobile: measurePlatformClosure(manifest, rootEntries, "mobile"),
+    desktop: { shellEntry: EAGER_SHELLS.desktop, ...measured },
+    mobile: { shellEntry: EAGER_SHELLS.mobile, ...measured },
+  };
+}
+
+export function measureStartupClosures(manifest = loadManifest()) {
+  const bundleStrategy = readBundleStrategy();
+  const singleRoots = Object.keys(manifest).filter((key) => isSingleBundleEntry(key)).sort();
+  const legacyRoots = Object.keys(manifest).filter((key) => isLegacyRootEntry(key)).sort();
+
+  if (bundleStrategy === "single" || singleRoots.length > 0) {
+    assert.ok(
+      singleRoots.length > 0,
+      "bundleStrategy=single but no runtime/client/bundle.js entry in the Vite client manifest",
+    );
+    const platforms = measureSingleBundle(manifest, singleRoots);
+    return {
+      bundleStrategy: "single",
+      rootEntries: singleRoots,
+      ...platforms,
+    };
+  }
+
+  assert.ok(legacyRoots.length > 0, "no root Vite entries found in client manifest");
+  return {
+    bundleStrategy: "split",
+    rootEntries: legacyRoots,
+    desktop: measurePlatformClosure(manifest, legacyRoots, "desktop"),
+    mobile: measurePlatformClosure(manifest, legacyRoots, "mobile"),
   };
 }
 
@@ -151,8 +195,11 @@ function main() {
     const snapshot = {
       schemaVersion: 2,
       notes:
-        "FRONT-001 regression ceilings for the real desktop/mobile startup closures. These are binding regression ratchets, not evidence that the H09 target has been met.",
+        measured.bundleStrategy === "single"
+          ? "FRONT-001 regression ceilings for kit.output.bundleStrategy=single (one packaged client JS/CSS payload). Platform shell isolation is enforced by source-level H09 tests, not chunk walks."
+          : "FRONT-001 regression ceilings for the real desktop/mobile startup closures. These are binding regression ratchets, not evidence that the H09 target has been met.",
       manifest: ".svelte-kit/output/client/.vite/manifest.json",
+      bundleStrategy: measured.bundleStrategy,
       ceilings: {
         desktop: measured.desktop,
         mobile: measured.mobile,
@@ -161,12 +208,19 @@ function main() {
     };
     writeFileSync(budgetPath, `${JSON.stringify(snapshot, null, 2)}\n`);
     console.log(
-      `Wrote security/bundle-budget.json: desktop JS ${measured.desktop.jsBytes}, mobile JS ${measured.mobile.jsBytes}`,
+      `Wrote security/bundle-budget.json (${measured.bundleStrategy}): desktop JS ${measured.desktop.jsBytes}, mobile JS ${measured.mobile.jsBytes}`,
     );
     return;
   }
   const expected = JSON.parse(readFileSync(budgetPath, "utf8"));
   assert.equal(expected.schemaVersion, 2);
+  if (expected.bundleStrategy) {
+    assert.equal(
+      expected.bundleStrategy,
+      measured.bundleStrategy,
+      `bundleStrategy drift: budget is ${expected.bundleStrategy}, build is ${measured.bundleStrategy}`,
+    );
+  }
   for (const platform of Object.keys(EAGER_SHELLS)) {
     for (const key of [
       "jsBytes",
@@ -182,7 +236,7 @@ function main() {
     }
   }
   console.log(
-    `Bundle budget verified: desktop JS ${measured.desktop.jsBytes} ≤ ${expected.ceilings.desktop.jsBytes}, mobile JS ${measured.mobile.jsBytes} ≤ ${expected.ceilings.mobile.jsBytes}`,
+    `Bundle budget verified (${measured.bundleStrategy}): desktop JS ${measured.desktop.jsBytes} ≤ ${expected.ceilings.desktop.jsBytes}, mobile JS ${measured.mobile.jsBytes} ≤ ${expected.ceilings.mobile.jsBytes}`,
   );
 }
 

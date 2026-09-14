@@ -1,6 +1,6 @@
 [package]
 name = "medousa-computer"
-version = "0.10.0"
+version = "0.11.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Colocated native computer driver for governed Medousa worlds"
@@ -21,7 +21,6 @@ block2 = "0.6"
 image = { version = "0.25.6", default-features = false, features = ["png"] }
 libc = "0.2"
 objc2 = "0.6"
-objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["CFData", "std"] }
 objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["CGDataProvider", "CGImage", "std"] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSArray", "NSError", "NSString", "std"] }
 objc2-screen-capture-kit = { version = "0.3.2", default-features = false, features = ["SCScreenshotManager", "SCShareableContent", "SCStream", "block2", "libc", "objc2-core-foundation", "objc2-core-graphics", "std"] }
