@@ -62,20 +62,31 @@ jobs:
 
   ios-embedded-deps:
     runs-on: macos-14
-    timeout-minutes: 30
+    # Two Apple targets in series cold-compile past 30m after the 0.11.0 train;
+    # split them and keep headroom for cache misses.
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-apple-ios
+          - aarch64-apple-ios-sim
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
             . -> .cache/cargo-target
           cache-workspace-crates: true
           cache-on-failure: true
-      - name: Check iOS embedded dependency slices
+          prefix-key: ios-embedded-${{ matrix.target }}
+      - name: Check iOS embedded dependency slices (${{ matrix.target }})
         run: ./scripts/ci/check-ios-embedded-deps.sh
+        env:
+          MEDOUSA_IOS_TARGETS: ${{ matrix.target }}
 
   tauri-ubuntu:
     runs-on: ubuntu-latest
