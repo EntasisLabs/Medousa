@@ -289,9 +289,9 @@ fn iso_bmff_image_mime(bytes: &[u8]) -> Option<&'static str> {
     if bytes.len() < 12 || &bytes[4..8] != b"ftyp" {
         return None;
     }
-    let brands = bytes[8..bytes.len().min(64)].chunks_exact(4);
+    let (brands, _) = bytes[8..bytes.len().min(64)].as_chunks::<4>();
     if brands
-        .clone()
+        .iter()
         .any(|brand| brand == b"avif" || brand == b"avis")
     {
         return Some("image/avif");

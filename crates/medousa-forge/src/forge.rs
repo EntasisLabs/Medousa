@@ -3207,7 +3207,9 @@ mod tests {
             .run(&fx.repo, &["switch", "-c", "review-branch"])
             .unwrap();
         fx.git.run(&fx.repo, &["add", "app.txt"]).unwrap();
-        fx.git.run(&fx.repo, &["commit", "-m", "reviewed"]).unwrap();
+        fx.git
+            .commit_checkpoint(&fx.repo, "reviewed", &CheckpointAuthor::default())
+            .unwrap();
         let head = fx.git.head_oid(&fx.repo).unwrap();
         assert!(forge.verify_attached_checkout(&item, &env).is_err());
         forge
