@@ -4,6 +4,7 @@ import { chat } from "$lib/stores/chat.svelte";
 import { workshops } from "$lib/stores/workshops.svelte";
 import { classifySiriAskFailure } from "$lib/siriIntentErrors";
 import { prepareInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
+import { registerSiriOwnedTurn } from "$lib/siriTurnPresentation";
 
 type PendingSiriAsk = {
   requestId: string;
@@ -62,6 +63,9 @@ async function waitForWorkshopScope(): Promise<void> {
 }
 
 export async function startPendingSiriAsk(requestId: string): Promise<void> {
+  if (document.activeElement instanceof HTMLElement) {
+    document.activeElement.blur();
+  }
   await waitForWorkshopScope();
   if (!chat.workshopScopeId) {
     throw new Error(classifySiriAskFailure("Workshop is switching").message);
@@ -119,6 +123,7 @@ export async function startPendingSiriAsk(requestId: string): Promise<void> {
   if (chat.workshopEpoch !== workshopEpoch) {
     throw new Error("Workshop changed while the Siri request was being admitted");
   }
+  registerSiriOwnedTurn(accepted.turn_id, SIRI_RESULT_WAIT_MS);
   chat.beginTurn(pending.prompt, accepted);
   await chat.startTurnStream(accepted.turn_id, accepted.session_id, accepted.stream_url);
   void publishSiriResult(pending.requestId, accepted.turn_id);

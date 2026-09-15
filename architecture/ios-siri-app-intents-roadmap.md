@@ -281,6 +281,32 @@ and Shortcuts without the webview already running.
 - Remaining S1 work is direct background execution, explicit error states, and
   cancellation behavior.
 
+#### Production Siri interaction milestone
+
+The proven foreground relay is a compatibility fallback, not the target UX.
+Production interaction should keep the person in Siri whenever the selected
+workshop is reachable without foreground-only UI:
+
+1. Move turn admission and bounded SSE consumption into shared native code used
+   by an App Intents extension. Share only the active route and session metadata;
+   keep bearer material in a shared Keychain access group, never App Group
+   defaults.
+2. Prefer background execution and adopt iOS 27 `LongRunningIntent` with durable
+   turn fallback. A timeout must detach from presentation, not cancel accepted
+   work.
+3. Return separate full and supporting dialog strings optimized for voice, plus
+   a branded result snippet containing the answer and selected chat.
+4. Add snippet actions for **Ask follow-up**, **Open chat**, and **Stop**. Follow-up
+   carries an opaque `SessionEntity`; cancellation targets the exact durable turn.
+5. Notify on completion only when Siri no longer owns the result presentation.
+   Foreground continuation must dismiss the keyboard and avoid duplicate success
+   notifications. Failures and operator-required states still notify.
+6. Donate accurate session/entity interactions so Siri can resolve references
+   such as “that conversation”; never donate transcript or prompt bodies.
+
+The foreground relay now implements item 5. Items 1–4 and 6 require the native
+extension and entity work and remain the next production slices.
+
 ### S2 — search, entities, and deep links
 
 **Goal:** Let the system find and open Medousa content.

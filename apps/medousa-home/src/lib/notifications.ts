@@ -2,6 +2,7 @@ import type { InteractiveTurnStreamEvent } from "$lib/types/chat";
 import type { TurnStreamEnvelopeV3 } from "$lib/types/generated/daemon_api";
 import type { OpenWorkHandler } from "$lib/mobileNative";
 import { isTauriMobilePlatform } from "$lib/platform";
+import { shouldSuppressSiriTurnNotification } from "$lib/siriTurnPresentation";
 
 let permissionReady: boolean | null = null;
 const budgetNotified = new Set<string>();
@@ -260,6 +261,7 @@ export async function notifyTurnTicketTerminal(
 
   const cardId = workspaceCardId?.trim() || turnId;
   const preview = streamNotificationPreview(event);
+  const siriOwnsResult = shouldSuppressSiriTurnNotification(turnId);
 
   if (
     event.event.outcome === "failed" ||
@@ -277,6 +279,8 @@ export async function notifyTurnTicketTerminal(
     }
     return;
   }
+
+  if (siriOwnsResult) return;
 
   try {
     await sendWorkNotification(
