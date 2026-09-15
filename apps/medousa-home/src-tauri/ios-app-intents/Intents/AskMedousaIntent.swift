@@ -56,12 +56,14 @@ private enum SiriBackgroundError: Error {
     case unavailable
     case authentication
     case configuration
+    case busy
     case timedOut
 }
 
 private enum SiriBackgroundOutcome {
     case answer(String)
     case continuing
+    case needsInput
 }
 
 @MainActor
@@ -186,6 +188,12 @@ struct AskMedousaIntent: AppIntent {
                     dialog: IntentDialog(full: "\(continuing)", supporting: "Open Medousa to check its progress."),
                     view: MedousaSiriResultView(answer: continuing, isContinuing: true)
                 )
+            case .needsInput:
+                let handoff = "Medousa needs you to open the app to finish that request."
+                return .result(
+                    dialog: IntentDialog(full: "\(handoff)", supporting: "Your work is saved in the selected chat."),
+                    view: MedousaSiriResultView(answer: handoff, isContinuing: false)
+                )
             }
         } catch {
             let unavailable: String
@@ -197,6 +205,9 @@ struct AskMedousaIntent: AppIntent {
             case SiriBackgroundError.configuration:
                 unavailable = "This Siri request doesn't match the selected workshop settings."
                 recovery = "Open Medousa and update the Siri defaults."
+            case SiriBackgroundError.busy:
+                unavailable = "Medousa is still working in that chat."
+                recovery = "I'll notify you when the current request is ready."
             default:
                 unavailable = "I couldn't reach your selected Medousa workshop."
                 recovery = "Open Medousa once, then try again."
@@ -345,10 +356,13 @@ struct AskMedousaIntent: AppIntent {
                 expirationHandler: nil
             )
         }
+        var keepCompletionTailAlive = false
         defer {
-            Task { @MainActor in
-                if backgroundTask != .invalid {
-                    UIApplication.shared.endBackgroundTask(backgroundTask)
+            if !keepCompletionTailAlive {
+                Task { @MainActor in
+                    if backgroundTask != .invalid {
+                        UIApplication.shared.endBackgroundTask(backgroundTask)
+                    }
                 }
             }
         }
@@ -383,9 +397,25 @@ struct AskMedousaIntent: AppIntent {
             }
             return .answer(String(text.prefix(600)))
         case "continuing":
+            keepCompletionTailAlive = true
+            Task {
+                // Siri already has its continuing card. Preserve the remainder
+                // of the OS background window for tools and final synthesis.
+                try? await Task.sleep(for: .seconds(16))
+                await MainActor.run {
+                    if backgroundTask != .invalid {
+                        UIApplication.shared.endBackgroundTask(backgroundTask)
+                    }
+                }
+            }
             return .continuing
+        case "needs_input":
+            return .needsInput
         default:
             let detail = response.error?.lowercased() ?? ""
+            if detail.contains("active interactive turn") {
+                throw SiriBackgroundError.busy
+            }
             if detail.contains("credential") || detail.contains("unauthorized") {
                 throw SiriBackgroundError.authentication
             }

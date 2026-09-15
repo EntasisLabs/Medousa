@@ -59,9 +59,10 @@ async fn reconcile_completion(app: AppHandle, turn_id: String) {
     while let Ok(Some(envelope)) = stream.recv().await {
         let text = match envelope.event {
             TurnStreamEventV2::Final { text, .. }
-            | TurnStreamEventV2::NeedsInput { text, .. }
-            | TurnStreamEventV2::Checkpoint { text, .. }
             | TurnStreamEventV2::WorkerSynthesis { text, .. } => Some(text),
+            TurnStreamEventV2::NeedsInput { .. } | TurnStreamEventV2::Checkpoint { .. } => {
+                Some("Medousa needs you to open the app to finish your request.".to_string())
+            }
             TurnStreamEventV2::Error { operator_message, .. } => Some(operator_message),
             _ => None,
         };
@@ -156,7 +157,7 @@ struct SiriPersonalTurnRequest {
 async fn execute_personal_turn(
     request: SiriPersonalTurnRequest,
 ) -> Result<serde_json::Value, String> {
-    use medousa_types::TurnStreamEventV2;
+    use medousa_types::{TurnStreamEventV2, TurnSurfaceContext};
 
     let app = tokio::time::timeout(std::time::Duration::from_secs(8), async {
         loop {
@@ -171,48 +172,85 @@ async fn execute_personal_turn(
     app.state::<crate::embedded_daemon::EmbeddedDaemonState>()
         .resume_for_background_execution()
         .await?;
-    let accepted = crate::daemon::session::turn_create(
-        app.state(),
-        app.state(),
-        app.state(),
-        request.session_id,
-        request.prompt,
-        None,
-        None,
-        Some(false),
-        None,
-        Some("interactive".into()),
-        Some(request.provider),
-        Some(request.model),
-        Some(request.response_depth_mode),
-        Some(request.reasoning_effort),
-        None,
-        Some("home-ios-siri".into()),
-        None,
-        Some(Vec::new()),
-        Some(Vec::new()),
-        Some(Vec::new()),
-        None,
-        None,
-        request.identity_user_id,
-    )
-    .await?;
     let embedded = app.state::<crate::embedded_daemon::EmbeddedDaemonState>();
     let client = embedded
-        .client_if_active()
+        .client_if_active_for_route(
+            (!request.provider.trim().is_empty()).then_some(request.provider.as_str()),
+            (!request.model.trim().is_empty()).then_some(request.model.as_str()),
+        )
         .await?
         .ok_or_else(|| "Personal is no longer the selected workshop".to_string())?;
+    let active_turn = client
+        .active_turn(&request.session_id)
+        .await
+        .map_err(|error| error.to_string())?
+        .turn;
+    if let Some(active) = active_turn {
+        if pending_completions().contains(&active.turn_id) {
+            client
+                .cancel_active_turn(&request.session_id)
+                .await
+                .map_err(|error| error.to_string())?;
+            update_pending_completion(&active.turn_id, false);
+        }
+    }
+    let accepted = client
+        .start_turn_with_options(
+            &request.session_id,
+            request.prompt,
+            request.identity_user_id,
+            TurnSurfaceContext {
+                channel_surface: Some("home-ios-siri".to_string()),
+                channel_id: Some(request.session_id.clone()),
+                user_id: None,
+                supports_ui_artifacts: false,
+                supports_liquid_markdown: false,
+                supports_browser_host: false,
+                browser_driver_id: None,
+                selected_worlds: Vec::new(),
+            },
+            None,
+            None,
+            request.response_depth_mode,
+            request.reasoning_effort,
+            Vec::new(),
+            Vec::new(),
+            None,
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    let watchdog_client = client.clone();
+    let watchdog_session_id = request.session_id.clone();
+    let watchdog_turn_id = accepted.turn_id.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(28)).await;
+        let active = watchdog_client.active_turn(&watchdog_session_id).await.ok();
+        if active
+            .and_then(|response| response.turn)
+            .is_some_and(|turn| turn.turn_id == watchdog_turn_id)
+        {
+            let _ = watchdog_client.cancel_active_turn(&watchdog_session_id).await;
+            update_pending_completion(&watchdog_turn_id, false);
+            ios::notify_completion(
+                "That request needs Medousa open to continue using its tools.",
+            );
+        }
+    });
     let mut stream = client
         .subscribe_turn(&accepted.turn_id, 0)
         .await
         .map_err(|error| error.to_string())?;
-    let result = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+    let result = tokio::time::timeout(std::time::Duration::from_secs(12), async {
         while let Some(envelope) = stream.recv().await.map_err(|error| error.to_string())? {
             match envelope.event {
                 TurnStreamEventV2::Final { text, .. }
-                | TurnStreamEventV2::NeedsInput { text, .. }
-                | TurnStreamEventV2::Checkpoint { text, .. }
-                | TurnStreamEventV2::WorkerSynthesis { text, .. } => return Ok(text),
+                | TurnStreamEventV2::WorkerSynthesis { text, .. } => {
+                    return Ok(("answer", text))
+                }
+                TurnStreamEventV2::NeedsInput { text, .. }
+                | TurnStreamEventV2::Checkpoint { text, .. } => {
+                    return Ok(("needs_input", text))
+                }
                 TurnStreamEventV2::Error {
                     operator_message, ..
                 } => return Err(operator_message),
@@ -223,8 +261,14 @@ async fn execute_personal_turn(
     })
     .await;
     match result {
-        Ok(Ok(text)) => Ok(serde_json::json!({ "status": "answer", "text": text })),
-        Ok(Err(error)) => Err(error),
+        Ok(Ok((status, text))) => {
+            update_pending_completion(&accepted.turn_id, false);
+            Ok(serde_json::json!({ "status": status, "text": text }))
+        }
+        Ok(Err(error)) => {
+            update_pending_completion(&accepted.turn_id, false);
+            Err(error)
+        }
         Err(_) => {
             let turn_id = accepted.turn_id.clone();
             update_pending_completion(&turn_id, true);
@@ -232,10 +276,16 @@ async fn execute_personal_turn(
                 while let Ok(Some(envelope)) = stream.recv().await {
                     match envelope.event {
                         TurnStreamEventV2::Final { text, .. }
-                        | TurnStreamEventV2::NeedsInput { text, .. }
-                        | TurnStreamEventV2::Checkpoint { text, .. }
                         | TurnStreamEventV2::WorkerSynthesis { text, .. } => {
                             ios::notify_completion(&text);
+                            update_pending_completion(&turn_id, false);
+                            break;
+                        }
+                        TurnStreamEventV2::NeedsInput { .. }
+                        | TurnStreamEventV2::Checkpoint { .. } => {
+                            ios::notify_completion(
+                                "Medousa needs you to open the app to finish your request.",
+                            );
                             update_pending_completion(&turn_id, false);
                             break;
                         }

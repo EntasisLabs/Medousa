@@ -2,7 +2,7 @@
 
 On iPhone, Siri can send a request to Medousa and continue the selected chat
 without bringing Medousa to the foreground. The turn uses that chat's current
-workshop, model, reasoning, identity, browser, and world settings.
+workshop, model, reasoning, and identity settings.
 
 ## Ask Medousa
 
@@ -11,9 +11,10 @@ workshop, model, reasoning, identity, browser, and world settings.
 3. When Siri asks what you want to ask, dictate the request.
 
 Medousa wakes if necessary and adds the request to the selected chat. When a
-short answer finishes within about 20 seconds, the answer returns in a Siri card
-and Medousa reads it with the installed iOS system voice. Longer
-work continues in Medousa instead.
+short answer finishes within about 12 seconds, the answer returns in a Siri card
+and Medousa reads it with the installed iOS system voice. Longer work returns a
+continuing card while Medousa uses the remainder of its bounded iOS background
+window to finish tools and post a completion notification.
 
 On iPhone, open **Settings → Preferences → Siri** to choose when Medousa speaks,
 limit spoken-answer length, pin the current chat, or select a faster model for
@@ -24,6 +25,16 @@ Siri may require you to unlock the phone before it runs Medousa or reveals a
 response. Personal receives a scoped, OS-managed background execution lease for
 the turn. Medousa stores the selected workshop and session context in its shared
 app container and limits the text returned to Siri.
+
+Siri turns can use tools that run without an on-screen interface. Tools that
+need a browser host, approval, secret, or other interactive UI pause safely;
+Siri asks you to open Medousa, where the selected chat keeps the request and
+can finish the interaction. While that chat already has an active turn, another
+Siri request reports that Medousa is still working instead of starting a
+conflicting turn. Personal tool work also has a device-safe execution deadline:
+if iOS suspends it before completion, Medousa releases the Siri-owned turn so
+the chat cannot remain stuck. Open the app to continue work that needs longer,
+or use a Shared workshop for work that must run independently of the phone.
 
 ## Shortcuts and the Action button
 
