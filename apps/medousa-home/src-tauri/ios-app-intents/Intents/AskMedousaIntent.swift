@@ -131,6 +131,7 @@ private struct MedousaSiriResultView: View {
 struct AskMedousaIntent: AppIntent {
     private static let daemonReadyWaitSeconds: TimeInterval = 8
     private static let resultWaitSeconds: TimeInterval = 20
+    private static let longRunningResultWaitSeconds: TimeInterval = 120
     static let title: LocalizedStringResource = "Ask Medousa"
     static let description = IntentDescription(
         "Ask the currently selected Medousa workshop without opening the app."
@@ -165,12 +166,26 @@ struct AskMedousaIntent: AppIntent {
             let workshopId = workshop?.id
                 ?? preferences.defaultWorkshopId
                 ?? WorkshopEntitySnapshot.load().first(where: \.isActive)?.id
-            let outcome = try await runBackgroundTurn(
-                workshopId: workshopId,
-                prompt: prompt,
-                defaults: defaults,
-                preferences: preferences
-            )
+            let outcome: SiriBackgroundOutcome
+            if #available(iOS 27.0, *) {
+                outcome = try await performBackgroundTask {
+                    try await runBackgroundTurn(
+                        workshopId: workshopId,
+                        prompt: prompt,
+                        defaults: defaults,
+                        preferences: preferences,
+                        resultWaitSeconds: Self.longRunningResultWaitSeconds
+                    )
+                }
+            } else {
+                outcome = try await runBackgroundTurn(
+                    workshopId: workshopId,
+                    prompt: prompt,
+                    defaults: defaults,
+                    preferences: preferences,
+                    resultWaitSeconds: Self.resultWaitSeconds
+                )
+            }
             switch outcome {
             case .answer(let answer):
                 if await shouldSpeak(preferences.speechMode) {
@@ -255,7 +270,8 @@ struct AskMedousaIntent: AppIntent {
         workshopId: String?,
         prompt: String,
         defaults: UserDefaults,
-        preferences: SiriPreferences
+        preferences: SiriPreferences,
+        resultWaitSeconds: TimeInterval
     ) async throws -> SiriBackgroundOutcome {
         let pinnedContext = preferences.defaultSessionId.flatMap { sessionId in
             (defaults.dictionary(forKey: "siri.executionContexts.v1") as? [String: String])?[sessionId]
@@ -276,7 +292,8 @@ struct AskMedousaIntent: AppIntent {
         if context.workshopId == "personal" {
             return try await runPersonalTurn(
                 context: context,
-                prompt: prompt
+                prompt: prompt,
+                resultWaitSeconds: resultWaitSeconds
             )
         }
 
@@ -331,7 +348,7 @@ struct AskMedousaIntent: AppIntent {
                     try await readTurnResult(streamURL: streamURL, bearer: loadSiriBearer())
                 }
                 group.addTask {
-                    try await Task.sleep(for: .seconds(Self.resultWaitSeconds))
+                    try await Task.sleep(for: .seconds(resultWaitSeconds))
                     throw SiriBackgroundError.timedOut
                 }
                 guard let result = try await group.next() else {
@@ -348,7 +365,8 @@ struct AskMedousaIntent: AppIntent {
 
     private func runPersonalTurn(
         context: SiriExecutionContext,
-        prompt: String
+        prompt: String,
+        resultWaitSeconds: TimeInterval
     ) async throws -> SiriBackgroundOutcome {
         let backgroundTask = await MainActor.run {
             UIApplication.shared.beginBackgroundTask(
@@ -374,6 +392,7 @@ struct AskMedousaIntent: AppIntent {
             "responseDepthMode": context.responseDepthMode,
             "reasoningEffort": context.reasoningEffort,
             "identityUserId": context.identityUserId ?? NSNull(),
+            "resultWaitSeconds": resultWaitSeconds,
         ]
         let data = try JSONSerialization.data(withJSONObject: payload)
         guard let encoded = String(data: data, encoding: .utf8) else {
@@ -446,6 +465,9 @@ struct AskMedousaIntent: AppIntent {
         throw SiriBackgroundError.unavailable
     }
 }
+
+@available(iOS 27.0, *)
+extension AskMedousaIntent: LongRunningIntent {}
 
 private func loadSiriBearer() -> String? {
     let query: [String: Any] = [

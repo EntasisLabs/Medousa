@@ -151,6 +151,7 @@ struct SiriPersonalTurnRequest {
     response_depth_mode: String,
     reasoning_effort: String,
     identity_user_id: Option<String>,
+    result_wait_seconds: Option<f64>,
 }
 
 #[cfg(target_os = "ios")]
@@ -219,11 +220,16 @@ async fn execute_personal_turn(
         )
         .await
         .map_err(|error| error.to_string())?;
+    let result_wait_seconds = request
+        .result_wait_seconds
+        .unwrap_or(12.0)
+        .clamp(12.0, 120.0);
+    let watchdog_seconds = result_wait_seconds + 16.0;
     let watchdog_client = client.clone();
     let watchdog_session_id = request.session_id.clone();
     let watchdog_turn_id = accepted.turn_id.clone();
     tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_secs(28)).await;
+        tokio::time::sleep(std::time::Duration::from_secs_f64(watchdog_seconds)).await;
         let active = watchdog_client.active_turn(&watchdog_session_id).await.ok();
         if active
             .and_then(|response| response.turn)
@@ -240,25 +246,28 @@ async fn execute_personal_turn(
         .subscribe_turn(&accepted.turn_id, 0)
         .await
         .map_err(|error| error.to_string())?;
-    let result = tokio::time::timeout(std::time::Duration::from_secs(12), async {
-        while let Some(envelope) = stream.recv().await.map_err(|error| error.to_string())? {
-            match envelope.event {
-                TurnStreamEventV2::Final { text, .. }
-                | TurnStreamEventV2::WorkerSynthesis { text, .. } => {
-                    return Ok(("answer", text))
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs_f64(result_wait_seconds),
+        async {
+            while let Some(envelope) = stream.recv().await.map_err(|error| error.to_string())? {
+                match envelope.event {
+                    TurnStreamEventV2::Final { text, .. }
+                    | TurnStreamEventV2::WorkerSynthesis { text, .. } => {
+                        return Ok(("answer", text));
+                    }
+                    TurnStreamEventV2::NeedsInput { text, .. }
+                    | TurnStreamEventV2::Checkpoint { text, .. } => {
+                        return Ok(("needs_input", text));
+                    }
+                    TurnStreamEventV2::Error {
+                        operator_message, ..
+                    } => return Err(operator_message),
+                    _ => {}
                 }
-                TurnStreamEventV2::NeedsInput { text, .. }
-                | TurnStreamEventV2::Checkpoint { text, .. } => {
-                    return Ok(("needs_input", text))
-                }
-                TurnStreamEventV2::Error {
-                    operator_message, ..
-                } => return Err(operator_message),
-                _ => {}
             }
-        }
-        Err("Medousa's response stream ended early".to_string())
-    })
+            Err("Medousa's response stream ended early".to_string())
+        },
+    )
     .await;
     match result {
         Ok(Ok((status, text))) => {
