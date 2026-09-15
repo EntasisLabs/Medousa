@@ -14,6 +14,45 @@ type PendingSiriAsk = {
 
 const WORKSHOP_READY_TIMEOUT_MS = 15_000;
 const WORKSHOP_READY_POLL_MS = 100;
+const SIRI_RESULT_WAIT_MS = 18_000;
+const SIRI_RESULT_POLL_MS = 150;
+const SIRI_RESULT_MAX_CHARS = 600;
+
+export function siriSpokenSummary(value: string): string {
+  const plain = value
+    .replace(/```[\s\S]*?```/g, " Code omitted. ")
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/[*_~`>]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (plain.length <= SIRI_RESULT_MAX_CHARS) return plain;
+  const prefix = plain.slice(0, SIRI_RESULT_MAX_CHARS - 1);
+  const boundary = prefix.lastIndexOf(" ");
+  return `${prefix.slice(0, boundary > 400 ? boundary : prefix.length).trimEnd()}…`;
+}
+
+async function publishSiriResult(requestId: string, turnId: string): Promise<void> {
+  const deadline = Date.now() + SIRI_RESULT_WAIT_MS;
+  while (Date.now() < deadline) {
+    const turn = chat.turns.get(turnId);
+    const message = chat.messages.find(
+      (candidate) => candidate.turnId === turnId && candidate.role === "assistant",
+    );
+    if (turn?.terminal || (message && !message.streaming)) {
+      const text = siriSpokenSummary(message?.content ?? "");
+      if (text) {
+        await invoke("siri_publish_ask_result", { requestId, text }).catch(
+          () => undefined,
+        );
+      }
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, SIRI_RESULT_POLL_MS));
+  }
+}
 
 async function waitForWorkshopScope(): Promise<void> {
   const deadline = Date.now() + WORKSHOP_READY_TIMEOUT_MS;
@@ -82,4 +121,5 @@ export async function startPendingSiriAsk(requestId: string): Promise<void> {
   }
   chat.beginTurn(pending.prompt, accepted);
   await chat.startTurnStream(accepted.turn_id, accepted.session_id, accepted.stream_url);
+  void publishSiriResult(pending.requestId, accepted.turn_id);
 }

@@ -239,10 +239,10 @@ and Shortcuts without the webview already running.
   the supported “Ask Medousa” / “Talk to Medousa” invocation phrases. Siri asks
   for the request through the parameter dialog; Apple does not permit a raw
   `String` parameter inside an App Shortcut phrase.
-- The native intent writes a bounded request into the shared App Group and opens
-  `medousa://ask?request=…` with an opaque UUID receipt. Rust atomically consumes
-  the matching receipt within ten minutes, so an unrelated app cannot forge an
-  auto-run URL or recover the prompt from the URL.
+- The native intent writes a bounded request into the shared App Group and uses
+  an opaque UUID receipt. Rust atomically consumes the matching receipt within
+  ten minutes, so an unrelated app cannot forge an auto-run URL or recover the
+  prompt from the handoff.
 - After receipt validation, the trusted shell admits a normal interactive turn
   through the existing selected-workshop path with `home-ios-siri` attribution,
   registers it in the current chat, and attaches the standard durable stream.
@@ -271,8 +271,15 @@ and Shortcuts without the webview already running.
   chat using that chat's provider, model, reasoning, routing, identity, browser,
   and world options. This preserves conversational continuity instead of creating
   a Siri-only or always-new session.
-- Remaining S1 work is direct background execution, bounded Siri result dialogue,
-  explicit error states, and cancellation behavior.
+- Physical-device testing on iOS 27 proved bounded result dialogue on 2026-09-15.
+  The intent uses dynamic foreground continuation to wake Medousa without ending
+  the Shortcut, waits briefly for the existing durable turn, and consumes a
+  receipt-matched one-time result from the App Group. Siri displayed the returned
+  answer while the same response remained in the selected chat. Spoken output is
+  normalized from Markdown and limited to 600 characters; longer-running turns
+  return a continuation message instead.
+- Remaining S1 work is direct background execution, explicit error states, and
+  cancellation behavior.
 
 ### S2 — search, entities, and deep links
 

@@ -68,6 +68,23 @@ pub fn siri_recent_pending_ask_id() -> Result<Option<String>, String> {
     Ok(None)
 }
 
+#[tauri::command]
+pub fn siri_publish_ask_result(request_id: String, text: String) -> Result<(), String> {
+    let request_id = request_id.trim();
+    let text = text.trim();
+    if request_id.is_empty() || request_id.len() > 64 || text.is_empty() || text.len() > 2_000 {
+        return Err("Invalid Siri result payload".into());
+    }
+
+    #[cfg(target_os = "ios")]
+    {
+        return ios::publish_result(request_id, text);
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    Ok(())
+}
+
 #[cfg(target_os = "ios")]
 mod ios {
     use super::PendingSiriAsk;
@@ -78,6 +95,7 @@ mod ios {
     unsafe extern "C" {
         fn medousa_siri_consume_pending_ask(request_id: *const c_char) -> *mut c_char;
         fn medousa_siri_recent_pending_ask_id() -> *mut c_char;
+        fn medousa_siri_publish_ask_result(json: *const c_char) -> bool;
         fn medousa_siri_store_workshops(json: *const c_char) -> bool;
         fn medousa_live_activity_free_string(ptr: *mut c_char);
     }
@@ -137,6 +155,30 @@ mod ios {
         Ok(None)
     }
 
+    pub fn publish_result(request_id: &str, text: &str) -> Result<(), String> {
+        #[cfg(live_activity_native)]
+        {
+            let encoded = serde_json::json!({
+                "requestId": request_id,
+                "text": text,
+                "createdAt": std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_err(|error| error.to_string())?
+                    .as_secs_f64(),
+            })
+            .to_string();
+            let encoded = CString::new(encoded)
+                .map_err(|_| "Siri result contained a null byte".to_string())?;
+            if unsafe { medousa_siri_publish_ask_result(encoded.as_ptr()) } {
+                return Ok(());
+            }
+            return Err("Could not publish the Siri result".into());
+        }
+
+        #[cfg(not(live_activity_native))]
+        Err("Siri native bridge is unavailable".into())
+    }
+
     pub fn store_workshops(summaries: &[super::SiriWorkshopSummary]) -> Result<(), String> {
         #[cfg(live_activity_native)]
         {
@@ -162,5 +204,12 @@ mod tests {
     fn rejects_invalid_receipt_before_platform_dispatch() {
         assert!(siri_consume_pending_ask("".into()).is_err());
         assert!(siri_consume_pending_ask("x".repeat(65)).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_result_before_platform_dispatch() {
+        assert!(siri_publish_ask_result("".into(), "answer".into()).is_err());
+        assert!(siri_publish_ask_result("receipt".into(), "".into()).is_err());
+        assert!(siri_publish_ask_result("receipt".into(), "x".repeat(2_001)).is_err());
     }
 }

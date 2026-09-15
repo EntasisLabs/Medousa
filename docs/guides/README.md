@@ -12,6 +12,7 @@ Integrator / self-host cookbooks: [../cookbook/README.md](../cookbook/README.md)
 | [Packages](packages.md) | Add optional computer, coding, model, channel, and MCP capabilities |
 | [Workshop & Automations](workshop-and-automations.md) | Flows, schedules, specialists, background work |
 | [Phone pairing](phone-pairing.md) | Add another computer as an optional portal |
+| [Siri and Shortcuts](siri-and-shortcuts.md) | Continue the selected Medousa chat by voice or from an iPhone shortcut |
 | [Peers & Nearby](peers-and-nearby.md) | LAN / tunnel workshops (deep dive linked) |
 | [Memory & identity](memory-and-identity.md) | Teach who you are; profiles |
 | [Channels](channels.md) | Telegram, Discord, Slack, WhatsApp from the app |

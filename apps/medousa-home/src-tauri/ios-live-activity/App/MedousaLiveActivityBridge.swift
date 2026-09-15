@@ -129,6 +129,19 @@ public func medousa_siri_recent_pending_ask_id() -> UnsafeMutablePointer<CChar>?
     return strdup(requestId)
 }
 
+@_cdecl("medousa_siri_publish_ask_result")
+public func medousa_siri_publish_ask_result(
+    _ jsonPointer: UnsafePointer<CChar>?
+) -> Bool {
+    guard let jsonPointer,
+          let defaults = UserDefaults(suiteName: "group.com.entasislabs.medousa-home")
+    else {
+        return false
+    }
+    defaults.set(String(cString: jsonPointer), forKey: "siri.askResult.v1")
+    return true
+}
+
 @_cdecl("medousa_siri_store_workshops")
 public func medousa_siri_store_workshops(
     _ jsonPointer: UnsafePointer<CChar>?
