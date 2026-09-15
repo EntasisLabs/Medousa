@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isTauriIos } from "$lib/platform";
+import { daemonUnary } from "$lib/daemon/contractClient";
 
 export type LiveVoicePhase =
   | "idle"
@@ -18,6 +19,18 @@ export interface LiveVoiceStatus {
   workshopName?: string | null;
   sessionId?: string | null;
   error?: string | null;
+}
+
+export interface LiveSessionAnswer {
+  liveSessionId: string;
+  sdp: string;
+}
+
+export async function createLiveSession(
+  sdp: string,
+  sessionId: string,
+): Promise<LiveSessionAnswer> {
+  return daemonUnary<LiveSessionAnswer>("live.sessions.post", {}, { sdp, sessionId });
 }
 
 const unavailable: LiveVoiceStatus = {

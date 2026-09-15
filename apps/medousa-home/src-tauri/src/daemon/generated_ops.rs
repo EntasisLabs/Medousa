@@ -504,6 +504,8 @@ pub enum DaemonOperation {
     JobsReportPost,
     #[serde(rename = "lan.workshops.get")]
     LanWorkshopsGet,
+    #[serde(rename = "live.sessions.post")]
+    LiveSessionsPost,
     #[serde(rename = "liveness.get")]
     LivenessGet,
     #[serde(rename = "local.catalog.get")]
@@ -1157,6 +1159,7 @@ impl DaemonOperation {
             Self::JobsPromptPost => "jobs.prompt.post",
             Self::JobsReportPost => "jobs.report.post",
             Self::LanWorkshopsGet => "lan.workshops.get",
+            Self::LiveSessionsPost => "live.sessions.post",
             Self::LivenessGet => "liveness.get",
             Self::LocalCatalogGet => "local.catalog.get",
             Self::LocalEngineStatusGet => "local.engine.status.get",

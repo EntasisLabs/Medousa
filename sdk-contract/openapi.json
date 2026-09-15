@@ -24934,6 +24934,57 @@
         }
       }
     },
+    "/v1/live/sessions": {
+      "post": {
+        "operationId": "live.sessions.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "LIVE_SESSIONS_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "live.sessions.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "live.sessions.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "live.sessions.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 266240,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
     "/v1/local/catalog": {
       "get": {
         "operationId": "local.catalog.get",

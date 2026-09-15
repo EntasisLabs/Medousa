@@ -164,6 +164,7 @@ pub mod install;
 pub mod integration_connection;
 pub mod integration_handlers;
 pub mod layout_tools;
+pub mod live_handlers;
 pub mod local_credential_handlers;
 pub mod local_daemon_auth;
 pub mod locus_handlers;

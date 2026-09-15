@@ -262,6 +262,7 @@ OPERATIONS: dict[str, Operation] = {
     "jobs.prompt.post": Operation("jobs.prompt.post", "POST", "/v1/jobs/prompt", False),
     "jobs.report.post": Operation("jobs.report.post", "POST", "/v1/jobs/report", False),
     "lan.workshops.get": Operation("lan.workshops.get", "GET", "/v1/lan/workshops", False),
+    "live.sessions.post": Operation("live.sessions.post", "POST", "/v1/live/sessions", False),
     "liveness.get": Operation("liveness.get", "GET", "/health", False),
     "local.catalog.get": Operation("local.catalog.get", "GET", "/v1/local/catalog", False),
     "local.engine.status.get": Operation("local.engine.status.get", "GET", "/v1/local/engine/status", False),

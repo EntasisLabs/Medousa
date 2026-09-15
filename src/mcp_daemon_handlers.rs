@@ -407,6 +407,7 @@ mod tests {
                     connected: true,
                     tool_count: 3,
                     allowed_lanes: vec!["interactive".to_string()],
+                    last_error: None,
                 }],
             }),
         );

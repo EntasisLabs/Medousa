@@ -586,6 +586,7 @@ pub fn build_workshop_surface() -> DeclaredRouter<AppState> {
     use crate::request_principal::Capability;
 
     DeclaredRouter::default()
+        .merge(crate::live_handlers::surface())
         .route(workshop_read_policy("/v1/health"), get(health))
         .route(workshop_read_policy("/v1/stats"), get(stats))
         .route(

@@ -259,6 +259,7 @@ export const OPERATIONS = {
   "jobs.prompt.post": { id: "jobs.prompt.post", method: "POST", path: "/v1/jobs/prompt", streaming: false },
   "jobs.report.post": { id: "jobs.report.post", method: "POST", path: "/v1/jobs/report", streaming: false },
   "lan.workshops.get": { id: "lan.workshops.get", method: "GET", path: "/v1/lan/workshops", streaming: false },
+  "live.sessions.post": { id: "live.sessions.post", method: "POST", path: "/v1/live/sessions", streaming: false },
   "liveness.get": { id: "liveness.get", method: "GET", path: "/health", streaming: false },
   "local.catalog.get": { id: "local.catalog.get", method: "GET", path: "/v1/local/catalog", streaming: false },
   "local.engine.status.get": { id: "local.engine.status.get", method: "GET", path: "/v1/local/engine/status", streaming: false },

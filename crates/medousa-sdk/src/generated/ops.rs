@@ -1759,6 +1759,13 @@ pub const LAN_WORKSHOPS_GET: Operation = Operation {
     streaming: false,
 };
 
+pub const LIVE_SESSIONS_POST: Operation = Operation {
+    id: "live.sessions.post",
+    method: "POST",
+    path: "/v1/live/sessions",
+    streaming: false,
+};
+
 pub const LIVENESS_GET: Operation = Operation {
     id: "liveness.get",
     method: "GET",
@@ -3403,6 +3410,7 @@ pub static ALL: &[Operation] = &[
     JOBS_PROMPT_POST,
     JOBS_REPORT_POST,
     LAN_WORKSHOPS_GET,
+    LIVE_SESSIONS_POST,
     LIVENESS_GET,
     LOCAL_CATALOG_GET,
     LOCAL_ENGINE_STATUS_GET,
