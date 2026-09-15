@@ -168,15 +168,12 @@ struct AskMedousaIntent: AppIntent {
                 ?? WorkshopEntitySnapshot.load().first(where: \.isActive)?.id
             let outcome: SiriBackgroundOutcome
             if #available(iOS 27.0, *) {
-                outcome = try await performBackgroundTask {
-                    try await runBackgroundTurn(
-                        workshopId: workshopId,
-                        prompt: prompt,
-                        defaults: defaults,
-                        preferences: preferences,
-                        resultWaitSeconds: Self.longRunningResultWaitSeconds
-                    )
-                }
+                outcome = try await performLongRunningTurn(
+                    workshopId: workshopId,
+                    prompt: prompt,
+                    defaults: defaults,
+                    preferences: preferences
+                )
             } else {
                 outcome = try await runBackgroundTurn(
                     workshopId: workshopId,
@@ -369,7 +366,13 @@ struct AskMedousaIntent: AppIntent {
         resultWaitSeconds: TimeInterval
     ) async throws -> SiriBackgroundOutcome {
         let backgroundTask = await MainActor.run {
-            UIApplication.shared.beginBackgroundTask(
+            if #available(iOS 27.0, *) {
+                // LongRunningIntent owns the background assertion on iOS 27.
+                // Starting a second UIKit assertion here can expire underneath
+                // the system-managed task while a tool call is still running.
+                return UIBackgroundTaskIdentifier.invalid
+            }
+            return UIApplication.shared.beginBackgroundTask(
                 withName: "Medousa Siri turn",
                 expirationHandler: nil
             )
@@ -467,7 +470,46 @@ struct AskMedousaIntent: AppIntent {
 }
 
 @available(iOS 27.0, *)
-extension AskMedousaIntent: LongRunningIntent {}
+extension AskMedousaIntent: LongRunningIntent {
+    private func performLongRunningTurn(
+        workshopId: String?,
+        prompt: String,
+        defaults: UserDefaults,
+        preferences: SiriPreferences
+    ) async throws -> SiriBackgroundOutcome {
+        let taskProgress = progress
+        taskProgress.totalUnitCount = Int64(Self.longRunningResultWaitSeconds)
+        taskProgress.completedUnitCount = 0
+        taskProgress.localizedDescription = "Working in Medousa"
+        taskProgress.localizedAdditionalDescription = "Starting your request"
+
+        return try await performBackgroundTask {
+            let heartbeat = Task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(2))
+                    guard !Task.isCancelled else { break }
+                    taskProgress.completedUnitCount = min(
+                        taskProgress.completedUnitCount + 2,
+                        taskProgress.totalUnitCount - 1
+                    )
+                    taskProgress.localizedAdditionalDescription = "Using your Medousa tools"
+                }
+            }
+            defer { heartbeat.cancel() }
+
+            let outcome = try await runBackgroundTurn(
+                workshopId: workshopId,
+                prompt: prompt,
+                defaults: defaults,
+                preferences: preferences,
+                resultWaitSeconds: Self.longRunningResultWaitSeconds
+            )
+            taskProgress.completedUnitCount = taskProgress.totalUnitCount
+            taskProgress.localizedAdditionalDescription = "Request complete"
+            return outcome
+        }
+    }
+}
 
 private func loadSiriBearer() -> String? {
     let query: [String: Any] = [
