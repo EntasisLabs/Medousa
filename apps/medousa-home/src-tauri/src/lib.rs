@@ -486,6 +486,7 @@ fn run_home() {
             siri_intents::siri_recent_pending_ask_id,
             siri_intents::siri_publish_ask_result,
             siri_intents::siri_sync_execution_context,
+            siri_intents::siri_sync_preferences,
             siri_intents::siri_sync_workshop_snapshot,
             pairing::bonjour_status,
             lan_share::lan_pairing_status,

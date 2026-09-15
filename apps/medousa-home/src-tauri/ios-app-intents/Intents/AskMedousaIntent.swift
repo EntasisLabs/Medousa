@@ -28,8 +28,34 @@ private struct SiriTurnAccepted: Decodable {
     }
 }
 
+private struct SiriPreferences: Decodable {
+    let speechMode: String
+    let maxSpokenCharacters: Int
+    let defaultWorkshopId: String?
+    let defaultSessionId: String?
+    let fastResponseModel: String?
+
+    static let defaults = SiriPreferences(
+        speechMode: "auto",
+        maxSpokenCharacters: 320,
+        defaultWorkshopId: nil,
+        defaultSessionId: nil,
+        fastResponseModel: nil
+    )
+
+    static func load(from defaults: UserDefaults) -> SiriPreferences {
+        guard let encoded = defaults.string(forKey: "siri.preferences.v1"),
+              let data = encoded.data(using: .utf8),
+              let value = try? JSONDecoder().decode(SiriPreferences.self, from: data)
+        else { return .defaults }
+        return value
+    }
+}
+
 private enum SiriBackgroundError: Error {
     case unavailable
+    case authentication
+    case configuration
     case timedOut
 }
 
@@ -128,19 +154,28 @@ struct AskMedousaIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
-        let workshopId = workshop?.id
-            ?? WorkshopEntitySnapshot.load().first(where: \.isActive)?.id
         guard let defaults = UserDefaults(suiteName: "group.com.entasislabs.medousa-home") else {
             throw SiriBackgroundError.unavailable
         }
 
         do {
+            let preferences = SiriPreferences.load(from: defaults)
+            let workshopId = workshop?.id
+                ?? preferences.defaultWorkshopId
+                ?? WorkshopEntitySnapshot.load().first(where: \.isActive)?.id
             let outcome = try await runBackgroundTurn(
-                workshopId: workshopId, prompt: prompt, defaults: defaults
+                workshopId: workshopId,
+                prompt: prompt,
+                defaults: defaults,
+                preferences: preferences
             )
             switch outcome {
             case .answer(let answer):
-                await speakAnswer(answer)
+                if await shouldSpeak(preferences.speechMode) {
+                    await speakAnswer(
+                        String(answer.prefix(max(80, preferences.maxSpokenCharacters)))
+                    )
+                }
                 return .result(
                     dialog: IntentDialog(full: "\(answer)", supporting: "\(answer)"),
                     view: MedousaSiriResultView(answer: answer, isContinuing: false)
@@ -153,9 +188,21 @@ struct AskMedousaIntent: AppIntent {
                 )
             }
         } catch {
-            let unavailable = "I couldn't reach your selected Medousa workshop."
+            let unavailable: String
+            let recovery: String
+            switch error {
+            case SiriBackgroundError.authentication:
+                unavailable = "Medousa needs you to reconnect this workshop."
+                recovery = "Open Connection settings in Medousa."
+            case SiriBackgroundError.configuration:
+                unavailable = "This Siri request doesn't match the selected workshop settings."
+                recovery = "Open Medousa and update the Siri defaults."
+            default:
+                unavailable = "I couldn't reach your selected Medousa workshop."
+                recovery = "Open Medousa once, then try again."
+            }
             return .result(
-                dialog: IntentDialog(full: "\(unavailable)", supporting: "Open Medousa once, then try again."),
+                dialog: IntentDialog(full: "\(unavailable)", supporting: "\(recovery)"),
                 view: MedousaSiriResultView(answer: unavailable, isContinuing: false)
             )
         }
@@ -183,12 +230,26 @@ struct AskMedousaIntent: AppIntent {
         }
     }
 
+    private func shouldSpeak(_ mode: String) async -> Bool {
+        if mode == "always" { return true }
+        if mode == "never" { return false }
+        return await MainActor.run {
+            AVAudioSession.sharedInstance().currentRoute.outputs.contains {
+                $0.portType == .builtInSpeaker || $0.portType == .builtInReceiver
+            }
+        }
+    }
+
     private func runBackgroundTurn(
         workshopId: String?,
         prompt: String,
-        defaults: UserDefaults
+        defaults: UserDefaults,
+        preferences: SiriPreferences
     ) async throws -> SiriBackgroundOutcome {
-        guard let encoded = defaults.string(forKey: "siri.executionContext.v1"),
+        let pinnedContext = preferences.defaultSessionId.flatMap { sessionId in
+            (defaults.dictionary(forKey: "siri.executionContexts.v1") as? [String: String])?[sessionId]
+        }
+        guard let encoded = pinnedContext ?? defaults.string(forKey: "siri.executionContext.v1"),
               let data = encoded.data(using: .utf8),
               let context = try? JSONDecoder().decode(SiriExecutionContext.self, from: data),
               context.version == 1,
@@ -202,7 +263,10 @@ struct AskMedousaIntent: AppIntent {
         }
 
         if context.workshopId == "personal" {
-            return try await runPersonalTurn(context: context, prompt: prompt)
+            return try await runPersonalTurn(
+                context: context,
+                prompt: prompt
+            )
         }
 
         let payload: [String: Any] = [
@@ -213,7 +277,7 @@ struct AskMedousaIntent: AppIntent {
             "response_depth_mode": context.responseDepthMode,
             "reasoning_effort": context.reasoningEffort,
             "provider": context.provider,
-            "model": context.model,
+            "model": preferences.fastResponseModel ?? context.model,
             "surface": [
                 "channel_surface": "home-ios-siri",
                 "channel_id": context.sessionId,
@@ -236,7 +300,15 @@ struct AskMedousaIntent: AppIntent {
 
         let (responseData, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse,
-              (200..<300).contains(http.statusCode),
+              (200..<300).contains(http.statusCode)
+        else {
+            if let http = response as? HTTPURLResponse,
+               http.statusCode == 401 || http.statusCode == 403 {
+                throw SiriBackgroundError.authentication
+            }
+            throw SiriBackgroundError.unavailable
+        }
+        guard
               let accepted = try? JSONDecoder().decode(SiriTurnAccepted.self, from: responseData),
               let streamURL = URL(string: accepted.streamUrl, relativeTo: baseURL)
         else {
@@ -313,7 +385,13 @@ struct AskMedousaIntent: AppIntent {
         case "continuing":
             return .continuing
         default:
-            _ = response.error
+            let detail = response.error?.lowercased() ?? ""
+            if detail.contains("credential") || detail.contains("unauthorized") {
+                throw SiriBackgroundError.authentication
+            }
+            if detail.contains("configured for") || detail.contains("model") {
+                throw SiriBackgroundError.configuration
+            }
             throw SiriBackgroundError.unavailable
         }
     }

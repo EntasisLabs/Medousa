@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { chat } from "$lib/stores/chat.svelte";
 import { prepareInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
+import { syncSiriPreferences } from "$lib/config/siriPreferences";
 
 export async function syncSiriWorkshopSnapshot(): Promise<void> {
   try {
@@ -8,6 +9,7 @@ export async function syncSiriWorkshopSnapshot(): Promise<void> {
   } catch (error) {
     console.warn("[siri] workshop snapshot sync failed:", error);
   }
+  await syncSiriPreferences();
   await syncSiriExecutionContext();
 }
 

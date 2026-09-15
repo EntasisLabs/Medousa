@@ -38,6 +38,19 @@ pub struct SiriExecutionContextInput {
     pub identity_user_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SiriPreferencesInput {
+    pub speech_mode: String,
+    pub max_spoken_characters: usize,
+    #[serde(default)]
+    pub default_workshop_id: Option<String>,
+    #[serde(default)]
+    pub default_session_id: Option<String>,
+    #[serde(default)]
+    pub fast_response_model: Option<String>,
+}
+
 fn default_response_depth() -> String {
     "standard".to_string()
 }
@@ -125,7 +138,7 @@ async fn execute_personal_turn(
         .subscribe_turn(&accepted.turn_id, 0)
         .await
         .map_err(|error| error.to_string())?;
-    let result = tokio::time::timeout(std::time::Duration::from_secs(20), async move {
+    let result = tokio::time::timeout(std::time::Duration::from_secs(20), async {
         while let Some(envelope) = stream.recv().await.map_err(|error| error.to_string())? {
             match envelope.event {
                 TurnStreamEventV2::Final { text, .. }
@@ -144,7 +157,27 @@ async fn execute_personal_turn(
     match result {
         Ok(Ok(text)) => Ok(serde_json::json!({ "status": "answer", "text": text })),
         Ok(Err(error)) => Err(error),
-        Err(_) => Ok(serde_json::json!({ "status": "continuing" })),
+        Err(_) => {
+            tauri::async_runtime::spawn(async move {
+                while let Ok(Some(envelope)) = stream.recv().await {
+                    match envelope.event {
+                        TurnStreamEventV2::Final { text, .. }
+                        | TurnStreamEventV2::NeedsInput { text, .. }
+                        | TurnStreamEventV2::Checkpoint { text, .. }
+                        | TurnStreamEventV2::WorkerSynthesis { text, .. } => {
+                            ios::notify_completion(&text);
+                            break;
+                        }
+                        TurnStreamEventV2::Error { operator_message, .. } => {
+                            ios::notify_completion(&operator_message);
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+            });
+            Ok(serde_json::json!({ "status": "continuing" }))
+        }
     }
 }
 
@@ -263,6 +296,34 @@ pub fn siri_sync_execution_context(context: SiriExecutionContextInput) -> Result
 }
 
 #[tauri::command]
+pub fn siri_sync_preferences(preferences: SiriPreferencesInput) -> Result<(), String> {
+    if !matches!(preferences.speech_mode.as_str(), "auto" | "always" | "never") {
+        return Err("Invalid Siri speech mode".into());
+    }
+    if !(80..=1_000).contains(&preferences.max_spoken_characters) {
+        return Err("Siri spoken length must be between 80 and 1000 characters".into());
+    }
+    for value in [
+        preferences.default_workshop_id.as_deref(),
+        preferences.default_session_id.as_deref(),
+        preferences.fast_response_model.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if value.len() > 256 || value.chars().any(char::is_control) {
+            return Err("Invalid Siri preference value".into());
+        }
+    }
+
+    #[cfg(target_os = "ios")]
+    return ios::store_preferences(&preferences);
+
+    #[cfg(not(target_os = "ios"))]
+    Ok(())
+}
+
+#[tauri::command]
 pub fn siri_consume_pending_ask(request_id: String) -> Result<PendingSiriAsk, String> {
     let request_id = request_id.trim();
     if request_id.is_empty() || request_id.len() > 64 {
@@ -319,6 +380,8 @@ mod ios {
         fn medousa_siri_publish_ask_result(json: *const c_char) -> bool;
         fn medousa_siri_store_execution_context(json: *const c_char, bearer: *const c_char)
         -> bool;
+        fn medousa_siri_store_preferences(json: *const c_char) -> bool;
+        fn medousa_siri_notify_completion(body: *const c_char) -> bool;
         fn medousa_siri_store_workshops(json: *const c_char) -> bool;
         fn medousa_live_activity_free_string(ptr: *mut c_char);
     }
@@ -423,6 +486,29 @@ mod ios {
         Err("Siri native bridge is unavailable".into())
     }
 
+    pub fn store_preferences(preferences: &super::SiriPreferencesInput) -> Result<(), String> {
+        #[cfg(live_activity_native)]
+        {
+            let encoded = serde_json::to_string(preferences).map_err(|error| error.to_string())?;
+            let encoded = CString::new(encoded)
+                .map_err(|_| "Siri preferences contained a null byte".to_string())?;
+            if unsafe { medousa_siri_store_preferences(encoded.as_ptr()) } {
+                return Ok(());
+            }
+            return Err("Could not store Siri preferences".into());
+        }
+
+        #[cfg(not(live_activity_native))]
+        Err("Siri native bridge is unavailable".into())
+    }
+
+    pub fn notify_completion(body: &str) {
+        #[cfg(live_activity_native)]
+        if let Ok(body) = CString::new(body.chars().take(500).collect::<String>()) {
+            let _ = unsafe { medousa_siri_notify_completion(body.as_ptr()) };
+        }
+    }
+
     pub fn store_workshops(summaries: &[super::SiriWorkshopSummary]) -> Result<(), String> {
         #[cfg(live_activity_native)]
         {
@@ -468,5 +554,17 @@ mod tests {
             identity_user_id: None,
         };
         assert!(siri_sync_execution_context(context).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_siri_preferences_before_platform_dispatch() {
+        let preferences = SiriPreferencesInput {
+            speech_mode: "sometimes".into(),
+            max_spoken_characters: 40,
+            default_workshop_id: None,
+            default_session_id: None,
+            fast_response_model: None,
+        };
+        assert!(siri_sync_preferences(preferences).is_err());
     }
 }

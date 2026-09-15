@@ -1,14 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import RoomShellOptions from "$lib/components/settings/RoomShellOptions.svelte";
+  import SettingsSiriSection from "$lib/components/settings/SettingsSiriSection.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { settings, COLOR_THEME_OPTIONS } from "$lib/stores/settings.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import type { ColorThemeId } from "$lib/types/colorThemes";
-  import {
-    COLOR_THEME_GROUP_LABELS,
-    COLOR_THEME_GROUPS,
-  } from "$lib/types/colorThemes";
+  import { COLOR_THEME_GROUP_LABELS, COLOR_THEME_GROUPS } from "$lib/types/colorThemes";
   import { presetDisplayLabel } from "$lib/utils/customViewStatus";
   import { openGuide } from "$lib/guide/openGuide";
   import { isTauri } from "$lib/window";
@@ -17,9 +15,7 @@
     queryLiveActivityAvailability,
     type LiveActivityStatus,
   } from "$lib/liveActivity";
-  import {
-    hostComputerPhrase,
-  } from "$lib/platformCopy";
+  import { hostComputerPhrase } from "$lib/platformCopy";
   import { Check, ChevronDown, Moon, RotateCcw, Sun } from "@lucide/svelte";
   import MedousaCompanion from "$lib/components/brand/MedousaCompanion.svelte";
   import { MEDOUSA_MARK_OPTIONS } from "$lib/theme/medousaMarks";
@@ -47,7 +43,6 @@
     setChordOverride,
   } from "$lib/commands/commandBindings";
   import { formatCatalogKeys } from "$lib/utils/keyboardShortcutsCatalog";
-
   const nativeMobile = isTauriMobilePlatform();
 
   const activePreset = $derived(
@@ -108,6 +103,7 @@
   function patchCodePreferences(partial: Partial<CodeWorkbenchPreferences>) {
     codePreferences = writeCodeWorkbenchPreferences(partial);
   }
+
 
   function captureBinding(event: KeyboardEvent, commandId: string) {
     if (event.key === "Escape") {
@@ -202,6 +198,10 @@
       {/if}
     </button>
   </header>
+
+  {#if nativeMobile}
+    <SettingsSiriSection />
+  {/if}
 
   <div class="prefs-band">
     <div class="prefs-band-head">

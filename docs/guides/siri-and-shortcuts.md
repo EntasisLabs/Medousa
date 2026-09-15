@@ -15,6 +15,11 @@ short answer finishes within about 20 seconds, the answer returns in a Siri card
 and Medousa reads it with the installed iOS system voice. Longer
 work continues in Medousa instead.
 
+On iPhone, open **Settings → Preferences → Siri** to choose when Medousa speaks,
+limit spoken-answer length, pin the current chat, or select a faster model for
+requests sent to a Shared workshop. **Auto** speaks through the phone while
+leaving voice-only routes such as headphones to Siri, avoiding duplicate audio.
+
 Siri may require you to unlock the phone before it runs Medousa or reveals a
 response. Personal receives a scoped, OS-managed background execution lease for
 the turn. Medousa stores the selected workshop and session context in its shared
@@ -28,3 +33,15 @@ workshop parameter unset to use the active workshop, or choose a specific one.
 
 If Medousa cannot safely start the turn, it leaves the request in the composer
 for review instead of silently discarding it.
+
+## Focused actions
+
+Medousa also provides Siri and Shortcuts actions for checking what needs your
+attention, summarizing active work, checking running work, and capturing an
+entry in your journal. They use the same selected or pinned chat and background
+execution rules as **Ask Medousa**.
+
+If a Personal response takes longer than Siri's result window, Medousa reports
+that it is continuing and posts a local completion notification when iOS allows
+the background process to finish. Shared workshop hosts can continue work
+independently of the phone's process lifetime.

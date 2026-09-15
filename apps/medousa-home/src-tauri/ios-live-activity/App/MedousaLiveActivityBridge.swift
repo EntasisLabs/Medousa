@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import UserNotifications
 
 private let siriBearerService = "com.entasislabs.medousa-home.siri"
 private let siriBearerAccount = "active-workshop-bearer.v1"
@@ -172,7 +173,43 @@ public func medousa_siri_store_execution_context(
     }
     let bearer = bearerPointer.map(String.init(cString:)) ?? ""
     guard storeSiriBearer(bearer) else { return false }
-    defaults.set(String(cString: jsonPointer), forKey: "siri.executionContext.v1")
+    let encoded = String(cString: jsonPointer)
+    defaults.set(encoded, forKey: "siri.executionContext.v1")
+    if let data = encoded.data(using: .utf8),
+       let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+       let sessionId = payload["sessionId"] as? String,
+       !sessionId.isEmpty
+    {
+        var contexts = defaults.dictionary(forKey: "siri.executionContexts.v1") as? [String: String] ?? [:]
+        contexts[sessionId] = encoded
+        defaults.set(contexts, forKey: "siri.executionContexts.v1")
+    }
+    return true
+}
+
+@_cdecl("medousa_siri_store_preferences")
+public func medousa_siri_store_preferences(
+    _ jsonPointer: UnsafePointer<CChar>?
+) -> Bool {
+    guard let jsonPointer,
+          let defaults = UserDefaults(suiteName: "group.com.entasislabs.medousa-home")
+    else {
+        return false
+    }
+    defaults.set(String(cString: jsonPointer), forKey: "siri.preferences.v1")
+    return true
+}
+
+@_cdecl("medousa_siri_notify_completion")
+public func medousa_siri_notify_completion(_ bodyPointer: UnsafePointer<CChar>?) -> Bool {
+    guard let bodyPointer else { return false }
+    let content = UNMutableNotificationContent()
+    content.title = "Medousa — turn ready"
+    content.body = String(cString: bodyPointer)
+    content.sound = .default
+    UNUserNotificationCenter.current().add(
+        UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+    )
     return true
 }
 
