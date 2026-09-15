@@ -1,5 +1,4 @@
 import AppIntents
-import AVFoundation
 import Foundation
 import Security
 import SwiftUI
@@ -66,30 +65,6 @@ private enum SiriBackgroundOutcome {
     case needsInput
 }
 
-@MainActor
-private final class MedousaSiriSpeechPlayer {
-    static let shared = MedousaSiriSpeechPlayer()
-    private let synthesizer = AVSpeechSynthesizer()
-
-    func start(_ text: String) {
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
-        try? session.setActive(true)
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        synthesizer.speak(utterance)
-    }
-
-    var isSpeaking: Bool { synthesizer.isSpeaking }
-
-    func finish() {
-        try? AVAudioSession.sharedInstance().setActive(
-            false,
-            options: [.notifyOthersOnDeactivation]
-        )
-    }
-}
-
 private struct SiriPersonalTurnResponse: Decodable {
     let status: String
     let text: String?
@@ -131,7 +106,7 @@ private struct MedousaSiriResultView: View {
 struct AskMedousaIntent: AppIntent {
     private static let daemonReadyWaitSeconds: TimeInterval = 8
     private static let resultWaitSeconds: TimeInterval = 20
-    private static let longRunningResultWaitSeconds: TimeInterval = 120
+    private static let siriReplyWaitSeconds: TimeInterval = 18
     static let title: LocalizedStringResource = "Ask Medousa"
     static let description = IntentDescription(
         "Ask the currently selected Medousa workshop without opening the app."
@@ -185,13 +160,11 @@ struct AskMedousaIntent: AppIntent {
             }
             switch outcome {
             case .answer(let answer):
-                if await shouldSpeak(preferences.speechMode) {
-                    await speakAnswer(
-                        String(answer.prefix(max(80, preferences.maxSpokenCharacters)))
-                    )
-                }
+                let spokenAnswer = String(
+                    answer.prefix(max(80, preferences.maxSpokenCharacters))
+                )
                 return .result(
-                    dialog: IntentDialog(full: "\(answer)", supporting: "\(answer)"),
+                    dialog: IntentDialog(full: "\(spokenAnswer)", supporting: "\(spokenAnswer)"),
                     view: MedousaSiriResultView(answer: answer, isContinuing: false)
                 )
             case .continuing:
@@ -228,38 +201,6 @@ struct AskMedousaIntent: AppIntent {
                 dialog: IntentDialog(full: "\(unavailable)", supporting: "\(recovery)"),
                 view: MedousaSiriResultView(answer: unavailable, isContinuing: false)
             )
-        }
-    }
-
-    private func speakAnswer(_ answer: String) async {
-        let backgroundTask = await MainActor.run {
-            UIApplication.shared.beginBackgroundTask(
-                withName: "Medousa Siri speech",
-                expirationHandler: nil
-            )
-        }
-        await MedousaSiriSpeechPlayer.shared.start(answer)
-        let deadline = Date().addingTimeInterval(20)
-        while !Task.isCancelled && Date() < deadline {
-            let speaking = await MedousaSiriSpeechPlayer.shared.isSpeaking
-            if !speaking { break }
-            try? await Task.sleep(for: .milliseconds(100))
-        }
-        await MedousaSiriSpeechPlayer.shared.finish()
-        await MainActor.run {
-            if backgroundTask != .invalid {
-                UIApplication.shared.endBackgroundTask(backgroundTask)
-            }
-        }
-    }
-
-    private func shouldSpeak(_ mode: String) async -> Bool {
-        if mode == "always" { return true }
-        if mode == "never" { return false }
-        return await MainActor.run {
-            AVAudioSession.sharedInstance().currentRoute.outputs.contains {
-                $0.portType == .builtInSpeaker || $0.portType == .builtInReceiver
-            }
         }
     }
 
@@ -478,7 +419,7 @@ extension AskMedousaIntent: LongRunningIntent {
         preferences: SiriPreferences
     ) async throws -> SiriBackgroundOutcome {
         let taskProgress = progress
-        taskProgress.totalUnitCount = Int64(Self.longRunningResultWaitSeconds)
+        taskProgress.totalUnitCount = Int64(Self.siriReplyWaitSeconds)
         taskProgress.completedUnitCount = 0
         taskProgress.localizedDescription = "Working in Medousa"
         taskProgress.localizedAdditionalDescription = "Starting your request"
@@ -502,10 +443,17 @@ extension AskMedousaIntent: LongRunningIntent {
                 prompt: prompt,
                 defaults: defaults,
                 preferences: preferences,
-                resultWaitSeconds: Self.longRunningResultWaitSeconds
+                resultWaitSeconds: Self.siriReplyWaitSeconds
             )
             taskProgress.completedUnitCount = taskProgress.totalUnitCount
-            taskProgress.localizedAdditionalDescription = "Request complete"
+            switch outcome {
+            case .answer:
+                taskProgress.localizedAdditionalDescription = "Request complete"
+            case .continuing:
+                taskProgress.localizedAdditionalDescription = "Continuing in Medousa"
+            case .needsInput:
+                taskProgress.localizedAdditionalDescription = "Open Medousa to continue"
+            }
             return outcome
         }
     }
