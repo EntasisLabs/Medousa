@@ -87,6 +87,50 @@ public func medousa_live_activity_push_token() -> UnsafeMutablePointer<CChar>? {
     return nil
 }
 
+@_cdecl("medousa_live_voice_start")
+public func medousa_live_voice_start(
+    _ jsonPointer: UnsafePointer<CChar>?
+) -> UnsafeMutablePointer<CChar>? {
+    guard let jsonPointer else { return nil }
+    if #available(iOS 17.0, *) {
+        let json = String(cString: jsonPointer)
+        return strdup(runOnMainActor {
+            MedousaLiveVoiceSessionManager.shared.start(json: json)
+        })
+    }
+    return strdup("{\"available\":false,\"active\":false,\"muted\":false,\"phase\":\"failed\",\"error\":\"iOS 17+ required\"}")
+}
+
+@_cdecl("medousa_live_voice_set_muted")
+public func medousa_live_voice_set_muted(_ muted: Bool) -> UnsafeMutablePointer<CChar>? {
+    if #available(iOS 17.0, *) {
+        return strdup(runOnMainActor {
+            MedousaLiveVoiceSessionManager.shared.setMuted(muted)
+        })
+    }
+    return nil
+}
+
+@_cdecl("medousa_live_voice_stop")
+public func medousa_live_voice_stop() -> UnsafeMutablePointer<CChar>? {
+    if #available(iOS 17.0, *) {
+        return strdup(runOnMainActor {
+            MedousaLiveVoiceSessionManager.shared.stop()
+        })
+    }
+    return nil
+}
+
+@_cdecl("medousa_live_voice_status")
+public func medousa_live_voice_status() -> UnsafeMutablePointer<CChar>? {
+    if #available(iOS 17.0, *) {
+        return strdup(runOnMainActor {
+            MedousaLiveVoiceSessionManager.shared.status()
+        })
+    }
+    return strdup("{\"available\":false,\"active\":false,\"muted\":false,\"phase\":\"failed\",\"error\":\"iOS 17+ required\"}")
+}
+
 private struct WidgetSyncResult: Encodable {
     let ok: Bool
     let error: String?

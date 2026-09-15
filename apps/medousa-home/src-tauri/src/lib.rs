@@ -40,6 +40,8 @@ mod ios_push_setup;
 mod lan_share;
 #[cfg(target_os = "ios")]
 mod live_activity;
+#[cfg(target_os = "ios")]
+mod live_voice;
 mod mcp_gateway;
 mod medousa_paths;
 mod mesh_envelope;
@@ -980,6 +982,14 @@ fn run_home() {
             live_activity::live_activity_push_token,
             #[cfg(target_os = "ios")]
             live_activity::live_activity_sync,
+            #[cfg(target_os = "ios")]
+            live_voice::live_voice_start,
+            #[cfg(target_os = "ios")]
+            live_voice::live_voice_set_muted,
+            #[cfg(target_os = "ios")]
+            live_voice::live_voice_stop,
+            #[cfg(target_os = "ios")]
+            live_voice::live_voice_status,
             #[cfg(target_os = "ios")]
             home_widget::home_widget_sync,
             medousa_paths::medousa_config_paths,

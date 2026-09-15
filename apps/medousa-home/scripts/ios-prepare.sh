@@ -209,6 +209,7 @@ if "UIBackgroundModes" not in text:
                 version_anchor
                 + "        NSSupportsLiveActivities: true\n"
                 + "        UIBackgroundModes:\n"
+                + "          - audio\n"
                 + "          - remote-notification\n",
                 1,
             )
@@ -223,15 +224,24 @@ if "UIBackgroundModes" not in text:
                 + f'        CFBundleVersion: "{app_version}"\n'
                 + "        NSSupportsLiveActivities: true\n"
                 + "        UIBackgroundModes:\n"
+                + "          - audio\n"
                 + "          - remote-notification\n",
                 1,
             )
     else:
         text = text.replace(
             "        NSSupportsLiveActivities: true\n",
-            "        NSSupportsLiveActivities: true\n        UIBackgroundModes:\n          - remote-notification\n",
+            "        NSSupportsLiveActivities: true\n        UIBackgroundModes:\n          - audio\n          - remote-notification\n",
             1,
         )
+
+# Medousa Live: an explicitly started two-way voice session owns background audio.
+if "UIBackgroundModes:" in text and "          - audio\n" not in text:
+    text = text.replace(
+        "        UIBackgroundModes:\n",
+        "        UIBackgroundModes:\n          - audio\n",
+        1,
+    )
 
 # Widget Extension target for Lock Screen / Dynamic Island Live Activity UI.
 if "MedousaWorkWidget:" not in text:
