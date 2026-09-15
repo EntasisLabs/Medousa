@@ -42,6 +42,7 @@ entry in your journal. They use the same selected or pinned chat and background
 execution rules as **Ask Medousa**.
 
 If a Personal response takes longer than Siri's result window, Medousa reports
-that it is continuing and posts a local completion notification when iOS allows
-the background process to finish. Shared workshop hosts can continue work
-independently of the phone's process lifetime.
+that it is continuing and records a durable completion watch. Medousa posts a
+local completion notification when the background process finishes, or
+reconciles the watch on the next OS wake if iOS terminated the process. Shared
+workshop hosts can continue work independently of the phone's process lifetime.

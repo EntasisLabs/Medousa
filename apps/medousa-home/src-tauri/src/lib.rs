@@ -285,6 +285,7 @@ fn run_home() {
         {
             let keychain_probe_ran = run_ios_phase0_keychain_probe_if_requested()?;
             siri_intents::init_app_handle(app.handle().clone());
+            siri_intents::reconcile_pending_completions(app.handle().clone());
             human_browser_ios::init_app_handle(app.handle().clone());
             ios_push_setup::install_ios_push_background_handler();
             embedded_daemon::install_lifecycle(app.handle());

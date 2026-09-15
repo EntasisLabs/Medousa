@@ -34,5 +34,7 @@ describe("Siri preferences", () => {
       defaultWorkshopId: "personal",
       defaultSessionId: "session-1",
     });
+    await writeSiriPreferences({ defaultWorkshopId: null, defaultSessionId: null });
+    expect(readSiriPreferences().defaultSessionId).toBeNull();
   });
 });

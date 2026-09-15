@@ -7,10 +7,78 @@ use tauri::{AppHandle, Manager};
 
 #[cfg(target_os = "ios")]
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
+#[cfg(target_os = "ios")]
+static SIRI_COMPLETIONS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[cfg(target_os = "ios")]
 pub fn init_app_handle(app: AppHandle) {
     let _ = APP_HANDLE.set(app);
+}
+
+#[cfg(target_os = "ios")]
+fn pending_completion_path() -> std::path::PathBuf {
+    crate::paths::medousa_data_dir().join("siri-pending-completions.json")
+}
+
+#[cfg(target_os = "ios")]
+fn pending_completions() -> Vec<String> {
+    let _guard = SIRI_COMPLETIONS_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    std::fs::read_to_string(pending_completion_path())
+        .ok()
+        .and_then(|encoded| serde_json::from_str(&encoded).ok())
+        .unwrap_or_default()
+}
+
+#[cfg(target_os = "ios")]
+fn update_pending_completion(turn_id: &str, add: bool) {
+    let _guard = SIRI_COMPLETIONS_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let path = pending_completion_path();
+    let mut ids: Vec<String> = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|encoded| serde_json::from_str(&encoded).ok())
+        .unwrap_or_default();
+    ids.retain(|id| id != turn_id);
+    if add {
+        ids.push(turn_id.to_string());
+    }
+    if let Ok(encoded) = serde_json::to_vec(&ids) {
+        let _ = std::fs::write(path, encoded);
+    }
+}
+
+#[cfg(target_os = "ios")]
+async fn reconcile_completion(app: AppHandle, turn_id: String) {
+    use medousa_types::TurnStreamEventV2;
+    let embedded = app.state::<crate::embedded_daemon::EmbeddedDaemonState>();
+    let Ok(Some(client)) = embedded.client_if_active().await else {
+        return;
+    };
+    let Ok(mut stream) = client.subscribe_turn(&turn_id, 0).await else {
+        return;
+    };
+    while let Ok(Some(envelope)) = stream.recv().await {
+        let text = match envelope.event {
+            TurnStreamEventV2::Final { text, .. }
+            | TurnStreamEventV2::NeedsInput { text, .. }
+            | TurnStreamEventV2::Checkpoint { text, .. }
+            | TurnStreamEventV2::WorkerSynthesis { text, .. } => Some(text),
+            TurnStreamEventV2::Error { operator_message, .. } => Some(operator_message),
+            _ => None,
+        };
+        if let Some(text) = text {
+            ios::notify_completion(&text);
+            update_pending_completion(&turn_id, false);
+            return;
+        }
+    }
+}
+
+#[cfg(target_os = "ios")]
+pub fn reconcile_pending_completions(app: AppHandle) {
+    for turn_id in pending_completions() {
+        let app = app.clone();
+        tauri::async_runtime::spawn(reconcile_completion(app, turn_id));
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -158,6 +226,8 @@ async fn execute_personal_turn(
         Ok(Ok(text)) => Ok(serde_json::json!({ "status": "answer", "text": text })),
         Ok(Err(error)) => Err(error),
         Err(_) => {
+            let turn_id = accepted.turn_id.clone();
+            update_pending_completion(&turn_id, true);
             tauri::async_runtime::spawn(async move {
                 while let Ok(Some(envelope)) = stream.recv().await {
                     match envelope.event {
@@ -166,10 +236,12 @@ async fn execute_personal_turn(
                         | TurnStreamEventV2::Checkpoint { text, .. }
                         | TurnStreamEventV2::WorkerSynthesis { text, .. } => {
                             ios::notify_completion(&text);
+                            update_pending_completion(&turn_id, false);
                             break;
                         }
                         TurnStreamEventV2::Error { operator_message, .. } => {
                             ios::notify_completion(&operator_message);
+                            update_pending_completion(&turn_id, false);
                             break;
                         }
                         _ => {}

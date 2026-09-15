@@ -79,9 +79,20 @@
         <span class="prefs-tile-title">Default chat</span>
         <span class="prefs-tile-meta">{preferences.defaultSessionId ? "Pinned to this chat" : "Follow the selected chat"}</span>
       </span>
-      <button type="button" class="workshop-rail-btn" disabled={busy || !chat.sessionId || !chat.workshopScopeId} onclick={useCurrentChat}>
-        Use current
-      </button>
+      {#if preferences.defaultSessionId}
+        <button
+          type="button"
+          class="workshop-rail-btn"
+          disabled={busy}
+          onclick={() => void patch({ defaultWorkshopId: null, defaultSessionId: null })}
+        >
+          Follow selected
+        </button>
+      {:else}
+        <button type="button" class="workshop-rail-btn" disabled={busy || !chat.sessionId || !chat.workshopScopeId} onclick={useCurrentChat}>
+          Use current
+        </button>
+      {/if}
     </div>
 
     <label class="prefs-tile">
