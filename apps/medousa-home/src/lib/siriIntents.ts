@@ -3,6 +3,7 @@ import { createTurnTicket } from "$lib/daemon";
 import { chat } from "$lib/stores/chat.svelte";
 import { workshops } from "$lib/stores/workshops.svelte";
 import { classifySiriAskFailure } from "$lib/siriIntentErrors";
+import { prepareInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
 
 type PendingSiriAsk = {
   requestId: string;
@@ -57,11 +58,20 @@ export async function startPendingSiriAsk(requestId: string): Promise<void> {
 
   let accepted;
   try {
+    const options = await prepareInteractiveTurnOptions(chat);
     accepted = await createTurnTicket({
       sessionId: chat.sessionId,
       prompt: pending.prompt,
       mode: "interactive",
+      provider: options.provider,
+      model: options.model,
+      responseDepthMode: options.responseDepthMode,
+      reasoningEffort: options.reasoningEffort,
+      stageRouting: options.stageRouting,
       channelSurface: "home-ios-siri",
+      browserDriverId: options.browserDriverId,
+      selectedWorlds: options.selectedWorlds,
+      identityUserId: options.identityUserId,
     });
   } catch (error) {
     chat.prefillDraft(pending.prompt);

@@ -18,6 +18,7 @@ const SIRI_RECEIPT_POLL_MS = 200;
 let workHandler: OpenWorkHandler | null = null;
 let vaultHandler: OpenVaultNoteHandler | null = null;
 let askHandler: AskHandler | null = null;
+const dispatchedAskIds = new Set<string>();
 /** Temporary override (e.g. onboarding wizard). */
 let pairHandler: OpenPairHandler | null = null;
 /** App-wide handler for medousa://pair/… after onboarding. */
@@ -38,6 +39,12 @@ function dispatchPairLink(url: string) {
   handler?.(url);
 }
 
+async function dispatchAskLink(requestId: string) {
+  if (!askHandler || dispatchedAskIds.has(requestId)) return;
+  dispatchedAskIds.add(requestId);
+  await askHandler(requestId);
+}
+
 function handleUrls(urls: string[]) {
   for (const url of urls) {
     if (parsePairQrUrl(url)) {
@@ -50,7 +57,7 @@ function handleUrls(urls: string[]) {
       return;
     }
     if (link?.kind === "ask") {
-      void askHandler?.(link.requestId);
+      void dispatchAskLink(link.requestId);
       return;
     }
     if (link?.kind === "vault") {
@@ -81,6 +88,7 @@ export function setWorkDeepLinkHandler(handler: OpenWorkHandler | null) {
 
 export function setAskDeepLinkHandler(handler: AskHandler | null) {
   askHandler = handler;
+  if (!handler) dispatchedAskIds.clear();
 }
 
 export function initMobileNative(
@@ -101,6 +109,34 @@ export function initMobileNative(
 
   const cleanups: Array<() => void> = [];
   let active = true;
+  let askRecoveryInFlight = false;
+
+  const recoverRecentSiriAsk = async () => {
+    if (!active || !options?.onAsk || askRecoveryInFlight) return;
+    askRecoveryInFlight = true;
+    try {
+      const deadline = Date.now() + SIRI_RECEIPT_WAIT_MS;
+      while (active && Date.now() < deadline) {
+        try {
+          const requestId = await invoke<string | null>(
+            "siri_recent_pending_ask_id",
+          );
+          if (requestId) {
+            await dispatchAskLink(requestId);
+            break;
+          }
+        } catch {
+          // Bridge unavailable; retrying cannot make it available.
+          break;
+        }
+        await new Promise((resolve) =>
+          setTimeout(resolve, SIRI_RECEIPT_POLL_MS),
+        );
+      }
+    } finally {
+      askRecoveryInFlight = false;
+    }
+  };
 
   const webLink = consumeWebWorkParam();
   if (webLink) void dispatchWorkLink(webLink);
@@ -133,27 +169,20 @@ export function initMobileNative(
       // canonical deep-link path; normal native consumption still validates
       // and deletes the full payload.
       if (options?.onAsk && !handledInitialAsk) {
-        void (async () => {
-          const deadline = Date.now() + SIRI_RECEIPT_WAIT_MS;
-          while (active && Date.now() < deadline) {
-            try {
-              const requestId = await invoke<string | null>(
-                "siri_recent_pending_ask_id",
-              );
-              if (requestId) {
-                await options.onAsk?.(requestId);
-                break;
-              }
-            } catch {
-              // Bridge unavailable; retrying cannot make it available.
-              break;
-            }
-            await new Promise((resolve) =>
-              setTimeout(resolve, SIRI_RECEIPT_POLL_MS),
-            );
-          }
-        })();
+        void recoverRecentSiriAsk();
       }
+
+      const recoverWhenVisible = () => {
+        if (document.visibilityState === "visible") {
+          void recoverRecentSiriAsk();
+        }
+      };
+      document.addEventListener("visibilitychange", recoverWhenVisible);
+      window.addEventListener("focus", recoverWhenVisible);
+      cleanups.push(() => {
+        document.removeEventListener("visibilitychange", recoverWhenVisible);
+        window.removeEventListener("focus", recoverWhenVisible);
+      });
 
       try {
         const { initNotificationRouting } = await import("$lib/notifications");

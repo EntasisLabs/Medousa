@@ -211,9 +211,10 @@ archive produced by the normal build script.
   passed the verifier, installed on an iPhone 15 running iOS 27.0 (24A437), and
   exposed the probe to Siri; “Check Medousa integration” returned the expected
   “Medousa actions are ready” dialog.
-- Still required for S0 exit: record foreground/background/suspended invocation
-  results alongside the now-passing terminated flow. iOS 27-only guards also
-  remain pending an installed iOS 27 SDK; the current probe is guarded at iOS 16.
+- Foreground, background, suspended/locked, and terminated invocation paths were
+  exercised on the physical iPhone. The locked path correctly requested an
+  unlock before handing the receipt to Medousa. iOS 27-only guards still remain
+  pending an installed iOS 27 SDK; the current probe is guarded at iOS 16.
 
 ### S1 — Ask Medousa MVP
 
@@ -264,8 +265,14 @@ and Shortcuts without the webview already running.
   receipt, waits for workshop authority initialization, and then uses the normal
   one-time validated consumption path. A dictated request was admitted and sent
   from a terminated app.
+- Physical-device testing also proved the suspended/locked resume path. Receipt
+  recovery reruns on visibility and focus transitions, deduplicates simultaneous
+  URL and fallback delivery, and admits the request into the currently selected
+  chat using that chat's provider, model, reasoning, routing, identity, browser,
+  and world options. This preserves conversational continuity instead of creating
+  a Siri-only or always-new session.
 - Remaining S1 work is direct background execution, bounded Siri result dialogue,
-  full lifecycle-matrix evidence, explicit error states, and cancellation behavior.
+  explicit error states, and cancellation behavior.
 
 ### S2 — search, entities, and deep links
 
