@@ -1,5 +1,27 @@
 import AppIntents
 import Foundation
+import SwiftUI
+
+@available(iOS 18.0, *)
+private struct MedousaSiriResultView: View {
+    let answer: String
+    let isContinuing: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: isContinuing ? "ellipsis.bubble.fill" : "waveform.circle.fill")
+                    .foregroundStyle(.purple)
+                Text(isContinuing ? "Working in Medousa" : "Medousa")
+                    .font(.headline)
+            }
+            Text(answer)
+                .font(.body)
+                .lineLimit(8)
+        }
+        .padding()
+    }
+}
 
 /// S1 foreground gateway. Prompt contents remain in the shared App Group and
 /// only a short-lived, one-time receipt is exposed to the trusted shell.
@@ -30,7 +52,7 @@ struct AskMedousaIntent: AppIntent, ForegroundContinuableIntent {
         Summary("Ask Medousa \(\.$prompt) in \(\.$workshop)")
     }
 
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
         let requestId = UUID().uuidString.lowercased()
         let workshopId = workshop?.id
             ?? WorkshopEntitySnapshot.load().first(where: \.isActive)?.id
@@ -52,9 +74,16 @@ struct AskMedousaIntent: AppIntent, ForegroundContinuableIntent {
             "Opening Medousa to start your request."
         )
         if let answer = await waitForResult(requestId: requestId, defaults: defaults) {
-            return .result(dialog: "\(answer)")
+            return .result(
+                dialog: IntentDialog(full: "\(answer)", supporting: "Medousa replied."),
+                view: MedousaSiriResultView(answer: answer, isContinuing: false)
+            )
         }
-        return .result(dialog: "Your request is continuing in Medousa.")
+        let continuing = "Your request is continuing in Medousa."
+        return .result(
+            dialog: IntentDialog(full: "\(continuing)", supporting: "You can return to Medousa at any time."),
+            view: MedousaSiriResultView(answer: continuing, isContinuing: true)
+        )
     }
 
     private func waitForResult(
