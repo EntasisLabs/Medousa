@@ -68,8 +68,10 @@ ActivityKit bridge is reused for background-visible state.
 1. **Native lifecycle foundation** — audio category, permission, start/mute/stop
    status, Rust/TypeScript bridge, background-audio entitlement, and ActivityKit
    voice state. *(landed in this slice)*
-2. **Live transport** — daemon-owned SDP exchange, native WebRTC client,
-   interruption/barge-in, route changes, and reconnect. *(daemon exchange landed)*
+2. **Live transport** — daemon-owned SDP exchange, WebRTC audio/data-channel
+   vertical slice, interruption/barge-in, route changes, and reconnect. *(foreground
+   webview transport landed; promote to a native engine if device qualification
+   shows iOS suspends the peer in background)*
 3. **Daemon sideband** — bind one Live session to one Medousa session; delegate
    tools, surface approvals, and project turn progress into conversational state.
 4. **Production controls** — app voice surface, Dynamic Island and Lock Screen

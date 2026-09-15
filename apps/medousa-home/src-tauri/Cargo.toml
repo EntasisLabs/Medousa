@@ -162,3 +162,6 @@ debug = false
 [patch.crates-io]
 # Upstream Package.swift declares iOS 13 but uses UNNotificationPresentationOptions.banner/.list (iOS 14+).
 tauri-plugin-mobile-push = { path = "../../../vendor/tauri-plugin-mobile-push" }
+# Xcode 27: do not leak the iOS clang target into SwiftPM's host macro tools.
+# Drop this patch after swift-rs ships the post-1.0.8 host-tool fix.
+swift-rs = { path = "../../../vendor/swift-rs" }

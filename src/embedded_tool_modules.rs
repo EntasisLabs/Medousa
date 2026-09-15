@@ -75,7 +75,6 @@ pub mod inference_profiles;
 pub mod inference_router;
 pub mod integration_connection;
 pub mod layout_tools;
-pub mod live_handlers;
 pub mod line_grep;
 pub mod liquid_interactions;
 pub mod liquid_state;
