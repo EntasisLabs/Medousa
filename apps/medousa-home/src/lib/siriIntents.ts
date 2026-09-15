@@ -11,7 +11,18 @@ type PendingSiriAsk = {
   createdAt: number;
 };
 
+const WORKSHOP_READY_TIMEOUT_MS = 15_000;
+const WORKSHOP_READY_POLL_MS = 100;
+
+async function waitForWorkshopScope(): Promise<void> {
+  const deadline = Date.now() + WORKSHOP_READY_TIMEOUT_MS;
+  while (!chat.workshopScopeId && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, WORKSHOP_READY_POLL_MS));
+  }
+}
+
 export async function startPendingSiriAsk(requestId: string): Promise<void> {
+  await waitForWorkshopScope();
   if (!chat.workshopScopeId) {
     throw new Error(classifySiriAskFailure("Workshop is switching").message);
   }

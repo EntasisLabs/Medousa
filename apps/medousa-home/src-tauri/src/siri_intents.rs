@@ -57,6 +57,17 @@ pub fn siri_consume_pending_ask(request_id: String) -> Result<PendingSiriAsk, St
     Err("Siri requests are only available on iOS".into())
 }
 
+#[tauri::command]
+pub fn siri_recent_pending_ask_id() -> Result<Option<String>, String> {
+    #[cfg(target_os = "ios")]
+    {
+        return ios::recent_pending_id();
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    Ok(None)
+}
+
 #[cfg(target_os = "ios")]
 mod ios {
     use super::PendingSiriAsk;
@@ -66,6 +77,7 @@ mod ios {
     #[cfg(live_activity_native)]
     unsafe extern "C" {
         fn medousa_siri_consume_pending_ask(request_id: *const c_char) -> *mut c_char;
+        fn medousa_siri_recent_pending_ask_id() -> *mut c_char;
         fn medousa_siri_store_workshops(json: *const c_char) -> bool;
         fn medousa_live_activity_free_string(ptr: *mut c_char);
     }
@@ -101,6 +113,28 @@ mod ios {
 
         #[cfg(not(live_activity_native))]
         Err("Siri native bridge is unavailable".into())
+    }
+
+    pub fn recent_pending_id() -> Result<Option<String>, String> {
+        #[cfg(live_activity_native)]
+        {
+            let raw = unsafe { medousa_siri_recent_pending_ask_id() };
+            if raw.is_null() {
+                return Ok(None);
+            }
+            let request_id = unsafe {
+                let request_id = CStr::from_ptr(raw).to_string_lossy().into_owned();
+                medousa_live_activity_free_string(raw);
+                request_id
+            };
+            if request_id.is_empty() || request_id.len() > 64 {
+                return Err("Invalid Siri request receipt".into());
+            }
+            return Ok(Some(request_id));
+        }
+
+        #[cfg(not(live_activity_native))]
+        Ok(None)
     }
 
     pub fn store_workshops(summaries: &[super::SiriWorkshopSummary]) -> Result<(), String> {

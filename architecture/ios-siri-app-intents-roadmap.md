@@ -207,10 +207,13 @@ archive produced by the normal build script.
   `com.entasislabs.medousa-home`.
 - `npm run ios:verify-app-intents -- /path/to/Medousa.app` provides a repeatable
   metadata assertion for simulator bundles and signed device archives.
-- Still required for S0 exit: run the verifier against a signed device archive,
-  confirm Shortcuts presentation, and record foreground/background/suspended/
-  terminated invocation results. iOS 27-only guards also remain pending an
-  installed iOS 27 SDK; the current probe is guarded at iOS 16.
+- A development-signed arm64 archive built through the normal Tauri command,
+  passed the verifier, installed on an iPhone 15 running iOS 27.0 (24A437), and
+  exposed the probe to Siri; “Check Medousa integration” returned the expected
+  “Medousa actions are ready” dialog.
+- Still required for S0 exit: record foreground/background/suspended invocation
+  results alongside the now-passing terminated flow. iOS 27-only guards also
+  remain pending an installed iOS 27 SDK; the current probe is guarded at iOS 16.
 
 ### S1 — Ask Medousa MVP
 
@@ -255,9 +258,14 @@ and Shortcuts without the webview already running.
   intermediate Xcode archives as well as Tauri's final bundle.
 - The normal simulator build and metadata verifier pass with both intents; the
   final iOS executable exports the Swift receipt-consumer C ABI used by Rust.
-  Remaining S1 work is direct background execution, an optional workshop
-  picker, bounded Siri result dialogue, explicit error states, and cancellation
-  behavior.
+- Physical-device testing on iOS 27 proved the terminated cold-start path. iOS
+  can launch the app before the receipt is written and can omit the OpenURLIntent
+  URL from the webview; Medousa now polls briefly for only the opaque recent
+  receipt, waits for workshop authority initialization, and then uses the normal
+  one-time validated consumption path. A dictated request was admitted and sent
+  from a terminated app.
+- Remaining S1 work is direct background execution, bounded Siri result dialogue,
+  full lifecycle-matrix evidence, explicit error states, and cancellation behavior.
 
 ### S2 — search, entities, and deep links
 

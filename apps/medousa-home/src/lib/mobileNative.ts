@@ -5,11 +5,15 @@ import {
 } from "$lib/deepLinks";
 import { parsePairQrUrl } from "$lib/utils/pairingUrl";
 import { isTauri } from "$lib/window";
+import { invoke } from "@tauri-apps/api/core";
 
 export type OpenWorkHandler = (cardId: string) => void | Promise<void>;
 export type OpenVaultNoteHandler = (notePath: string) => void | Promise<void>;
 export type OpenPairHandler = (pairUrl: string) => void;
 export type AskHandler = (requestId: string) => void | Promise<void>;
+
+const SIRI_RECEIPT_WAIT_MS = 15_000;
+const SIRI_RECEIPT_POLL_MS = 200;
 
 let workHandler: OpenWorkHandler | null = null;
 let vaultHandler: OpenVaultNoteHandler | null = null;
@@ -96,18 +100,25 @@ export function initMobileNative(
   setAskDeepLinkHandler(options?.onAsk ?? null);
 
   const cleanups: Array<() => void> = [];
+  let active = true;
 
   const webLink = consumeWebWorkParam();
   if (webLink) void dispatchWorkLink(webLink);
 
   if (isTauri()) {
     void (async () => {
+      let handledInitialAsk = false;
       try {
         const { getCurrentDeepLinks, onDeepLinkOpen } = await import(
           "$lib/deepLinkTauri"
         );
         const initial = await getCurrentDeepLinks();
-        if (initial?.length) handleUrls(initial);
+        if (initial?.length) {
+          handledInitialAsk = initial.some(
+            (url) => parseDeepLink(url)?.kind === "ask",
+          );
+          handleUrls(initial);
+        }
 
         const unlisten = await onDeepLinkOpen((urls: string[]) =>
           handleUrls(urls),
@@ -115,6 +126,33 @@ export function initMobileNative(
         cleanups.push(unlisten);
       } catch {
         // Plugin unavailable in Vite-only dev.
+      }
+
+      // iOS can launch for an OpenURLIntent without retaining its URL through
+      // webview startup. Recover only a just-created receipt after checking the
+      // canonical deep-link path; normal native consumption still validates
+      // and deletes the full payload.
+      if (options?.onAsk && !handledInitialAsk) {
+        void (async () => {
+          const deadline = Date.now() + SIRI_RECEIPT_WAIT_MS;
+          while (active && Date.now() < deadline) {
+            try {
+              const requestId = await invoke<string | null>(
+                "siri_recent_pending_ask_id",
+              );
+              if (requestId) {
+                await options.onAsk?.(requestId);
+                break;
+              }
+            } catch {
+              // Bridge unavailable; retrying cannot make it available.
+              break;
+            }
+            await new Promise((resolve) =>
+              setTimeout(resolve, SIRI_RECEIPT_POLL_MS),
+            );
+          }
+        })();
       }
 
       try {
@@ -140,6 +178,7 @@ export function initMobileNative(
   }
 
   return () => {
+    active = false;
     setWorkDeepLinkHandler(null);
     setVaultDeepLinkHandler(null);
     setPairDeepLinkHandler(null);

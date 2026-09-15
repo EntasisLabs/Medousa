@@ -108,6 +108,27 @@ public func medousa_siri_consume_pending_ask(
     return strdup(encoded)
 }
 
+/// Returns only the receipt identifier for a just-created Siri request. This
+/// covers iOS cold starts where OpenURLIntent launches the app but the URL is
+/// not retained for the webview. The normal consume path remains authoritative.
+@_cdecl("medousa_siri_recent_pending_ask_id")
+public func medousa_siri_recent_pending_ask_id() -> UnsafeMutablePointer<CChar>? {
+    guard let defaults = UserDefaults(suiteName: "group.com.entasislabs.medousa-home"),
+          let encoded = defaults.string(forKey: "siri.pendingAsk.v1"),
+          let data = encoded.data(using: .utf8),
+          let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let requestId = payload["requestId"] as? String,
+          !requestId.isEmpty,
+          requestId.count <= 64,
+          let createdAt = payload["createdAt"] as? TimeInterval,
+          createdAt <= Date().timeIntervalSince1970 + 60,
+          Date().timeIntervalSince1970 - createdAt < 120
+    else {
+        return nil
+    }
+    return strdup(requestId)
+}
+
 @_cdecl("medousa_siri_store_workshops")
 public func medousa_siri_store_workshops(
     _ jsonPointer: UnsafePointer<CChar>?
