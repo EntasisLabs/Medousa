@@ -106,7 +106,7 @@ private struct MedousaSiriResultView: View {
 struct AskMedousaIntent: AppIntent {
     private static let daemonReadyWaitSeconds: TimeInterval = 8
     private static let resultWaitSeconds: TimeInterval = 20
-    private static let siriReplyWaitSeconds: TimeInterval = 18
+    private static let longRunningResultWaitSeconds: TimeInterval = 120
     static let title: LocalizedStringResource = "Ask Medousa"
     static let description = IntentDescription(
         "Ask the currently selected Medousa workshop without opening the app."
@@ -419,7 +419,7 @@ extension AskMedousaIntent: LongRunningIntent {
         preferences: SiriPreferences
     ) async throws -> SiriBackgroundOutcome {
         let taskProgress = progress
-        taskProgress.totalUnitCount = Int64(Self.siriReplyWaitSeconds)
+        taskProgress.totalUnitCount = Int64(Self.longRunningResultWaitSeconds)
         taskProgress.completedUnitCount = 0
         taskProgress.localizedDescription = "Working in Medousa"
         taskProgress.localizedAdditionalDescription = "Starting your request"
@@ -443,7 +443,7 @@ extension AskMedousaIntent: LongRunningIntent {
                 prompt: prompt,
                 defaults: defaults,
                 preferences: preferences,
-                resultWaitSeconds: Self.siriReplyWaitSeconds
+                resultWaitSeconds: Self.longRunningResultWaitSeconds
             )
             taskProgress.completedUnitCount = taskProgress.totalUnitCount
             switch outcome {
