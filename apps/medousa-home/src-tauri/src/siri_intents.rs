@@ -1,5 +1,18 @@
 use serde::{Deserialize, Serialize};
 
+#[cfg(target_os = "ios")]
+use std::sync::OnceLock;
+#[cfg(target_os = "ios")]
+use tauri::{AppHandle, Manager};
+
+#[cfg(target_os = "ios")]
+static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
+
+#[cfg(target_os = "ios")]
+pub fn init_app_handle(app: AppHandle) {
+    let _ = APP_HANDLE.set(app);
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingSiriAsk {
@@ -7,6 +20,168 @@ pub struct PendingSiriAsk {
     pub prompt: String,
     pub workshop_id: String,
     pub created_at: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SiriExecutionContextInput {
+    pub session_id: String,
+    #[serde(default)]
+    pub provider: String,
+    #[serde(default)]
+    pub model: String,
+    #[serde(default = "default_response_depth")]
+    pub response_depth_mode: String,
+    #[serde(default)]
+    pub reasoning_effort: String,
+    #[serde(default)]
+    pub identity_user_id: Option<String>,
+}
+
+fn default_response_depth() -> String {
+    "standard".to_string()
+}
+
+#[cfg(target_os = "ios")]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SiriExecutionContext {
+    version: u32,
+    workshop_id: String,
+    base_url: String,
+    session_id: String,
+    provider: String,
+    model: String,
+    response_depth_mode: String,
+    reasoning_effort: String,
+    identity_user_id: Option<String>,
+    updated_at: f64,
+}
+
+#[cfg(target_os = "ios")]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SiriPersonalTurnRequest {
+    prompt: String,
+    session_id: String,
+    provider: String,
+    model: String,
+    response_depth_mode: String,
+    reasoning_effort: String,
+    identity_user_id: Option<String>,
+}
+
+#[cfg(target_os = "ios")]
+async fn execute_personal_turn(
+    request: SiriPersonalTurnRequest,
+) -> Result<serde_json::Value, String> {
+    use medousa_types::TurnStreamEventV2;
+
+    let app = tokio::time::timeout(std::time::Duration::from_secs(8), async {
+        loop {
+            if let Some(app) = APP_HANDLE.get() {
+                return app;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .map_err(|_| "Medousa background runtime did not become ready".to_string())?;
+    app.state::<crate::embedded_daemon::EmbeddedDaemonState>()
+        .resume_for_background_execution()
+        .await?;
+    let accepted = crate::daemon::session::turn_create(
+        app.state(),
+        app.state(),
+        app.state(),
+        request.session_id,
+        request.prompt,
+        None,
+        None,
+        Some(false),
+        None,
+        Some("interactive".into()),
+        Some(request.provider),
+        Some(request.model),
+        Some(request.response_depth_mode),
+        Some(request.reasoning_effort),
+        None,
+        Some("home-ios-siri".into()),
+        None,
+        Some(Vec::new()),
+        Some(Vec::new()),
+        Some(Vec::new()),
+        None,
+        None,
+        request.identity_user_id,
+    )
+    .await?;
+    let embedded = app.state::<crate::embedded_daemon::EmbeddedDaemonState>();
+    let client = embedded
+        .client_if_active()
+        .await?
+        .ok_or_else(|| "Personal is no longer the selected workshop".to_string())?;
+    let mut stream = client
+        .subscribe_turn(&accepted.turn_id, 0)
+        .await
+        .map_err(|error| error.to_string())?;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(20), async move {
+        while let Some(envelope) = stream.recv().await.map_err(|error| error.to_string())? {
+            match envelope.event {
+                TurnStreamEventV2::Final { text, .. }
+                | TurnStreamEventV2::NeedsInput { text, .. }
+                | TurnStreamEventV2::Checkpoint { text, .. }
+                | TurnStreamEventV2::WorkerSynthesis { text, .. } => return Ok(text),
+                TurnStreamEventV2::Error {
+                    operator_message, ..
+                } => return Err(operator_message),
+                _ => {}
+            }
+        }
+        Err("Medousa's response stream ended early".to_string())
+    })
+    .await;
+    match result {
+        Ok(Ok(text)) => Ok(serde_json::json!({ "status": "answer", "text": text })),
+        Ok(Err(error)) => Err(error),
+        Err(_) => Ok(serde_json::json!({ "status": "continuing" })),
+    }
+}
+
+#[cfg(target_os = "ios")]
+#[unsafe(no_mangle)]
+pub extern "C" fn medousa_siri_execute_personal(
+    json: *const std::os::raw::c_char,
+) -> *mut std::os::raw::c_char {
+    if json.is_null() {
+        return std::ptr::null_mut();
+    }
+    let result = std::panic::catch_unwind(|| {
+        let encoded = unsafe { std::ffi::CStr::from_ptr(json) }
+            .to_str()
+            .map_err(|error| error.to_string())?;
+        let request: SiriPersonalTurnRequest =
+            serde_json::from_str(encoded).map_err(|error| error.to_string())?;
+        tauri::async_runtime::block_on(execute_personal_turn(request))
+    });
+    let payload = match result {
+        Ok(Ok(value)) => value,
+        Ok(Err(error)) => serde_json::json!({ "status": "error", "error": error }),
+        Err(_) => {
+            serde_json::json!({ "status": "error", "error": "Medousa background runtime failed" })
+        }
+    };
+    std::ffi::CString::new(payload.to_string())
+        .map(std::ffi::CString::into_raw)
+        .unwrap_or(std::ptr::null_mut())
+}
+
+#[cfg(target_os = "ios")]
+#[unsafe(no_mangle)]
+pub extern "C" fn medousa_siri_free_rust_string(value: *mut std::os::raw::c_char) {
+    if !value.is_null() {
+        drop(unsafe { std::ffi::CString::from_raw(value) });
+    }
 }
 
 #[cfg(target_os = "ios")]
@@ -35,6 +210,52 @@ pub fn siri_sync_workshop_snapshot() -> Result<(), String> {
             })
             .collect::<Vec<_>>();
         return ios::store_workshops(&summaries);
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    Ok(())
+}
+
+#[tauri::command]
+pub fn siri_sync_execution_context(context: SiriExecutionContextInput) -> Result<(), String> {
+    let session_id = context.session_id.trim();
+    if session_id.is_empty() || session_id.len() > 256 {
+        return Err("Invalid Siri session context".into());
+    }
+
+    #[cfg(target_os = "ios")]
+    {
+        let registry = crate::workshop_registry::ensure_migrated()?;
+        let workshop = crate::workshop_registry::active_workshop(&registry)
+            .ok_or_else(|| "No active workshop in registry".to_string())?;
+        let (base_url, bearer) = match crate::active_workshop::resolve()? {
+            crate::active_workshop::ActiveWorkshopTarget::EmbeddedPersonal => {
+                (crate::daemon::types::DEFAULT_DAEMON_URL.to_string(), None)
+            }
+            crate::active_workshop::ActiveWorkshopTarget::Transport { base_url, .. } => {
+                let transport = crate::active_workshop::transport_config()?;
+                (base_url, transport.session_token)
+            }
+        };
+        let snapshot = SiriExecutionContext {
+            version: 1,
+            workshop_id: workshop.id.clone(),
+            base_url,
+            session_id: session_id.to_string(),
+            provider: context.provider.trim().to_string(),
+            model: context.model.trim().to_string(),
+            response_depth_mode: context.response_depth_mode.trim().to_string(),
+            reasoning_effort: context.reasoning_effort.trim().to_string(),
+            identity_user_id: context
+                .identity_user_id
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
+            updated_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|error| error.to_string())?
+                .as_secs_f64(),
+        };
+        return ios::store_execution_context(&snapshot, bearer.as_deref());
     }
 
     #[cfg(not(target_os = "ios"))]
@@ -96,6 +317,8 @@ mod ios {
         fn medousa_siri_consume_pending_ask(request_id: *const c_char) -> *mut c_char;
         fn medousa_siri_recent_pending_ask_id() -> *mut c_char;
         fn medousa_siri_publish_ask_result(json: *const c_char) -> bool;
+        fn medousa_siri_store_execution_context(json: *const c_char, bearer: *const c_char)
+        -> bool;
         fn medousa_siri_store_workshops(json: *const c_char) -> bool;
         fn medousa_live_activity_free_string(ptr: *mut c_char);
     }
@@ -179,6 +402,27 @@ mod ios {
         Err("Siri native bridge is unavailable".into())
     }
 
+    pub fn store_execution_context(
+        context: &super::SiriExecutionContext,
+        bearer: Option<&str>,
+    ) -> Result<(), String> {
+        #[cfg(live_activity_native)]
+        {
+            let encoded = serde_json::to_string(context).map_err(|error| error.to_string())?;
+            let encoded = CString::new(encoded)
+                .map_err(|_| "Siri execution context contained a null byte".to_string())?;
+            let bearer = CString::new(bearer.unwrap_or_default())
+                .map_err(|_| "Siri bearer contained a null byte".to_string())?;
+            if unsafe { medousa_siri_store_execution_context(encoded.as_ptr(), bearer.as_ptr()) } {
+                return Ok(());
+            }
+            return Err("Could not store the Siri execution context".into());
+        }
+
+        #[cfg(not(live_activity_native))]
+        Err("Siri native bridge is unavailable".into())
+    }
+
     pub fn store_workshops(summaries: &[super::SiriWorkshopSummary]) -> Result<(), String> {
         #[cfg(live_activity_native)]
         {
@@ -211,5 +455,18 @@ mod tests {
         assert!(siri_publish_ask_result("".into(), "answer".into()).is_err());
         assert!(siri_publish_ask_result("receipt".into(), "".into()).is_err());
         assert!(siri_publish_ask_result("receipt".into(), "x".repeat(2_001)).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_execution_context_before_platform_dispatch() {
+        let context = SiriExecutionContextInput {
+            session_id: "".into(),
+            provider: "openai".into(),
+            model: "model".into(),
+            response_depth_mode: "standard".into(),
+            reasoning_effort: "default".into(),
+            identity_user_id: None,
+        };
+        assert!(siri_sync_execution_context(context).is_err());
     }
 }

@@ -154,6 +154,27 @@ impl EmbeddedDaemonState {
             }
         });
     }
+
+    /// Reopen admission for an OS-managed background execution such as an
+    /// App Intent. The caller remains responsible for holding the platform's
+    /// background execution assertion while the turn is live.
+    #[cfg(target_os = "ios")]
+    pub(crate) async fn resume_for_background_execution(&self) -> Result<(), String> {
+        let _ = self
+            .client_if_active()
+            .await?
+            .ok_or_else(|| "Personal is no longer the selected workshop".to_string())?;
+        let daemon = self
+            .daemon
+            .get()
+            .cloned()
+            .ok_or_else(|| "Personal runtime did not boot".to_string())?;
+        daemon
+            .resume()
+            .await
+            .map_err(|error| format!("resume Personal for Siri: {error:#}"))?;
+        Ok(())
+    }
 }
 
 #[cfg(target_os = "ios")]

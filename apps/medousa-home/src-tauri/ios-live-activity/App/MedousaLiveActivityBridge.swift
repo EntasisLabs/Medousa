@@ -1,4 +1,22 @@
 import Foundation
+import Security
+
+private let siriBearerService = "com.entasislabs.medousa-home.siri"
+private let siriBearerAccount = "active-workshop-bearer.v1"
+
+private func storeSiriBearer(_ bearer: String) -> Bool {
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: siriBearerService,
+        kSecAttrAccount as String: siriBearerAccount,
+    ]
+    SecItemDelete(query as CFDictionary)
+    guard !bearer.isEmpty else { return true }
+    var insert = query
+    insert[kSecValueData as String] = Data(bearer.utf8)
+    insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+    return SecItemAdd(insert as CFDictionary, nil) == errSecSuccess
+}
 
 /// Rust/Tauri invoke handlers run off the main thread; `@MainActor` types must hop to main first.
 @available(iOS 16.1, *)
@@ -139,6 +157,22 @@ public func medousa_siri_publish_ask_result(
         return false
     }
     defaults.set(String(cString: jsonPointer), forKey: "siri.askResult.v1")
+    return true
+}
+
+@_cdecl("medousa_siri_store_execution_context")
+public func medousa_siri_store_execution_context(
+    _ jsonPointer: UnsafePointer<CChar>?,
+    _ bearerPointer: UnsafePointer<CChar>?
+) -> Bool {
+    guard let jsonPointer,
+          let defaults = UserDefaults(suiteName: "group.com.entasislabs.medousa-home")
+    else {
+        return false
+    }
+    let bearer = bearerPointer.map(String.init(cString:)) ?? ""
+    guard storeSiriBearer(bearer) else { return false }
+    defaults.set(String(cString: jsonPointer), forKey: "siri.executionContext.v1")
     return true
 }
 

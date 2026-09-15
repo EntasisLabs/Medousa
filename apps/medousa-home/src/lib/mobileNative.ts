@@ -175,6 +175,10 @@ export function initMobileNative(
       const recoverWhenVisible = () => {
         if (document.visibilityState === "visible") {
           void recoverRecentSiriAsk();
+        } else {
+          void import("$lib/siriWorkshopSnapshot").then(
+            ({ syncSiriExecutionContext }) => syncSiriExecutionContext(),
+          );
         }
       };
       document.addEventListener("visibilitychange", recoverWhenVisible);

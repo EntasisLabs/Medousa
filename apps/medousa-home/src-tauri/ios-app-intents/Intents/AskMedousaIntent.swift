@@ -1,6 +1,80 @@
 import AppIntents
+import AVFoundation
 import Foundation
+import Security
 import SwiftUI
+import UIKit
+
+private struct SiriExecutionContext: Decodable {
+    let version: Int
+    let workshopId: String
+    let baseUrl: String
+    let sessionId: String
+    let provider: String
+    let model: String
+    let responseDepthMode: String
+    let reasoningEffort: String
+    let identityUserId: String?
+    let updatedAt: TimeInterval
+}
+
+private struct SiriTurnAccepted: Decodable {
+    let turnId: String
+    let streamUrl: String
+
+    enum CodingKeys: String, CodingKey {
+        case turnId = "turn_id"
+        case streamUrl = "stream_url"
+    }
+}
+
+private enum SiriBackgroundError: Error {
+    case unavailable
+    case timedOut
+}
+
+private enum SiriBackgroundOutcome {
+    case answer(String)
+    case continuing
+}
+
+@MainActor
+private final class MedousaSiriSpeechPlayer {
+    static let shared = MedousaSiriSpeechPlayer()
+    private let synthesizer = AVSpeechSynthesizer()
+
+    func start(_ text: String) {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+        try? session.setActive(true)
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        synthesizer.speak(utterance)
+    }
+
+    var isSpeaking: Bool { synthesizer.isSpeaking }
+
+    func finish() {
+        try? AVAudioSession.sharedInstance().setActive(
+            false,
+            options: [.notifyOthersOnDeactivation]
+        )
+    }
+}
+
+private struct SiriPersonalTurnResponse: Decodable {
+    let status: String
+    let text: String?
+    let error: String?
+}
+
+@_silgen_name("medousa_siri_execute_personal")
+private func medousaSiriExecutePersonal(
+    _ json: UnsafePointer<CChar>?
+) -> UnsafeMutablePointer<CChar>?
+
+@_silgen_name("medousa_siri_free_rust_string")
+private func medousaSiriFreeRustString(_ value: UnsafeMutablePointer<CChar>?)
 
 @available(iOS 18.0, *)
 private struct MedousaSiriResultView: View {
@@ -23,20 +97,21 @@ private struct MedousaSiriResultView: View {
     }
 }
 
-/// S1 foreground gateway. Prompt contents remain in the shared App Group and
-/// only a short-lived, one-time receipt is exposed to the trusted shell.
+/// Runs the selected workshop directly in the background. A failed background
+/// admission is reported to Siri instead of unexpectedly launching the app.
 @available(iOS 18.0, *)
-struct AskMedousaIntent: AppIntent, ForegroundContinuableIntent {
+struct AskMedousaIntent: AppIntent {
+    private static let daemonReadyWaitSeconds: TimeInterval = 8
     private static let resultWaitSeconds: TimeInterval = 20
     static let title: LocalizedStringResource = "Ask Medousa"
     static let description = IntentDescription(
-        "Bring a request into Medousa using the currently selected workshop."
+        "Ask the currently selected Medousa workshop without opening the app."
     )
     static let openAppWhenRun = false
 
     @available(iOS 26.0, *)
     static var supportedModes: IntentModes {
-        [.background, .foreground(.dynamic)]
+        [.background]
     }
 
     @Parameter(
@@ -53,64 +128,257 @@ struct AskMedousaIntent: AppIntent, ForegroundContinuableIntent {
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
-        let requestId = UUID().uuidString.lowercased()
         let workshopId = workshop?.id
             ?? WorkshopEntitySnapshot.load().first(where: \.isActive)?.id
-        let payload: [String: Any] = [
-            "requestId": requestId,
-            "prompt": prompt,
-            "workshopId": workshopId ?? "",
-            "createdAt": Date().timeIntervalSince1970,
-        ]
-        guard let data = try? JSONSerialization.data(withJSONObject: payload),
-              let encoded = String(data: data, encoding: .utf8),
-              let defaults = UserDefaults(suiteName: "group.com.entasislabs.medousa-home")
-        else {
-            throw AskMedousaError.unavailable
+        guard let defaults = UserDefaults(suiteName: "group.com.entasislabs.medousa-home") else {
+            throw SiriBackgroundError.unavailable
         }
-        defaults.set(encoded, forKey: "siri.pendingAsk.v1")
 
-        try await requestToContinueInForeground(
-            "Opening Medousa to start your request."
-        )
-        if let answer = await waitForResult(requestId: requestId, defaults: defaults) {
+        do {
+            let outcome = try await runBackgroundTurn(
+                workshopId: workshopId, prompt: prompt, defaults: defaults
+            )
+            switch outcome {
+            case .answer(let answer):
+                await speakAnswer(answer)
+                return .result(
+                    dialog: IntentDialog(full: "\(answer)", supporting: "\(answer)"),
+                    view: MedousaSiriResultView(answer: answer, isContinuing: false)
+                )
+            case .continuing:
+                let continuing = "Your request is continuing in Medousa."
+                return .result(
+                    dialog: IntentDialog(full: "\(continuing)", supporting: "Open Medousa to check its progress."),
+                    view: MedousaSiriResultView(answer: continuing, isContinuing: true)
+                )
+            }
+        } catch {
+            let unavailable = "I couldn't reach your selected Medousa workshop."
             return .result(
-                dialog: IntentDialog(full: "\(answer)", supporting: "Medousa replied."),
-                view: MedousaSiriResultView(answer: answer, isContinuing: false)
+                dialog: IntentDialog(full: "\(unavailable)", supporting: "Open Medousa once, then try again."),
+                view: MedousaSiriResultView(answer: unavailable, isContinuing: false)
             )
         }
-        let continuing = "Your request is continuing in Medousa."
-        return .result(
-            dialog: IntentDialog(full: "\(continuing)", supporting: "You can return to Medousa at any time."),
-            view: MedousaSiriResultView(answer: continuing, isContinuing: true)
-        )
     }
 
-    private func waitForResult(
-        requestId: String,
-        defaults: UserDefaults
-    ) async -> String? {
-        let deadline = Date().addingTimeInterval(Self.resultWaitSeconds)
-        while !Task.isCancelled && Date() < deadline {
-            if let encoded = defaults.string(forKey: "siri.askResult.v1"),
-               let data = encoded.data(using: .utf8),
-               let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               payload["requestId"] as? String == requestId,
-               let createdAt = payload["createdAt"] as? TimeInterval,
-               Date().timeIntervalSince1970 - createdAt < 60,
-               let text = payload["text"] as? String,
-               !text.isEmpty
-            {
-                defaults.removeObject(forKey: "siri.askResult.v1")
-                return text
-            }
-            try? await Task.sleep(for: .milliseconds(250))
+    private func speakAnswer(_ answer: String) async {
+        let backgroundTask = await MainActor.run {
+            UIApplication.shared.beginBackgroundTask(
+                withName: "Medousa Siri speech",
+                expirationHandler: nil
+            )
         }
-        return nil
+        await MedousaSiriSpeechPlayer.shared.start(answer)
+        let deadline = Date().addingTimeInterval(20)
+        while !Task.isCancelled && Date() < deadline {
+            let speaking = await MedousaSiriSpeechPlayer.shared.isSpeaking
+            if !speaking { break }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        await MedousaSiriSpeechPlayer.shared.finish()
+        await MainActor.run {
+            if backgroundTask != .invalid {
+                UIApplication.shared.endBackgroundTask(backgroundTask)
+            }
+        }
+    }
+
+    private func runBackgroundTurn(
+        workshopId: String?,
+        prompt: String,
+        defaults: UserDefaults
+    ) async throws -> SiriBackgroundOutcome {
+        guard let encoded = defaults.string(forKey: "siri.executionContext.v1"),
+              let data = encoded.data(using: .utf8),
+              let context = try? JSONDecoder().decode(SiriExecutionContext.self, from: data),
+              context.version == 1,
+              context.updatedAt <= Date().timeIntervalSince1970 + 60,
+              Date().timeIntervalSince1970 - context.updatedAt < 86_400,
+              workshopId == nil || workshopId == context.workshopId,
+              let baseURL = URL(string: context.baseUrl),
+              let turnURL = URL(string: "v1/turns", relativeTo: baseURL.appendingPathComponent(""))
+        else {
+            throw SiriBackgroundError.unavailable
+        }
+
+        if context.workshopId == "personal" {
+            return try await runPersonalTurn(context: context, prompt: prompt)
+        }
+
+        let payload: [String: Any] = [
+            "session_id": context.sessionId,
+            "prompt": prompt,
+            "mode": "interactive",
+            "persist_user_turn": true,
+            "response_depth_mode": context.responseDepthMode,
+            "reasoning_effort": context.reasoningEffort,
+            "provider": context.provider,
+            "model": context.model,
+            "surface": [
+                "channel_surface": "home-ios-siri",
+                "channel_id": context.sessionId,
+                "supports_ui_artifacts": false,
+                "supports_liquid_markdown": false,
+                "supports_browser_host": false,
+                "selected_worlds": [],
+            ],
+            "media_refs": [],
+            "identity_user_id": context.identityUserId ?? NSNull(),
+        ]
+        try await waitForDaemon(baseURL: baseURL, bearer: loadSiriBearer())
+        var request = URLRequest(url: turnURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let bearer = loadSiriBearer(), !bearer.isEmpty {
+            request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+
+        let (responseData, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode),
+              let accepted = try? JSONDecoder().decode(SiriTurnAccepted.self, from: responseData),
+              let streamURL = URL(string: accepted.streamUrl, relativeTo: baseURL)
+        else {
+            throw SiriBackgroundError.unavailable
+        }
+        do {
+            let answer = try await withThrowingTaskGroup(of: String.self) { group in
+                group.addTask {
+                    try await readTurnResult(streamURL: streamURL, bearer: loadSiriBearer())
+                }
+                group.addTask {
+                    try await Task.sleep(for: .seconds(Self.resultWaitSeconds))
+                    throw SiriBackgroundError.timedOut
+                }
+                guard let result = try await group.next() else {
+                    throw SiriBackgroundError.unavailable
+                }
+                group.cancelAll()
+                return result
+            }
+            return .answer(answer)
+        } catch {
+            return .continuing
+        }
+    }
+
+    private func runPersonalTurn(
+        context: SiriExecutionContext,
+        prompt: String
+    ) async throws -> SiriBackgroundOutcome {
+        let backgroundTask = await MainActor.run {
+            UIApplication.shared.beginBackgroundTask(
+                withName: "Medousa Siri turn",
+                expirationHandler: nil
+            )
+        }
+        defer {
+            Task { @MainActor in
+                if backgroundTask != .invalid {
+                    UIApplication.shared.endBackgroundTask(backgroundTask)
+                }
+            }
+        }
+        let payload: [String: Any] = [
+            "prompt": prompt,
+            "sessionId": context.sessionId,
+            "provider": context.provider,
+            "model": context.model,
+            "responseDepthMode": context.responseDepthMode,
+            "reasoningEffort": context.reasoningEffort,
+            "identityUserId": context.identityUserId ?? NSNull(),
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        guard let encoded = String(data: data, encoding: .utf8) else {
+            throw SiriBackgroundError.unavailable
+        }
+        let response = await Task.detached(priority: .userInitiated) {
+            encoded.withCString { pointer -> SiriPersonalTurnResponse? in
+                guard let raw = medousaSiriExecutePersonal(pointer) else { return nil }
+                defer { medousaSiriFreeRustString(raw) }
+                let result = Data(String(cString: raw).utf8)
+                return try? JSONDecoder().decode(SiriPersonalTurnResponse.self, from: result)
+            }
+        }.value
+        guard let response else { throw SiriBackgroundError.unavailable }
+        switch response.status {
+        case "answer":
+            guard let text = response.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !text.isEmpty
+            else {
+                throw SiriBackgroundError.unavailable
+            }
+            return .answer(String(text.prefix(600)))
+        case "continuing":
+            return .continuing
+        default:
+            _ = response.error
+            throw SiriBackgroundError.unavailable
+        }
+    }
+
+    private func waitForDaemon(baseURL: URL, bearer: String?) async throws {
+        let deadline = Date().addingTimeInterval(Self.daemonReadyWaitSeconds)
+        let healthURL = baseURL.appendingPathComponent("health")
+        repeat {
+            var request = URLRequest(url: healthURL)
+            request.timeoutInterval = 1
+            if let bearer, !bearer.isEmpty {
+                request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+            }
+            if let (_, response) = try? await URLSession.shared.data(for: request),
+               let http = response as? HTTPURLResponse,
+               (200..<300).contains(http.statusCode)
+            {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(250))
+        } while !Task.isCancelled && Date() < deadline
+        throw SiriBackgroundError.unavailable
     }
 }
 
-@available(iOS 18.0, *)
-private enum AskMedousaError: Error {
-    case unavailable
+private func loadSiriBearer() -> String? {
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: "com.entasislabs.medousa-home.siri",
+        kSecAttrAccount as String: "active-workshop-bearer.v1",
+        kSecReturnData as String: true,
+        kSecMatchLimit as String: kSecMatchLimitOne,
+    ]
+    var item: CFTypeRef?
+    guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+          let data = item as? Data
+    else {
+        return nil
+    }
+    return String(data: data, encoding: .utf8)
+}
+
+private func readTurnResult(streamURL: URL, bearer: String?) async throws -> String {
+    var request = URLRequest(url: streamURL)
+    request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+    if let bearer, !bearer.isEmpty {
+        request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+    }
+    let (bytes, response) = try await URLSession.shared.bytes(for: request)
+    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+        throw SiriBackgroundError.unavailable
+    }
+    for try await line in bytes.lines where line.hasPrefix("data:") {
+        let json = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+        guard let data = json.data(using: .utf8),
+              let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              event["terminal"] as? Bool == true
+        else {
+            continue
+        }
+        let answer = (event["final_text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? (event["message"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? ""
+        guard !answer.isEmpty else { throw SiriBackgroundError.unavailable }
+        return String(answer.prefix(600))
+    }
+    throw SiriBackgroundError.unavailable
 }

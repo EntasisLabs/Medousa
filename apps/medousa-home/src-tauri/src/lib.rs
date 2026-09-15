@@ -284,6 +284,7 @@ fn run_home() {
         #[cfg(target_os = "ios")]
         {
             let keychain_probe_ran = run_ios_phase0_keychain_probe_if_requested()?;
+            siri_intents::init_app_handle(app.handle().clone());
             human_browser_ios::init_app_handle(app.handle().clone());
             ios_push_setup::install_ios_push_background_handler();
             embedded_daemon::install_lifecycle(app.handle());
@@ -484,6 +485,7 @@ fn run_home() {
             siri_intents::siri_consume_pending_ask,
             siri_intents::siri_recent_pending_ask_id,
             siri_intents::siri_publish_ask_result,
+            siri_intents::siri_sync_execution_context,
             siri_intents::siri_sync_workshop_snapshot,
             pairing::bonjour_status,
             lan_share::lan_pairing_status,
