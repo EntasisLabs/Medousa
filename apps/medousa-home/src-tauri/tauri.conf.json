@@ -40,7 +40,7 @@
       "resources/docs/runbooks/connection-reliability.md"
     ],
     "iOS": {
-      "minimumSystemVersion": "16.2",
+      "minimumSystemVersion": "17.0",
       "developmentTeam": "K5SZ28RN9P",
       "infoPlist": "Info.mobile.plist"
     },

@@ -12,8 +12,18 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/../../.." && pwd)"
 target_root="${CARGO_TARGET_DIR:-${MEDOUSA_CARGO_TARGET_DIR:-$(cd "${repo_root}/.." && pwd)/.cache/cargo-target}}"
 package_resolved="${repo_root}/vendor/tauri-plugin-native-inference/ios/Package.resolved"
+vendored_mlx="${repo_root}/vendor/mlx-swift"
+vendored_revision_file="${vendored_mlx}/MEDOUSA_UPSTREAM_REVISION"
 
-mlx_revision="$(awk '
+mlx_revision=""
+mlx_checkout=""
+if [[ -d "${vendored_mlx}/Source/Cmlx/mlx/mlx/backend/metal/kernels" && -f "${vendored_revision_file}" ]]; then
+  mlx_revision="$(tr -d '[:space:]' < "${vendored_revision_file}")"
+  mlx_checkout="${vendored_mlx}"
+fi
+
+if [[ -z "${mlx_revision}" ]]; then
+  mlx_revision="$(awk '
   /"identity"[[:space:]]*:[[:space:]]*"mlx-swift"/ { in_mlx = 1 }
   in_mlx && /"revision"[[:space:]]*:/ {
     line = $0
@@ -23,22 +33,24 @@ mlx_revision="$(awk '
     exit
   }
 ' "${package_resolved}")"
+fi
 
 if [[ -z "${mlx_revision}" ]]; then
   echo "[mlx-metal] could not resolve the pinned mlx-swift revision" >&2
   exit 1
 fi
 
-mlx_checkout=""
-while IFS= read -r candidate; do
-  checkout="${candidate%/Source/Cmlx/mlx/mlx/backend/metal/kernels}"
-  if [[ "$(git -C "${checkout}" rev-parse HEAD 2>/dev/null || true)" == "${mlx_revision}" ]]; then
-    mlx_checkout="${checkout}"
-    break
-  fi
-done < <(find "${target_root}" -type d \
-  -path '*/checkouts/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels' \
-  -print 2>/dev/null)
+if [[ -z "${mlx_checkout}" ]]; then
+  while IFS= read -r candidate; do
+    checkout="${candidate%/Source/Cmlx/mlx/mlx/backend/metal/kernels}"
+    if [[ "$(git -C "${checkout}" rev-parse HEAD 2>/dev/null || true)" == "${mlx_revision}" ]]; then
+      mlx_checkout="${checkout}"
+      break
+    fi
+  done < <(find "${target_root}" -type d \
+    -path '*/checkouts/mlx-swift/Source/Cmlx/mlx/mlx/backend/metal/kernels' \
+    -print 2>/dev/null)
+fi
 
 if [[ -z "${mlx_checkout}" ]]; then
   echo "[mlx-metal] mlx-swift ${mlx_revision} was not found under ${target_root}" >&2

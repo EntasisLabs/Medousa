@@ -307,11 +307,11 @@ impl SwiftLinker {
             let cross_compiling = !matches!(rust_target.os, RustTargetOS::MacOS);
             let use_triple = cross_compiling && xcode27;
 
-            // Xcode 27 SDKs reject iOS deployment targets below 15
-            // ("supported deployment target versions is 15.0 to 27.0.x") and
-            // consumers commonly pass lower minimums (tauri passes ios13.0).
+            // Medousa and its MLX package both require iOS 17. Xcode 27's
+            // Metal compiler aliases bfloat to float for older deployment
+            // triples, which makes MLX's float/bfloat kernels collide.
             if xcode27 {
-                clamp_ios_deployment_target(&mut swift_target_triple, 15);
+                clamp_ios_deployment_target(&mut swift_target_triple, 17);
             }
 
             command
@@ -366,11 +366,12 @@ impl SwiftLinker {
                 // (e.g. out/Products/Release-iphoneos on 27A5218g).
                 let lib_file = format!("lib{}.a", package.name);
                 let direct = out_path.join(configuration);
-                if direct.join(&lib_file).exists() {
-                    direct
-                } else {
-                    xcode27_products_dir(&out_path, configuration, &lib_file).unwrap_or(direct)
-                }
+                // Prefer the platform-qualified Xcode product. SwiftPM may
+                // leave a stale legacy archive behind after an SDK upgrade;
+                // choosing it hides the current @_cdecl entry points.
+                xcode27_products_dir(&out_path, configuration, &lib_file)
+                    .or_else(|| direct.join(&lib_file).exists().then_some(direct.clone()))
+                    .unwrap_or(direct)
             } else {
                 out_path
                     .join(format!("{}-apple-macosx", arch))
@@ -378,13 +379,14 @@ impl SwiftLinker {
             };
 
             if xcode27 {
+                let archive = search_path.join(format!("lib{}.a", package.name));
+                if package.name != "Tauri" {
+                    remove_embedded_tauri_support(&archive);
+                }
                 // Xcode 27's SwiftPM internalizes @_cdecl exports in static
                 // products (they show as local 't' in nm), so consumers fail to
                 // link with "undefined symbols". Promote them back to global.
-                globalize_cdecl_symbols(
-                    &search_path.join(format!("lib{}.a", package.name)),
-                    &package.name,
-                );
+                globalize_cdecl_symbols(&archive, &package.name);
             }
 
             println!("cargo:rerun-if-changed={}", package_path.display());
@@ -392,6 +394,21 @@ impl SwiftLinker {
             println!("cargo:rustc-link-lib=static={}", package.name);
         }
     }
+}
+
+/// Xcode 27's SwiftPM static product includes object members from package
+/// dependencies. Every Tauri plugin therefore contains another Tauri.o and
+/// SwiftRs.o, which produces duplicate Swift metadata at the final app link.
+/// Keep those support objects only in the core Tauri archive.
+fn remove_embedded_tauri_support(archive: &std::path::Path) {
+    if !archive.exists() {
+        return;
+    }
+    let _ = Command::new("ar")
+        .args(["-d"])
+        .arg(archive)
+        .args(["Tauri.o", "SwiftRs.o"])
+        .status();
 }
 
 fn link_clang_rt(rust_target: &RustTarget) {
@@ -440,7 +457,7 @@ fn xcode_major_version() -> Option<u32> {
 
 /// Raise the iOS version embedded in a swift target triple (e.g.
 /// `arm64-apple-ios13.0[-simulator]`) to `min_major` if it is lower.
-/// Xcode 27 SDKs hard-reject deployment targets below iOS 15.
+/// Raise dependency builds to the app's supported iOS floor.
 fn clamp_ios_deployment_target(triple: &mut String, min_major: u32) {
     let Some(idx) = triple.find("apple-ios") else {
         return;
@@ -519,7 +536,11 @@ fn globalize_cdecl_symbols(archive: &std::path::Path, package_name: &str) {
             let header = line.trim_end_matches(':').trim_end_matches(')');
             let member = header.rsplit('(').next().unwrap_or(header);
             if let Some(module) = member.strip_suffix(".o") {
-                in_own_member = norm(module) == pkg;
+                let module = norm(module);
+                // SwiftRs.o owns the three shared Rust/Swift bridge exports.
+                // Globalize that support object exactly once, in Tauri's core
+                // archive, so plugin archives cannot introduce duplicates.
+                in_own_member = module == pkg || (pkg == "tauri" && module == "swiftrs");
                 continue;
             }
         }
