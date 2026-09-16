@@ -33,7 +33,20 @@
       if (!chat.sessionId.trim()) await chat.newSession();
       const sessionId = chat.sessionId.trim();
       if (!sessionId) throw new Error("Could not create a conversation for Medousa Live");
-      await connectLiveVoice(workshops.activeLabel || "Medousa", sessionId);
+      const active = workshops.activeWorkshop;
+      const liveWorkshop =
+        active && (active.kind === "portal" || active.kind === "paired")
+          ? active
+          : workshops.workshops.find(
+              (workshop) =>
+                (workshop.kind === "portal" || workshop.kind === "paired") &&
+                Boolean(workshop.pairing?.workshopDeviceId.trim()),
+            );
+      const executionRuntimeId = liveWorkshop?.pairing?.workshopDeviceId.trim();
+      if (!liveWorkshop || !executionRuntimeId) {
+        throw new Error("Pair a workshop before starting Medousa Live");
+      }
+      await connectLiveVoice(liveWorkshop.label || "Medousa", sessionId, executionRuntimeId);
     } catch (error) {
       localError = error instanceof Error ? error.message : String(error);
       haptic("warning");

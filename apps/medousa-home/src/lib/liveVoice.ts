@@ -34,8 +34,14 @@ export interface LiveVoiceClientState extends LiveVoiceStatus {
 export async function createLiveSession(
   sdp: string,
   sessionId: string,
+  executionRuntimeId: string,
 ): Promise<LiveSessionAnswer> {
-  return daemonUnary<LiveSessionAnswer>("live.sessions.post", {}, { sdp, sessionId });
+  return daemonUnary<LiveSessionAnswer>(
+    "live.sessions.post",
+    {},
+    { sdp, sessionId },
+    executionRuntimeId,
+  );
 }
 
 const unavailable: LiveVoiceStatus = {
@@ -139,6 +145,7 @@ function handleServerEvent(raw: string) {
 export async function connectLiveVoice(
   workshopName: string,
   sessionId: string,
+  executionRuntimeId: string,
 ): Promise<void> {
   if (!isTauriIos()) throw new Error(unavailable.error ?? "Medousa Live is unavailable");
   if (!navigator.mediaDevices?.getUserMedia || typeof RTCPeerConnection === "undefined") {
@@ -205,7 +212,7 @@ export async function connectLiveVoice(
     const offer = connection.localDescription?.sdp;
     if (!offer) throw new Error("The iPhone could not create a Live audio offer");
 
-    const answer = await createLiveSession(offer, sessionId);
+    const answer = await createLiveSession(offer, sessionId, executionRuntimeId);
     await connection.setRemoteDescription({ type: "answer", sdp: answer.sdp });
     await waitForConnection(connection);
     updateClientState({
