@@ -81,6 +81,11 @@ export function handleBrowserChallenge(host: ChatStoreHost, event: InteractiveTu
   const isClientAct = !challengeUrl;
   const messageId = host.messageIdForTurn(event.turn_id);
 
+  if (event.message === "client_search") {
+    void executeClientBrowserSearch(host, event, sessionId);
+    return;
+  }
+
   if (isClientAct) {
     void executeClientBrowserAct(sessionId);
     return;
@@ -105,6 +110,76 @@ export function handleBrowserChallenge(host: ChatStoreHost, event: InteractiveTu
         workCardId,
       }),
     );
+  }
+}
+
+const runningClientSearches = new Map<string, string>();
+
+async function executeClientBrowserSearch(
+  host: ChatStoreHost,
+  event: InteractiveTurnStreamEvent,
+  sessionId: string,
+) {
+  if (runningClientSearches.has(sessionId)) return;
+  runningClientSearches.set(sessionId, event.turn_id);
+  let worldDriverId: string | null | undefined;
+  try {
+    const { fetchBrowserSession, completeBrowserSession } = await import("$lib/daemon");
+    const session = await fetchBrowserSession(sessionId);
+    worldDriverId = session.world_driver_id;
+    const { openInBrowser } = await import("$lib/utils/openInBrowser");
+    const { humanBrowserSnapshotSearch } = await import("$lib/humanBrowser");
+    const { humanBrowser } = await import("$lib/stores/humanBrowser.svelte");
+    const { governedBrowser } = await import("$lib/stores/governedBrowser.svelte");
+    // This request was explicitly admitted to the device driver. Show that
+    // source, not an unrelated workshop-world frame hiding the native page.
+    governedBrowser.chooseDevice();
+    await openInBrowser(event.browser_challenge_url || `https://html.duckduckgo.com/html/?q=${encodeURIComponent(session.query)}`, {
+      openedBy: "agent",
+      sessionId: host.sessionId,
+      workCardId: host.workCardIdForTurn(event.turn_id),
+      title: `Search: ${session.query}`,
+    });
+
+    // Navigation completes asynchronously in the native webview. Empty early
+    // snapshots are not search failures; wait for results or a real challenge.
+    const deadline = Date.now() + 20_000;
+    do {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      if (humanBrowser.loading) continue;
+      const response = await humanBrowserSnapshotSearch(session.query, session.max_results);
+      if (response.challenge && response.challenge !== "empty_results") {
+        host.browserChallenge = {
+          turnId: event.turn_id,
+          messageId: host.messageIdForTurn(event.turn_id),
+          sessionId,
+          challengeUrl: event.browser_challenge_url || `https://html.duckduckgo.com/html/?q=${encodeURIComponent(session.query)}`,
+          message: "Complete the web verification in this tab, then tap Continue agent.",
+        };
+        const { browser } = await import("$lib/stores/browser.svelte");
+        await browser.setControl("awaiting_operator");
+        // Keep the loaded CAPTCHA intact; reopening it can reset verification.
+        return;
+      }
+      if (response.results.length) {
+        await completeBrowserSession(sessionId, { worldDriverId, searchResponse: response });
+        clearBrowserChallenge(host, sessionId);
+        return;
+      }
+    } while (Date.now() < deadline);
+    throw new Error("The search page loaded without readable results. Try the search again.");
+  } catch (error) {
+    try {
+      const { completeBrowserSession } = await import("$lib/daemon");
+      await completeBrowserSession(sessionId, {
+        worldDriverId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } catch {
+      // The turn may have ended or its workshop disconnected.
+    }
+  } finally {
+    runningClientSearches.delete(sessionId);
   }
 }
 
@@ -156,6 +231,8 @@ async function executeClientBrowserAct(sessionId: string) {
 }
 
 export function handleBrowserNavigated(host: ChatStoreHost, event: InteractiveTurnStreamEvent) {
+  // The client-search handler already owns opening and reading this page.
+  if ([...runningClientSearches.values()].includes(event.turn_id)) return;
   if (!chatSettingsPort().autoOpenWebOnAgentBrowse()) return;
   const url = event.message?.trim();
   if (!url) return;
