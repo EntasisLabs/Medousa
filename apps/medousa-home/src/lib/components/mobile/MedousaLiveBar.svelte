@@ -11,12 +11,14 @@
   } from "$lib/liveVoice";
 
   let busy = $state(false);
-  const canStart = $derived(Boolean(chat.sessionId.trim()) && !busy);
+  let localError = $state<string | null>(null);
+  const canStart = $derived(!busy && !$liveVoiceState.active);
   const label = $derived.by(() => {
     if ($liveVoiceState.phase === "connecting") return "Connecting…";
     if ($liveVoiceState.phase === "speaking") return "Medousa is speaking";
     if ($liveVoiceState.phase === "thinking") return "Medousa is thinking";
     if ($liveVoiceState.phase === "muted") return "Microphone muted";
+    if (localError) return localError;
     if ($liveVoiceState.phase === "failed") return $liveVoiceState.error ?? "Live stopped";
     if ($liveVoiceState.active) return "Listening";
     return "Talk live";
@@ -25,10 +27,15 @@
   async function start() {
     if (!canStart) return;
     busy = true;
+    localError = null;
     haptic("medium");
     try {
-      await connectLiveVoice(workshops.activeLabel || "Medousa", chat.sessionId);
-    } catch {
+      if (!chat.sessionId.trim()) await chat.newSession();
+      const sessionId = chat.sessionId.trim();
+      if (!sessionId) throw new Error("Could not create a conversation for Medousa Live");
+      await connectLiveVoice(workshops.activeLabel || "Medousa", sessionId);
+    } catch (error) {
+      localError = error instanceof Error ? error.message : String(error);
       haptic("warning");
     } finally {
       busy = false;
@@ -59,29 +66,35 @@
 </script>
 
 <div class="border-b border-white/6 bg-surface-950/95 px-3 pb-2 backdrop-blur-xl">
-  <div class="flex min-h-11 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-2 py-1.5">
+  {#if !$liveVoiceState.active}
     <button
       type="button"
-      class="grid size-9 shrink-0 place-items-center rounded-full bg-fuchsia-500 text-white disabled:opacity-45"
-      disabled={!canStart || $liveVoiceState.active}
+      class="flex min-h-11 w-full items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-2 py-1.5 text-left disabled:opacity-45"
+      disabled={!canStart}
       aria-label="Start Medousa Live"
       onclick={start}
     >
-      {#if busy || $liveVoiceState.phase === "connecting"}
-        <LoaderCircle class="size-4 animate-spin" />
-      {:else}
-        <Mic class="size-4" />
-      {/if}
+      <span class="grid size-9 shrink-0 place-items-center rounded-full bg-fuchsia-500 text-white">
+        {#if busy || $liveVoiceState.phase === "connecting"}
+          <LoaderCircle class="size-4 animate-spin" />
+        {:else}
+          <Mic class="size-4" />
+        {/if}
+      </span>
+      <span class="min-w-0 flex-1">
+        <span class="block truncate text-sm font-medium text-white">{label}</span>
+        <span class="block truncate text-[11px] text-white/45">Medousa Live · preview</span>
+      </span>
     </button>
-
-    <div class="min-w-0 flex-1">
-      <p class="truncate text-sm font-medium text-white">{label}</p>
-      <p class="truncate text-[11px] text-white/45">
-        {$liveVoiceState.active ? workshops.activeLabel : "Medousa Live · preview"}
-      </p>
-    </div>
-
-    {#if $liveVoiceState.active}
+  {:else}
+    <div class="flex min-h-11 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-2 py-1.5">
+      <span class="grid size-9 shrink-0 place-items-center rounded-full bg-fuchsia-500 text-white">
+        <Mic class="size-4" />
+      </span>
+      <div class="min-w-0 flex-1">
+        <p class="truncate text-sm font-medium text-white">{label}</p>
+        <p class="truncate text-[11px] text-white/45">{workshops.activeLabel}</p>
+      </div>
       <button
         type="button"
         class="grid size-9 place-items-center rounded-full bg-white/8 text-white"
@@ -98,6 +111,6 @@
       >
         <PhoneOff class="size-4" />
       </button>
-    {/if}
-  </div>
+    </div>
+  {/if}
 </div>
