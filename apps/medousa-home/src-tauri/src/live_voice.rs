@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-const OPENAI_LIVE_SESSIONS_URL: &str = "https://api.openai.com/v1/live/sessions";
+const OPENAI_REALTIME_CALLS_URL: &str = "https://api.openai.com/v1/realtime/calls";
 const MAX_SDP_BYTES: usize = 256 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -19,22 +19,6 @@ pub struct LiveVoiceStatus {
 #[serde(rename_all = "camelCase")]
 pub struct LiveSessionAnswer {
     live_session_id: String,
-    sdp: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAiLiveResponse {
-    session: OpenAiLiveSession,
-    transport: OpenAiLiveTransport,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAiLiveSession {
-    id: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAiLiveTransport {
     sdp: String,
 }
 
@@ -63,40 +47,71 @@ pub async fn live_voice_create_session(
             })?;
 
     let response = reqwest::Client::new()
-        .post(OPENAI_LIVE_SESSIONS_URL)
+        .post(OPENAI_REALTIME_CALLS_URL)
         .bearer_auth(api_key)
-        .json(&serde_json::json!({
-            "session": {
-                "model": "gpt-live-1",
-                "instructions": "You are Medousa's live voice. Be concise and conversational. Delegate requests that need tools or durable work to the Medousa application."
-            },
-            "transport": {
-                "type": "webrtc",
-                "sdp": sdp
-            }
-        }))
+        .multipart(
+            reqwest::multipart::Form::new()
+                .part(
+                    "sdp",
+                    reqwest::multipart::Part::text(sdp.to_string())
+                        .mime_str("application/sdp")
+                        .map_err(|error| error.to_string())?,
+                )
+                .part(
+                    "session",
+                    reqwest::multipart::Part::text(
+                        serde_json::json!({
+                            "type": "realtime",
+                            "model": "gpt-realtime",
+                            "instructions": "You are Medousa's live voice. Be concise and conversational. Delegate requests that need tools or durable work to the Medousa application."
+                        })
+                        .to_string(),
+                    )
+                    .mime_str("application/json")
+                    .map_err(|error| error.to_string())?,
+                ),
+        )
         .send()
         .await
         .map_err(|error| format!("Could not reach OpenAI Live from this iPhone: {error}"))?;
     let status = response.status();
+    let live_session_id = response
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.rsplit('/').next())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("realtime-call")
+        .to_string();
     if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        let provider_message = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|value| {
+                value
+                    .pointer("/error/message")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string)
+            });
         return Err(match status.as_u16() {
             401 | 403 => "OpenAI rejected the API key stored on this iPhone".into(),
             429 => "OpenAI Live is temporarily rate limited".into(),
-            code => format!("OpenAI Live could not start the session (HTTP {code})"),
+            code => provider_message.unwrap_or_else(|| {
+                format!("OpenAI Live could not start the session (HTTP {code})")
+            }),
         });
     }
-
-    let decoded: OpenAiLiveResponse = response
-        .json()
+    let answer_sdp = response
+        .text()
         .await
-        .map_err(|_| "OpenAI Live returned an invalid session response".to_string())?;
-    if decoded.session.id.trim().is_empty() || decoded.transport.sdp.trim().is_empty() {
+        .map_err(|error| format!("Could not read OpenAI's Live audio answer: {error}"))?;
+    if !answer_sdp.trim().starts_with("v=0") {
         return Err("OpenAI Live returned an incomplete session response".into());
     }
     Ok(LiveSessionAnswer {
-        live_session_id: decoded.session.id,
-        sdp: decoded.transport.sdp,
+        live_session_id,
+        sdp: answer_sdp,
     })
 }
 

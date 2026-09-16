@@ -813,13 +813,7 @@ pub async fn turn_create(
         selected_worlds: selected_worlds.unwrap_or_default(),
     };
     #[cfg(any(target_os = "ios", target_os = "android"))]
-    if let Some(client) = _embedded_state
-        .client_if_active_for_route(
-            (!selected_provider.is_empty()).then_some(selected_provider),
-            selected_model,
-        )
-        .await?
-    {
+    if let Some(client) = _embedded_state.client_if_active().await? {
         if !matches!(ticket_mode, TurnTicketMode::Interactive) {
             return Err(
                 "Background chat turns require a Shared workshop host because iOS may suspend Personal while the turn is running."

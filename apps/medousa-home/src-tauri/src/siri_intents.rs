@@ -175,10 +175,7 @@ async fn execute_personal_turn(
         .await?;
     let embedded = app.state::<crate::embedded_daemon::EmbeddedDaemonState>();
     let client = embedded
-        .client_if_active_for_route(
-            (!request.provider.trim().is_empty()).then_some(request.provider.as_str()),
-            (!request.model.trim().is_empty()).then_some(request.model.as_str()),
-        )
+        .client_if_active()
         .await?
         .ok_or_else(|| "Personal is no longer the selected workshop".to_string())?;
     let active_turn = client
