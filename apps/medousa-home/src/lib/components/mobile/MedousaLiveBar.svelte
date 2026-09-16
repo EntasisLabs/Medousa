@@ -3,6 +3,8 @@
   import { chat } from "$lib/stores/chat.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { haptic } from "$lib/haptics";
+  import { submitChatTurn } from "$lib/chat/submitTurnController";
+  import type { LiveTranscriptEntry } from "$lib/liveVoice";
   import {
     connectLiveVoice,
     disconnectLiveVoice,
@@ -34,13 +36,35 @@
       if (!chat.sessionId.trim()) await chat.newSession();
       const sessionId = chat.sessionId.trim();
       if (!sessionId) throw new Error("Could not create a conversation for Medousa Live");
-      await connectLiveVoice(workshops.activeLabel || "Medousa", sessionId);
+      await connectLiveVoice(workshops.activeLabel || "Medousa", sessionId, handoffToMedousa);
     } catch (error) {
       localError = error instanceof Error ? error.message : String(error);
       haptic("warning");
     } finally {
       busy = false;
     }
+  }
+
+  async function handoffToMedousa(request: string, transcript: LiveTranscriptEntry[]) {
+    const conversation = transcript
+      .map((entry) => `${entry.role === "user" ? "User" : "Medousa Live"}: ${entry.text}`)
+      .join("\n");
+    const prompt = [
+      "A request was handed off from Medousa Live. Continue it in this same conversation using any tools or durable work required.",
+      conversation ? `Live conversation:\n${conversation}` : "",
+      `Requested work:\n${request}`,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    await submitChatTurn({
+      userContent: `🎙️ ${request}`,
+      prompt,
+      mode: "interactive",
+      synchronizeAgentSession: async () => null,
+      onAgentSessionLost: () => undefined,
+      scrollToLatest: () => undefined,
+    });
+    haptic("success");
   }
 
   async function toggleMuted() {

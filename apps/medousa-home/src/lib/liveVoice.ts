@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isTauriIos } from "$lib/platform";
-import { writable } from "svelte/store";
+import { get, writable } from "svelte/store";
 
 export type LiveVoicePhase =
   | "idle"
@@ -37,6 +37,11 @@ export interface LiveTranscriptEntry {
   text: string;
 }
 
+export type LiveHandoffHandler = (
+  request: string,
+  transcript: LiveTranscriptEntry[],
+) => Promise<void>;
+
 export async function createLiveSession(
   sdp: string,
   sessionId: string,
@@ -67,6 +72,8 @@ let peer: RTCPeerConnection | null = null;
 let localStream: MediaStream | null = null;
 let remoteAudio: HTMLAudioElement | null = null;
 let dataChannel: RTCDataChannel | null = null;
+let handoffHandler: LiveHandoffHandler | null = null;
+const handledToolCalls = new Set<string>();
 
 function updateClientState(next: Partial<LiveVoiceClientState>) {
   liveVoiceState.update((current) => ({ ...current, ...next }));
@@ -75,6 +82,8 @@ function updateClientState(next: Partial<LiveVoiceClientState>) {
 function closeMediaTransport() {
   dataChannel?.close();
   dataChannel = null;
+  handoffHandler = null;
+  handledToolCalls.clear();
   peer?.close();
   peer = null;
   for (const track of localStream?.getTracks() ?? []) track.stop();
@@ -161,6 +170,50 @@ function appendTranscript(entry: LiveTranscriptEntry) {
   });
 }
 
+function sendRealtimeEvent(event: Record<string, unknown>) {
+  if (dataChannel?.readyState === "open") dataChannel.send(JSON.stringify(event));
+}
+
+async function handleHandoffTool(event: Record<string, unknown>) {
+  if (event.type !== "response.function_call_arguments.done") return;
+  if (event.name !== "hand_off_to_medousa" || typeof event.call_id !== "string") return;
+  if (handledToolCalls.has(event.call_id)) return;
+  handledToolCalls.add(event.call_id);
+
+  let request = "";
+  try {
+    if (typeof event.arguments === "string") {
+      const args = JSON.parse(event.arguments) as { request?: unknown };
+      if (typeof args.request === "string") request = args.request.trim();
+    }
+  } catch {
+    // Report malformed arguments to the voice model through the normal tool result.
+  }
+
+  let output = "The handoff could not be started because the request was empty.";
+  if (request && handoffHandler) {
+    updateClientState({ phase: "thinking" });
+    try {
+      const transcript = [...get(liveVoiceState).transcript];
+      await handoffHandler(request, transcript);
+      output = "The request was handed to the active Medousa chat successfully. It can continue using tools and will show progress in the app.";
+    } catch (error) {
+      output = `The Medousa handoff failed: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+
+  sendRealtimeEvent({
+    type: "conversation.item.create",
+    item: { type: "function_call_output", call_id: event.call_id, output },
+  });
+  sendRealtimeEvent({
+    type: "response.create",
+    response: {
+      instructions: "Briefly tell the user whether the Medousa handoff succeeded. Do not repeat the full request.",
+    },
+  });
+}
+
 function handleServerEvent(raw: string) {
   try {
     const event = JSON.parse(raw) as Record<string, unknown>;
@@ -169,6 +222,7 @@ function handleServerEvent(raw: string) {
     if (phase) updateClientState({ phase });
     const transcript = liveTranscriptForServerEvent(event);
     if (transcript) appendTranscript(transcript);
+    void handleHandoffTool(event);
   } catch {
     // Ignore non-JSON diagnostic frames; media continues independently.
   }
@@ -177,6 +231,7 @@ function handleServerEvent(raw: string) {
 export async function connectLiveVoice(
   workshopName: string,
   sessionId: string,
+  onHandoff?: LiveHandoffHandler,
 ): Promise<void> {
   if (!isTauriIos()) throw new Error(unavailable.error ?? "Medousa Live is unavailable");
   if (!navigator.mediaDevices?.getUserMedia || typeof RTCPeerConnection === "undefined") {
@@ -184,6 +239,7 @@ export async function connectLiveVoice(
   }
 
   await disconnectLiveVoice();
+  handoffHandler = onHandoff ?? null;
   updateClientState({
     available: true,
     active: false,

@@ -77,7 +77,24 @@ pub async fn live_voice_create_session(
                                     "transcription": { "model": "gpt-4o-mini-transcribe" }
                                 },
                                 "output": { "voice": "marin" }
-                            }
+                            },
+                            "tool_choice": "auto",
+                            "tools": [{
+                                "type": "function",
+                                "name": "hand_off_to_medousa",
+                                "description": "Send a request that needs tools, research, files, durable work, or more time to the user's active Medousa chat. Tell the user briefly that you are handing it off, then call this function.",
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {
+                                        "request": {
+                                            "type": "string",
+                                            "description": "A self-contained description of the work Medousa should perform, including relevant context from the live conversation."
+                                        }
+                                    },
+                                    "required": ["request"],
+                                    "additionalProperties": false
+                                }
+                            }]
                         })
                         .to_string(),
                     )
