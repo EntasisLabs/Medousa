@@ -785,8 +785,7 @@ impl ChatGptCredentialStore for HomeChatGptCredentialStore {
             "chatgpt",
             medousa_types::secrets::IntegrationSecretSlot::OauthBundle,
             bundle,
-        );
-        Ok(())
+        )
     }
 }
 

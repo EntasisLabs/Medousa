@@ -174,50 +174,53 @@ pub fn load_kind_secret(kind: &str, slot: IntegrationSecretSlot) -> Option<Strin
 }
 
 pub fn kind_secret_configured(kind: &str, slot: IntegrationSecretSlot) -> bool {
-    if ensure_secrets_bootstrapped().is_err() {
-        return false;
-    }
-    find_by_kind_sync(kind)
-        .into_iter()
-        .any(|connection| connection.secrets.slot(slot))
+    load_kind_secret(kind, slot).is_some()
 }
 
-pub fn save_kind_secret(kind: &str, slot: IntegrationSecretSlot, value: Option<&str>) {
-    let Ok(installation_id) = ensure_secrets_bootstrapped() else {
-        return;
-    };
-    let Ok(connection) = ensure_kind_sync(kind, None, None) else {
-        return;
-    };
+pub fn save_kind_secret(
+    kind: &str,
+    slot: IntegrationSecretSlot,
+    value: Option<&str>,
+) -> Result<(), String> {
+    let installation_id = ensure_secrets_bootstrapped()?;
+    let connection = ensure_kind_sync(kind, None, None)?;
     let path = integration_path(&installation_id, &connection.connection_id, slot);
     match value.map(str::trim).filter(|v| !v.is_empty()) {
         Some(v) => {
-            let _ = save_daemon_secret(&data_dir(), &path, v);
-            let _ = set_slot_presence_sync(&connection.connection_id, slot, true);
+            save_daemon_secret(&data_dir(), &path, v).map_err(|error| error.to_string())?;
+            let stored = load_daemon_secret(&data_dir(), &path)
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| format!("{kind} credential was not readable after saving"))?;
+            if stored.value != v {
+                return Err(format!("{kind} credential read-back did not match"));
+            }
+            set_slot_presence_sync(&connection.connection_id, slot, true)?
+                .ok_or_else(|| format!("{kind} connection disappeared while saving its secret"))?;
         }
         None => {
-            let _ = delete_daemon_secret(&data_dir(), &path);
-            let _ = set_slot_presence_sync(&connection.connection_id, slot, false);
+            delete_daemon_secret(&data_dir(), &path).map_err(|error| error.to_string())?;
+            set_slot_presence_sync(&connection.connection_id, slot, false)?.ok_or_else(|| {
+                format!("{kind} connection disappeared while clearing its secret")
+            })?;
         }
     }
+    Ok(())
 }
 
 pub fn load_provider_secret(provider: &str) -> Option<String> {
     load_kind_secret(provider, IntegrationSecretSlot::ApiKey)
 }
 
-pub fn save_provider_secret(provider: &str, api_key: Option<&str>) {
-    save_kind_secret(provider, IntegrationSecretSlot::ApiKey, api_key);
+pub fn save_provider_secret(provider: &str, api_key: Option<&str>) -> Result<(), String> {
+    save_kind_secret(provider, IntegrationSecretSlot::ApiKey, api_key)
 }
 
 pub fn load_connection_base_url(kind: &str) -> Option<String> {
     find_by_kind_sync(kind).into_iter().find_map(|c| c.base_url)
 }
 
-pub fn save_connection_base_url(kind: &str, base_url: Option<&str>) {
-    let Ok(mut connection) = ensure_kind_sync(kind, None, None) else {
-        return;
-    };
+pub fn save_connection_base_url(kind: &str, base_url: Option<&str>) -> Result<(), String> {
+    let mut connection = ensure_kind_sync(kind, None, None)?;
     connection.base_url = base_url
         .map(str::trim)
         .filter(|v| !v.is_empty())
@@ -227,7 +230,7 @@ pub fn save_connection_base_url(kind: &str, base_url: Option<&str>) {
     let mut doc = load_file_doc();
     doc.connections
         .insert(connection.connection_id.as_str().to_string(), connection);
-    let _ = save_file_doc(&doc);
+    save_file_doc(&doc)
 }
 
 pub fn load_bot_token(channel: &str) -> Option<String> {
