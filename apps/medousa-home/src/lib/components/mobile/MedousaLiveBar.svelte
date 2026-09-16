@@ -13,6 +13,7 @@
   let busy = $state(false);
   let localError = $state<string | null>(null);
   const canStart = $derived(!busy && !$liveVoiceState.active);
+  const recentTranscript = $derived($liveVoiceState.transcript.slice(-2));
   const label = $derived.by(() => {
     if ($liveVoiceState.phase === "connecting") return "Connecting…";
     if ($liveVoiceState.phase === "speaking") return "Medousa is speaking";
@@ -87,30 +88,42 @@
       </span>
     </button>
   {:else}
-    <div class="flex min-h-11 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-2 py-1.5">
-      <span class="grid size-9 shrink-0 place-items-center rounded-full bg-fuchsia-500 text-white">
-        <Mic class="size-4" />
-      </span>
-      <div class="min-w-0 flex-1">
-        <p class="truncate text-sm font-medium text-white">{label}</p>
-        <p class="truncate text-[11px] text-white/45">{workshops.activeLabel}</p>
+    <div class="rounded-2xl border border-fuchsia-400/20 bg-fuchsia-400/8 px-2 py-2">
+      <div class="flex min-h-11 items-center gap-2">
+        <span class="grid size-9 shrink-0 place-items-center rounded-full bg-fuchsia-500 text-white shadow-lg shadow-fuchsia-500/20">
+          <Mic class="size-4" />
+        </span>
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-sm font-medium text-white">{label}</p>
+          <p class="truncate text-[11px] text-white/45">Live in {workshops.activeLabel}</p>
+        </div>
+        <button
+          type="button"
+          class="grid size-9 place-items-center rounded-full bg-white/8 text-white"
+          aria-label={$liveVoiceState.muted ? "Unmute microphone" : "Mute microphone"}
+          onclick={toggleMuted}
+        >
+          {#if $liveVoiceState.muted}<MicOff class="size-4" />{:else}<Mic class="size-4" />{/if}
+        </button>
+        <button
+          type="button"
+          class="grid size-9 place-items-center rounded-full bg-red-500/90 text-white"
+          aria-label="End Medousa Live"
+          onclick={stop}
+        >
+          <PhoneOff class="size-4" />
+        </button>
       </div>
-      <button
-        type="button"
-        class="grid size-9 place-items-center rounded-full bg-white/8 text-white"
-        aria-label={$liveVoiceState.muted ? "Unmute microphone" : "Mute microphone"}
-        onclick={toggleMuted}
-      >
-        {#if $liveVoiceState.muted}<MicOff class="size-4" />{:else}<Mic class="size-4" />{/if}
-      </button>
-      <button
-        type="button"
-        class="grid size-9 place-items-center rounded-full bg-red-500/90 text-white"
-        aria-label="End Medousa Live"
-        onclick={stop}
-      >
-        <PhoneOff class="size-4" />
-      </button>
+      {#if recentTranscript.length}
+        <div class="space-y-1 border-t border-white/8 px-1 pt-2">
+          {#each recentTranscript as entry (entry.id)}
+            <p class="line-clamp-2 text-xs leading-relaxed text-white/70">
+              <span class="font-semibold text-white/45">{entry.role === "user" ? "You" : "Medousa"}</span>
+              {entry.text}
+            </p>
+          {/each}
+        </div>
+      {/if}
     </div>
   {/if}
 </div>

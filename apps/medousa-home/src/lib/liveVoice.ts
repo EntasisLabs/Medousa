@@ -28,13 +28,21 @@ export interface LiveSessionAnswer {
 
 export interface LiveVoiceClientState extends LiveVoiceStatus {
   liveSessionId?: string | null;
+  transcript: LiveTranscriptEntry[];
+}
+
+export interface LiveTranscriptEntry {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
 }
 
 export async function createLiveSession(
   sdp: string,
   sessionId: string,
+  workshopName: string,
 ): Promise<LiveSessionAnswer> {
-  return invoke<LiveSessionAnswer>("live_voice_create_session", { sdp, sessionId });
+  return invoke<LiveSessionAnswer>("live_voice_create_session", { sdp, sessionId, workshopName });
 }
 
 const unavailable: LiveVoiceStatus = {
@@ -50,6 +58,7 @@ const idle: LiveVoiceClientState = {
   active: false,
   muted: false,
   phase: "idle",
+  transcript: [],
 };
 
 export const liveVoiceState = writable<LiveVoiceClientState>(idle);
@@ -124,12 +133,42 @@ export function livePhaseForServerEvent(type: string): LiveVoicePhase | null {
   return null;
 }
 
+export function liveTranscriptForServerEvent(event: Record<string, unknown>): LiveTranscriptEntry | null {
+  const type = typeof event.type === "string" ? event.type : "";
+  const text = typeof event.transcript === "string" ? event.transcript.trim() : "";
+  if (!text) return null;
+  const id =
+    (typeof event.item_id === "string" && event.item_id) ||
+    (typeof event.response_id === "string" && event.response_id) ||
+    (typeof event.event_id === "string" && event.event_id) ||
+    `${type}-${text}`;
+  if (type === "conversation.item.input_audio_transcription.completed") {
+    return { id: `user-${id}`, role: "user", text };
+  }
+  if (type === "response.output_audio_transcript.done") {
+    return { id: `assistant-${id}`, role: "assistant", text };
+  }
+  return null;
+}
+
+function appendTranscript(entry: LiveTranscriptEntry) {
+  liveVoiceState.update((current) => {
+    const existing = current.transcript.findIndex((item) => item.id === entry.id);
+    const transcript = [...current.transcript];
+    if (existing >= 0) transcript[existing] = entry;
+    else transcript.push(entry);
+    return { ...current, transcript: transcript.slice(-20) };
+  });
+}
+
 function handleServerEvent(raw: string) {
   try {
-    const event = JSON.parse(raw) as { type?: unknown };
+    const event = JSON.parse(raw) as Record<string, unknown>;
     if (typeof event.type !== "string") return;
     const phase = livePhaseForServerEvent(event.type);
     if (phase) updateClientState({ phase });
+    const transcript = liveTranscriptForServerEvent(event);
+    if (transcript) appendTranscript(transcript);
   } catch {
     // Ignore non-JSON diagnostic frames; media continues independently.
   }
@@ -153,6 +192,7 @@ export async function connectLiveVoice(
     workshopName,
     sessionId,
     liveSessionId: null,
+    transcript: [],
     error: null,
   });
 
@@ -204,7 +244,7 @@ export async function connectLiveVoice(
     const offer = connection.localDescription?.sdp;
     if (!offer) throw new Error("The iPhone could not create a Live audio offer");
 
-    const answer = await createLiveSession(offer, sessionId);
+    const answer = await createLiveSession(offer, sessionId, workshopName);
     await connection.setRemoteDescription({ type: "answer", sdp: answer.sdp });
     await waitForConnection(connection);
     updateClientState({

@@ -26,10 +26,13 @@ pub struct LiveSessionAnswer {
 pub async fn live_voice_create_session(
     sdp: String,
     session_id: String,
+    workshop_name: String,
 ) -> Result<LiveSessionAnswer, String> {
     let validated_sdp = sdp.trim();
-    if validated_sdp.is_empty() || session_id.trim().is_empty() {
-        return Err("sdp and sessionId are required".into());
+    let session_id = session_id.trim();
+    let workshop_name = workshop_name.trim();
+    if validated_sdp.is_empty() || session_id.is_empty() || workshop_name.is_empty() {
+        return Err("sdp, sessionId, and workshopName are required".into());
     }
     if sdp.len() > MAX_SDP_BYTES {
         return Err("The Live audio offer is too large".into());
@@ -65,7 +68,16 @@ pub async fn live_voice_create_session(
                         serde_json::json!({
                             "type": "realtime",
                             "model": "gpt-realtime",
-                            "instructions": "You are Medousa's live voice. Be concise and conversational. Delegate requests that need tools or durable work to the Medousa application."
+                            "instructions": format!(
+                                "You are Medousa, speaking inside the user's {workshop_name} workshop. Be warm, concise, conversational, and sound like the same assistant they use in Medousa. This live conversation belongs to Medousa session {session_id}. Never claim to have used tools or changed data from this voice session. If a request needs tools or durable work, clearly offer to hand it back to the Medousa chat."
+                            ),
+                            "audio": {
+                                "input": {
+                                    "noise_reduction": { "type": "near_field" },
+                                    "transcription": { "model": "gpt-4o-mini-transcribe" }
+                                },
+                                "output": { "voice": "marin" }
+                            }
                         })
                         .to_string(),
                     )
