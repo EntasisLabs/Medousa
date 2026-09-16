@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+const OPENAI_LIVE_SESSIONS_URL: &str = "https://api.openai.com/v1/live/sessions";
+const MAX_SDP_BYTES: usize = 256 * 1024;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct LiveVoiceStatus {
@@ -10,6 +13,91 @@ pub struct LiveVoiceStatus {
     pub workshop_name: Option<String>,
     pub session_id: Option<String>,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveSessionAnswer {
+    live_session_id: String,
+    sdp: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiLiveResponse {
+    session: OpenAiLiveSession,
+    transport: OpenAiLiveTransport,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiLiveSession {
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiLiveTransport {
+    sdp: String,
+}
+
+#[tauri::command]
+pub async fn live_voice_create_session(
+    sdp: String,
+    session_id: String,
+) -> Result<LiveSessionAnswer, String> {
+    let sdp = sdp.trim();
+    if sdp.is_empty() || session_id.trim().is_empty() {
+        return Err("sdp and sessionId are required".into());
+    }
+    if sdp.len() > MAX_SDP_BYTES {
+        return Err("The Live audio offer is too large".into());
+    }
+    if !sdp.starts_with("v=0") {
+        return Err("The iPhone created an invalid Live audio offer".into());
+    }
+
+    let api_key =
+        tokio::task::spawn_blocking(|| crate::integration_secrets::load_provider_secret("openai"))
+            .await
+            .map_err(|_| "Could not read the iPhone's OpenAI credential".to_string())?
+            .ok_or_else(|| {
+                "Configure an OpenAI API key on this iPhone to use Medousa Live".to_string()
+            })?;
+
+    let response = reqwest::Client::new()
+        .post(OPENAI_LIVE_SESSIONS_URL)
+        .bearer_auth(api_key)
+        .json(&serde_json::json!({
+            "session": {
+                "model": "gpt-live-1",
+                "instructions": "You are Medousa's live voice. Be concise and conversational. Delegate requests that need tools or durable work to the Medousa application."
+            },
+            "transport": {
+                "type": "webrtc",
+                "sdp": sdp
+            }
+        }))
+        .send()
+        .await
+        .map_err(|error| format!("Could not reach OpenAI Live from this iPhone: {error}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(match status.as_u16() {
+            401 | 403 => "OpenAI rejected the API key stored on this iPhone".into(),
+            429 => "OpenAI Live is temporarily rate limited".into(),
+            code => format!("OpenAI Live could not start the session (HTTP {code})"),
+        });
+    }
+
+    let decoded: OpenAiLiveResponse = response
+        .json()
+        .await
+        .map_err(|_| "OpenAI Live returned an invalid session response".to_string())?;
+    if decoded.session.id.trim().is_empty() || decoded.transport.sdp.trim().is_empty() {
+        return Err("OpenAI Live returned an incomplete session response".into());
+    }
+    Ok(LiveSessionAnswer {
+        live_session_id: decoded.session.id,
+        sdp: decoded.transport.sdp,
+    })
 }
 
 #[derive(Debug, Serialize)]
