@@ -27,14 +27,14 @@ pub async fn live_voice_create_session(
     sdp: String,
     session_id: String,
 ) -> Result<LiveSessionAnswer, String> {
-    let sdp = sdp.trim();
-    if sdp.is_empty() || session_id.trim().is_empty() {
+    let validated_sdp = sdp.trim();
+    if validated_sdp.is_empty() || session_id.trim().is_empty() {
         return Err("sdp and sessionId are required".into());
     }
     if sdp.len() > MAX_SDP_BYTES {
         return Err("The Live audio offer is too large".into());
     }
-    if !sdp.starts_with("v=0") {
+    if !validated_sdp.starts_with("v=0") {
         return Err("The iPhone created an invalid Live audio offer".into());
     }
 
@@ -53,7 +53,9 @@ pub async fn live_voice_create_session(
             reqwest::multipart::Form::new()
                 .part(
                     "sdp",
-                    reqwest::multipart::Part::text(sdp.to_string())
+                    // Preserve the browser-generated CRLF line endings, including
+                    // the final terminator required by strict SDP parsers.
+                    reqwest::multipart::Part::bytes(sdp.into_bytes())
                         .mime_str("application/sdp")
                         .map_err(|error| error.to_string())?,
                 )
