@@ -53,6 +53,7 @@ import {
 } from "$lib/stores/environment.svelte";
 import type { EnvironmentStreamEvent } from "$lib/types/environment";
 import { homeChannelSurface } from "$lib/platform";
+import { layout } from "$lib/runtime/layout.svelte";
 import type { TurnStreamEnvelopeV3 } from "$lib/types/generated/daemon_api";
 import type { WorkspaceStreamEvent } from "$lib/types/workspace";
 
@@ -217,6 +218,7 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
     onInteractiveEvent<TurnStreamEnvelopeV3>((envelope) => {
       if (workshopTransitioning) return;
       const turnBefore = chat.turns.get(envelope.turn_id);
+      const turnSessionId = chat.streamOwners.get(envelope.turn_id)?.sessionId;
       chat.applyStreamEvent(envelope);
       if (!isTauriMobilePlatform()) return;
 
@@ -243,7 +245,10 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
       }
 
       if (envelope.event.type === "turn_completed") {
-        void notifyTurnTicketTerminal(envelope, turnBefore?.workspaceCardId);
+        void notifyTurnTicketTerminal(envelope, turnBefore?.workspaceCardId, {
+          viewingConversation: document.visibilityState === "visible"
+            && layout.mobileTab === "chat" && chat.sessionId === turnSessionId,
+        });
         haptic("success");
       }
     }),

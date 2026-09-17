@@ -8,6 +8,17 @@ function msg(partial: Partial<ChatMessage>): ChatMessage {
 }
 
 describe("chatMessageToScene — assistant order (thinking → body → tools)", () => {
+  it("paints a settled result and repeated tool identity only once", () => {
+    const run: ToolRunState = { runId: "r1", toolName: "mcp", status: "succeeded", round: 1 };
+    const scene = chatMessageToScene(msg({ streaming: false, segments: [
+      { kind: "tool_group", groupId: "g1", toolRound: 1, runs: [run] },
+      { kind: "text", segmentId: "a", modelRound: 1, markdown: "**GitHub** is available.", committed: true },
+      { kind: "tool_group", groupId: "g2", toolRound: 1, runs: [run] },
+      { kind: "text", segmentId: "b", modelRound: 2, markdown: "GitHub is available.", committed: true },
+      { kind: "text", segmentId: "c", modelRound: 3, markdown: "You can search repositories.", committed: true },
+    ] }));
+    expect(scene.slots?.flow?.map((node) => node.type)).toEqual(["tool_trace", "prose", "prose"]);
+  });
   it("wraps content in a document flow with a prose body", () => {
     const scene = chatMessageToScene(msg({ content: "Hello **world**" }));
     expect(scene.type).toBe("document");

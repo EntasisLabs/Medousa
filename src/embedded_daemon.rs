@@ -2242,8 +2242,8 @@ impl EmbeddedDaemon {
         if chronological
             .publish(TurnStreamEventV3::Status {
                 phase: "accepted".to_string(),
-                operator_message: Some("foreground turn accepted".to_string()),
-                debug_message: None,
+                operator_message: None,
+                debug_message: Some("foreground turn accepted".to_string()),
             })
             .await
             .is_err()

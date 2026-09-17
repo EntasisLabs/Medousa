@@ -103,6 +103,12 @@ rather than moving an active call to another daemon.
 
 ## Troubleshooting
 
+Successful turns do not send a separate completion notification while their
+conversation is visible in Medousa. Background completions still notify, and
+failed turns still notify even when the conversation is visible. Settled chat
+timelines show identical result text and repeated tool-run identities once;
+the stored transcript is preserved.
+
 - **The control says Live is unavailable:** use the installed iOS app rather
   than a desktop or browser build.
 - **Microphone access is disabled:** enable Medousa in **Settings → Privacy &

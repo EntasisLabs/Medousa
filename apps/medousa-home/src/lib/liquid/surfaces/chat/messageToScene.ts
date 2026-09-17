@@ -63,10 +63,17 @@ function chronologicalSegmentFlow(
   segments: ChatSegment[],
 ): SceneNode[] {
   const flow: SceneNode[] = [];
+  const seenText = new Set<string>();
+  const seenRuns = new Set<string>();
   for (const [index, segment] of segments.entries()) {
     switch (segment.kind) {
       case "text": {
         const markdown = stripChatBodyChrome(segment.markdown).markdown;
+        // Settled tool turns can contain both a streamed answer and its final
+        // recap. Paint identical text once; retain the underlying transcript.
+        const comparison = markdown.replace(/\*\*|`/g, "").replace(/\s+/g, " ").trim();
+        if (!message.streaming && comparison && seenText.has(comparison)) break;
+        if (comparison) seenText.add(comparison);
         if (markdown.trim() || (message.streaming && !segment.committed)) {
           flow.push(
             child(`${message.id}:segment:text:${segment.segmentId}`, "prose", {
@@ -86,11 +93,17 @@ function chronologicalSegmentFlow(
           );
         }
         break;
-      case "tool_group":
-        if (segment.runs.length > 0) {
+      case "tool_group": {
+        const runs = segment.runs.filter((run) => {
+          if (message.streaming) return true;
+          if (seenRuns.has(run.runId)) return false;
+          seenRuns.add(run.runId);
+          return true;
+        });
+        if (runs.length > 0) {
           flow.push(
             child(`${message.id}:segment:${segment.groupId}`, "tool_trace", {
-              runs: segment.runs,
+              runs,
               turnIndex: message.turnIndex ?? null,
               streaming: segment.runs.some((run) => run.status === "running"),
               compact: true,
@@ -98,6 +111,7 @@ function chronologicalSegmentFlow(
           );
         }
         break;
+      }
       case "artifact":
         flow.push(
           child(`${message.id}:segment:artifact:${segment.artifact.artifactId}`, "presentation", {

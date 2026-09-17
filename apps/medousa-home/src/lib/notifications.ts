@@ -3,6 +3,7 @@ import type { TurnStreamEnvelopeV3 } from "$lib/types/generated/daemon_api";
 import type { OpenWorkHandler } from "$lib/mobileNative";
 import { isTauriMobilePlatform } from "$lib/platform";
 import { shouldSuppressSiriTurnNotification } from "$lib/siriTurnPresentation";
+import { shouldNotifyTurnCompletion } from "$lib/turnNotificationPolicy";
 
 let permissionReady: boolean | null = null;
 const budgetNotified = new Set<string>();
@@ -249,6 +250,7 @@ const turnTerminalNotified = new Set<string>();
 export async function notifyTurnTicketTerminal(
   event: TurnStreamEnvelopeV3,
   workspaceCardId?: string | null,
+  presentation?: { viewingConversation: boolean },
 ) {
   if (!isTauriMobilePlatform() || event.event.type !== "turn_completed") return;
   const turnId = event.turn_id.trim();
@@ -280,7 +282,7 @@ export async function notifyTurnTicketTerminal(
     return;
   }
 
-  if (siriOwnsResult) return;
+  if (!shouldNotifyTurnCompletion(false, siriOwnsResult, presentation?.viewingConversation)) return;
 
   try {
     await sendWorkNotification(
