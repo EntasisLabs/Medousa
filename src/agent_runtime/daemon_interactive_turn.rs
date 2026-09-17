@@ -2003,17 +2003,9 @@ async fn run_agent_turn_inner(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let scheduled_tool_allowlist = request
-        .scheduled_tool_allowlist
-        .as_ref()
-        .map(|tools| {
-            tools
-                .iter()
-                .map(|tool| tool.trim().to_string())
-                .filter(|tool| !tool.is_empty())
-                .collect::<std::collections::HashSet<_>>()
-        })
-        .filter(|tools| !tools.is_empty())
+    let scheduled_tool_allowlist = super::turn_services::requested_tool_allowlist(
+        request.scheduled_tool_allowlist.as_deref(),
+    )
         .or_else(|| {
             manuscript_id.and_then(|id| {
                 crate::identity_manuscript::build_manuscript_context(id)

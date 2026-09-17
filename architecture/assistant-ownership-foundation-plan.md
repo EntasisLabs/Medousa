@@ -110,11 +110,34 @@ adapter and store tests cover replay, concurrent claims, restart, exact grant
 scope/expiry/revocation, and source visibility/provenance/budgets.
 
 This is an internal service seam, not yet a boot-composed user flow or public HTTP
-surface. Human approval UI, model-facing tools, terminal receipt persistence,
-restart reconciliation, and durable owner intake remain to be wired. The raw
+surface. Human approval UI, model-facing tools, boot/retry-host composition,
+restart reconciliation, and autonomous follow-up commands remain to be wired. The raw
 admission port alone does not claim persistence or exactly-once execution. No
 model-facing peer spawn tool is advertised yet. Real provider integration and
 device presentation still require validation beyond the fake harness.
+
+The next internal increment persists immutable terminal receipts against recorded
+peer custody before owner wakeup. Duplicate/out-of-order lifecycle events cannot
+replace a terminal or start a second intake. Receipt capture remains permitted
+after dispatch approval expiry/revocation so evidence is not lost; owner intake
+requires a separate exact operator grant, current ownership/source visibility,
+and unrevoked assignment authority. Idle timeout is interrupted, not proof of
+peer completion. A completed receipt means the prompt ended, not verified Forge
+work completion. Each delegated custody accepts only one prompt.
+
+Owner intake holds a nonblocking cross-process fence scoped to the owner session
+across channels and persists a turn attempt before calling the canonical
+turn-ticket/runtime path. Initial continuation is result-only: no tools, no
+manufactured user transcript turn, and no inherited operator capabilities.
+Consumption requires successful terminal delivery plus an execution-correlated
+committed assistant decision reference/digest. Known pre-execution admission
+rejections can retry within a fixed budget; timeouts and uncertain started turns
+cannot blindly rerun. Completion wakeups retry busy sessions with bounded host
+backoff. Pending receipts and acknowledged decisions survive store reopen;
+internal drain/resume ports are ready for a future startup/retry host, but are not
+yet boot-composed. A crash between owner execution and acknowledgment requires
+explicit reconciliation; process-local turn tickets are not restart evidence.
+Receipt/prompt/scan budgets fail closed rather than hiding missing evidence.
 
 Service extraction must preserve the existing ACP creation path's Forge leases,
 permission/secret routing, event pump, and cancellation behavior. Its current

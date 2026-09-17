@@ -39,6 +39,11 @@ sequenceDiagram
 
 SDK: [`docs/sdk/interactive-streaming.md`](../sdk/interactive-streaming.md)
 
+For `InteractiveTurnRequest.scheduled_tool_allowlist`, omission preserves normal
+tool selection. An explicitly empty list requests a result-only turn: no tools,
+including implicit public API tools. A nonempty list retains the existing
+scheduled allowlist behavior. Tool selection never grants execution authority.
+
 ---
 
 ## Cancel

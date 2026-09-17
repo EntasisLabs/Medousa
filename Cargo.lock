@@ -7652,6 +7652,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
+ "fs2",
  "medousa-store",
  "medousa-types",
  "serde",

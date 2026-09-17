@@ -723,6 +723,23 @@ mod tests {
         assert!(lane.allows(crate::public_api::COGNITION_IDENTITY_QUERY));
     }
 
+    #[test]
+    fn result_only_registry_denies_every_tool_including_public_api() {
+        use stasis::application::orchestration::tool_registry::InMemoryToolRegistry;
+        let exact = AllowlistToolRegistry::new_exact(
+            Arc::new(InMemoryToolRegistry::default()),
+            HashSet::new(),
+        );
+        for name in [
+            crate::public_api::COGNITION_IDENTITY_QUERY,
+            "cognition_web_search",
+            "cognition_workshop_spawn",
+            "cognition_utility_uuid",
+        ] {
+            assert!(!exact.allows(name), "result-only turn exposed {name}");
+        }
+    }
+
     #[tokio::test]
     async fn world_registry_binds_only_opaque_world_and_hides_driver_mechanics() {
         let seen = Arc::new(Mutex::new(Vec::new()));

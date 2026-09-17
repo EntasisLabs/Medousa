@@ -60,6 +60,10 @@ impl AcpPromptPersistState {
         }
     }
 
+    pub(crate) fn result_text(&self) -> String {
+        self.canonical_body()
+    }
+
     /// Build the assistant turn once. Subsequent calls return `None`.
     pub fn take_assistant_turn(&mut self, answer_state: Option<&str>) -> Option<ConversationTurn> {
         if self.finalized {

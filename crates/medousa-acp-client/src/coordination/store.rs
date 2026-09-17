@@ -16,6 +16,7 @@ use std::path::Path;
 
 const MAX_RECORD_BYTES: u64 = 2 * 1024 * 1024;
 const SCHEMA_VERSION: u16 = 1;
+pub mod intake;
 
 #[derive(Serialize, Deserialize)]
 struct Record<T> {
@@ -31,6 +32,7 @@ pub enum AssignmentClaim {
 
 pub struct CoordinationStore {
     root: StoreRoot,
+    intake_identity: std::sync::Arc<()>,
 }
 
 fn object_path(channel: &CoordinationChannelRef, kind: &str, id: &str) -> Result<StorePath> {
@@ -46,7 +48,8 @@ fn object_path(channel: &CoordinationChannelRef, kind: &str, id: &str) -> Result
         digest.update(part.as_bytes());
     }
     Ok(StorePath::parse(&format!(
-        "c1-{:x}.json",
+        "{}-{:x}.json",
+        if kind == "receipt" { "r1" } else { "c1" },
         digest.finalize()
     ))?)
 }
@@ -55,6 +58,7 @@ impl CoordinationStore {
     pub fn open(path: &Path) -> Result<Self> {
         Ok(Self {
             root: StoreRoot::open_or_create(path)?,
+            intake_identity: std::sync::Arc::new(()),
         })
     }
 
@@ -227,13 +231,21 @@ impl CoordinationStore {
             "assignment",
             &binding.assignment_id,
         )?)?;
-        self.require_assignment_grant(&request, chrono::Utc::now())?;
         if binding.target != request.target
             || binding.execution_session != request.execution_session
             || binding.agent_session_id.trim().is_empty()
         {
             bail!("peer binding does not match the claimed execution");
         }
+        if let Some(existing) = self.peer_if_recorded(&binding.channel, &binding.assignment_id)? {
+            if existing != *binding {
+                bail!("peer binding conflicts with recorded custody");
+            }
+            // A no-op replay cannot grant new execution. Do not turn expiry
+            // after accepted startup into a false persistence failure.
+            return Ok(false);
+        }
+        self.require_assignment_grant(&request, chrono::Utc::now())?;
         self.create(
             &object_path(&binding.channel, "peer", &binding.assignment_id)?,
             binding,

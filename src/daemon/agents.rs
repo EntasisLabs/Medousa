@@ -56,6 +56,8 @@ struct LiveAgentSession {
     /// Forge undertaking this session is bound to (governed cwd + leases).
     forge_work_id: Option<WorkId>,
     forge_lease: Option<medousa_forge::model::ExecutionLease>,
+    peer_receipt: Option<super::coordination::PeerReceiptSink>,
+    peer_prompt_started: Arc<std::sync::atomic::AtomicBool>,
 }
 
 #[derive(Default)]
@@ -516,6 +518,8 @@ pub(crate) async fn create_agent_session_service(
         cancelled: Arc::new(Mutex::new(false)),
         forge_work_id: forge_work_id.clone(),
         forge_lease,
+        peer_receipt: None,
+        peer_prompt_started: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     };
 
     {
@@ -670,6 +674,16 @@ pub(crate) async fn prompt_agent_session_service(
     if *live.cancelled.lock().await {
         return Err((StatusCode::CONFLICT, "agent session cancelled".into()));
     }
+    if live.peer_receipt.is_some()
+        && live
+            .peer_prompt_started
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+    {
+        return Err((
+            StatusCode::CONFLICT,
+            "delegated peer prompt has already started; reconcile before retry".into(),
+        ));
+    }
     spawn_prompt_pump(
         state,
         live.clone(),
@@ -679,6 +693,33 @@ pub(crate) async fn prompt_agent_session_service(
         accepted: true,
         agent_session_id: live.agent_session_id,
     })
+}
+
+pub(crate) async fn attach_peer_receipt_sink(
+    agent_session_id: &str,
+    sink: super::coordination::PeerReceiptSink,
+) -> anyhow::Result<()> {
+    let mut registry = AGENT_SESSIONS.write().await;
+    let live = registry
+        .by_agent_session
+        .get_mut(agent_session_id)
+        .ok_or_else(|| anyhow::anyhow!("peer custody disappeared before observer attachment"))?;
+    if live.peer_receipt.is_some() || *live.cancelled.lock().await {
+        anyhow::bail!("peer observer already bound or custody cancelled");
+    }
+    live.peer_receipt = Some(sink);
+    Ok(())
+}
+
+async fn persist_peer_terminal(
+    live: &LiveAgentSession,
+    outcome: medousa_types::coordination::PeerAssignmentOutcome,
+    result: String,
+) -> anyhow::Result<()> {
+    if let Some(sink) = &live.peer_receipt {
+        sink.terminal(outcome, result).await?;
+    }
+    Ok(())
 }
 
 pub async fn cancel_agent_session(
@@ -760,6 +801,13 @@ pub(crate) async fn cancel_live_agent_session(
         entry.channel.mark_closed();
     }
 
+    persist_peer_terminal(
+        &live,
+        medousa_types::coordination::PeerAssignmentOutcome::Cancelled,
+        "agent session cancelled".into(),
+    )
+    .await
+    .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
     publish_acp_terminal(
         AcpTerminalKind::Cancelled,
         &live.session_id,
@@ -1063,6 +1111,15 @@ async fn update_registry_forge(
 }
 
 async fn publish_agent_pump_error(state: &AppState, live: &LiveAgentSession, message: &str) {
+    if let Err(error) = persist_peer_terminal(
+        live,
+        medousa_types::coordination::PeerAssignmentOutcome::Failed,
+        message.to_string(),
+    )
+    .await
+    {
+        tracing::warn!(error = %error, "peer terminal receipt not acknowledged");
+    }
     let entry = {
         state
             .interactive_turn_streams
@@ -1233,6 +1290,14 @@ async fn run_prompt_pump(
                     None,
                 )
                 .await?;
+                // Idle is not proof that a delegated prompt completed. Preserve
+                // the legacy stream behavior, but never tell the owner it succeeded.
+                persist_peer_terminal(
+                    &live,
+                    medousa_types::coordination::PeerAssignmentOutcome::Interrupted,
+                    persist.result_text(),
+                )
+                .await?;
                 publish_agent_event(
                     &entry,
                     &live.agent_session_id,
@@ -1367,6 +1432,12 @@ async fn run_prompt_pump(
                     Some("error"),
                 )
                 .await?;
+                persist_peer_terminal(
+                    &live,
+                    medousa_types::coordination::PeerAssignmentOutcome::Failed,
+                    message.clone(),
+                )
+                .await?;
                 if let Some(lease) = live.forge_lease.as_ref() {
                     let failure = message.clone();
                     match admit_agent_lease(&state, lease, move |forge, lease| {
@@ -1410,6 +1481,9 @@ async fn run_prompt_pump(
                     json!({ "error": message }),
                 )
                 .await;
+                if live.peer_receipt.is_some() {
+                    break;
+                }
             }
             AcpEvent::Done => {
                 // Done is *not* a seal — lease stays live; heartbeat only.
@@ -1427,6 +1501,12 @@ async fn run_prompt_pump(
                 {
                     return Err(anyhow::anyhow!("Forge workspace authority changed: {err}"));
                 }
+                persist_peer_terminal(
+                    &live,
+                    medousa_types::coordination::PeerAssignmentOutcome::Completed,
+                    persist.result_text(),
+                )
+                .await?;
                 publish_agent_event(
                     &entry,
                     &live.agent_session_id,

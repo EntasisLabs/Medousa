@@ -1,4 +1,4 @@
-//! Transport-independent peer admission seam. Not yet wired to production ACP.
+//! Transport-independent peer admission and durable dispatch seams.
 //!
 //! Destination authorization and context visibility must be checked immediately
 //! before dispatch. Persistence/idempotent command claiming belongs to the host,
@@ -723,5 +723,388 @@ mod tests {
             .sources
             .push(request.context.sources[0].clone());
         assert!(hydrate(&request, &entry).is_err());
+    }
+
+    fn receipt_fixture() -> (
+        tempfile::TempDir,
+        store::CoordinationStore,
+        ExternalPeerAssignmentRequest,
+        medousa_types::coordination::ExternalPeerAssignmentReceipt,
+    ) {
+        use medousa_types::coordination::*;
+        let (temp, store, request) = persisted_fixture();
+        store.claim_assignment(&request).unwrap();
+        let binding = ExternalPeerAssignmentBinding {
+            assignment_id: request.assignment_id.clone(),
+            owner_principal_id: request.owner_principal_id.clone(),
+            channel: request.channel.clone(),
+            target: request.target.clone(),
+            execution_session: request.execution_session.clone(),
+            agent_session_id: "peer-1".into(),
+        };
+        store.record_peer(&binding).unwrap();
+        let receipt = ExternalPeerAssignmentReceipt {
+            receipt_id: store::intake::terminal_receipt_id(&binding),
+            binding,
+            outcome: PeerAssignmentOutcome::Completed,
+            result: "Peer prompt finished; verification not performed.".into(),
+        };
+        store
+            .approve_owner_continuation(&PeerOwnerContinuationGrant {
+                request: request.clone(),
+                expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+            })
+            .unwrap();
+        (temp, store, request, receipt)
+    }
+
+    #[test]
+    fn terminal_receipts_survive_restart_and_dedupe_conflicting_events() {
+        let (temp, store, request, receipt) = receipt_fixture();
+        assert!(store.record_receipt(&receipt).unwrap());
+        assert!(!store.record_receipt(&receipt).unwrap());
+        let mut conflict = receipt.clone();
+        conflict.outcome = medousa_types::coordination::PeerAssignmentOutcome::Failed;
+        assert!(store.record_receipt(&conflict).is_err());
+        conflict = receipt.clone();
+        conflict.receipt_id.push('x');
+        assert!(store.record_receipt(&conflict).is_err());
+        conflict = receipt.clone();
+        conflict.binding.agent_session_id = "another-peer".into();
+        conflict.receipt_id = store::intake::terminal_receipt_id(&conflict.binding);
+        assert!(store.record_receipt(&conflict).is_err());
+        drop(store);
+        let reopened = store::CoordinationStore::open(temp.path()).unwrap();
+        assert_eq!(
+            reopened
+                .pending_owner_receipts(&request.channel, &request.owner_principal_id, 10)
+                .unwrap(),
+            vec![receipt]
+        );
+        assert!(
+            reopened
+                .pending_owner_receipts(&request.channel, "someone-else", 10)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn every_terminal_outcome_is_preserved_even_after_dispatch_revocation() {
+        use medousa_types::coordination::PeerAssignmentOutcome::*;
+        for outcome in [Completed, Failed, Cancelled, Interrupted] {
+            let (_temp, store, request, mut receipt) = receipt_fixture();
+            receipt.outcome = outcome;
+            store
+                .revoke_assignment_grant(&request.channel, &request.execution_grant_id)
+                .unwrap();
+            assert!(store.record_receipt(&receipt).unwrap());
+            assert_eq!(
+                store
+                    .receipt(&request.channel, &request.assignment_id)
+                    .unwrap()
+                    .outcome,
+                outcome
+            );
+            assert!(
+                store
+                    .require_owner_continuation(&receipt, chrono::Utc::now())
+                    .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn concurrent_terminals_have_one_durable_winner() {
+        let (temp, _store, _, receipt) = receipt_fixture();
+        let outcomes = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..8)
+                .map(|_| {
+                    let path = temp.path();
+                    let receipt = &receipt;
+                    scope.spawn(move || {
+                        store::CoordinationStore::open(path)
+                            .unwrap()
+                            .record_receipt(receipt)
+                            .unwrap()
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(outcomes.into_iter().filter(|created| *created).count(), 1);
+    }
+
+    #[test]
+    fn dispatch_approval_does_not_authorize_owner_continuation() {
+        let (_temp, store, request) = persisted_fixture();
+        let binding = ExternalPeerAssignmentBinding {
+            assignment_id: request.assignment_id.clone(),
+            owner_principal_id: request.owner_principal_id.clone(),
+            channel: request.channel.clone(),
+            target: request.target.clone(),
+            execution_session: request.execution_session.clone(),
+            agent_session_id: "peer-1".into(),
+        };
+        store.claim_assignment(&request).unwrap();
+        store.record_peer(&binding).unwrap();
+        let receipt = medousa_types::coordination::ExternalPeerAssignmentReceipt {
+            receipt_id: store::intake::terminal_receipt_id(&binding),
+            binding,
+            outcome: medousa_types::coordination::PeerAssignmentOutcome::Completed,
+            result: "result".into(),
+        };
+        store.record_receipt(&receipt).unwrap();
+        assert!(
+            store
+                .require_owner_continuation(&receipt, chrono::Utc::now())
+                .is_err()
+        );
+        let lease = store.try_owner_intake_lease(&request).unwrap().unwrap();
+        assert!(store.begin_owner_intake(&receipt, &lease).is_err());
+    }
+
+    #[test]
+    fn owner_intake_requires_committed_receipt_and_current_approval() {
+        let (_temp, store, request, receipt) = receipt_fixture();
+        assert!(
+            store
+                .require_owner_continuation(&receipt, chrono::Utc::now())
+                .is_err()
+        );
+        store.record_receipt(&receipt).unwrap();
+        store
+            .require_owner_continuation(&receipt, chrono::Utc::now())
+            .unwrap();
+        assert!(
+            store
+                .require_owner_continuation(
+                    &receipt,
+                    chrono::Utc::now() + chrono::Duration::hours(2)
+                )
+                .is_err()
+        );
+        let mut wrong_grant = medousa_types::coordination::PeerOwnerContinuationGrant {
+            request,
+            expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+        };
+        wrong_grant.request.instructions.push_str(" and deploy");
+        assert!(store.approve_owner_continuation(&wrong_grant).is_err());
+    }
+
+    #[test]
+    fn owner_session_fence_spans_store_instances_and_channels() {
+        let (temp, store, request, _) = receipt_fixture();
+        let lease = store.try_owner_intake_lease(&request).unwrap().unwrap();
+        let reopened = store::CoordinationStore::open(temp.path()).unwrap();
+        assert!(reopened.try_owner_intake_lease(&request).unwrap().is_none());
+        let mut another = request.clone();
+        another.channel.channel_id = "another-channel".into();
+        reopened
+            .create_channel(&medousa_types::coordination::CoordinationChannelRecord {
+                channel: another.channel.clone(),
+                owner_principal_id: another.owner_principal_id.clone(),
+                member_principal_ids: vec![another.owner_principal_id.clone()],
+                attached_sessions: vec![another.owner_session.clone()],
+            })
+            .unwrap();
+        assert!(reopened.try_owner_intake_lease(&another).unwrap().is_none());
+        another.owner_session.session_id = "different-owner-session".parse().unwrap();
+        assert!(reopened.try_owner_intake_lease(&another).unwrap().is_some());
+        drop(lease);
+        assert!(reopened.try_owner_intake_lease(&request).unwrap().is_some());
+    }
+
+    #[test]
+    fn unfinished_intake_survives_restart_without_replaying_the_turn() {
+        let (temp, store, request, receipt) = receipt_fixture();
+        store.record_receipt(&receipt).unwrap();
+        let lease = store.try_owner_intake_lease(&request).unwrap().unwrap();
+        let store::intake::OwnerIntakeClaim::Started(intake) =
+            store.begin_owner_intake(&receipt, &lease).unwrap()
+        else {
+            panic!("expected new intake");
+        };
+        drop(lease);
+        drop(store);
+        let reopened = store::CoordinationStore::open(temp.path()).unwrap();
+        let lease = reopened.try_owner_intake_lease(&request).unwrap().unwrap();
+        assert_eq!(
+            reopened.begin_owner_intake(&receipt, &lease).unwrap(),
+            store::intake::OwnerIntakeClaim::Unresolved(intake)
+        );
+        assert_eq!(
+            reopened
+                .pending_owner_receipts(&request.channel, &request.owner_principal_id, 10)
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn known_admission_rejection_can_retry_but_an_uncertain_turn_cannot() {
+        let (_temp, store, request, receipt) = receipt_fixture();
+        store.record_receipt(&receipt).unwrap();
+        let lease = store.try_owner_intake_lease(&request).unwrap().unwrap();
+        for attempt in 0..8 {
+            let store::intake::OwnerIntakeClaim::Started(intake) =
+                store.begin_owner_intake(&receipt, &lease).unwrap()
+            else {
+                panic!("expected fresh attempt");
+            };
+            assert_eq!(intake.attempt, attempt);
+            store.reject_owner_admission(&intake, &lease).unwrap();
+        }
+        assert!(store.begin_owner_intake(&receipt, &lease).is_err());
+    }
+
+    #[test]
+    fn only_durable_owner_decision_consumes_receipt() {
+        let (temp, store, request, receipt) = receipt_fixture();
+        store.record_receipt(&receipt).unwrap();
+        let lease = store.try_owner_intake_lease(&request).unwrap().unwrap();
+        let store::intake::OwnerIntakeClaim::Started(intake) =
+            store.begin_owner_intake(&receipt, &lease).unwrap()
+        else {
+            panic!("expected intake");
+        };
+        let mut ack = medousa_types::coordination::PeerOwnerIntakeAcknowledgment {
+            intake,
+            decision: medousa_types::TranscriptEntryRef {
+                session: request.execution_session.clone(),
+                entry_id: format!("ent_{}", "c".repeat(32)).parse().unwrap(),
+                entry_seq: 1,
+            },
+            decision_digest: "sha256:decision".into(),
+        };
+        assert!(store.acknowledge_owner_intake(&ack, &lease).is_err());
+        ack.decision.session = request.owner_session.clone();
+        assert!(store.acknowledge_owner_intake(&ack, &lease).unwrap());
+        assert!(!store.acknowledge_owner_intake(&ack, &lease).unwrap());
+        assert!(
+            store
+                .pending_owner_receipts(&request.channel, &request.owner_principal_id, 10)
+                .unwrap()
+                .is_empty()
+        );
+        drop(lease);
+        drop(store);
+        let reopened = store::CoordinationStore::open(temp.path()).unwrap();
+        let lease = reopened.try_owner_intake_lease(&request).unwrap().unwrap();
+        assert_eq!(
+            reopened.begin_owner_intake(&receipt, &lease).unwrap(),
+            store::intake::OwnerIntakeClaim::Consumed(ack)
+        );
+    }
+
+    #[test]
+    fn a_lease_from_another_store_cannot_acknowledge_or_start_intake() {
+        let (temp, store, request, receipt) = receipt_fixture();
+        store.record_receipt(&receipt).unwrap();
+        let lease = store.try_owner_intake_lease(&request).unwrap().unwrap();
+        let reopened = store::CoordinationStore::open(temp.path()).unwrap();
+        assert!(reopened.begin_owner_intake(&receipt, &lease).is_err());
+    }
+
+    #[test]
+    fn oversized_receipt_and_corrupt_index_fail_closed() {
+        let (temp, store, request, mut receipt) = receipt_fixture();
+        receipt.result = "x".repeat(store::intake::MAX_RECEIPT_BYTES + 1);
+        assert!(store.record_receipt(&receipt).is_err());
+        receipt.result = "done".into();
+        store.record_receipt(&receipt).unwrap();
+        let path = std::fs::read_dir(temp.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| {
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with("r1-")
+            })
+            .unwrap();
+        std::fs::write(path, b"corrupt").unwrap();
+        assert!(
+            store
+                .pending_owner_receipts(&request.channel, &request.owner_principal_id, 10)
+                .is_err()
+        );
+        assert!(store.record_receipt(&receipt).is_err());
+    }
+
+    #[test]
+    fn closing_completed_custody_does_not_replace_terminal_or_wake_twice() {
+        let (_temp, store, request, receipt) = receipt_fixture();
+        assert!(store.observe_receipt_once(&receipt).unwrap());
+        let mut closed = receipt.clone();
+        closed.outcome = medousa_types::coordination::PeerAssignmentOutcome::Cancelled;
+        closed.result = "custody closed after prompt completion".into();
+        assert!(!store.observe_receipt_once(&closed).unwrap());
+        assert_eq!(
+            store
+                .receipt(&request.channel, &request.assignment_id)
+                .unwrap(),
+            receipt
+        );
+        closed.receipt_id.push('x');
+        assert!(store.observe_receipt_once(&closed).is_err());
+    }
+
+    #[test]
+    fn recorded_custody_replay_is_a_noop_after_revocation_not_new_authority() {
+        let (_temp, store, request, receipt) = receipt_fixture();
+        store
+            .revoke_assignment_grant(&request.channel, &request.execution_grant_id)
+            .unwrap();
+        assert!(!store.record_peer(&receipt.binding).unwrap());
+        let mut changed = receipt.binding.clone();
+        changed.agent_session_id = "new-peer".into();
+        assert!(store.record_peer(&changed).is_err());
+        assert!(
+            store
+                .require_assignment_grant(&request, chrono::Utc::now())
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn revoked_or_rejected_intake_cannot_consume_the_receipt() {
+        for revoke in [false, true] {
+            let (_temp, store, request, receipt) = receipt_fixture();
+            store.record_receipt(&receipt).unwrap();
+            let lease = store.try_owner_intake_lease(&request).unwrap().unwrap();
+            let store::intake::OwnerIntakeClaim::Started(intake) =
+                store.begin_owner_intake(&receipt, &lease).unwrap()
+            else {
+                panic!("expected intake");
+            };
+            if revoke {
+                store
+                    .revoke_assignment_grant(&request.channel, &request.execution_grant_id)
+                    .unwrap();
+            } else {
+                store.reject_owner_admission(&intake, &lease).unwrap();
+            }
+            let ack = medousa_types::coordination::PeerOwnerIntakeAcknowledgment {
+                intake,
+                decision: medousa_types::TranscriptEntryRef {
+                    session: request.owner_session.clone(),
+                    entry_id: format!("ent_{}", "c".repeat(32)).parse().unwrap(),
+                    entry_seq: 1,
+                },
+                decision_digest: "sha256:decision".into(),
+            };
+            assert!(store.acknowledge_owner_intake(&ack, &lease).is_err());
+            assert_eq!(
+                store
+                    .pending_owner_receipts(&request.channel, &request.owner_principal_id, 10)
+                    .unwrap()
+                    .len(),
+                1
+            );
+        }
     }
 }

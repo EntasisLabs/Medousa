@@ -24,11 +24,84 @@ use sha2::{Digest, Sha256};
 
 use crate::daemon::state::AppState;
 use crate::request_principal::{Capability, PrincipalKind, RequestPrincipal};
+mod owner_intake;
+pub use owner_intake::OwnerIntakeResult;
 
+#[derive(Clone)]
 pub struct LocalPeerDispatcher {
     state: AppState,
     local_runtime_id: String,
     store: Arc<CoordinationStore>,
+}
+
+#[derive(Clone)]
+pub(crate) struct PeerReceiptSink {
+    host: LocalPeerDispatcher,
+    binding: ExternalPeerAssignmentBinding,
+}
+
+impl PeerReceiptSink {
+    pub(crate) async fn terminal(
+        &self,
+        outcome: PeerAssignmentOutcome,
+        result: String,
+    ) -> Result<()> {
+        use medousa_acp_client::coordination::store::intake::{
+            MAX_RECEIPT_BYTES, terminal_receipt_id,
+        };
+        let receipt = ExternalPeerAssignmentReceipt {
+            receipt_id: terminal_receipt_id(&self.binding),
+            binding: self.binding.clone(),
+            outcome,
+            result: crate::text_budget::truncate_text_for_budget(&result, MAX_RECEIPT_BYTES / 4),
+        };
+        let store = self.host.store.clone();
+        let saved = receipt.clone();
+        let created = self
+            .host
+            .state
+            .forge_execution
+            .run(ExecutionClass::StoreIo, MAX_CONTEXT_BYTES, move || {
+                Ok(store.observe_receipt_once(&saved))
+            })
+            .await??;
+        if created {
+            let host = self.host.clone();
+            tokio::spawn(async move {
+                let principal =
+                    RequestPrincipal::continuation(receipt.binding.owner_principal_id.clone());
+                // Bounded host retries do not poll a model or replay a started
+                // turn. The durable inbox remains the recovery source afterward.
+                for attempt in 0..12u32 {
+                    match host
+                        .resume_owner_intake(
+                            &principal,
+                            receipt.binding.channel.clone(),
+                            &receipt.binding.assignment_id,
+                        )
+                        .await
+                    {
+                        Ok(OwnerIntakeResult::DeferredBusy) => {
+                            tokio::time::sleep(std::time::Duration::from_secs(
+                                (1u64 << attempt.min(5)).min(30),
+                            ))
+                            .await;
+                        }
+                        Ok(OwnerIntakeResult::NeedsReconciliation) => {
+                            tracing::warn!(receipt_id = %receipt.receipt_id, "peer owner intake requires reconciliation");
+                            break;
+                        }
+                        Ok(_) => break,
+                        Err(error) => {
+                            tracing::warn!(error = %error, "peer receipt retained pending owner intake");
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+        Ok(())
+    }
 }
 
 fn actor(principal: &RequestPrincipal) -> Result<String> {
@@ -431,7 +504,26 @@ impl ExternalPeerExecutionPort for LocalPeerCall<'_> {
         .map_err(|(_, message)| anyhow::anyhow!(message))?;
         // Startup can await a provider handshake. Recheck approval before any
         // prompt is sent; on failure retain the uncertain claim and cancel custody.
+        let binding = ExternalPeerAssignmentBinding {
+            assignment_id: request.assignment_id.clone(),
+            owner_principal_id: request.owner_principal_id.clone(),
+            channel: request.channel.clone(),
+            target: request.target.clone(),
+            execution_session: request.execution_session.clone(),
+            agent_session_id: response.agent_session_id.clone(),
+        };
         let start = async {
+            self.host.hydrate(&self.principal, request, true).await?;
+            // Bind custody durably before a fast peer can publish completion.
+            self.record(&binding).await?;
+            super::agents::attach_peer_receipt_sink(
+                &response.agent_session_id,
+                PeerReceiptSink {
+                    host: self.host.clone(),
+                    binding: binding.clone(),
+                },
+            )
+            .await?;
             self.host.hydrate(&self.principal, request, true).await?;
             super::agents::prompt_agent_session_service(
                 self.host.state.clone(),
@@ -447,6 +539,18 @@ impl ExternalPeerExecutionPort for LocalPeerCall<'_> {
         }
         .await;
         if let Err(error) = start {
+            // Binding persistence may precede a rejected prompt. Record that
+            // outcome rather than leaving accepted custody with no result.
+            let sink = PeerReceiptSink {
+                host: self.host.clone(),
+                binding: binding.clone(),
+            };
+            if let Err(receipt_error) = sink
+                .terminal(PeerAssignmentOutcome::Interrupted, error.to_string())
+                .await
+            {
+                tracing::warn!(error = %receipt_error, "peer startup claim requires reconciliation");
+            }
             let _ = super::agents::cancel_live_agent_session(
                 &self.host.state,
                 &response.agent_session_id,
@@ -454,13 +558,6 @@ impl ExternalPeerExecutionPort for LocalPeerCall<'_> {
             .await;
             return Err(error);
         }
-        Ok(ExternalPeerAssignmentBinding {
-            assignment_id: request.assignment_id.clone(),
-            owner_principal_id: request.owner_principal_id.clone(),
-            channel: request.channel.clone(),
-            target: request.target.clone(),
-            execution_session: request.execution_session.clone(),
-            agent_session_id: response.agent_session_id,
-        })
+        Ok(binding)
     }
 }

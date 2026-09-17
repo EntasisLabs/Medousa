@@ -25,6 +25,11 @@ let response: InteractiveTurnResponse = client
 let stream_url = response.stream_url;
 ```
 
+`scheduled_tool_allowlist: None` preserves normal tool selection;
+`Some(Vec::new())` requests a result-only turn with no tools, including implicit
+public API tools. Python uses omission/`None` versus `[]` for the same distinction.
+This field narrows tool selection; it does not grant execution authority.
+
 ### Select an exact browser world
 
 Browser identity is request-scoped. After creating or listing a daemon-owned

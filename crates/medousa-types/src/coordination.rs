@@ -106,6 +106,29 @@ pub struct ExternalPeerAssignmentReceipt {
     pub result: String,
 }
 
+/// Separate operator approval for one result-only owner turn. This does not
+/// authorize follow-up tool calls or transfer the peer's execution authority.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PeerOwnerContinuationGrant {
+    pub request: ExternalPeerAssignmentRequest,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PeerOwnerIntakeAttempt {
+    pub receipt: ExternalPeerAssignmentReceipt,
+    pub attempt: u32,
+    pub turn_id: String,
+}
+
+/// Acknowledges a durable owner decision, not merely acceptance of a turn.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PeerOwnerIntakeAcknowledgment {
+    pub intake: PeerOwnerIntakeAttempt,
+    pub decision: crate::TranscriptEntryRef,
+    pub decision_digest: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
