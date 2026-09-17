@@ -985,6 +985,8 @@ fn run_home() {
             #[cfg(target_os = "ios")]
             live_voice::live_voice_create_session,
             #[cfg(target_os = "ios")]
+            live_voice::live_voice_append_transcript,
+            #[cfg(target_os = "ios")]
             live_voice::live_voice_start,
             #[cfg(target_os = "ios")]
             live_voice::live_voice_set_muted,

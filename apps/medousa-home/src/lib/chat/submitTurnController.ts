@@ -33,6 +33,8 @@ export async function submitChatTurn(input: {
   ) => Promise<PreparedAgentSession | null>;
   onAgentSessionLost: () => void;
   scrollToLatest: (force: boolean) => void;
+  onAccepted?: (ticket: TurnTicketResponse) => void;
+  responseVoiceAppendix?: string;
 }): Promise<void> {
   const workshopEpoch = chat.workshopEpoch;
   if (!chat.workshopScopeId) {
@@ -61,6 +63,7 @@ export async function submitChatTurn(input: {
       throw new Error("Workshop changed while the turn was being admitted");
     }
     chat.beginTurn(input.userContent, ticket, [], identityUserId);
+    input.onAccepted?.(ticket);
     chat.clearPendingMedia();
     input.scrollToLatest(true);
     await chat.startTurnStream(ticket.turn_id, ticket.session_id, ticket.stream_url);
@@ -105,7 +108,7 @@ export async function submitChatTurn(input: {
     mediaRefs,
     liquidInteractions,
     voicePresetId: voice.voicePresetId,
-    voiceAppendix: voice.voiceAppendix,
+    voiceAppendix: [voice.voiceAppendix, input.responseVoiceAppendix].filter(Boolean).join("\n") || undefined,
     identityUserId: opts.identityUserId,
   });
   if (chat.workshopEpoch !== workshopEpoch) {
@@ -121,5 +124,6 @@ export async function submitChatTurn(input: {
   );
   chat.clearPendingMedia();
   input.scrollToLatest(true);
+  input.onAccepted?.(accepted);
   await chat.startTurnStream(accepted.turn_id, accepted.session_id, accepted.stream_url);
 }

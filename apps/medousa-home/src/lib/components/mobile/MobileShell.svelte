@@ -7,7 +7,6 @@
   import AskSheet from "$lib/components/mobile/AskSheet.svelte";
   import MobileBottomChrome from "$lib/components/mobile/MobileBottomChrome.svelte";
   import MobileTopChrome from "$lib/components/mobile/MobileTopChrome.svelte";
-  import MedousaLiveBar from "$lib/components/mobile/MedousaLiveBar.svelte";
   import HomePanel from "$lib/components/mobile/HomePanel.svelte";
   import WorkStory from "$lib/components/mobile/WorkStory.svelte";
   import MoreHub from "$lib/components/mobile/MoreHub.svelte";
@@ -224,9 +223,6 @@
 >
   <EnvPendingProposalBanner />
   <MobileTopChrome />
-  {#if layout.mobileTab === "chat" && isTauriIos()}
-    <MedousaLiveBar />
-  {/if}
   <main bind:this={mainEl} class="flex min-h-0 flex-1 flex-col overflow-hidden">
     {#key layout.navigationEpoch}
       {#if layout.mobileTab === "home"}

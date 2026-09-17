@@ -1,5 +1,8 @@
 <script lang="ts">
   import MobileChatContext from "./MobileChatContext.svelte";
+  import { Mic } from "@lucide/svelte";
+  import { isTauriIos } from "$lib/platform";
+  import { liveVoiceState } from "$lib/liveVoice";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
   import ModeProposalBar from "$lib/components/chat/ModeProposalBar.svelte";
   import AgentPermissionBar from "$lib/components/chat/AgentPermissionBar.svelte";
@@ -216,7 +219,22 @@
   <AgentPermissionBar mobile />
   <AgentSecretBar mobile />
   <AgentBrowserPanel mobile />
-  <MobileChatContext disabled={connection.offline || chat.composerBlocked || runtime.savingControls}/>
+  <div class="flex min-w-0 items-center justify-between gap-2">
+  <div class="min-w-0 flex-1">
+    <MobileChatContext disabled={connection.offline || chat.composerBlocked || runtime.savingControls}/>
+  </div>
+  {#if isTauriIos() && !$liveVoiceState.active}
+    <button
+      type="button"
+      class="mr-2 mb-1 flex min-h-11 shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-sm text-white disabled:opacity-45"
+      disabled={connection.offline || $liveVoiceState.phase === "connecting"}
+      aria-label="Start Medousa Live in this conversation"
+      onclick={() => window.dispatchEvent(new CustomEvent("medousa-live-start"))}
+    >
+      <Mic class="size-4" /> Talk live
+    </button>
+  {/if}
+  </div>
   <ChatComposerBar
     mobile
     disabled={connection.offline}

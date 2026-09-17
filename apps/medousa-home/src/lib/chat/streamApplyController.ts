@@ -39,6 +39,7 @@ import { randomUuid } from "$lib/utils/randomUuid";
 import { handleWorkerSynthesisStreamEvent, workerLinkForTurn } from "$lib/chat/workerLaneController";
 import type { ChatStoreHost } from "$lib/chat/chatStoreHost";
 import { narration } from "$lib/stores/narration.svelte";
+import { turnCompletionLedger } from "$lib/chat/turnCompletionLedger";
 import {
   detachStreamOwner,
   finishMessage,
@@ -370,29 +371,20 @@ function runMessageFollowUp(
     if (shouldNarrate) maybeNarrateTerminal(host, event, id);
     finishMessage(host, id);
     finishAskLaneTurn(host, event.turn_id);
-    if (shouldSettleTurnFromStream(host, event.turn_id)) {
-      settleTurn(host, event.turn_id);
-      host.scheduleSessionsRefresh();
-    }
+    noteTurnTerminal(host, event);
     return;
   }
   if (followUp === "terminal" && id) {
     if (shouldNarrate) maybeNarrateTerminal(host, event, id, revealContent);
     if (revealContent) {
       finishAskLaneTurn(host, event.turn_id);
-      if (shouldSettleTurnFromStream(host, event.turn_id)) {
-        settleTurn(host, event.turn_id);
-        host.scheduleSessionsRefresh();
-      }
+      noteTurnTerminal(host, event, revealContent);
       revealContentText(host, id, revealContent);
       return;
     }
     finishMessage(host, id);
     finishAskLaneTurn(host, event.turn_id);
-    if (shouldSettleTurnFromStream(host, event.turn_id)) {
-      settleTurn(host, event.turn_id);
-      host.scheduleSessionsRefresh();
-    }
+    noteTurnTerminal(host, event);
   }
 }
 
@@ -455,8 +447,16 @@ function finishAskLaneTurn(host: ChatStoreHost, turnId: string) {
   );
 }
 
-function noteTurnTerminal(host: ChatStoreHost, event: InteractiveTurnStreamEvent) {
+function noteTurnTerminal(host: ChatStoreHost, event: InteractiveTurnStreamEvent, canonicalContent?: string) {
   if (!shouldSettleTurnFromStream(host, event.turn_id)) return;
+  const messageId = host.messageIdForTurn(event.turn_id);
+  const message = host.messages.find((item) => item.role === "assistant"
+    && (item.id === messageId || item.turnId === event.turn_id));
+  const phase = event.event_type === "error" || event.phase === "error" ? "error"
+    : event.phase === "cancelled" ? "cancelled" : "done";
+  turnCompletionLedger.record(host.workshopScopeId ?? "", host.sessionId, event.turn_id, {
+    terminal: true, phase, text: canonicalContent?.trim() || event.final_text?.trim() || message?.content || "",
+  });
   settleTurn(host, event.turn_id);
   host.scheduleSessionsRefresh();
 }

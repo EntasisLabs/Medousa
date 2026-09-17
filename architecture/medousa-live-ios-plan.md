@@ -4,6 +4,25 @@
 > **Date:** 2026-09-15  
 > **Owner:** Medousa platform
 
+## Locked integration checkpoints — 2026-09-16
+
+Live is a mode of the existing conversation, not a second assistant.
+
+1. **Shared context + persistence:** daemon-built bounded policy, identity,
+   recent history, relevant memory and work; finalized voice messages persisted
+   without a second inference, stable IDs, ordering and interruption semantics.
+2. **Unified conversation UI:** composer voice mode, shared message timeline,
+   artifacts and tool activity; captions/mute/end; pin workshop/session ownership
+   so changing the visible chat cannot reroute a running call.
+3. **Execution/results + background hardening:** idempotent daemon execution,
+   existing policy/approvals, progress and authoritative results back into Live;
+   no double narration or speaking over the user; native state/control recovery.
+
+Keep Siri intact. Local contract/unit/build checks are the development gates
+while the phone is unavailable. Device qualification remains explicitly pending
+for audio feel, interruptions, lock/background, network transitions and soak.
+Do not claim background reliability from frontend tests alone.
+
 ## Decision
 
 Medousa Live, not Siri, owns sustained voice conversations. The workshop daemon
@@ -50,8 +69,10 @@ flowchart LR
 
 ### Trust boundary
 
-Production clients receive short-lived Live session credentials from a Medousa
-broker. Long-lived OpenAI keys stay in the workshop's secret authority. A
+Target production clients receive short-lived Live session credentials from a
+Medousa broker. The current phone prototype bootstraps Realtime using the
+iPhone's native secret authority; it does not yet have remote sideband ownership.
+Long-lived OpenAI keys stay outside JavaScript and model context. A
 trusted sideband connection lets the broker observe the Live session, dispatch
 tool calls into the selected Medousa session, append bounded progress, and
 return tool results. The mobile client never executes privileged tools directly.
@@ -92,3 +113,43 @@ ActivityKit bridge is reused for background-visible state.
   logs, notifications, widget data, or Live Activity content.
 - Every terminal state is recoverable from the app without creating a duplicate
   interactive turn.
+# GPT-Live client-delegation trial — 2026-09-16
+
+Trial the actual `/v1/live/sessions` WebRTC protocol, not a Realtime model rename.
+The native credential broker supplies bounded identity/history and a small
+voice prompt; the daemon remains the sole tool and permission authority.
+Client delegations are opaque IDs plus timeline offsets, not generated request
+arguments. Retain transcript fragments and reconstruct backend context;
+caption grouping must never initiate tools. Verified results return with
+`session.commentary.append`; no voice `response.create` turn triggers.
+
+Keep explicit legacy retry during qualification. Initial slice uses a bounded
+750ms context-collection delay, a short spoken result excerpt, and closure-time
+caption persistence. These are trial limitations, not a production guarantee.
+Validate MCP discovery, follow-up context, overlapping speech, late fragments,
+background execution, correction/cancellation semantics, and graceful closure
+on device before declaring migration complete.
+
+Device follow-up: MCP execution succeeded, but result return did not. The active
+chat map deletes settled interactive turns; it cannot serve as a completion
+ledger. Live now polls the daemon's full turn records and waits for the exact
+assistant message to finish streaming before returning a result. Track API
+commentary acceptance separately from speech/playback. Show unacknowledged
+results and unexpected session-closure reasons instead of silently disappearing.
+Submit the actual speech request as the saved user message, with answer-style
+hints in response-voice metadata, not an internal routing envelope in chat.
+
+Interruption follow-up: voice acknowledgments must not become failed overlapping
+daemon turns. A per-call work coordinator handles narrow acknowledgments without
+execution and serializes genuine delegated follow-ups. Completed results remain
+available independently of current speech and API acknowledgments. An explicit
+Hear result control re-presents the stored result without repeating tool work;
+it does not imply confirmed playback or automatic spoken cancellation support.
+
+Device follow-up: a visible completed answer with no Hear result control means
+the work observer has not captured a result, not merely a speech acknowledgment
+failure. Saved transcript mapping changes display IDs and omits the streaming
+turn ID. Capture exact terminal output at the normal stream's settlement boundary
+in bounded scoped completion receipts, before deleting active turns. Live reads
+these receipts independently of display reconciliation; no second stream or
+inference is introduced. Keep full daemon-turn polling as a fallback.

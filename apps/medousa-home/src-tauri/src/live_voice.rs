@@ -1,7 +1,23 @@
 use serde::{Deserialize, Serialize};
 
 const OPENAI_REALTIME_CALLS_URL: &str = "https://api.openai.com/v1/realtime/calls";
+const OPENAI_LIVE_SESSIONS_URL: &str = "https://api.openai.com/v1/live/sessions";
 const MAX_SDP_BYTES: usize = 256 * 1024;
+
+#[tauri::command]
+pub async fn live_voice_append_transcript(
+    embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
+    session_id: String,
+    live_session_id: String,
+    item_id: String,
+    role: String,
+    text: String,
+) -> Result<(), String> {
+    let client = embedded_state.client_if_active().await?
+        .ok_or_else(|| "Live transcript persistence requires the Personal workshop".to_string())?;
+    client.append_live_transcript(&session_id, &live_session_id, &item_id, &role, &text)
+        .await.map_err(|error| error.to_string())
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -18,15 +34,25 @@ pub struct LiveVoiceStatus {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LiveSessionAnswer {
+    protocol: &'static str,
     live_session_id: String,
     sdp: String,
+    seed_history: Vec<LiveSeedMessage>,
+}
+
+#[derive(Debug, Serialize)]
+struct LiveSeedMessage {
+    role: String,
+    content: String,
 }
 
 #[tauri::command]
 pub async fn live_voice_create_session(
+    embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     sdp: String,
     session_id: String,
     workshop_name: String,
+    protocol: Option<String>,
 ) -> Result<LiveSessionAnswer, String> {
     let validated_sdp = sdp.trim();
     let session_id = session_id.trim();
@@ -41,6 +67,26 @@ pub async fn live_voice_create_session(
         return Err("The iPhone created an invalid Live audio offer".into());
     }
 
+    let context = match embedded_state.client_if_active().await? {
+        Some(client) => Some(client.live_context(session_id).await.map_err(|error| error.to_string())?),
+        None => None,
+    };
+    let use_live = match protocol.as_deref().unwrap_or("realtime") {
+        "live" => true,
+        "realtime" => false,
+        _ => return Err("Unsupported Live voice protocol".into()),
+    };
+    let mut voice_instructions = context.as_ref().map(|packet| packet.voice_instructions.clone())
+        .unwrap_or_else(|| format!("You are Medousa in {workshop_name}. Speak naturally and briefly. Delegate work requiring research, MCP tools, files, images or durable actions to the workshop backend before answering. Never invent results."));
+    voice_instructions.push_str("\nDo not delegate to the backend when: the user gives a conversational acknowledgment such as 'okay, no worries', thanks you, or asks to hear an already provided result. These acknowledgments do not cancel work or mean its answer should be suppressed. Yield speech to interruptions, then present verified work results when available unless the user explicitly asks not to hear them. Use current returned facts for follow-up questions instead of starting another lookup. Distinguish stopping speech from cancelling a task; never claim cancellation without backend confirmation.");
+    let instructions = context.as_ref().map(|packet| packet.instructions.clone()).unwrap_or_else(|| {
+        format!("You are Medousa in the user's {workshop_name} workshop. Be direct and conversational. Use hand_off_to_medousa for requests requiring tools or durable work; never invent execution results.")
+    });
+    let seed_history: Vec<LiveSeedMessage> = context.map(|packet| packet.recent_history.into_iter().map(|turn| LiveSeedMessage {
+        role: turn.role,
+        content: turn.content,
+    }).collect()).unwrap_or_default();
+
     let api_key =
         tokio::task::spawn_blocking(|| crate::integration_secrets::load_provider_secret("openai"))
             .await
@@ -49,7 +95,26 @@ pub async fn live_voice_create_session(
                 "Configure an OpenAI API key on this iPhone to use Medousa Live".to_string()
             })?;
 
-    let response = reqwest::Client::new()
+    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(30))
+        .build().map_err(|error| error.to_string())?;
+    let request = if use_live {
+        client.post(OPENAI_LIVE_SESSIONS_URL).bearer_auth(&api_key).json(&serde_json::json!({
+            "session": {
+                "model": "gpt-live-1", "instructions": voice_instructions,
+                "delegation": { "type": "client" }, "store": false,
+                "audio": { "output": { "voice": "marin" } },
+                "client": { "data_channel": { "allowed_client_events": [
+                    "session.thinking.append", "session.commentary.append", "session.close"
+                ] } },
+                "input": seed_history.iter().map(|message| serde_json::json!({
+                    "role": message.role,
+                    "content": [{ "type": if message.role == "user" { "input_text" } else { "output_text" }, "text": message.content }]
+                })).collect::<Vec<_>>()
+            },
+            "transport": { "type": "webrtc", "sdp": sdp }
+        }))
+    } else {
+        client
         .post(OPENAI_REALTIME_CALLS_URL)
         .bearer_auth(api_key)
         .multipart(
@@ -68,9 +133,7 @@ pub async fn live_voice_create_session(
                         serde_json::json!({
                             "type": "realtime",
                             "model": "gpt-realtime",
-                            "instructions": format!(
-                                "You are Medousa, speaking inside the user's {workshop_name} workshop. Be warm, concise, conversational, and sound like the same assistant they use in Medousa. This live conversation belongs to Medousa session {session_id}. Never claim to have used tools or changed data from this voice session. If a request needs tools or durable work, clearly offer to hand it back to the Medousa chat."
-                            ),
+                            "instructions": instructions,
                             "audio": {
                                 "input": {
                                     "noise_reduction": { "type": "near_field" },
@@ -102,7 +165,8 @@ pub async fn live_voice_create_session(
                     .map_err(|error| error.to_string())?,
                 ),
         )
-        .send()
+    };
+    let response = request.send()
         .await
         .map_err(|error| format!("Could not reach OpenAI Live from this iPhone: {error}"))?;
     let status = response.status();
@@ -133,16 +197,27 @@ pub async fn live_voice_create_session(
             }),
         });
     }
-    let answer_sdp = response
+    let answer_body = response
         .text()
         .await
         .map_err(|error| format!("Could not read OpenAI's Live audio answer: {error}"))?;
+    let (live_session_id, answer_sdp) = if use_live {
+        let body: serde_json::Value = serde_json::from_str(&answer_body)
+            .map_err(|_| "OpenAI Live returned an invalid session response".to_string())?;
+        let id = body.pointer("/session/id").and_then(serde_json::Value::as_str)
+            .filter(|id| !id.is_empty()).ok_or("OpenAI Live returned no session ID")?;
+        let sdp = body.pointer("/transport/sdp").and_then(serde_json::Value::as_str)
+            .ok_or("OpenAI Live returned no audio answer")?;
+        (id.to_string(), sdp.to_string())
+    } else { (live_session_id, answer_body) };
     if !answer_sdp.trim().starts_with("v=0") {
         return Err("OpenAI Live returned an incomplete session response".into());
     }
     Ok(LiveSessionAnswer {
+        protocol: if use_live { "live" } else { "realtime" },
         live_session_id,
         sdp: answer_sdp,
+        seed_history: if use_live { Vec::new() } else { seed_history },
     })
 }
 
