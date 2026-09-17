@@ -129,6 +129,23 @@ pub struct PeerOwnerIntakeAcknowledgment {
     pub decision_digest: String,
 }
 
+/// Immutable snapshot offered to the owner for explicit approval. No execution
+/// authority exists merely because a proposal was submitted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PeerAssignmentProposal {
+    pub proposal_id: String,
+    pub request: ExternalPeerAssignmentRequest,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+    pub continue_owner: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PeerProposalDecision {
+    pub proposal_id: String,
+    pub owner_principal_id: String,
+    pub approved: bool,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

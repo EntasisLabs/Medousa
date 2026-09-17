@@ -17,6 +17,7 @@ use std::path::Path;
 const MAX_RECORD_BYTES: u64 = 2 * 1024 * 1024;
 const SCHEMA_VERSION: u16 = 1;
 pub mod intake;
+pub mod proposals;
 
 #[derive(Serialize, Deserialize)]
 struct Record<T> {

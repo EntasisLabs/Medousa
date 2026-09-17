@@ -109,8 +109,8 @@ failure cancels known custody while retaining the uncertain claim. Focused fake
 adapter and store tests cover replay, concurrent claims, restart, exact grant
 scope/expiry/revocation, and source visibility/provenance/budgets.
 
-This is an internal service seam, not yet a boot-composed user flow or public HTTP
-surface. Human approval UI, model-facing tools, boot/retry-host composition,
+This is an internal service seam, not yet a user flow or public HTTP
+surface. Human approval UI, model-facing tools,
 restart reconciliation, and autonomous follow-up commands remain to be wired. The raw
 admission port alone does not claim persistence or exactly-once execution. No
 model-facing peer spawn tool is advertised yet. Real provider integration and
@@ -134,10 +134,25 @@ committed assistant decision reference/digest. Known pre-execution admission
 rejections can retry within a fixed budget; timeouts and uncertain started turns
 cannot blindly rerun. Completion wakeups retry busy sessions with bounded host
 backoff. Pending receipts and acknowledged decisions survive store reopen;
-internal drain/resume ports are ready for a future startup/retry host, but are not
-yet boot-composed. A crash between owner execution and acknowledgment requires
+the desktop daemon now composes a startup/retry host (four concurrent intake
+workers, 30-second busy retry, five-minute unavailable-approval backoff). A paged
+local-authority/runtime inbox prevents blocked receipts starving later work.
+This host never relaunches peer processes from old claims. Monitor timeout and
+shutdown cancel only the exact owner turn admitted by the intake worker.
+A crash between owner execution and acknowledgment requires
 explicit reconciliation; process-local turn tickets are not restart evidence.
 Receipt/prompt/scan budgets fail closed rather than hiding missing evidence.
+
+The operator-approval backend persists content-addressed assignment proposals
+before decisions. Each assignment has one immutable proposal snapshot, including
+expiry and the separate owner-continuation choice. Approval and denial are
+immutable owner-scoped decisions; denial cannot be reversed into approval.
+Approval revalidates current source visibility and compiles exact grants
+idempotently, so partial writes can finish without changing the approved request.
+Proposal creation itself grants no execution authority. Dispatch reads the
+approved stored snapshot rather than mutable client instructions. Home approval
+presentation and public HTTP/SDK adapters remain the next slice, not a shipped
+user-facing or model-facing flow. Mobile daemon composition is not claimed here.
 
 Service extraction must preserve the existing ACP creation path's Forge leases,
 permission/secret routing, event pump, and cancellation behavior. Its current

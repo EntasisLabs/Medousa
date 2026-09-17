@@ -19,6 +19,20 @@ pub enum OwnerIntakeResult {
     NeedsReconciliation,
 }
 
+/// An intake monitor never abandons its admitted model turn on timeout/shutdown.
+/// Exact matching protects a newer human turn in the same owner session.
+struct OwnerTurnGuard {
+    registry: crate::agent_runtime::execution_context::TurnExecutionRegistry,
+    session: medousa_types::SessionId,
+    turn_id: String,
+}
+impl Drop for OwnerTurnGuard {
+    fn drop(&mut self) {
+        self.registry
+            .cancel_matching_turn(&self.session, &self.turn_id);
+    }
+}
+
 impl LocalPeerDispatcher {
     async fn stored<T: Send + 'static>(
         &self,
@@ -49,6 +63,7 @@ impl LocalPeerDispatcher {
         self.hydrate(principal, &grant.request, false).await?;
         self.stored(move |store| store.approve_owner_continuation(&grant))
             .await?;
+        self.wake.notify_one();
         Ok(())
     }
 
@@ -162,6 +177,16 @@ impl LocalPeerDispatcher {
         }
         // The canonical runner publishes terminal success only after transcript
         // persistence. Keep the owner-session fence until then, not just acceptance.
+        let _owner_turn = OwnerTurnGuard {
+            registry: self
+                .state
+                .platform
+                .agent_handle()
+                .execution_registry
+                .clone(),
+            session: request.owner_session.session_id.clone(),
+            turn_id: intake.turn_id.clone(),
+        };
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(120);
         loop {
             if let Some(ticket) =

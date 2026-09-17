@@ -407,6 +407,227 @@ mod tests {
         assert_eq!(adapter.assignments.load(Ordering::SeqCst), 0);
     }
 
+    #[test]
+    fn proposal_is_immutable_and_denial_cannot_be_reversed() {
+        use medousa_types::coordination::{PeerAssignmentProposal, PeerProposalDecision};
+        let (temp, store, request) = persisted_fixture();
+        let mut proposal = PeerAssignmentProposal {
+            proposal_id: String::new(),
+            request: request.clone(),
+            expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+            continue_owner: true,
+        };
+        proposal.proposal_id = store::proposals::proposal_identity(&proposal).unwrap();
+        assert!(store.record_proposal(&proposal).unwrap());
+        assert!(!store.record_proposal(&proposal).unwrap());
+        assert!(
+            store
+                .require_approved_proposal(
+                    &request.channel,
+                    &proposal.proposal_id,
+                    &request.owner_principal_id
+                )
+                .is_err()
+        );
+        let mut changed = proposal.clone();
+        changed.continue_owner = false;
+        assert!(store.record_proposal(&changed).is_err());
+        changed.proposal_id = store::proposals::proposal_identity(&changed).unwrap();
+        assert!(store.record_proposal(&changed).is_err());
+        let mut decision = PeerProposalDecision {
+            proposal_id: proposal.proposal_id.clone(),
+            owner_principal_id: request.owner_principal_id.clone(),
+            approved: false,
+        };
+        assert!(store.decide_proposal(&request.channel, &decision).unwrap());
+        assert!(!store.decide_proposal(&request.channel, &decision).unwrap());
+        decision.approved = true;
+        assert!(store.decide_proposal(&request.channel, &decision).is_err());
+        let reopened = store::CoordinationStore::open(temp.path()).unwrap();
+        assert_eq!(
+            reopened
+                .proposal(&request.channel, &proposal.proposal_id)
+                .unwrap(),
+            proposal
+        );
+        assert!(
+            reopened
+                .require_approved_proposal(
+                    &request.channel,
+                    &proposal.proposal_id,
+                    &request.owner_principal_id
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn proposal_approval_requires_owner_and_current_snapshot() {
+        use medousa_types::coordination::{PeerAssignmentProposal, PeerProposalDecision};
+        for expired in [false, true] {
+            let (_temp, store, request) = persisted_fixture();
+            let mut proposal = PeerAssignmentProposal {
+                proposal_id: String::new(),
+                request: request.clone(),
+                expires_at: chrono::Utc::now()
+                    + chrono::Duration::seconds(if expired { -1 } else { 3600 }),
+                continue_owner: false,
+            };
+            proposal.proposal_id = store::proposals::proposal_identity(&proposal).unwrap();
+            store.record_proposal(&proposal).unwrap();
+            let mut decision = PeerProposalDecision {
+                proposal_id: proposal.proposal_id.clone(),
+                owner_principal_id: "user:mallory".into(),
+                approved: true,
+            };
+            assert!(store.decide_proposal(&request.channel, &decision).is_err());
+            decision.owner_principal_id = request.owner_principal_id.clone();
+            assert_eq!(
+                store.decide_proposal(&request.channel, &decision).is_err(),
+                expired
+            );
+            if !expired {
+                assert_eq!(
+                    store
+                        .require_approved_proposal(
+                            &request.channel,
+                            &proposal.proposal_id,
+                            &request.owner_principal_id
+                        )
+                        .unwrap(),
+                    proposal
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn proposal_decision_is_not_itself_an_execution_grant() {
+        use medousa_types::coordination::{PeerAssignmentProposal, PeerProposalDecision};
+        let (_temp, store, mut request) = persisted_fixture();
+        request.assignment_id = "proposal-only".into();
+        request.execution_grant_id = "proposal-only-grant".into();
+        let mut proposal = PeerAssignmentProposal {
+            proposal_id: String::new(),
+            request: request.clone(),
+            expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+            continue_owner: true,
+        };
+        proposal.proposal_id = store::proposals::proposal_identity(&proposal).unwrap();
+        store.record_proposal(&proposal).unwrap();
+        let decision = PeerProposalDecision {
+            proposal_id: proposal.proposal_id.clone(),
+            owner_principal_id: request.owner_principal_id.clone(),
+            approved: true,
+        };
+        store.decide_proposal(&request.channel, &decision).unwrap();
+        assert!(
+            store
+                .require_assignment_grant(&request, chrono::Utc::now())
+                .is_err()
+        );
+        assert_eq!(
+            store
+                .require_approved_proposal(
+                    &request.channel,
+                    &proposal.proposal_id,
+                    &request.owner_principal_id
+                )
+                .unwrap(),
+            proposal
+        );
+    }
+
+    #[test]
+    fn local_recovery_is_paged_and_does_not_include_remote_receipts() {
+        use medousa_types::coordination::*;
+        let (temp, store, base) = persisted_fixture();
+        let mut ids = Vec::new();
+        for number in 0..3 {
+            let mut request = base.clone();
+            request.assignment_id = format!("recovery-{number}");
+            request.idempotency_key = format!("recovery-command-{number}");
+            request.execution_grant_id = format!("recovery-grant-{number}");
+            if number != 2 {
+                request.target.authority_id = request.channel.authority_id.clone();
+                request.execution_session.authority_id = request.channel.authority_id.clone();
+            }
+            store
+                .approve_assignment(&ExternalPeerAssignmentGrant {
+                    request: request.clone(),
+                    expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+                })
+                .unwrap();
+            store.claim_assignment(&request).unwrap();
+            let binding = ExternalPeerAssignmentBinding {
+                assignment_id: request.assignment_id,
+                owner_principal_id: request.owner_principal_id,
+                channel: request.channel,
+                target: request.target,
+                execution_session: request.execution_session,
+                agent_session_id: format!("recovery-peer-{number}"),
+            };
+            store.record_peer(&binding).unwrap();
+            let receipt = ExternalPeerAssignmentReceipt {
+                receipt_id: store::intake::terminal_receipt_id(&binding),
+                binding,
+                outcome: PeerAssignmentOutcome::Completed,
+                result: "done".into(),
+            };
+            store.record_receipt(&receipt).unwrap();
+            if number != 2 {
+                ids.push(receipt.receipt_id);
+            }
+        }
+        ids.sort();
+        let reopened = store::CoordinationStore::open(temp.path()).unwrap();
+        let page = reopened
+            .pending_local_owner_receipts(
+                &base.channel.authority_id,
+                &base.target.execution_runtime_id,
+                1,
+                None,
+            )
+            .unwrap();
+        assert_eq!(page[0].receipt_id, ids[0]);
+        let page = reopened
+            .pending_local_owner_receipts(
+                &base.channel.authority_id,
+                &base.target.execution_runtime_id,
+                1,
+                Some(&ids[0]),
+            )
+            .unwrap();
+        assert_eq!(page[0].receipt_id, ids[1]);
+        assert!(
+            reopened
+                .pending_local_owner_receipts(
+                    &base.channel.authority_id,
+                    &base.target.execution_runtime_id,
+                    1,
+                    Some(&ids[1])
+                )
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            reopened
+                .pending_local_owner_receipts(&base.channel.authority_id, "wrong-host", 256, None)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            reopened
+                .pending_local_owner_receipts(
+                    &base.channel.authority_id,
+                    &base.target.execution_runtime_id,
+                    257,
+                    None
+                )
+                .is_err()
+        );
+    }
+
     fn persisted_fixture() -> (
         tempfile::TempDir,
         store::CoordinationStore,

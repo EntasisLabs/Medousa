@@ -1090,6 +1090,19 @@ async fn start_daemon() -> Result<()> {
     let _mdns_advertiser = mdns_advertiser;
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let _coordination_host = match medousa::daemon::coordination::start_local_coordination_host(
+        state.clone(),
+        local_runtime_node_id.clone(),
+        shutdown_rx.clone(),
+    )
+    .await
+    {
+        Ok(host) => Some(host),
+        Err(error) => {
+            tracing::warn!(%error, "coordination recovery unavailable; chat remains active");
+            None
+        }
+    };
     let scheduler_ctx = SchedulerHeartbeatContext {
         platform: state.platform.clone(),
         heartbeat_policy: state.heartbeat_policy,
@@ -1228,6 +1241,9 @@ async fn start_daemon() -> Result<()> {
     .with_graceful_shutdown(async move {
         let _ = tokio::signal::ctrl_c().await;
         let _ = shutdown_tx.send(true);
+        if let Some(host) = _coordination_host {
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), host).await;
+        }
         if let Err(error) =
             medousa::session_writer::drain(std::time::Duration::from_secs(5)).await
         {

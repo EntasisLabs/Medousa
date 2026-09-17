@@ -24,7 +24,10 @@ use sha2::{Digest, Sha256};
 
 use crate::daemon::state::AppState;
 use crate::request_principal::{Capability, PrincipalKind, RequestPrincipal};
+mod host;
 mod owner_intake;
+mod proposals;
+pub use host::{local_coordination_host, start_local_coordination_host};
 pub use owner_intake::OwnerIntakeResult;
 
 #[derive(Clone)]
@@ -32,6 +35,7 @@ pub struct LocalPeerDispatcher {
     state: AppState,
     local_runtime_id: String,
     store: Arc<CoordinationStore>,
+    wake: Arc<tokio::sync::Notify>,
 }
 
 #[derive(Clone)]
@@ -66,39 +70,7 @@ impl PeerReceiptSink {
             })
             .await??;
         if created {
-            let host = self.host.clone();
-            tokio::spawn(async move {
-                let principal =
-                    RequestPrincipal::continuation(receipt.binding.owner_principal_id.clone());
-                // Bounded host retries do not poll a model or replay a started
-                // turn. The durable inbox remains the recovery source afterward.
-                for attempt in 0..12u32 {
-                    match host
-                        .resume_owner_intake(
-                            &principal,
-                            receipt.binding.channel.clone(),
-                            &receipt.binding.assignment_id,
-                        )
-                        .await
-                    {
-                        Ok(OwnerIntakeResult::DeferredBusy) => {
-                            tokio::time::sleep(std::time::Duration::from_secs(
-                                (1u64 << attempt.min(5)).min(30),
-                            ))
-                            .await;
-                        }
-                        Ok(OwnerIntakeResult::NeedsReconciliation) => {
-                            tracing::warn!(receipt_id = %receipt.receipt_id, "peer owner intake requires reconciliation");
-                            break;
-                        }
-                        Ok(_) => break,
-                        Err(error) => {
-                            tracing::warn!(error = %error, "peer receipt retained pending owner intake");
-                            break;
-                        }
-                    }
-                }
-            });
+            self.host.wake.notify_one();
         }
         Ok(())
     }
@@ -157,6 +129,7 @@ impl LocalPeerDispatcher {
             state,
             local_runtime_id,
             store,
+            wake: Arc::new(tokio::sync::Notify::new()),
         })
     }
 

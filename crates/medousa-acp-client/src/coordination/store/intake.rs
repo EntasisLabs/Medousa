@@ -44,6 +44,57 @@ pub fn terminal_receipt_id(binding: &ExternalPeerAssignmentBinding) -> String {
 }
 
 impl CoordinationStore {
+    /// Host recovery index. Source permissions and current approval must still
+    /// be checked at intake; this list is never an anonymous public surface.
+    pub fn pending_local_owner_receipts(
+        &self,
+        authority: &medousa_types::AuthorityId,
+        runtime_id: &str,
+        limit: usize,
+        after_receipt_id: Option<&str>,
+    ) -> Result<Vec<ExternalPeerAssignmentReceipt>> {
+        if !(1..=256).contains(&limit) {
+            bail!("invalid recovery limit");
+        }
+        let entries = self.root.list_root_utf8()?;
+        if entries.len() > 10_000 {
+            bail!("coordination recovery scan budget exhausted");
+        }
+        // Keep only the earliest page in memory, not every result in the inbox.
+        let mut pending = std::collections::BTreeMap::new();
+        for entry in entries {
+            if !entry.name.starts_with("r1-") {
+                continue;
+            }
+            let receipt: ExternalPeerAssignmentReceipt =
+                self.read(&StorePath::parse(&entry.name)?)?;
+            let binding = &receipt.binding;
+            if binding.channel.authority_id != *authority
+                || binding.target.authority_id != *authority
+                || binding.execution_session.authority_id != *authority
+                || binding.target.execution_runtime_id != runtime_id
+            {
+                continue;
+            }
+            if self.receipt(&binding.channel, &binding.assignment_id)? != receipt {
+                bail!("recovery receipt identity mismatch");
+            }
+            self.validate_receipt_binding(&receipt)?;
+            if self.owner_ack(&receipt)?.is_none()
+                && after_receipt_id.is_none_or(|after| receipt.receipt_id.as_str() > after)
+            {
+                pending.insert(receipt.receipt_id.clone(), receipt);
+                if pending.len() > limit {
+                    pending.pop_last();
+                }
+            }
+        }
+        let page: Vec<_> = pending.into_values().collect();
+        if serde_json::to_vec(&page)?.len() > 1024 * 1024 {
+            bail!("coordination recovery page byte budget exhausted");
+        }
+        Ok(page)
+    }
     pub fn assignment(
         &self,
         channel: &CoordinationChannelRef,
