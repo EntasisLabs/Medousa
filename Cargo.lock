@@ -7651,9 +7651,13 @@ version = "0.10.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "chrono",
+ "medousa-store",
  "medousa-types",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
  "tokio",
  "tracing",
 ]

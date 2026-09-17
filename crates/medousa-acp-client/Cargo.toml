@@ -7,6 +7,9 @@ description = "ACP client bones — Home chat talks to external agentic runtimes
 
 [dependencies]
 medousa-types = { path = "../medousa-types" }
+medousa-store = { path = "../medousa-store" }
+sha2 = "0.10"
+chrono = { version = "0.4", features = ["serde"] }
 anyhow = "1"
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
@@ -15,4 +18,5 @@ tokio = { version = "1", features = ["io-util", "macros", "process", "rt-multi-t
 tracing = "0.1"
 
 [dev-dependencies]
+tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

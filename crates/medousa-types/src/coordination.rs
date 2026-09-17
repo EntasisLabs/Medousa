@@ -4,6 +4,7 @@
 //! separate authorities; an adapter must never infer a grant from membership.
 
 use serde::{Deserialize, Serialize};
+pub mod context;
 
 use crate::{AuthorityId, ContextManifest, SessionRef};
 
@@ -11,6 +12,15 @@ use crate::{AuthorityId, ContextManifest, SessionRef};
 pub struct CoordinationChannelRef {
     pub authority_id: AuthorityId,
     pub channel_id: String,
+}
+
+/// Initial immutable channel snapshot; future membership edits require revision fencing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoordinationChannelRecord {
+    pub channel: CoordinationChannelRef,
+    pub owner_principal_id: String,
+    pub member_principal_ids: Vec<String>,
+    pub attached_sessions: Vec<SessionRef>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,6 +66,15 @@ pub struct ExternalPeerAssignmentRequest {
     pub execution_session: SessionRef,
     pub instructions: String,
     pub execution_grant_id: String,
+    /// Initial local bridge is restricted to a governed Forge work item.
+    pub forge_work_id: String,
+}
+
+/// Destination-owned approval for one exact assignment, never an ambient tool grant.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalPeerAssignmentGrant {
+    pub request: ExternalPeerAssignmentRequest,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
 }
 
 /// Stable correlation returned by an admitted external execution.

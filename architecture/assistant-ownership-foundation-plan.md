@@ -84,11 +84,37 @@ owner/channel/context/target/executor bindings, separate owner and executor
 sessions, unavailable adapters, and an injected authorization boundary.
 The fake harness exercises Codex, Cursor, and Hermes without starting processes.
 
-This is not yet a production peer service or public HTTP surface. Channel storage,
-membership enforcement, destination grant compilation, command idempotency,
-receipt persistence, and durable owner intake remain unwired. The port explicitly
-does not claim persistence or exactly-once dispatch. Production dispatch must
-enforce destination grants at actual admission, not merely before discovery.
+The next increment adds create-only channel snapshots, assignment/command claims,
+and peer execution bindings in `coordination/store.rs`, using the existing
+capability-confined `medousa-store` root. Records survive reopen, exact replay is
+idempotent, concurrent claims have one winner, and conflicting/corrupt records
+fail closed. An unresolved claim is not a license to relaunch an external agent.
+The synchronous store must be called through host execution admission from async
+services. Initial snapshots are immutable; membership edits are not yet exposed.
+
+`src/daemon/coordination.rs` now connects local dispatch to the shared ACP create
+and prompt services, using admitted storage/Forge operations rather than a second
+client or model loop. Explicit operator grants bind the entire immutable request
+and expire within 24 hours. Dispatch checks authenticated ownership, local host
+identity, attached source visibility, contiguous committed ranges, canonical
+range digests, context budgets, and the selected Forge work. Each assignment has
+a deterministic independent executor session. Approval is rechecked after
+discovery and provider startup; explicit revocation cancels known live custody.
+Expiry limits admission, not an automatic wall-clock termination of running work.
+
+Persistent command claims precede provider effects. Exact recorded replay works
+even when the runtime becomes unavailable; unresolved or malformed outcomes
+require reconciliation rather than automatic respawn. A binding persistence
+failure cancels known custody while retaining the uncertain claim. Focused fake
+adapter and store tests cover replay, concurrent claims, restart, exact grant
+scope/expiry/revocation, and source visibility/provenance/budgets.
+
+This is an internal service seam, not yet a boot-composed user flow or public HTTP
+surface. Human approval UI, model-facing tools, terminal receipt persistence,
+restart reconciliation, and durable owner intake remain to be wired. The raw
+admission port alone does not claim persistence or exactly-once execution. No
+model-facing peer spawn tool is advertised yet. Real provider integration and
+device presentation still require validation beyond the fake harness.
 
 Service extraction must preserve the existing ACP creation path's Forge leases,
 permission/secret routing, event pump, and cancellation behavior. Its current
