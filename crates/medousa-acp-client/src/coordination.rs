@@ -693,6 +693,65 @@ mod tests {
     }
 
     #[test]
+    fn proposal_assignment_lookup_survives_reopen_and_does_not_mutate_decisions() {
+        use medousa_types::coordination::*;
+        let (temp, store, request) = persisted_fixture();
+        assert!(
+            store
+                .proposal_for_assignment(&request.channel, &request.assignment_id)
+                .unwrap()
+                .is_none()
+        );
+        let mut proposal = PeerAssignmentProposal {
+            proposal_id: String::new(),
+            request: request.clone(),
+            expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+            continue_owner: true,
+        };
+        proposal.proposal_id = store::proposals::proposal_identity(&proposal).unwrap();
+        store.record_proposal(&proposal).unwrap();
+        store
+            .decide_proposal(
+                &request.channel,
+                &PeerProposalDecision {
+                    proposal_id: proposal.proposal_id.clone(),
+                    owner_principal_id: request.owner_principal_id.clone(),
+                    approved: false,
+                },
+            )
+            .unwrap();
+        let reopened = store::CoordinationStore::open(temp.path()).unwrap();
+        assert_eq!(
+            reopened
+                .proposal_for_assignment(&request.channel, &request.assignment_id)
+                .unwrap(),
+            Some(proposal.clone())
+        );
+        assert!(!reopened.record_proposal(&proposal).unwrap());
+        assert!(
+            !reopened
+                .proposal_decision(&proposal)
+                .unwrap()
+                .unwrap()
+                .approved
+        );
+        assert!(
+            reopened
+                .proposal_for_assignment(&request.channel, "missing")
+                .unwrap()
+                .is_none()
+        );
+        let mut foreign = request.channel.clone();
+        foreign.authority_id = medousa_types::AuthorityId::parse(format!("auth_{}", "b".repeat(64))).unwrap();
+        assert!(
+            reopened
+                .proposal_for_assignment(&foreign, &request.assignment_id)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
     fn dispatched_proposals_leave_the_operator_inbox() {
         use medousa_types::coordination::*;
         let (_temp, store, request) = persisted_fixture();

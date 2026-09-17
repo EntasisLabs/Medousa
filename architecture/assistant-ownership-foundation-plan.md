@@ -77,6 +77,13 @@ ACP spawn adapter simply because of its name.
 
 ## Implementation progress
 
+The General host now registers a `peers` domain for conversation-bound local
+agent discovery and immutable proposals. It derives identity, bound Forge work,
+and committed context digests from the admitted owner turn; model input cannot
+issue grants or launch agents. Home's exact-snapshot approval/start controls
+remain the operator boundary. This slice still needs on-device end-to-end
+validation and does not add cross-workshop/cloud delegation or autonomous chains.
+
 Slice 0 has an initial, additive contract seam in
 `crates/medousa-types/src/coordination.rs` and an adapter-independent admission
 harness in `crates/medousa-acp-client/src/coordination.rs`. It covers exact
@@ -109,9 +116,9 @@ failure cancels known custody while retaining the uncertain claim. Focused fake
 adapter and store tests cover replay, concurrent claims, restart, exact grant
 scope/expiry/revocation, and source visibility/provenance/budgets.
 
-This now has a native operator approval preview, not yet an end-to-end
-conversational delegation flow. Model-facing tools, explicit restart
-reconciliation, and autonomous follow-up commands remain to be wired. The raw
+This now has conversation-bound discovery/proposal tools and a native operator
+approval preview, not yet a validated end-to-end conversational delegation flow.
+Explicit restart reconciliation and autonomous follow-up commands remain to be wired. The raw
 admission port alone does not claim persistence or exactly-once execution. No
 model-facing peer spawn tool is advertised yet. Real provider integration and
 device presentation still require validation beyond the fake harness.

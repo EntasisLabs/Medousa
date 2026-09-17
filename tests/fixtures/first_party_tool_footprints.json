@@ -3,10 +3,10 @@
   "surfaces": [
     {
       "id": "general",
-      "tool_count": 81,
-      "total_chars": 52356,
-      "tokens_estimate": 13089,
-      "tools_over_1000_chars": 11,
+      "tool_count": 83,
+      "total_chars": 53875,
+      "tokens_estimate": 13469,
+      "tools_over_1000_chars": 12,
       "largest_tools_share_bps": 0,
       "largest_tools": [
         {
@@ -45,18 +45,18 @@
           "tokens_estimate": 363
         },
         {
-          "name": "cognition_openshell_sandbox_run",
-          "chars": 1182,
-          "tokens_estimate": 296
+          "name": "cognition_peer_propose",
+          "chars": 1201,
+          "tokens_estimate": 301
         }
       ]
     },
     {
       "id": "host_bus_home",
-      "tool_count": 39,
-      "total_chars": 24750,
-      "tokens_estimate": 6188,
-      "tools_over_1000_chars": 4,
+      "tool_count": 41,
+      "total_chars": 26269,
+      "tokens_estimate": 6568,
+      "tools_over_1000_chars": 5,
       "largest_tools_share_bps": 0,
       "largest_tools": [
         {
@@ -73,6 +73,11 @@
           "name": "cognition_schema",
           "chars": 1676,
           "tokens_estimate": 419
+        },
+        {
+          "name": "cognition_peer_propose",
+          "chars": 1201,
+          "tokens_estimate": 301
         },
         {
           "name": "cognition_image_generate",
@@ -93,20 +98,15 @@
           "name": "cognition_grapheme_request_secret",
           "chars": 822,
           "tokens_estimate": 206
-        },
-        {
-          "name": "cognition_web_search",
-          "chars": 801,
-          "tokens_estimate": 201
         }
       ]
     },
     {
       "id": "host_bus_thin",
-      "tool_count": 36,
-      "total_chars": 20821,
-      "tokens_estimate": 5206,
-      "tools_over_1000_chars": 3,
+      "tool_count": 38,
+      "total_chars": 22340,
+      "tokens_estimate": 5585,
+      "tools_over_1000_chars": 4,
       "largest_tools_share_bps": 0,
       "largest_tools": [
         {
@@ -118,6 +118,11 @@
           "name": "cognition_schema",
           "chars": 1676,
           "tokens_estimate": 419
+        },
+        {
+          "name": "cognition_peer_propose",
+          "chars": 1201,
+          "tokens_estimate": 301
         },
         {
           "name": "cognition_image_generate",
@@ -143,11 +148,6 @@
           "name": "cognition_shell_run",
           "chars": 774,
           "tokens_estimate": 194
-        },
-        {
-          "name": "cognition_openshell_request_secret",
-          "chars": 751,
-          "tokens_estimate": 188
         }
       ]
     },

@@ -25,6 +25,8 @@ use sha2::{Digest, Sha256};
 use crate::daemon::state::AppState;
 use crate::request_principal::{Capability, PrincipalKind, RequestPrincipal};
 mod host;
+mod conversational;
+pub use conversational::PeerProposalIntent;
 pub mod http;
 mod owner_intake;
 mod proposals;

@@ -4,6 +4,26 @@ Logical coordination channels are not Telegram/Slack delivery channels. Proposal
 snapshots retain authority-qualified channel/session references, exact context
 ranges and digests, a governed Forge work item, and independent peer custody.
 
+## Conversational proposal tools
+
+The full-daemon General host's `peers` discovery domain contains
+`cognition_peer_discover` and `cognition_peer_propose`. Both require an admitted
+owner turn and use its authenticated principal/session. Discovery reports local
+ACP availability and the current chat's project binding and committed range.
+Proposal input contains only `request_key`, `runtime`, `instructions`,
+`after_entry_seq`, `through_entry_seq`, and `continue_owner`; unknown fields
+are rejected. The host derives owner, workshop, session, channel, Forge work,
+range digests, manifest, grant reference, and independent execution session.
+Project binding must explicitly name the current execution runtime.
+
+Proposals use a one-hour expiry and a stable owner/session/authority-scoped
+request key. Exact retries reuse the immutable snapshot and repair its index;
+changed intent under the same key fails closed. Neither tool approves or launches
+work. Worker/remote-delegated/mobile ceilings are unchanged; embedded mobile
+composition, cloud adapters, and cross-workshop proposals remain unsupported.
+
+## Native operator approval
+
 These native-only routes require `admin.execute` plus a bound owner identity
 (`content.read` and `workshop.interact` are rechecked by the service):
 

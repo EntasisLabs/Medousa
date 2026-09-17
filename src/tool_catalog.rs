@@ -129,6 +129,8 @@ fn add_effects_and_capabilities(index: &mut ToolPlacementIndex) {
         "cognition_utility_day_of_week",
         "cognition_utility_time_now",
         "cognition_utility_uuid",
+        #[cfg(feature = "full-daemon")]
+        "cognition_peer_discover",
         crate::public_api::COGNITION_STORE_READ,
         #[cfg(feature = "full-daemon")]
         crate::agent_runtime::coder_tools::COGNITION_ENGINEERING_POINTERS,
@@ -142,6 +144,11 @@ fn add_effects_and_capabilities(index: &mut ToolPlacementIndex) {
     ] {
         index.set_effect(ToolId::new(name), ToolEffect::Observe);
     }
+    #[cfg(feature = "full-daemon")]
+    index.set_effect(
+        ToolId::new("cognition_peer_propose"),
+        ToolEffect::Coordinate,
+    );
     #[cfg(feature = "full-daemon")]
     index.set_effect(
         ToolId::new(crate::computer_tools::COGNITION_COMPUTER_ACT),

@@ -233,6 +233,12 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                     "cognition_tool_history_detail",
                 ],
             },
+            #[cfg(feature = "full-daemon")]
+            ToolDomainCatalogEntry {
+                domain: "peers",
+                summary: "Discover local Codex/Cursor/Hermes and propose project work for human approval; never grants or launches work",
+                tools: &["cognition_peer_discover", "cognition_peer_propose"],
+            },
             ToolDomainCatalogEntry {
                 domain: "identity",
                 summary: "Identity graph inspect and commit (operator-gated writes)",

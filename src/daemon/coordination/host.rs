@@ -13,7 +13,8 @@ use tokio::sync::watch;
 
 static HOST: OnceLock<Arc<LocalPeerDispatcher>> = OnceLock::new();
 
-/// Internal service composition only; no model or anonymous access surface.
+/// Internal service composition; model intent tools must authenticate the admitted
+/// owner turn and cannot use this getter to infer operator approval.
 pub fn local_coordination_host() -> Option<Arc<LocalPeerDispatcher>> {
     HOST.get().cloned()
 }

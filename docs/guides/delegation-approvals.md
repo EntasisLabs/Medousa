@@ -1,8 +1,14 @@
 # Reviewing delegated work
 
-Medousa's coordination foundation can present stored delegation proposals in
-the owning chat. This is a preview approval surface, not yet a conversational
-agent-spawning feature: model-facing delegation tools are still being wired.
+On a supported workshop, ask Medousa to have Codex, Cursor, or Hermes work on
+the project bound to this chat. Medousa can discover local agent availability
+and prepare a delegation proposal. This remains a preview: cross-workshop
+delegation, cloud adapters, and autonomous chains are not yet connected.
+
+The chat must be bound to a governed project on the current workshop. Medousa
+selects a specific committed conversation range to share, not a separate
+model-authored transcript. Discovery suggests the most recent 32 entries;
+one proposal can share at most 256 entries. Review that selection before starting.
 
 On a supported workshop, a proposal appears above the composer. Review the
 agent, instructions, channel, governed work item, execution workshop, exact
@@ -12,6 +18,8 @@ Choose **Approve** to record your decision, then **Start approved work** to
 dispatch that exact proposal. Approval alone does not launch an agent. Choose
 **Decline** instead to permanently reject it; a revised request needs a new
 assignment. Expired proposals cannot be approved or started.
+Conversational proposals expire after one hour. Saying “yes” in chat or Live
+does not replace these approval controls or start the agent.
 
 If starting fails, the request remains visible unless recorded peer custody
 already exists. Retrying does not blindly spawn another process; uncertain

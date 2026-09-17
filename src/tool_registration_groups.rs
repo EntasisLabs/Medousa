@@ -110,6 +110,7 @@ pub fn register_shared_interactive_tools(
         bindings.turn_scope.clone(),
     )?;
     crate::workshop_api::register_workshop_tools(registry, bindings.worker_scheduler.clone())?;
+    crate::coordination_tools::register_coordination_tools(registry)?;
     Ok(())
 }
 

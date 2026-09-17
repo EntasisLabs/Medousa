@@ -4722,6 +4722,74 @@
     },
     {
       "registry": "general_runtime",
+      "name": "cognition_peer_discover",
+      "description": "Discover local Codex/Cursor/Hermes peers and this chat's bound project/context range. Unavailable peers must not be substituted. Use peer_propose to prepare work, not to execute it.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:domain:peers"
+      ]
+    },
+    {
+      "registry": "general_runtime",
+      "name": "cognition_peer_propose",
+      "description": "Prepare an immutable peer assignment for this chat's bound local Forge project. Discover peers first and select an explicit committed context range. Reuse request_key for exact retries only. This requests human review; it does NOT approve, launch, or complete work. Tell the user to review the approval card and explicitly start approved work. A conversational yes is not execution authority.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "after_entry_seq": {
+            "description": "Exclusive lower bound from coordination discovery.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "continue_owner": {
+            "description": "Request a separately approved result-only reply in this chat.",
+            "type": "boolean"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "request_key": {
+            "description": "Stable request key; reuse for retries, never for different work.",
+            "type": "string"
+          },
+          "runtime": {
+            "enum": [
+              "codex",
+              "cursor",
+              "hermes"
+            ],
+            "type": "string"
+          },
+          "through_entry_seq": {
+            "description": "Inclusive committed upper bound from coordination discovery.",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "after_entry_seq",
+          "continue_owner",
+          "instructions",
+          "request_key",
+          "runtime",
+          "through_entry_seq"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:domain:peers"
+      ]
+    },
+    {
+      "registry": "general_runtime",
       "name": "cognition_runtime_mutate",
       "description": "Mutate durable runtime work. action is a typed name (job.enqueue, workflow.run, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {

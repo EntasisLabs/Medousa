@@ -228,6 +228,8 @@ pub fn host_bus_tool_names() -> HashSet<String> {
         &mut names,
         &[
             "cognition_tools_discover",
+            "cognition_peer_discover",
+            "cognition_peer_propose",
             "cognition_utility_time_now",
             "cognition_utility_day_of_week",
             "cognition_utility_uuid",

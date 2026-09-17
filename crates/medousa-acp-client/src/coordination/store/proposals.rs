@@ -26,6 +26,29 @@ pub fn proposal_identity(proposal: &PeerAssignmentProposal) -> Result<String> {
 }
 
 impl CoordinationStore {
+    pub fn proposal_for_assignment(
+        &self,
+        channel: &CoordinationChannelRef,
+        assignment_id: &str,
+    ) -> Result<Option<PeerAssignmentProposal>> {
+        let id = match self.read::<String>(&object_path(channel, "proposal-slot", assignment_id)?) {
+            Ok(id) => id,
+            Err(error)
+                if error
+                    .downcast_ref::<medousa_store::StoreRootError>()
+                    .is_some_and(|error| error.is_not_found()) =>
+            {
+                return Ok(None);
+            }
+            Err(error) => return Err(error),
+        };
+        let proposal = self.proposal(channel, &id)?;
+        if proposal.request.assignment_id != assignment_id {
+            bail!("proposal slot assignment mismatch");
+        }
+        Ok(Some(proposal))
+    }
+
     pub fn record_proposal(&self, proposal: &PeerAssignmentProposal) -> Result<bool> {
         self.require_owner(
             &proposal.request.channel,
