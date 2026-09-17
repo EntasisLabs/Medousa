@@ -16,6 +16,9 @@ OUT = ROOT / "apps" / "medousa-home" / "src" / "lib" / "types" / "generated" / "
 # Stream + session types TypeScript surfaces rely on for contract parity.
 # Nested $ref targets (MediaRef, ContextUsageReport, …) are resolved automatically.
 EXPORTED_TYPES = [
+    "PeerProposalInboxResponse",
+    "PeerProposalActionResponse",
+    "PeerProposalActionRequest",
     "HealthResponse",
     "CreateSessionRequest",
     "CreateSessionResponse",
@@ -95,6 +98,11 @@ def collect_refs(schema: dict, found: set[str]) -> None:
 
 
 def ts_type(schema: dict, defs: dict) -> str:
+    # JSON Schema permits boolean schemas (including nested properties).
+    if schema is True:
+        return "unknown"
+    if schema is False:
+        return "never"
     if "$ref" in schema:
         ref = schema["$ref"].split("/")[-1]
         return ref

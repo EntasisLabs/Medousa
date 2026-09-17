@@ -8,6 +8,55 @@ use medousa_forge::execution::ExecutionClass;
 use medousa_types::coordination::*;
 
 impl LocalPeerDispatcher {
+    pub async fn proposal_inbox(
+        &self,
+        principal: &RequestPrincipal,
+        session_id: medousa_types::SessionId,
+        after: Option<String>,
+    ) -> Result<PeerProposalInboxResponse> {
+        let owner = actor(principal)?;
+        let authority = crate::workshop_authority::current()
+            .map_err(anyhow::Error::msg)?
+            .clone();
+        let store = self.store.clone();
+        let rows = self
+            .state
+            .forge_execution
+            .run(
+                ExecutionClass::StoreIo,
+                medousa_forge::execution::MAX_STORE_PAYLOAD_BYTES,
+                move || {
+                    Ok((|| -> Result<_> {
+                        if !crate::session_catalog::session_visible_to_profile(
+                            session_id.as_str(),
+                            &owner,
+                        ) {
+                            bail!("owner session is not visible");
+                        }
+                        store.proposal_inbox(
+                            &owner,
+                            &medousa_types::SessionRef {
+                                authority_id: authority,
+                                session_id,
+                            },
+                            after.as_deref(),
+                        )
+                    })())
+                },
+            )
+            .await??;
+        // Review does not expose source bodies. Full visibility is rechecked at approval.
+        for row in &rows {
+            self.local_request(principal, &row.proposal.request)?;
+        }
+        let next_cursor =
+            (rows.len() == 8).then(|| rows.last().unwrap().proposal.proposal_id.clone());
+        Ok(PeerProposalInboxResponse {
+            proposals: rows,
+            next_cursor,
+        })
+    }
+
     pub async fn propose_assignment(
         &self,
         principal: &RequestPrincipal,
@@ -130,6 +179,15 @@ impl LocalPeerDispatcher {
                 Ok(store.require_approved_proposal(&channel, &proposal_id, &owner))
             })
             .await??;
+        // Repair partial grant compilation using only the already approved
+        // snapshot. This cannot turn a pending/denied proposal into approval.
+        self.decide_proposal(
+            principal,
+            proposal.request.channel.clone(),
+            proposal.proposal_id.clone(),
+            true,
+        )
+        .await?;
         self.dispatch(principal, &proposal.request).await
     }
 }

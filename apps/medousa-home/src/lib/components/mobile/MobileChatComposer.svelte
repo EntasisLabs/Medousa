@@ -4,6 +4,7 @@
   import { isTauriIos } from "$lib/platform";
   import { liveVoiceState } from "$lib/liveVoice";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
+  import PeerProposalBar from "$lib/components/chat/PeerProposalBar.svelte";
   import ModeProposalBar from "$lib/components/chat/ModeProposalBar.svelte";
   import AgentPermissionBar from "$lib/components/chat/AgentPermissionBar.svelte";
   import AgentSecretBar from "$lib/components/chat/AgentSecretBar.svelte";
@@ -204,6 +205,7 @@
   {#if chat.streamError}
     <p class="mb-2 px-1 text-xs text-content-error" role="alert">{chat.streamError}</p>
   {/if}
+  <PeerProposalBar mobile sessionId={chat.focusedSessionId} />
   <BudgetApprovalBar
     mobile
     onOpenWork={() => {

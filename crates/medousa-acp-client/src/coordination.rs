@@ -628,6 +628,108 @@ mod tests {
         );
     }
 
+    #[test]
+    fn proposal_inbox_preserves_owner_scope_pagination_and_decisions() {
+        use medousa_types::coordination::*;
+        let (temp, store, base) = persisted_fixture();
+        let mut proposals = Vec::new();
+        for number in 0..10 {
+            let mut request = base.clone();
+            request.assignment_id = format!("proposal-inbox-{number}");
+            let mut proposal = PeerAssignmentProposal {
+                proposal_id: String::new(),
+                request,
+                expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+                continue_owner: true,
+            };
+            proposal.proposal_id = store::proposals::proposal_identity(&proposal).unwrap();
+            store.record_proposal(&proposal).unwrap();
+            proposals.push(proposal);
+        }
+        proposals.sort_by(|a, b| a.proposal_id.cmp(&b.proposal_id));
+        let store = store::CoordinationStore::open(temp.path()).unwrap();
+        let first = store
+            .proposal_inbox(&base.owner_principal_id, &base.owner_session, None)
+            .unwrap();
+        assert_eq!(first.len(), 8);
+        assert_eq!(first[0].proposal, proposals[0]);
+        let after = first.last().unwrap().proposal.proposal_id.as_str();
+        let second = store
+            .proposal_inbox(&base.owner_principal_id, &base.owner_session, Some(after))
+            .unwrap();
+        assert_eq!(second.len(), 2);
+        assert_eq!(second[0].proposal, proposals[8]);
+        assert!(
+            store
+                .proposal_inbox("user:mallory", &base.owner_session, None)
+                .unwrap()
+                .is_empty()
+        );
+        let mut foreign = base.owner_session.clone();
+        foreign.authority_id = base.target.authority_id;
+        assert!(
+            store
+                .proposal_inbox(&base.owner_principal_id, &foreign, None)
+                .unwrap()
+                .is_empty()
+        );
+        for (proposal, approved) in [(&proposals[0], true), (&proposals[1], false)] {
+            store
+                .decide_proposal(
+                    &base.channel,
+                    &PeerProposalDecision {
+                        proposal_id: proposal.proposal_id.clone(),
+                        owner_principal_id: base.owner_principal_id.clone(),
+                        approved,
+                    },
+                )
+                .unwrap();
+        }
+        let rows = store
+            .proposal_inbox(&base.owner_principal_id, &base.owner_session, None)
+            .unwrap();
+        assert!(rows[0].decision.as_ref().unwrap().approved);
+        assert!(rows.iter().all(|row| row.proposal != proposals[1]));
+    }
+
+    #[test]
+    fn dispatched_proposals_leave_the_operator_inbox() {
+        use medousa_types::coordination::*;
+        let (_temp, store, request) = persisted_fixture();
+        let mut proposal = PeerAssignmentProposal {
+            proposal_id: String::new(),
+            request: request.clone(),
+            expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+            continue_owner: false,
+        };
+        proposal.proposal_id = store::proposals::proposal_identity(&proposal).unwrap();
+        store.record_proposal(&proposal).unwrap();
+        assert_eq!(
+            store
+                .proposal_inbox(&request.owner_principal_id, &request.owner_session, None)
+                .unwrap()
+                .len(),
+            1
+        );
+        store.claim_assignment(&request).unwrap();
+        store
+            .record_peer(&ExternalPeerAssignmentBinding {
+                assignment_id: request.assignment_id,
+                owner_principal_id: request.owner_principal_id.clone(),
+                channel: request.channel,
+                target: request.target,
+                execution_session: request.execution_session,
+                agent_session_id: "accepted-peer".into(),
+            })
+            .unwrap();
+        assert!(
+            store
+                .proposal_inbox(&request.owner_principal_id, &request.owner_session, None)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
     fn persisted_fixture() -> (
         tempfile::TempDir,
         store::CoordinationStore,

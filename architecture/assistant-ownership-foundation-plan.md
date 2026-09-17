@@ -109,9 +109,9 @@ failure cancels known custody while retaining the uncertain claim. Focused fake
 adapter and store tests cover replay, concurrent claims, restart, exact grant
 scope/expiry/revocation, and source visibility/provenance/budgets.
 
-This is an internal service seam, not yet a user flow or public HTTP
-surface. Human approval UI, model-facing tools,
-restart reconciliation, and autonomous follow-up commands remain to be wired. The raw
+This now has a native operator approval preview, not yet an end-to-end
+conversational delegation flow. Model-facing tools, explicit restart
+reconciliation, and autonomous follow-up commands remain to be wired. The raw
 admission port alone does not claim persistence or exactly-once execution. No
 model-facing peer spawn tool is advertised yet. Real provider integration and
 device presentation still require validation beyond the fake harness.
@@ -151,8 +151,13 @@ Approval revalidates current source visibility and compiles exact grants
 idempotently, so partial writes can finish without changing the approved request.
 Proposal creation itself grants no execution authority. Dispatch reads the
 approved stored snapshot rather than mutable client instructions. Home approval
-presentation and public HTTP/SDK adapters remain the next slice, not a shipped
-user-facing or model-facing flow. Mobile daemon composition is not claimed here.
+presentation now appears in the owning Home chat on workshops advertising the
+operator-proposal capability, with separate approve and start actions. Native
+operator HTTP routes and generated SDK operation/schema tables expose the same
+immutable workflow; no mutable grant payload is accepted. A bounded indexed
+owner-session inbox excludes denied and recorded peer assignments. Model-facing
+proposal/delegation tools remain the next slice; this is not yet conversational
+agent spawning. Mobile embedded-daemon composition is not claimed here.
 
 Service extraction must preserve the existing ACP creation path's Forge leases,
 permission/secret routing, event pump, and cancellation behavior. Its current

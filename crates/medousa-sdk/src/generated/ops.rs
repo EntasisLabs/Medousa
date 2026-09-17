@@ -639,6 +639,34 @@ pub const CONTINUATIONS_STATUS_GET: Operation = Operation {
     streaming: false,
 };
 
+pub const COORDINATION_CHANNELS_BY_CHANNEL_ID_PROPOSALS_BY_PROPOSAL_ID_APPROVE_POST: Operation = Operation {
+    id: "coordination.channels.by_channel_id.proposals.by_proposal_id.approve.post",
+    method: "POST",
+    path: "/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/approve",
+    streaming: false,
+};
+
+pub const COORDINATION_CHANNELS_BY_CHANNEL_ID_PROPOSALS_BY_PROPOSAL_ID_DENY_POST: Operation = Operation {
+    id: "coordination.channels.by_channel_id.proposals.by_proposal_id.deny.post",
+    method: "POST",
+    path: "/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/deny",
+    streaming: false,
+};
+
+pub const COORDINATION_CHANNELS_BY_CHANNEL_ID_PROPOSALS_BY_PROPOSAL_ID_DISPATCH_POST: Operation = Operation {
+    id: "coordination.channels.by_channel_id.proposals.by_proposal_id.dispatch.post",
+    method: "POST",
+    path: "/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/dispatch",
+    streaming: false,
+};
+
+pub const COORDINATION_PROPOSALS_GET: Operation = Operation {
+    id: "coordination.proposals.get",
+    method: "GET",
+    path: "/v1/coordination/proposals",
+    streaming: false,
+};
+
 pub const DELIVER_OUTBOX_POST: Operation = Operation {
     id: "deliver.outbox.post",
     method: "POST",
@@ -3250,6 +3278,10 @@ pub static ALL: &[Operation] = &[
     COMPUTER_DRIVERS_GET,
     CONTINUATIONS_LINEAGE_BY_TURN_CORRELATION_ID_GET,
     CONTINUATIONS_STATUS_GET,
+    COORDINATION_CHANNELS_BY_CHANNEL_ID_PROPOSALS_BY_PROPOSAL_ID_APPROVE_POST,
+    COORDINATION_CHANNELS_BY_CHANNEL_ID_PROPOSALS_BY_PROPOSAL_ID_DENY_POST,
+    COORDINATION_CHANNELS_BY_CHANNEL_ID_PROPOSALS_BY_PROPOSAL_ID_DISPATCH_POST,
+    COORDINATION_PROPOSALS_GET,
     DELIVER_OUTBOX_POST,
     DELIVER_POLL_BY_JOB_ID_GET,
     DELIVERY_STATUS_GET,

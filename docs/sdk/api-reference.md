@@ -548,3 +548,15 @@ The generated operation catalog includes Forge `changes/git` (GET),
 Forge authority; mutations additionally require a live human editing lease and
 the snapshot returned by `changes/git`. See [Forge](../engine/forge.md#explicit-git-actions-from-chat-review)
 for request fields, stale-snapshot behavior, and partial-success handling.
+## Native coordination approval preview
+
+Generated operation tables include `coordination.proposals.get` and
+`coordination.channels.by_channel_id.proposals.by_proposal_id.{approve,deny,dispatch}.post`.
+Use the SDK's low-level generated-operation request path; dedicated convenience
+helpers are not yet exposed. POST bodies are `{}` and must not contain mutable
+instructions or caller-selected identities. The inbox query requires
+`session_id` and optionally `after`; response DTOs are `PeerProposalInboxResponse`
+and `PeerProposalActionResponse` in `medousa-types::coordination` (and generated
+Python/TypeScript mirrors). These are native operator operations, not model
+approval tools. See [Coordination](../engine/coordination.md) for limits and
+ownership checks.

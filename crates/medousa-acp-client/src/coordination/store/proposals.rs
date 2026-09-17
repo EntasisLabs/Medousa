@@ -5,6 +5,14 @@ use anyhow::{Result, bail};
 use medousa_types::coordination::*;
 use sha2::{Digest, Sha256};
 
+#[derive(serde::Serialize, serde::Deserialize, PartialEq)]
+struct ProposalIndex {
+    channel: CoordinationChannelRef,
+    proposal_id: String,
+    owner: String,
+    owner_session: medousa_types::SessionRef,
+}
+
 pub fn proposal_identity(proposal: &PeerAssignmentProposal) -> Result<String> {
     let bytes = serde_json::to_vec(&(
         &proposal.request,
@@ -37,10 +45,109 @@ impl CoordinationStore {
             )?,
             &proposal.proposal_id,
         )?;
-        self.create(
+        let created = self.create(
             &object_path(&proposal.request.channel, "proposal", &proposal.proposal_id)?,
             proposal,
-        )
+        )?;
+        self.create(
+            &object_path(
+                &proposal.request.channel,
+                "proposal-index",
+                &proposal.proposal_id,
+            )?,
+            &ProposalIndex {
+                channel: proposal.request.channel.clone(),
+                proposal_id: proposal.proposal_id.clone(),
+                owner: proposal.request.owner_principal_id.clone(),
+                owner_session: proposal.request.owner_session.clone(),
+            },
+        )?;
+        Ok(created)
+    }
+
+    pub fn proposal_decision(
+        &self,
+        proposal: &PeerAssignmentProposal,
+    ) -> Result<Option<PeerProposalDecision>> {
+        match self.read::<PeerProposalDecision>(&object_path(
+            &proposal.request.channel,
+            "proposal-decision",
+            &proposal.proposal_id,
+        )?) {
+            Ok(decision)
+                if decision.proposal_id == proposal.proposal_id
+                    && decision.owner_principal_id == proposal.request.owner_principal_id =>
+            {
+                Ok(Some(decision))
+            }
+            Ok(_) => bail!("stored proposal decision identity mismatch"),
+            Err(error)
+                if error
+                    .downcast_ref::<medousa_store::StoreRootError>()
+                    .is_some_and(|error| error.is_not_found()) =>
+            {
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Operator inbox only. Indexed snapshots do not confer execution authority.
+    pub fn proposal_inbox(
+        &self,
+        owner: &str,
+        session: &medousa_types::SessionRef,
+        after: Option<&str>,
+    ) -> Result<Vec<PeerProposalReviewRecord>> {
+        let entries = self.root.list_root_utf8()?;
+        if entries.len() > 10_000 {
+            bail!("proposal inbox scan budget exhausted");
+        }
+        let mut page = std::collections::BTreeMap::new();
+        for entry in entries {
+            if !entry.name.starts_with("p1-") {
+                continue;
+            }
+            let index: ProposalIndex = self.read(&medousa_store::StorePath::parse(&entry.name)?)?;
+            if index.owner != owner
+                || index.owner_session != *session
+                || after.is_some_and(|id| index.proposal_id.as_str() <= id)
+            {
+                continue;
+            }
+            if object_path(&index.channel, "proposal-index", &index.proposal_id)?.file_name()
+                != entry.name
+            {
+                bail!("proposal index identity mismatch");
+            }
+            self.require_owner(&index.channel, owner)?;
+            let proposal = self.proposal(&index.channel, &index.proposal_id)?;
+            if proposal.request.owner_principal_id != owner
+                || proposal.request.owner_session != *session
+            {
+                bail!("proposal index scope mismatch");
+            }
+            let decision = self.proposal_decision(&proposal)?;
+            if decision.as_ref().is_some_and(|decision| !decision.approved)
+                || self
+                    .peer_if_recorded(&index.channel, &proposal.request.assignment_id)?
+                    .is_some()
+            {
+                continue;
+            }
+            page.insert(
+                proposal.proposal_id.clone(),
+                PeerProposalReviewRecord { proposal, decision },
+            );
+            if page.len() > 8 {
+                page.pop_last();
+            }
+        }
+        let rows: Vec<_> = page.into_values().collect();
+        if serde_json::to_vec(&rows)?.len() > 1024 * 1024 {
+            bail!("proposal inbox page budget exhausted");
+        }
+        Ok(rows)
     }
 
     pub fn proposal(

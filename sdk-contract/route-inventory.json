@@ -1687,6 +1687,70 @@
       "trust_group": "portal"
     },
     {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "coordination.channels.by_channel_id.proposals.by_proposal_id.approve.post",
+      "path": "/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/approve",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "coordination.channels.by_channel_id.proposals.by_proposal_id.deny.post",
+      "path": "/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/deny",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "coordination.channels.by_channel_id.proposals.by_proposal_id.dispatch.post",
+      "path": "/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/dispatch",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "coordination.proposals.get",
+      "path": "/v1/coordination/proposals",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
       "body_limit": 1048576,
       "bootstrap_public": false,
       "browser_policy": "native_only",

@@ -47,6 +47,16 @@ pub(crate) fn stream_spec(transport: StreamTransport, item_name: &str) -> Stream
 
 pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
     Some(match operation_id {
+        "coordination.proposals.get" => WireBinding {
+            request: None,
+            response: "PeerProposalInboxResponse",
+        },
+        "coordination.channels.by_channel_id.proposals.by_proposal_id.approve.post"
+        | "coordination.channels.by_channel_id.proposals.by_proposal_id.deny.post"
+        | "coordination.channels.by_channel_id.proposals.by_proposal_id.dispatch.post" => WireBinding {
+            request: Some("PeerProposalActionRequest"),
+            response: "PeerProposalActionResponse",
+        },
         "liveness.get" => WireBinding {
             request: None,
             response: "HealthLiveness",

@@ -50,7 +50,11 @@ fn object_path(channel: &CoordinationChannelRef, kind: &str, id: &str) -> Result
     }
     Ok(StorePath::parse(&format!(
         "{}-{:x}.json",
-        if kind == "receipt" { "r1" } else { "c1" },
+        match kind {
+            "receipt" => "r1",
+            "proposal-index" => "p1",
+            _ => "c1",
+        },
         digest.finalize()
     ))?)
 }

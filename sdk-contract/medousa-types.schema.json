@@ -17254,6 +17254,418 @@
       }
     }
   },
+  "PeerProposalActionRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "PeerProposalActionRequest",
+    "description": "Decisions take no mutable assignment fields or caller-supplied owner id.",
+    "type": "object",
+    "additionalProperties": false
+  },
+  "PeerProposalActionResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "PeerProposalActionResponse",
+    "type": "object",
+    "required": [
+      "proposal_id"
+    ],
+    "properties": {
+      "binding": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ExternalPeerAssignmentBinding"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "proposal_id": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "CoordinationChannelRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "channel_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "channel_id": {
+            "type": "string"
+          }
+        }
+      },
+      "ExternalPeerAssignmentBinding": {
+        "description": "Stable correlation returned by an admitted external execution.",
+        "type": "object",
+        "required": [
+          "agent_session_id",
+          "assignment_id",
+          "channel",
+          "execution_session",
+          "owner_principal_id",
+          "target"
+        ],
+        "properties": {
+          "agent_session_id": {
+            "type": "string"
+          },
+          "assignment_id": {
+            "type": "string"
+          },
+          "channel": {
+            "$ref": "#/definitions/CoordinationChannelRef"
+          },
+          "execution_session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "owner_principal_id": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/definitions/ExternalPeerTarget"
+          }
+        }
+      },
+      "ExternalPeerRuntime": {
+        "type": "string",
+        "enum": [
+          "codex",
+          "cursor",
+          "hermes"
+        ]
+      },
+      "ExternalPeerTarget": {
+        "description": "An exact adapter on an exact execution workshop, not a model preference.",
+        "type": "object",
+        "required": [
+          "authority_id",
+          "execution_runtime_id",
+          "runtime"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "execution_runtime_id": {
+            "type": "string"
+          },
+          "runtime": {
+            "$ref": "#/definitions/ExternalPeerRuntime"
+          }
+        }
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      }
+    }
+  },
+  "PeerProposalInboxResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "PeerProposalInboxResponse",
+    "type": "object",
+    "required": [
+      "proposals"
+    ],
+    "properties": {
+      "next_cursor": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "proposals": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/PeerProposalReviewRecord"
+        }
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "ContextManifest": {
+        "type": "object",
+        "required": [
+          "created_at",
+          "created_by",
+          "manifest_id",
+          "sources"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "manifest_id": {
+            "$ref": "#/definitions/ContextManifestId"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ResolvedConversationRange"
+            }
+          }
+        }
+      },
+      "ContextManifestId": {
+        "type": "string"
+      },
+      "ConversationRangeSelection": {
+        "description": "One committed contiguous range selected from a session. The lower bound is exclusive and the upper bound is inclusive; omitting `after_entry_seq` selects from the beginning of the session.",
+        "type": "object",
+        "required": [
+          "session",
+          "through_entry_seq"
+        ],
+        "properties": {
+          "after_entry_seq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "through_entry_seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 1.0
+          }
+        }
+      },
+      "CoordinationChannelRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "channel_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "channel_id": {
+            "type": "string"
+          }
+        }
+      },
+      "ExternalPeerAssignmentRequest": {
+        "description": "Caller intent only. Grant checks occur outside the model before dispatch.",
+        "type": "object",
+        "required": [
+          "assignment_id",
+          "channel",
+          "context",
+          "execution_grant_id",
+          "execution_session",
+          "forge_work_id",
+          "idempotency_key",
+          "instructions",
+          "owner_principal_id",
+          "owner_session",
+          "target"
+        ],
+        "properties": {
+          "assignment_id": {
+            "type": "string"
+          },
+          "channel": {
+            "$ref": "#/definitions/CoordinationChannelRef"
+          },
+          "context": {
+            "$ref": "#/definitions/ContextManifest"
+          },
+          "execution_grant_id": {
+            "type": "string"
+          },
+          "execution_session": {
+            "description": "Separate executor session: never reuse the owner's interactive session.",
+            "allOf": [
+              {
+                "$ref": "#/definitions/SessionRef"
+              }
+            ]
+          },
+          "forge_work_id": {
+            "description": "Initial local bridge is restricted to a governed Forge work item.",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "owner_principal_id": {
+            "type": "string"
+          },
+          "owner_session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "target": {
+            "$ref": "#/definitions/ExternalPeerTarget"
+          }
+        }
+      },
+      "ExternalPeerRuntime": {
+        "type": "string",
+        "enum": [
+          "codex",
+          "cursor",
+          "hermes"
+        ]
+      },
+      "ExternalPeerTarget": {
+        "description": "An exact adapter on an exact execution workshop, not a model preference.",
+        "type": "object",
+        "required": [
+          "authority_id",
+          "execution_runtime_id",
+          "runtime"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "execution_runtime_id": {
+            "type": "string"
+          },
+          "runtime": {
+            "$ref": "#/definitions/ExternalPeerRuntime"
+          }
+        }
+      },
+      "PeerAssignmentProposal": {
+        "description": "Immutable snapshot offered to the owner for explicit approval. No execution authority exists merely because a proposal was submitted.",
+        "type": "object",
+        "required": [
+          "continue_owner",
+          "expires_at",
+          "proposal_id",
+          "request"
+        ],
+        "properties": {
+          "continue_owner": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "proposal_id": {
+            "type": "string"
+          },
+          "request": {
+            "$ref": "#/definitions/ExternalPeerAssignmentRequest"
+          }
+        }
+      },
+      "PeerProposalDecision": {
+        "type": "object",
+        "required": [
+          "approved",
+          "owner_principal_id",
+          "proposal_id"
+        ],
+        "properties": {
+          "approved": {
+            "type": "boolean"
+          },
+          "owner_principal_id": {
+            "type": "string"
+          },
+          "proposal_id": {
+            "type": "string"
+          }
+        }
+      },
+      "PeerProposalReviewRecord": {
+        "type": "object",
+        "required": [
+          "proposal"
+        ],
+        "properties": {
+          "decision": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/PeerProposalDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposal": {
+            "$ref": "#/definitions/PeerAssignmentProposal"
+          }
+        }
+      },
+      "ResolvedConversationRange": {
+        "type": "object",
+        "required": [
+          "selection",
+          "selection_digest"
+        ],
+        "properties": {
+          "selection": {
+            "$ref": "#/definitions/ConversationRangeSelection"
+          },
+          "selection_digest": {
+            "type": "string"
+          }
+        }
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      }
+    }
+  },
   "PromptStash": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "PromptStash",

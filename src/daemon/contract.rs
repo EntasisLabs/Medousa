@@ -130,6 +130,22 @@ pub fn operation_from_policy(policy: &RoutePolicy, profile: FeatureProfile) -> O
             schema: SchemaRef::named("string"),
         });
     }
+    if operation_id == "coordination.proposals.get" {
+        spec.parameters.extend([
+            ParameterSpec {
+                name: "session_id".into(),
+                location: ParameterLocation::Query,
+                required: true,
+                schema: SchemaRef::named("string"),
+            },
+            ParameterSpec {
+                name: "after".into(),
+                location: ParameterLocation::Query,
+                required: false,
+                schema: SchemaRef::named("string"),
+            },
+        ]);
+    }
     spec = spec.with_path_parameters();
     spec
 }
@@ -365,12 +381,12 @@ mod tests {
     fn production_profiles_match_declared_counts() {
         let without_pairing = production_registry(false);
         let with_pairing = production_registry(true);
-        assert_eq!(without_pairing.len(), 430);
-        assert_eq!(with_pairing.len(), 449);
+        assert_eq!(without_pairing.len(), 435);
+        assert_eq!(with_pairing.len(), 454);
         let artifacts = artifacts(&with_pairing);
         let inventory: serde_json::Value =
             serde_json::from_str(&artifacts.route_inventory_json).unwrap();
-        assert_eq!(inventory["operations"].as_array().unwrap().len(), 449);
+        assert_eq!(inventory["operations"].as_array().unwrap().len(), 454);
         assert!(artifacts.openapi_json.contains("\"openapi\": \"3.2.0\""));
     }
 

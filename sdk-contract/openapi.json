@@ -1983,6 +1983,21 @@
         ],
         "type": "object"
       },
+      "CoordinationChannelRef": {
+        "properties": {
+          "authority_id": {
+            "$ref": "#/components/schemas/AuthorityId"
+          },
+          "channel_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "authority_id",
+          "channel_id"
+        ],
+        "type": "object"
+      },
       "CreateAgentSessionRequest": {
         "properties": {
           "args": {
@@ -3419,6 +3434,124 @@
             "type": "object"
           }
         ]
+      },
+      "ExternalPeerAssignmentBinding": {
+        "description": "Stable correlation returned by an admitted external execution.",
+        "properties": {
+          "agent_session_id": {
+            "type": "string"
+          },
+          "assignment_id": {
+            "type": "string"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/CoordinationChannelRef"
+          },
+          "execution_session": {
+            "$ref": "#/components/schemas/SessionRef"
+          },
+          "owner_principal_id": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ExternalPeerTarget"
+          }
+        },
+        "required": [
+          "agent_session_id",
+          "assignment_id",
+          "channel",
+          "execution_session",
+          "owner_principal_id",
+          "target"
+        ],
+        "type": "object"
+      },
+      "ExternalPeerAssignmentRequest": {
+        "description": "Caller intent only. Grant checks occur outside the model before dispatch.",
+        "properties": {
+          "assignment_id": {
+            "type": "string"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/CoordinationChannelRef"
+          },
+          "context": {
+            "$ref": "#/components/schemas/ContextManifest"
+          },
+          "execution_grant_id": {
+            "type": "string"
+          },
+          "execution_session": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SessionRef"
+              }
+            ],
+            "description": "Separate executor session: never reuse the owner's interactive session."
+          },
+          "forge_work_id": {
+            "description": "Initial local bridge is restricted to a governed Forge work item.",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "owner_principal_id": {
+            "type": "string"
+          },
+          "owner_session": {
+            "$ref": "#/components/schemas/SessionRef"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ExternalPeerTarget"
+          }
+        },
+        "required": [
+          "assignment_id",
+          "channel",
+          "context",
+          "execution_grant_id",
+          "execution_session",
+          "forge_work_id",
+          "idempotency_key",
+          "instructions",
+          "owner_principal_id",
+          "owner_session",
+          "target"
+        ],
+        "type": "object"
+      },
+      "ExternalPeerRuntime": {
+        "enum": [
+          "codex",
+          "cursor",
+          "hermes"
+        ],
+        "type": "string"
+      },
+      "ExternalPeerTarget": {
+        "description": "An exact adapter on an exact execution workshop, not a model preference.",
+        "properties": {
+          "authority_id": {
+            "$ref": "#/components/schemas/AuthorityId"
+          },
+          "execution_runtime_id": {
+            "type": "string"
+          },
+          "runtime": {
+            "$ref": "#/components/schemas/ExternalPeerRuntime"
+          }
+        },
+        "required": [
+          "authority_id",
+          "execution_runtime_id",
+          "runtime"
+        ],
+        "type": "object"
       },
       "FeedEvent": {
         "properties": {
@@ -5047,6 +5180,120 @@
           "phase"
         ],
         "title": "ModelDownloadProgress",
+        "type": "object"
+      },
+      "PeerAssignmentProposal": {
+        "description": "Immutable snapshot offered to the owner for explicit approval. No execution authority exists merely because a proposal was submitted.",
+        "properties": {
+          "continue_owner": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "proposal_id": {
+            "type": "string"
+          },
+          "request": {
+            "$ref": "#/components/schemas/ExternalPeerAssignmentRequest"
+          }
+        },
+        "required": [
+          "continue_owner",
+          "expires_at",
+          "proposal_id",
+          "request"
+        ],
+        "type": "object"
+      },
+      "PeerProposalActionRequest": {
+        "additionalProperties": false,
+        "description": "Decisions take no mutable assignment fields or caller-supplied owner id.",
+        "title": "PeerProposalActionRequest",
+        "type": "object"
+      },
+      "PeerProposalActionResponse": {
+        "properties": {
+          "binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExternalPeerAssignmentBinding"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposal_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id"
+        ],
+        "title": "PeerProposalActionResponse",
+        "type": "object"
+      },
+      "PeerProposalDecision": {
+        "properties": {
+          "approved": {
+            "type": "boolean"
+          },
+          "owner_principal_id": {
+            "type": "string"
+          },
+          "proposal_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approved",
+          "owner_principal_id",
+          "proposal_id"
+        ],
+        "type": "object"
+      },
+      "PeerProposalInboxResponse": {
+        "properties": {
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "proposals": {
+            "items": {
+              "$ref": "#/components/schemas/PeerProposalReviewRecord"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "proposals"
+        ],
+        "title": "PeerProposalInboxResponse",
+        "type": "object"
+      },
+      "PeerProposalReviewRecord": {
+        "properties": {
+          "decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PeerProposalDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposal": {
+            "$ref": "#/components/schemas/PeerAssignmentProposal"
+          }
+        },
+        "required": [
+          "proposal"
+        ],
         "type": "object"
       },
       "PromptStash": {
@@ -15675,6 +15922,304 @@
           "feature_profile": "core",
           "rate_limit_class": "read",
           "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/approve": {
+      "post": {
+        "operationId": "coordination.channels.by_channel_id.proposals.by_proposal_id.approve.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeerProposalActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeerProposalActionResponse"
+                }
+              }
+            },
+            "description": "coordination.channels.by_channel_id.proposals.by_proposal_id.approve.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "coordination.channels.by_channel_id.proposals.by_proposal_id.approve.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "coordination.channels.by_channel_id.proposals.by_proposal_id.approve.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/deny": {
+      "post": {
+        "operationId": "coordination.channels.by_channel_id.proposals.by_proposal_id.deny.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeerProposalActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeerProposalActionResponse"
+                }
+              }
+            },
+            "description": "coordination.channels.by_channel_id.proposals.by_proposal_id.deny.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "coordination.channels.by_channel_id.proposals.by_proposal_id.deny.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "coordination.channels.by_channel_id.proposals.by_proposal_id.deny.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/dispatch": {
+      "post": {
+        "operationId": "coordination.channels.by_channel_id.proposals.by_proposal_id.dispatch.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeerProposalActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeerProposalActionResponse"
+                }
+              }
+            },
+            "description": "coordination.channels.by_channel_id.proposals.by_proposal_id.dispatch.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "coordination.channels.by_channel_id.proposals.by_proposal_id.dispatch.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "coordination.channels.by_channel_id.proposals.by_proposal_id.dispatch.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/coordination/proposals": {
+      "get": {
+        "operationId": "coordination.proposals.get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeerProposalInboxResponse"
+                }
+              }
+            },
+            "description": "coordination.proposals.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "coordination.proposals.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "coordination.proposals.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
         }
       }
     },

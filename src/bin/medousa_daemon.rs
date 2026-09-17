@@ -993,6 +993,7 @@ async fn start_daemon() -> Result<()> {
         .merge(medousa::computer_handlers::computer_surface())
         .merge(medousa::world_handlers::world_timeline_surface())
         .with_state(state.clone());
+    declared = declared.merge(medousa::daemon::coordination::http::surface());
     declared = declared.merge(medousa::local_credential_handlers::surface().with_state(
         medousa::local_credential_handlers::LocalCredentialApiState {
             data_dir: medousa::paths::medousa_data_dir(),

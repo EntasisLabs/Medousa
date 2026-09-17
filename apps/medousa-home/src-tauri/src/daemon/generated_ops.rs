@@ -184,6 +184,14 @@ pub enum DaemonOperation {
     ContinuationsLineageByTurnCorrelationIdGet,
     #[serde(rename = "continuations.status.get")]
     ContinuationsStatusGet,
+    #[serde(rename = "coordination.channels.by_channel_id.proposals.by_proposal_id.approve.post")]
+    CoordinationChannelsByChannelIdProposalsByProposalIdApprovePost,
+    #[serde(rename = "coordination.channels.by_channel_id.proposals.by_proposal_id.deny.post")]
+    CoordinationChannelsByChannelIdProposalsByProposalIdDenyPost,
+    #[serde(rename = "coordination.channels.by_channel_id.proposals.by_proposal_id.dispatch.post")]
+    CoordinationChannelsByChannelIdProposalsByProposalIdDispatchPost,
+    #[serde(rename = "coordination.proposals.get")]
+    CoordinationProposalsGet,
     #[serde(rename = "deliver.outbox.post")]
     DeliverOutboxPost,
     #[serde(rename = "deliver.poll.by_job_id.get")]
@@ -999,6 +1007,10 @@ impl DaemonOperation {
             Self::ComputerDriversGet => "computer.drivers.get",
             Self::ContinuationsLineageByTurnCorrelationIdGet => "continuations.lineage.by_turn_correlation_id.get",
             Self::ContinuationsStatusGet => "continuations.status.get",
+            Self::CoordinationChannelsByChannelIdProposalsByProposalIdApprovePost => "coordination.channels.by_channel_id.proposals.by_proposal_id.approve.post",
+            Self::CoordinationChannelsByChannelIdProposalsByProposalIdDenyPost => "coordination.channels.by_channel_id.proposals.by_proposal_id.deny.post",
+            Self::CoordinationChannelsByChannelIdProposalsByProposalIdDispatchPost => "coordination.channels.by_channel_id.proposals.by_proposal_id.dispatch.post",
+            Self::CoordinationProposalsGet => "coordination.proposals.get",
             Self::DeliverOutboxPost => "deliver.outbox.post",
             Self::DeliverPollByJobIdGet => "deliver.poll.by_job_id.get",
             Self::DeliveryStatusGet => "delivery.status.get",

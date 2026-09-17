@@ -28,6 +28,7 @@ Integrator / self-host cookbooks: [../cookbook/README.md](../cookbook/README.md)
 | [Chat drawings and generated images](chat-media-and-images.md) | Draw in chat, generate images, refine them, and save or share the result |
 | [Interactive recipes](interactive-recipes.md) | Follow guided recipes/procedures with durable step timers |
 | [Undertakings & ForgeLens](undertakings.md) | Governed work, seal, review, World observe |
+| [Delegation approvals](delegation-approvals.md) | Review immutable agent-work proposals (native preview) |
 
 Also useful from the cookbook (app-user tagged):
 [Custom views & canvas](../cookbook/custom-views-and-canvas.md) ·

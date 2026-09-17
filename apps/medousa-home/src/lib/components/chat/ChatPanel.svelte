@@ -15,6 +15,7 @@
   import ComposerSkillSlashMenu from "$lib/components/chat/ComposerSkillSlashMenu.svelte";
   import ChatRuntimeControlRow from "$lib/components/chat/ChatRuntimeControlRow.svelte";
   import BudgetApprovalBar from "$lib/components/chat/BudgetApprovalBar.svelte";
+  import PeerProposalBar from "$lib/components/chat/PeerProposalBar.svelte";
   import ModeProposalBar from "$lib/components/chat/ModeProposalBar.svelte";
   import AgentPermissionBar from "$lib/components/chat/AgentPermissionBar.svelte";
   import AgentSecretBar from "$lib/components/chat/AgentSecretBar.svelte";
@@ -1063,6 +1064,7 @@
     onContinue={continueWhereLeftOff}
   >
     {#if !embedded && !presenceComposerCentered}
+      <PeerProposalBar sessionId={panelSessionId} />
       <BudgetApprovalBar
         onOpenWork={() => {
           workspace.workView = "hub";

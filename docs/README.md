@@ -46,6 +46,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Chat drawings and generated images](guides/chat-media-and-images.md) | Draw in chat, generate images, refine them, and save or share the result |
 | [Interactive recipes](guides/interactive-recipes.md) | Follow guided recipes/procedures with durable step timers |
 | [Undertakings & ForgeLens](guides/undertakings.md) | Governed work, chat review, comments, commits, pull requests |
+| [Delegation approvals](guides/delegation-approvals.md) | Review immutable agent-work proposals (native preview) |
 | Full index | [guides/README.md](guides/README.md) |
 
 ---
@@ -88,6 +89,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Calendar](engine/calendar.md) | Personal `.ics` API + cognition calendar tools |
 | [Workspace](engine/workspace.md) | Work board, feed, SSE |
 | [Forge](engine/forge.md) | Undertaking custody (`/v1/forge`), leases, review |
+| [Coordination](engine/coordination.md) | Owner-scoped native delegation approval and dispatch |
 | [Coding engine](engine/coding-engine.md) | Language servers, project intelligence, safe edits |
 | [Agent tools](engine/agent-tools.md) | Host/worker lanes, discover domains |
 | [Runtime config](engine/runtime-config.md) | Inference profiles, stage routing |

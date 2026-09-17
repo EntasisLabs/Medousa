@@ -47,6 +47,11 @@ pub async fn health(
     .into_iter()
     .chain(cfg!(feature = "iroh-transport").then_some("transport.iroh"))
     .chain(
+        crate::daemon::coordination::local_coordination_host()
+            .is_some()
+            .then_some("coordination.operator_proposals.v1"),
+    )
+    .chain(
         state
             .work_environment
             .is_some()

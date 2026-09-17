@@ -1,5 +1,5 @@
-//! Local, explicitly approved coordination dispatch. No model tool or HTTP route
-//! is advertised yet; grant issuance must remain a human/operator surface.
+//! Local, explicitly approved coordination dispatch. Native operator HTTP
+//! adapters review persisted proposals; grant issuance is never a model tool.
 
 use std::sync::Arc;
 
@@ -25,6 +25,7 @@ use sha2::{Digest, Sha256};
 use crate::daemon::state::AppState;
 use crate::request_principal::{Capability, PrincipalKind, RequestPrincipal};
 mod host;
+pub mod http;
 mod owner_intake;
 mod proposals;
 pub use host::{local_coordination_host, start_local_coordination_host};
