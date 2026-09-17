@@ -10,6 +10,8 @@
 //! Missing CLI → stub; spawn/handshake failures surface as errors (no silent stub).
 //! Force stub: `MEDOUSA_ACP_FORCE_STUB=1`.
 
+pub mod coordination;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;

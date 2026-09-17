@@ -9,6 +9,7 @@ pub mod browser;
 pub mod capability;
 pub mod component_runtime;
 pub mod component_store;
+pub mod coordination;
 pub mod daemon_api;
 pub mod environment;
 pub mod environment_default;

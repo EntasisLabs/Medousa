@@ -7651,6 +7651,7 @@ version = "0.10.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "medousa-types",
  "serde",
  "serde_json",
  "tokio",
