@@ -59,6 +59,7 @@ export type LiveHandoffHandler = (
   request: string,
   transcript: LiveTranscriptEntry[],
   signal: AbortSignal,
+  onAccepted?: (turnId: string) => void,
 ) => Promise<LiveWorkResult>;
 
 export async function createLiveSession(
@@ -110,15 +111,16 @@ const resultAcks = new Map<string, number>();
 let coordinator = new LiveDelegationCoordinator();
 let latestResult: { id: string; result: LiveWorkResult } | null = null;
 let resultPresentation = 0;
+let transcriptBindings: Array<{ start: number; turnId: string }> = [];
 
-function persistTranscript(entry: LiveTranscriptEntry) {
+function persistTranscript(entry: LiveTranscriptEntry, attachment = false, targetTurnId?: string) {
   const { sessionId, liveSessionId } = get(liveVoiceState);
   const onSaved = transcriptSavedHandler;
   if (!sessionId || !liveSessionId) return;
   // Capture the origin before queuing; switching chats must never redirect writes.
   transcriptWrites = transcriptWrites.then(async () => {
     await invoke("live_voice_append_transcript", {
-      sessionId, liveSessionId, itemId: entry.id, role: entry.role, text: entry.text,
+      sessionId, liveSessionId, itemId: entry.id, role: entry.role, text: entry.text, attachment, targetTurnId,
     });
     await onSaved?.();
   }).catch((error) => {
@@ -167,6 +169,7 @@ async function handleLiveDelegation(event: Record<string, unknown>) {
   if (signal.aborted) return;
   const transcript = timeline.snapshot(delegation.offsetMs);
   const request = timeline.requestBetween(lastDelegationOffset, delegation.offsetMs);
+  const requestStart = timeline.requestStart(lastDelegationOffset, delegation.offsetMs);
   lastDelegationOffset = Math.max(lastDelegationOffset, delegation.offsetMs);
   let result: LiveWorkResult = { status: "failed", text: "The request's speech context was unavailable. Please repeat it." };
   if (handler) {
@@ -175,7 +178,10 @@ async function handleLiveDelegation(event: Record<string, unknown>) {
       delegation_id: delegation.id, content: "The workshop is processing this request. No result is available yet; tool availability and completion are not known." });
     try {
       const coordinated = await coordinator.execute(request, () => request
-        ? handler(request, transcript, signal)
+        ? handler(request, transcript, signal, (turnId) => {
+          if (signal.aborted || dataChannel !== channel) return;
+          if (!transcriptBindings.some((binding) => binding.turnId === turnId)) transcriptBindings.push({ start: requestStart, turnId });
+        })
         : Promise.resolve({ status: "failed", text: "The request's speech context was unavailable. Please repeat it." } as LiveWorkResult), signal);
       if (coordinated.kind === "acknowledgment") {
         if (!signal.aborted && dataChannel === channel) sendRealtimeEvent({
@@ -190,6 +196,7 @@ async function handleLiveDelegation(event: Record<string, unknown>) {
   }
   if (signal.aborted || dataChannel !== channel || channel?.readyState !== "open") return;
   if (request && result.turnId) delegatedRequests.add(request.trim());
+  if (result.turnId && !transcriptBindings.some((binding) => binding.turnId === result.turnId)) transcriptBindings.push({ start: requestStart, turnId: result.turnId });
   latestResult = { id: delegation.id, result };
   updateClientState({ resultAvailable: true });
   presentLiveResult(delegation.id, result, channel, signal);
@@ -425,6 +432,7 @@ export async function connectLiveVoice(
   timeline = new LiveTimeline();
   lastDelegationOffset = -1;
   delegatedRequests.clear();
+  transcriptBindings = [];
   coordinator = new LiveDelegationCoordinator();
   latestResult = null;
   liveVoiceUsage.set({ seconds: null, confirmed: false });
@@ -558,15 +566,19 @@ export async function disconnectLiveVoice(): Promise<void> {
         sendRealtimeEvent({ type: "session.close" });
       });
     }
-    for (const row of timeline.snapshot()) {
-      if (row.text.trim() && !(row.role === "user" && delegatedRequests.has(row.text.trim()))) persistTranscript(row);
+    const bindings = [...transcriptBindings].sort((a, b) => a.start - b.start);
+    if (!bindings.length) bindings.push({ start: 0, turnId: "" });
+    for (const [index, binding] of bindings.entries()) {
+      const rows = timeline.transcriptRange(index === 0 ? 0 : binding.start, bindings[index + 1]?.start ?? Infinity);
+      if (rows.length) persistTranscript({ id: `attachment-${index}`, role: "assistant", text: JSON.stringify(rows.map(({ role, text }) => ({ role, text }))) }, true, binding.turnId || undefined);
     }
+    await transcriptWrites;
   }
   closeMediaTransport();
   if (isTauriIos()) await liveVoiceStop().catch(() => undefined);
   const finalizationError = protocol === "live" && get(liveVoiceState).liveSessionId && !get(liveVoiceUsage).confirmed
     ? "Live ended without confirmed final usage" : null;
-  liveVoiceState.set({ ...idle, available: isTauriIos(), error: finalizationError });
+  liveVoiceState.set({ ...idle, available: isTauriIos(), error: finalizationError ?? get(liveVoiceState).error });
 }
 
 export async function liveVoiceStart(

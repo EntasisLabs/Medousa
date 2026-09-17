@@ -53,6 +53,21 @@ export class LiveTimeline {
       .filter((fragment) => fragment.role === "user" && fragment.endMs > previousOffset && fragment.startMs <= offset)
       .map((fragment) => fragment.text).join("").trim();
   }
+
+  requestStart(previousOffset: number, offset: number): number {
+    return Math.min(...this.fragments.filter((fragment) => fragment.role === "user" && fragment.endMs > previousOffset && fragment.startMs <= offset).map((fragment) => fragment.startMs), offset);
+  }
+
+  transcriptRange(start: number, end: number): LiveTranscriptEntry[] {
+    const rows: LiveTranscriptEntry[] = [];
+    for (const fragment of [...this.fragments].sort((a, b) => a.startMs - b.startMs)) {
+      if (fragment.startMs < start || fragment.startMs >= end) continue;
+      const previous = rows.at(-1);
+      if (previous?.role === fragment.role) previous.text += fragment.text;
+      else rows.push({ id: fragment.id, role: fragment.role, text: fragment.text });
+    }
+    return rows;
+  }
 }
 
 export function liveDelegation(event: Record<string, unknown>): { id: string; offsetMs: number } | null {

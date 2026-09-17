@@ -3,8 +3,10 @@ use serde::{Deserialize, Serialize};
 const OPENAI_REALTIME_CALLS_URL: &str = "https://api.openai.com/v1/realtime/calls";
 const OPENAI_LIVE_SESSIONS_URL: &str = "https://api.openai.com/v1/live/sessions";
 const MAX_SDP_BYTES: usize = 256 * 1024;
+const PERSONAL_CONTEXT_HANDOFF: &str = "\nBackend tools: the workshop can look up permitted saved memory, conversation history, journal or vault notes, and connected sources when configured.\nDelegate to the backend when: the user asks to recall or summarize their personal activity, work, decisions, plans, or progress beyond facts explicitly available in this conversation. Examples: 'what I've been up to this week', 'what have I been working on lately?', 'what did we decide last time?', and 'summarize my week'. These are personal-context retrieval requests, not small talk. Delegate before answering; the small seeded history is not a complete activity log. Do not guess, claim you have no memory, or ask the user to recount their week before the backend checks its permitted sources. If the backend finds insufficient information, say so honestly. A new time range or topic requires a new lookup even after an earlier result.\nDo not delegate to the backend when: the user is simply telling you about their week, sharing feelings, greeting you, thanking you, or asking to repeat or explain a verified result already provided for that same scope. Respond naturally to those conversational turns.";
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn live_voice_append_transcript(
     embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
     session_id: String,
@@ -12,10 +14,12 @@ pub async fn live_voice_append_transcript(
     item_id: String,
     role: String,
     text: String,
+    attachment: Option<bool>,
+    target_turn_id: Option<String>,
 ) -> Result<(), String> {
     let client = embedded_state.client_if_active().await?
         .ok_or_else(|| "Live transcript persistence requires the Personal workshop".to_string())?;
-    client.append_live_transcript(&session_id, &live_session_id, &item_id, &role, &text)
+    client.append_live_transcript(&session_id, &live_session_id, &item_id, &role, &text, attachment.unwrap_or(false), target_turn_id.as_deref())
         .await.map_err(|error| error.to_string())
 }
 
@@ -79,9 +83,11 @@ pub async fn live_voice_create_session(
     let mut voice_instructions = context.as_ref().map(|packet| packet.voice_instructions.clone())
         .unwrap_or_else(|| format!("You are Medousa in {workshop_name}. Speak naturally and briefly. Delegate work requiring research, MCP tools, files, images or durable actions to the workshop backend before answering. Never invent results."));
     voice_instructions.push_str("\nDo not delegate to the backend when: the user gives a conversational acknowledgment such as 'okay, no worries', thanks you, or asks to hear an already provided result. These acknowledgments do not cancel work or mean its answer should be suppressed. Yield speech to interruptions, then present verified work results when available unless the user explicitly asks not to hear them. Use current returned facts for follow-up questions instead of starting another lookup. Distinguish stopping speech from cancelling a task; never claim cancellation without backend confirmation.");
-    let instructions = context.as_ref().map(|packet| packet.instructions.clone()).unwrap_or_else(|| {
+    voice_instructions.push_str(PERSONAL_CONTEXT_HANDOFF);
+    let mut instructions = context.as_ref().map(|packet| packet.instructions.clone()).unwrap_or_else(|| {
         format!("You are Medousa in the user's {workshop_name} workshop. Be direct and conversational. Use hand_off_to_medousa for requests requiring tools or durable work; never invent execution results.")
     });
+    instructions.push_str(PERSONAL_CONTEXT_HANDOFF);
     let seed_history: Vec<LiveSeedMessage> = context.map(|packet| packet.recent_history.into_iter().map(|turn| LiveSeedMessage {
         role: turn.role,
         content: turn.content,

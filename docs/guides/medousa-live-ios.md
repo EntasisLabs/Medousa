@@ -103,6 +103,19 @@ rather than moving an active call to another daemon.
 
 ## Troubleshooting
 
+Live hands questions such as “what have I been up to this week?” or “what did
+we decide last time?” to the workshop for a permitted memory/history lookup.
+The voice session's recent context is not treated as a complete activity log.
+Simply telling Medousa about your week does not require a lookup.
+
+When you end a Live session, its speech is saved as an expandable **Live
+transcript** below Medousa's message actions, rather than individual chat bubbles.
+Tool-backed speech attaches to that work's answer; voice-only sessions create
+one Medousa turn. Captions remain in the Live dock while connected. If the
+answer is outside the loaded history page, the transcript stays available as
+a standalone transcript until history is reloaded with that answer. This does
+not rewrite or remove transcripts saved by earlier versions.
+
 Successful turns do not send a separate completion notification while their
 conversation is visible in Medousa. Background completions still notify, and
 failed turns still notify even when the conversation is visible. Settled chat

@@ -303,6 +303,19 @@ pub struct EmbeddedLiveContext {
 fn bounded_live_history(history: Vec<ConversationTurn>) -> Vec<ConversationTurn> {
     let mut turns = history
         .into_iter()
+        .flat_map(|turn| {
+            let attachment = turn.parts.as_ref().and_then(|parts| parts.iter().find_map(|part| match part {
+                crate::turn_parts::TurnPart::Handoff { handoff_kind, text, .. } if handoff_kind == "live_transcript" => serde_json::from_str::<Vec<serde_json::Value>>(text).ok(),
+                _ => None,
+            }));
+            if let Some(rows) = attachment {
+                rows.into_iter().filter_map(|row| {
+                    let role = row["role"].as_str()?;
+                    let text = row["text"].as_str()?;
+                    matches!(role, "user" | "assistant").then(|| ConversationTurn::plain(role, text.to_string(), turn.timestamp, vec![], None))
+                }).collect::<Vec<_>>()
+            } else { vec![turn] }
+        })
         .rev()
         .filter(|turn| matches!(turn.role.as_str(), "user" | "assistant") && !turn.content.trim().is_empty())
         .take(12)
@@ -5048,6 +5061,7 @@ impl EmbeddedDaemonClient {
     }
 
     /// Ingest an already-generated voice message without starting inference.
+    #[allow(clippy::too_many_arguments)]
     pub async fn append_live_transcript(
         &self,
         session_id: &str,
@@ -5055,6 +5069,8 @@ impl EmbeddedDaemonClient {
         item_id: &str,
         role: &str,
         text: &str,
+        attachment: bool,
+        target_turn_id: Option<&str>,
     ) -> Result<()> {
         use sha2::{Digest, Sha256};
         use medousa_types::session::TranscriptEntryId;
@@ -5072,10 +5088,29 @@ impl EmbeddedDaemonClient {
         let lookup_session = session_id.clone();
         let entries = tokio::task::spawn_blocking(move || store.load_transcript_entries(&lookup_session)).await?;
         if let Some(existing) = entries.iter().find(|entry| entry.entry_id == entry_id) {
-            anyhow::ensure!(existing.turn.role == role && existing.turn.content == text.trim(), "Live message identity conflicts with saved content");
+            let matches = if attachment {
+                existing.turn.parts.as_ref().is_some_and(|parts| parts.iter().any(|part| matches!(part, crate::turn_parts::TurnPart::Handoff { handoff_kind, text: saved, .. } if handoff_kind == "live_transcript" && saved == text)))
+            } else { existing.turn.content == text.trim() };
+            anyhow::ensure!(existing.turn.role == role && matches, "Live message identity conflicts with saved content");
             return Ok(());
         }
         let mut turn = ConversationTurn::plain(role, text.trim().to_string(), Utc::now(), vec![], None);
+        if attachment {
+            anyhow::ensure!(role == "assistant", "Live attachments belong to Medousa");
+            let rows: Vec<serde_json::Value> = serde_json::from_str(text)?;
+            anyhow::ensure!(!rows.is_empty() && rows.len() <= 256, "invalid Live attachment size");
+            anyhow::ensure!(rows.iter().all(|row| matches!(row["role"].as_str(), Some("user" | "assistant")) && row["text"].as_str().is_some()), "invalid Live attachment rows");
+            let target = if let Some(target_id) = target_turn_id {
+                Some(entries.iter().find(|entry| entry.turn.role == "assistant" && entry.caused_by.as_ref().is_some_and(|cause| cause.execution_id.as_str() == target_id))
+                    .map(|entry| entry.entry_id.to_string()).unwrap_or_else(|| format!("execution:{target_id}")))
+            } else { None };
+            turn.content = if target.is_some() { String::new() } else {
+                rows.iter().rev().find(|row| row["role"] == "assistant").and_then(|row| row["text"].as_str()).unwrap_or("Voice conversation").to_string()
+            };
+            turn.parts = Some(vec![crate::turn_parts::TurnPart::Handoff {
+                handoff_kind: "live_transcript".to_string(), text: text.to_string(), work_id: target,
+            }]);
+        }
         if role == "user" {
             turn.speaker_profile_id = Some(self.active_profile_id()?);
         }

@@ -3,6 +3,13 @@ import type { ChatMessage } from "$lib/types/chat";
 import { mergeTranscript } from "./mergeTranscript";
 
 describe("mergeTranscript", () => {
+  it("hydrates attachments by stable turn identity without replacing the streaming bubble", () => {
+    const local = [{ id: "stream", role: "assistant", turnId: "turn", content: "Answer", streaming: true }] as ChatMessage[];
+    const liveTranscripts = [{ id: "attachment", rows: [{ role: "user" as const, text: "Hi" }] }];
+    const result = mergeTranscript(local, [{ id: "saved", role: "assistant", turnId: "turn", content: "Answer", liveTranscripts }] as ChatMessage[]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ id: "stream", streaming: true, liveTranscripts });
+  });
   it("hydrates generated media onto an already-rendered assistant bubble", () => {
     const local: ChatMessage[] = [{
       id: "live",

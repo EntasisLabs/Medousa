@@ -26,6 +26,7 @@ import {
 } from "$lib/types/turnParts";
 import { formatSessionLabel } from "$lib/utils/formatSession";
 import { dedupeMessagesById, mergeTranscript } from "$lib/utils/mergeTranscript";
+import { attachLiveTranscripts } from "$lib/liveTranscriptAttachments";
 import { chatScenes } from "$lib/liquid/surfaces/chat/chatScenes.svelte";
 import { chatInteractions } from "$lib/liquid/surfaces/chat/chatInteractions";
 import { chatStreamPool } from "$lib/chat/chatStreamPool.svelte";
@@ -115,16 +116,18 @@ export function mapTurns(
   const askJobId = options?.askJobId ?? null;
   const sessionId = options?.sessionId?.trim() || "session";
   const authorityId = options?.authorityId?.trim() || "";
-  return turns.map((turn, index) => {
+  return attachLiveTranscripts(turns.map((turn, index) => {
     const modelReceipt = modelReceiptFromParts(turn.parts ?? null);
     const entryId = turn.entry_id?.trim();
-    const segments =
-      turn.role === "assistant" ? chatSegmentsFromParts(turn.parts ?? null) : undefined;
+    const livePart = turn.parts?.find((part) => part.kind === "handoff" && part.handoff_kind === "live_transcript");
+    const segments: ChatMessage["segments"] = livePart?.kind === "handoff" ? [{ kind: "handoff", handoffKind: "live_transcript", text: livePart.text, workId: livePart.work_id }]
+      : turn.role === "assistant" ? chatSegmentsFromParts(turn.parts ?? null) : undefined;
     return {
       id: entryId
         ? `${sessionId}:${entryId}`
         : `${sessionId}:${turn.timestamp}:${turn.role}:${index}`,
       role: normalizeRole(turn.role),
+      turnId: turn.role === "assistant" ? turn.caused_by?.execution_id : undefined,
       content: turn.content,
       lane,
       askJobId,
@@ -162,9 +165,8 @@ export function mapTurns(
             }
           : null,
     };
-  });
+  }));
 }
-
 function historyCursor(history: SessionHistoryResponse): string | null {
   return history.next_cursor?.trim() || null;
 }

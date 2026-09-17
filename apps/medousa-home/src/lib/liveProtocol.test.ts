@@ -2,6 +2,17 @@ import { describe, expect, it } from "vitest";
 import { LiveTimeline, liveDelegation, liveDelegationResult } from "./liveProtocol";
 
 describe("GPT-Live protocol", () => {
+  it("partitions attachments at the next work request while retaining acknowledgments", () => {
+    const timeline = new LiveTimeline();
+    timeline.accept({ type: "session.input_transcript.delta", delta: "Check GitHub", start_ms: 10, end_ms: 30 });
+    timeline.accept({ type: "session.output_transcript.delta", delta: "Checking", start_ms: 40, end_ms: 50 });
+    timeline.accept({ type: "session.input_transcript.delta", delta: "Thank you", start_ms: 60, end_ms: 70 });
+    timeline.accept({ type: "session.output_transcript.delta", delta: "GitHub is available", start_ms: 80, end_ms: 100 });
+    timeline.accept({ type: "session.input_transcript.delta", delta: "Search a repository", start_ms: 110, end_ms: 140 });
+    expect(timeline.requestStart(100, 150)).toBe(110);
+    expect(timeline.transcriptRange(0, 110).map((row) => row.text)).toEqual(["Check GitHub", "Checking", "Thank you", "GitHub is available"]);
+    expect(timeline.transcriptRange(110, Infinity)[0].text).toBe("Search a repository");
+  });
   it("preserves fragments exactly, deduplicates delivery, and handles late timestamps", () => {
     const timeline = new LiveTimeline();
     const event = { type: "session.input_transcript.delta", event_id: "b", delta: " tools?", start_ms: 500, end_ms: 800 };

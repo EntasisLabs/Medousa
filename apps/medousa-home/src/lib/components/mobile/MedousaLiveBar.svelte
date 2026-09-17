@@ -68,11 +68,11 @@
       if (!sessionId) throw new Error("Could not create a conversation for Medousa Live");
       const workshopEpoch = chat.workshopEpoch;
       ownerEpoch = workshopEpoch;
-      await connectLiveVoice(workshops.activeLabel || "Medousa", sessionId, async (request, transcript, signal) => {
+      await connectLiveVoice(workshops.activeLabel || "Medousa", sessionId, async (request, transcript, signal, onAccepted) => {
         if (chat.sessionId !== sessionId || chat.workshopEpoch !== workshopEpoch) {
           throw new Error("Return to the conversation where Live started before requesting work.");
         }
-        return handoffToMedousa(request, transcript, signal);
+        return handoffToMedousa(request, transcript, signal, onAccepted);
       }, async () => {
         if (chat.sessionId === sessionId && chat.workshopEpoch === workshopEpoch && !chat.isStreaming) {
           await chat.reloadCurrentSession({ notice: false });
@@ -87,7 +87,7 @@
     }
   }
 
-  async function handoffToMedousa(request: string, _transcript: LiveTranscriptEntry[], signal: AbortSignal) {
+  async function handoffToMedousa(request: string, _transcript: LiveTranscriptEntry[], signal: AbortSignal, onAccepted?: (turnId: string) => void) {
     if (chat.isStreaming) throw new Error("A turn is already running in this conversation. Let it finish first.");
     const sessionId = chat.sessionId;
     const workshopEpoch = chat.workshopEpoch;
@@ -104,6 +104,7 @@
       scrollToLatest: () => undefined,
       onAccepted: (ticket) => {
         turnId = ticket.turn_id;
+        onAccepted?.(turnId);
         assistantId = chat.turns.get(turnId)?.messageId ?? null;
       },
     });
