@@ -38,6 +38,8 @@ final class MedousaLiveVoiceSessionManager {
     private var nativeAudio: MedousaLiveNativeAudioEngine?
     private var nativeTransport: MedousaLiveSocketTransport?
     private var pendingNativeBootstrap: (authorization: String, configuration: [String: Any])?
+    private var nativeEvents: [String] = []
+    private var nativeEventBytes = 0
 
     private init() {}
 
@@ -53,6 +55,8 @@ final class MedousaLiveVoiceSessionManager {
         workshopName = request.workshopName
         sessionId = request.sessionId
         nativeLiveSessionId = nil
+        nativeEvents.removeAll()
+        nativeEventBytes = 0
         phase = "connecting"
         lastError = nil
 
@@ -137,8 +141,24 @@ final class MedousaLiveVoiceSessionManager {
         workshopName = nil
         sessionId = nil
         nativeLiveSessionId = nil
+        nativeEvents.removeAll()
+        nativeEventBytes = 0
         endLiveActivity()
         return encodedStatus()
+    }
+
+    func drainNativeEvents() -> String {
+        let events = nativeEvents
+        nativeEvents.removeAll()
+        nativeEventBytes = 0
+        return "[\(events.joined(separator: ","))]"
+    }
+
+    func sendNativeEvent(json: String) -> Bool {
+        guard let data = json.data(using: .utf8), data.count <= 65 * 1024,
+              let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return false }
+        return nativeTransport?.sendClientEvent(event) == true
     }
 
     func status() -> String {
@@ -179,17 +199,20 @@ final class MedousaLiveVoiceSessionManager {
                 do { try audio.play(bytes) }
                 catch { self.fail("Could not play native Live audio: \(error.localizedDescription)") }
             case .closed:
+                self.queueNativeEvent(["type": "session.closed"])
                 audio.stop()
                 self.nativeAudio = nil
                 self.nativeTransport = nil
                 self.nativeLiveSessionId = nil
+                self.active = false
+                self.phase = "idle"
             case let .failed(message):
                 audio.stop()
                 self.nativeAudio = nil
                 self.nativeTransport = nil
                 self.fail(message)
-            case .event:
-                break
+            case let .event(event):
+                self.queueNativeEvent(event)
             }
         }
         nativeTransport = transport
@@ -242,6 +265,18 @@ final class MedousaLiveVoiceSessionManager {
             authorization: bootstrap.authorization,
             configuration: bootstrap.configuration
         )
+    }
+
+    private func queueNativeEvent(_ event: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: event),
+              data.count <= 64 * 1024,
+              let json = String(data: data, encoding: .utf8) else { return }
+        while nativeEvents.count >= 128 || nativeEventBytes + data.count > 256 * 1024 {
+            guard !nativeEvents.isEmpty else { return }
+            nativeEventBytes -= nativeEvents.removeFirst().utf8.count
+        }
+        nativeEvents.append(json)
+        nativeEventBytes += data.count
     }
 
     private func publishLiveActivity() {

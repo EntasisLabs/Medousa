@@ -145,6 +145,28 @@ public func medousa_live_voice_status() -> UnsafeMutablePointer<CChar>? {
     return strdup("{\"available\":false,\"active\":false,\"muted\":false,\"phase\":\"failed\",\"error\":\"iOS 17+ required\"}")
 }
 
+@_cdecl("medousa_live_voice_drain_events")
+public func medousa_live_voice_drain_events() -> UnsafeMutablePointer<CChar>? {
+    if #available(iOS 17.0, *) {
+        return strdup(runOnMainActor {
+            MedousaLiveVoiceSessionManager.shared.drainNativeEvents()
+        })
+    }
+    return strdup("[]")
+}
+
+@_cdecl("medousa_live_voice_send_event")
+public func medousa_live_voice_send_event(_ jsonPointer: UnsafePointer<CChar>?) -> Bool {
+    guard let jsonPointer else { return false }
+    if #available(iOS 17.0, *) {
+        let json = String(cString: jsonPointer)
+        return runOnMainActor {
+            MedousaLiveVoiceSessionManager.shared.sendNativeEvent(json: json)
+        }
+    }
+    return false
+}
+
 @_cdecl("medousa_carplay_live_exchange")
 public func medousa_carplay_live_exchange(_ jsonPointer: UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>? {
     guard let jsonPointer else { return nil }

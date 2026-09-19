@@ -84,6 +84,13 @@ into this path. It defaults off and falls back to the qualified WebRTC path when
 native startup fails; tool handoffs remain on WebRTC during qualification.
 No new key store or managed agent backend is introduced.
 
+The native preview can now drain bounded delegation/transcript events into the
+same foreground Medousa coordinator used by WebRTC and return verified progress
+or commentary through a narrow allowlist. This qualifies conversation continuity
+without creating a second tool runtime. It still depends on the app webview being
+active for tool dispatch; background-independent daemon sideband ownership is not
+yet claimed.
+
 Run the scene-independent native lifecycle tests on macOS with Xcode installed:
 
 ```bash

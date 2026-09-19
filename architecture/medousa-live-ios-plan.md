@@ -98,6 +98,9 @@ ActivityKit bridge is reused for background-visible state.
    device qualification)*
 3. **Daemon sideband** — bind one Live session to one Medousa session; delegate
    tools, surface approvals, and project turn progress into conversational state.
+   *(the opt-in native transport now bridges bounded server events to the existing
+   foreground coordinator and accepts only validated thinking/commentary results;
+   scene-independent daemon execution remains next)*
 4. **Production controls** — app voice surface, Dynamic Island and Lock Screen
    controls, widget/Control Center/Action button start, mute, stop, and resume.
 5. **Siri launcher** — “Talk to Medousa” starts or resumes Medousa Live and

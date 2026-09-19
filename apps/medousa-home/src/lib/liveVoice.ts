@@ -116,6 +116,8 @@ let resultPresentation = 0;
 let transcriptBindings: Array<{ start: number; turnId: string }> = [];
 let transportMode: "webrtc" | "native" = "webrtc";
 let nativeStatusTimer: number | null = null;
+let transportGeneration = 0;
+let nativePollActive = false;
 
 function persistTranscript(entry: LiveTranscriptEntry, attachment = false, targetTurnId?: string) {
   const { sessionId, liveSessionId } = get(liveVoiceState);
@@ -137,6 +139,7 @@ function updateClientState(next: Partial<LiveVoiceClientState>) {
 }
 
 function closeMediaTransport() {
+  transportGeneration += 1;
   workAbort.abort();
   sessionReady = false;
   for (const timer of resultAcks.values()) window.clearTimeout(timer);
@@ -164,6 +167,34 @@ function closeMediaTransport() {
   }
 }
 
+function canSendLiveEvent(generation: number): boolean {
+  if (workAbort.signal.aborted || generation !== transportGeneration) return false;
+  if (transportMode === "native") return get(liveVoiceState).active;
+  return dataChannel?.readyState === "open";
+}
+
+async function pollNativeLiveVoice(): Promise<void> {
+  if (nativePollActive || transportMode !== "native") return;
+  nativePollActive = true;
+  try {
+    const events = await liveVoiceDrainNativeEvents();
+    if (transportMode !== "native") return;
+    for (const event of events) handleServerEvent(JSON.stringify(event));
+    const next = await liveVoiceStatus();
+    if (transportMode !== "native") return;
+    if (next.phase === "failed" || !next.active) {
+      closeMediaTransport();
+      updateClientState({ active: false, phase: "failed", error: next.error ?? "Native Live ended" });
+      return;
+    }
+    updateClientState({ muted: next.muted, phase: next.phase });
+  } catch (error) {
+    if (transportMode === "native") updateClientState({ error: `Native Live sync failed: ${String(error)}` });
+  } finally {
+    nativePollActive = false;
+  }
+}
+
 async function connectNativeLiveVoice(workshopName: string, sessionId: string): Promise<void> {
   transportMode = "native";
   const started = await liveVoiceStartNative(workshopName, sessionId);
@@ -180,16 +211,9 @@ async function connectNativeLiveVoice(workshopName: string, sessionId: string): 
         phase: status.phase,
         liveSessionId: status.liveSessionId ?? "native-live",
       });
+      sessionReady = true;
       nativeStatusTimer = window.setInterval(() => {
-        void liveVoiceStatus().then((next) => {
-          if (transportMode !== "native") return;
-          if (next.phase === "failed" || !next.active) {
-            closeMediaTransport();
-            updateClientState({ active: false, phase: "failed", error: next.error ?? "Native Live ended" });
-            return;
-          }
-          updateClientState({ muted: next.muted, phase: next.phase });
-        }).catch(() => undefined);
+        void pollNativeLiveVoice();
       }, 500);
       return;
     }
@@ -202,7 +226,7 @@ async function handleLiveDelegation(event: Record<string, unknown>) {
   const delegation = liveDelegation(event);
   if (!delegation || handledToolCalls.has(delegation.id)) return;
   handledToolCalls.add(delegation.id);
-  const channel = dataChannel;
+  const generation = transportGeneration;
   const handler = handoffHandler;
   const signal = workAbort.signal;
   // Transcript delivery may lag delegation metadata. This is a bounded context
@@ -221,12 +245,12 @@ async function handleLiveDelegation(event: Record<string, unknown>) {
     try {
       const coordinated = await coordinator.execute(request, () => request
         ? handler(request, transcript, signal, (turnId) => {
-          if (signal.aborted || dataChannel !== channel) return;
+          if (!canSendLiveEvent(generation)) return;
           if (!transcriptBindings.some((binding) => binding.turnId === turnId)) transcriptBindings.push({ start: requestStart, turnId });
         })
         : Promise.resolve({ status: "failed", text: "The request's speech context was unavailable. Please repeat it." } as LiveWorkResult), signal);
       if (coordinated.kind === "acknowledgment") {
-        if (!signal.aborted && dataChannel === channel) sendRealtimeEvent({
+        if (canSendLiveEvent(generation)) sendRealtimeEvent({
           type: "session.thinking.append", event_id: `ack-${delegation.id}`, delegation_id: delegation.id,
           content: "This was a conversational acknowledgment. It did not start another task, cancel pending work, approve any action, or suppress verified results from earlier work."
         });
@@ -236,23 +260,23 @@ async function handleLiveDelegation(event: Record<string, unknown>) {
     }
     catch (error) { result = { status: "failed", text: String(error) }; }
   }
-  if (signal.aborted || dataChannel !== channel || channel?.readyState !== "open") return;
+  if (!canSendLiveEvent(generation)) return;
   if (request && result.turnId) delegatedRequests.add(request.trim());
   if (result.turnId && !transcriptBindings.some((binding) => binding.turnId === result.turnId)) transcriptBindings.push({ start: requestStart, turnId: result.turnId });
   latestResult = { id: delegation.id, result };
   updateClientState({ resultAvailable: true });
-  presentLiveResult(delegation.id, result, channel, signal);
+  presentLiveResult(delegation.id, result, generation, signal);
 }
 
-function presentLiveResult(id: string, result: LiveWorkResult, channel: RTCDataChannel | null, signal: AbortSignal) {
-  if (signal.aborted || dataChannel !== channel || channel?.readyState !== "open") return;
+function presentLiveResult(id: string, result: LiveWorkResult, generation: number, signal: AbortSignal) {
+  if (signal.aborted || !canSendLiveEvent(generation)) return;
   for (const timer of resultAcks.values()) window.clearTimeout(timer);
   resultAcks.clear();
   const resultEvent = { ...liveDelegationResult(id, result), event_id: `result-${++resultPresentation}-${id}` };
   updateClientState({ workStatus: "Returning result to Live…" });
   resultAcks.set(resultEvent.event_id, window.setTimeout(() => {
     resultAcks.delete(resultEvent.event_id);
-    if (signal.aborted || dataChannel !== channel) return;
+    if (signal.aborted || !canSendLiveEvent(generation)) return;
     updateClientState({ workStatus: null, error: "Work finished in chat, but Live did not acknowledge the result." });
   }, 15_000));
   sendRealtimeEvent(resultEvent);
@@ -261,7 +285,7 @@ function presentLiveResult(id: string, result: LiveWorkResult, channel: RTCDataC
 /** Presentation only: retrying speech must never rerun a tool task. */
 export function hearLatestLiveResult(): void {
   if (!latestResult || !sessionReady) return;
-  presentLiveResult(latestResult.id, latestResult.result, dataChannel, workAbort.signal);
+  presentLiveResult(latestResult.id, latestResult.result, transportGeneration, workAbort.signal);
 }
 
 function waitForIceGathering(connection: RTCPeerConnection): Promise<void> {
@@ -339,6 +363,12 @@ function appendTranscript(entry: LiveTranscriptEntry) {
 }
 
 function sendRealtimeEvent(event: Record<string, unknown>) {
+  if (transportMode === "native") {
+    void liveVoiceSendNativeEvent(event).catch((error) => {
+      updateClientState({ error: `Native Live rejected an update: ${String(error)}` });
+    });
+    return;
+  }
   if (dataChannel?.readyState === "open") dataChannel.send(JSON.stringify(event));
 }
 
@@ -663,4 +693,14 @@ export async function liveVoiceStop(): Promise<LiveVoiceStatus> {
 export async function liveVoiceStatus(): Promise<LiveVoiceStatus> {
   if (!isTauriIos()) return unavailable;
   return invoke<LiveVoiceStatus>("live_voice_status");
+}
+
+export async function liveVoiceDrainNativeEvents(): Promise<Record<string, unknown>[]> {
+  if (!isTauriIos()) return [];
+  return invoke<Record<string, unknown>[]>("live_voice_drain_native_events");
+}
+
+export async function liveVoiceSendNativeEvent(event: Record<string, unknown>): Promise<void> {
+  if (!isTauriIos()) return;
+  await invoke("live_voice_send_native_event", { event });
 }

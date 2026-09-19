@@ -322,6 +322,16 @@ pub fn live_voice_status() -> Result<LiveVoiceStatus, String> {
     ios::status()
 }
 
+#[tauri::command]
+pub fn live_voice_drain_native_events() -> Result<Vec<serde_json::Value>, String> {
+    ios::drain_events()
+}
+
+#[tauri::command]
+pub fn live_voice_send_native_event(event: serde_json::Value) -> Result<(), String> {
+    ios::send_event(event)
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CarPlayLiveSnapshot {
@@ -371,6 +381,8 @@ mod ios {
         fn medousa_live_voice_set_muted(muted: bool) -> *mut c_char;
         fn medousa_live_voice_stop() -> *mut c_char;
         fn medousa_live_voice_status() -> *mut c_char;
+        fn medousa_live_voice_drain_events() -> *mut c_char;
+        fn medousa_live_voice_send_event(json: *const c_char) -> bool;
         fn medousa_carplay_live_exchange(json: *const c_char) -> *mut c_char;
         fn medousa_live_activity_free_string(ptr: *mut c_char);
     }
@@ -409,6 +421,33 @@ mod ios {
 
     pub fn status() -> Result<LiveVoiceStatus, String> {
         decode(unsafe { medousa_live_voice_status() })
+    }
+
+    pub fn drain_events() -> Result<Vec<serde_json::Value>, String> {
+        let raw = unsafe { medousa_live_voice_drain_events() };
+        if raw.is_null() {
+            return Err("Medousa Live native event bridge returned null".into());
+        }
+        let json = unsafe {
+            let json = CStr::from_ptr(raw).to_string_lossy().into_owned();
+            medousa_live_activity_free_string(raw);
+            json
+        };
+        serde_json::from_str(&json)
+            .map_err(|error| format!("decode native Live events: {error}"))
+    }
+
+    pub fn send_event(event: serde_json::Value) -> Result<(), String> {
+        let json = serde_json::to_string(&event).map_err(|error| error.to_string())?;
+        if json.len() > 65 * 1024 {
+            return Err("Native Live event is too large".into());
+        }
+        let json = CString::new(json).map_err(|_| "Native Live event contained a null byte")?;
+        if unsafe { medousa_live_voice_send_event(json.as_ptr()) } {
+            Ok(())
+        } else {
+            Err("Native Live rejected the event".into())
+        }
     }
 
     pub fn carplay_exchange(

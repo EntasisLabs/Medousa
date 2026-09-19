@@ -97,6 +97,27 @@ final class MedousaLiveSocketTransport {
                  "delegation_id": id, "content": text])
     }
 
+    /// Accept only the two sideband presentation events Medousa already uses.
+    /// Swift never accepts arbitrary Live commands from the webview.
+    func sendClientEvent(_ event: [String: Any]) -> Bool {
+        guard lifecycle.phase == .ready,
+              let type = event["type"] as? String,
+              ["session.commentary.append", "session.thinking.append"].contains(type),
+              let eventId = event["event_id"] as? String, !eventId.isEmpty, eventId.count <= 128,
+              let delegationId = event["delegation_id"] as? String, !delegationId.isEmpty,
+              delegationId.count <= 128,
+              let content = event["content"] as? String, !content.isEmpty,
+              content.utf8.count <= (type == "session.commentary.append" ? 400 : 64 * 1024)
+        else { return false }
+        enqueue([
+            "type": type,
+            "event_id": eventId,
+            "delegation_id": delegationId,
+            "content": content,
+        ])
+        return true
+    }
+
     func close() {
         guard lifecycle.phase != .closing && lifecycle.phase != .closed && lifecycle.phase != .failed else { return }
         discardQueuedAudio()
