@@ -4,8 +4,12 @@
   import { chat } from "$lib/stores/chat.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { haptic } from "$lib/haptics";
+  import { pendingLiveLaunch } from "$lib/liveLaunch";
+  import { invoke } from "@tauri-apps/api/core";
+  import { isTauriIos } from "$lib/platform";
+  import { permittedCarPlayAction } from "$lib/carPlayLive";
   import { submitChatTurn } from "$lib/chat/submitTurnController";
-  import { listSessionTurns } from "$lib/daemon";
+  import { checkDaemonHealth, listSessionTurns } from "$lib/daemon";
   import { turnCompletionLedger } from "$lib/chat/turnCompletionLedger";
   import type { LiveTranscriptEntry } from "$lib/liveVoice";
   import { liveWorkSnapshot, settledLiveWorkSnapshot, waitForLiveWork } from "$lib/liveWorkResult";
@@ -20,6 +24,54 @@
   let busy = $state(false);
   let localError = $state<string | null>(null);
   let ownerEpoch = $state<number | null>(null);
+
+  $effect(() => {
+    if (!isTauriIos()) return;
+    let mounted = true;
+    let inFlight = false;
+    const exchange = async () => {
+      if (!mounted || inFlight) return;
+      inFlight = true;
+      let bridgeReplied = false;
+      const owner = `${chat.workshopScopeId ?? ""}:${chat.workshopEpoch}:${chat.sessionId}`;
+      try {
+        const value = await invoke<{ enabled: boolean; action: unknown }>("live_voice_carplay_exchange", { snapshot: {
+          owner, active: $liveVoiceState.active, muted: $liveVoiceState.muted,
+          phase: localError ? "failed" : busy && !$liveVoiceState.active ? "connecting"
+            : $liveVoiceState.workStatus ? "thinking" : $liveVoiceState.phase,
+          canControl: $liveVoiceState.available && !busy && !workshops.loading && !workshops.switching,
+        } });
+        bridgeReplied = true;
+        if (!value.enabled) { clearInterval(timer); return; }
+        const currentOwner = `${chat.workshopScopeId ?? ""}:${chat.workshopEpoch}:${chat.sessionId}`;
+        if (!mounted || owner !== currentOwner) return;
+        const action = permittedCarPlayAction(value.action, currentOwner, $liveVoiceState.active, busy);
+        if (action?.action === "start") void start("live", false, true);
+        else if (action?.action === "stop") void stop();
+        else if (action) {
+          busy = true;
+          try { await setLiveVoiceMuted(action.action === "mute"); } finally { busy = false; }
+        }
+      } catch (error) {
+        if (!bridgeReplied) clearInterval(timer); // Old native builds must not break phone Live.
+        else localError = error instanceof Error ? error.message : String(error);
+      }
+      finally { inFlight = false; }
+    };
+    const timer = setInterval(() => { void exchange(); }, 500);
+    // Use only the timer: its reads must not make this effect restart on every caption/state update.
+    return () => { mounted = false; clearInterval(timer); };
+  });
+
+  $effect(() => {
+    const request = $pendingLiveLaunch;
+    if (!request || busy || workshops.loading || workshops.switching) return;
+    pendingLiveLaunch.set(null);
+    switchMobileTab("chat");
+    // A repeated Siri launch must not replace an active voice conversation.
+    if ($liveVoiceState.active || $liveVoiceState.phase === "connecting") return;
+    void start("live", request.mode === "new", true);
+  });
 
   $effect(() => {
     const startRequested = () => { void start(); };
@@ -57,13 +109,25 @@
     return "Talk live";
   });
 
-  async function start(protocol: "live" | "realtime" = "live") {
+  async function start(protocol: "live" | "realtime" = "live", newConversation = false, fromSiri = false) {
     if (!canStart) return;
     busy = true;
     localError = null;
     haptic("medium");
     try {
-      if (!chat.sessionId.trim()) await chat.newSession();
+      if (fromSiri) {
+        const epoch = chat.workshopEpoch;
+        const deadline = Date.now() + 15_000;
+        let ready = false;
+        while (Date.now() < deadline) {
+          try { ready = Boolean((await checkDaemonHealth()).ok); } catch { /* Cold-start engine is not ready yet. */ }
+          if (chat.workshopEpoch !== epoch) throw new Error("Workshop changed while starting Live. Try again.");
+          if (ready) break;
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        if (!ready) throw new Error("Medousa is still starting. Tap to retry Live.");
+      }
+      if (newConversation || !chat.sessionId.trim()) await chat.newSession();
       const sessionId = chat.sessionId.trim();
       if (!sessionId) throw new Error("Could not create a conversation for Medousa Live");
       const workshopEpoch = chat.workshopEpoch;

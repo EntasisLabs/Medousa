@@ -72,6 +72,15 @@ text = re.sub(
 if mobile_info_plist.is_file() and "  medousa-home_iOS:" in text:
     with mobile_info_plist.open("rb") as handle:
         mobile_info = plistlib.load(handle)
+    # CarPlay scene registration is opt-in until the conversational entitlement
+    # and provisioning profile are approved. Never add a restricted entitlement
+    # to the normal signed phone build merely to enable simulator development.
+    if os.environ.get("MEDOUSA_CARPLAY") == "1":
+        scene_path = mobile_info_plist.parent / "ios-carplay" / "scene.json"
+        scene = json.loads(scene_path.read_text())
+        mobile_info["UIApplicationSceneManifest"]["UISceneConfigurations"][
+            "CPTemplateApplicationSceneSessionRoleApplication"
+        ] = [scene]
 
     target_start = text.index("  medousa-home_iOS:")
     target_body_start = target_start + len("  medousa-home_iOS:")
@@ -82,6 +91,33 @@ if mobile_info_plist.is_file() and "  medousa-home_iOS:" in text:
         else len(text)
     )
     target = text[target_start:target_end]
+
+    # UIApplicationSceneManifest is a nested YAML mapping, so the generic
+    # inline-property merger below cannot replace it. Register the opt-in
+    # CarPlay role in project.yml *before* xcodegen; patching only the generated
+    # plist is lost when Tauri archives and regenerates the project.
+    carplay_role = "CPTemplateApplicationSceneSessionRoleApplication"
+    if os.environ.get("MEDOUSA_CARPLAY") == "1" and carplay_role not in target:
+        scene_marker = "          UISceneConfigurations:\n"
+        scene_yaml = (
+            f"            {carplay_role}:\n"
+            "              - UISceneClassName: CPTemplateApplicationScene\n"
+            "                UISceneConfigurationName: Medousa Live\n"
+            "                UISceneDelegateClassName: MedousaCarPlaySceneDelegate\n"
+        )
+        if scene_marker not in target:
+            raise SystemExit("[ios-prepare] error: generated project has no scene configuration")
+        target = target.replace(scene_marker, scene_marker + scene_yaml, 1)
+    elif os.environ.get("MEDOUSA_CARPLAY") != "1" and carplay_role in target:
+        target = re.sub(
+            rf"^            {carplay_role}:\n"
+            r"(?:^              - [^\n]+\n)"
+            r"(?:^                [^\n]+\n)*",
+            "",
+            target,
+            count=1,
+            flags=re.M,
+        )
 
     additions = []
     for key, value in mobile_info.items():
@@ -190,6 +226,24 @@ if "Bundle MLX Metal Library" not in text:
     anchor = "    postBuildScripts:\n"
     if anchor in text:
         text = text.replace(anchor, anchor + mlx_bundle_entry, 1)
+
+# Tauri rewrites the generated source Info.plist after ios-prepare runs. Patch
+# the built plist after ProcessInfoPlistFile (and before code signing) so an
+# opted-in CarPlay scene survives both `ios dev` and archive/export.
+carplay_info_name = "Register opt-in CarPlay scene"
+carplay_info_entry = """      - script: |
+          app_plist="${TARGET_BUILD_DIR}/${INFOPLIST_PATH}"
+          /usr/bin/plutil -replace UIApplicationSceneManifest.UISceneConfigurations.CPTemplateApplicationSceneSessionRoleApplication -json '[{"UISceneClassName":"CPTemplateApplicationScene","UISceneConfigurationName":"Medousa Live","UISceneDelegateClassName":"MedousaCarPlaySceneDelegate"}]' "$app_plist"
+          echo "[ios-prepare] registered opt-in CarPlay scene in built app"
+        name: Register opt-in CarPlay scene
+        basedOnDependencyAnalysis: false
+"""
+if os.environ.get("MEDOUSA_CARPLAY") == "1" and carplay_info_name not in text:
+    anchor = "    postBuildScripts:\n"
+    if anchor in text:
+        text = text.replace(anchor, anchor + carplay_info_entry, 1)
+elif os.environ.get("MEDOUSA_CARPLAY") != "1" and carplay_info_name in text:
+    text = text.replace(carplay_info_entry, "", 1)
 
 # Live Activity: enable Rust/Swift bridge during Xcode Rust build.
 if "MEDOUSA_LIVE_ACTIVITY" not in text:
@@ -372,6 +426,8 @@ sync_ios_versions() {
   APP_VERSION="$(node -p "require('$ROOT/src-tauri/tauri.conf.json').version")"
   python3 - <<PY
 from pathlib import Path
+import json
+import os
 import plistlib
 import re
 app_version = "${APP_VERSION}"
@@ -406,6 +462,11 @@ generated_info_path = Path("${GEN}/medousa-home_iOS/Info.plist")
 if mobile_info_path.is_file() and generated_info_path.is_file():
     with mobile_info_path.open("rb") as handle:
         mobile_info = plistlib.load(handle)
+    if os.environ.get("MEDOUSA_CARPLAY") == "1":
+        scene = json.loads((mobile_info_path.parent / "ios-carplay" / "scene.json").read_text())
+        mobile_info["UIApplicationSceneManifest"]["UISceneConfigurations"][
+            "CPTemplateApplicationSceneSessionRoleApplication"
+        ] = [scene]
     with generated_info_path.open("rb") as handle:
         generated_info = plistlib.load(handle)
     changed = False

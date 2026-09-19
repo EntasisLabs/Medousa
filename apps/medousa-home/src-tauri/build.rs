@@ -34,6 +34,9 @@ fn compile_ios_live_activity() {
         swift_root.join("Shared/MedousaWidgetSnapshot.swift"),
         swift_root.join("App/MedousaLiveActivityManager.swift"),
         swift_root.join("App/MedousaLiveVoiceSessionManager.swift"),
+        swift_root.join("App/MedousaLiveSocketLifecycle.swift"),
+        swift_root.join("App/MedousaLiveSocketTransport.swift"),
+        swift_root.join("App/MedousaCarPlaySceneDelegate.swift"),
         swift_root.join("App/MedousaLiveActivityBridge.swift"),
         swift_root.join("App/MedousaWidgetSnapshotStore.swift"),
         swift_root.join("App/MedousaPushBackgroundHandler.swift"),
@@ -114,6 +117,7 @@ fn compile_ios_live_activity() {
             println!("cargo:rustc-link-lib=framework=SwiftUI");
             println!("cargo:rustc-link-lib=framework=UIKit");
             println!("cargo:rustc-link-lib=framework=AVFAudio");
+            println!("cargo:rustc-link-lib=framework=CarPlay");
         }
         Ok(s) => {
             panic!(

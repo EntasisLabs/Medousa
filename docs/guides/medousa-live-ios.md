@@ -29,6 +29,19 @@ launch Medousa, and use Live when you want a back-and-forth conversation.
 Use the microphone button to mute or unmute. Use the red phone button to end
 the Live session and release the microphone.
 
+## Launch Live with Siri
+
+Say “Hey Siri, start a new live session with Medousa” to open the app and
+start Live in a new chat in the selected workshop. “Resume live with Medousa”
+uses the current chat (or creates one if none exists). If Live is already
+running, either action leaves that conversation intact.
+
+Siri launches Medousa; Medousa owns the ongoing voice conversation and tool
+results. Unlock the phone if iOS requires it and grant microphone access on
+first use. These launch actions require an updated installed build and still
+need on-device qualification for cold launches and Siri phrase recognition.
+CarPlay support is not included in this launch slice.
+
 ## What is different from Siri?
 
 Siri owns a short invocation window and cannot be resumed later by an app after

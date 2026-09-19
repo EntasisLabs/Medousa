@@ -131,6 +131,16 @@ public func medousa_live_voice_status() -> UnsafeMutablePointer<CChar>? {
     return strdup("{\"available\":false,\"active\":false,\"muted\":false,\"phase\":\"failed\",\"error\":\"iOS 17+ required\"}")
 }
 
+@_cdecl("medousa_carplay_live_exchange")
+public func medousa_carplay_live_exchange(_ jsonPointer: UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>? {
+    guard let jsonPointer else { return nil }
+    if #available(iOS 26.4, *) {
+        let json = String(cString: jsonPointer)
+        return strdup(runOnMainActor { MedousaCarPlayLiveController.shared.exchange(json: json) })
+    }
+    return strdup("{\"enabled\":false,\"action\":null}")
+}
+
 private struct WidgetSyncResult: Encodable {
     let ok: Bool
     let error: String?
@@ -190,6 +200,19 @@ public func medousa_siri_recent_pending_ask_id() -> UnsafeMutablePointer<CChar>?
         return nil
     }
     return strdup(requestId)
+}
+
+@_cdecl("medousa_siri_consume_pending_live_url")
+public func medousa_siri_consume_pending_live_url() -> UnsafeMutablePointer<CChar>? {
+    guard let defaults = UserDefaults(suiteName: "group.com.entasislabs.medousa-home"),
+          let payload = defaults.dictionary(forKey: "siri.pendingLive.v1") else { return nil }
+    defaults.removeObject(forKey: "siri.pendingLive.v1")
+    let now = Date().timeIntervalSince1970
+    guard let createdAt = payload["createdAt"] as? TimeInterval,
+          createdAt <= now + 5, now - createdAt < 120,
+          let url = payload["url"] as? String, url.count < 256,
+          url.hasPrefix("medousa://live?") else { return nil }
+    return strdup(url)
 }
 
 @_cdecl("medousa_siri_publish_ask_result")

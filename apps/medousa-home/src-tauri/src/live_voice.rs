@@ -265,9 +265,46 @@ pub fn live_voice_status() -> Result<LiveVoiceStatus, String> {
     ios::status()
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CarPlayLiveSnapshot {
+    owner: String,
+    active: bool,
+    muted: bool,
+    phase: String,
+    can_control: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CarPlayLiveAction {
+    owner: String,
+    action: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CarPlayLiveExchange {
+    enabled: bool,
+    action: Option<CarPlayLiveAction>,
+}
+
+#[tauri::command]
+pub fn live_voice_carplay_exchange(
+    snapshot: CarPlayLiveSnapshot,
+) -> Result<CarPlayLiveExchange, String> {
+    if snapshot.owner.is_empty() || snapshot.owner.len() > 512
+        || !matches!(
+            snapshot.phase.as_str(),
+            "idle" | "connecting" | "listening" | "thinking" | "speaking" | "muted" | "failed"
+        )
+    {
+        return Err("Invalid CarPlay Live state".into());
+    }
+    ios::carplay_exchange(snapshot)
+}
+
 #[cfg(target_os = "ios")]
 mod ios {
-    use super::{LiveVoiceStartRequest, LiveVoiceStatus};
+    use super::{CarPlayLiveExchange, CarPlayLiveSnapshot, LiveVoiceStartRequest, LiveVoiceStatus};
     use std::ffi::{CStr, CString};
     use std::os::raw::c_char;
 
@@ -276,6 +313,7 @@ mod ios {
         fn medousa_live_voice_set_muted(muted: bool) -> *mut c_char;
         fn medousa_live_voice_stop() -> *mut c_char;
         fn medousa_live_voice_status() -> *mut c_char;
+        fn medousa_carplay_live_exchange(json: *const c_char) -> *mut c_char;
         fn medousa_live_activity_free_string(ptr: *mut c_char);
     }
 
@@ -307,5 +345,22 @@ mod ios {
 
     pub fn status() -> Result<LiveVoiceStatus, String> {
         decode(unsafe { medousa_live_voice_status() })
+    }
+
+    pub fn carplay_exchange(
+        snapshot: CarPlayLiveSnapshot,
+    ) -> Result<CarPlayLiveExchange, String> {
+        let json = serde_json::to_string(&snapshot).map_err(|error| error.to_string())?;
+        let json = CString::new(json).map_err(|_| "Invalid CarPlay Live state")?;
+        let raw = unsafe { medousa_carplay_live_exchange(json.as_ptr()) };
+        if raw.is_null() {
+            return Err("CarPlay Live bridge unavailable".into());
+        }
+        let result = unsafe {
+            let json = CStr::from_ptr(raw).to_string_lossy().into_owned();
+            medousa_live_activity_free_string(raw);
+            json
+        };
+        serde_json::from_str(&result).map_err(|error| error.to_string())
     }
 }

@@ -468,6 +468,16 @@ pub fn siri_consume_pending_ask(request_id: String) -> Result<PendingSiriAsk, St
 }
 
 #[tauri::command]
+pub fn siri_consume_pending_live_url() -> Result<Option<String>, String> {
+    #[cfg(target_os = "ios")]
+    {
+        return ios::consume_live_url();
+    }
+    #[cfg(not(target_os = "ios"))]
+    Ok(None)
+}
+
+#[tauri::command]
 pub fn siri_recent_pending_ask_id() -> Result<Option<String>, String> {
     #[cfg(target_os = "ios")]
     {
@@ -505,6 +515,7 @@ mod ios {
     unsafe extern "C" {
         fn medousa_siri_consume_pending_ask(request_id: *const c_char) -> *mut c_char;
         fn medousa_siri_recent_pending_ask_id() -> *mut c_char;
+        fn medousa_siri_consume_pending_live_url() -> *mut c_char;
         fn medousa_siri_publish_ask_result(json: *const c_char) -> bool;
         fn medousa_siri_store_execution_context(json: *const c_char, bearer: *const c_char)
         -> bool;
@@ -545,6 +556,27 @@ mod ios {
 
         #[cfg(not(live_activity_native))]
         Err("Siri native bridge is unavailable".into())
+    }
+
+    pub fn consume_live_url() -> Result<Option<String>, String> {
+        #[cfg(live_activity_native)]
+        {
+            let raw = unsafe { medousa_siri_consume_pending_live_url() };
+            if raw.is_null() {
+                return Ok(None);
+            }
+            let url = unsafe {
+                let url = CStr::from_ptr(raw).to_string_lossy().into_owned();
+                medousa_live_activity_free_string(raw);
+                url
+            };
+            if url.len() > 256 || !url.starts_with("medousa://live?") {
+                return Err("Invalid Live launch receipt".into());
+            }
+            return Ok(Some(url));
+        }
+        #[cfg(not(live_activity_native))]
+        Ok(None)
     }
 
     pub fn recent_pending_id() -> Result<Option<String>, String> {

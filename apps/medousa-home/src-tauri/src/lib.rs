@@ -487,6 +487,7 @@ fn run_home() {
             push::push_clear_apns_token,
             siri_intents::siri_consume_pending_ask,
             siri_intents::siri_recent_pending_ask_id,
+            siri_intents::siri_consume_pending_live_url,
             siri_intents::siri_publish_ask_result,
             siri_intents::siri_sync_execution_context,
             siri_intents::siri_sync_preferences,
@@ -984,6 +985,8 @@ fn run_home() {
             live_activity::live_activity_sync,
             #[cfg(target_os = "ios")]
             live_voice::live_voice_create_session,
+            #[cfg(target_os = "ios")]
+            live_voice::live_voice_carplay_exchange,
             #[cfg(target_os = "ios")]
             live_voice::live_voice_append_transcript,
             #[cfg(target_os = "ios")]

@@ -67,6 +67,18 @@ struct MedousaJournalIntent: AppIntent {
 struct MedousaAppShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
+            intent: StartMedousaLiveIntent(),
+            phrases: ["Start a new live session with \(.applicationName)", "Start live with \(.applicationName)"],
+            shortTitle: "Start Live",
+            systemImageName: "waveform"
+        )
+        AppShortcut(
+            intent: ResumeMedousaLiveIntent(),
+            phrases: ["Resume live with \(.applicationName)"],
+            shortTitle: "Resume Live",
+            systemImageName: "mic"
+        )
+        AppShortcut(
             intent: AskMedousaIntent(),
             phrases: [
                 "Ask \(.applicationName)",

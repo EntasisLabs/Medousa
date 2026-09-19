@@ -32,6 +32,7 @@ final class MedousaLiveVoiceSessionManager {
     private var workshopName: String?
     private var sessionId: String?
     private var lastError: String?
+    private var carPlayConnected = false
 
     private init() {}
 
@@ -104,14 +105,25 @@ final class MedousaLiveVoiceSessionManager {
         encodedStatus()
     }
 
+    func setCarPlayConnected(_ connected: Bool) {
+        carPlayConnected = connected
+        guard active else { return }
+        do { try configureAudioCategory() }
+        catch { lastError = "Could not change voice audio route: \(error.localizedDescription)" }
+    }
+
+    private func configureAudioCategory() throws {
+        try AVAudioSession.sharedInstance().setCategory(
+            .playAndRecord,
+            mode: carPlayConnected ? .default : .voiceChat,
+            options: carPlayConnected ? [.allowBluetoothHFP] : [.allowBluetoothHFP, .defaultToSpeaker]
+        )
+    }
+
     private func activateAudioSession() {
         do {
             let audio = AVAudioSession.sharedInstance()
-            try audio.setCategory(
-                .playAndRecord,
-                mode: .voiceChat,
-                options: [.allowBluetoothHFP, .defaultToSpeaker]
-            )
+            try configureAudioCategory()
             try audio.setActive(true)
             active = true
             muted = false

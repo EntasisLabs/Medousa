@@ -23,11 +23,18 @@ export type AskDeepLink = {
   requestId: string;
 };
 
+export type LiveDeepLink = {
+  kind: "live";
+  requestId: string;
+  mode: "new" | "resume";
+};
+
 export type DeepLink =
   | WorkDeepLink
   | VaultDeepLink
   | UndertakingLocationDeepLink
-  | AskDeepLink;
+  | AskDeepLink
+  | LiveDeepLink;
 
 const WORK_PATH = /^\/work\/([^/?#]+)\/?$/i;
 
@@ -71,6 +78,13 @@ export function parseDeepLink(raw: string): DeepLink | null {
       const url = new URL(trimmed);
       const host = url.hostname.toLowerCase();
       const pathSegment = url.pathname.replace(/^\/+/, "");
+      if (host === "live") {
+        const requestId = url.searchParams.get("request")?.toLowerCase() ?? "";
+        const mode = url.searchParams.get("mode");
+        if (pathSegment || url.hash || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestId)
+          || (mode !== "new" && mode !== "resume")) return null;
+        return { kind: "live", requestId, mode };
+      }
       if (host === "ask") {
         const requestId = url.searchParams.get("request")?.trim().toLowerCase() ?? "";
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestId)) {

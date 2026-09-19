@@ -6,6 +6,7 @@ import {
 import { parsePairQrUrl } from "$lib/utils/pairingUrl";
 import { isTauri } from "$lib/window";
 import { invoke } from "@tauri-apps/api/core";
+import { queueLiveLaunch } from "$lib/liveLaunch";
 
 export type OpenWorkHandler = (cardId: string) => void | Promise<void>;
 export type OpenVaultNoteHandler = (notePath: string) => void | Promise<void>;
@@ -52,6 +53,10 @@ function handleUrls(urls: string[]) {
       return;
     }
     const link = parseDeepLink(url);
+    if (link?.kind === "live") {
+      queueLiveLaunch(link);
+      return;
+    }
     if (link?.kind === "work") {
       void dispatchWorkLink(link);
       return;
@@ -110,6 +115,16 @@ export function initMobileNative(
   const cleanups: Array<() => void> = [];
   let active = true;
   let askRecoveryInFlight = false;
+
+  const recoverSiriLive = async () => {
+    if (!active) return;
+    try {
+      const url = await invoke<string | null>("siri_consume_pending_live_url");
+      if (active && url) handleUrls([url]);
+    } catch {
+      // Live launch recovery is only available in an updated iOS build.
+    }
+  };
 
   const recoverRecentSiriAsk = async () => {
     if (!active || !options?.onAsk || askRecoveryInFlight) return;
@@ -171,9 +186,11 @@ export function initMobileNative(
       if (options?.onAsk && !handledInitialAsk) {
         void recoverRecentSiriAsk();
       }
+      void recoverSiriLive();
 
       const recoverWhenVisible = () => {
         if (document.visibilityState === "visible") {
+          void recoverSiriLive();
           void recoverRecentSiriAsk();
         } else {
           void import("$lib/siriWorkshopSnapshot").then(
