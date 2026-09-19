@@ -4,6 +4,7 @@ import { get, writable } from "svelte/store";
 import { liveWorkResultEvents, type LiveWorkResult } from "$lib/liveWorkResult";
 import { LiveTimeline, liveDelegation, liveDelegationResult } from "$lib/liveProtocol";
 import { LiveDelegationCoordinator } from "$lib/liveDelegationCoordinator";
+import { nativeLivePreviewEnabled } from "$lib/config/liveVoicePreferences";
 
 export type LiveVoicePhase =
   | "idle"
@@ -21,6 +22,7 @@ export interface LiveVoiceStatus {
   phase: LiveVoicePhase;
   workshopName?: string | null;
   sessionId?: string | null;
+  liveSessionId?: string | null;
   error?: string | null;
 }
 
@@ -112,6 +114,8 @@ let coordinator = new LiveDelegationCoordinator();
 let latestResult: { id: string; result: LiveWorkResult } | null = null;
 let resultPresentation = 0;
 let transcriptBindings: Array<{ start: number; turnId: string }> = [];
+let transportMode: "webrtc" | "native" = "webrtc";
+let nativeStatusTimer: number | null = null;
 
 function persistTranscript(entry: LiveTranscriptEntry, attachment = false, targetTurnId?: string) {
   const { sessionId, liveSessionId } = get(liveVoiceState);
@@ -148,12 +152,50 @@ function closeMediaTransport() {
   peer = null;
   for (const track of localStream?.getTracks() ?? []) track.stop();
   localStream = null;
+  if (nativeStatusTimer !== null) {
+    window.clearInterval(nativeStatusTimer);
+    nativeStatusTimer = null;
+  }
   if (remoteAudio) {
     remoteAudio.pause();
     remoteAudio.srcObject = null;
     remoteAudio.remove();
     remoteAudio = null;
   }
+}
+
+async function connectNativeLiveVoice(workshopName: string, sessionId: string): Promise<void> {
+  transportMode = "native";
+  const started = await liveVoiceStartNative(workshopName, sessionId);
+  if (started.phase === "failed") throw new Error(started.error ?? "Native Live could not start");
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    if (workAbort.signal.aborted) throw new Error("Live connection was stopped.");
+    const status = await liveVoiceStatus();
+    if (status.phase === "failed") throw new Error(status.error ?? "Native Live could not connect");
+    if (status.active && ["listening", "muted"].includes(status.phase)) {
+      updateClientState({
+        active: true,
+        muted: status.muted,
+        phase: status.phase,
+        liveSessionId: status.liveSessionId ?? "native-live",
+      });
+      nativeStatusTimer = window.setInterval(() => {
+        void liveVoiceStatus().then((next) => {
+          if (transportMode !== "native") return;
+          if (next.phase === "failed" || !next.active) {
+            closeMediaTransport();
+            updateClientState({ active: false, phase: "failed", error: next.error ?? "Native Live ended" });
+            return;
+          }
+          updateClientState({ muted: next.muted, phase: next.phase });
+        }).catch(() => undefined);
+      }, 500);
+      return;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 100));
+  }
+  throw new Error("Native Live did not confirm startup");
 }
 
 async function handleLiveDelegation(event: Record<string, unknown>) {
@@ -422,9 +464,6 @@ export async function connectLiveVoice(
   requestedProtocol: "live" | "realtime" = "live",
 ): Promise<void> {
   if (!isTauriIos()) throw new Error(unavailable.error ?? "Medousa Live is unavailable");
-  if (!navigator.mediaDevices?.getUserMedia || typeof RTCPeerConnection === "undefined") {
-    throw new Error("This iPhone does not expose the required WebRTC audio APIs");
-  }
 
   await disconnectLiveVoice();
   workAbort = new AbortController();
@@ -457,6 +496,19 @@ export async function connectLiveVoice(
   });
 
   try {
+    if (nativeLivePreviewEnabled() && requestedProtocol === "live") {
+      try {
+        await connectNativeLiveVoice(workshopName, sessionId);
+        return;
+      } catch (error) {
+        console.warn("[live] native preview startup failed; falling back to WebRTC", error);
+        await liveVoiceStop().catch(() => undefined);
+        transportMode = "webrtc";
+      }
+    }
+    if (!navigator.mediaDevices?.getUserMedia || typeof RTCPeerConnection === "undefined") {
+      throw new Error("This iPhone does not expose the required WebRTC audio APIs");
+    }
     const nativeStatus = await liveVoiceStart(workshopName, sessionId);
     requireCurrentConnection();
     if (nativeStatus.phase === "failed") {
@@ -552,7 +604,7 @@ export async function setLiveVoiceMuted(muted: boolean): Promise<void> {
 
 export async function disconnectLiveVoice(): Promise<void> {
   workAbort.abort();
-  if (protocol === "live") {
+  if (transportMode !== "native" && protocol === "live") {
     // Persist only stable snapshots at closure, not every growing delta. Display
     // groups are heuristic; fragments never trigger durable work themselves.
     if (sessionReady && dataChannel?.readyState === "open") {
@@ -576,8 +628,9 @@ export async function disconnectLiveVoice(): Promise<void> {
   }
   closeMediaTransport();
   if (isTauriIos()) await liveVoiceStop().catch(() => undefined);
-  const finalizationError = protocol === "live" && get(liveVoiceState).liveSessionId && !get(liveVoiceUsage).confirmed
+  const finalizationError = transportMode !== "native" && protocol === "live" && get(liveVoiceState).liveSessionId && !get(liveVoiceUsage).confirmed
     ? "Live ended without confirmed final usage" : null;
+  transportMode = "webrtc";
   liveVoiceState.set({ ...idle, available: isTauriIos(), error: finalizationError ?? get(liveVoiceState).error });
 }
 
@@ -587,6 +640,14 @@ export async function liveVoiceStart(
 ): Promise<LiveVoiceStatus> {
   if (!isTauriIos()) return unavailable;
   return invoke<LiveVoiceStatus>("live_voice_start", { workshopName, sessionId });
+}
+
+export async function liveVoiceStartNative(
+  workshopName: string,
+  sessionId: string,
+): Promise<LiveVoiceStatus> {
+  if (!isTauriIos()) return unavailable;
+  return invoke<LiveVoiceStatus>("live_voice_start_native", { workshopName, sessionId });
 }
 
 export async function liveVoiceSetMuted(muted: boolean): Promise<LiveVoiceStatus> {

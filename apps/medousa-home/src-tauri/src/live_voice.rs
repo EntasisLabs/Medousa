@@ -32,6 +32,7 @@ pub struct LiveVoiceStatus {
     pub phase: String,
     pub workshop_name: Option<String>,
     pub session_id: Option<String>,
+    pub live_session_id: Option<String>,
     pub error: Option<String>,
 }
 
@@ -234,6 +235,15 @@ struct LiveVoiceStartRequest<'a> {
     session_id: &'a str,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeLiveBootstrap<'a> {
+    workshop_name: &'a str,
+    session_id: &'a str,
+    authorization: &'a str,
+    configuration: serde_json::Value,
+}
+
 #[tauri::command]
 pub fn live_voice_start(
     workshop_name: String,
@@ -247,6 +257,53 @@ pub fn live_voice_start(
     ios::start(LiveVoiceStartRequest {
         workshop_name,
         session_id,
+    })
+}
+
+#[tauri::command]
+pub async fn live_voice_start_native(
+    embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
+    workshop_name: String,
+    session_id: String,
+) -> Result<LiveVoiceStatus, String> {
+    let workshop_name = workshop_name.trim();
+    let session_id = session_id.trim();
+    if workshop_name.is_empty() || session_id.is_empty() {
+        return Err("workshopName and sessionId are required".into());
+    }
+    let client = embedded_state.client_if_active().await?
+        .ok_or_else(|| "Native Live currently requires the Personal workshop".to_string())?;
+    let context = client.live_context(session_id).await.map_err(|error| error.to_string())?;
+    let api_key = tokio::task::spawn_blocking(|| {
+        crate::integration_secrets::load_provider_secret("openai")
+    }).await.map_err(|_| "Could not read the iPhone's OpenAI credential".to_string())?
+      .ok_or_else(|| "Configure an OpenAI API key on this iPhone to use Medousa Live".to_string())?;
+
+    let mut instructions = context.voice_instructions;
+    instructions.push_str(PERSONAL_CONTEXT_HANDOFF);
+    let input = context.recent_history.into_iter().map(|turn| {
+        let content_type = if turn.role == "user" { "input_text" } else { "output_text" };
+        serde_json::json!({
+            "role": turn.role,
+            "content": [{ "type": content_type, "text": turn.content }]
+        })
+    }).collect::<Vec<_>>();
+    let configuration = serde_json::json!({
+        "model": "gpt-live-1",
+        "instructions": instructions,
+        "delegation": { "type": "client" },
+        "store": false,
+        "audio": {
+            "format": { "type": "audio/pcm", "rate": 24_000 },
+            "output": { "voice": "marin" }
+        },
+        "input": input
+    });
+    ios::start_native(NativeLiveBootstrap {
+        workshop_name,
+        session_id,
+        authorization: &api_key,
+        configuration,
     })
 }
 
@@ -304,12 +361,13 @@ pub fn live_voice_carplay_exchange(
 
 #[cfg(target_os = "ios")]
 mod ios {
-    use super::{CarPlayLiveExchange, CarPlayLiveSnapshot, LiveVoiceStartRequest, LiveVoiceStatus};
+    use super::{CarPlayLiveExchange, CarPlayLiveSnapshot, LiveVoiceStartRequest, LiveVoiceStatus, NativeLiveBootstrap};
     use std::ffi::{CStr, CString};
     use std::os::raw::c_char;
 
     extern "C" {
         fn medousa_live_voice_start(json: *const c_char) -> *mut c_char;
+        fn medousa_live_voice_start_native(json: *const c_char) -> *mut c_char;
         fn medousa_live_voice_set_muted(muted: bool) -> *mut c_char;
         fn medousa_live_voice_stop() -> *mut c_char;
         fn medousa_live_voice_status() -> *mut c_char;
@@ -333,6 +391,12 @@ mod ios {
         let json = serde_json::to_string(&request).map_err(|error| error.to_string())?;
         let json = CString::new(json).map_err(|_| "voice request contained a null byte")?;
         decode(unsafe { medousa_live_voice_start(json.as_ptr()) })
+    }
+
+    pub fn start_native(request: NativeLiveBootstrap<'_>) -> Result<LiveVoiceStatus, String> {
+        let json = serde_json::to_string(&request).map_err(|error| error.to_string())?;
+        let json = CString::new(json).map_err(|_| "native Live bootstrap contained a null byte")?;
+        decode(unsafe { medousa_live_voice_start_native(json.as_ptr()) })
     }
 
     pub fn set_muted(muted: bool) -> Result<LiveVoiceStatus, String> {

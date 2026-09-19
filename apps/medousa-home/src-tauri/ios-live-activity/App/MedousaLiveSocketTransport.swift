@@ -81,10 +81,12 @@ final class MedousaLiveSocketTransport {
     }
 
     func setMuted(_ muted: Bool) {
+        guard lifecycle.phase == .ready, lifecycle.muted != muted else { return }
         lifecycle.setMuted(muted)
         // The local gate is immediate, independent of remote acknowledgment.
         // Already queued PCM is removed so mute/close never flush old speech.
         discardQueuedAudio()
+        enqueue(["type": muted ? "session.input_audio.mute" : "session.input_audio.unmute"])
     }
 
     func appendContext(_ text: String, spoken: Bool, id: String) {

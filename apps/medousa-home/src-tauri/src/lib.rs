@@ -992,6 +992,8 @@ fn run_home() {
             #[cfg(target_os = "ios")]
             live_voice::live_voice_start,
             #[cfg(target_os = "ios")]
+            live_voice::live_voice_start_native,
+            #[cfg(target_os = "ios")]
             live_voice::live_voice_set_muted,
             #[cfg(target_os = "ios")]
             live_voice::live_voice_stop,

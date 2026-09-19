@@ -62,13 +62,26 @@ phone entitlements or request approval on your behalf. Follow the current
 Independent cold-start and dependable background control need further native
 transport/lifecycle work before this can be advertised as production support.
 
-The native archive now includes an unactivated primary WebSocket transport and
-scene-independent lifecycle state. It follows the
+The native archive now includes an opt-in primary WebSocket transport,
+scene-independent lifecycle state, and a native audio graph that converts the
+current microphone route to mono 24 kHz PCM16 and plays returned PCM without the
+webview. Local mute gates capture immediately and also sends the matching Live
+mute/unmute command. It follows the
 [GPT-Live WebSocket contract](https://developers.openai.com/api/docs/guides/voice-websockets?api=live):
 confirmed startup before PCM input, bounded ordered sends, immediate local input
 mute, and explicit finalization. It does not change the existing phone WebRTC
-path or enable independent CarPlay startup yet. Native microphone conversion,
-playback, workshop bootstrap, and tool-result continuation remain prerequisites.
+path by default or enable independent CarPlay startup yet. Tool-result
+continuation remains a prerequisite before that native audio graph can replace
+the qualified phone WebRTC path.
+
+The trusted bootstrap is now implemented as an opt-in native command for the
+Personal workshop. Rust reads the iPhone's Keychain-backed OpenAI credential,
+builds bounded identity/history instructions from the selected daemon session,
+and passes both directly to Swift memory through the native bridge. The secret is
+not returned to JavaScript, CarPlay, app-group defaults, Live Activity state, or
+logs. A developer-only **Native Live transport** preference can opt Talk Live
+into this path. It defaults off and falls back to the qualified WebRTC path when
+native startup fails; tool handoffs remain on WebRTC during qualification.
 No new key store or managed agent backend is introduced.
 
 Run the scene-independent native lifecycle tests on macOS with Xcode installed:

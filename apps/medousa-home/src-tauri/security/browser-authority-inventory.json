@@ -375,6 +375,7 @@
     "live_voice::live_voice_create_session",
     "live_voice::live_voice_set_muted",
     "live_voice::live_voice_start",
+    "live_voice::live_voice_start_native",
     "live_voice::live_voice_status",
     "live_voice::live_voice_stop",
     "mcp_gateway::mcp_gateway_apply_server",

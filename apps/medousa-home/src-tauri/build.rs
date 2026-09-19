@@ -34,6 +34,7 @@ fn compile_ios_live_activity() {
         swift_root.join("Shared/MedousaWidgetSnapshot.swift"),
         swift_root.join("App/MedousaLiveActivityManager.swift"),
         swift_root.join("App/MedousaLiveVoiceSessionManager.swift"),
+        swift_root.join("App/MedousaLiveNativeAudioEngine.swift"),
         swift_root.join("App/MedousaLiveSocketLifecycle.swift"),
         swift_root.join("App/MedousaLiveSocketTransport.swift"),
         swift_root.join("App/MedousaCarPlaySceneDelegate.swift"),

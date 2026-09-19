@@ -101,6 +101,20 @@ public func medousa_live_voice_start(
     return strdup("{\"available\":false,\"active\":false,\"muted\":false,\"phase\":\"failed\",\"error\":\"iOS 17+ required\"}")
 }
 
+@_cdecl("medousa_live_voice_start_native")
+public func medousa_live_voice_start_native(
+    _ jsonPointer: UnsafePointer<CChar>?
+) -> UnsafeMutablePointer<CChar>? {
+    guard let jsonPointer else { return nil }
+    if #available(iOS 17.0, *) {
+        let json = String(cString: jsonPointer)
+        return strdup(runOnMainActor {
+            MedousaLiveVoiceSessionManager.shared.startNative(json: json)
+        })
+    }
+    return strdup("{\"available\":false,\"active\":false,\"muted\":false,\"phase\":\"failed\",\"error\":\"iOS 17+ required\"}")
+}
+
 @_cdecl("medousa_live_voice_set_muted")
 public func medousa_live_voice_set_muted(_ muted: Bool) -> UnsafeMutablePointer<CChar>? {
     if #available(iOS 17.0, *) {

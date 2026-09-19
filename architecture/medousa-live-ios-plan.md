@@ -92,7 +92,10 @@ ActivityKit bridge is reused for background-visible state.
 2. **Live transport** — daemon-owned SDP exchange, WebRTC audio/data-channel
    vertical slice, interruption/barge-in, route changes, and reconnect. *(foreground
    webview transport landed; promote to a native engine if device qualification
-   shows iOS suspends the peer in background)*
+   shows iOS suspends the peer in background; opt-in native WebSocket transport
+   now has bounded PCM microphone conversion/playback, a Rust-to-Swift
+   Keychain-backed bootstrap, and an explicit developer preference, pending
+   device qualification)*
 3. **Daemon sideband** — bind one Live session to one Medousa session; delegate
    tools, surface approvals, and project turn progress into conversational state.
 4. **Production controls** — app voice surface, Dynamic Island and Lock Screen

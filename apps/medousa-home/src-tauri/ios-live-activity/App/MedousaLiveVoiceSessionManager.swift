@@ -13,6 +13,7 @@ private struct LiveVoiceStatus: Encodable {
     let phase: String
     let workshopName: String?
     let sessionId: String?
+    let liveSessionId: String?
     let error: String?
 }
 
@@ -31,8 +32,12 @@ final class MedousaLiveVoiceSessionManager {
     private var phase = "idle"
     private var workshopName: String?
     private var sessionId: String?
+    private var nativeLiveSessionId: String?
     private var lastError: String?
     private var carPlayConnected = false
+    private var nativeAudio: MedousaLiveNativeAudioEngine?
+    private var nativeTransport: MedousaLiveSocketTransport?
+    private var pendingNativeBootstrap: (authorization: String, configuration: [String: Any])?
 
     private init() {}
 
@@ -47,6 +52,7 @@ final class MedousaLiveVoiceSessionManager {
 
         workshopName = request.workshopName
         sessionId = request.sessionId
+        nativeLiveSessionId = nil
         phase = "connecting"
         lastError = nil
 
@@ -73,17 +79,50 @@ final class MedousaLiveVoiceSessionManager {
         return encodedStatus()
     }
 
+    /// Consumes a Rust-created bootstrap entirely inside the native process.
+    /// The authorization material is retained only until microphone permission
+    /// and AVAudioSession activation complete; it is never persisted or rendered.
+    func startNative(json: String) -> String {
+        guard let data = json.data(using: .utf8),
+              let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let workshopName = payload["workshopName"] as? String,
+              let sessionId = payload["sessionId"] as? String,
+              let authorization = payload["authorization"] as? String,
+              let configuration = payload["configuration"] as? [String: Any],
+              !authorization.isEmpty
+        else { return encodedStatus(error: "Invalid native Live bootstrap") }
+
+        pendingNativeBootstrap = (authorization, configuration)
+        guard let request = try? JSONSerialization.data(withJSONObject: [
+            "workshopName": workshopName,
+            "sessionId": sessionId,
+        ]), let requestJson = String(data: request, encoding: .utf8) else {
+            pendingNativeBootstrap = nil
+            return encodedStatus(error: "Invalid native Live owner")
+        }
+        let status = start(json: requestJson)
+        if active { beginPendingNativeTransport() }
+        return status
+    }
+
     func setMuted(_ nextMuted: Bool) -> String {
         guard active else {
             return encodedStatus(error: "No Medousa Live session is active")
         }
         muted = nextMuted
+        nativeAudio?.setMuted(nextMuted)
+        nativeTransport?.setMuted(nextMuted)
         phase = nextMuted ? "muted" : "listening"
         publishLiveActivity()
         return encodedStatus()
     }
 
     func stop() -> String {
+        nativeAudio?.stop()
+        nativeAudio = nil
+        nativeTransport?.close()
+        nativeTransport = nil
+        pendingNativeBootstrap = nil
         do {
             try AVAudioSession.sharedInstance().setActive(
                 false,
@@ -97,6 +136,7 @@ final class MedousaLiveVoiceSessionManager {
         phase = "idle"
         workshopName = nil
         sessionId = nil
+        nativeLiveSessionId = nil
         endLiveActivity()
         return encodedStatus()
     }
@@ -110,6 +150,52 @@ final class MedousaLiveVoiceSessionManager {
         guard active else { return }
         do { try configureAudioCategory() }
         catch { lastError = "Could not change voice audio route: \(error.localizedDescription)" }
+    }
+
+    /// Starts the opt-in native transport after a trusted bootstrap supplies a
+    /// short-lived credential and the daemon-built Live configuration. This is
+    /// intentionally not exposed to CarPlay or JavaScript yet.
+    private func startNativeTransport(authorization: String, configuration: [String: Any]) {
+        guard active, nativeTransport == nil else { return }
+        guard let audio = MedousaLiveNativeAudioEngine() else {
+            fail("Native Live audio is unavailable")
+            return
+        }
+        nativeAudio = audio
+        let transport = MedousaLiveSocketTransport { [weak self] output in
+            guard let self else { return }
+            switch output {
+            case let .ready(id):
+                self.nativeLiveSessionId = id
+                do {
+                    try audio.start { [weak self] bytes in self?.nativeTransport?.appendAudio(bytes) }
+                    audio.setMuted(self.muted)
+                    self.phase = self.muted ? "muted" : "listening"
+                    self.publishLiveActivity()
+                } catch {
+                    self.fail("Could not start native Live audio: \(error.localizedDescription)")
+                }
+            case let .audio(bytes):
+                do { try audio.play(bytes) }
+                catch { self.fail("Could not play native Live audio: \(error.localizedDescription)") }
+            case .closed:
+                audio.stop()
+                self.nativeAudio = nil
+                self.nativeTransport = nil
+                self.nativeLiveSessionId = nil
+            case let .failed(message):
+                audio.stop()
+                self.nativeAudio = nil
+                self.nativeTransport = nil
+                self.fail(message)
+            case .event:
+                break
+            }
+        }
+        nativeTransport = transport
+        phase = "connecting"
+        publishLiveActivity()
+        transport.start(authorization: authorization, configuration: configuration)
     }
 
     private func configureAudioCategory() throws {
@@ -130,17 +216,32 @@ final class MedousaLiveVoiceSessionManager {
             phase = "listening"
             lastError = nil
             publishLiveActivity()
+            beginPendingNativeTransport()
         } catch {
             fail("Could not start voice audio: \(error.localizedDescription)")
         }
     }
 
     private func fail(_ message: String) {
+        nativeAudio?.stop()
+        nativeAudio = nil
+        nativeTransport = nil
+        nativeLiveSessionId = nil
+        pendingNativeBootstrap = nil
         active = false
         muted = false
         phase = "failed"
         lastError = message
         publishLiveActivity()
+    }
+
+    private func beginPendingNativeTransport() {
+        guard active, nativeTransport == nil, let bootstrap = pendingNativeBootstrap else { return }
+        pendingNativeBootstrap = nil
+        startNativeTransport(
+            authorization: bootstrap.authorization,
+            configuration: bootstrap.configuration
+        )
     }
 
     private func publishLiveActivity() {
@@ -199,6 +300,7 @@ final class MedousaLiveVoiceSessionManager {
             phase: phase,
             workshopName: workshopName,
             sessionId: sessionId,
+            liveSessionId: nativeLiveSessionId,
             error: overrideError ?? lastError
         )
         guard let data = try? JSONEncoder().encode(status),
