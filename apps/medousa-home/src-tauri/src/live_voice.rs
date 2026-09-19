@@ -328,6 +328,11 @@ pub fn live_voice_drain_native_events() -> Result<Vec<serde_json::Value>, String
 }
 
 #[tauri::command]
+pub fn live_voice_ack_native_events(through_sequence: u64) -> Result<(), String> {
+    ios::ack_events(through_sequence)
+}
+
+#[tauri::command]
 pub fn live_voice_send_native_event(event: serde_json::Value) -> Result<(), String> {
     ios::send_event(event)
 }
@@ -382,6 +387,7 @@ mod ios {
         fn medousa_live_voice_stop() -> *mut c_char;
         fn medousa_live_voice_status() -> *mut c_char;
         fn medousa_live_voice_drain_events() -> *mut c_char;
+        fn medousa_live_voice_ack_events(through_sequence: u64) -> bool;
         fn medousa_live_voice_send_event(json: *const c_char) -> bool;
         fn medousa_carplay_live_exchange(json: *const c_char) -> *mut c_char;
         fn medousa_live_activity_free_string(ptr: *mut c_char);
@@ -435,6 +441,17 @@ mod ios {
         };
         serde_json::from_str(&json)
             .map_err(|error| format!("decode native Live events: {error}"))
+    }
+
+    pub fn ack_events(through_sequence: u64) -> Result<(), String> {
+        if through_sequence == 0 {
+            return Err("Native Live event sequence is invalid".into());
+        }
+        if unsafe { medousa_live_voice_ack_events(through_sequence) } {
+            Ok(())
+        } else {
+            Err("Native Live could not acknowledge events".into())
+        }
     }
 
     pub fn send_event(event: serde_json::Value) -> Result<(), String> {

@@ -100,7 +100,9 @@ ActivityKit bridge is reused for background-visible state.
    tools, surface approvals, and project turn progress into conversational state.
    *(the opt-in native transport now bridges bounded server events to the existing
    foreground coordinator and accepts only validated thinking/commentary results;
-   scene-independent daemon execution remains next)*
+   delivery uses a sequence/ack journal so webview suspension cannot erase an
+   event before the coordinator receives it; scene-independent daemon execution
+   remains next)*
 4. **Production controls** — app voice surface, Dynamic Island and Lock Screen
    controls, widget/Control Center/Action button start, mute, stop, and resume.
 5. **Siri launcher** — “Talk to Medousa” starts or resumes Medousa Live and

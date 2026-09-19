@@ -996,6 +996,8 @@ fn run_home() {
             #[cfg(target_os = "ios")]
             live_voice::live_voice_drain_native_events,
             #[cfg(target_os = "ios")]
+            live_voice::live_voice_ack_native_events,
+            #[cfg(target_os = "ios")]
             live_voice::live_voice_send_native_event,
             #[cfg(target_os = "ios")]
             live_voice::live_voice_set_muted,

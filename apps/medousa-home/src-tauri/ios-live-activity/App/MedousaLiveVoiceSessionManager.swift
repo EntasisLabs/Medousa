@@ -38,8 +38,14 @@ final class MedousaLiveVoiceSessionManager {
     private var nativeAudio: MedousaLiveNativeAudioEngine?
     private var nativeTransport: MedousaLiveSocketTransport?
     private var pendingNativeBootstrap: (authorization: String, configuration: [String: Any])?
-    private var nativeEvents: [String] = []
+    private struct PendingNativeEvent {
+        let sequence: UInt64
+        let json: String
+    }
+
+    private var nativeEvents: [PendingNativeEvent] = []
     private var nativeEventBytes = 0
+    private var nextNativeEventSequence: UInt64 = 1
 
     private init() {}
 
@@ -57,6 +63,7 @@ final class MedousaLiveVoiceSessionManager {
         nativeLiveSessionId = nil
         nativeEvents.removeAll()
         nativeEventBytes = 0
+        nextNativeEventSequence = 1
         phase = "connecting"
         lastError = nil
 
@@ -143,15 +150,25 @@ final class MedousaLiveVoiceSessionManager {
         nativeLiveSessionId = nil
         nativeEvents.removeAll()
         nativeEventBytes = 0
+        nextNativeEventSequence = 1
         endLiveActivity()
         return encodedStatus()
     }
 
     func drainNativeEvents() -> String {
-        let events = nativeEvents
-        nativeEvents.removeAll()
-        nativeEventBytes = 0
+        let events = nativeEvents.map { event in
+            "{\"sequence\":\(event.sequence),\"event\":\(event.json)}"
+        }
         return "[\(events.joined(separator: ","))]"
+    }
+
+    func acknowledgeNativeEvents(through sequence: UInt64) -> Bool {
+        guard sequence > 0 else { return false }
+        while let event = nativeEvents.first, event.sequence <= sequence {
+            nativeEventBytes -= event.json.utf8.count
+            nativeEvents.removeFirst()
+        }
+        return true
     }
 
     func sendNativeEvent(json: String) -> Bool {
@@ -273,10 +290,12 @@ final class MedousaLiveVoiceSessionManager {
               let json = String(data: data, encoding: .utf8) else { return }
         while nativeEvents.count >= 128 || nativeEventBytes + data.count > 256 * 1024 {
             guard !nativeEvents.isEmpty else { return }
-            nativeEventBytes -= nativeEvents.removeFirst().utf8.count
+            nativeEventBytes -= nativeEvents.removeFirst().json.utf8.count
         }
-        nativeEvents.append(json)
+        nativeEvents.append(PendingNativeEvent(sequence: nextNativeEventSequence, json: json))
         nativeEventBytes += data.count
+        nextNativeEventSequence &+= 1
+        if nextNativeEventSequence == 0 { nextNativeEventSequence = 1 }
     }
 
     private func publishLiveActivity() {

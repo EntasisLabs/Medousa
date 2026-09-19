@@ -370,6 +370,7 @@
     "live_activity::live_activity_is_available",
     "live_activity::live_activity_push_token",
     "live_activity::live_activity_sync",
+    "live_voice::live_voice_ack_native_events",
     "live_voice::live_voice_append_transcript",
     "live_voice::live_voice_carplay_exchange",
     "live_voice::live_voice_create_session",

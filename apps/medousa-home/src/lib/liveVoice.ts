@@ -119,6 +119,11 @@ let nativeStatusTimer: number | null = null;
 let transportGeneration = 0;
 let nativePollActive = false;
 
+interface NativeLiveEventEnvelope {
+  sequence: number;
+  event: Record<string, unknown>;
+}
+
 function persistTranscript(entry: LiveTranscriptEntry, attachment = false, targetTurnId?: string) {
   const { sessionId, liveSessionId } = get(liveVoiceState);
   const onSaved = transcriptSavedHandler;
@@ -179,7 +184,12 @@ async function pollNativeLiveVoice(): Promise<void> {
   try {
     const events = await liveVoiceDrainNativeEvents();
     if (transportMode !== "native") return;
-    for (const event of events) handleServerEvent(JSON.stringify(event));
+    let acknowledgedThrough = 0;
+    for (const envelope of events) {
+      handleServerEvent(JSON.stringify(envelope.event));
+      acknowledgedThrough = envelope.sequence;
+    }
+    if (acknowledgedThrough > 0) await liveVoiceAckNativeEvents(acknowledgedThrough);
     const next = await liveVoiceStatus();
     if (transportMode !== "native") return;
     if (next.phase === "failed" || !next.active) {
@@ -695,9 +705,14 @@ export async function liveVoiceStatus(): Promise<LiveVoiceStatus> {
   return invoke<LiveVoiceStatus>("live_voice_status");
 }
 
-export async function liveVoiceDrainNativeEvents(): Promise<Record<string, unknown>[]> {
+export async function liveVoiceDrainNativeEvents(): Promise<NativeLiveEventEnvelope[]> {
   if (!isTauriIos()) return [];
-  return invoke<Record<string, unknown>[]>("live_voice_drain_native_events");
+  return invoke<NativeLiveEventEnvelope[]>("live_voice_drain_native_events");
+}
+
+export async function liveVoiceAckNativeEvents(throughSequence: number): Promise<void> {
+  if (!isTauriIos()) return;
+  await invoke("live_voice_ack_native_events", { throughSequence });
 }
 
 export async function liveVoiceSendNativeEvent(event: Record<string, unknown>): Promise<void> {
