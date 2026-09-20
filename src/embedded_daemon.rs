@@ -5,7 +5,7 @@
 //! ticket registry, durable journal, and production foreground loop to a
 //! trusted co-located client.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -2684,6 +2684,72 @@ impl EmbeddedDaemonClient {
 
     pub fn inference_model(&self) -> String {
         self.daemon.inference.route().1
+    }
+
+    pub async fn workspace_snapshot(
+        &self,
+        query: &medousa_types::WorkspaceSnapshotQuery,
+    ) -> Result<medousa_types::WorkspaceSnapshot> {
+        self.require(Capability::WorkshopRead)?;
+        let _ = query;
+        Ok(medousa_types::WorkspaceSnapshot {
+            workspace_revision: 0,
+            server_time_utc: Utc::now(),
+            cards: Vec::new(),
+            counts_by_column: HashMap::new(),
+            feed_tail: Vec::new(),
+        })
+    }
+
+    pub fn subscribe_workspace(
+        &self,
+        query: medousa_types::WorkspaceStreamQuery,
+    ) -> Result<mpsc::Receiver<medousa_types::WorkspaceStreamEvent>> {
+        self.require(Capability::WorkshopRead)?;
+        let (tx, rx) = mpsc::channel(8);
+        tokio::spawn(async move {
+            let snapshot = medousa_types::WorkspaceSnapshot {
+                workspace_revision: 0,
+                server_time_utc: Utc::now(),
+                cards: Vec::new(),
+                counts_by_column: HashMap::new(),
+                feed_tail: Vec::new(),
+            };
+            let initial = medousa_types::WorkspaceStreamEvent {
+                workspace_revision: 0,
+                stream_event_type: "snapshot".to_string(),
+                emitted_at_utc: Utc::now(),
+                card: None,
+                feed_event: None,
+                counts: None,
+                snapshot: Some(snapshot),
+                worker_progress: None,
+            };
+            if tx.send(initial).await.is_err() {
+                return;
+            }
+
+            let mut heartbeat = tokio::time::interval(Duration::from_secs(30));
+            heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            let _ = heartbeat.tick().await;
+            loop {
+                heartbeat.tick().await;
+                let event = medousa_types::WorkspaceStreamEvent {
+                    workspace_revision: query.since_revision.unwrap_or(0),
+                    stream_event_type: "heartbeat".to_string(),
+                    emitted_at_utc: Utc::now(),
+                    card: None,
+                    feed_event: None,
+                    counts: None,
+                    snapshot: None,
+                    worker_progress: None,
+                };
+                if tx.send(event).await.is_err() {
+                    return;
+                }
+            }
+        });
+        Ok(rx)
     }
 
     pub fn reconfigure_inference(
