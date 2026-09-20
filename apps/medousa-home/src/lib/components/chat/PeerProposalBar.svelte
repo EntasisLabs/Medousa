@@ -54,7 +54,7 @@
     return () => { ++epoch; clearInterval(timer); document.removeEventListener("visibilitychange", refresh); };
   });
 
-  async function action(kind: "approve" | "deny" | "dispatch") {
+  async function action(kind: "approve_and_dispatch" | "deny" | "dispatch") {
     if (!current || busy || !available) return;
     const token = epoch;
     const proposal = current.proposal;
@@ -63,15 +63,21 @@
     try {
       // Pin paired portals; local workshops use the normal authenticated route.
       const transport = proposalExecutionTransport(workshops.activeWorkshop?.kind, proposal.request.target.execution_runtime_id);
-      await actOnPeerProposal(proposal, kind, transport);
-      if (token !== epoch) return;
-      if (kind === "approve") {
+      if (kind === "approve_and_dispatch") {
+        await actOnPeerProposal(proposal, "approve", transport);
+        if (token !== epoch) return;
+        // Approval is durable even when provider startup fails. Reflect that
+        // boundary immediately so the operator can safely retry dispatch
+        // without creating or approving a second assignment.
         rows = rows.map(row => row.proposal.proposal_id === proposal.proposal_id ? { ...row, decision: { proposal_id: proposal.proposal_id, owner_principal_id: proposal.request.owner_principal_id, approved: true } } : row);
-        feedback = "Approved. Start the work when you’re ready.";
+        feedback = "Approved. Starting the agent…";
+        await actOnPeerProposal(proposal, "dispatch", transport);
       } else {
-        rows = rows.filter(row => row.proposal.proposal_id !== proposal.proposal_id);
-        feedback = kind === "deny" ? "Declined." : "Work accepted by the agent.";
+        await actOnPeerProposal(proposal, kind, transport);
       }
+      if (token !== epoch) return;
+      rows = rows.filter(row => row.proposal.proposal_id !== proposal.proposal_id);
+      feedback = kind === "deny" ? "Declined." : "Work accepted by the agent.";
     } catch (error) {
       if (token === epoch) feedback = error instanceof Error ? error.message : String(error);
     } finally { if (token === epoch) busy = false; }
@@ -123,7 +129,7 @@
       {#if current.decision?.approved}
         <button type="button" class="btn btn-sm variant-filled-primary" disabled={busy || expired} onclick={() => void action('dispatch')}>Start approved work</button>
       {:else}
-        <button type="button" class="btn btn-sm variant-filled-primary" disabled={busy || expired} onclick={() => void action('approve')}>Approve</button>
+        <button type="button" class="btn btn-sm variant-filled-primary" disabled={busy || expired} onclick={() => void action('approve_and_dispatch')}>Approve &amp; start</button>
         <button type="button" class="btn btn-sm variant-ghost-surface" disabled={busy} onclick={() => void action('deny')}>Decline</button>
       {/if}
     </div>

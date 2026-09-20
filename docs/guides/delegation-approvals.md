@@ -14,10 +14,11 @@ On a supported workshop, a proposal appears above the composer. Review the
 agent, instructions, channel, governed work item, execution workshop, exact
 shared conversation ranges, expiry, and owner-continuation choice.
 
-Choose **Approve** to record your decision, then **Start approved work** to
-dispatch that exact proposal. Approval alone does not launch an agent. Choose
-**Decline** instead to permanently reject it; a revised request needs a new
-assignment. Expired proposals cannot be approved or started.
+Choose **Approve & start** to record your decision and then dispatch that exact
+proposal. Approval is durably recorded before startup. If provider startup
+fails, the same card remains approved and offers **Start approved work** for a
+safe retry. Choose **Decline** instead to permanently reject it; a revised
+request needs a new assignment. Expired proposals cannot be approved or started.
 Conversational proposals expire after one hour. Saying “yes” in chat or Live
 does not replace these approval controls or start the agent.
 
