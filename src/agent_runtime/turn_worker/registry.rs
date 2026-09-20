@@ -192,6 +192,23 @@ pub struct AllowlistToolRegistry {
     delegated_finish_only: bool,
 }
 
+/// Removes a small mode-owned capability set while preserving every other
+/// registry layer, including runtime/client tools outside the static catalog.
+pub struct BlocklistToolRegistry {
+    inner: Arc<dyn ToolRegistry>,
+    blocklist: HashSet<String>,
+}
+
+impl BlocklistToolRegistry {
+    pub fn new(inner: Arc<dyn ToolRegistry>, blocklist: HashSet<String>) -> Self {
+        Self { inner, blocklist }
+    }
+
+    fn blocks(&self, tool_name: &str) -> bool {
+        self.blocklist.contains(tool_name)
+    }
+}
+
 impl AllowlistToolRegistry {
     pub fn new(inner: Arc<dyn ToolRegistry>, allowlist: HashSet<String>) -> Self {
         Self {
@@ -595,6 +612,26 @@ impl ToolRegistry for AllowlistToolRegistry {
 }
 
 #[async_trait]
+impl ToolRegistry for BlocklistToolRegistry {
+    async fn list_tools(&self) -> Result<Vec<Tool>> {
+        let tools = self.inner.list_tools().await?;
+        Ok(tools
+            .into_iter()
+            .filter(|tool| !self.blocks(tool.name.as_str()))
+            .collect())
+    }
+
+    async fn invoke_tool(&self, tool_name: &str, input: Value) -> Result<Value> {
+        if self.blocks(tool_name) {
+            return Err(StasisError::PortFailure(format!(
+                "tool is reserved for Assistant mode: {tool_name}"
+            )));
+        }
+        self.inner.invoke_tool(tool_name, input).await
+    }
+}
+
+#[async_trait]
 impl ToolRegistry for WorkerSessionToolRegistry {
     async fn list_tools(&self) -> Result<Vec<Tool>> {
         self.inner.list_tools().await
@@ -738,6 +775,25 @@ mod tests {
         ] {
             assert!(!exact.allows(name), "result-only turn exposed {name}");
         }
+    }
+
+    #[tokio::test]
+    async fn blocklist_hides_and_rejects_assistant_only_tools() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let registry = BlocklistToolRegistry::new(
+            Arc::new(RecordingRegistry {
+                tool_name: "cognition_peer_propose",
+                seen,
+            }),
+            HashSet::from(["cognition_peer_propose".to_string()]),
+        );
+
+        assert!(registry.list_tools().await.unwrap().is_empty());
+        let error = registry
+            .invoke_tool("cognition_peer_propose", json!({}))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("reserved for Assistant mode"));
     }
 
     #[tokio::test]

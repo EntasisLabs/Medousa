@@ -29,8 +29,8 @@ pub use prompts::{
     worker_system_prompt_for_parent_mode,
 };
 pub use registry::{
-    AllowlistToolRegistry, SessionBootstrapToolRegistry, WorkerSessionToolRegistry,
-    inject_worker_session_id,
+    AllowlistToolRegistry, BlocklistToolRegistry, SessionBootstrapToolRegistry,
+    WorkerSessionToolRegistry, inject_worker_session_id,
 };
 pub use routing::{
     HOST_BUS_MAX_TOOL_ROUNDS, HostBusEnvMode, HostTurnProfile, HostTurnRoute,

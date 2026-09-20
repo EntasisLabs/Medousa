@@ -1703,6 +1703,17 @@ async fn run_agent_turn_inner(
             Some(crate::agent_mode_context::INSTANT_CAPABILITY_CONTEXT.to_string()),
             Some(registry_override),
         )
+    } else if matches!(
+        agent_mode.id,
+        crate::daemon_api::AgentModeId::General | crate::daemon_api::AgentModeId::Teacher
+    ) {
+        let registry_override: Arc<
+            dyn stasis::application::orchestration::tool_registry::ToolRegistry,
+        > = Arc::new(super::turn_worker::BlocklistToolRegistry::new(
+            agent_rt.tool_registry.clone(),
+            crate::agent_mode_context::assistant_elevated_tool_names(),
+        ));
+        (None, None, None, None, None, Some(registry_override))
     } else {
         (None, None, None, None, None, None)
     };

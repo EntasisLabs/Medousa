@@ -99,6 +99,17 @@ mode and Home explains it only in the existing picker. This establishes the
 authority boundary without claiming that remote ACP creation or autonomous
 chains are already available; those arrive through the gated slices below.
 
+The runtime now enforces that boundary at the model-visible tool registry as
+well as in catalog metadata. General and Teacher retain their existing surface,
+including read-only active-work inventory and ordinary workshop execution, while
+external-peer discovery and immutable proposal creation are visible only to
+Assistant. Assistant's policy directs it to inspect work before choosing compute
+and distinguishes Medousa workshop execution from Codex/Cursor/Hermes custody.
+This is a surface ceiling, not an execution grant: all existing proposal,
+operator-approval, destination-policy, and receipt checks remain authoritative.
+The next boundary is a signed cross-workshop coordination adapter that can turn
+an exact remote inventory row into a proposal on the workshop that owns it.
+
 The General host now registers a `peers` domain for conversation-bound local
 agent discovery and immutable proposals. It derives identity, bound Forge work,
 and committed context digests from the admitted owner turn; model input cannot

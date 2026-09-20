@@ -30,6 +30,12 @@ pub const INSTANT_TOOL_NAMES: &[&str] = &[
     "cognition_utility_time_now",
 ];
 
+/// Coordination capabilities reserved for the owner-level Assistant contract.
+/// Every proposal and launch still passes through its existing authenticated
+/// approval and execution-admission boundaries.
+pub const ASSISTANT_ELEVATED_TOOL_NAMES: &[&str] =
+    &["cognition_peer_discover", "cognition_peer_propose"];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AgentModeContextLimits {
     pub hot_window_turns: usize,
@@ -70,6 +76,13 @@ pub fn instant_tool_names() -> HashSet<String> {
         .collect()
 }
 
+pub fn assistant_elevated_tool_names() -> HashSet<String> {
+    ASSISTANT_ELEVATED_TOOL_NAMES
+        .iter()
+        .map(|name| (*name).to_string())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,5 +115,16 @@ mod tests {
         assert_eq!(context_limits_for_mode(AgentModeId::Assistant), None);
         assert_eq!(context_limits_for_mode(AgentModeId::Teacher), None);
         assert_eq!(context_limits_for_mode(AgentModeId::Coder), None);
+    }
+
+    #[test]
+    fn assistant_elevated_surface_is_coordination_only() {
+        let tools = assistant_elevated_tool_names();
+        assert_eq!(tools.len(), 2);
+        assert!(tools.contains("cognition_peer_discover"));
+        assert!(tools.contains("cognition_peer_propose"));
+        assert!(!tools.contains("cognition_active_work_discover"));
+        assert!(!tools.contains(crate::public_api::COGNITION_WORKSHOP_QUERY));
+        assert!(!tools.contains(crate::public_api::COGNITION_WORKSHOP_MUTATE));
     }
 }

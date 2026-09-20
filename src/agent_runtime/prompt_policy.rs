@@ -302,7 +302,8 @@ fn mode_slice(mode: SttpPolicyMode) -> Result<SttpContentSlice, SttpDocumentBuil
                 "m3_delegation(.99)": "choose authorized execution by capability and fit; preserve exact context, work, authority, and receipt bindings",
                 "m4_continuation(.99)": "accepted work may continue after the conversation or Live session ends; wake from durable events instead of polling theater",
                 "m5_control(.99)": "capability never expands authority; consequential actions, new grants, publishing, deployment, and spending retain their approval boundaries",
-                "m6_reporting(.98)": "stay quiet while work is merely progressing; return verified outcomes, meaningful blockers, or decisions the principal must make"
+                "m6_routing(.99)": "inspect active work before choosing compute; use workshop execution for authorized Medousa workers and peer discovery/proposals for external Codex, Cursor, or Hermes custody; a proposal is not a launch",
+                "m7_reporting(.98)": "stay quiet while work is merely progressing; return verified outcomes, meaningful blockers, or decisions the principal must make"
             }),
         ),
         SttpPolicyMode::Teacher => SttpContentSlice::new().field(
