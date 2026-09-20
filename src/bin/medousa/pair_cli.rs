@@ -6,7 +6,7 @@ use anyhow::{Context, Result, bail};
 use medousa::daemon_api::{
     DEFAULT_DAEMON_PORT, DEFAULT_DAEMON_URL, detect_lan_ipv4, resolve_daemon_url,
 };
-use serde_json::Value;
+use serde_json::{Value, json};
 
 pub fn run_pair(args: &[String]) -> Result<()> {
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
@@ -20,10 +20,120 @@ pub fn run_pair(args: &[String]) -> Result<()> {
         Some("qr") => run_pair_qr(&daemon_url, args),
         Some("remove") => run_pair_remove(&resolve_pair_remove_daemon_url(args), args),
         Some("lan") => run_pair_lan(args),
+        Some("permissions") => run_pair_permissions(&daemon_url, args),
         Some(other) => {
             bail!("unknown pair subcommand '{other}'. run 'medousa pair --help' for usage")
         }
     }
+}
+
+fn run_pair_permissions(daemon_url: &str, args: &[String]) -> Result<()> {
+    match args.get(1).map(String::as_str) {
+        None | Some("list") => run_pair_permissions_list(daemon_url),
+        Some("set") => run_pair_permissions_set(daemon_url, args),
+        Some(other) => bail!(
+            "unknown permissions subcommand '{other}'. try: medousa pair permissions list|set"
+        ),
+    }
+}
+
+fn run_pair_permissions_list(daemon_url: &str) -> Result<()> {
+    let response = http_client(daemon_url)?
+        .get(format!("{daemon_url}/v1/peers/execution-policies"))
+        .send()
+        .context("GET /v1/peers/execution-policies")?;
+    let body = successful_json(response, "GET /v1/peers/execution-policies")?;
+    let peers = body
+        .get("peers")
+        .and_then(Value::as_array)
+        .context("execution policy response is missing peers")?;
+    if peers.is_empty() {
+        println!("No paired devices.");
+        return Ok(());
+    }
+
+    println!("DEVICE ID\tNAME\tPERMISSION\tSOURCE\tEXPIRES");
+    for peer in peers {
+        let execution = peer.get("execution").unwrap_or(&Value::Null);
+        let policy = execution.get("policy").unwrap_or(&Value::Null);
+        println!(
+            "{}\t{}\t{}\t{}\t{}",
+            value_str(peer, "peerDeviceId"),
+            value_str(peer, "displayName"),
+            value_str(policy, "preset"),
+            value_str(execution, "source"),
+            value_str(policy, "expiresAt"),
+        );
+    }
+    Ok(())
+}
+
+fn run_pair_permissions_set(daemon_url: &str, args: &[String]) -> Result<()> {
+    let device_id = args
+        .get(2)
+        .map(String::as_str)
+        .filter(|value| !value.starts_with("--"))
+        .context("usage: medousa pair permissions set <device_id> --preset <permission>")?;
+    let preset = find_arg_value(args, "--preset").context("--preset is required")?;
+    let mut update = json!({ "preset": preset });
+
+    if preset == "approved_projects" {
+        update["allowedProjectIds"] = json!(find_arg_values(args, "--project"));
+    } else if preset == "custom" {
+        update["assistantWork"] = json!(has_flag(args, "--assistant-work"));
+        update["sandboxExecution"] = json!(has_flag(args, "--sandbox-execution"));
+        update["hostShell"] = json!(has_flag(args, "--host-shell"));
+        update["coderWork"] = json!(has_flag(args, "--coder-work"));
+        update["workEnvironmentMaterialization"] =
+            json!(has_flag(args, "--work-environment-materialization"));
+        update["allowAgentTargeting"] = json!(has_flag(args, "--allow-agent-targeting"));
+        update["networkPolicy"] =
+            json!(find_arg_value(args, "--network").unwrap_or_else(|| "deny".to_string()));
+        update["allowedProjectIds"] = json!(find_arg_values(args, "--project"));
+        update["allowedRootRefs"] = json!(find_arg_values(args, "--root-ref"));
+        update["allowedToolDomains"] = json!(find_arg_values(args, "--tool-domain"));
+        update["allowedMcpServerIds"] = json!(find_arg_values(args, "--mcp-server"));
+        update["allowedSecretRefs"] = json!(find_arg_values(args, "--secret-ref"));
+    }
+    if let Some(expires_at) = find_arg_value(args, "--expires-at") {
+        update["expiresAt"] = json!(expires_at);
+    }
+
+    let mut url =
+        reqwest::Url::parse(&format!("{daemon_url}/v1/peers/")).context("invalid daemon url")?;
+    url.path_segments_mut()
+        .map_err(|_| anyhow::anyhow!("daemon url cannot be a base"))?
+        .push(device_id)
+        .push("execution-policy");
+    let response = http_client(daemon_url)?
+        .put(url)
+        .json(&update)
+        .send()
+        .context("PUT peer execution policy")?;
+    let body = successful_json(response, "PUT peer execution policy")?;
+    let policy = body
+        .pointer("/peer/execution/policy")
+        .context("execution policy response is missing the saved policy")?;
+    println!(
+        "Updated {}: {} (revision {})",
+        device_id,
+        value_str(policy, "preset"),
+        policy.get("revision").and_then(Value::as_u64).unwrap_or(0),
+    );
+    Ok(())
+}
+
+fn successful_json(response: reqwest::blocking::Response, operation: &str) -> Result<Value> {
+    let status = response.status();
+    let text = response.text().context("read daemon response")?;
+    if !status.is_success() {
+        bail!("{operation} returned {status}: {}", text.trim());
+    }
+    serde_json::from_str(&text).context("parse daemon response json")
+}
+
+fn value_str<'a>(value: &'a Value, key: &str) -> &'a str {
+    value.get(key).and_then(Value::as_str).unwrap_or("-")
 }
 
 fn run_pair_status(daemon_url: &str) -> Result<()> {
@@ -262,6 +372,10 @@ fn print_pair_help() {
     println!("  medousa pair qr [--term] [--open] [--full] [--daemon-url <url>]");
     println!("  medousa pair remove <pairing_id> [--daemon-url <url>]");
     println!("  medousa pair lan status|on|off");
+    println!("  medousa pair permissions list [--daemon-url <url>]");
+    println!(
+        "  medousa pair permissions set <device_id> --preset assistant-work [--daemon-url <url>]"
+    );
     println!();
     println!(
         "LAN pairing window binds the engine to 0.0.0.0; invite details remain local-admin only."
@@ -281,4 +395,12 @@ fn find_arg_value(args: &[String], flag: &str) -> Option<String> {
         .position(|arg| arg == flag)
         .and_then(|index| args.get(index + 1))
         .cloned()
+}
+
+fn find_arg_values(args: &[String], flag: &str) -> Vec<String> {
+    args.iter()
+        .enumerate()
+        .filter_map(|(index, arg)| (arg == flag).then(|| args.get(index + 1)).flatten())
+        .cloned()
+        .collect()
 }
