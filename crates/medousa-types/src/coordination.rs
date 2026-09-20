@@ -121,8 +121,9 @@ pub struct ExternalPeerAssignmentReceipt {
     pub result: String,
 }
 
-/// Separate operator approval for one result-only owner turn. This does not
-/// authorize follow-up tool calls or transfer the peer's execution authority.
+/// Separate operator approval for one bounded owner turn. The host may expose
+/// proposal-only coordination tools, but this grant never authorizes dispatch
+/// or transfers the peer's execution authority.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct PeerOwnerContinuationGrant {
@@ -173,6 +174,10 @@ pub struct PeerProposalReviewRecord {
     pub decision: Option<PeerProposalDecision>,
     /// Recorded custody remains visible until its terminal receipt arrives.
     pub binding: Option<ExternalPeerAssignmentBinding>,
+    /// Present for source-session projections so a remote owner can observe the
+    /// immutable terminal even though execution belongs to another workshop.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receipt: Option<ExternalPeerAssignmentReceipt>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -44,8 +44,20 @@ agent accepted the assignment, not that its work passed review or was deployed.
 The card remains in the chat as tracked custody until the daemon records a
 terminal receipt; it then yields to Medousa's attributable owner continuation.
 
-Owner continuation, when included, permits one result-only reply in the same
-chat. It does not permit follow-up tools, another delegation, or deployment.
+Owner continuation, when included, permits one bounded Assistant turn in the
+same chat. Medousa can explain the verified result and, only when the existing
+conversation already requested a next Codex/Cursor/Hermes step, prepare one
+follow-up proposal against the same governed work. The continuation can inspect
+peer scope and create that proposal; it cannot approve, launch, steer, cancel,
+deploy, or inherit the completed peer's authority. Every follow-up still appears
+as a separate approval card before execution.
+
+For work executed on a paired workshop, the originating phone chat also projects
+the immutable terminal outcome and result into the delegation card. This keeps
+completion visible even though the canonical owner continuation is committed by
+the execution workshop's request-scoped shadow session. A follow-up proposal
+prepared by that continuation is projected into the originating chat as a new
+approval card.
 
 This surface requires operator execution access on the workshop that owns the
 proposal. Unsupported workshops do not show it. The phone aggregates proposal

@@ -17521,6 +17521,30 @@
           }
         }
       },
+      "ExternalPeerAssignmentReceipt": {
+        "description": "Receipt identity is used for owner-inbox deduplication, not text matching.",
+        "type": "object",
+        "required": [
+          "binding",
+          "outcome",
+          "receipt_id",
+          "result"
+        ],
+        "properties": {
+          "binding": {
+            "$ref": "#/definitions/ExternalPeerAssignmentBinding"
+          },
+          "outcome": {
+            "$ref": "#/definitions/PeerAssignmentOutcome"
+          },
+          "receipt_id": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          }
+        }
+      },
       "ExternalPeerAssignmentRequest": {
         "description": "Caller intent only. Grant checks occur outside the model before dispatch.",
         "type": "object",
@@ -17614,6 +17638,15 @@
           }
         }
       },
+      "PeerAssignmentOutcome": {
+        "type": "string",
+        "enum": [
+          "completed",
+          "failed",
+          "cancelled",
+          "interrupted"
+        ]
+      },
       "PeerAssignmentProposal": {
         "description": "Immutable snapshot offered to the owner for explicit approval. No execution authority exists merely because a proposal was submitted.",
         "type": "object",
@@ -17687,6 +17720,17 @@
           },
           "proposal": {
             "$ref": "#/definitions/PeerAssignmentProposal"
+          },
+          "receipt": {
+            "description": "Present for source-session projections so a remote owner can observe the immutable terminal even though execution belongs to another workshop.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ExternalPeerAssignmentReceipt"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },

@@ -17,6 +17,7 @@
   let pageAfter: string | undefined;
   let selectedId: string | undefined;
   const current = $derived(rows[0] ?? null);
+  const completed = $derived(current?.receipt ?? null);
   const adopting = $derived(Boolean(current?.proposal.request.existing_agent_session_id));
   const profileScope = $derived(connection.health?.active_profile_id ?? "");
   const proposalRuntimes = $derived([
@@ -131,7 +132,7 @@
 {#if current && available}
   <section class="{mobile ? 'mx-3' : 'mx-4'} mb-2 rounded-xl border border-primary-400/25 bg-surface-900 p-3" aria-label="Agent delegation approval">
     <div class="flex items-center justify-between gap-2">
-      <p class="text-xs font-medium text-content-link">{current.binding ? 'Medousa is tracking this work' : current.decision?.approved ? 'Approved delegation' : 'Delegate work · needs your approval'}</p>
+      <p class="text-xs font-medium text-content-link">{completed ? 'Agent result · verified terminal' : current.binding ? 'Medousa is tracking this work' : current.decision?.approved ? 'Approved delegation' : 'Delegate work · needs your approval'}</p>
       <div class="flex gap-2">
         {#if rows.length > 1}<button type="button" class="text-xs text-content-secondary" disabled={busy} onclick={() => void next()}>Next request</button>{/if}
         {#if cursor}<button type="button" class="text-xs text-content-secondary" disabled={busy} onclick={() => void next(true)}>More requests</button>{/if}
@@ -139,6 +140,12 @@
     </div>
     <p class="mt-1 text-sm text-content-primary">{current.proposal.request.target.runtime} · {proposalWorkshop(current.proposal.request.target.execution_runtime_id)?.label ?? workshops.activeLabel}{adopting ? ' · existing work' : ''}</p>
     <p class="mt-1 whitespace-pre-wrap text-sm text-content-secondary">{current.proposal.request.instructions}</p>
+    {#if completed}
+      <div class="mt-2 rounded-lg border border-primary-400/15 bg-surface-950/60 p-2">
+        <p class="text-xs font-medium text-content-primary">{completed.outcome}</p>
+        <p class="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap text-sm text-content-secondary">{completed.result}</p>
+      </div>
+    {/if}
     <details class="mt-2 text-xs text-content-secondary">
       <summary class="cursor-pointer">Review shared context and scope</summary>
       <dl class="mt-2 space-y-1 break-all">
@@ -151,14 +158,16 @@
         {#each current.proposal.request.context.sources as source}
           <dd>{source.selection.session.session_id} · entries {(source.selection.after_entry_seq ?? 0) + 1}–{source.selection.through_entry_seq} · {source.selection_digest}</dd>
         {/each}
-        <dt>Owner continuation</dt><dd>{current.proposal.continue_owner ? 'One result-only turn in this chat; no follow-up tools.' : 'Not approved by this proposal.'}</dd>
+        <dt>Owner continuation</dt><dd>{current.proposal.continue_owner ? 'Report the result and, if you already requested it, prepare one follow-up handoff. Every launch still needs approval.' : 'Not approved by this proposal.'}</dd>
         <dt>Expires</dt><dd>{new Date(current.proposal.expires_at).toLocaleString()}{expired ? ' · expired' : ''}</dd>
         <dt>Proposal</dt><dd>{current.proposal.proposal_id}</dd>
       </dl>
     </details>
     {#if feedback}<p class="mt-2 text-xs text-content-secondary" role="status">{feedback}</p>{/if}
     <div class="mt-3 flex gap-2">
-      {#if current.binding}
+      {#if completed}
+        <span class="text-xs text-content-secondary">Medousa received the terminal result.</span>
+      {:else if current.binding}
         <span class="text-xs text-content-secondary">Waiting for the verified terminal result…</span>
       {:else if current.decision?.approved}
         <button type="button" class="btn btn-sm variant-filled-primary" disabled={busy || expired} onclick={() => void action('dispatch')}>Start approved work</button>

@@ -179,6 +179,7 @@ impl CoordinationStore {
                     proposal,
                     decision,
                     binding,
+                    receipt: None,
                 },
             );
             if page.len() > 8 {
@@ -211,9 +212,7 @@ impl CoordinationStore {
                 continue;
             }
             let index: ProposalIndex = self.read(&medousa_store::StorePath::parse(&entry.name)?)?;
-            if index.owner != owner
-                || after.is_some_and(|id| index.proposal_id.as_str() <= id)
-            {
+            if index.owner != owner || after.is_some_and(|id| index.proposal_id.as_str() <= id) {
                 continue;
             }
             if object_path(&index.channel, "proposal-index", &index.proposal_id)?.file_name()
@@ -222,7 +221,10 @@ impl CoordinationStore {
                 bail!("proposal index identity mismatch");
             }
             self.require_owner(&index.channel, owner)?;
-            if !index.projected_source_session_ids.contains(source_session_id) {
+            if !index
+                .projected_source_session_ids
+                .contains(source_session_id)
+            {
                 continue;
             }
             let proposal = self.proposal(&index.channel, &index.proposal_id)?;
@@ -234,19 +236,15 @@ impl CoordinationStore {
                 continue;
             }
             let binding = self.peer_if_recorded(&index.channel, &proposal.request.assignment_id)?;
-            if binding.is_some()
-                && self
-                    .receipt_if_recorded(&index.channel, &proposal.request.assignment_id)?
-                    .is_some()
-            {
-                continue;
-            }
+            let receipt =
+                self.receipt_if_recorded(&index.channel, &proposal.request.assignment_id)?;
             page.insert(
                 proposal.proposal_id.clone(),
                 PeerProposalReviewRecord {
                     proposal,
                     decision,
                     binding,
+                    receipt,
                 },
             );
             if page.len() > 8 {

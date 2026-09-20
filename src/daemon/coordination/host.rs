@@ -1,5 +1,6 @@
 //! Daemon-composed terminal inbox recovery. Never launches or reattaches a peer
-//! process from a disk claim. Owner turns remain result-only and explicitly approved.
+//! process from a disk claim. Owner turns remain explicitly approved and may
+//! only prepare follow-up proposals; they cannot dispatch peer work.
 use super::{LocalPeerDispatcher, MAX_CONTEXT_BYTES, OwnerIntakeResult};
 use crate::{daemon::state::AppState, request_principal::RequestPrincipal};
 use anyhow::{Result, bail};

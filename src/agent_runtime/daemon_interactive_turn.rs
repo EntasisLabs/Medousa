@@ -1703,6 +1703,27 @@ async fn run_agent_turn_inner(
             Some(crate::agent_mode_context::INSTANT_CAPABILITY_CONTEXT.to_string()),
             Some(registry_override),
         )
+    } else if agent_mode.id == crate::daemon_api::AgentModeId::Assistant
+        && request.scheduled_tool_allowlist.is_some()
+    {
+        // Internal Assistant continuations use an explicit deployment ceiling.
+        // Wrap exactly here so the later scheduled selector cannot implicitly
+        // add the public API surface.
+        let allowlist = request
+            .scheduled_tool_allowlist
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(|tool| tool.trim().to_string())
+            .filter(|tool| !tool.is_empty())
+            .collect();
+        let registry_override: Arc<
+            dyn stasis::application::orchestration::tool_registry::ToolRegistry,
+        > = Arc::new(super::turn_worker::AllowlistToolRegistry::new_exact(
+            agent_rt.tool_registry.clone(),
+            allowlist,
+        ));
+        (None, None, None, None, None, Some(registry_override))
     } else if matches!(
         agent_mode.id,
         crate::daemon_api::AgentModeId::General | crate::daemon_api::AgentModeId::Teacher

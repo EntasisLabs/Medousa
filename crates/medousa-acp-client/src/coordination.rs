@@ -710,6 +710,8 @@ mod tests {
             .session_id
             .clone();
         request.assignment_id = "remote-shadow-proposal".into();
+        request.idempotency_key = "remote-shadow-command".into();
+        request.execution_grant_id = "remote-shadow-grant".into();
         request.owner_session.session_id = "request-scoped-shadow".parse().unwrap();
         let mut proposal = PeerAssignmentProposal {
             proposal_id: String::new(),
@@ -727,6 +729,46 @@ mod tests {
             .unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].proposal, proposal);
+        assert!(rows[0].receipt.is_none());
+
+        store
+            .decide_proposal(
+                &proposal.request.channel,
+                &PeerProposalDecision {
+                    proposal_id: proposal.proposal_id.clone(),
+                    owner_principal_id: proposal.request.owner_principal_id.clone(),
+                    approved: true,
+                },
+            )
+            .unwrap();
+        store
+            .approve_assignment(&ExternalPeerAssignmentGrant {
+                request: proposal.request.clone(),
+                expires_at: proposal.expires_at,
+            })
+            .unwrap();
+        store.claim_assignment(&proposal.request).unwrap();
+        let binding = ExternalPeerAssignmentBinding {
+            assignment_id: proposal.request.assignment_id.clone(),
+            owner_principal_id: proposal.request.owner_principal_id.clone(),
+            channel: proposal.request.channel.clone(),
+            target: proposal.request.target.clone(),
+            execution_session: proposal.request.execution_session.clone(),
+            agent_session_id: "remote-peer".into(),
+        };
+        store.record_peer(&binding).unwrap();
+        let receipt = ExternalPeerAssignmentReceipt {
+            receipt_id: store::intake::terminal_receipt_id(&binding),
+            binding,
+            outcome: PeerAssignmentOutcome::Completed,
+            result: "verified remote result".into(),
+        };
+        store.record_receipt(&receipt).unwrap();
+        let terminal_rows = store
+            .proposal_inbox_for_source_session("user:alice", &source_session_id, None)
+            .unwrap();
+        assert_eq!(terminal_rows.len(), 1);
+        assert_eq!(terminal_rows[0].receipt.as_ref(), Some(&receipt));
         assert!(
             store
                 .proposal_inbox_for_source_session("user:mallory", &source_session_id, None)

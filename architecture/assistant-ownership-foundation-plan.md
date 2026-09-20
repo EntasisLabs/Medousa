@@ -115,8 +115,11 @@ runtime identity, Forge ownership, and source provenance; it materializes a
 request-scoped derived session so repeated requests from one phone chat remain
 independent. Home projects those proposals back through the originating chat
 and routes approve/start to the exact workshop. Existing proposal decisions and
-execution admission remain authoritative. On-device validation is still pending;
-durable autonomous chaining after terminal peer receipts remains the next slice.
+execution admission remain authoritative. A verified terminal can now wake one
+bounded Assistant continuation with an exact discover/propose-only tool ceiling.
+It may prepare one user-requested follow-up handoff against the same governed
+work, but every launch remains behind a separate approval card. On-device
+end-to-end validation of this chained loop is still pending.
 
 The General host now registers a `peers` domain for conversation-bound local
 agent discovery and immutable proposals. It derives identity, bound Forge work,

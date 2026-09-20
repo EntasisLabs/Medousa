@@ -32,6 +32,15 @@ export interface ExternalPeerAssignmentBinding {
   target: ExternalPeerTarget;
 }
 
+export type PeerAssignmentOutcome = "completed" | "failed" | "cancelled" | "interrupted";
+
+export interface ExternalPeerAssignmentReceipt {
+  binding: ExternalPeerAssignmentBinding;
+  outcome: PeerAssignmentOutcome;
+  receipt_id: string;
+  result: string;
+}
+
 export type ContextManifestId = string;
 
 export interface ConversationRangeSelection {
@@ -84,6 +93,7 @@ export interface PeerProposalReviewRecord {
   binding?: ExternalPeerAssignmentBinding | null;
   decision?: PeerProposalDecision | null;
   proposal: PeerAssignmentProposal;
+  receipt?: ExternalPeerAssignmentReceipt | null;
 }
 
 export interface PeerProposalInboxResponse {
