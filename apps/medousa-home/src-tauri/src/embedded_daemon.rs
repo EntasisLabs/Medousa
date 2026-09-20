@@ -523,13 +523,53 @@ impl DelegatedTaskTransport for HomeDelegatedTaskTransport {
                 .label
                 .to_ascii_lowercase()
                 .cmp(&right.candidate.label.to_ascii_lowercase())
-                .then(
-                    left.candidate
-                        .runtime_id
-                        .cmp(&right.candidate.runtime_id),
-                )
+                .then(left.candidate.runtime_id.cmp(&right.candidate.runtime_id))
         });
         Ok(authorized)
+    }
+
+    async fn active_work_inventories(
+        &self,
+        include_terminal: bool,
+    ) -> Result<Vec<serde_json::Value>, DelegatedTaskError> {
+        let targets = tokio::task::spawn_blocking(|| {
+            let registry = crate::workshop_registry::ensure_migrated()?;
+            Ok::<_, String>(
+                registry
+                    .workshops
+                    .iter()
+                    .filter(|workshop| {
+                        workshop.id != crate::workshop_registry::PERSONAL_WORKSHOP_ID
+                            && crate::workshop_registry::is_portal_kind(&workshop.kind)
+                            && workshop.pairing.is_some()
+                    })
+                    .filter_map(|workshop| delegation_target_for(&workshop.id).ok())
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .await
+        .map_err(|_| DelegatedTaskError::transport("workshop inventory lookup failed"))?
+        .map_err(DelegatedTaskError::transport)?;
+        let futures = targets.into_iter().map(|target| async move {
+            let summary = serde_json::json!({
+                "route_ref": target.route_ref.clone(),
+                "execution_runtime_id": target.peer_device_id.clone(),
+                "label": target.label.clone(),
+            });
+            match fetch_active_work_target(&target, include_terminal).await {
+                Ok(inventory) => serde_json::json!({
+                    "available": true,
+                    "target": summary,
+                    "inventory": inventory,
+                }),
+                Err(error) => serde_json::json!({
+                    "available": false,
+                    "target": summary,
+                    "error": error.to_string(),
+                }),
+            }
+        });
+        Ok(futures_util::future::join_all(futures).await)
     }
 
     async fn submit_or_observe(
@@ -667,6 +707,49 @@ async fn probe_delegation_target(
         candidate,
         policy_revision: response.payload.policy_revision,
     })
+}
+
+#[cfg(any(target_os = "ios", target_os = "android"))]
+async fn fetch_active_work_target(
+    target: &medousa::delegation::DelegationTarget,
+    include_terminal: bool,
+) -> Result<serde_json::Value, DelegatedTaskError> {
+    let transport_target = target.clone();
+    let config = tokio::task::spawn_blocking(move || delegation_transport_for(&transport_target))
+        .await
+        .map_err(|_| DelegatedTaskError::transport("paired transport lookup failed"))?
+        .map_err(DelegatedTaskError::transport)?;
+    let request = medousa::workshop_contract::ActiveWorkInventoryProbeRequest {
+        schema_version: medousa::workshop_contract::ACTIVE_WORK_INVENTORY_SCHEMA_VERSION,
+        include_terminal,
+    };
+    let wrapped = crate::mesh_envelope::wrap_payload_for_workshop(
+        &config,
+        crate::mesh_envelope::CAP_TASK_REQUEST,
+        request,
+    )
+    .map_err(DelegatedTaskError::transport)?;
+    let response: crate::mesh_envelope::MeshEnvelopedRequest<
+        medousa::workshop_contract::ActiveWorkInventoryProbeResponse,
+    > = crate::workshop_transport::workshop_post_json(&config, "/v1/mesh/active-work", &wrapped)
+        .await
+        .map_err(DelegatedTaskError::transport)?;
+    crate::mesh_envelope::verify_payload_from_workshop(
+        &config,
+        &response,
+        crate::mesh_envelope::CAP_TASK_RESULT,
+    )
+    .map_err(DelegatedTaskError::transport)?;
+    if response.payload.schema_version
+        != medousa::workshop_contract::ACTIVE_WORK_INVENTORY_SCHEMA_VERSION
+        || response.payload.inventory["coverage"]["execution_runtime_id"].as_str()
+            != Some(config.workshop_device_id.as_str())
+    {
+        return Err(DelegatedTaskError::transport(
+            "active-work inventory does not match the authenticated workshop",
+        ));
+    }
+    Ok(response.payload.inventory)
 }
 
 #[cfg(any(target_os = "ios", target_os = "android"))]

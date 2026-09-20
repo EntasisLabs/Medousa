@@ -37,6 +37,14 @@ impl LocalPeerDispatcher {
         include_terminal: bool,
     ) -> Result<serde_json::Value> {
         let owner = actor(principal)?;
+        self.active_work_for_owner(owner, include_terminal).await
+    }
+
+    pub(crate) async fn active_work_for_owner(
+        &self,
+        owner: String,
+        include_terminal: bool,
+    ) -> Result<serde_json::Value> {
         let authority = crate::workshop_authority::current()
             .map_err(anyhow::Error::msg)?
             .clone();

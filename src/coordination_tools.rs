@@ -5,17 +5,14 @@ use stasis::prelude::{Result, StasisError};
 
 pub const COGNITION_PEER_DISCOVER: &str = "cognition_peer_discover";
 pub const COGNITION_PEER_PROPOSE: &str = "cognition_peer_propose";
-pub const COGNITION_ACTIVE_WORK_DISCOVER: &str = "cognition_active_work_discover";
 const PEER_DISCOVER_ID: ToolId = ToolId::new(COGNITION_PEER_DISCOVER);
 const PEER_PROPOSE_ID: ToolId = ToolId::new(COGNITION_PEER_PROPOSE);
-const ACTIVE_WORK_DISCOVER_ID: ToolId = ToolId::new(COGNITION_ACTIVE_WORK_DISCOVER);
 
 pub fn register_coordination_tools(
     registry: &mut impl crate::typed_tools::ToolRegistration,
 ) -> Result<()> {
     registry.register_typed_tool(PeerDiscoverTool)?;
     registry.register_typed_tool(PeerProposeTool)?;
-    registry.register_typed_tool(ActiveWorkDiscoverTool)?;
     Ok(())
 }
 
@@ -32,27 +29,6 @@ fn admitted()
 struct PeerDiscoverInput {}
 struct PeerDiscoverTool;
 struct PeerProposeTool;
-#[derive(serde::Deserialize, schemars::JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct ActiveWorkDiscoverInput {
-    /// Include accepted, discarded, and failed Forge work.
-    #[serde(default)]
-    include_terminal: bool,
-}
-struct ActiveWorkDiscoverTool;
-
-#[medousa_tool(id = ACTIVE_WORK_DISCOVER_ID)]
-impl ActiveWorkDiscoverTool {
-    /// List projects and agent sessions visible to the user in the current workshop. Use this for “what are we working on?” before asking the user to identify a project. The response states its coverage and is read-only; never describe current-workshop results as the complete mesh.
-    async fn invoke_typed(&self, input: ActiveWorkDiscoverInput) -> Result<serde_json::Value> {
-        let turn = admitted()?;
-        let host = local_coordination_host()
-            .ok_or_else(|| error("active work discovery is not available on this workshop"))?;
-        host.active_work_for_turn(turn.principal(), input.include_terminal)
-            .await
-            .map_err(error)
-    }
-}
 
 #[medousa_tool(id = PEER_DISCOVER_ID)]
 impl PeerDiscoverTool {
@@ -114,20 +90,6 @@ mod tests {
         assert!(
             PeerProposeTool
                 .invoke_typed(intent)
-                .await
-                .unwrap_err()
-                .to_string()
-                .contains("admitted owner turn")
-        );
-    }
-
-    #[tokio::test]
-    async fn active_work_discovery_requires_an_admitted_owner_turn() {
-        assert!(
-            ActiveWorkDiscoverTool
-                .invoke_typed(ActiveWorkDiscoverInput {
-                    include_terminal: false,
-                })
                 .await
                 .unwrap_err()
                 .to_string()

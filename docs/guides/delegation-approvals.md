@@ -7,8 +7,8 @@ delegation, cloud adapters, and autonomous chains are not yet connected.
 
 You can also ask what work is active without first opening a project-bound chat.
 Medousa can list your non-terminal governed projects and visible agent sessions
-in the current workshop. It will identify the workshop coverage because this is
-not yet a complete inventory of every connected workshop in your mesh.
+across the current and authorized paired workshops. Offline or unavailable
+workshops remain visible as unavailable; Medousa does not treat them as empty.
 
 If Codex, Cursor, or Hermes is already running through Medousa on the same
 governed project, Medousa can offer that exact live session for adoption. Adoption

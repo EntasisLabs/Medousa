@@ -96,8 +96,12 @@ first half of “what are we working on?” without requiring the chat to alread
 bound to a project. It lists the authenticated principal's non-terminal Forge
 work in the current workshop and joins visible ACP custody to each exact work id,
 including whether it is already Medousa-owned or adoptable. The response carries
-an explicit current-workshop coverage marker; connected-workshop federation is
-still required before Medousa may claim a complete mesh view.
+an explicit coverage marker. The same read contract now federates from the
+mobile owner across configured paired workshops through signed mesh envelopes.
+Each destination rechecks its directional execution policy and resolves its own
+active workshop identity. Offline/erroring workshops remain explicit, and the
+aggregate is complete only when every configured workshop answered. Cross-
+workshop adoption and delegation from an inventory row remain the next boundary.
 
 Slice 0 has an initial, additive contract seam in
 `crates/medousa-types/src/coordination.rs` and an adapter-independent admission

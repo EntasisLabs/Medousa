@@ -1,3 +1,4 @@
+pub mod active_work_tools;
 pub mod adapter_ingest;
 pub mod agent_permission_request;
 pub mod agent_runtime;

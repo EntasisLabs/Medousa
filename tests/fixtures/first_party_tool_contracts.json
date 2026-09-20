@@ -2395,7 +2395,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_active_work_discover",
-      "description": "List projects and agent sessions visible to the user in the current workshop. Use this for “what are we working on?” before asking the user to identify a project. The response states its coverage and is read-only; never describe current-workshop results as the complete mesh.",
+      "description": "List projects and agent sessions visible to the user across the local and authorized connected workshops. Use this for “what are we working on?” before asking the user to identify a project. The response is read-only and preserves unavailable workshops explicitly; never describe partial coverage as complete.",
       "input_schema": {
         "additionalProperties": false,
         "properties": {

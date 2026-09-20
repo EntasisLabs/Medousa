@@ -379,6 +379,16 @@ pub trait DelegatedTaskTransport: Send + Sync {
         Ok(Vec::new())
     }
 
+    /// Read-only inventory from every configured workshop. Implementations
+    /// preserve unavailable targets as explicit error rows rather than
+    /// silently treating them as empty workshops.
+    async fn active_work_inventories(
+        &self,
+        _include_terminal: bool,
+    ) -> Result<Vec<serde_json::Value>, DelegatedTaskError> {
+        Ok(Vec::new())
+    }
+
     async fn submit_or_observe(
         &self,
         target: &crate::delegation::DelegationTarget,

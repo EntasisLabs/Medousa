@@ -9,13 +9,19 @@ ranges and digests, a governed Forge work item, and independent peer custody.
 The full-daemon General host's `peers` discovery domain contains
 `cognition_active_work_discover`, `cognition_peer_discover`, and
 `cognition_peer_propose`. All require an admitted owner turn and use its
-authenticated principal/session. Active-work discovery lists the current
-workshop's non-terminal Forge projects owned by that principal and joins visible
-ACP sessions by exact Forge work id. It reports owned/adoptable, terminal, and
+authenticated principal/session. Active-work discovery lists each reachable
+workshop's non-terminal Forge projects and joins visible ACP sessions by exact
+Forge work id. The local workshop uses the admitted principal; paired workshops
+use their active workshop identity after authenticating the signed mesh request
+and directional execution policy. It reports owned/adoptable, terminal, and
 cancelled session state without granting authority or changing custody. Results
-are capped at 128 projects, expose no repository path, and explicitly report
-that current-workshop coverage is not yet a complete mesh inventory. Callers
-must not represent it as cross-workshop discovery.
+are capped at 128 projects per workshop and expose no repository path.
+
+Federated reads use `/v1/mesh/active-work` over the existing pinned pairing and
+signed request/result envelope. Configured workshops that cannot answer remain
+explicit unavailable rows; they are never represented as empty. Consequently
+`coverage.complete_mesh` is true only when every configured authorized workshop
+answered. Inventory authority does not imply adoption or execution authority.
 
 Peer discovery reports local ACP availability and the current chat's project
 binding and committed range.

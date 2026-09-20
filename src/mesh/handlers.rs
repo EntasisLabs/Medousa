@@ -36,8 +36,9 @@ use crate::peer_execution_policy::{
 };
 use crate::request_principal::{Capability, PrincipalKind, RequestPrincipal, TransportClass};
 use crate::workshop_contract::{
-    EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION, ExecutionTargetInventoryEntry,
-    ExecutionTargetProbeRequest, ExecutionTargetProbeResponse,
+    ACTIVE_WORK_INVENTORY_SCHEMA_VERSION, ActiveWorkInventoryProbeRequest,
+    ActiveWorkInventoryProbeResponse, EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION,
+    ExecutionTargetInventoryEntry, ExecutionTargetProbeRequest, ExecutionTargetProbeResponse,
 };
 
 #[derive(Clone)]
@@ -194,6 +195,10 @@ pub fn mesh_surface() -> DeclaredRouter<MeshApiState> {
                 16 * 1024,
             ),
             post(describe_execution_target),
+        )
+        .route(
+            peer_policy(axum::http::Method::POST, "/v1/mesh/active-work", 16 * 1024),
+            post(describe_active_work),
         )
         .route(
             peer_policy(
@@ -748,10 +753,12 @@ async fn describe_execution_target(
         capabilities.contains("assistant.work") || capabilities.contains("coder.work");
     if user_selectable && policy.allowed_tool_domains.contains("world") {
         let computer_drivers = state.computer_drivers.registrations().await;
-        capabilities.extend(crate::workshop_contract::world_driver_execution_capabilities(
-            &computer_drivers,
-            state.isolated_browser_available,
-        ));
+        capabilities.extend(
+            crate::workshop_contract::world_driver_execution_capabilities(
+                &computer_drivers,
+                state.isolated_browser_available,
+            ),
+        );
     }
     let response = ExecutionTargetProbeResponse {
         schema_version: EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION,
@@ -772,6 +779,113 @@ async fn describe_execution_target(
         policy_revision: policy.revision,
     };
 
+    let pairing = state.pairing.as_ref().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "LAN pairing is not enabled on this workshop".to_string(),
+        )
+    })?;
+    let payload_hash = payload_hash_hex(&response)
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    let accepted = delivery::accept_inbound_delivery(
+        pairing.identity().signing_key(),
+        &state.local_device_id,
+        &envelope,
+        &request_hash,
+    )
+    .map_err(internal)?;
+    let seq = registry::allocate_outbound_seq(&sender.phone_id).map_err(internal)?;
+    let response_envelope = sign_envelope(
+        pairing.identity().signing_key(),
+        &state.local_device_id,
+        &sender.phone_id,
+        seq,
+        MeshCapability::TaskResult,
+        &payload_hash,
+        chrono::Duration::seconds(DEFAULT_ENVELOPE_TTL_SECS),
+    );
+    let receipt = delivery::receipt_header_value(&accepted.receipt).map_err(internal)?;
+    Ok((
+        [("x-medousa-mesh-receipt", receipt)],
+        Json(MeshEnvelopedRequest {
+            envelope: response_envelope,
+            payload: response,
+        }),
+    )
+        .into_response())
+}
+
+async fn describe_active_work(
+    State(state): State<MeshApiState>,
+    Extension(principal): Extension<RequestPrincipal>,
+    Json(body): Json<MeshInboundBody<ActiveWorkInventoryProbeRequest>>,
+) -> Result<Response, (StatusCode, String)> {
+    require_pairing_principal(&principal)?;
+    let sender = authorize_remote_peer(&state, &principal)?;
+    let (envelope, request) = body.into_parts();
+    let envelope = envelope.ok_or_else(|| {
+        (
+            StatusCode::UNAUTHORIZED,
+            "signed mesh envelope required for active-work discovery".to_string(),
+        )
+    })?;
+    if envelope.sender_device_id.trim() != sender.phone_id.trim()
+        || envelope.recipient_device_id.trim() != state.local_device_id.trim()
+        || request.schema_version != ACTIVE_WORK_INVENTORY_SCHEMA_VERSION
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "active-work inventory identity or schema mismatch".to_string(),
+        ));
+    }
+    let request_hash =
+        payload_hash_hex(&request).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    verify_enveloped_payload(
+        &MeshEnvelopedRequest {
+            envelope: envelope.clone(),
+            payload: request.clone(),
+        },
+        &sender.phone_public_key,
+        &sender.phone_id,
+        &state.local_device_id,
+        MeshCapability::TaskRequest,
+        true,
+    )
+    .map_err(|error| (StatusCode::UNAUTHORIZED, error.to_string()))?;
+    let legacy_task_request_granted = record_has_capability(&sender, CAP_TASK_REQUEST);
+    let policy = state
+        .execution_policies
+        .policy_for_peer(
+            &sender.phone_id,
+            &sender.pairing_id,
+            legacy_task_request_granted,
+        )
+        .map_err(internal)?
+        .policy;
+    let capabilities = policy.advertised_execution_capabilities(chrono::Utc::now());
+    if !capabilities.contains("assistant.work") && !capabilities.contains("coder.work") {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "paired device cannot inspect workshop work".to_string(),
+        ));
+    }
+    let host = crate::daemon::coordination::local_coordination_host().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "active-work inventory is unavailable".to_string(),
+        )
+    })?;
+    let inventory = host
+        .active_work_for_owner(
+            crate::user_profiles::resolve_workshop_identity_user_id(),
+            request.include_terminal,
+        )
+        .await
+        .map_err(internal)?;
+    let response = ActiveWorkInventoryProbeResponse {
+        schema_version: ACTIVE_WORK_INVENTORY_SCHEMA_VERSION,
+        inventory,
+    };
     let pairing = state.pairing.as_ref().ok_or_else(|| {
         (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -1083,8 +1197,7 @@ fn resolve_task_execution_grant(
     if !requested_world_ids.is_empty() {
         requested_tool_domain_values.insert("world".to_string());
     }
-    let requested_tool_domain_values =
-        requested_tool_domain_values.into_iter().collect::<Vec<_>>();
+    let requested_tool_domain_values = requested_tool_domain_values.into_iter().collect::<Vec<_>>();
     let requested_tool_domains = requested_tool_domain_values
         .iter()
         .map(String::as_str)
@@ -1287,7 +1400,7 @@ mod tests {
     #[test]
     fn mesh_inventory_is_complete_and_peer_scoped() {
         let entries = mesh_surface().inventory().entries().collect::<Vec<_>>();
-        assert_eq!(entries.len(), 16);
+        assert_eq!(entries.len(), 17);
         assert!(entries.iter().all(|entry| {
             entry.group == RouteGroup::PeerExchange
                 && entry.required_capability == Some("peer.exchange")
@@ -1303,8 +1416,15 @@ mod tests {
         assert_eq!(outbox[0].body_limit, 1024);
         assert_eq!(outbox[1].method, "POST");
         assert_eq!(outbox[1].body_limit, 2 * 1024 * 1024);
+        assert!(
+            entries.iter().any(|entry| {
+                entry.method == "POST" && entry.path == "/v1/mesh/execution-target"
+            })
+        );
         assert!(entries.iter().any(|entry| {
-            entry.method == "POST" && entry.path == "/v1/mesh/execution-target"
+            entry.method == "POST"
+                && entry.path == "/v1/mesh/active-work"
+                && entry.body_limit == 16 * 1024
         }));
         assert!(entries.iter().any(|entry| {
             entry.method == "POST" && entry.path == "/v1/mesh/tasks/{work_id}/control"

@@ -6,6 +6,9 @@
 
 pub mod agent_mode_context;
 
+#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+pub mod active_work_tools;
+
 #[cfg(feature = "full-daemon")]
 include!("full_daemon.rs");
 

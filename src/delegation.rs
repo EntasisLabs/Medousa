@@ -760,6 +760,13 @@ pub struct DelegationService {
 }
 
 impl DelegationService {
+    pub async fn active_work_inventories(
+        &self,
+        include_terminal: bool,
+    ) -> Result<Vec<Value>, crate::delegated_task::DelegatedTaskError> {
+        self.host.active_work_inventories(include_terminal).await
+    }
+
     pub async fn authorized_targets(
         &self,
     ) -> Result<Vec<AuthorizedDelegationTarget>, crate::delegated_task::DelegatedTaskError> {
