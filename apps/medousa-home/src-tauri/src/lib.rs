@@ -994,6 +994,8 @@ fn run_home() {
             #[cfg(target_os = "ios")]
             live_voice::live_voice_start_native,
             #[cfg(target_os = "ios")]
+            live_voice::live_voice_prepare_native,
+            #[cfg(target_os = "ios")]
             live_voice::live_voice_drain_native_events,
             #[cfg(target_os = "ios")]
             live_voice::live_voice_ack_native_events,

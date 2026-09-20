@@ -17,10 +17,22 @@ pub async fn live_voice_append_transcript(
     attachment: Option<bool>,
     target_turn_id: Option<String>,
 ) -> Result<(), String> {
-    let client = embedded_state.client_if_active().await?
+    let client = embedded_state
+        .client_if_active()
+        .await?
         .ok_or_else(|| "Live transcript persistence requires the Personal workshop".to_string())?;
-    client.append_live_transcript(&session_id, &live_session_id, &item_id, &role, &text, attachment.unwrap_or(false), target_turn_id.as_deref())
-        .await.map_err(|error| error.to_string())
+    client
+        .append_live_transcript(
+            &session_id,
+            &live_session_id,
+            &item_id,
+            &role,
+            &text,
+            attachment.unwrap_or(false),
+            target_turn_id.as_deref(),
+        )
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -73,7 +85,12 @@ pub async fn live_voice_create_session(
     }
 
     let context = match embedded_state.client_if_active().await? {
-        Some(client) => Some(client.live_context(session_id).await.map_err(|error| error.to_string())?),
+        Some(client) => Some(
+            client
+                .live_context(session_id)
+                .await
+                .map_err(|error| error.to_string())?,
+        ),
         None => None,
     };
     let use_live = match protocol.as_deref().unwrap_or("realtime") {
@@ -89,10 +106,18 @@ pub async fn live_voice_create_session(
         format!("You are Medousa in the user's {workshop_name} workshop. Be direct and conversational. Use hand_off_to_medousa for requests requiring tools or durable work; never invent execution results.")
     });
     instructions.push_str(PERSONAL_CONTEXT_HANDOFF);
-    let seed_history: Vec<LiveSeedMessage> = context.map(|packet| packet.recent_history.into_iter().map(|turn| LiveSeedMessage {
-        role: turn.role,
-        content: turn.content,
-    }).collect()).unwrap_or_default();
+    let seed_history: Vec<LiveSeedMessage> = context
+        .map(|packet| {
+            packet
+                .recent_history
+                .into_iter()
+                .map(|turn| LiveSeedMessage {
+                    role: turn.role,
+                    content: turn.content,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
     let api_key =
         tokio::task::spawn_blocking(|| crate::integration_secrets::load_provider_secret("openai"))
@@ -102,8 +127,10 @@ pub async fn live_voice_create_session(
                 "Configure an OpenAI API key on this iPhone to use Medousa Live".to_string()
             })?;
 
-    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(30))
-        .build().map_err(|error| error.to_string())?;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|error| error.to_string())?;
     let request = if use_live {
         client.post(OPENAI_LIVE_SESSIONS_URL).bearer_auth(&api_key).json(&serde_json::json!({
             "session": {
@@ -173,7 +200,8 @@ pub async fn live_voice_create_session(
                 ),
         )
     };
-    let response = request.send()
+    let response = request
+        .send()
         .await
         .map_err(|error| format!("Could not reach OpenAI Live from this iPhone: {error}"))?;
     let status = response.status();
@@ -211,12 +239,19 @@ pub async fn live_voice_create_session(
     let (live_session_id, answer_sdp) = if use_live {
         let body: serde_json::Value = serde_json::from_str(&answer_body)
             .map_err(|_| "OpenAI Live returned an invalid session response".to_string())?;
-        let id = body.pointer("/session/id").and_then(serde_json::Value::as_str)
-            .filter(|id| !id.is_empty()).ok_or("OpenAI Live returned no session ID")?;
-        let sdp = body.pointer("/transport/sdp").and_then(serde_json::Value::as_str)
+        let id = body
+            .pointer("/session/id")
+            .and_then(serde_json::Value::as_str)
+            .filter(|id| !id.is_empty())
+            .ok_or("OpenAI Live returned no session ID")?;
+        let sdp = body
+            .pointer("/transport/sdp")
+            .and_then(serde_json::Value::as_str)
             .ok_or("OpenAI Live returned no audio answer")?;
         (id.to_string(), sdp.to_string())
-    } else { (live_session_id, answer_body) };
+    } else {
+        (live_session_id, answer_body)
+    };
     if !answer_sdp.trim().starts_with("v=0") {
         return Err("OpenAI Live returned an incomplete session response".into());
     }
@@ -271,23 +306,39 @@ pub async fn live_voice_start_native(
     if workshop_name.is_empty() || session_id.is_empty() {
         return Err("workshopName and sessionId are required".into());
     }
-    let client = embedded_state.client_if_active().await?
+    let client = embedded_state
+        .client_if_active()
+        .await?
         .ok_or_else(|| "Native Live currently requires the Personal workshop".to_string())?;
-    let context = client.live_context(session_id).await.map_err(|error| error.to_string())?;
-    let api_key = tokio::task::spawn_blocking(|| {
-        crate::integration_secrets::load_provider_secret("openai")
-    }).await.map_err(|_| "Could not read the iPhone's OpenAI credential".to_string())?
-      .ok_or_else(|| "Configure an OpenAI API key on this iPhone to use Medousa Live".to_string())?;
+    let context = client
+        .live_context(session_id)
+        .await
+        .map_err(|error| error.to_string())?;
+    let api_key =
+        tokio::task::spawn_blocking(|| crate::integration_secrets::load_provider_secret("openai"))
+            .await
+            .map_err(|_| "Could not read the iPhone's OpenAI credential".to_string())?
+            .ok_or_else(|| {
+                "Configure an OpenAI API key on this iPhone to use Medousa Live".to_string()
+            })?;
 
     let mut instructions = context.voice_instructions;
     instructions.push_str(PERSONAL_CONTEXT_HANDOFF);
-    let input = context.recent_history.into_iter().map(|turn| {
-        let content_type = if turn.role == "user" { "input_text" } else { "output_text" };
-        serde_json::json!({
-            "role": turn.role,
-            "content": [{ "type": content_type, "text": turn.content }]
+    let input = context
+        .recent_history
+        .into_iter()
+        .map(|turn| {
+            let content_type = if turn.role == "user" {
+                "input_text"
+            } else {
+                "output_text"
+            };
+            serde_json::json!({
+                "role": turn.role,
+                "content": [{ "type": content_type, "text": turn.content }]
+            })
         })
-    }).collect::<Vec<_>>();
+        .collect::<Vec<_>>();
     let configuration = serde_json::json!({
         "model": "gpt-live-1",
         "instructions": instructions,
@@ -300,6 +351,69 @@ pub async fn live_voice_start_native(
         "input": input
     });
     ios::start_native(NativeLiveBootstrap {
+        workshop_name,
+        session_id,
+        authorization: &api_key,
+        configuration,
+    })
+}
+
+#[tauri::command]
+pub async fn live_voice_prepare_native(
+    embedded_state: tauri::State<'_, crate::embedded_daemon::EmbeddedDaemonState>,
+    workshop_name: String,
+    session_id: String,
+) -> Result<bool, String> {
+    let workshop_name = workshop_name.trim();
+    let session_id = session_id.trim();
+    if workshop_name.is_empty() || session_id.is_empty() {
+        return Err("workshopName and sessionId are required".into());
+    }
+    let client = embedded_state
+        .client_if_active()
+        .await?
+        .ok_or_else(|| "Background Live currently requires the Personal workshop".to_string())?;
+    let context = client
+        .live_context(session_id)
+        .await
+        .map_err(|error| error.to_string())?;
+    let api_key =
+        tokio::task::spawn_blocking(|| crate::integration_secrets::load_provider_secret("openai"))
+            .await
+            .map_err(|_| "Could not read the iPhone's OpenAI credential".to_string())?
+            .ok_or_else(|| {
+                "Configure an OpenAI API key on this iPhone to use Medousa Live".to_string()
+            })?;
+
+    let mut instructions = context.voice_instructions;
+    instructions.push_str(PERSONAL_CONTEXT_HANDOFF);
+    let input = context
+        .recent_history
+        .into_iter()
+        .map(|turn| {
+            let content_type = if turn.role == "user" {
+                "input_text"
+            } else {
+                "output_text"
+            };
+            serde_json::json!({
+                "role": turn.role,
+                "content": [{ "type": content_type, "text": turn.content }]
+            })
+        })
+        .collect::<Vec<_>>();
+    let configuration = serde_json::json!({
+        "model": "gpt-live-1",
+        "instructions": instructions,
+        "delegation": { "type": "client" },
+        "store": false,
+        "audio": {
+            "format": { "type": "audio/pcm", "rate": 24_000 },
+            "output": { "voice": "marin" }
+        },
+        "input": input
+    });
+    ios::prepare_native(NativeLiveBootstrap {
         workshop_name,
         session_id,
         authorization: &api_key,
@@ -363,7 +477,8 @@ pub struct CarPlayLiveExchange {
 pub fn live_voice_carplay_exchange(
     snapshot: CarPlayLiveSnapshot,
 ) -> Result<CarPlayLiveExchange, String> {
-    if snapshot.owner.is_empty() || snapshot.owner.len() > 512
+    if snapshot.owner.is_empty()
+        || snapshot.owner.len() > 512
         || !matches!(
             snapshot.phase.as_str(),
             "idle" | "connecting" | "listening" | "thinking" | "speaking" | "muted" | "failed"
@@ -376,13 +491,17 @@ pub fn live_voice_carplay_exchange(
 
 #[cfg(target_os = "ios")]
 mod ios {
-    use super::{CarPlayLiveExchange, CarPlayLiveSnapshot, LiveVoiceStartRequest, LiveVoiceStatus, NativeLiveBootstrap};
+    use super::{
+        CarPlayLiveExchange, CarPlayLiveSnapshot, LiveVoiceStartRequest, LiveVoiceStatus,
+        NativeLiveBootstrap,
+    };
     use std::ffi::{CStr, CString};
     use std::os::raw::c_char;
 
     extern "C" {
         fn medousa_live_voice_start(json: *const c_char) -> *mut c_char;
         fn medousa_live_voice_start_native(json: *const c_char) -> *mut c_char;
+        fn medousa_live_voice_prepare_native(json: *const c_char) -> bool;
         fn medousa_live_voice_set_muted(muted: bool) -> *mut c_char;
         fn medousa_live_voice_stop() -> *mut c_char;
         fn medousa_live_voice_status() -> *mut c_char;
@@ -417,6 +536,13 @@ mod ios {
         decode(unsafe { medousa_live_voice_start_native(json.as_ptr()) })
     }
 
+    pub fn prepare_native(request: NativeLiveBootstrap<'_>) -> Result<bool, String> {
+        let json = serde_json::to_string(&request).map_err(|error| error.to_string())?;
+        let json =
+            CString::new(json).map_err(|_| "native Live preparation contained a null byte")?;
+        Ok(unsafe { medousa_live_voice_prepare_native(json.as_ptr()) })
+    }
+
     pub fn set_muted(muted: bool) -> Result<LiveVoiceStatus, String> {
         decode(unsafe { medousa_live_voice_set_muted(muted) })
     }
@@ -439,8 +565,7 @@ mod ios {
             medousa_live_activity_free_string(raw);
             json
         };
-        serde_json::from_str(&json)
-            .map_err(|error| format!("decode native Live events: {error}"))
+        serde_json::from_str(&json).map_err(|error| format!("decode native Live events: {error}"))
     }
 
     pub fn ack_events(through_sequence: u64) -> Result<(), String> {
@@ -467,9 +592,7 @@ mod ios {
         }
     }
 
-    pub fn carplay_exchange(
-        snapshot: CarPlayLiveSnapshot,
-    ) -> Result<CarPlayLiveExchange, String> {
+    pub fn carplay_exchange(snapshot: CarPlayLiveSnapshot) -> Result<CarPlayLiveExchange, String> {
         let json = serde_json::to_string(&snapshot).map_err(|error| error.to_string())?;
         let json = CString::new(json).map_err(|_| "Invalid CarPlay Live state")?;
         let raw = unsafe { medousa_carplay_live_exchange(json.as_ptr()) };

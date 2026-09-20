@@ -15,15 +15,61 @@
   import { liveWorkSnapshot, settledLiveWorkSnapshot, waitForLiveWork } from "$lib/liveWorkResult";
   import {
     connectLiveVoice,
+    adoptNativeLiveVoice,
     disconnectLiveVoice,
     liveVoiceState,
     hearLatestLiveResult,
+    liveVoicePrepareNative,
+    liveVoiceStatus,
     setLiveVoiceMuted,
   } from "$lib/liveVoice";
 
   let busy = $state(false);
   let localError = $state<string | null>(null);
   let ownerEpoch = $state<number | null>(null);
+
+  $effect(() => {
+    if (!isTauriIos() || workshops.loading || workshops.switching) return;
+    const sessionId = chat.sessionId.trim();
+    const workshopName = workshops.activeLabel || "Medousa";
+    if (!sessionId) return;
+    // Keep the current conversation ready for a background widget launch.
+    // The bootstrap stays in native process memory and dies on force quit.
+    void liveVoicePrepareNative(workshopName, sessionId).catch(() => undefined);
+  });
+
+  $effect(() => {
+    if (!isTauriIos()) return;
+    let mounted = true;
+    let adopting = false;
+    const adoptWidgetSession = async () => {
+      if (!mounted || adopting || $liveVoiceState.active) return;
+      adopting = true;
+      try {
+        const status = await liveVoiceStatus();
+        if (!mounted || !status.active || !status.sessionId) return;
+        const workshopEpoch = chat.workshopEpoch;
+        ownerEpoch = workshopEpoch;
+        await adoptNativeLiveVoice(status, async (request, transcript, signal, onAccepted) => {
+          if (chat.sessionId !== status.sessionId || chat.workshopEpoch !== workshopEpoch) {
+            throw new Error("Return to the conversation where Live started before requesting work.");
+          }
+          return handoffToMedousa(request, transcript, signal, onAccepted);
+        }, async () => {
+          if (chat.sessionId === status.sessionId && chat.workshopEpoch === workshopEpoch && !chat.isStreaming) {
+            await chat.reloadCurrentSession({ notice: false });
+          }
+        });
+      } catch (error) {
+        if (mounted) localError = error instanceof Error ? error.message : String(error);
+      } finally {
+        adopting = false;
+      }
+    };
+    void adoptWidgetSession();
+    const timer = window.setInterval(() => { void adoptWidgetSession(); }, 500);
+    return () => { mounted = false; window.clearInterval(timer); };
+  });
 
   $effect(() => {
     if (!isTauriIos()) return;

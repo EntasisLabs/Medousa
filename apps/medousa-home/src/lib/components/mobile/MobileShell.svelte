@@ -34,6 +34,7 @@
     syncLiveActivity,
   } from "$lib/liveActivity";
   import { bumpHomeWidgetSync, syncHomeWidget } from "$lib/homeWidget";
+  import { liveVoiceState } from "$lib/liveVoice";
   import { setMobileBadge } from "$lib/mobileBadge";
   import { isTauriIos } from "$lib/platform";
   import { isTauri, updateTrayBlockedCount } from "$lib/window";
@@ -115,6 +116,9 @@
 
   function syncLiveActivityNow(force = false) {
     if (!isTauriIos() || !settings.liveActivityEnabled || daemonHealth === null) return;
+    // Native Live owns the Activity while voice is active. A foreground shell
+    // refresh must not replace its mute/end controls with the workspace pulse.
+    if ($liveVoiceState.active || $liveVoiceState.phase === "connecting") return;
     void syncLiveActivity(liveActivityPayload(), { force });
   }
 

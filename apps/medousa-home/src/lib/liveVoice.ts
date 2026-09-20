@@ -232,6 +232,45 @@ async function connectNativeLiveVoice(workshopName: string, sessionId: string): 
   throw new Error("Native Live did not confirm startup");
 }
 
+/** Adopt a native session that was started outside the webview (for example by a widget). */
+export async function adoptNativeLiveVoice(
+  status: LiveVoiceStatus,
+  onHandoff?: LiveHandoffHandler,
+  onTranscriptSaved?: () => Promise<void>,
+): Promise<boolean> {
+  if (!isTauriIos() || !status.active || !status.sessionId || transportMode === "native") return false;
+
+  closeMediaTransport();
+  workAbort = new AbortController();
+  protocol = "live";
+  transportMode = "native";
+  timeline = new LiveTimeline();
+  lastDelegationOffset = -1;
+  delegatedRequests.clear();
+  transcriptBindings = [];
+  coordinator = new LiveDelegationCoordinator();
+  latestResult = null;
+  handoffHandler = onHandoff ?? null;
+  transcriptSavedHandler = onTranscriptSaved ?? null;
+  sessionReady = true;
+  updateClientState({
+    available: true,
+    active: true,
+    muted: status.muted,
+    phase: status.phase,
+    workshopName: status.workshopName,
+    sessionId: status.sessionId,
+    liveSessionId: status.liveSessionId ?? "native-live",
+    transcript: [],
+    workStatus: null,
+    resultAvailable: false,
+    error: status.error ?? null,
+  });
+  nativeStatusTimer = window.setInterval(() => { void pollNativeLiveVoice(); }, 500);
+  await pollNativeLiveVoice();
+  return true;
+}
+
 async function handleLiveDelegation(event: Record<string, unknown>) {
   const delegation = liveDelegation(event);
   if (!delegation || handledToolCalls.has(delegation.id)) return;
@@ -685,6 +724,14 @@ export async function liveVoiceStartNative(
 ): Promise<LiveVoiceStatus> {
   if (!isTauriIos()) return unavailable;
   return invoke<LiveVoiceStatus>("live_voice_start_native", { workshopName, sessionId });
+}
+
+export async function liveVoicePrepareNative(
+  workshopName: string,
+  sessionId: string,
+): Promise<boolean> {
+  if (!isTauriIos()) return false;
+  return invoke<boolean>("live_voice_prepare_native", { workshopName, sessionId });
 }
 
 export async function liveVoiceSetMuted(muted: boolean): Promise<LiveVoiceStatus> {

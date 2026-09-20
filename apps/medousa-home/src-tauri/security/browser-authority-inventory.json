@@ -375,6 +375,7 @@
     "live_voice::live_voice_carplay_exchange",
     "live_voice::live_voice_create_session",
     "live_voice::live_voice_drain_native_events",
+    "live_voice::live_voice_prepare_native",
     "live_voice::live_voice_send_native_event",
     "live_voice::live_voice_set_muted",
     "live_voice::live_voice_start",

@@ -21,6 +21,8 @@
   import { executionTargets } from "$lib/stores/executionTargets.svelte";
   import { voicePresets } from "$lib/stores/voicePresets.svelte";
   import { switchMobileTab } from "$lib/mobileNavigation";
+  import { pendingComposeLaunch } from "$lib/composeLaunch";
+  import { layout } from "$lib/runtime/layout.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { createTurnTicket, getSessionAgentMode, getSessionCodeBinding } from "$lib/daemon";
   import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
@@ -45,6 +47,35 @@
     };
     window.addEventListener("medousa-code-project-agent-setup", sendToSetup);
     return () => window.removeEventListener("medousa-code-project-agent-setup", sendToSetup);
+  });
+
+  $effect(() => {
+    const request = $pendingComposeLaunch;
+    if (!request) return;
+    pendingComposeLaunch.set(null);
+    void (async () => {
+      switchMobileTab("chat");
+      if (request.action === "new") {
+        await chat.newSession();
+        window.dispatchEvent(new CustomEvent("medousa-chat-composer-focus"));
+        return;
+      }
+      if (request.action === "notes") {
+        switchMobileTab("notes");
+        return;
+      }
+      if (request.action === "calendar") {
+        layout.openMore("calendar");
+        return;
+      }
+      if (request.action === "projects") {
+        switchMobileTab("home");
+        return;
+      }
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("medousa-compose-action", { detail: request }));
+      });
+    })();
   });
 
   function parseDaemonAskPrompt(value: string): string | null {

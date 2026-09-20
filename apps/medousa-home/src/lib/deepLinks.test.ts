@@ -52,6 +52,16 @@ describe("deepLinks", () => {
     expect(parseDeepLink("medousa://ask?request=not-a-receipt")).toBe(null);
   });
 
+  it("parses widget composer actions", () => {
+    const request = "550e8400-e29b-41d4-a716-446655440000";
+    for (const action of ["new", "camera", "notes", "photos", "calendar", "projects"] as const) {
+      expect(parseDeepLink(`medousa://compose?action=${action}&request=${request}`)).toEqual({
+        kind: "compose", action, requestId: request,
+      });
+    }
+    expect(parseDeepLink(`medousa://compose?action=files&request=${request}`)).toBeNull();
+  });
+
   it("round-trips undertaking locations", () => {
     const url = undertakingLocationDeepLinkUrl({
       workId: "work-1",

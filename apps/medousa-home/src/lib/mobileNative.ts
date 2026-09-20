@@ -7,6 +7,7 @@ import { parsePairQrUrl } from "$lib/utils/pairingUrl";
 import { isTauri } from "$lib/window";
 import { invoke } from "@tauri-apps/api/core";
 import { queueLiveLaunch } from "$lib/liveLaunch";
+import { queueComposeLaunch } from "$lib/composeLaunch";
 
 export type OpenWorkHandler = (cardId: string) => void | Promise<void>;
 export type OpenVaultNoteHandler = (notePath: string) => void | Promise<void>;
@@ -55,6 +56,10 @@ function handleUrls(urls: string[]) {
     const link = parseDeepLink(url);
     if (link?.kind === "live") {
       queueLiveLaunch(link);
+      return;
+    }
+    if (link?.kind === "compose") {
+      queueComposeLaunch(link);
       return;
     }
     if (link?.kind === "work") {

@@ -29,12 +29,19 @@ export type LiveDeepLink = {
   mode: "new" | "resume";
 };
 
+export type ComposeDeepLink = {
+  kind: "compose";
+  action: "new" | "camera" | "notes" | "photos" | "calendar" | "projects";
+  requestId: string;
+};
+
 export type DeepLink =
   | WorkDeepLink
   | VaultDeepLink
   | UndertakingLocationDeepLink
   | AskDeepLink
-  | LiveDeepLink;
+  | LiveDeepLink
+  | ComposeDeepLink;
 
 const WORK_PATH = /^\/work\/([^/?#]+)\/?$/i;
 
@@ -91,6 +98,14 @@ export function parseDeepLink(raw: string): DeepLink | null {
           return null;
         }
         return { kind: "ask", requestId };
+      }
+      if (host === "compose") {
+        const requestId = url.searchParams.get("request")?.trim().toLowerCase() ?? "";
+        const action = url.searchParams.get("action");
+        if (pathSegment || url.hash || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestId)
+          || (action !== "new" && action !== "camera" && action !== "notes" && action !== "photos"
+            && action !== "calendar" && action !== "projects")) return null;
+        return { kind: "compose", action, requestId };
       }
       if (host === "work" && pathSegment) {
         return { kind: "work", cardId: decodeURIComponent(pathSegment) };

@@ -38,6 +38,7 @@ final class MedousaLiveVoiceSessionManager {
     private var nativeAudio: MedousaLiveNativeAudioEngine?
     private var nativeTransport: MedousaLiveSocketTransport?
     private var pendingNativeBootstrap: (authorization: String, configuration: [String: Any])?
+    private var preparedNativeBootstrap: (workshopName: String, sessionId: String, authorization: String, configuration: [String: Any])?
     private struct PendingNativeEvent {
         let sequence: UInt64
         let json: String
@@ -61,6 +62,20 @@ final class MedousaLiveVoiceSessionManager {
                 Task { @MainActor in manager.consumeLiveControlCommand() }
             },
             MedousaLiveControlCommand.notificationName as CFString,
+            nil,
+            .deliverImmediately
+        )
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            Unmanaged.passUnretained(self).toOpaque(),
+            { _, observer, _, _, _ in
+                guard let observer else { return }
+                let manager = Unmanaged<MedousaLiveVoiceSessionManager>
+                    .fromOpaque(observer)
+                    .takeUnretainedValue()
+                Task { @MainActor in manager.startPreparedNativeSession() }
+            },
+            "com.entasislabs.medousa-home.live.start" as CFString,
             nil,
             .deliverImmediately
         )
@@ -147,6 +162,30 @@ final class MedousaLiveVoiceSessionManager {
         let status = start(json: requestJson)
         if active { beginPendingNativeTransport() }
         return status
+    }
+
+    func prepareNative(json: String) -> Bool {
+        guard let data = json.data(using: .utf8),
+              let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let workshopName = payload["workshopName"] as? String,
+              let sessionId = payload["sessionId"] as? String,
+              let authorization = payload["authorization"] as? String,
+              let configuration = payload["configuration"] as? [String: Any],
+              !workshopName.isEmpty, !sessionId.isEmpty, !authorization.isEmpty
+        else { return false }
+        preparedNativeBootstrap = (workshopName, sessionId, authorization, configuration)
+        return true
+    }
+
+    private func startPreparedNativeSession() {
+        guard !active, let prepared = preparedNativeBootstrap else { return }
+        guard let data = try? JSONSerialization.data(withJSONObject: [
+            "workshopName": prepared.workshopName,
+            "sessionId": prepared.sessionId,
+            "authorization": prepared.authorization,
+            "configuration": prepared.configuration,
+        ]), let json = String(data: data, encoding: .utf8) else { return }
+        _ = startNative(json: json)
     }
 
     func setMuted(_ nextMuted: Bool) -> String {
