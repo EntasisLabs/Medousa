@@ -16,6 +16,7 @@
     "type": "string",
     "enum": [
       "general",
+      "assistant",
       "teacher",
       "instant",
       "coder"
@@ -73,6 +74,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -101,6 +103,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -287,6 +290,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -2148,6 +2152,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -2305,6 +2310,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -2581,6 +2587,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -4965,6 +4972,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -5446,6 +5454,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -13451,6 +13460,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -18879,6 +18889,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -19787,6 +19798,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -21615,6 +21627,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -27227,6 +27240,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"

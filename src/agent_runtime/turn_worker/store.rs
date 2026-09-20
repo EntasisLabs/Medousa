@@ -133,7 +133,7 @@ pub struct TurnWorkRecord {
     pub max_tool_rounds: usize,
     pub delivery_target: Option<StoredDeliveryTarget>,
     pub parent_user_prompt: Option<String>,
-    /// Snapshotted host agent mode (`general` / `teacher` / `instant` / `coder`) so resume stays in-lane.
+    /// Snapshotted host agent mode (`general` / `assistant` / `teacher` / `instant` / `coder`) so resume stays in-lane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_agent_mode: Option<String>,
     /// Snapshotted Forge work id when the host spawned from Coder.

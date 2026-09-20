@@ -12,7 +12,7 @@ Bots, modes, and archetypes do different jobs:
 | Control | What it changes |
 |---------|-----------------|
 | **Bot** | Who you are working with and which durable memory continues |
-| **Mode** | How this turn is handled: General, Teacher, Instant, or Coder |
+| **Mode** | How this turn is handled: General, Assistant, Teacher, Instant, or Coder |
 | **Archetype** | Reusable expertise and tool boundaries |
 
 Changing a mode does not change the Bot. A Bot can mentor in Teacher mode,

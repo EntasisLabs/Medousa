@@ -76,6 +76,7 @@ pub fn worker_system_prompt_for_parent_mode(
 pub fn host_system_prompt_for_parent_mode(parent_agent_mode: Option<&str>) -> String {
     let policy_mode = match parent_agent_mode {
         Some("coder") => crate::agent_runtime::prompt_policy::SttpPolicyMode::CoderWork,
+        Some("assistant") => crate::agent_runtime::prompt_policy::SttpPolicyMode::Assistant,
         Some("teacher") => crate::agent_runtime::prompt_policy::SttpPolicyMode::Teacher,
         _ => crate::agent_runtime::prompt_policy::SttpPolicyMode::General,
     };

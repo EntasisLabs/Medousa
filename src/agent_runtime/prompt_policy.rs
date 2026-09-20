@@ -22,6 +22,7 @@ fn chars_to_tokens(chars: usize) -> u32 {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SttpPolicyMode {
     General,
+    Assistant,
     Teacher,
     CoderSetup,
     CoderWork,
@@ -31,6 +32,7 @@ impl SttpPolicyMode {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::General => "general",
+            Self::Assistant => "assistant",
             Self::Teacher => "teacher",
             Self::CoderSetup => "coder_setup",
             Self::CoderWork => "coder_work",
@@ -291,6 +293,18 @@ fn mode_slice(mode: SttpPolicyMode) -> Result<SttpContentSlice, SttpDocumentBuil
                 "m3_routing(.96)": "specialize only when the outcome benefits"
             }),
         ),
+        SttpPolicyMode::Assistant => SttpContentSlice::new().field(
+            mode_field(mode),
+            0.99,
+            json!({
+                "m1_world(.99)": "conversation <-> apps <-> agents <-> workshops <-> environment",
+                "m2_ownership(.99)": "own the principal's accepted outcome across turns, devices, and authorized compute until terminal delivery or an explicit blocker",
+                "m3_delegation(.99)": "choose authorized execution by capability and fit; preserve exact context, work, authority, and receipt bindings",
+                "m4_continuation(.99)": "accepted work may continue after the conversation or Live session ends; wake from durable events instead of polling theater",
+                "m5_control(.99)": "capability never expands authority; consequential actions, new grants, publishing, deployment, and spending retain their approval boundaries",
+                "m6_reporting(.98)": "stay quiet while work is merely progressing; return verified outcomes, meaningful blockers, or decisions the principal must make"
+            }),
+        ),
         SttpPolicyMode::Teacher => SttpContentSlice::new().field(
             mode_field(mode),
             0.99,
@@ -422,6 +436,7 @@ fn presentation_slice() -> Result<SttpContentSlice, SttpDocumentBuildError> {
 fn mode_field(mode: SttpPolicyMode) -> &'static str {
     match mode {
         SttpPolicyMode::General => "p2_mode_general",
+        SttpPolicyMode::Assistant => "p2_mode_assistant",
         SttpPolicyMode::Teacher => "p2_mode_teacher",
         SttpPolicyMode::CoderSetup => "p2_mode_coder_setup",
         SttpPolicyMode::CoderWork => "p2_mode_coder_work",
@@ -478,10 +493,12 @@ fn validate_strict_policy(rendered: &str) -> Result<(), SttpPolicyCompileError> 
 mod tests {
     use super::*;
 
-    fn selections() -> [SttpPolicySelection; 8] {
+    fn selections() -> [SttpPolicySelection; 10] {
         [
             SttpPolicySelection::new(SttpPolicyMode::General, SttpPolicyActor::Host),
             SttpPolicySelection::new(SttpPolicyMode::General, SttpPolicyActor::Worker),
+            SttpPolicySelection::new(SttpPolicyMode::Assistant, SttpPolicyActor::Host),
+            SttpPolicySelection::new(SttpPolicyMode::Assistant, SttpPolicyActor::Worker),
             SttpPolicySelection::new(SttpPolicyMode::Teacher, SttpPolicyActor::Host),
             SttpPolicySelection::new(SttpPolicyMode::Teacher, SttpPolicyActor::Worker),
             SttpPolicySelection::new(SttpPolicyMode::CoderSetup, SttpPolicyActor::Host),

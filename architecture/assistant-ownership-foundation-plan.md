@@ -12,6 +12,21 @@ It is not a second personality, a replacement runtime, or an always-running mode
 Existing agent turns do the reasoning; existing execution authorities do the work.
 Closing Live ends audio transport, not ownership of accepted work.
 
+Assistant is a first-class user-selected mode and a strict behavioral superset of
+General, not a second runtime. It keeps the same Medousa identity, memory, chat,
+and host-orchestrated lane while adding an ownership policy and, as the following
+slices land, durable coordination tools. General retains its existing lower-
+autonomy contract. Selecting Assistant never creates a grant or bypasses an
+approval boundary; it enables Medousa to use authority the principal and target
+workshops have already made available.
+
+The existing mode picker is the sole routine explanation surface: one concise
+description establishes that Assistant owns work across agents, workshops, and
+time. The composer, transcript, Live UI, activity feed, and notifications should
+otherwise behave normally. Do not add persistent autonomy banners, warning
+chrome, or repeated permission copy. Concrete approvals and blockers remain
+visible at the moment they matter.
+
 The first foundation must let Medousa initiate external-agent work, adopt existing
 work, retain responsibility, wake later, and return an attributable outcome.
 The mobile client controls and presents this world; filesystem and execution
@@ -76,6 +91,13 @@ ACP spawn adapter simply because of its name.
     substitute another host, agent, or model contrary to the requested constraints.
 
 ## Implementation progress
+
+The first product-facing seam is the Assistant mode contract itself. It reuses
+General's host lane, context path, identity, and completion scheduler while
+selecting an explicit ownership policy. Full and embedded daemons expose the same
+mode and Home explains it only in the existing picker. This establishes the
+authority boundary without claiming that remote ACP creation or autonomous
+chains are already available; those arrive through the gated slices below.
 
 The General host now registers a `peers` domain for conversation-bound local
 agent discovery and immutable proposals. It derives identity, bound Forge work,
@@ -336,13 +358,16 @@ notification/channel result; invitation UX follows after ownership is reliable.
 
 ## Implementation sequence and gates
 
-### Slice 0 — lock contracts and seams
+### Slice 0 — lock contracts, mode, and seams
 
 Trace services beneath ACP handlers, worker ownership, scheduling admission,
 shared-room authorization, and delivery. Write contract tests for unavailable
 adapters, identity scope, and existing behavior. Decide reuse versus additive
-records from actual persistence semantics. Exit: reviewed typed contracts and a
-small end-to-end fake-adapter harness; no new agent model loop.
+records from actual persistence semantics. Establish Assistant as a real General
+superset in the existing mode registry, prompt policy, resume path, embedded
+runtime, and picker without adding a second model loop or repeated UI warnings.
+Exit: reviewed typed contracts, a small end-to-end fake-adapter harness, and a
+mode selection that preserves existing General behavior.
 
 ### Slice 1 — channels and external peers
 
@@ -379,8 +404,9 @@ dumping orchestration prompts into chat. Add topic-bearing Live re-entry. Exit:
 accepting an invitation resumes verified context; ending Live never ends accepted
 work; reconnecting never narrates an obsolete outcome as current.
 
-No giant mode UI or broad autonomy toggle before these gates. Capability and
-ownership limits should be inspectable before Assistant is presented as ready.
+No giant mode UI or global autonomy toggle. The picker describes the ownership
+posture; exact grants, assignment approvals, and target policy remain inspectable
+at their existing decision boundaries as each capability ships.
 
 ## Verification and rollout
 

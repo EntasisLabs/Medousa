@@ -121,6 +121,13 @@ pub fn resolve_agent_mode(
             completion_profile: TurnCompletionProfile::HostScheduler,
             coder_phase: None,
         }),
+        AgentModeId::Assistant => Ok(ResolvedAgentMode {
+            id: AgentModeId::Assistant,
+            contract_revision: "assistant-v1",
+            execution_lane: ModeExecutionLane::HostOrchestrated,
+            completion_profile: TurnCompletionProfile::HostScheduler,
+            coder_phase: None,
+        }),
         AgentModeId::Teacher => Ok(ResolvedAgentMode {
             id: AgentModeId::Teacher,
             contract_revision: "teacher-v1",
@@ -156,6 +163,13 @@ pub fn list_agent_modes() -> AgentModeListResponse {
                 unavailable_reason: None,
             },
             AgentModeAvailability {
+                mode: AgentModeId::Assistant,
+                label: "Assistant".to_string(),
+                available: true,
+                contract_revision: Some("assistant-v1".to_string()),
+                unavailable_reason: None,
+            },
+            AgentModeAvailability {
                 mode: AgentModeId::Teacher,
                 label: "Teacher".to_string(),
                 available: true,
@@ -186,6 +200,7 @@ pub fn list_agent_modes() -> AgentModeListResponse {
 pub fn compiled_system_policy_for_mode(mode: &ResolvedAgentMode) -> CompiledSttpPolicy {
     let policy_mode = match (mode.id, mode.coder_phase) {
         (AgentModeId::General | AgentModeId::Instant, _) => SttpPolicyMode::General,
+        (AgentModeId::Assistant, _) => SttpPolicyMode::Assistant,
         (AgentModeId::Teacher, _) => SttpPolicyMode::Teacher,
         (AgentModeId::Coder, Some(CoderRuntimePhase::Work)) => SttpPolicyMode::CoderWork,
         (AgentModeId::Coder, _) => SttpPolicyMode::CoderSetup,
@@ -232,6 +247,24 @@ mod tests {
     }
 
     #[test]
+    fn assistant_is_a_host_orchestrated_general_superset_contract() {
+        let mode = resolve_agent_mode(AgentModeId::Assistant).expect("assistant mode");
+        assert_eq!(mode.contract_revision, "assistant-v1");
+        assert_eq!(mode.execution_lane, ModeExecutionLane::HostOrchestrated);
+        assert_eq!(
+            mode.completion_profile,
+            TurnCompletionProfile::HostScheduler
+        );
+        assert_eq!(mode.coder_phase, None);
+
+        let prompt = system_prompt_for_mode(&mode);
+        assert!(prompt.contains("p1_core(.99)"));
+        assert!(prompt.contains("p2_mode_assistant(.99)"));
+        assert!(prompt.contains("own the principal's accepted outcome"));
+        assert!(prompt.contains("capability never expands authority"));
+    }
+
+    #[test]
     fn instant_reuses_general_runtime_contract() {
         let mode = resolve_agent_mode(AgentModeId::Instant).expect("instant mode");
         assert_eq!(mode.id, AgentModeId::Instant);
@@ -273,14 +306,12 @@ mod tests {
     #[test]
     fn registry_reports_all_modes_available() {
         let registry = list_agent_modes();
-        assert_eq!(registry.modes.len(), 4);
-        assert!(registry.modes[0].available);
-        assert!(registry.modes[1].available);
-        assert!(registry.modes[2].available);
-        assert!(registry.modes[3].available);
-        assert_eq!(registry.modes[1].mode, AgentModeId::Teacher);
-        assert_eq!(registry.modes[2].mode, AgentModeId::Instant);
-        assert_eq!(registry.modes[3].mode, AgentModeId::Coder);
+        assert_eq!(registry.modes.len(), 5);
+        assert!(registry.modes.iter().all(|mode| mode.available));
+        assert_eq!(registry.modes[1].mode, AgentModeId::Assistant);
+        assert_eq!(registry.modes[2].mode, AgentModeId::Teacher);
+        assert_eq!(registry.modes[3].mode, AgentModeId::Instant);
+        assert_eq!(registry.modes[4].mode, AgentModeId::Coder);
     }
 
     #[test]

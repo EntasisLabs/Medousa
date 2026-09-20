@@ -254,17 +254,21 @@ impl crate::delegation::DelegationCompletionSink for EmbeddedDelegationCompletio
 
 fn embedded_system_prompt(agent_mode: AgentModeId) -> String {
     static GENERAL_PROMPT: OnceLock<String> = OnceLock::new();
+    static ASSISTANT_PROMPT: OnceLock<String> = OnceLock::new();
     static TEACHER_PROMPT: OnceLock<String> = OnceLock::new();
-    let (prompt, policy_mode) = if agent_mode == AgentModeId::Teacher {
-        (
+    let (prompt, policy_mode) = match agent_mode {
+        AgentModeId::Assistant => (
+            &ASSISTANT_PROMPT,
+            crate::prompt_policy::SttpPolicyMode::Assistant,
+        ),
+        AgentModeId::Teacher => (
             &TEACHER_PROMPT,
             crate::prompt_policy::SttpPolicyMode::Teacher,
-        )
-    } else {
-        (
+        ),
+        _ => (
             &GENERAL_PROMPT,
             crate::prompt_policy::SttpPolicyMode::General,
-        )
+        ),
     };
     let policy = prompt
         .get_or_init(|| {
@@ -5265,6 +5269,13 @@ impl EmbeddedDaemonClient {
                     label: "General".to_string(),
                     available: true,
                     contract_revision: Some("general-v1".to_string()),
+                    unavailable_reason: None,
+                },
+                medousa_types::daemon_api::AgentModeAvailability {
+                    mode: medousa_types::daemon_api::AgentModeId::Assistant,
+                    label: "Assistant".to_string(),
+                    available: true,
+                    contract_revision: Some("assistant-v1".to_string()),
                     unavailable_reason: None,
                 },
                 medousa_types::daemon_api::AgentModeAvailability {

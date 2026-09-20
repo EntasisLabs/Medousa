@@ -108,7 +108,10 @@ independent of interactive/background ticket delivery. When omitted, the
 daemon checks the active task lease, then the session selection, then a bound
 Bot's default, and finally defaults to `general`. `instant` uses the General
 execution path with a smaller recent history and tool context; it does not
-change provider or generation behavior. `coder` additionally requires an active
+change provider or generation behavior. `assistant` uses General's host lane,
+identity, memory, context, and completion scheduler with an ownership policy for
+durable coordination; selecting it does not create execution grants or bypass
+target policy and approval boundaries. `coder` additionally requires an active
 Forge undertaking and its turn-scoped authority for file, shell, and engineering
 tools; without a binding it enters the restricted project-setup phase.
 Resolution is deterministic and does not require an additional model call.

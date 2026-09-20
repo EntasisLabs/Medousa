@@ -339,6 +339,7 @@ impl CognitionTurnProposeModeTool {
 #[serde(rename_all = "snake_case")]
 pub enum TurnModeInput {
     General,
+    Assistant,
     Coder,
 }
 
@@ -346,6 +347,7 @@ impl From<TurnModeInput> for crate::daemon_api::AgentModeId {
     fn from(value: TurnModeInput) -> Self {
         match value {
             TurnModeInput::General => Self::General,
+            TurnModeInput::Assistant => Self::Assistant,
             TurnModeInput::Coder => Self::Coder,
         }
     }
