@@ -11,7 +11,7 @@ struct MedousaLiveLauncherWidget: Widget {
         }
         .configurationDisplayName("Live")
         .description("Start talking with Medousa.")
-        .supportedFamilies([.systemSmall])
+        .supportedFamilies([.systemSmall, .accessoryCircular, .accessoryRectangular, .accessoryInline])
     }
 }
 
@@ -26,6 +26,8 @@ private struct MedousaLiveLauncherProvider: TimelineProvider {
 }
 
 private struct MedousaLiveLauncherView: View {
+    @Environment(\.widgetFamily) private var family
+
     var body: some View {
         Group {
             if #available(iOS 18.0, *) {
@@ -41,14 +43,43 @@ private struct MedousaLiveLauncherView: View {
     }
 
     private var label: some View {
-        VStack(spacing: 11) {
-            MedousaMark(size: 30)
-            Image(systemName: "waveform")
-                .font(.system(size: 30, weight: .medium))
-                .foregroundStyle(MedousaPalette.primarySoft)
-            Text("Talk Live")
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                .foregroundStyle(MedousaPalette.ink)
+        Group {
+            switch family {
+            case .accessoryCircular:
+                ZStack(alignment: .bottomTrailing) {
+                    MedousaMark(size: 38)
+                    Image(systemName: "waveform")
+                        .font(.system(size: 11, weight: .bold))
+                        .padding(4)
+                        .background(.background, in: Circle())
+                }
+                .widgetAccentable()
+            case .accessoryRectangular:
+                HStack(spacing: 8) {
+                    MedousaMark(size: 30)
+                        .widgetAccentable()
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Talk Live")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        Text("Start Medousa")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                }
+            case .accessoryInline:
+                Label("Talk Live with Medousa", systemImage: "waveform")
+            default:
+                VStack(spacing: 11) {
+                    MedousaMark(size: 30)
+                    Image(systemName: "waveform")
+                        .font(.system(size: 30, weight: .medium))
+                        .foregroundStyle(MedousaPalette.primarySoft)
+                    Text("Talk Live")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .foregroundStyle(MedousaPalette.ink)
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

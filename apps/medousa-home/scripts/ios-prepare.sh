@@ -309,6 +309,9 @@ if "MedousaWorkWidget:" not in text:
           - Info.plist
           - MedousaWorkWidget.entitlements
       - path: ../../ios-live-activity/Shared
+      - path: ../../ios-live-activity/Controls
+      - path: ../../../static/brand/app-icons/png/medousa-icon-192.png
+        buildPhase: resources
     info:
       path: ../../ios-live-activity/Widget/Info.plist
       properties:
@@ -350,6 +353,15 @@ if "MedousaWorkWidget:" in text and "../../ios-live-activity/Shared" not in text
     text = text.replace(
         "      - path: ../../ios-live-activity/Widget\n        excludes:\n          - Info.plist\n          - MedousaWorkWidget.entitlements\n",
         "      - path: ../../ios-live-activity/Widget\n        excludes:\n          - Info.plist\n          - MedousaWorkWidget.entitlements\n      - path: ../../ios-live-activity/Shared\n",
+        1,
+    )
+
+# Bundle the canonical detailed app mark for widgets and Live Activity chrome.
+widget_resource = "      - path: ../../ios-live-activity/Controls\n      - path: ../../../static/brand/app-icons/png/medousa-icon-192.png\n        buildPhase: resources\n"
+if "MedousaWorkWidget:" in text and widget_resource not in text:
+    text = text.replace(
+        "      - path: ../../ios-live-activity/Controls\n",
+        widget_resource,
         1,
     )
 
