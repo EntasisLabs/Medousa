@@ -51,6 +51,13 @@ from an already approved snapshot before executing. Retries use persistent
 assignment/command fences; uncertain dispatch is not proof of failure and must
 not trigger another spawn. Accepted custody is not verified Forge completion.
 
+Owner-result intake also reconciles the safe post-commit restart boundary. If
+the process-local turn ticket is gone but the canonical owner transcript already
+contains a non-empty assistant decision attributed to the exact intake execution,
+the daemon acknowledges that durable decision instead of leaving the receipt
+stuck. A missing ticket without that committed evidence remains unresolved and
+is never rerun or acknowledged automatically.
+
 The daemon advertises `coordination.operator_proposals.v1` only when the local
 coordination host is composed. An unavailable host returns 503; scope, expiry,
 visibility, and immutable-write conflicts return 409. This increment exposes no

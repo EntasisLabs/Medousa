@@ -146,8 +146,10 @@ workers, 30-second busy retry, five-minute unavailable-approval backoff). A page
 local-authority/runtime inbox prevents blocked receipts starving later work.
 This host never relaunches peer processes from old claims. Monitor timeout and
 shutdown cancel only the exact owner turn admitted by the intake worker.
-A crash between owner execution and acknowledgment requires
-explicit reconciliation; process-local turn tickets are not restart evidence.
+After restart, an exact attributed assistant decision already committed to the
+canonical owner transcript can reconcile and acknowledge its intake without the
+process-local turn ticket. A missing ticket without that durable decision remains
+explicitly unresolved and is never rerun blindly.
 Receipt/prompt/scan budgets fail closed rather than hiding missing evidence.
 
 The operator-approval backend persists content-addressed assignment proposals

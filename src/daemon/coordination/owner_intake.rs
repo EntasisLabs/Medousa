@@ -207,49 +207,50 @@ impl LocalPeerDispatcher {
         intake: PeerOwnerIntakeAttempt,
         lease: Arc<medousa_acp_client::coordination::store::intake::OwnerIntakeLease>,
     ) -> Result<OwnerIntakeResult> {
-        let Some(ticket) =
-            crate::turn_ticket::get_turn(&self.state.turn_tickets, &intake.turn_id).await
-        else {
-            return Ok(OwnerIntakeResult::NeedsReconciliation);
-        };
-        if ticket.phase != TurnTicketPhase::Done {
+        let ticket = crate::turn_ticket::get_turn(&self.state.turn_tickets, &intake.turn_id).await;
+        // A live non-success terminal is not completion evidence. A missing
+        // ticket is expected after restart, so fall through and reconcile only
+        // from an execution-correlated assistant entry already committed to the
+        // canonical transcript. Absence of both forms of evidence never reruns
+        // or acknowledges the uncertain turn.
+        if ticket.is_some_and(|ticket| ticket.phase != TurnTicketPhase::Done) {
             return Ok(OwnerIntakeResult::NeedsReconciliation);
         }
-        self.stored(move |store| {
-            let request = store.require_owner_continuation(&intake.receipt, chrono::Utc::now())?;
-            if !crate::session_catalog::session_visible_to_profile(
-                request.owner_session.session_id.as_str(),
-                &request.owner_principal_id,
-            ) {
-                bail!("owner visibility revoked before acknowledgment");
-            }
-            let entry = crate::session_store::get_session_store()
-                .load_transcript_entries(&request.owner_session.session_id)
-                .into_iter()
-                .rev()
-                .find(|entry| {
-                    entry.turn.role == "assistant"
-                        && !entry.turn.content.trim().is_empty()
-                        && entry.caused_by.as_ref().is_some_and(|source| {
-                            source.authority_id == request.owner_session.authority_id
-                                && source.session_id == request.owner_session.session_id
-                                && source.execution_id.as_str() == intake.turn_id
-                        })
-                })
-                .ok_or_else(|| anyhow::anyhow!("owner terminal lacks a committed decision"))?;
-            let ack = PeerOwnerIntakeAcknowledgment {
-                intake,
-                decision: TranscriptEntryRef {
-                    session: request.owner_session,
-                    entry_id: entry.entry_id,
-                    entry_seq: entry.entry_seq,
-                },
-                decision_digest: entry.content_digest,
-            };
-            store.acknowledge_owner_intake(&ack, &lease)?;
-            Ok(OwnerIntakeResult::Delivered)
+        let delivered = self
+            .stored(move |store| {
+                let request =
+                    store.require_owner_continuation(&intake.receipt, chrono::Utc::now())?;
+                if !crate::session_catalog::session_visible_to_profile(
+                    request.owner_session.session_id.as_str(),
+                    &request.owner_principal_id,
+                ) {
+                    bail!("owner visibility revoked before acknowledgment");
+                }
+                let entries = crate::session_store::get_session_store()
+                    .load_transcript_entries(&request.owner_session.session_id);
+                let Some(entry) =
+                    committed_owner_decision(&entries, &request.owner_session, &intake.turn_id)
+                else {
+                    return Ok(false);
+                };
+                let ack = PeerOwnerIntakeAcknowledgment {
+                    intake,
+                    decision: TranscriptEntryRef {
+                        session: request.owner_session,
+                        entry_id: entry.entry_id.clone(),
+                        entry_seq: entry.entry_seq,
+                    },
+                    decision_digest: entry.content_digest.clone(),
+                };
+                store.acknowledge_owner_intake(&ack, &lease)?;
+                Ok(true)
+            })
+            .await?;
+        Ok(if delivered {
+            OwnerIntakeResult::Delivered
+        } else {
+            OwnerIntakeResult::NeedsReconciliation
         })
-        .await
     }
 
     pub async fn drain_pending_owner_intake(
@@ -274,5 +275,71 @@ impl LocalPeerDispatcher {
             );
         }
         Ok(outcomes)
+    }
+}
+
+fn committed_owner_decision<'a>(
+    entries: &'a [medousa_types::TranscriptEntry],
+    owner_session: &medousa_types::SessionRef,
+    turn_id: &str,
+) -> Option<&'a medousa_types::TranscriptEntry> {
+    entries.iter().rev().find(|entry| {
+        entry.turn.role == "assistant"
+            && !entry.turn.content.trim().is_empty()
+            && entry.caused_by.as_ref().is_some_and(|source| {
+                source.authority_id == owner_session.authority_id
+                    && source.session_id == owner_session.session_id
+                    && source.execution_id.as_str() == turn_id
+            })
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(
+        owner: &medousa_types::SessionRef,
+        execution_id: &str,
+        role: &str,
+        content: &str,
+    ) -> medousa_types::TranscriptEntry {
+        medousa_types::TranscriptEntry {
+            entry_id: medousa_types::TranscriptEntryId::parse(format!("ent_{}", "b".repeat(32)))
+                .unwrap(),
+            entry_seq: 1,
+            caused_by: Some(medousa_types::ExecutionRef {
+                authority_id: owner.authority_id.clone(),
+                session_id: owner.session_id.clone(),
+                execution_id: medousa_types::ExecutionId::parse(execution_id).unwrap(),
+            }),
+            source: None,
+            content_digest: format!("digest-{execution_id}"),
+            turn: medousa_types::ConversationTurn::plain(
+                role,
+                content.to_string(),
+                chrono::Utc::now(),
+                Vec::new(),
+                None,
+            ),
+        }
+    }
+
+    #[test]
+    fn restart_reconciliation_requires_an_attributed_committed_assistant_decision() {
+        let owner = medousa_types::SessionRef {
+            authority_id: medousa_types::AuthorityId::parse(format!("auth_{}", "a".repeat(64)))
+                .unwrap(),
+            session_id: medousa_types::SessionId::parse("ses_owner").unwrap(),
+        };
+        let entries = vec![
+            entry(&owner, "turn-other", "assistant", "wrong turn"),
+            entry(&owner, "turn-owner", "user", "wrong role"),
+            entry(&owner, "turn-owner", "assistant", ""),
+            entry(&owner, "turn-owner", "assistant", "verified result"),
+        ];
+        let decision = committed_owner_decision(&entries, &owner, "turn-owner").unwrap();
+        assert_eq!(decision.turn.content, "verified result");
+        assert!(committed_owner_decision(&entries, &owner, "missing").is_none());
     }
 }
