@@ -31,6 +31,91 @@ fn identity(owner: &str, session: &SessionRef, key: &str) -> String {
 }
 
 impl LocalPeerDispatcher {
+    pub async fn active_work_for_turn(
+        &self,
+        principal: &RequestPrincipal,
+        include_terminal: bool,
+    ) -> Result<serde_json::Value> {
+        let owner = actor(principal)?;
+        let authority = crate::workshop_authority::current()
+            .map_err(anyhow::Error::msg)?
+            .clone();
+        let runtime_id = self.local_runtime_id.clone();
+        let forge = self.state.forge.clone();
+        let owner_for_items = owner.clone();
+        let (mut projects, truncated) = self
+            .state
+            .forge_execution
+            .run(ExecutionClass::StoreIo, MAX_CONTEXT_BYTES, move || {
+                let mut items = forge
+                    .list()?
+                    .into_iter()
+                    .filter(|item| {
+                        item.owner == owner_for_items
+                            && (include_terminal || !item.state.is_terminal())
+                    })
+                    .collect::<Vec<_>>();
+                items.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
+                let truncated = items.len() > 128;
+                items.truncate(128);
+                let projects = items
+                    .into_iter()
+                    .map(|item| {
+                        serde_json::json!({
+                            "forge_work_id": item.id.to_string(),
+                            "title": item.title,
+                            "brief": item.brief,
+                            "state": item.state.to_string(),
+                            "workspace_mode": item.workspace_mode,
+                            "active_attempt_count": item.active_attempts.len(),
+                            "created_at": item.created_at,
+                            "updated_at": item.updated_at,
+                            "agent_sessions": [],
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                Ok((projects, truncated))
+            })
+            .await?;
+        let sessions = super::super::agents::discover_visible_agent_sessions(&owner).await;
+        let mut unbound_agent_sessions = Vec::new();
+        for session in sessions {
+            if !include_terminal && (session.terminal || session.cancelled) {
+                continue;
+            }
+            let Some(work_id) = session.forge_work_id.as_deref() else {
+                unbound_agent_sessions.push(serde_json::to_value(session)?);
+                continue;
+            };
+            if let Some(project) = projects.iter_mut().find(|project| {
+                project
+                    .get("forge_work_id")
+                    .and_then(serde_json::Value::as_str)
+                    == Some(work_id)
+            }) {
+                project["agent_sessions"]
+                    .as_array_mut()
+                    .expect("project agent_sessions is an array")
+                    .push(serde_json::to_value(session)?);
+            }
+        }
+        Ok(serde_json::json!({
+            "coverage": {
+                "kind": "current_workshop",
+                "complete_mesh": false,
+                "authority_id": authority,
+                "execution_runtime_id": runtime_id,
+                "sources": ["forge", "acp_live_registry"],
+                "note": "This inventory covers the current workshop. Connected-workshop federation is not yet included."
+            },
+            "generated_at": Utc::now(),
+            "projects": projects,
+            "unbound_agent_sessions": unbound_agent_sessions,
+            "truncated": truncated,
+            "policy": "Read-only inventory. Discovery does not adopt, delegate, cancel, steer, or grant authority."
+        }))
+    }
+
     pub async fn proposal_tool_result(
         &self,
         principal: &RequestPrincipal,

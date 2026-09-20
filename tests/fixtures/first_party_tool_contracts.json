@@ -2394,6 +2394,27 @@
     },
     {
       "registry": "general_runtime",
+      "name": "cognition_active_work_discover",
+      "description": "List projects and agent sessions visible to the user in the current workshop. Use this for “what are we working on?” before asking the user to identify a project. The response states its coverage and is read-only; never describe current-workshop results as the complete mesh.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "include_terminal": {
+            "default": false,
+            "description": "Include accepted, discarded, and failed Forge work.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "general:authorized",
+        "general:domain:peers"
+      ]
+    },
+    {
+      "registry": "general_runtime",
       "name": "cognition_browser_act",
       "description": "Act on the shared Web tab using opaque refs from cognition_browser_snapshot. A guarded actions batch executes locally in order and stops at the first failure.",
       "input_schema": {
@@ -4723,7 +4744,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_peer_discover",
-      "description": "Discover local Codex/Cursor/Hermes peers and this chat's bound project/context range. Unavailable peers must not be substituted. Use peer_propose to prepare work, not to execute it.",
+      "description": "Discover local Codex/Cursor/Hermes peers, exact adoptable agent sessions, and this chat's bound project/context range. Unavailable peers must not be substituted. Use peer_propose to prepare new or adopted work, not to execute it.",
       "input_schema": {
         "additionalProperties": false,
         "properties": {},
@@ -4738,7 +4759,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_peer_propose",
-      "description": "Prepare an immutable peer assignment for this chat's bound local Forge project. Discover peers first and select an explicit committed context range. Reuse request_key for exact retries only. This requests human review; it does NOT approve, launch, or complete work. Tell the user to review the approval card and explicitly start approved work. A conversational yes is not execution authority.",
+      "description": "Prepare an immutable peer assignment for this chat's bound local Forge project. Discover first and select an explicit committed context range. To adopt existing work, copy only an exact existing_agent_session_id returned by discovery; omission starts new work. Reuse request_key for exact retries only. This requests human review; it does NOT approve, launch, adopt, or complete work. Tell the user to review the approval card and explicitly start approved work. A conversational yes is not execution authority.",
       "input_schema": {
         "additionalProperties": false,
         "properties": {
@@ -4750,6 +4771,13 @@
           "continue_owner": {
             "description": "Request a separately approved result-only reply in this chat.",
             "type": "boolean"
+          },
+          "existing_agent_session_id": {
+            "description": "Exact active ACP session returned by discovery. Omit to start new work.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "instructions": {
             "type": "string"

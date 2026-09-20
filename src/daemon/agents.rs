@@ -87,6 +87,52 @@ pub(crate) struct AdoptableAgentSession {
     pub terminal: bool,
 }
 
+#[derive(Clone, serde::Serialize)]
+pub(crate) struct VisibleAgentSession {
+    pub agent_session_id: String,
+    pub session_id: String,
+    pub runtime: String,
+    pub forge_work_id: Option<String>,
+    pub cancelled: bool,
+    pub terminal: bool,
+    pub medousa_owned: bool,
+    pub adoptable: bool,
+}
+
+pub(crate) async fn discover_visible_agent_sessions(
+    owner_principal_id: &str,
+) -> Vec<VisibleAgentSession> {
+    let sessions: Vec<_> = AGENT_SESSIONS
+        .read()
+        .await
+        .by_agent_session
+        .values()
+        .cloned()
+        .collect();
+    let mut rows = Vec::new();
+    for live in sessions {
+        if !crate::session_catalog::session_visible_to_profile(&live.session_id, owner_principal_id)
+        {
+            continue;
+        }
+        let cancelled = *live.cancelled.lock().await;
+        let terminal = live.peer_terminal.lock().await.is_some();
+        let medousa_owned = live.peer_receipt.lock().await.is_some();
+        rows.push(VisibleAgentSession {
+            agent_session_id: live.agent_session_id,
+            session_id: live.session_id,
+            runtime: live.runtime,
+            forge_work_id: live.forge_work_id.map(|id| id.to_string()),
+            cancelled,
+            terminal,
+            medousa_owned,
+            adoptable: !cancelled && !medousa_owned,
+        });
+    }
+    rows.sort_by(|left, right| left.agent_session_id.cmp(&right.agent_session_id));
+    rows
+}
+
 pub(crate) async fn discover_adoptable_agent_sessions(
     owner_principal_id: &str,
     forge_work_id: &str,

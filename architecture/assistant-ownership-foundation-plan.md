@@ -91,6 +91,14 @@ prompt and completion racing observer attachment is retained. Initial adoption
 is limited to the live local process registry; reconstructing provider custody
 after daemon restart remains a separate adapter-reconciliation problem.
 
+The owner agent now has a read-only active-work inventory tool that answers the
+first half of “what are we working on?” without requiring the chat to already be
+bound to a project. It lists the authenticated principal's non-terminal Forge
+work in the current workshop and joins visible ACP custody to each exact work id,
+including whether it is already Medousa-owned or adoptable. The response carries
+an explicit current-workshop coverage marker; connected-workshop federation is
+still required before Medousa may claim a complete mesh view.
+
 Slice 0 has an initial, additive contract seam in
 `crates/medousa-types/src/coordination.rs` and an adapter-independent admission
 harness in `crates/medousa-acp-client/src/coordination.rs`. It covers exact

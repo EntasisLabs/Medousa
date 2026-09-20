@@ -7,9 +7,18 @@ ranges and digests, a governed Forge work item, and independent peer custody.
 ## Conversational proposal tools
 
 The full-daemon General host's `peers` discovery domain contains
-`cognition_peer_discover` and `cognition_peer_propose`. Both require an admitted
-owner turn and use its authenticated principal/session. Discovery reports local
-ACP availability and the current chat's project binding and committed range.
+`cognition_active_work_discover`, `cognition_peer_discover`, and
+`cognition_peer_propose`. All require an admitted owner turn and use its
+authenticated principal/session. Active-work discovery lists the current
+workshop's non-terminal Forge projects owned by that principal and joins visible
+ACP sessions by exact Forge work id. It reports owned/adoptable, terminal, and
+cancelled session state without granting authority or changing custody. Results
+are capped at 128 projects, expose no repository path, and explicitly report
+that current-workshop coverage is not yet a complete mesh inventory. Callers
+must not represent it as cross-workshop discovery.
+
+Peer discovery reports local ACP availability and the current chat's project
+binding and committed range.
 Proposal input contains only `request_key`, `runtime`, `instructions`,
 `after_entry_seq`, `through_entry_seq`, `continue_owner`, and the optional exact
 `existing_agent_session_id` returned by discovery; unknown fields are rejected.

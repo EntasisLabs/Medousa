@@ -5,6 +5,11 @@ the project bound to this chat. Medousa can discover local agent availability
 and prepare a delegation proposal. This remains a preview: cross-workshop
 delegation, cloud adapters, and autonomous chains are not yet connected.
 
+You can also ask what work is active without first opening a project-bound chat.
+Medousa can list your non-terminal governed projects and visible agent sessions
+in the current workshop. It will identify the workshop coverage because this is
+not yet a complete inventory of every connected workshop in your mesh.
+
 If Codex, Cursor, or Hermes is already running through Medousa on the same
 governed project, Medousa can offer that exact live session for adoption. Adoption
 attaches ownership and waits for its real terminal result; it does not send the

@@ -3,9 +3,9 @@
   "surfaces": [
     {
       "id": "general",
-      "tool_count": 83,
-      "total_chars": 53875,
-      "tokens_estimate": 13469,
+      "tool_count": 84,
+      "total_chars": 54725,
+      "tokens_estimate": 13682,
       "tools_over_1000_chars": 12,
       "largest_tools_share_bps": 0,
       "largest_tools": [
@@ -40,22 +40,22 @@
           "tokens_estimate": 393
         },
         {
+          "name": "cognition_peer_propose",
+          "chars": 1463,
+          "tokens_estimate": 366
+        },
+        {
           "name": "cognition_ui_present",
           "chars": 1450,
           "tokens_estimate": 363
-        },
-        {
-          "name": "cognition_peer_propose",
-          "chars": 1201,
-          "tokens_estimate": 301
         }
       ]
     },
     {
       "id": "host_bus_home",
-      "tool_count": 41,
-      "total_chars": 26269,
-      "tokens_estimate": 6568,
+      "tool_count": 42,
+      "total_chars": 27119,
+      "tokens_estimate": 6780,
       "tools_over_1000_chars": 5,
       "largest_tools_share_bps": 0,
       "largest_tools": [
@@ -76,8 +76,8 @@
         },
         {
           "name": "cognition_peer_propose",
-          "chars": 1201,
-          "tokens_estimate": 301
+          "chars": 1463,
+          "tokens_estimate": 366
         },
         {
           "name": "cognition_image_generate",
@@ -103,9 +103,9 @@
     },
     {
       "id": "host_bus_thin",
-      "tool_count": 38,
-      "total_chars": 22340,
-      "tokens_estimate": 5585,
+      "tool_count": 39,
+      "total_chars": 23190,
+      "tokens_estimate": 5798,
       "tools_over_1000_chars": 4,
       "largest_tools_share_bps": 0,
       "largest_tools": [
@@ -121,8 +121,8 @@
         },
         {
           "name": "cognition_peer_propose",
-          "chars": 1201,
-          "tokens_estimate": 301
+          "chars": 1463,
+          "tokens_estimate": 366
         },
         {
           "name": "cognition_image_generate",

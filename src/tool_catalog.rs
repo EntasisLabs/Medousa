@@ -6,13 +6,13 @@ use genai::chat::Tool;
 use crate::agent_runtime::turn_worker::{
     TurnWorkerIntent, allowed_tool_names_for_intent, host_bus_tool_names, tool_allowed,
 };
+#[cfg(feature = "full-daemon")]
+use crate::typed_tools::ToolPolicyId;
 use crate::typed_tools::{
     EmptyCallMetadata, ModeToolAdapter, ModeToolAdapterError, RegisteredToolKind, ToolCapabilityId,
     ToolCatalog, ToolDomainId, ToolEffect, ToolExposureRef, ToolId, ToolModeId, ToolPlacementIndex,
     ToolSurfaceId,
 };
-#[cfg(feature = "full-daemon")]
-use crate::typed_tools::ToolPolicyId;
 
 pub(crate) const GENERAL_MODE_ID: ToolModeId = ToolModeId::new("general");
 pub(crate) const WORKSHOP_MODE_ID: ToolModeId = ToolModeId::new("workshop");
@@ -129,6 +129,8 @@ fn add_effects_and_capabilities(index: &mut ToolPlacementIndex) {
         "cognition_utility_day_of_week",
         "cognition_utility_time_now",
         "cognition_utility_uuid",
+        #[cfg(feature = "full-daemon")]
+        "cognition_active_work_discover",
         #[cfg(feature = "full-daemon")]
         "cognition_peer_discover",
         crate::public_api::COGNITION_STORE_READ,
