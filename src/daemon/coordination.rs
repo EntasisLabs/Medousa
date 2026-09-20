@@ -24,8 +24,8 @@ use sha2::{Digest, Sha256};
 
 use crate::daemon::state::AppState;
 use crate::request_principal::{Capability, PrincipalKind, RequestPrincipal};
-mod host;
 mod conversational;
+mod host;
 pub use conversational::PeerProposalIntent;
 pub mod http;
 mod owner_intake;
@@ -456,6 +456,45 @@ impl ExternalPeerExecutionPort for LocalPeerCall<'_> {
         request: &ExternalPeerAssignmentRequest,
     ) -> Result<ExternalPeerAssignmentBinding> {
         let prompt = self.host.hydrate(&self.principal, request, true).await?;
+        if let Some(agent_session_id) = request.existing_agent_session_id.as_deref() {
+            super::agents::require_adoptable_agent_session(
+                &request.owner_principal_id,
+                &request.forge_work_id,
+                runtime_kind(request.target.runtime).as_str(),
+                agent_session_id,
+            )
+            .await?;
+            let binding = ExternalPeerAssignmentBinding {
+                assignment_id: request.assignment_id.clone(),
+                owner_principal_id: request.owner_principal_id.clone(),
+                channel: request.channel.clone(),
+                target: request.target.clone(),
+                execution_session: request.execution_session.clone(),
+                agent_session_id: agent_session_id.to_string(),
+            };
+            // Record ownership before observer attachment. If the live session
+            // changes in this narrow race, close this assignment as interrupted;
+            // never cancel or restart the independently-created agent.
+            self.record(&binding).await?;
+            if let Err(error) = super::agents::attach_peer_receipt_sink(
+                agent_session_id,
+                PeerReceiptSink {
+                    host: self.host.clone(),
+                    binding: binding.clone(),
+                },
+            )
+            .await
+            {
+                PeerReceiptSink {
+                    host: self.host.clone(),
+                    binding: binding.clone(),
+                }
+                .terminal(PeerAssignmentOutcome::Interrupted, error.to_string())
+                .await?;
+                return Err(error);
+            }
+            return Ok(binding);
+        }
         if !self.discover().await?.iter().any(|candidate| {
             candidate.target == request.target && candidate.availability == PeerAvailability::Ready
         }) {

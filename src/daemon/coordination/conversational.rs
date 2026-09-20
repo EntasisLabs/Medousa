@@ -19,6 +19,8 @@ pub struct PeerProposalIntent {
     pub through_entry_seq: u64,
     /// Request a separately approved result-only reply in this chat.
     pub continue_owner: bool,
+    /// Exact active ACP session returned by discovery. Omit to start new work.
+    pub existing_agent_session_id: Option<String>,
 }
 
 fn identity(owner: &str, session: &SessionRef, key: &str) -> String {
@@ -52,10 +54,11 @@ impl LocalPeerDispatcher {
         session: SessionId,
     ) -> Result<serde_json::Value> {
         let owner = actor(principal)?;
+        let owner_for_scope = owner.clone();
         let runtime = self.local_runtime_id.clone();
         let scope = self.state.forge_execution.run(ExecutionClass::StoreIo, MAX_CONTEXT_BYTES, move || {
             Ok((|| -> Result<_> {
-                if !crate::session_catalog::session_visible_to_profile(session.as_str(), &owner) {
+                if !crate::session_catalog::session_visible_to_profile(session.as_str(), &owner_for_scope) {
                     bail!("owner session is not visible");
                 }
                 let binding = crate::agent_mode_state::get_session_code_binding(session.as_str()).ok();
@@ -72,8 +75,14 @@ impl LocalPeerDispatcher {
         }
         .discover()
         .await?;
+        let adoptable = match scope.get("forge_work_id").and_then(|value| value.as_str()) {
+            Some(work_id) => {
+                super::super::agents::discover_adoptable_agent_sessions(&owner, work_id).await
+            }
+            None => Vec::new(),
+        };
         Ok(
-            serde_json::json!({"peers": peers, "scope": scope, "policy": "Local workshop only. Propose requires this chat's bound Forge project. Proposal is not approval or execution."}),
+            serde_json::json!({"peers": peers, "adoptable_sessions": adoptable, "scope": scope, "policy": "Local workshop only. Propose requires this chat's bound Forge project. Proposal is not approval or execution. Adopt only an exact agent_session_id returned here."}),
         )
     }
 
@@ -187,6 +196,15 @@ impl LocalPeerDispatcher {
                 })())
             })
             .await??;
+        if let Some(agent_session_id) = intent.existing_agent_session_id.as_deref() {
+            super::super::agents::require_adoptable_agent_session(
+                &owner,
+                &work_id,
+                super::runtime_kind(intent.runtime).as_str(),
+                agent_session_id,
+            )
+            .await?;
+        }
         let created_at = previous
             .as_ref()
             .map_or_else(Utc::now, |proposal| proposal.request.context.created_at);
@@ -213,6 +231,7 @@ impl LocalPeerDispatcher {
             instructions: intent.instructions,
             execution_grant_id: format!("peer_grant_{id}"),
             forge_work_id: work_id,
+            existing_agent_session_id: intent.existing_agent_session_id,
         };
         if let Some(proposal) = previous {
             if proposal.request != request || proposal.continue_owner != intent.continue_owner {
@@ -284,6 +303,9 @@ mod tests {
     fn model_intent_cannot_supply_execution_authority() {
         let base = serde_json::json!({"request_key":"review", "runtime":"cursor", "instructions":"Review changes", "after_entry_seq":0, "through_entry_seq":3, "continue_owner":true});
         assert!(serde_json::from_value::<PeerProposalIntent>(base.clone()).is_ok());
+        let mut adoption = base.clone();
+        adoption["existing_agent_session_id"] = serde_json::json!("agent-existing");
+        assert!(serde_json::from_value::<PeerProposalIntent>(adoption).is_ok());
         for field in [
             "owner_principal_id",
             "session_id",

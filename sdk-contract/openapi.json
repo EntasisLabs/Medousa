@@ -3490,6 +3490,13 @@
             ],
             "description": "Separate executor session: never reuse the owner's interactive session."
           },
+          "existing_agent_session_id": {
+            "description": "Exact live ACP custody to adopt instead of creating a new provider session. Absence means this assignment creates new work.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "forge_work_id": {
             "description": "Initial local bridge is restricted to a governed Forge work item.",
             "type": "string"
@@ -5277,6 +5284,17 @@
       },
       "PeerProposalReviewRecord": {
         "properties": {
+          "binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExternalPeerAssignmentBinding"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Recorded custody remains visible until its terminal receipt arrives."
+          },
           "decision": {
             "anyOf": [
               {

@@ -17,6 +17,7 @@
   let pageAfter: string | undefined;
   let selectedId: string | undefined;
   const current = $derived(rows[0] ?? null);
+  const adopting = $derived(Boolean(current?.proposal.request.existing_agent_session_id));
   const profileScope = $derived(connection.health?.active_profile_id ?? "");
   const available = $derived(isTauri() && connection.online && !workshops.switching && Boolean(connection.health?.runtime?.advertised_capabilities.includes("coordination.operator_proposals.v1")));
   const expired = $derived(current ? Date.parse(current.proposal.expires_at) <= now : false);
@@ -63,6 +64,7 @@
     try {
       // Pin paired portals; local workshops use the normal authenticated route.
       const transport = proposalExecutionTransport(workshops.activeWorkshop?.kind, proposal.request.target.execution_runtime_id);
+      let response;
       if (kind === "approve_and_dispatch") {
         await actOnPeerProposal(proposal, "approve", transport);
         if (token !== epoch) return;
@@ -71,13 +73,18 @@
         // without creating or approving a second assignment.
         rows = rows.map(row => row.proposal.proposal_id === proposal.proposal_id ? { ...row, decision: { proposal_id: proposal.proposal_id, owner_principal_id: proposal.request.owner_principal_id, approved: true } } : row);
         feedback = "Approved. Starting the agent…";
-        await actOnPeerProposal(proposal, "dispatch", transport);
+        response = await actOnPeerProposal(proposal, "dispatch", transport);
       } else {
-        await actOnPeerProposal(proposal, kind, transport);
+        response = await actOnPeerProposal(proposal, kind, transport);
       }
       if (token !== epoch) return;
-      rows = rows.filter(row => row.proposal.proposal_id !== proposal.proposal_id);
-      feedback = kind === "deny" ? "Declined." : "Work accepted by the agent.";
+      if (kind === "deny") {
+        rows = rows.filter(row => row.proposal.proposal_id !== proposal.proposal_id);
+        feedback = "Declined.";
+      } else {
+        rows = rows.map(row => row.proposal.proposal_id === proposal.proposal_id ? { ...row, binding: response.binding } : row);
+        feedback = adopting ? "Existing work adopted. Medousa is tracking it." : "Work accepted. Medousa is tracking it.";
+      }
     } catch (error) {
       if (token === epoch) feedback = error instanceof Error ? error.message : String(error);
     } finally { if (token === epoch) busy = false; }
@@ -101,13 +108,13 @@
 {#if current && available}
   <section class="{mobile ? 'mx-3' : 'mx-4'} mb-2 rounded-xl border border-primary-400/25 bg-surface-900 p-3" aria-label="Agent delegation approval">
     <div class="flex items-center justify-between gap-2">
-      <p class="text-xs font-medium text-content-link">{current.decision?.approved ? 'Approved delegation' : 'Delegate work · needs your approval'}</p>
+      <p class="text-xs font-medium text-content-link">{current.binding ? 'Medousa is tracking this work' : current.decision?.approved ? 'Approved delegation' : 'Delegate work · needs your approval'}</p>
       <div class="flex gap-2">
         {#if rows.length > 1}<button type="button" class="text-xs text-content-secondary" disabled={busy} onclick={() => void next()}>Next request</button>{/if}
         {#if cursor}<button type="button" class="text-xs text-content-secondary" disabled={busy} onclick={() => void next(true)}>More requests</button>{/if}
       </div>
     </div>
-    <p class="mt-1 text-sm text-content-primary">{current.proposal.request.target.runtime} · {workshops.activeLabel}</p>
+    <p class="mt-1 text-sm text-content-primary">{current.proposal.request.target.runtime} · {workshops.activeLabel}{adopting ? ' · existing work' : ''}</p>
     <p class="mt-1 whitespace-pre-wrap text-sm text-content-secondary">{current.proposal.request.instructions}</p>
     <details class="mt-2 text-xs text-content-secondary">
       <summary class="cursor-pointer">Review shared context and scope</summary>
@@ -115,6 +122,8 @@
         <dt>Channel</dt><dd>{current.proposal.request.channel.channel_id}</dd>
         <dt>Work item</dt><dd>{current.proposal.request.forge_work_id}</dd>
         <dt>Execution workshop</dt><dd>{current.proposal.request.target.execution_runtime_id} · {current.proposal.request.target.authority_id}</dd>
+        {#if current.proposal.request.existing_agent_session_id}<dt>Existing agent session</dt><dd>{current.proposal.request.existing_agent_session_id}</dd>{/if}
+        {#if current.binding}<dt>Agent custody</dt><dd>{current.binding.agent_session_id}</dd>{/if}
         <dt>Shared conversation ranges</dt>
         {#each current.proposal.request.context.sources as source}
           <dd>{source.selection.session.session_id} · entries {(source.selection.after_entry_seq ?? 0) + 1}–{source.selection.through_entry_seq} · {source.selection_digest}</dd>
@@ -126,10 +135,12 @@
     </details>
     {#if feedback}<p class="mt-2 text-xs text-content-secondary" role="status">{feedback}</p>{/if}
     <div class="mt-3 flex gap-2">
-      {#if current.decision?.approved}
+      {#if current.binding}
+        <span class="text-xs text-content-secondary">Waiting for the verified terminal result…</span>
+      {:else if current.decision?.approved}
         <button type="button" class="btn btn-sm variant-filled-primary" disabled={busy || expired} onclick={() => void action('dispatch')}>Start approved work</button>
       {:else}
-        <button type="button" class="btn btn-sm variant-filled-primary" disabled={busy || expired} onclick={() => void action('approve_and_dispatch')}>Approve &amp; start</button>
+        <button type="button" class="btn btn-sm variant-filled-primary" disabled={busy || expired} onclick={() => void action('approve_and_dispatch')}>{adopting ? 'Approve & adopt' : 'Approve & start'}</button>
         <button type="button" class="btn btn-sm variant-ghost-surface" disabled={busy} onclick={() => void action('deny')}>Decline</button>
       {/if}
     </div>

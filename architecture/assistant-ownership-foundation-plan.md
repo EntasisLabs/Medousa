@@ -84,6 +84,13 @@ issue grants or launch agents. Home's exact-snapshot approval/start controls
 remain the operator boundary. This slice still needs on-device end-to-end
 validation and does not add cross-workshop/cloud delegation or autonomous chains.
 
+Discovery and proposals now also admit exact adoption of a visible, unowned ACP
+session already running against the same governed Forge work. The running prompt
+pump and registry share observer and terminal state, so adoption never resends a
+prompt and completion racing observer attachment is retained. Initial adoption
+is limited to the live local process registry; reconstructing provider custody
+after daemon restart remains a separate adapter-reconciliation problem.
+
 Slice 0 has an initial, additive contract seam in
 `crates/medousa-types/src/coordination.rs` and an adapter-independent admission
 harness in `crates/medousa-acp-client/src/coordination.rs`. It covers exact

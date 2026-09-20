@@ -17479,6 +17479,38 @@
           }
         }
       },
+      "ExternalPeerAssignmentBinding": {
+        "description": "Stable correlation returned by an admitted external execution.",
+        "type": "object",
+        "required": [
+          "agent_session_id",
+          "assignment_id",
+          "channel",
+          "execution_session",
+          "owner_principal_id",
+          "target"
+        ],
+        "properties": {
+          "agent_session_id": {
+            "type": "string"
+          },
+          "assignment_id": {
+            "type": "string"
+          },
+          "channel": {
+            "$ref": "#/definitions/CoordinationChannelRef"
+          },
+          "execution_session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "owner_principal_id": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/definitions/ExternalPeerTarget"
+          }
+        }
+      },
       "ExternalPeerAssignmentRequest": {
         "description": "Caller intent only. Grant checks occur outside the model before dispatch.",
         "type": "object",
@@ -17514,6 +17546,13 @@
               {
                 "$ref": "#/definitions/SessionRef"
               }
+            ]
+          },
+          "existing_agent_session_id": {
+            "description": "Exact live ACP custody to adopt instead of creating a new provider session. Absence means this assignment creates new work.",
+            "type": [
+              "string",
+              "null"
             ]
           },
           "forge_work_id": {
@@ -17615,6 +17654,17 @@
           "proposal"
         ],
         "properties": {
+          "binding": {
+            "description": "Recorded custody remains visible until its terminal receipt arrives.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ExternalPeerAssignmentBinding"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "decision": {
             "anyOf": [
               {

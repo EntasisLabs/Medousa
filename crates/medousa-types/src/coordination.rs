@@ -75,6 +75,10 @@ pub struct ExternalPeerAssignmentRequest {
     pub execution_grant_id: String,
     /// Initial local bridge is restricted to a governed Forge work item.
     pub forge_work_id: String,
+    /// Exact live ACP custody to adopt instead of creating a new provider
+    /// session. Absence means this assignment creates new work.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub existing_agent_session_id: Option<String>,
 }
 
 /// Destination-owned approval for one exact assignment, never an ambient tool grant.
@@ -167,6 +171,8 @@ pub struct PeerProposalDecision {
 pub struct PeerProposalReviewRecord {
     pub proposal: PeerAssignmentProposal,
     pub decision: Option<PeerProposalDecision>,
+    /// Recorded custody remains visible until its terminal receipt arrives.
+    pub binding: Option<ExternalPeerAssignmentBinding>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

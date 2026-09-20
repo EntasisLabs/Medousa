@@ -11,10 +11,20 @@ The full-daemon General host's `peers` discovery domain contains
 owner turn and use its authenticated principal/session. Discovery reports local
 ACP availability and the current chat's project binding and committed range.
 Proposal input contains only `request_key`, `runtime`, `instructions`,
-`after_entry_seq`, `through_entry_seq`, and `continue_owner`; unknown fields
-are rejected. The host derives owner, workshop, session, channel, Forge work,
-range digests, manifest, grant reference, and independent execution session.
+`after_entry_seq`, `through_entry_seq`, `continue_owner`, and the optional exact
+`existing_agent_session_id` returned by discovery; unknown fields are rejected.
+The host derives owner, workshop, session, channel, Forge work, range digests,
+manifest, grant reference, and independent coordination execution session.
 Project binding must explicitly name the current execution runtime.
+
+Discovery includes visible, unowned local ACP sessions bound to the same Forge
+work. Adopting one never sends another prompt or restarts its provider. Approval
+records coordination custody and attaches the durable terminal observer to the
+running session. Terminal state is shared across the prompt pump and registry,
+so completion racing adoption is replayed into the assignment exactly once.
+Cancelled, foreign-project, hidden, wrong-runtime, or already-owned sessions
+fail closed. The initial adoption seam is process-local; a provider absent from
+the live registry after daemon restart is not invented from Forge metadata.
 
 Proposals use a one-hour expiry and a stable owner/session/authority-scoped
 request key. Exact retries reuse the immutable snapshot and repair its index;
@@ -40,7 +50,8 @@ destination daemon, not the caller. Approval cannot be reversed into denial or
 vice versa. A revised proposal requires a new assignment identity.
 
 Inbox pages contain at most eight proposal/decision records and one MiB of JSON.
-Denied and recorded peer assignments leave this inbox. Each indexed proposal is
+Denied assignments leave this inbox. Recorded custody remains visible to the
+owner as active work until its terminal receipt arrives. Each indexed proposal is
 validated against its immutable snapshot and current channel owner. Source
 visibility is fully rechecked on approval and dispatch, not inferred from channel
 membership. Corruption or exceeded scan budgets fail closed. The index is

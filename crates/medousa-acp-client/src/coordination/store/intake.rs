@@ -158,6 +158,24 @@ impl CoordinationStore {
         Ok(receipt)
     }
 
+    pub fn receipt_if_recorded(
+        &self,
+        channel: &CoordinationChannelRef,
+        assignment_id: &str,
+    ) -> Result<Option<ExternalPeerAssignmentReceipt>> {
+        match self.receipt(channel, assignment_id) {
+            Ok(receipt) => Ok(Some(receipt)),
+            Err(error)
+                if error
+                    .downcast_ref::<medousa_store::StoreRootError>()
+                    .is_some_and(|error| error.is_not_found()) =>
+            {
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
     pub fn approve_owner_continuation(&self, grant: &PeerOwnerContinuationGrant) -> Result<bool> {
         self.require_owner(&grant.request.channel, &grant.request.owner_principal_id)?;
         self.create(

@@ -151,16 +151,24 @@ impl CoordinationStore {
                 bail!("proposal index scope mismatch");
             }
             let decision = self.proposal_decision(&proposal)?;
-            if decision.as_ref().is_some_and(|decision| !decision.approved)
-                || self
-                    .peer_if_recorded(&index.channel, &proposal.request.assignment_id)?
+            if decision.as_ref().is_some_and(|decision| !decision.approved) {
+                continue;
+            }
+            let binding = self.peer_if_recorded(&index.channel, &proposal.request.assignment_id)?;
+            if binding.is_some()
+                && self
+                    .receipt_if_recorded(&index.channel, &proposal.request.assignment_id)?
                     .is_some()
             {
                 continue;
             }
             page.insert(
                 proposal.proposal_id.clone(),
-                PeerProposalReviewRecord { proposal, decision },
+                PeerProposalReviewRecord {
+                    proposal,
+                    decision,
+                    binding,
+                },
             );
             if page.len() > 8 {
                 page.pop_last();

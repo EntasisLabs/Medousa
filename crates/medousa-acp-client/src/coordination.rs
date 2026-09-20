@@ -119,6 +119,13 @@ pub fn validate_assignment_request(request: &ExternalPeerAssignmentRequest) -> R
             bail!("external peer assignment contains an empty required field");
         }
     }
+    if request
+        .existing_agent_session_id
+        .as_deref()
+        .is_some_and(|value| value.trim().is_empty() || value.len() > 256)
+    {
+        bail!("external peer adoption requires a bounded agent session identity");
+    }
     if request.execution_session.authority_id != request.target.authority_id {
         bail!("executor session authority does not match the destination workshop");
     }
@@ -263,6 +270,7 @@ mod tests {
             instructions: "Review the designated checkpoint; do not publish changes".into(),
             execution_grant_id: "grant-1".into(),
             forge_work_id: "work-1".into(),
+            existing_agent_session_id: None,
         };
         (
             request,
@@ -742,7 +750,8 @@ mod tests {
                 .is_none()
         );
         let mut foreign = request.channel.clone();
-        foreign.authority_id = medousa_types::AuthorityId::parse(format!("auth_{}", "b".repeat(64))).unwrap();
+        foreign.authority_id =
+            medousa_types::AuthorityId::parse(format!("auth_{}", "b".repeat(64))).unwrap();
         assert!(
             reopened
                 .proposal_for_assignment(&foreign, &request.assignment_id)
@@ -752,7 +761,7 @@ mod tests {
     }
 
     #[test]
-    fn dispatched_proposals_leave_the_operator_inbox() {
+    fn dispatched_proposals_remain_until_the_terminal_receipt() {
         use medousa_types::coordination::*;
         let (_temp, store, request) = persisted_fixture();
         let mut proposal = PeerAssignmentProposal {
@@ -771,14 +780,26 @@ mod tests {
             1
         );
         store.claim_assignment(&request).unwrap();
+        let binding = ExternalPeerAssignmentBinding {
+            assignment_id: request.assignment_id,
+            owner_principal_id: request.owner_principal_id.clone(),
+            channel: request.channel.clone(),
+            target: request.target.clone(),
+            execution_session: request.execution_session.clone(),
+            agent_session_id: "accepted-peer".into(),
+        };
+        store.record_peer(&binding).unwrap();
+        let inbox = store
+            .proposal_inbox(&request.owner_principal_id, &request.owner_session, None)
+            .unwrap();
+        assert_eq!(inbox.len(), 1);
+        assert_eq!(inbox[0].binding.as_ref(), Some(&binding));
         store
-            .record_peer(&ExternalPeerAssignmentBinding {
-                assignment_id: request.assignment_id,
-                owner_principal_id: request.owner_principal_id.clone(),
-                channel: request.channel,
-                target: request.target,
-                execution_session: request.execution_session,
-                agent_session_id: "accepted-peer".into(),
+            .record_receipt(&ExternalPeerAssignmentReceipt {
+                receipt_id: store::intake::terminal_receipt_id(&binding),
+                binding,
+                outcome: PeerAssignmentOutcome::Completed,
+                result: "done".into(),
             })
             .unwrap();
         assert!(
@@ -1105,6 +1126,18 @@ mod tests {
             .sources
             .push(request.context.sources[0].clone());
         assert!(hydrate(&request, &entry).is_err());
+    }
+
+    #[test]
+    fn adoption_identity_is_optional_but_never_blank_or_unbounded() {
+        let (mut request, _, _) = fixture(ExternalPeerRuntime::Codex);
+        assert!(validate_assignment_request(&request).is_ok());
+        request.existing_agent_session_id = Some("agent-existing".into());
+        assert!(validate_assignment_request(&request).is_ok());
+        request.existing_agent_session_id = Some("   ".into());
+        assert!(validate_assignment_request(&request).is_err());
+        request.existing_agent_session_id = Some("a".repeat(257));
+        assert!(validate_assignment_request(&request).is_err());
     }
 
     fn receipt_fixture() -> (

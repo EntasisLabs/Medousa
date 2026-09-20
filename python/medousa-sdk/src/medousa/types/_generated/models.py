@@ -4034,6 +4034,11 @@ class ExternalPeerAssignmentRequest(MedousaModel):
     execution_session: SessionRef = Field(
         ..., description="Separate executor session: never reuse the owner's interactive session."
     )
+    existing_agent_session_id: (
+        str | None
+    ) = (
+        Field(None, description='Exact live ACP custody to adopt instead of creating a new provider session. Absence means this assignment creates new work.')
+    )
     forge_work_id: str = Field(
         ..., description='Initial local bridge is restricted to a governed Forge work item.'
     )
@@ -4052,6 +4057,9 @@ class PeerAssignmentProposal(MedousaModel):
 
 
 class PeerProposalReviewRecord(MedousaModel):
+    binding: ExternalPeerAssignmentBinding | None = Field(
+        None, description='Recorded custody remains visible until its terminal receipt arrives.'
+    )
     decision: PeerProposalDecision | None = None
     proposal: PeerAssignmentProposal
 

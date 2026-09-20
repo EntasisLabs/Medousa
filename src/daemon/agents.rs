@@ -56,7 +56,12 @@ struct LiveAgentSession {
     /// Forge undertaking this session is bound to (governed cwd + leases).
     forge_work_id: Option<WorkId>,
     forge_lease: Option<medousa_forge::model::ExecutionLease>,
-    peer_receipt: Option<super::coordination::PeerReceiptSink>,
+    /// Shared across the registry and the running prompt-pump clone so an
+    /// explicitly authorized owner can adopt already-running custody.
+    peer_receipt: Arc<Mutex<Option<super::coordination::PeerReceiptSink>>>,
+    /// Retain one terminal observation so adoption racing completion can
+    /// publish the exact result instead of losing it or restarting work.
+    peer_terminal: Arc<Mutex<Option<(medousa_types::coordination::PeerAssignmentOutcome, String)>>>,
     peer_prompt_started: Arc<std::sync::atomic::AtomicBool>,
 }
 
@@ -72,6 +77,74 @@ static AGENT_SESSIONS: once_cell::sync::Lazy<RwLock<AgentSessionRegistry>> =
 
 static ACP_CLIENT: once_cell::sync::Lazy<ExternalAcpClient> =
     once_cell::sync::Lazy::new(ExternalAcpClient::new);
+
+#[derive(Clone, serde::Serialize)]
+pub(crate) struct AdoptableAgentSession {
+    pub agent_session_id: String,
+    pub session_id: String,
+    pub runtime: String,
+    pub forge_work_id: String,
+    pub terminal: bool,
+}
+
+pub(crate) async fn discover_adoptable_agent_sessions(
+    owner_principal_id: &str,
+    forge_work_id: &str,
+) -> Vec<AdoptableAgentSession> {
+    let sessions: Vec<_> = AGENT_SESSIONS
+        .read()
+        .await
+        .by_agent_session
+        .values()
+        .cloned()
+        .collect();
+    let mut rows = Vec::new();
+    for live in sessions {
+        if *live.cancelled.lock().await
+            || live.peer_receipt.lock().await.is_some()
+            || live
+                .forge_work_id
+                .as_ref()
+                .map(ToString::to_string)
+                .as_deref()
+                != Some(forge_work_id)
+            || !crate::session_catalog::session_visible_to_profile(
+                &live.session_id,
+                owner_principal_id,
+            )
+        {
+            continue;
+        }
+        rows.push(AdoptableAgentSession {
+            agent_session_id: live.agent_session_id,
+            session_id: live.session_id,
+            runtime: live.runtime,
+            forge_work_id: forge_work_id.to_string(),
+            terminal: live.peer_terminal.lock().await.is_some(),
+        });
+    }
+    rows.sort_by(|left, right| left.agent_session_id.cmp(&right.agent_session_id));
+    rows
+}
+
+pub(crate) async fn require_adoptable_agent_session(
+    owner_principal_id: &str,
+    forge_work_id: &str,
+    runtime: &str,
+    agent_session_id: &str,
+) -> anyhow::Result<AdoptableAgentSession> {
+    discover_adoptable_agent_sessions(owner_principal_id, forge_work_id)
+        .await
+        .into_iter()
+        .find(|candidate| {
+            candidate.agent_session_id == agent_session_id && candidate.runtime == runtime
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "agent session is unavailable, already owned, outside this project, or not visible"
+            )
+        })
+}
 
 async fn admit_agent_blocking<T, F>(state: &AppState, work: F) -> anyhow::Result<T>
 where
@@ -518,7 +591,8 @@ pub(crate) async fn create_agent_session_service(
         cancelled: Arc::new(Mutex::new(false)),
         forge_work_id: forge_work_id.clone(),
         forge_lease,
-        peer_receipt: None,
+        peer_receipt: Arc::new(Mutex::new(None)),
+        peer_terminal: Arc::new(Mutex::new(None)),
         peer_prompt_started: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     };
 
@@ -674,7 +748,7 @@ pub(crate) async fn prompt_agent_session_service(
     if *live.cancelled.lock().await {
         return Err((StatusCode::CONFLICT, "agent session cancelled".into()));
     }
-    if live.peer_receipt.is_some()
+    if live.peer_receipt.lock().await.is_some()
         && live
             .peer_prompt_started
             .swap(true, std::sync::atomic::Ordering::SeqCst)
@@ -699,15 +773,25 @@ pub(crate) async fn attach_peer_receipt_sink(
     agent_session_id: &str,
     sink: super::coordination::PeerReceiptSink,
 ) -> anyhow::Result<()> {
-    let mut registry = AGENT_SESSIONS.write().await;
-    let live = registry
+    let live = AGENT_SESSIONS
+        .read()
+        .await
         .by_agent_session
-        .get_mut(agent_session_id)
+        .get(agent_session_id)
+        .cloned()
         .ok_or_else(|| anyhow::anyhow!("peer custody disappeared before observer attachment"))?;
-    if live.peer_receipt.is_some() || *live.cancelled.lock().await {
-        anyhow::bail!("peer observer already bound or custody cancelled");
+    if *live.cancelled.lock().await {
+        anyhow::bail!("peer custody cancelled before observer attachment");
     }
-    live.peer_receipt = Some(sink);
+    let mut sink_slot = live.peer_receipt.lock().await;
+    if sink_slot.is_some() {
+        anyhow::bail!("peer observer already bound");
+    }
+    *sink_slot = Some(sink.clone());
+    drop(sink_slot);
+    if let Some((outcome, result)) = live.peer_terminal.lock().await.clone() {
+        sink.terminal(outcome, result).await?;
+    }
     Ok(())
 }
 
@@ -716,7 +800,18 @@ async fn persist_peer_terminal(
     outcome: medousa_types::coordination::PeerAssignmentOutcome,
     result: String,
 ) -> anyhow::Result<()> {
-    if let Some(sink) = &live.peer_receipt {
+    let terminal = (outcome, result);
+    let mut saved = live.peer_terminal.lock().await;
+    if let Some(existing) = saved.as_ref() {
+        if existing != &terminal {
+            anyhow::bail!("agent session produced conflicting terminal observations");
+        }
+    } else {
+        *saved = Some(terminal.clone());
+    }
+    drop(saved);
+    if let Some(sink) = live.peer_receipt.lock().await.clone() {
+        let (outcome, result) = terminal;
         sink.terminal(outcome, result).await?;
     }
     Ok(())
@@ -1481,7 +1576,7 @@ async fn run_prompt_pump(
                     json!({ "error": message }),
                 )
                 .await;
-                if live.peer_receipt.is_some() {
+                if live.peer_receipt.lock().await.is_some() {
                     break;
                 }
             }
