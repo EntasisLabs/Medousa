@@ -93,7 +93,7 @@ objc2-ui-kit = { version = "0.3", features = [
   "UIApplication",
   "block2",
 ] }
-tauri-plugin-ios-webview-insets = "0.1"
+tauri-plugin-ios-webview-insets = { path = "../../../vendor/tauri-plugin-ios-webview-insets" }
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.38"
