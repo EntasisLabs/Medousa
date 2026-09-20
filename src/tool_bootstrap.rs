@@ -232,6 +232,11 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                     "cognition_tool_history_detail",
                 ],
             },
+            ToolDomainCatalogEntry {
+                domain: "remote_peers",
+                summary: "Prepare Codex/Cursor/Hermes work on an exact authorized remote workshop for human approval",
+                tools: &["cognition_peer_delegate"],
+            },
             #[cfg(feature = "full-daemon")]
             ToolDomainCatalogEntry {
                 domain: "peers",

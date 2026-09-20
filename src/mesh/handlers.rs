@@ -31,6 +31,10 @@ use crate::mesh::{
     record_has_capability,
 };
 use crate::pairing::{PairedDeviceRecord, PairingService};
+use crate::peer_coordination_mesh::{
+    REMOTE_PEER_PROPOSAL_SCHEMA_VERSION, RemotePeerProposalRequest, RemotePeerProposalResponse,
+    materialize_remote_peer_proposal_context, validate_remote_peer_proposal_request,
+};
 use crate::peer_execution_policy::{
     AssistantWorkAdmission, PeerExecutionPolicyStore, TaskExecutionGrant, execution_tool_domain,
 };
@@ -199,6 +203,14 @@ pub fn mesh_surface() -> DeclaredRouter<MeshApiState> {
         .route(
             peer_policy(axum::http::Method::POST, "/v1/mesh/active-work", 16 * 1024),
             post(describe_active_work),
+        )
+        .route(
+            peer_policy(
+                axum::http::Method::POST,
+                "/v1/mesh/peer-proposals",
+                1024 * 1024,
+            ),
+            post(propose_remote_peer),
         )
         .route(
             peer_policy(
@@ -922,6 +934,176 @@ async fn describe_active_work(
         .into_response())
 }
 
+async fn propose_remote_peer(
+    State(state): State<MeshApiState>,
+    Extension(principal): Extension<RequestPrincipal>,
+    Json(body): Json<MeshInboundBody<RemotePeerProposalRequest>>,
+) -> Result<Response, (StatusCode, String)> {
+    require_pairing_principal(&principal)?;
+    let sender = authorize_remote_peer(&state, &principal)?;
+    let (envelope, request) = body.into_parts();
+    let envelope = envelope.ok_or_else(|| {
+        (
+            StatusCode::UNAUTHORIZED,
+            "signed mesh envelope required for peer proposal delivery".to_string(),
+        )
+    })?;
+    if envelope.sender_device_id.trim() != sender.phone_id.trim()
+        || envelope.recipient_device_id.trim() != state.local_device_id.trim()
+        || request.target_runtime_id != state.local_device_id
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "peer proposal identities must match the authenticated exact target".to_string(),
+        ));
+    }
+    validate_remote_peer_proposal_request(&request).map_err(map_delegated_task_error)?;
+    let request_hash =
+        payload_hash_hex(&request).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    verify_enveloped_payload(
+        &MeshEnvelopedRequest {
+            envelope: envelope.clone(),
+            payload: request.clone(),
+        },
+        &sender.phone_public_key,
+        &sender.phone_id,
+        &state.local_device_id,
+        MeshCapability::TaskRequest,
+        true,
+    )
+    .map_err(|error| (StatusCode::UNAUTHORIZED, error.to_string()))?;
+
+    let legacy_task_request_granted = record_has_capability(&sender, CAP_TASK_REQUEST);
+    let policy = state
+        .execution_policies
+        .policy_for_peer(
+            &sender.phone_id,
+            &sender.pairing_id,
+            legacy_task_request_granted,
+        )
+        .map_err(internal)?
+        .policy;
+    let capabilities = policy.advertised_execution_capabilities(chrono::Utc::now());
+    if !capabilities.contains("assistant.work") || !policy.allow_agent_targeting {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "paired Assistant cannot target agents on this workshop".to_string(),
+        ));
+    }
+    let host = crate::daemon::coordination::local_coordination_host().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "peer coordination is unavailable".to_string(),
+        )
+    })?;
+    let authority = crate::workshop_authority::current()
+        .map_err(|error| (StatusCode::SERVICE_UNAVAILABLE, error))?
+        .clone();
+    let owner = crate::user_profiles::resolve_workshop_identity_user_id();
+    host.require_owned_work(&owner, &request.forge_work_id)
+        .await
+        .map_err(|error| (StatusCode::FORBIDDEN, error.to_string()))?;
+    let shadow = materialize_remote_peer_proposal_context(
+        crate::session_store::get_session_store().as_ref(),
+        &authority,
+        &sender.phone_id,
+        &owner,
+        &request,
+    )
+    .await
+    .map_err(map_delegated_task_error)?;
+    let shadow_session_id = shadow.derivation.target_session.session_id;
+    let binding = crate::agent_mode_state::get_session_code_binding(
+        shadow_session_id.as_str(),
+    )
+    .map_err(|error| (StatusCode::CONFLICT, error))?;
+    if binding
+        .work_id
+        .as_deref()
+        .is_some_and(|work| work != request.forge_work_id)
+        || binding
+            .execution_runtime_id
+            .as_deref()
+            .is_some_and(|runtime| runtime != state.local_device_id)
+    {
+        return Err((
+            StatusCode::CONFLICT,
+            "remote proposal shadow is already bound to different governed work".to_string(),
+        ));
+    }
+    crate::agent_mode_state::set_session_code_binding_authority(
+        shadow_session_id.as_str(),
+        &request.forge_work_id,
+        Some(&state.local_device_id),
+        None,
+    )
+    .map_err(|error| (StatusCode::CONFLICT, error))?;
+    let entries = crate::session_store::get_session_store()
+        .load_transcript_entries(&shadow_session_id);
+    let first = entries.first().ok_or_else(|| {
+        (
+            StatusCode::CONFLICT,
+            "remote proposal context was not materialized".to_string(),
+        )
+    })?;
+    let last = entries.last().expect("non-empty checked");
+    let proposal_principal = RequestPrincipal::continuation(owner);
+    let proposal = host
+        .propose_for_turn(
+            &proposal_principal,
+            shadow_session_id,
+            crate::daemon::coordination::PeerProposalIntent {
+                request_key: request.request_key,
+                runtime: request.runtime,
+                instructions: request.instructions,
+                after_entry_seq: first.entry_seq.saturating_sub(1),
+                through_entry_seq: last.entry_seq,
+                continue_owner: request.continue_owner,
+                existing_agent_session_id: request.existing_agent_session_id,
+            },
+        )
+        .await
+        .map_err(internal)?;
+    let response = RemotePeerProposalResponse {
+        schema_version: REMOTE_PEER_PROPOSAL_SCHEMA_VERSION,
+        proposal,
+    };
+    let pairing = state.pairing.as_ref().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "LAN pairing is not enabled on this workshop".to_string(),
+        )
+    })?;
+    let payload_hash = payload_hash_hex(&response)
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    let accepted = delivery::accept_inbound_delivery(
+        pairing.identity().signing_key(),
+        &state.local_device_id,
+        &envelope,
+        &request_hash,
+    )
+    .map_err(internal)?;
+    let seq = registry::allocate_outbound_seq(&sender.phone_id).map_err(internal)?;
+    let response_envelope = sign_envelope(
+        pairing.identity().signing_key(),
+        &state.local_device_id,
+        &sender.phone_id,
+        seq,
+        MeshCapability::TaskResult,
+        &payload_hash,
+        chrono::Duration::seconds(DEFAULT_ENVELOPE_TTL_SECS),
+    );
+    let receipt = delivery::receipt_header_value(&accepted.receipt).map_err(internal)?;
+    Ok((
+        [("x-medousa-mesh-receipt", receipt)],
+        Json(MeshEnvelopedRequest {
+            envelope: response_envelope,
+            payload: response,
+        }),
+    )
+        .into_response())
+}
+
 async fn control_mesh_task(
     State(state): State<MeshApiState>,
     Extension(principal): Extension<RequestPrincipal>,
@@ -1400,7 +1582,7 @@ mod tests {
     #[test]
     fn mesh_inventory_is_complete_and_peer_scoped() {
         let entries = mesh_surface().inventory().entries().collect::<Vec<_>>();
-        assert_eq!(entries.len(), 17);
+        assert_eq!(entries.len(), 18);
         assert!(entries.iter().all(|entry| {
             entry.group == RouteGroup::PeerExchange
                 && entry.required_capability == Some("peer.exchange")
@@ -1425,6 +1607,11 @@ mod tests {
             entry.method == "POST"
                 && entry.path == "/v1/mesh/active-work"
                 && entry.body_limit == 16 * 1024
+        }));
+        assert!(entries.iter().any(|entry| {
+            entry.method == "POST"
+                && entry.path == "/v1/mesh/peer-proposals"
+                && entry.body_limit == 1024 * 1024
         }));
         assert!(entries.iter().any(|entry| {
             entry.method == "POST" && entry.path == "/v1/mesh/tasks/{work_id}/control"

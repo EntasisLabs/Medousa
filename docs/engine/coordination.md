@@ -6,9 +6,10 @@ ranges and digests, a governed Forge work item, and independent peer custody.
 
 ## Conversational proposal tools
 
-The full-daemon General host's `peers` discovery domain contains
-`cognition_active_work_discover`, `cognition_peer_discover`, and
-`cognition_peer_propose`. All require an admitted owner turn and use its
+The portable host exposes read-only `cognition_active_work_discover` in ordinary
+conversation modes. Assistant additionally exposes local
+`cognition_peer_discover` / `cognition_peer_propose` and the location-neutral
+`cognition_peer_delegate`. All require an admitted owner turn and use its
 authenticated principal/session. Active-work discovery lists each reachable
 workshop's non-terminal Forge projects and joins visible ACP sessions by exact
 Forge work id. The local workshop uses the admitted principal; paired workshops
@@ -44,8 +45,15 @@ the live registry after daemon restart is not invented from Forge metadata.
 Proposals use a one-hour expiry and a stable owner/session/authority-scoped
 request key. Exact retries reuse the immutable snapshot and repair its index;
 changed intent under the same key fails closed. Neither tool approves or launches
-work. Worker/remote-delegated/mobile ceilings are unchanged; embedded mobile
-composition, cloud adapters, and cross-workshop proposals remain unsupported.
+work. On embedded mobile, `cognition_peer_delegate` accepts only an exact
+agent-selectable runtime and Forge work id returned by active-work discovery. It
+sends a signed, bounded, digest-checked context grant to
+`/v1/mesh/peer-proposals`. The destination rechecks directional `assistant.work`
+policy, agent targeting, exact runtime, work ownership, and context provenance
+before creating a request-scoped shadow session and the normal immutable local
+proposal. The transfer carries no approval or execution grant. Exact retries
+reuse the shadow; another request key from the same phone chat gets an independent
+immutable shadow. Worker and remote-delegated ceilings remain unchanged.
 
 ## Native operator approval
 
@@ -54,7 +62,7 @@ These native-only routes require `admin.execute` plus a bound owner identity
 
 | Method | Route | Behavior |
 |--------|-------|----------|
-| GET | `/v1/coordination/proposals?session_id=...&after=...` | Owner-session inbox; optional opaque proposal-id cursor |
+| GET | `/v1/coordination/proposals?session_id=...&after=...` | Owner-session inbox, including paired request-scoped shadows projected through their immutable source chat; optional opaque proposal-id cursor |
 | POST | `/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/approve` | Approve the immutable snapshot; compile exact grants |
 | POST | `/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/deny` | Immutable denial |
 | POST | `/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/dispatch` | Dispatch an already approved snapshot |
@@ -87,5 +95,6 @@ is never rerun or acknowledged automatically.
 The daemon advertises `coordination.operator_proposals.v1` only when the local
 coordination host is composed. An unavailable host returns 503; scope, expiry,
 visibility, and immutable-write conflicts return 409. This increment exposes no
-proposal-creation HTTP route, model grant-issuance tool, autonomous follow-up
-authority, or mobile embedded-host composition.
+model grant-issuance tool or autonomous follow-up authority. The signed mesh
+proposal route is peer-only and destination-policy-gated; it is not a native
+operator proposal-creation endpoint.

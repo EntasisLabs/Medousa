@@ -30,6 +30,7 @@ pub const TYPED_TOOL_CONTRACTS: &[&str] = &[
     "cognition_context_list_pointers",
     "cognition_active_work_discover",
     "cognition_peer_discover",
+    "cognition_peer_delegate",
     "cognition_peer_propose",
     "cognition_custom_view_doctor",
     "cognition_custom_view_compose",

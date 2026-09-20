@@ -11,6 +11,8 @@ struct ProposalIndex {
     proposal_id: String,
     owner: String,
     owner_session: medousa_types::SessionRef,
+    #[serde(default)]
+    projected_source_session_ids: Vec<medousa_types::SessionId>,
 }
 
 pub fn proposal_identity(proposal: &PeerAssignmentProposal) -> Result<String> {
@@ -50,6 +52,14 @@ impl CoordinationStore {
     }
 
     pub fn record_proposal(&self, proposal: &PeerAssignmentProposal) -> Result<bool> {
+        self.record_proposal_with_source_sessions(proposal, &[])
+    }
+
+    pub fn record_proposal_with_source_sessions(
+        &self,
+        proposal: &PeerAssignmentProposal,
+        projected_source_session_ids: &[medousa_types::SessionId],
+    ) -> Result<bool> {
         self.require_owner(
             &proposal.request.channel,
             &proposal.request.owner_principal_id,
@@ -83,6 +93,7 @@ impl CoordinationStore {
                 proposal_id: proposal.proposal_id.clone(),
                 owner: proposal.request.owner_principal_id.clone(),
                 owner_session: proposal.request.owner_session.clone(),
+                projected_source_session_ids: projected_source_session_ids.to_vec(),
             },
         )?;
         Ok(created)
@@ -149,6 +160,74 @@ impl CoordinationStore {
                 || proposal.request.owner_session != *session
             {
                 bail!("proposal index scope mismatch");
+            }
+            let decision = self.proposal_decision(&proposal)?;
+            if decision.as_ref().is_some_and(|decision| !decision.approved) {
+                continue;
+            }
+            let binding = self.peer_if_recorded(&index.channel, &proposal.request.assignment_id)?;
+            if binding.is_some()
+                && self
+                    .receipt_if_recorded(&index.channel, &proposal.request.assignment_id)?
+                    .is_some()
+            {
+                continue;
+            }
+            page.insert(
+                proposal.proposal_id.clone(),
+                PeerProposalReviewRecord {
+                    proposal,
+                    decision,
+                    binding,
+                },
+            );
+            if page.len() > 8 {
+                page.pop_last();
+            }
+        }
+        let rows: Vec<_> = page.into_values().collect();
+        if serde_json::to_vec(&rows)?.len() > 1024 * 1024 {
+            bail!("proposal inbox page budget exhausted");
+        }
+        Ok(rows)
+    }
+
+    /// Operator inbox projected through an immutable source session. This is
+    /// used when a paired workshop owns request-scoped shadow sessions while
+    /// Home remains focused on the originating chat.
+    pub fn proposal_inbox_for_source_session(
+        &self,
+        owner: &str,
+        source_session_id: &medousa_types::SessionId,
+        after: Option<&str>,
+    ) -> Result<Vec<PeerProposalReviewRecord>> {
+        let entries = self.root.list_root_utf8()?;
+        if entries.len() > 10_000 {
+            bail!("proposal inbox scan budget exhausted");
+        }
+        let mut page = std::collections::BTreeMap::new();
+        for entry in entries {
+            if !entry.name.starts_with("p1-") {
+                continue;
+            }
+            let index: ProposalIndex = self.read(&medousa_store::StorePath::parse(&entry.name)?)?;
+            if index.owner != owner
+                || after.is_some_and(|id| index.proposal_id.as_str() <= id)
+            {
+                continue;
+            }
+            if object_path(&index.channel, "proposal-index", &index.proposal_id)?.file_name()
+                != entry.name
+            {
+                bail!("proposal index identity mismatch");
+            }
+            self.require_owner(&index.channel, owner)?;
+            if !index.projected_source_session_ids.contains(source_session_id) {
+                continue;
+            }
+            let proposal = self.proposal(&index.channel, &index.proposal_id)?;
+            if proposal.request.owner_principal_id != owner {
+                continue;
             }
             let decision = self.proposal_decision(&proposal)?;
             if decision.as_ref().is_some_and(|decision| !decision.approved) {

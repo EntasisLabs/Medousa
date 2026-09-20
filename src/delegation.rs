@@ -35,9 +35,9 @@ use stasis::prelude::{RuntimeComposition, RuntimeFactory};
 use crate::daemon_runtime_handlers::DaemonRuntimeRegistrar;
 use crate::delegated_task::{
     DELEGATED_TASK_SCHEMA_VERSION, DelegatedTaskControlAction, DelegatedTaskControlRequest,
-    DelegatedTaskObservation, DelegatedTaskRequest, DelegatedTaskStatus, DelegatedTaskTransport,
-    build_bounded_context_grant, source_execution_from_grant, validate_task_control_observation,
-    validate_task_control_request, validate_task_observation,
+    DelegatedTaskError, DelegatedTaskObservation, DelegatedTaskRequest, DelegatedTaskStatus,
+    DelegatedTaskTransport, build_bounded_context_grant, source_execution_from_grant,
+    validate_task_control_observation, validate_task_control_request, validate_task_observation,
 };
 use crate::execution_context::active_turn_execution_context;
 use crate::runtime_composition_ext::{RuntimeCompositionExt, process_once};
@@ -771,6 +771,65 @@ impl DelegationService {
         &self,
     ) -> Result<Vec<AuthorizedDelegationTarget>, crate::delegated_task::DelegatedTaskError> {
         self.host.authorized_targets().await
+    }
+
+    pub async fn propose_remote_peer(
+        &self,
+        target_runtime_id: &str,
+        forge_work_id: &str,
+        request_key: &str,
+        runtime: medousa_types::coordination::ExternalPeerRuntime,
+        instructions: &str,
+        continue_owner: bool,
+        existing_agent_session_id: Option<String>,
+    ) -> Result<crate::peer_coordination_mesh::RemotePeerProposalResponse, DelegatedTaskError> {
+        let execution = active_turn_execution_context().ok_or_else(|| {
+            DelegatedTaskError::invalid("remote peer proposal requires an admitted owner turn")
+        })?;
+        let target = self
+            .host
+            .authorized_targets()
+            .await?
+            .into_iter()
+            .find(|candidate| {
+                candidate.target.peer_device_id == target_runtime_id
+                    && candidate.candidate.agent_selectable
+            })
+            .map(|candidate| candidate.target)
+            .ok_or_else(|| {
+                DelegatedTaskError::conflict(
+                    "exact workshop is unavailable for agent-targeted Assistant work",
+                )
+            })?;
+        let context = build_bounded_context_grant(
+            self.session_store.as_ref(),
+            &self.authority_id,
+            execution.session_id(),
+            &format!("daemon:{}", self.authority_id),
+            request_key,
+            Utc::now(),
+        )?;
+        let source_execution = medousa_types::ExecutionRef {
+            authority_id: self.authority_id.clone(),
+            session_id: execution.session_id().clone(),
+            execution_id: medousa_types::ExecutionId::parse(execution.turn_id())
+                .map_err(|error| DelegatedTaskError::invalid(error.to_string()))?,
+        };
+        let request = crate::peer_coordination_mesh::RemotePeerProposalRequest {
+            schema_version: crate::peer_coordination_mesh::REMOTE_PEER_PROPOSAL_SCHEMA_VERSION,
+            source_execution,
+            owner_session_id: execution.session_id().clone(),
+            target_runtime_id: target_runtime_id.to_string(),
+            forge_work_id: forge_work_id.to_string(),
+            request_key: request_key.to_string(),
+            runtime,
+            instructions: instructions.to_string(),
+            continue_owner,
+            existing_agent_session_id,
+            context,
+        };
+        crate::peer_coordination_mesh::validate_remote_peer_proposal_request(&request)?;
+        self.host.propose_peer(&target, request).await
     }
 
     pub async fn binding(&self) -> Result<Option<DelegationBinding>> {

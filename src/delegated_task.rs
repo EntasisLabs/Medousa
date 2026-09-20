@@ -389,6 +389,16 @@ pub trait DelegatedTaskTransport: Send + Sync {
         Ok(Vec::new())
     }
 
+    async fn propose_peer(
+        &self,
+        _target: &crate::delegation::DelegationTarget,
+        _request: crate::peer_coordination_mesh::RemotePeerProposalRequest,
+    ) -> Result<crate::peer_coordination_mesh::RemotePeerProposalResponse, DelegatedTaskError> {
+        Err(DelegatedTaskError::transport(
+            "remote peer proposal transport is unavailable",
+        ))
+    }
+
     async fn submit_or_observe(
         &self,
         target: &crate::delegation::DelegationTarget,

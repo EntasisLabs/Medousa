@@ -572,6 +572,60 @@ impl DelegatedTaskTransport for HomeDelegatedTaskTransport {
         Ok(futures_util::future::join_all(futures).await)
     }
 
+    async fn propose_peer(
+        &self,
+        target: &medousa::delegation::DelegationTarget,
+        request: medousa::peer_coordination_mesh::RemotePeerProposalRequest,
+    ) -> Result<medousa::peer_coordination_mesh::RemotePeerProposalResponse, DelegatedTaskError>
+    {
+        let target = target.clone();
+        let config = tokio::task::spawn_blocking(move || delegation_transport_for(&target))
+            .await
+            .map_err(|_| DelegatedTaskError::transport("paired transport lookup failed"))?
+            .map_err(DelegatedTaskError::transport)?;
+        let wrapped = crate::mesh_envelope::wrap_payload_for_workshop(
+            &config,
+            crate::mesh_envelope::CAP_TASK_REQUEST,
+            request.clone(),
+        )
+        .map_err(DelegatedTaskError::transport)?;
+        let response: crate::mesh_envelope::MeshEnvelopedRequest<
+            medousa::peer_coordination_mesh::RemotePeerProposalResponse,
+        > = crate::workshop_transport::workshop_post_json(
+            &config,
+            "/v1/mesh/peer-proposals",
+            &wrapped,
+        )
+        .await
+        .map_err(DelegatedTaskError::transport)?;
+        crate::mesh_envelope::verify_payload_from_workshop(
+            &config,
+            &response,
+            crate::mesh_envelope::CAP_TASK_RESULT,
+        )
+        .map_err(DelegatedTaskError::transport)?;
+        if response.payload.schema_version
+            != medousa::peer_coordination_mesh::REMOTE_PEER_PROPOSAL_SCHEMA_VERSION
+            || response.payload.proposal.request.target.execution_runtime_id
+            != request.target_runtime_id
+            || response.payload.proposal.request.target.runtime != request.runtime
+            || response.payload.proposal.request.forge_work_id != request.forge_work_id
+            || response.payload.proposal.request.instructions != request.instructions
+            || response.payload.proposal.continue_owner != request.continue_owner
+            || response
+                .payload
+                .proposal
+                .request
+                .existing_agent_session_id
+                != request.existing_agent_session_id
+        {
+            return Err(DelegatedTaskError::conflict(
+                "remote proposal does not match the signed request",
+            ));
+        }
+        Ok(response.payload)
+    }
+
     async fn submit_or_observe(
         &self,
         target: &medousa::delegation::DelegationTarget,

@@ -31,6 +31,25 @@ fn identity(owner: &str, session: &SessionRef, key: &str) -> String {
 }
 
 impl LocalPeerDispatcher {
+    pub(crate) async fn require_owned_work(&self, owner: &str, work_id: &str) -> Result<()> {
+        let forge = self.state.forge.clone();
+        let owner = owner.to_string();
+        let work_id = work_id.to_string();
+        self.state
+            .forge_execution
+            .run(ExecutionClass::StoreIo, MAX_CONTEXT_BYTES, move || {
+                Ok((|| -> Result<()> {
+                    let governed = forge.load(&medousa_forge::model::WorkId::from(work_id))?;
+                    if governed.owner != owner {
+                        bail!("governed Forge work does not belong to the authenticated owner");
+                    }
+                    Ok(())
+                })())
+            })
+            .await??;
+        Ok(())
+    }
+
     pub async fn active_work_for_turn(
         &self,
         principal: &RequestPrincipal,
@@ -202,6 +221,18 @@ impl LocalPeerDispatcher {
             authority_id: authority.clone(),
             session_id,
         };
+        let projected_source_session_ids = crate::session_store::get_session_store()
+            .load_derivation(&session.session_id)?
+            .map(|derived| {
+                derived
+                    .derivation
+                    .manifest
+                    .sources
+                    .into_iter()
+                    .map(|source| source.selection.session.session_id)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         let channel = CoordinationChannelRef {
             authority_id: authority.clone(),
             channel_id: format!("peer_chat_{}", identity(&owner, &session, "channel")),
@@ -214,6 +245,7 @@ impl LocalPeerDispatcher {
         let owner_copy = owner.clone();
         let session_copy = session.clone();
         let runtime = self.local_runtime_id.clone();
+        let forge = self.state.forge.clone();
         let after = intent.after_entry_seq;
         let through = intent.through_entry_seq;
         let (work_id, source, previous) = self
@@ -240,6 +272,10 @@ impl LocalPeerDispatcher {
                         .work_id
                         .filter(|id| !id.trim().is_empty())
                         .ok_or_else(|| anyhow::anyhow!("chat has no governed Forge work item"))?;
+                    let governed = forge.load(&medousa_forge::model::WorkId::from(work.clone()))?;
+                    if governed.owner != owner_copy {
+                        bail!("governed Forge work does not belong to the authenticated owner");
+                    }
                     let entries: Vec<_> = crate::session_store::get_session_store()
                         .load_transcript_entries(&session_copy.session_id)
                         .into_iter()
@@ -337,7 +373,10 @@ impl LocalPeerDispatcher {
             self.state
                 .forge_execution
                 .run(ExecutionClass::StoreIo, MAX_CONTEXT_BYTES, move || {
-                    Ok(store.record_proposal(&saved))
+                    Ok(store.record_proposal_with_source_sessions(
+                        &saved,
+                        &projected_source_session_ids,
+                    ))
                 })
                 .await??;
             return Ok(proposal);
@@ -347,6 +386,7 @@ impl LocalPeerDispatcher {
             request,
             created_at + chrono::Duration::hours(1),
             intent.continue_owner,
+            projected_source_session_ids,
         )
         .await
     }

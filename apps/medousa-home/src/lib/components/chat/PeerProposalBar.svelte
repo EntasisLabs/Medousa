@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { actOnPeerProposal, listPeerProposals, proposalExecutionTransport } from "$lib/daemon/coordination";
-  import type { PeerProposalReviewRecord } from "$lib/types/generated/daemon_api";
+  import type { PeerProposalInboxResponse, PeerProposalReviewRecord } from "$lib/types/generated/daemon_api";
   import { connection } from "$lib/stores/connection.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { isTauri } from "$lib/platform";
@@ -19,8 +19,21 @@
   const current = $derived(rows[0] ?? null);
   const adopting = $derived(Boolean(current?.proposal.request.existing_agent_session_id));
   const profileScope = $derived(connection.health?.active_profile_id ?? "");
-  const available = $derived(isTauri() && connection.online && !workshops.switching && Boolean(connection.health?.runtime?.advertised_capabilities.includes("coordination.operator_proposals.v1")));
+  const proposalRuntimes = $derived([
+    null,
+    ...workshops.workshops
+      .filter(workshop => workshop.kind === "portal" || workshop.kind === "paired")
+      .map(workshop => workshop.pairing?.workshopDeviceId?.trim() || "")
+      .filter(Boolean),
+  ]);
+  const available = $derived(isTauri() && connection.online && !workshops.switching && (
+    Boolean(connection.health?.runtime?.advertised_capabilities.includes("coordination.operator_proposals.v1"))
+    || proposalRuntimes.length > 1
+  ));
   const expired = $derived(current ? Date.parse(current.proposal.expires_at) <= now : false);
+  function proposalWorkshop(runtimeId: string) {
+    return workshops.workshops.find(workshop => workshop.pairing?.workshopDeviceId === runtimeId);
+  }
 
   $effect(() => {
     const session = sessionId;
@@ -37,11 +50,20 @@
       loading = true;
       const requestRevision = revision;
       try {
-        const response = await listPeerProposals(session, undefined, pageAfter);
+        const settled = await Promise.allSettled(
+          proposalRuntimes.map(runtime => listPeerProposals(session, runtime, pageAfter)),
+        );
+        const responses = settled
+          .filter((result): result is PromiseFulfilledResult<PeerProposalInboxResponse> => result.status === "fulfilled")
+          .map(result => result.value);
+        if (!responses.length) throw settled.find(result => result.status === "rejected")?.reason ?? new Error("Proposal inbox unavailable");
         if (token === epoch && requestRevision === revision) {
-          const index = response.proposals.findIndex(row => row.proposal.proposal_id === selectedId);
-          rows = index > 0 ? [...response.proposals.slice(index), ...response.proposals.slice(0, index)] : response.proposals;
-          cursor = response.next_cursor ?? null; now = Date.now();
+          const proposals = responses
+            .flatMap(response => response.proposals)
+            .filter((row, index, all) => all.findIndex(candidate => candidate.proposal.proposal_id === row.proposal.proposal_id) === index);
+          const index = proposals.findIndex(row => row.proposal.proposal_id === selectedId);
+          rows = index > 0 ? [...proposals.slice(index), ...proposals.slice(0, index)] : proposals;
+          cursor = null; now = Date.now();
           if (!rows.length && pageAfter) pageAfter = undefined;
         }
       } catch (error) {
@@ -63,7 +85,8 @@
     busy = true; feedback = null;
     try {
       // Pin paired portals; local workshops use the normal authenticated route.
-      const transport = proposalExecutionTransport(workshops.activeWorkshop?.kind, proposal.request.target.execution_runtime_id);
+      const targetWorkshop = proposalWorkshop(proposal.request.target.execution_runtime_id);
+      const transport = proposalExecutionTransport(targetWorkshop?.kind, proposal.request.target.execution_runtime_id);
       let response;
       if (kind === "approve_and_dispatch") {
         await actOnPeerProposal(proposal, "approve", transport);
@@ -114,7 +137,7 @@
         {#if cursor}<button type="button" class="text-xs text-content-secondary" disabled={busy} onclick={() => void next(true)}>More requests</button>{/if}
       </div>
     </div>
-    <p class="mt-1 text-sm text-content-primary">{current.proposal.request.target.runtime} · {workshops.activeLabel}{adopting ? ' · existing work' : ''}</p>
+    <p class="mt-1 text-sm text-content-primary">{current.proposal.request.target.runtime} · {proposalWorkshop(current.proposal.request.target.execution_runtime_id)?.label ?? workshops.activeLabel}{adopting ? ' · existing work' : ''}</p>
     <p class="mt-1 whitespace-pre-wrap text-sm text-content-secondary">{current.proposal.request.instructions}</p>
     <details class="mt-2 text-xs text-content-secondary">
       <summary class="cursor-pointer">Review shared context and scope</summary>

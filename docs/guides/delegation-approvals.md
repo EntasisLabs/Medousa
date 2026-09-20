@@ -2,8 +2,9 @@
 
 On a supported workshop, ask Medousa to have Codex, Cursor, or Hermes work on
 the project bound to this chat. Medousa can discover local agent availability
-and prepare a delegation proposal. This remains a preview: cross-workshop
-delegation, cloud adapters, and autonomous chains are not yet connected.
+and prepare a delegation proposal. In Assistant mode on mobile, it can also
+prepare that proposal on an authorized paired workshop selected from active-work
+discovery. Cloud adapters and autonomous chains are not yet connected.
 
 You can also ask what work is active without first opening a project-bound chat.
 Medousa can list your non-terminal governed projects and visible agent sessions
@@ -16,10 +17,12 @@ attaches ownership and waits for its real terminal result; it does not send the
 task again. Sessions from another project, sessions you cannot see, and sessions
 already owned by another assignment are not eligible.
 
-The chat must be bound to a governed project on the current workshop. Medousa
-selects a specific committed conversation range to share, not a separate
-model-authored transcript. Discovery suggests the most recent 32 entries;
-one proposal can share at most 256 entries. Review that selection before starting.
+Local proposals require the chat to be bound to a governed project on the current
+workshop. A mobile Assistant can instead select an exact governed project on a
+paired workshop. Medousa shares a bounded committed conversation range with
+immutable provenance, not a separate model-authored transcript. Discovery
+suggests the most recent 32 entries; one proposal can share at most 256 entries.
+Review that selection before starting.
 
 On a supported workshop, a proposal appears above the composer. Review the
 agent, instructions, channel, governed work item, execution workshop, exact
@@ -45,5 +48,6 @@ Owner continuation, when included, permits one result-only reply in the same
 chat. It does not permit follow-up tools, another delegation, or deployment.
 
 This surface requires operator execution access on the workshop that owns the
-proposal. Unsupported workshops do not show it. The phone can review a supported
-remote workshop; the embedded mobile daemon is not yet composed for this flow.
+proposal. Unsupported workshops do not show it. The phone aggregates proposal
+inboxes from Personal and paired workshops while the chat stays on Personal;
+approval and launch are still executed by the exact destination workshop.

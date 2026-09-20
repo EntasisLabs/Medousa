@@ -701,6 +701,41 @@ mod tests {
     }
 
     #[test]
+    fn proposal_inbox_projects_shadow_session_through_source_chat() {
+        use medousa_types::coordination::*;
+        let (_temp, store, mut request) = persisted_fixture();
+        let source_session_id = request.context.sources[0]
+            .selection
+            .session
+            .session_id
+            .clone();
+        request.assignment_id = "remote-shadow-proposal".into();
+        request.owner_session.session_id = "request-scoped-shadow".parse().unwrap();
+        let mut proposal = PeerAssignmentProposal {
+            proposal_id: String::new(),
+            request,
+            expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+            continue_owner: true,
+        };
+        proposal.proposal_id = store::proposals::proposal_identity(&proposal).unwrap();
+        store
+            .record_proposal_with_source_sessions(&proposal, &[source_session_id.clone()])
+            .unwrap();
+
+        let rows = store
+            .proposal_inbox_for_source_session("user:alice", &source_session_id, None)
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].proposal, proposal);
+        assert!(
+            store
+                .proposal_inbox_for_source_session("user:mallory", &source_session_id, None)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
     fn proposal_assignment_lookup_survives_reopen_and_does_not_mutate_decisions() {
         use medousa_types::coordination::*;
         let (temp, store, request) = persisted_fixture();

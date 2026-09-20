@@ -181,6 +181,10 @@ fn add_effects_and_capabilities(index: &mut ToolPlacementIndex) {
         ToolId::new("cognition_peer_propose"),
         ToolEffect::Coordinate,
     );
+    index.set_effect(
+        ToolId::new("cognition_peer_delegate"),
+        ToolEffect::Coordinate,
+    );
     #[cfg(feature = "full-daemon")]
     index.set_effect(
         ToolId::new(crate::computer_tools::COGNITION_COMPUTER_ACT),

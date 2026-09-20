@@ -107,8 +107,16 @@ Assistant. Assistant's policy directs it to inspect work before choosing compute
 and distinguishes Medousa workshop execution from Codex/Cursor/Hermes custody.
 This is a surface ceiling, not an execution grant: all existing proposal,
 operator-approval, destination-policy, and receipt checks remain authoritative.
-The next boundary is a signed cross-workshop coordination adapter that can turn
-an exact remote inventory row into a proposal on the workshop that owns it.
+The signed cross-workshop coordination adapter now turns an exact authorized
+inventory row into an immutable proposal on the workshop that owns it. Mobile
+Assistant transfers only a bounded digest-checked context grant and intent over
+the pinned mesh. The destination rechecks directional policy, agent targeting,
+runtime identity, Forge ownership, and source provenance; it materializes a
+request-scoped derived session so repeated requests from one phone chat remain
+independent. Home projects those proposals back through the originating chat
+and routes approve/start to the exact workshop. Existing proposal decisions and
+execution admission remain authoritative. On-device validation is still pending;
+durable autonomous chaining after terminal peer receipts remains the next slice.
 
 The General host now registers a `peers` domain for conversation-bound local
 agent discovery and immutable proposals. It derives identity, bound Forge work,

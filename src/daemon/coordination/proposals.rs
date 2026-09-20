@@ -27,20 +27,25 @@ impl LocalPeerDispatcher {
                 medousa_forge::execution::MAX_STORE_PAYLOAD_BYTES,
                 move || {
                     Ok((|| -> Result<_> {
-                        if !crate::session_catalog::session_visible_to_profile(
+                        if crate::session_catalog::session_visible_to_profile(
                             session_id.as_str(),
                             &owner,
                         ) {
-                            bail!("owner session is not visible");
+                            store.proposal_inbox(
+                                &owner,
+                                &medousa_types::SessionRef {
+                                    authority_id: authority,
+                                    session_id,
+                                },
+                                after.as_deref(),
+                            )
+                        } else {
+                            store.proposal_inbox_for_source_session(
+                                &owner,
+                                &session_id,
+                                after.as_deref(),
+                            )
                         }
-                        store.proposal_inbox(
-                            &owner,
-                            &medousa_types::SessionRef {
-                                authority_id: authority,
-                                session_id,
-                            },
-                            after.as_deref(),
-                        )
                     })())
                 },
             )
@@ -63,6 +68,7 @@ impl LocalPeerDispatcher {
         request: ExternalPeerAssignmentRequest,
         expires_at: chrono::DateTime<chrono::Utc>,
         continue_owner: bool,
+        projected_source_session_ids: Vec<medousa_types::SessionId>,
     ) -> Result<PeerAssignmentProposal> {
         self.local_request(principal, &request)?;
         let ttl = expires_at - chrono::Utc::now();
@@ -82,7 +88,10 @@ impl LocalPeerDispatcher {
         self.state
             .forge_execution
             .run(ExecutionClass::StoreIo, MAX_CONTEXT_BYTES, move || {
-                Ok(store.record_proposal(&saved))
+                Ok(store.record_proposal_with_source_sessions(
+                    &saved,
+                    &projected_source_session_ids,
+                ))
             })
             .await??;
         Ok(proposal)

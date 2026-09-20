@@ -33,8 +33,11 @@ pub const INSTANT_TOOL_NAMES: &[&str] = &[
 /// Coordination capabilities reserved for the owner-level Assistant contract.
 /// Every proposal and launch still passes through its existing authenticated
 /// approval and execution-admission boundaries.
-pub const ASSISTANT_ELEVATED_TOOL_NAMES: &[&str] =
-    &["cognition_peer_discover", "cognition_peer_propose"];
+pub const ASSISTANT_ELEVATED_TOOL_NAMES: &[&str] = &[
+    "cognition_peer_delegate",
+    "cognition_peer_discover",
+    "cognition_peer_propose",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AgentModeContextLimits {
@@ -120,7 +123,8 @@ mod tests {
     #[test]
     fn assistant_elevated_surface_is_coordination_only() {
         let tools = assistant_elevated_tool_names();
-        assert_eq!(tools.len(), 2);
+        assert_eq!(tools.len(), 3);
+        assert!(tools.contains("cognition_peer_delegate"));
         assert!(tools.contains("cognition_peer_discover"));
         assert!(tools.contains("cognition_peer_propose"));
         assert!(!tools.contains("cognition_active_work_discover"));

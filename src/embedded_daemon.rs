@@ -339,15 +339,32 @@ fn bounded_live_history(history: Vec<ConversationTurn>) -> Vec<ConversationTurn>
 #[derive(Clone)]
 struct EmbeddedModeToolRegistry {
     inner: Arc<dyn ToolRegistry>,
-    allowlist: std::collections::HashSet<String>,
+    allowlist: Option<std::collections::HashSet<String>>,
+    blocklist: std::collections::HashSet<String>,
 }
 
 impl EmbeddedModeToolRegistry {
     fn instant(inner: Arc<dyn ToolRegistry>) -> Self {
         Self {
             inner,
-            allowlist: crate::agent_mode_context::instant_tool_names(),
+            allowlist: Some(crate::agent_mode_context::instant_tool_names()),
+            blocklist: std::collections::HashSet::new(),
         }
+    }
+
+    fn without_assistant_elevated(inner: Arc<dyn ToolRegistry>) -> Self {
+        Self {
+            inner,
+            allowlist: None,
+            blocklist: crate::agent_mode_context::assistant_elevated_tool_names(),
+        }
+    }
+
+    fn exposes(&self, tool_name: &str) -> bool {
+        self.allowlist
+            .as_ref()
+            .is_none_or(|allowlist| allowlist.contains(tool_name))
+            && !self.blocklist.contains(tool_name)
     }
 }
 
@@ -359,12 +376,12 @@ impl ToolRegistry for EmbeddedModeToolRegistry {
             .list_tools()
             .await?
             .into_iter()
-            .filter(|tool| self.allowlist.contains(tool.name.as_str()))
+            .filter(|tool| self.exposes(tool.name.as_str()))
             .collect())
     }
 
     async fn invoke_tool(&self, tool_name: &str, input: Value) -> StasisResult<Value> {
-        if !self.allowlist.contains(tool_name) {
+        if !self.exposes(tool_name) {
             return Err(StasisError::PortFailure(format!(
                 "tool not loaded in the active agent mode: {tool_name}"
             )));
@@ -2321,6 +2338,10 @@ impl EmbeddedDaemon {
         let prompt_pipeline = PromptExecutionPipeline::new(self.chat_client.clone());
         let tool_registry: Arc<dyn ToolRegistry> = if agent_mode == AgentModeId::Instant {
             Arc::new(EmbeddedModeToolRegistry::instant(
+                self.tool_registry.clone(),
+            ))
+        } else if matches!(agent_mode, AgentModeId::General | AgentModeId::Teacher) {
+            Arc::new(EmbeddedModeToolRegistry::without_assistant_elevated(
                 self.tool_registry.clone(),
             ))
         } else {
