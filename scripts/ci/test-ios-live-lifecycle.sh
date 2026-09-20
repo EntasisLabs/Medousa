@@ -18,6 +18,7 @@ xcrun swiftc -typecheck \
   -target arm64-apple-ios17.0-simulator \
   "$repo_root/apps/medousa-home/src-tauri/ios-live-activity/Shared/MedousaWorkAttributes.swift" \
   "$repo_root/apps/medousa-home/src-tauri/ios-live-activity/Shared/MedousaWidgetSnapshot.swift" \
+  "$repo_root/apps/medousa-home/src-tauri/ios-live-activity/Shared/MedousaLiveControlCommand.swift" \
   "$repo_root/apps/medousa-home/src-tauri/ios-live-activity/App/MedousaWidgetSnapshotStore.swift" \
   "$repo_root/apps/medousa-home/src-tauri/ios-live-activity/App/MedousaLiveActivityManager.swift" \
   "$repo_root/apps/medousa-home/src-tauri/ios-live-activity/App/MedousaLiveSocketLifecycle.swift" \

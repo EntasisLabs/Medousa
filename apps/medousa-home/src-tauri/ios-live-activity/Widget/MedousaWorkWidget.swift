@@ -1,6 +1,12 @@
 import ActivityKit
+import AppIntents
 import SwiftUI
 import WidgetKit
+
+@available(iOS 16.2, *)
+private func isMedousaLive(_ state: MedousaWorkAttributes.ContentState) -> Bool {
+    ["listening", "muted", "connecting"].contains(state.motionSummary?.lowercased() ?? "")
+}
 
 @available(iOS 16.2, *)
 struct MedousaWorkLiveActivity: Widget {
@@ -32,21 +38,15 @@ struct MedousaWorkLiveActivity: Widget {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    if let line = MedousaLiveActivityCopy.secondaryLine(
-                        motionSummary: context.state.motionSummary,
-                        subline: context.state.subline
-                    ) {
-                        Text(line)
+                    HStack(spacing: 10) {
+                        Text(context.attributes.workshopName)
                             .font(.system(.caption, design: .rounded))
                             .foregroundStyle(MedousaPalette.muted)
                             .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
-                        Text(context.attributes.workshopName)
-                            .font(.system(.caption2, design: .rounded))
-                            .foregroundStyle(MedousaPalette.subtle)
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Spacer(minLength: 8)
+                        if isMedousaLive(context.state) {
+                            MedousaLiveControls(state: context.state, compact: true)
+                        }
                     }
                 }
             } compactLeading: {
@@ -124,8 +124,58 @@ private struct MedousaWorkLockScreenView: View {
                     .minimumScaleFactor(0.85)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+
+            if isMedousaLive(context.state) {
+                MedousaLiveControls(state: context.state, compact: false)
+                    .padding(.top, 2)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(MedousaLiveActivityCopy.lockScreenInsets)
+    }
+
+}
+
+@available(iOS 17.0, *)
+private struct MedousaLiveControls: View {
+    let state: MedousaWorkAttributes.ContentState
+    let compact: Bool
+
+    private var isMuted: Bool { state.motionSummary?.lowercased() == "muted" }
+
+    var body: some View {
+        HStack(spacing: compact ? 8 : 12) {
+            Button(intent: SetMedousaLiveMutedIntent(muted: !isMuted)) {
+                Group {
+                    if compact {
+                        Image(systemName: isMuted ? "mic.fill" : "mic.slash.fill")
+                    } else {
+                        Label(isMuted ? "Unmute" : "Mute", systemImage: isMuted ? "mic.fill" : "mic.slash.fill")
+                    }
+                }
+                    .font(.system(size: compact ? 13 : 12, weight: .semibold, design: .rounded))
+                    .frame(minWidth: compact ? 32 : 88, minHeight: compact ? 32 : 36)
+                    .background(MedousaPalette.ink.opacity(0.08))
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .tint(MedousaPalette.ink)
+
+            Button(intent: StopMedousaLiveIntent()) {
+                Group {
+                    if compact {
+                        Image(systemName: "xmark")
+                    } else {
+                        Label("End", systemImage: "xmark")
+                    }
+                }
+                    .font(.system(size: compact ? 13 : 12, weight: .semibold, design: .rounded))
+                    .frame(minWidth: compact ? 32 : 72, minHeight: compact ? 32 : 36)
+                    .background(MedousaPalette.danger.opacity(0.18))
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .tint(MedousaPalette.danger)
+        }
     }
 }

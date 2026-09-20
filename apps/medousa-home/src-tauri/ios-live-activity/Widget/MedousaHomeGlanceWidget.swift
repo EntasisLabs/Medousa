@@ -81,6 +81,10 @@ private struct MedousaGlanceWidgetView: View {
 private struct MedousaGlanceSmallView: View {
     let snapshot: MedousaWidgetSnapshot
 
+    private var liveURL: URL {
+        URL(string: "medousa://live?mode=new&request=\(UUID().uuidString.lowercased())")!
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 6) {
@@ -109,6 +113,17 @@ private struct MedousaGlanceSmallView: View {
                 .lineLimit(3)
                 .minimumScaleFactor(0.85)
                 .frame(maxWidth: .infinity, alignment: .leading)
+
+            Spacer(minLength: 0)
+
+            Link(destination: liveURL) {
+                Label("Live", systemImage: "waveform")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .frame(maxWidth: .infinity, minHeight: 30)
+            }
+                .foregroundStyle(MedousaPalette.ink)
+                .background(MedousaPalette.primary.opacity(0.22))
+                .clipShape(Capsule())
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(14)
@@ -117,6 +132,10 @@ private struct MedousaGlanceSmallView: View {
 
 private struct MedousaGlanceMediumView: View {
     let snapshot: MedousaWidgetSnapshot
+
+    private var liveURL: URL {
+        URL(string: "medousa://live?mode=new&request=\(UUID().uuidString.lowercased())")!
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -139,16 +158,28 @@ private struct MedousaGlanceMediumView: View {
                 .minimumScaleFactor(0.9)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            if let footer = MedousaLiveActivityCopy.footerLine(
-                workshopName: snapshot.workshopName,
-                motionSummary: snapshot.motionSummary,
-                subline: snapshot.subline
-            ) {
-                Text(footer)
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(MedousaPalette.subtle)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+            HStack(spacing: 10) {
+                if let footer = MedousaLiveActivityCopy.footerLine(
+                    workshopName: snapshot.workshopName,
+                    motionSummary: snapshot.motionSummary,
+                    subline: snapshot.subline
+                ) {
+                    Text(footer)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(MedousaPalette.subtle)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+                Spacer(minLength: 6)
+                Link(destination: liveURL) {
+                    Label("Talk Live", systemImage: "waveform")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .padding(.horizontal, 11)
+                        .frame(minHeight: 30)
+                }
+                    .foregroundStyle(MedousaPalette.ink)
+                    .background(MedousaPalette.primary.opacity(0.22))
+                    .clipShape(Capsule())
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

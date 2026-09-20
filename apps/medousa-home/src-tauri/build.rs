@@ -32,6 +32,7 @@ fn compile_ios_live_activity() {
     let sources = [
         swift_root.join("Shared/MedousaWorkAttributes.swift"),
         swift_root.join("Shared/MedousaWidgetSnapshot.swift"),
+        swift_root.join("Shared/MedousaLiveControlCommand.swift"),
         swift_root.join("App/MedousaLiveActivityManager.swift"),
         swift_root.join("App/MedousaLiveVoiceSessionManager.swift"),
         swift_root.join("App/MedousaLiveNativeAudioEngine.swift"),

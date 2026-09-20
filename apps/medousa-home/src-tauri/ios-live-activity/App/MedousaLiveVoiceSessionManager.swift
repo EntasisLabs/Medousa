@@ -47,7 +47,40 @@ final class MedousaLiveVoiceSessionManager {
     private var nativeEventBytes = 0
     private var nextNativeEventSequence: UInt64 = 1
 
-    private init() {}
+    private var lastControlCommandId: String?
+
+    private init() {
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            Unmanaged.passUnretained(self).toOpaque(),
+            { _, observer, _, _, _ in
+                guard let observer else { return }
+                let manager = Unmanaged<MedousaLiveVoiceSessionManager>
+                    .fromOpaque(observer)
+                    .takeUnretainedValue()
+                Task { @MainActor in manager.consumeLiveControlCommand() }
+            },
+            MedousaLiveControlCommand.notificationName as CFString,
+            nil,
+            .deliverImmediately
+        )
+    }
+
+    private func consumeLiveControlCommand() {
+        guard let command = MedousaLiveControlCommand.consume(),
+              command.id != lastControlCommandId,
+              active
+        else { return }
+        lastControlCommandId = command.id
+        switch command.action {
+        case .mute:
+            _ = setMuted(true)
+        case .unmute:
+            _ = setMuted(false)
+        case .stop:
+            _ = stop()
+        }
+    }
 
     func start(json: String) -> String {
         guard let data = json.data(using: .utf8),
