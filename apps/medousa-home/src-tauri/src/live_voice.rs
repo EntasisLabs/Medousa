@@ -1,9 +1,193 @@
 use serde::{Deserialize, Serialize};
 
+#[cfg(target_os = "ios")]
+use medousa_types::{TurnStreamEventV2, TurnSurfaceContext};
+#[cfg(target_os = "ios")]
+use tauri::Manager;
+
 const OPENAI_REALTIME_CALLS_URL: &str = "https://api.openai.com/v1/realtime/calls";
 const OPENAI_LIVE_SESSIONS_URL: &str = "https://api.openai.com/v1/live/sessions";
 const MAX_SDP_BYTES: usize = 256 * 1024;
 const PERSONAL_CONTEXT_HANDOFF: &str = "\nBackend tools: the workshop can look up permitted saved memory, conversation history, journal or vault notes, and connected sources when configured.\nDelegate to the backend when: the user asks to recall or summarize their personal activity, work, decisions, plans, or progress beyond facts explicitly available in this conversation. Examples: 'what I've been up to this week', 'what have I been working on lately?', 'what did we decide last time?', and 'summarize my week'. These are personal-context retrieval requests, not small talk. Delegate before answering; the small seeded history is not a complete activity log. Do not guess, claim you have no memory, or ask the user to recount their week before the backend checks its permitted sources. If the backend finds insufficient information, say so honestly. A new time range or topic requires a new lookup even after an earlier result.\nDo not delegate to the backend when: the user is simply telling you about their week, sharing feelings, greeting you, thanking you, or asking to repeat or explain a verified result already provided for that same scope. Respond naturally to those conversational turns.";
+
+#[cfg(target_os = "ios")]
+#[derive(Default)]
+struct NativeLiveTimeline {
+    fragments: Vec<NativeLiveFragment>,
+    seen: std::collections::HashSet<String>,
+    last_delegation_offset: Option<f64>,
+}
+
+#[cfg(target_os = "ios")]
+struct NativeLiveFragment {
+    id: String,
+    role: &'static str,
+    text: String,
+    start_ms: f64,
+    end_ms: f64,
+}
+
+#[cfg(target_os = "ios")]
+impl NativeLiveTimeline {
+    fn accept(&mut self, event: &serde_json::Value) {
+        let role = match event.get("type").and_then(serde_json::Value::as_str) {
+            Some("session.input_transcript.delta") => "user",
+            Some("session.output_transcript.delta") => "assistant",
+            _ => return,
+        };
+        let Some(text) = event.get("delta").and_then(serde_json::Value::as_str) else { return };
+        let Some(start_ms) = event.get("start_ms").and_then(serde_json::Value::as_f64) else { return };
+        let Some(end_ms) = event.get("end_ms").and_then(serde_json::Value::as_f64) else { return };
+        if text.is_empty() || !start_ms.is_finite() || !end_ms.is_finite() || start_ms < 0.0 || end_ms < start_ms { return; }
+        let id = event.get("event_id").and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("{role}-{start_ms}-{end_ms}-{text}"));
+        if !self.seen.insert(id.clone()) { return; }
+        self.fragments.push(NativeLiveFragment { id, role, text: text.to_string(), start_ms, end_ms });
+        if self.fragments.len() > 512 {
+            let removed = self.fragments.remove(0);
+            self.seen.remove(&removed.id);
+        }
+    }
+
+    fn request(&mut self, offset_ms: f64) -> String {
+        let previous = self.last_delegation_offset.replace(offset_ms);
+        let mut fragments: Vec<_> = self.fragments.iter()
+            .filter(|fragment| fragment.role == "user" && fragment.start_ms <= offset_ms
+                && previous.is_none_or(|value| fragment.end_ms > value))
+            .collect();
+        fragments.sort_by(|left, right| left.start_ms.total_cmp(&right.start_ms));
+        if previous.is_none() {
+            let mut grouped = String::new();
+            let mut latest_end = -1.0;
+            for fragment in fragments {
+                if latest_end >= 0.0 && fragment.start_ms - latest_end > 1200.0 { grouped.clear(); }
+                grouped.push_str(&fragment.text);
+                latest_end = latest_end.max(fragment.end_ms);
+            }
+            return grouped.trim().to_string();
+        }
+        fragments.into_iter().map(|fragment| fragment.text.as_str()).collect::<String>().trim().to_string()
+    }
+}
+
+#[cfg(target_os = "ios")]
+fn native_delegation(event: &serde_json::Value) -> Option<(String, f64)> {
+    if event.get("type")?.as_str()? != "session.delegation.created" { return None; }
+    let delegation = event.get("delegation")?;
+    if delegation.get("target")?.as_str()? != "client" { return None; }
+    let id = delegation.get("id")?.as_str()?.trim();
+    let offset = event.get("offset_ms")?.as_f64()?;
+    (!id.is_empty() && offset.is_finite()).then(|| (id.to_string(), offset))
+}
+
+#[cfg(target_os = "ios")]
+fn bounded_live_result(status: &str, text: &str) -> String {
+    let mut excerpt = String::new();
+    for character in text.chars() {
+        if excerpt.len() + character.len_utf8() > 360 { break; }
+        excerpt.push(character);
+    }
+    let prefix = if status == "completed" { "" } else { status };
+    format!("{}{}{}", if prefix.is_empty() { "" } else { prefix }, if prefix.is_empty() { "" } else { ": " }, excerpt)
+        + if excerpt.len() < text.len() { "… Full result is in the chat." } else { "" }
+}
+
+#[cfg(target_os = "ios")]
+async fn execute_native_delegation(
+    app: &tauri::AppHandle,
+    session_id: &str,
+    delegation_id: &str,
+    request: String,
+) -> Result<(), String> {
+    if request.is_empty() { return Err("The request's speech context was unavailable. Please repeat it.".into()); }
+    let embedded = app.state::<crate::embedded_daemon::EmbeddedDaemonState>();
+    embedded.resume_for_background_execution().await?;
+    let client = embedded.client_if_active().await?
+        .ok_or_else(|| "Live tools require the Personal workshop".to_string())?;
+    let accepted = client.start_turn_with_options(
+        session_id,
+        request,
+        None,
+        TurnSurfaceContext {
+            channel_surface: Some("home-ios-live".to_string()),
+            channel_id: Some(session_id.to_string()),
+            user_id: None,
+            supports_ui_artifacts: false,
+            supports_liquid_markdown: false,
+            supports_browser_host: false,
+            browser_driver_id: None,
+            selected_worlds: Vec::new(),
+        },
+        None,
+        Some("This answer returns to an ongoing Medousa voice conversation. Lead with a brief, complete spoken summary of the verified result and status, then any useful details. Do not announce internal routing.".to_string()),
+        "standard".to_string(),
+        "default".to_string(),
+        Vec::new(),
+        Vec::new(),
+        None,
+    ).await.map_err(|error| error.to_string())?;
+    let mut stream = client.subscribe_turn(&accepted.turn_id, 0).await.map_err(|error| error.to_string())?;
+    while let Some(envelope) = stream.recv().await.map_err(|error| error.to_string())? {
+        let outcome = match envelope.event {
+            TurnStreamEventV2::Final { text, .. } | TurnStreamEventV2::WorkerSynthesis { text, .. } => Some(("completed", text)),
+            TurnStreamEventV2::NeedsInput { text, .. } | TurnStreamEventV2::Checkpoint { text, .. } => Some(("needs input", text)),
+            TurnStreamEventV2::Error { operator_message, .. } => Some(("failed", operator_message)),
+            _ => None,
+        };
+        if let Some((status, text)) = outcome {
+            ios::send_event(serde_json::json!({
+                "type": "session.commentary.append",
+                "event_id": format!("result-{delegation_id}"),
+                "delegation_id": delegation_id,
+                "content": bounded_live_result(status, &text),
+            }))?;
+            return Ok(());
+        }
+    }
+    Err("Medousa's response stream ended early".to_string())
+}
+
+#[cfg(target_os = "ios")]
+pub fn install_background_coordinator(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let mut timeline = NativeLiveTimeline::default();
+        let mut handled = std::collections::HashSet::<String>::new();
+        loop {
+            let status = ios::status().ok();
+            if !status.as_ref().is_some_and(|value| value.active) {
+                timeline = NativeLiveTimeline::default();
+                handled.clear();
+                tokio::time::sleep(std::time::Duration::from_millis(750)).await;
+                continue;
+            }
+            let events = ios::drain_background_events().unwrap_or_default();
+            for event in &events { timeline.accept(event); }
+            for event in events {
+                let Some((delegation_id, offset_ms)) = native_delegation(&event) else { continue; };
+                if !handled.insert(delegation_id.clone()) { continue; }
+                tokio::time::sleep(std::time::Duration::from_millis(750)).await;
+                for late in ios::drain_background_events().unwrap_or_default() { timeline.accept(&late); }
+                let request = timeline.request(offset_ms);
+                let _ = ios::send_event(serde_json::json!({
+                    "type": "session.thinking.append",
+                    "event_id": format!("progress-{delegation_id}"),
+                    "delegation_id": delegation_id,
+                    "content": "The workshop is processing this request. No result is available yet.",
+                }));
+                if let Err(error) = execute_native_delegation(&app, status.as_ref().and_then(|value| value.session_id.as_deref()).unwrap_or(""), &delegation_id, request).await {
+                    let _ = ios::send_event(serde_json::json!({
+                        "type": "session.commentary.append",
+                        "event_id": format!("result-{delegation_id}"),
+                        "delegation_id": delegation_id,
+                        "content": bounded_live_result("failed", &error),
+                    }));
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        }
+    });
+}
 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
@@ -506,6 +690,7 @@ mod ios {
         fn medousa_live_voice_stop() -> *mut c_char;
         fn medousa_live_voice_status() -> *mut c_char;
         fn medousa_live_voice_drain_events() -> *mut c_char;
+        fn medousa_live_voice_drain_background_events() -> *mut c_char;
         fn medousa_live_voice_ack_events(through_sequence: u64) -> bool;
         fn medousa_live_voice_send_event(json: *const c_char) -> bool;
         fn medousa_carplay_live_exchange(json: *const c_char) -> *mut c_char;
@@ -566,6 +751,14 @@ mod ios {
             json
         };
         serde_json::from_str(&json).map_err(|error| format!("decode native Live events: {error}"))
+    }
+
+    pub fn drain_background_events() -> Result<Vec<serde_json::Value>, String> {
+        let raw = unsafe { medousa_live_voice_drain_background_events() };
+        if raw.is_null() { return Ok(Vec::new()); }
+        let text = unsafe { CStr::from_ptr(raw) }.to_string_lossy().into_owned();
+        unsafe { medousa_live_activity_free_string(raw) };
+        serde_json::from_str(&text).map_err(|error| error.to_string())
     }
 
     pub fn ack_events(through_sequence: u64) -> Result<(), String> {

@@ -274,6 +274,9 @@ export async function adoptNativeLiveVoice(
 async function handleLiveDelegation(event: Record<string, unknown>) {
   const delegation = liveDelegation(event);
   if (!delegation || handledToolCalls.has(delegation.id)) return;
+  // Native sessions are coordinated by the Rust host so delegation survives
+  // webview suspension. JavaScript only owns WebRTC/legacy delegation.
+  if (transportMode === "native") return;
   handledToolCalls.add(delegation.id);
   const generation = transportGeneration;
   const handler = handoffHandler;

@@ -292,6 +292,7 @@ fn run_home() {
             ios_push_setup::install_ios_push_background_handler();
             embedded_daemon::install_lifecycle(app.handle());
             embedded_daemon::prewarm(app.handle());
+            live_voice::install_background_coordinator(app.handle().clone());
             // Match medousa-theme surface-950 so the status-bar / Dynamic Island
             // backdrop is not pure black against the charcoal shell.
             if let Some(main) = app.get_webview_window("main") {

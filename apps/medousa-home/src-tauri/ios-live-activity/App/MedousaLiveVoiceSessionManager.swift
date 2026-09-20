@@ -45,6 +45,7 @@ final class MedousaLiveVoiceSessionManager {
     }
 
     private var nativeEvents: [PendingNativeEvent] = []
+    private var backgroundEvents: [String] = []
     private var nativeEventBytes = 0
     private var nextNativeEventSequence: UInt64 = 1
 
@@ -110,6 +111,7 @@ final class MedousaLiveVoiceSessionManager {
         sessionId = request.sessionId
         nativeLiveSessionId = nil
         nativeEvents.removeAll()
+        backgroundEvents.removeAll()
         nativeEventBytes = 0
         nextNativeEventSequence = 1
         phase = "connecting"
@@ -221,6 +223,7 @@ final class MedousaLiveVoiceSessionManager {
         sessionId = nil
         nativeLiveSessionId = nil
         nativeEvents.removeAll()
+        backgroundEvents.removeAll()
         nativeEventBytes = 0
         nextNativeEventSequence = 1
         endLiveActivity()
@@ -241,6 +244,15 @@ final class MedousaLiveVoiceSessionManager {
             nativeEvents.removeFirst()
         }
         return true
+    }
+
+    /// A destructive side journal for the Rust-owned coordinator. The regular
+    /// sequence/ack journal remains untouched so the webview can adopt and render
+    /// the same native session without competing for delegation ownership.
+    func drainBackgroundEvents() -> String {
+        let events = backgroundEvents
+        backgroundEvents.removeAll(keepingCapacity: true)
+        return "[\(events.joined(separator: ","))]"
     }
 
     func sendNativeEvent(json: String) -> Bool {
@@ -365,6 +377,10 @@ final class MedousaLiveVoiceSessionManager {
             nativeEventBytes -= nativeEvents.removeFirst().json.utf8.count
         }
         nativeEvents.append(PendingNativeEvent(sequence: nextNativeEventSequence, json: json))
+        while backgroundEvents.count >= 128 {
+            backgroundEvents.removeFirst()
+        }
+        backgroundEvents.append(json)
         nativeEventBytes += data.count
         nextNativeEventSequence &+= 1
         if nextNativeEventSequence == 0 { nextNativeEventSequence = 1 }

@@ -176,6 +176,16 @@ public func medousa_live_voice_ack_events(_ throughSequence: UInt64) -> Bool {
     return false
 }
 
+@_cdecl("medousa_live_voice_drain_background_events")
+public func medousa_live_voice_drain_background_events() -> UnsafeMutablePointer<CChar>? {
+    if #available(iOS 17.0, *) {
+        return strdup(runOnMainActor {
+            MedousaLiveVoiceSessionManager.shared.drainBackgroundEvents()
+        })
+    }
+    return strdup("[]")
+}
+
 @_cdecl("medousa_live_voice_send_event")
 public func medousa_live_voice_send_event(_ jsonPointer: UnsafePointer<CChar>?) -> Bool {
     guard let jsonPointer else { return false }
