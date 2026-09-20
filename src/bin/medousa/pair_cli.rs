@@ -99,12 +99,7 @@ fn run_pair_permissions_set(daemon_url: &str, args: &[String]) -> Result<()> {
         update["expiresAt"] = json!(expires_at);
     }
 
-    let mut url =
-        reqwest::Url::parse(&format!("{daemon_url}/v1/peers/")).context("invalid daemon url")?;
-    url.path_segments_mut()
-        .map_err(|_| anyhow::anyhow!("daemon url cannot be a base"))?
-        .push(device_id)
-        .push("execution-policy");
+    let url = peer_execution_policy_url(daemon_url, device_id)?;
     let response = http_client(daemon_url)?
         .put(url)
         .json(&update)
@@ -121,6 +116,17 @@ fn run_pair_permissions_set(daemon_url: &str, args: &[String]) -> Result<()> {
         policy.get("revision").and_then(Value::as_u64).unwrap_or(0),
     );
     Ok(())
+}
+
+fn peer_execution_policy_url(daemon_url: &str, device_id: &str) -> Result<reqwest::Url> {
+    let mut url = reqwest::Url::parse(daemon_url).context("invalid daemon url")?;
+    url.path_segments_mut()
+        .map_err(|_| anyhow::anyhow!("daemon url cannot be a base"))?
+        .pop_if_empty()
+        .extend(["v1", "peers"])
+        .push(device_id)
+        .push("execution-policy");
+    Ok(url)
 }
 
 fn successful_json(response: reqwest::blocking::Response, operation: &str) -> Result<Value> {
@@ -403,4 +409,20 @@ fn find_arg_values(args: &[String], flag: &str) -> Vec<String> {
         .filter_map(|(index, arg)| (arg == flag).then(|| args.get(index + 1)).flatten())
         .cloned()
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::peer_execution_policy_url;
+
+    #[test]
+    fn peer_execution_policy_url_has_no_empty_path_segment() {
+        for daemon_url in ["http://127.0.0.1:7419", "http://127.0.0.1:7419/"] {
+            let url = peer_execution_policy_url(daemon_url, "phone-device-id").expect("url");
+            assert_eq!(
+                url.as_str(),
+                "http://127.0.0.1:7419/v1/peers/phone-device-id/execution-policy"
+            );
+        }
+    }
 }
