@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { liveHistoryEvents, livePhaseForServerEvent, liveTranscriptForServerEvent } from "$lib/liveVoice";
+import { LiveTimeline, liveTranscriptSlices } from "$lib/liveProtocol";
 
 describe("Medousa Live server events", () => {
   it("does not persist partial or empty transcripts", () => {
@@ -45,5 +46,19 @@ describe("Medousa Live server events", () => {
         transcript: "What's good?",
       }),
     ).toEqual({ id: "assistant-reply-1", role: "assistant", text: "What's good?" });
+  });
+
+  it("builds durable transcript attachments from Live protocol fragments", () => {
+    const timeline = new LiveTimeline();
+    timeline.accept({ type: "session.input_transcript.delta", event_id: "u1", delta: "Check GitHub", start_ms: 100, end_ms: 500 });
+    timeline.accept({ type: "session.output_transcript.delta", event_id: "a1", delta: "On it", start_ms: 600, end_ms: 900 });
+
+    expect(liveTranscriptSlices(timeline, [])).toEqual([{
+      turnId: undefined,
+      rows: [
+        { role: "user", text: "Check GitHub" },
+        { role: "assistant", text: "On it" },
+      ],
+    }]);
   });
 });

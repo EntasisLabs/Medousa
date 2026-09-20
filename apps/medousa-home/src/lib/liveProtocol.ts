@@ -70,6 +70,19 @@ export class LiveTimeline {
   }
 }
 
+export function liveTranscriptSlices(
+  timeline: LiveTimeline,
+  bindings: Array<{ start: number; turnId: string }>,
+): Array<{ turnId?: string; rows: Array<{ role: "user" | "assistant"; text: string }> }> {
+  const ordered = [...bindings].sort((a, b) => a.start - b.start);
+  if (!ordered.length) ordered.push({ start: 0, turnId: "" });
+  return ordered.flatMap((binding, index) => {
+    const rows = timeline.transcriptRange(index === 0 ? 0 : binding.start, ordered[index + 1]?.start ?? Infinity)
+      .map(({ role, text }) => ({ role, text }));
+    return rows.length ? [{ turnId: binding.turnId || undefined, rows }] : [];
+  });
+}
+
 export function liveDelegation(event: Record<string, unknown>): { id: string; offsetMs: number } | null {
   if (event.type !== "session.delegation.created") return null;
   const delegation = event.delegation as Record<string, unknown> | undefined;

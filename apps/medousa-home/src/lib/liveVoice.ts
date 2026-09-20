@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { isTauriIos } from "$lib/platform";
 import { get, writable } from "svelte/store";
 import { liveWorkResultEvents, type LiveWorkResult } from "$lib/liveWorkResult";
-import { LiveTimeline, liveDelegation, liveDelegationResult } from "$lib/liveProtocol";
+import { LiveTimeline, liveDelegation, liveDelegationResult, liveTranscriptSlices } from "$lib/liveProtocol";
 import { LiveDelegationCoordinator } from "$lib/liveDelegationCoordinator";
 import { nativeLivePreviewEnabled } from "$lib/config/liveVoicePreferences";
 
@@ -644,10 +644,10 @@ export async function setLiveVoiceMuted(muted: boolean): Promise<void> {
 
 export async function disconnectLiveVoice(): Promise<void> {
   workAbort.abort();
-  if (transportMode !== "native" && protocol === "live") {
+  if (protocol === "live") {
     // Persist only stable snapshots at closure, not every growing delta. Display
     // groups are heuristic; fragments never trigger durable work themselves.
-    if (sessionReady && dataChannel?.readyState === "open") {
+    if (transportMode !== "native" && sessionReady && dataChannel?.readyState === "open") {
       await new Promise<void>((resolve) => {
         const timeout = window.setTimeout(() => {
           sessionFinalized = null;
@@ -658,11 +658,8 @@ export async function disconnectLiveVoice(): Promise<void> {
         sendRealtimeEvent({ type: "session.close" });
       });
     }
-    const bindings = [...transcriptBindings].sort((a, b) => a.start - b.start);
-    if (!bindings.length) bindings.push({ start: 0, turnId: "" });
-    for (const [index, binding] of bindings.entries()) {
-      const rows = timeline.transcriptRange(index === 0 ? 0 : binding.start, bindings[index + 1]?.start ?? Infinity);
-      if (rows.length) persistTranscript({ id: `attachment-${index}`, role: "assistant", text: JSON.stringify(rows.map(({ role, text }) => ({ role, text }))) }, true, binding.turnId || undefined);
+    for (const [index, slice] of liveTranscriptSlices(timeline, transcriptBindings).entries()) {
+      persistTranscript({ id: `attachment-${index}`, role: "assistant", text: JSON.stringify(slice.rows) }, true, slice.turnId);
     }
     await transcriptWrites;
   }
