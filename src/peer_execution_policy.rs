@@ -185,6 +185,20 @@ impl PeerExecutionPolicy {
         self.expires_at.is_some_and(|expires_at| expires_at <= now)
     }
 
+    /// A peer that may already run host shell commands has been trusted with
+    /// strictly more authority than launching a bounded external-agent
+    /// assignment. Requiring another per-assignment approval in that case does
+    /// not add a meaningful security boundary; it only breaks unattended
+    /// Assistant ownership. Narrower agent-targeting policies continue through
+    /// the proposal inbox for explicit operator review.
+    pub fn permits_unattended_agent_launch(&self, now: DateTime<Utc>) -> bool {
+        self.enabled
+            && !self.is_expired_at(now)
+            && self.assistant_work
+            && self.allow_agent_targeting
+            && self.host_shell
+    }
+
     /// Capabilities safe to advertise back to this exact peer. This is a
     /// permission-filtered view, not the daemon's ambient capability set.
     pub fn advertised_execution_capabilities(&self, now: DateTime<Utc>) -> BTreeSet<String> {
@@ -1407,6 +1421,7 @@ mod tests {
         assert!(!view.policy.coder_work);
         assert!(view.policy.allowed_secret_refs.is_empty());
         assert!(!view.policy.allow_agent_targeting);
+        assert!(!view.policy.permits_unattended_agent_launch(Utc::now()));
 
         let mut request = admission("peer-a", "work-a");
         request.legacy_task_request_granted = true;
@@ -1426,6 +1441,34 @@ mod tests {
                 .map(|name| (*name).to_string())
                 .collect::<Vec<_>>()
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn host_owner_policy_can_launch_agents_without_per_request_approval() {
+        let (store, root) = test_store();
+        let policy = store
+            .update_policy(
+                "peer-a",
+                "pairing-1",
+                PeerExecutionPolicyUpdate {
+                    preset: PeerExecutionPolicyPreset::Custom,
+                    assistant_work: Some(true),
+                    host_shell: Some(true),
+                    allow_agent_targeting: Some(true),
+                    ..Default::default()
+                },
+                "local:operator",
+            )
+            .unwrap();
+        assert!(policy.permits_unattended_agent_launch(Utc::now()));
+
+        let mut narrower = policy;
+        narrower.host_shell = false;
+        assert!(!narrower.permits_unattended_agent_launch(Utc::now()));
+        narrower.host_shell = true;
+        narrower.allow_agent_targeting = false;
+        assert!(!narrower.permits_unattended_agent_launch(Utc::now()));
         let _ = std::fs::remove_dir_all(root);
     }
 

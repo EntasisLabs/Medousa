@@ -1,8 +1,11 @@
-//! Signed mesh contract for preparing an external-peer proposal on the
-//! workshop that owns the governed work. This transfers context and intent;
-//! it never carries an operator decision or execution grant.
+//! Signed mesh contract for preparing an external-peer assignment on the
+//! workshop that owns the governed work. The request transfers context and
+//! intent, never an operator decision or execution grant. The destination may
+//! return a binding when its own stored owner policy admits unattended launch.
 
-use medousa_types::coordination::{ExternalPeerRuntime, PeerAssignmentProposal};
+use medousa_types::coordination::{
+    ExternalPeerAssignmentBinding, ExternalPeerRuntime, PeerAssignmentProposal,
+};
 use medousa_types::session::{ExecutionRef, SessionId};
 use serde::{Deserialize, Serialize};
 
@@ -39,6 +42,8 @@ pub struct RemotePeerProposalRequest {
 pub struct RemotePeerProposalResponse {
     pub schema_version: u32,
     pub proposal: PeerAssignmentProposal,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding: Option<ExternalPeerAssignmentBinding>,
 }
 
 pub fn validate_remote_peer_proposal_request(
@@ -227,8 +232,7 @@ mod tests {
         };
         let source = TranscriptEntryRef {
             session: session.clone(),
-            entry_id: TranscriptEntryId::parse("ent_0123456789abcdef0123456789abcdef")
-                .unwrap(),
+            entry_id: TranscriptEntryId::parse("ent_0123456789abcdef0123456789abcdef").unwrap(),
             entry_seq: 1,
         };
         let turn = ConversationTurn::plain(
@@ -260,10 +264,8 @@ mod tests {
             existing_agent_session_id: None,
             context: DelegatedContextGrant {
                 manifest: ContextManifest {
-                    manifest_id: ContextManifestId::parse(
-                        "ctx_0123456789abcdef0123456789abcdef",
-                    )
-                    .unwrap(),
+                    manifest_id: ContextManifestId::parse("ctx_0123456789abcdef0123456789abcdef")
+                        .unwrap(),
                     sources: vec![ResolvedConversationRange {
                         selection: ConversationRangeSelection {
                             session,

@@ -98,6 +98,13 @@ Delegation is separate from pairing and portal selection:
    **Settings → Runtime Controls → Computer** when it advertises the matching
    driver. An open browser world or computer view remains bound to that exact
    workshop; changing the default does not move it.
+
+   A custom policy that grants **Assistant work**, **Agent targeting**, and
+   **Host shell** is treated as owner-level machine trust. External Codex,
+   Cursor, and Hermes assignments are then launched directly from their exact,
+   immutable handoff snapshot; Medousa does not require another approval card
+   for every assignment. Policies without host shell continue to create an
+   approval card before an external agent starts.
 2. On the phone, keep Personal selected. Open the paired workshop's edit
    actions under **Settings → Connection**, then choose **Use for delegated
    work**.

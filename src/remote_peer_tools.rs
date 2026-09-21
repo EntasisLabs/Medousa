@@ -34,7 +34,7 @@ struct PeerDelegateTool {
 
 #[medousa_tool(id = PEER_DELEGATE_ID)]
 impl PeerDelegateTool {
-    /// Prepare an immutable Codex/Cursor/Hermes assignment on the exact remote workshop that owns a discovered Forge work item. This transfers a bounded, digest-checked slice of this chat and creates a human approval card; it does not approve or launch the agent. Use only exact ids returned by cognition_active_work_discover. Reuse request_key only for an exact retry.
+    /// Delegate an immutable Codex/Cursor/Hermes assignment to the exact remote workshop that owns a discovered Forge work item. This transfers a bounded, digest-checked slice of this chat. A trusted owner-level Assistant policy launches it immediately; narrower policies return a human approval proposal. Use only exact ids returned by cognition_active_work_discover. Reuse request_key only for an exact retry.
     async fn invoke_typed(&self, input: PeerDelegateInput) -> Result<serde_json::Value> {
         let response = self
             .service
@@ -49,10 +49,17 @@ impl PeerDelegateTool {
             )
             .await
             .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+        let started = response.binding.is_some();
         Ok(serde_json::json!({
-            "status": "pending_approval",
+            "status": if started { "started" } else { "pending_approval" },
             "proposal": response.proposal,
-            "message": "Remote peer assignment prepared. The user must approve and start it from the proposal card.",
+            "binding": response.binding,
+            "started": started,
+            "message": if started {
+                "Remote peer assignment was accepted and started by the trusted Assistant workshop."
+            } else {
+                "Remote peer assignment prepared. The user must approve and start it from the proposal card."
+            },
         }))
     }
 }

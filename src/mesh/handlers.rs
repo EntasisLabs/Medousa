@@ -1013,10 +1013,8 @@ async fn propose_remote_peer(
     .await
     .map_err(map_delegated_task_error)?;
     let shadow_session_id = shadow.derivation.target_session.session_id;
-    let binding = crate::agent_mode_state::get_session_code_binding(
-        shadow_session_id.as_str(),
-    )
-    .map_err(|error| (StatusCode::CONFLICT, error))?;
+    let binding = crate::agent_mode_state::get_session_code_binding(shadow_session_id.as_str())
+        .map_err(|error| (StatusCode::CONFLICT, error))?;
     if binding
         .work_id
         .as_deref()
@@ -1038,8 +1036,8 @@ async fn propose_remote_peer(
         None,
     )
     .map_err(|error| (StatusCode::CONFLICT, error))?;
-    let entries = crate::session_store::get_session_store()
-        .load_transcript_entries(&shadow_session_id);
+    let entries =
+        crate::session_store::get_session_store().load_transcript_entries(&shadow_session_id);
     let first = entries.first().ok_or_else(|| {
         (
             StatusCode::CONFLICT,
@@ -1064,9 +1062,39 @@ async fn propose_remote_peer(
         )
         .await
         .map_err(internal)?;
+    let binding = if policy.permits_unattended_agent_launch(chrono::Utc::now()) {
+        // The signed peer request has already been authenticated and admitted
+        // by the destination-owned policy. Re-materialize operator authority
+        // locally only after that policy proves the device already holds host
+        // shell authority; model input can never manufacture this principal.
+        let operator = RequestPrincipal::local_app(
+            Arc::from(format!("trusted-assistant:{}", sender.phone_id)),
+            TransportClass::Loopback,
+        );
+        host.decide_proposal(
+            &operator,
+            proposal.request.channel.clone(),
+            proposal.proposal_id.clone(),
+            true,
+        )
+        .await
+        .map_err(internal)?;
+        Some(
+            host.dispatch_approved_proposal(
+                &operator,
+                proposal.request.channel.clone(),
+                proposal.proposal_id.clone(),
+            )
+            .await
+            .map_err(internal)?,
+        )
+    } else {
+        None
+    };
     let response = RemotePeerProposalResponse {
         schema_version: REMOTE_PEER_PROPOSAL_SCHEMA_VERSION,
         proposal,
+        binding,
     };
     let pairing = state.pairing.as_ref().ok_or_else(|| {
         (
