@@ -109,10 +109,12 @@ impl CoordinationStore {
         self.validate_receipt_binding(receipt)?;
         let binding = &receipt.binding;
         // Expired/revoked dispatch approval must not discard completion evidence.
-        self.create(
+        let created = self.create(
             &object_path(&binding.channel, "receipt", &binding.assignment_id)?,
             receipt,
-        )
+        )?;
+        self.project_external_receipt(receipt)?;
+        Ok(created)
     }
 
     fn validate_receipt_binding(&self, receipt: &ExternalPeerAssignmentReceipt) -> Result<()> {

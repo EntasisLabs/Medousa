@@ -435,6 +435,28 @@ impl WorkflowExecutor {
         self.registry
             .update_status(&payload.workflow_id, WorkflowStatus::Running, Vec::new())
             .await;
+        let _ = crate::assistant_assignments::project_runtime_event(
+            medousa_types::assistant_assignment::AssistantAssignmentKind::Workflow,
+            &payload.workflow_id,
+            medousa_types::assistant_assignment::AssistantAssignmentStatus::Running,
+            1,
+            "runtime:workflow",
+            None,
+        );
+        if payload.lane == "scheduled" {
+            let _ = crate::assistant_assignments::project_scheduled_occurrence(
+                &payload.workflow_id,
+                &job.id,
+            );
+            let _ = crate::assistant_assignments::project_runtime_event(
+                medousa_types::assistant_assignment::AssistantAssignmentKind::ScheduledOccurrence,
+                &job.id,
+                medousa_types::assistant_assignment::AssistantAssignmentStatus::Running,
+                1,
+                "runtime:scheduler",
+                None,
+            );
+        }
 
         let lane = if payload.lane == "scheduled" {
             McpTurnLane::Scheduled
@@ -458,6 +480,29 @@ impl WorkflowExecutor {
         self.registry
             .update_status(&payload.workflow_id, final_status, step_results.clone())
             .await;
+        let assignment_status = if workflow_failed {
+            medousa_types::assistant_assignment::AssistantAssignmentStatus::Failed
+        } else {
+            medousa_types::assistant_assignment::AssistantAssignmentStatus::Completed
+        };
+        let _ = crate::assistant_assignments::project_runtime_event(
+            medousa_types::assistant_assignment::AssistantAssignmentKind::Workflow,
+            &payload.workflow_id,
+            assignment_status,
+            2,
+            "runtime:workflow",
+            None,
+        );
+        if payload.lane == "scheduled" {
+            let _ = crate::assistant_assignments::project_runtime_event(
+                medousa_types::assistant_assignment::AssistantAssignmentKind::ScheduledOccurrence,
+                &job.id,
+                assignment_status,
+                2,
+                "runtime:scheduler",
+                None,
+            );
+        }
 
         let duration_ms = started.elapsed().as_millis();
         let diagnostics = json!({

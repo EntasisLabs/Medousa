@@ -16,6 +16,7 @@ use std::path::Path;
 
 const MAX_RECORD_BYTES: u64 = 2 * 1024 * 1024;
 const SCHEMA_VERSION: u16 = 1;
+pub mod assistant_ledger;
 pub mod intake;
 pub mod proposals;
 
@@ -53,6 +54,10 @@ fn object_path(channel: &CoordinationChannelRef, kind: &str, id: &str) -> Result
         match kind {
             "receipt" => "r1",
             "proposal-index" => "p1",
+            "assistant-assignment" => "aa1",
+            "assistant-event" => "ae1",
+            "assistant-terminal" => "at1",
+            "assistant-command" => "ac1",
             _ => "c1",
         },
         digest.finalize()
@@ -222,6 +227,7 @@ impl CoordinationStore {
             &object_path(&request.channel, "assignment", &request.assignment_id)?,
             request,
         )?;
+        self.project_external_request(request)?;
         Ok(if created {
             AssignmentClaim::Claimed
         } else {
@@ -251,10 +257,12 @@ impl CoordinationStore {
             return Ok(false);
         }
         self.require_assignment_grant(&request, chrono::Utc::now())?;
-        self.create(
+        let created = self.create(
             &object_path(&binding.channel, "peer", &binding.assignment_id)?,
             binding,
-        )
+        )?;
+        self.project_external_binding(binding)?;
+        Ok(created)
     }
 
     pub fn peer(
