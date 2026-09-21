@@ -14,11 +14,18 @@ fi
 
 ENT_SRC="$ROOT/src-tauri/ios-entitlements/medousa-home_iOS.entitlements"
 ENT_DST="$GEN/medousa-home_iOS/medousa-home_iOS.entitlements"
+CARPLAY_ENTITLEMENT="com.apple.developer.carplay-voice-based-conversation"
 
-apply_push_entitlements() {
+apply_app_entitlements() {
   if [[ -f "$ENT_SRC" && -d "$(dirname "$ENT_DST")" ]]; then
     cp "$ENT_SRC" "$ENT_DST"
-    echo "[ios-prepare] applied push entitlements"
+    if [[ "${MEDOUSA_CARPLAY:-0}" == "1" ]]; then
+      /usr/libexec/PlistBuddy -c "Add :${CARPLAY_ENTITLEMENT} bool true" "$ENT_DST" 2>/dev/null \
+        || /usr/libexec/PlistBuddy -c "Set :${CARPLAY_ENTITLEMENT} true" "$ENT_DST"
+      echo "[ios-prepare] applied app + CarPlay voice conversation entitlements"
+    else
+      echo "[ios-prepare] applied app entitlements"
+    fi
   fi
 }
 
@@ -394,6 +401,23 @@ if "aps-environment" not in text:
         1,
     )
 
+# A CarPlay scene without its approved managed entitlement never appears on a
+# physical head unit. Keep both changes behind one build switch so a CarPlay
+# build cannot accidentally contain only half of the required configuration.
+carplay_entitlement = "        com.apple.developer.carplay-voice-based-conversation: true\n"
+if os.environ.get("MEDOUSA_CARPLAY") == "1":
+    if carplay_entitlement not in text:
+        entitlement_anchor = "        aps-environment: development\n"
+        if entitlement_anchor not in text:
+            raise SystemExit("[ios-prepare] error: generated project has no app entitlement properties")
+        text = text.replace(
+            entitlement_anchor,
+            entitlement_anchor + carplay_entitlement,
+            1,
+        )
+else:
+    text = text.replace(carplay_entitlement, "")
+
 if "com.apple.Push" not in text and "medousa-home_iOS:" in text:
     text = text.replace(
         "  medousa-home_iOS:\n    type: application\n",
@@ -496,14 +520,22 @@ PY
 if command -v xcodegen >/dev/null 2>&1; then
   (cd "$GEN" && xcodegen >/dev/null)
   echo "[ios-prepare] xcode project synced"
-  apply_push_entitlements
+  apply_app_entitlements
 else
   echo "[ios-prepare] warn: install xcodegen (brew install xcodegen) to sync Xcode after patches"
-  apply_push_entitlements
+  apply_app_entitlements
 fi
 
 # xcodegen rewrites widget Info.plist defaults (1.0) — re-stamp after sync.
 sync_ios_versions
+
+if [[ "${MEDOUSA_CARPLAY:-0}" == "1" ]]; then
+  /usr/libexec/PlistBuddy -c \
+    "Print :UIApplicationSceneManifest:UISceneConfigurations:CPTemplateApplicationSceneSessionRoleApplication" \
+    "$GEN/medousa-home_iOS/Info.plist" >/dev/null
+  /usr/libexec/PlistBuddy -c "Print :${CARPLAY_ENTITLEMENT}" "$ENT_DST" | grep -q true
+  echo "[ios-prepare] verified CarPlay scene + voice conversation entitlement"
+fi
 
 # App Store rejects any alpha channel on iOS app icons (ITMS-90717). `tauri icon` composites
 # over --ios-color but still writes RGBA, so flatten the asset catalog to opaque RGB.

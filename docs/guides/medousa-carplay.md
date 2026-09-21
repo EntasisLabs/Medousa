@@ -32,24 +32,37 @@ Xcode 27 includes the required CarPlay framework in its iOS SDK. Apple's
 the separate CarPlay Simulator app. The installed iOS Simulator runtime alone
 does not imply that this separate app is installed.
 
-Enable scene registration for an experimental build:
+Enable the CarPlay scene and its matching voice-conversation entitlement for a
+simulator build:
 
 ```bash
 cd apps/medousa-home
-MEDOUSA_CARPLAY=1 npm run ios:prepare
+npm run tauri:ios:dev:carplay:sim
 ```
 
-Keep `MEDOUSA_CARPLAY=1` set for the subsequent iOS build, which runs preparation
-again. Normal preparation removes the experimental scene configuration.
+For a connected iPhone or an archive, use the explicit CarPlay variants:
+
+```bash
+npm run tauri:ios:dev:carplay
+npm run tauri:ios:build:carplay
+npm run tauri:ios:build:testflight:carplay
+```
+
+These commands keep `MEDOUSA_CARPLAY=1` set through preparation and the Tauri/Xcode
+build. Preparation registers the CarPlay scene and adds
+`com.apple.developer.carplay-voice-based-conversation`; the TestFlight command
+also verifies both survived into the signed app. Normal iOS commands remove the
+restricted entitlement and scene so ordinary development builds remain signable.
 The source scene configuration is `src-tauri/ios-carplay/scene.json` and the
 native delegate is linked through the existing Swift archive, not compiled
 twice in the Xcode app target.
 
-Scene registration alone is insufficient: Apple must approve the voice-based
-conversational CarPlay entitlement and it must be present in the app's signed
-entitlements and provisioning profile. This slice does not alter the normal
-phone entitlements or request approval on your behalf. Follow the current
-[CarPlay Developer Guide and entitlement request](https://developer.apple.com/carplay/).
+Apple must approve **CarPlay Voice Based Conversation** for the Medousa App ID.
+After approval, regenerate the development, Ad Hoc, and App Store provisioning
+profiles before using a physical phone, vehicle, or TestFlight archive. A build
+fails signing—or the post-build verification—rather than silently producing a
+CarPlay-less archive when that managed capability is absent. Request it through
+Apple's [CarPlay entitlement form](https://developer.apple.com/contact/request/carplay/).
 
 ## Qualification still required
 

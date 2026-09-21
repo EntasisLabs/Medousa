@@ -35,6 +35,20 @@ if [[ -n "$IPA" && -f "$IPA" ]]; then
     echo "     CFBundleShortVersionString = $MARKETING"
     echo "     CFBundleVersion            = $BUNDLE"
   fi
+  if [[ "${MEDOUSA_CARPLAY:-0}" == "1" && -n "$APP" ]]; then
+    CARPLAY_ENTITLEMENT="com.apple.developer.carplay-voice-based-conversation"
+    /usr/libexec/PlistBuddy -c \
+      'Print :UIApplicationSceneManifest:UISceneConfigurations:CPTemplateApplicationSceneSessionRoleApplication' \
+      "$APP/Info.plist" >/dev/null
+    SIGNED_ENTITLEMENTS="$(codesign -d --entitlements - "$APP" 2>/dev/null)"
+    if ! grep -q "$CARPLAY_ENTITLEMENT" <<<"$SIGNED_ENTITLEMENTS"; then
+      echo "[error] CarPlay build is missing $CARPLAY_ENTITLEMENT in its signed entitlements"
+      echo "        Request/enable CarPlay Voice Based Conversation for this App ID,"
+      echo "        then regenerate the provisioning profile and rebuild."
+      exit 1
+    fi
+    echo "[ok] Verified signed CarPlay scene + voice conversation entitlement"
+  fi
   echo
   echo "[ok] IPA ready:"
   echo "     $IPA"
