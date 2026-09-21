@@ -123,6 +123,10 @@ pub struct TurnWorkRecord {
     pub result_text: Option<String>,
     pub tool_names: Vec<String>,
     pub termination_reason: Option<String>,
+    /// Explicit worker handback decision. `false` means the worker result is
+    /// already principal-facing and must be delivered without another model call.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub needs_synthesis: Option<bool>,
     pub error: Option<String>,
     pub user_ack: String,
     pub provider: String,
@@ -228,6 +232,7 @@ impl TurnWorkRecord {
             result_text: None,
             tool_names: Vec::new(),
             termination_reason: None,
+            needs_synthesis: None,
             error: None,
             user_ack: String::new(),
             provider,
@@ -1253,6 +1258,7 @@ mod tests {
             result_text: Some("done".to_string()),
             tool_names: Vec::new(),
             termination_reason: None,
+            needs_synthesis: None,
             error: None,
             user_ack: "On it".to_string(),
             provider: "openai".to_string(),

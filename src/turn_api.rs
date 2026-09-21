@@ -96,6 +96,13 @@ pub struct TurnFinish {
     /// Optional short note for logs
     #[serde(default)]
     reason: Option<String>,
+    /// Worker handback policy. False means this is already the complete answer.
+    #[serde(default = "default_turn_finish_needs_synthesis")]
+    needs_synthesis: bool,
+}
+
+fn default_turn_finish_needs_synthesis() -> bool {
+    true
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -321,6 +328,7 @@ impl TurnFinish {
             .invoke_typed(TurnFinishInput {
                 message: self.message,
                 reason: self.reason,
+                needs_synthesis: self.needs_synthesis,
             })
             .await?;
         serialize_output(CognitionTurnFinishTool::tool_id(), output)
@@ -385,9 +393,14 @@ mod tests {
         }))
         .expect("finish");
         match finish {
-            TurnAction::Finish(TurnFinish { message, reason }) => {
+            TurnAction::Finish(TurnFinish {
+                message,
+                reason,
+                needs_synthesis,
+            }) => {
                 assert_eq!(message.as_deref(), Some("Done."));
                 assert!(reason.is_none());
+                assert!(needs_synthesis);
             }
             other => panic!("expected finish, got {other:?}"),
         }

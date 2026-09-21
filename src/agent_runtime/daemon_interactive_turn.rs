@@ -1553,7 +1553,7 @@ async fn run_agent_turn_inner(
                                     ),
                                 };
                         }
-                        forge.begin_workspace_attempt(
+                        forge.begin_collaborative_workspace_attempt(
                             &work_id,
                             executor,
                             Some(std::process::id()),
@@ -1562,7 +1562,7 @@ async fn run_agent_turn_inner(
                     }
                 }
             } else {
-                forge.begin_workspace_attempt(
+                forge.begin_collaborative_workspace_attempt(
                     &work_id,
                     executor,
                     Some(std::process::id()),

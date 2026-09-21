@@ -394,6 +394,7 @@ mod tests {
             result_text: None,
             tool_names: vec![],
             termination_reason: None,
+            needs_synthesis: None,
             error: None,
             user_ack: "run".to_string(),
             provider: "openai".to_string(),

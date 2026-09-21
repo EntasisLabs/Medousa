@@ -1,7 +1,7 @@
 # Assistant ownership foundation
 
-Status: implementation plan; no runtime capabilities are added by this document.
-Date: 2026-09-17.
+Status: locked phased implementation plan; no runtime capabilities are added by this document.
+Date: 2026-09-17; rebaselined against the runtime on 2026-09-21.
 Branch: `codex/assistant-ownership-foundation`, based on the validated iOS Live branch.
 
 ## Product decision
@@ -378,57 +378,229 @@ Live from canonical context and verified outcomes. Do not automatically activate
 the microphone or promise to restart Siri. Initial foundation delivery is a normal
 notification/channel result; invitation UX follows after ownership is reliable.
 
-## Implementation sequence and gates
+## Locked implementation sequence and gates
 
-### Slice 0 — lock contracts, mode, and seams
+This sequence is rebaselined against the 2026-09-21 runtime audit. It supersedes
+the older five-slice ordering. The architecture above remains the target; these
+phases define the smallest dependency-safe path from the current runtime to it.
+A phase may be developed behind an unadvertised capability, but it does not count
+as complete until its exit gate passes. Later phases must not invent parallel
+ownership, scheduling, delivery, or voice systems to bypass an earlier gate.
 
-Trace services beneath ACP handlers, worker ownership, scheduling admission,
-shared-room authorization, and delivery. Write contract tests for unavailable
-adapters, identity scope, and existing behavior. Decide reuse versus additive
-records from actual persistence semantics. Establish Assistant as a real General
-superset in the existing mode registry, prompt policy, resume path, embedded
-runtime, and picker without adding a second model loop or repeated UI warnings.
-Exit: reviewed typed contracts, a small end-to-end fake-adapter harness, and a
-mode selection that preserves existing General behavior.
+### Current baseline
 
-### Slice 1 — channels and external peers
+The repository already has real execution primitives: canonical interactive and
+scheduled agent turns, parallel and bound workers, durable Stasis jobs, workflows,
+recurring schedules, ACP sessions, governed Forge work, paired-workshop mesh
+routing, delivery bindings, and Home/Live presentation. Assistant mode also has
+initial proposal, approval, adoption, receipt, and bounded continuation seams.
 
-Add logical channel/participant/session bindings and the model-facing external
-peer bridge. Support one local ACP peer at a time, then Codex/Cursor/Hermes adapter
-parity. Exit: Medousa—not a UI-only caller—discovers, creates, assigns, observes,
-and cancels a peer; attributed output and permission requests reach the channel.
-No personal context leaks to another member or executor.
+Those primitives do not yet form one durable assistant coordinator. Ownership is
+spread across subsystem-specific records, and orchestration is still primarily
+assembled inside an active model turn. The immediate routing fix adds an explicit
+`needs_synthesis` handback and avoids daemon-default fallback, but host synthesis
+still derives its route from resolved worker execution rather than a durably
+preserved parent `final_response` contract. That defect is Phase 0, because every
+later owner wakeup depends on trustworthy return routing.
 
-### Slice 2 — adoption and durable owner intake
+### Phase 0 — preserve the parent continuation route
 
-Adopt existing work, normalize receipts, and continue the owner after completion
-with busy-session deferral and restart reconciliation. Exit: close the client,
-complete peer work, restart/reconnect, and obtain one attributable owner decision
-without duplicate assignment or a stuck active turn.
+**Outcome:** delegated work always returns to the parent assistant through the
+route selected for final user-facing synthesis, independent of the worker model.
 
-### Slice 3 — scheduled self-waking
+- Introduce a versioned continuation-route value carrying at least stage role,
+  route profile, provider/model intent where pinned, and safe fallback policy.
+- Capture it when the parent turn accepts/delegates work; persist it with the
+  worker/assignment continuation rather than reconstructing it from daemon
+  defaults or the worker's resolved route.
+- Make bound-workshop synthesis, parallel-worker host resume, restart reconcile,
+  and delivery retry consume the same contract.
+- Preserve compatibility for old records by using an explicit legacy fallback;
+  never silently treat the worker route as the desired final-response route.
+- Keep `needs_synthesis` structural. Prose, worker success, and transport delivery
+  are not substitutes for a terminal host decision.
 
-Add delay/at/recurrence controls with occurrence limits and generation fencing.
-Exit: “check in 30 minutes” fires one logical occurrence, retries safely, exhausts
-itself, and remains inspectable. Cancellation, downtime, timezone changes, and
-concurrent scheduler ticks pass deterministic-clock tests.
+**Likely seams:** `daemon_interactive_turn.rs`, `turn_worker/{run,store,status,
+registry,host_resume}.rs`, `turn_api.rs`, and the stage-routing types used by the
+canonical turn path.
 
-### Slice 4 — bounded review coordination
+**Exit gate:** tests use deliberately different host and worker models and prove
+that direct completion, parallel cohort completion, bound work, busy-session
+deferral, daemon restart, and retry each produce one final answer on the preserved
+parent route. Legacy records have deterministic fallback behavior. No path falls
+back to a tiny/default model merely because worker execution completed there.
 
-Compose existing peers and owner events into Codex → reviewer → permitted fixes →
-review. Exit: exact revision/evidence binding, independent runtime sessions,
-bounded loops, failure/cancel/revocation handling, and no unauthorized publish.
+### Phase 1 — one Assistant assignment ledger over existing executors
 
-### Slice 5 — coherent presentation and return
+**Outcome:** Assistant can answer “what do I own, who is doing it, where is it
+running, what authority allows it, and what happens next?” without scraping four
+unrelated stores inside a model turn.
 
-Present participants, assignments, permissions, outcomes, and notifications without
-dumping orchestration prompts into chat. Add topic-bearing Live re-entry. Exit:
-accepting an invitation resumes verified context; ending Live never ends accepted
-work; reconnecting never narrates an obsolete outcome as current.
+- Define one versioned `AssistantAssignment` projection with stable assignment,
+  owner, principal, source session/channel, execution binding, workshop, work id,
+  grant, budget, lifecycle, receipt, delivery, and continuation references.
+- Project existing internal turn workers, ACP/external sessions, workflows/jobs,
+  and scheduled occurrences into that contract. Do not rewrite their execution
+  engines or duplicate their native state.
+- Define lifecycle transitions and terminal precedence centrally. Unknown,
+  interrupted, unavailable, blocked, and awaiting-approval remain distinct from
+  failed or completed.
+- Make commands idempotent and causally attributable. Persist command claims
+  before effects and reconcile uncertain effects instead of blind relaunch.
+- Provide bounded list/get/event APIs suitable for both owner reasoning and UI.
 
-No giant mode UI or global autonomy toggle. The picker describes the ownership
-posture; exact grants, assignment approvals, and target policy remain inspectable
-at their existing decision boundaries as each capability ships.
+**Likely seams:** existing coordination records/store, `turn_worker/store.rs`,
+runtime job/workflow APIs, recurring records, ACP custody registry, and Forge work
+bindings. Native subsystem ids remain visible as execution references.
+
+**Exit gate:** one query returns mixed internal, external, scheduled, and workflow
+assignments with exact provenance. Reopen/restart preserves identity and status;
+duplicate and out-of-order events cannot regress a terminal. Existing subsystem
+APIs and execution behavior remain compatible.
+
+### Phase 2 — general durable owner inbox and serialized continuation
+
+**Outcome:** accepted work can wake its owning Assistant later, even after the
+originating interactive turn, client, or daemon process is gone.
+
+- Generalize the current peer-receipt intake into an owner-event inbox accepting
+  assignment terminals, approvals, addressed human messages, schedule occurrences,
+  selected stalls, and delivery failures.
+- Persist each event before acknowledgment and serialize intake by owner session
+  with a lease/fencing boundary. Busy sessions defer; they do not drop the event
+  or start a competing turn.
+- Resume the canonical agent-turn path with bounded context and exact receipts.
+  An event is consumed only after resulting decisions/commands and terminal
+  delivery are durably correlated.
+- Add causal-depth, wake-frequency, elapsed-time, cost, retry, and review-round
+  limits. Exhaustion produces an inspectable blocked state and a user decision.
+- Reconcile committed decisions after crashes. Never rerun an uncertain started
+  continuation solely because a process-local ticket disappeared.
+
+**Dependency:** Phase 0 continuation routes and Phase 1 assignment identity.
+
+**Exit gate:** close the client, complete work, restart the daemon, and receive one
+attributable owner decision with no duplicate command or transcript turn. Busy,
+crash-before-claim, crash-after-claim, timeout, replay, and poison-event tests are
+deterministic and do not starve unrelated assignments.
+
+### Phase 3 — normalized execution adapters and placement policy
+
+**Outcome:** Assistant chooses among inline work, internal workers, workflows,
+local ACP agents, and authorized remote workshops using explicit policy rather
+than prompt folklore.
+
+- Define a placement request from task needs: capabilities, context locality,
+  governed work, trust boundary, latency, cost, persistence, interactivity, and
+  requested/forbidden executor constraints.
+- Return ranked eligible targets with reasons and explicit unavailable causes.
+  Selection never grants authority; destination admission, operator approvals,
+  Forge leases, secret handling, and peer execution policy remain authoritative.
+- Normalize start/adopt/observe/steer/cancel around assignment commands while
+  preserving adapter-specific custody and receipts.
+- Require exact work/revision/context bindings for code review and fix loops.
+  Offline targets stay offline; do not silently substitute another host, agent,
+  provider, or model contrary to the user's constraint.
+- Start with existing local/internal paths and authorized paired workshops. New
+  cloud adapters and automatic compute provisioning are separate capabilities.
+
+**Dependency:** Phases 1–2. Placement may read inventory earlier, but autonomous
+placement cannot ship before durable ownership and return intake exist.
+
+**Exit gate:** scenario tests choose the expected target from mixed inventories,
+explain rejection/ineligibility, survive target disappearance, adopt exact running
+work without resending its prompt, and return through the same owner. No test can
+turn discovery, pairing, channel membership, or model text into an execution grant.
+
+### Phase 4 — bounded plans, schedules, and multi-assignment coordination
+
+**Outcome:** Assistant can decompose a user goal into durable assignments and
+bounded follow-ups while remaining the single accountable owner.
+
+- Represent plan steps and dependencies as assignment relations, not hidden chain
+  of thought or a second workflow engine.
+- Reuse Stasis, workflows, and recurring scheduling. One-shot schedules create one
+  logical occurrence; retries remain attempts of that occurrence.
+- Support event-triggered follow-up, delay/at/recurrence, pause/cancel, generation
+  fencing, missed-run policy, and explicit watchdogs.
+- Enforce plan-wide authority, budget, deadline, concurrency, and causal-depth
+  ceilings. Expanding scope or obtaining new access requires the user.
+- First reference flow: implement → exact-revision review → permitted fixes →
+  bounded re-review. Publishing, merging, deployment, and unrelated cleanup are
+  never implied.
+
+**Dependency:** durable assignments, owner intake, and placement from Phases 1–3.
+
+**Exit gate:** the reference review loop survives disconnect/restart, uses separate
+executor sessions, binds every review to an exact revision, stops at configured
+limits, and reports blocked/failed/cancelled states honestly. A “check in 30
+minutes” test fires once, retries safely, and remains inspectable after exhaustion.
+
+### Phase 5 — contact policy and unified delivery decisions
+
+**Outcome:** Assistant contacts the user only when policy says the user—not another
+agent—needs to know or decide something, through the best currently authorized
+channel.
+
+- Add a user-controlled contact policy covering urgency, quiet hours, preferred
+  channels/devices, escalation, batching, reminders, expiry, and per-assignment
+  overrides. Defaults are conservative and inspectable.
+- Separate durable owner conclusions, approval/decision requests, progress, and
+  raw peer events. Tool chatter and intermediary promises are not notifications.
+- Put policy selection above existing channel/outbox/push transports; do not build
+  another delivery engine. Persist intent, selected route, attempts, receipts,
+  dedupe key, and fallback/escalation decisions.
+- Respect channel capability and presence without assuming reachability. Failed or
+  unavailable delivery stays inspectable and can re-enter owner intake when useful.
+- Give users pause/snooze/mute/cancel controls without implicitly cancelling work.
+
+**Dependency:** Phase 2 owner decisions and Phase 1 assignment state. Placement is
+not required for basic contact, but multi-agent product rollout should include it.
+
+**Exit gate:** deterministic policy tests cover quiet hours, urgent approval,
+batched completions, duplicate events, offline devices, fallback channels, snooze,
+and revoked endpoints. Delivery spies observe at most one logical notification per
+policy decision, and every message links to current assignment evidence.
+
+### Phase 6 — explicit Live invitation and coherent return UX
+
+**Outcome:** Assistant can offer a topic-bearing Live conversation when voice is
+the appropriate escalation, while the user remains in control of microphone and
+session creation.
+
+- Model a Live invitation as a contact-policy action carrying topic, owner session,
+  assignment/result references, expiry, and an authorization-checked deep link.
+- The user must accept. Acceptance creates/resumes Live from canonical context and
+  current verified outcomes; sending an invitation never activates a microphone.
+- Decline, expiry, duplicate delivery, reconnect, and already-resolved work have
+  explicit behavior. Ending Live ends audio transport, not accepted assignments.
+- Present participants, assignment state, decisions, and outcomes without dumping
+  orchestration prompts or pretending an external agent spoke as the user.
+- Voice calling, PSTN/SIP, wake-word activation, and automatic audio capture are
+  separate consent and transport projects, not hidden inside this phase.
+
+**Dependency:** Phase 5 contact policy and the durable owner/session references from
+Phases 1–2.
+
+**Exit gate:** an Assistant decision can issue one invitation; acceptance opens the
+right topic and evidence on another device; decline/expiry do not loop; reconnect
+never narrates stale results as current; work continues after Live closes.
+
+### Rollout order and product gates
+
+1. Ship Phase 0 as a correctness fix with no new autonomy claim.
+2. Expose the Phase 1 ledger initially as read-only diagnostics and UI projection.
+3. Enable Phase 2 wakeups only for explicit accepted assignments and conservative
+   budgets; retain a kill switch and per-owner pause.
+4. Add placement targets incrementally, proving each adapter independently.
+5. Enable bounded plans only after restart and uncertain-effect tests pass.
+6. Default contact policy to completion and decision-needed events; opt into more.
+7. Ship Live invitations last, as a contact modality rather than ownership logic.
+
+The user-facing promise is complete only when Phases 0–5 pass: one conversation,
+one accountable Assistant, authorized compute chosen intentionally, durable work
+tracking, and restrained proactive return. Phase 6 adds voice re-entry to that
+reliable ownership loop; it does not make an unreliable loop autonomous.
 
 ## Verification and rollout
 

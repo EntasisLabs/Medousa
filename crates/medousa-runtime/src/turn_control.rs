@@ -120,6 +120,30 @@ pub fn finish_turn_from_invocations(invocations: &[ToolInvocation]) -> Option<St
     })
 }
 
+/// Explicit worker handback contract carried by `turn.finish`.
+/// `None` preserves compatibility with older callers that did not emit the field.
+pub fn finish_turn_needs_synthesis_from_invocations(
+    invocations: &[ToolInvocation],
+) -> Option<bool> {
+    invocations.iter().rev().find_map(|invocation| {
+        if !is_finish_turn_tool_name(&invocation.tool_name, &invocation.tool_input)
+            || invocation.tool_output.get("ok") == Some(&Value::Bool(false))
+        {
+            return None;
+        }
+        invocation
+            .tool_input
+            .get("needs_synthesis")
+            .and_then(Value::as_bool)
+            .or_else(|| {
+                invocation
+                    .tool_output
+                    .get("needs_synthesis")
+                    .and_then(Value::as_bool)
+            })
+    })
+}
+
 pub fn checkpoint_turn_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
     terminal_message_from_invocations(invocations, is_checkpoint_turn_tool_name)
 }
@@ -296,6 +320,16 @@ mod tests {
         assert_eq!(
             finish_turn_from_invocations(&[finish]).as_deref(),
             Some("done")
+        );
+
+        let complete = invocation(
+            "turn.finish",
+            json!({ "message": "done", "needs_synthesis": false }),
+            json!({ "ok": true, "needs_synthesis": false }),
+        );
+        assert_eq!(
+            finish_turn_needs_synthesis_from_invocations(&[complete]),
+            Some(false)
         );
 
         let silent_finish = invocation("turn.finish", json!({}), json!({ "ok": true }));

@@ -265,7 +265,7 @@ async fn prepare_worker_coder(
         }),
     };
     let (item, lease) = forge
-        .begin_workspace_attempt(
+        .begin_collaborative_workspace_attempt(
             &work_id,
             executor,
             Some(std::process::id()),
@@ -948,6 +948,7 @@ impl TurnWorkerScheduler {
             result_text: None,
             tool_names: Vec::new(),
             termination_reason: None,
+            needs_synthesis: None,
             error: None,
             user_ack: user_ack.trim().to_string(),
             provider,
@@ -1160,6 +1161,7 @@ impl TurnWorkerScheduler {
             result_text: None,
             tool_names: Vec::new(),
             termination_reason: None,
+            needs_synthesis: None,
             error: None,
             user_ack: user_ack.to_string(),
             provider,
@@ -1769,11 +1771,16 @@ async fn run_worker_turn_inner(
                     .iter()
                     .map(|i| i.tool_name.clone())
                     .collect();
+                let needs_synthesis =
+                    medousa_runtime::turn_control::finish_turn_needs_synthesis_from_invocations(
+                        &response.tool_invocations,
+                    );
                 store.update(&work_id, |r| {
                     r.status = TurnWorkStatus::Completed;
                     r.result_text = Some(response.text.clone());
                     r.tool_names = tool_names;
                     r.termination_reason = Some(response.termination_reason.clone());
+                    r.needs_synthesis = needs_synthesis;
                     r.worker_scratch = worker_scratch.clone();
                 });
                 ledger_bus_event(
@@ -2156,14 +2163,20 @@ async fn run_synthesis_turn(
 
 /// Phase 7C / 8D.2: skip host synthesis LLM when the worker committed via `cognition_turn_finish`.
 pub(crate) fn worker_synthesis_pass_through(record: &TurnWorkRecord) -> bool {
-    record.termination_reason.as_deref() == Some("cognition_turn_finish")
-        && record
-            .result_text
-            .as_ref()
-            .is_some_and(|text| !text.trim().is_empty())
+    let has_result = record
+        .result_text
+        .as_ref()
+        .is_some_and(|text| !text.trim().is_empty());
+    if !has_result {
+        return false;
+    }
+    match record.needs_synthesis {
+        Some(needs_synthesis) => !needs_synthesis,
+        None => record.termination_reason.as_deref() == Some("cognition_turn_finish"),
+    }
 }
 
-async fn deliver_synthesis_response(
+pub(crate) async fn deliver_synthesis_response(
     record: &TurnWorkRecord,
     sink: &SharedAgentStreamSink,
     synthesis_turn_id: u64,
@@ -2460,6 +2473,7 @@ mod tests {
             result_text: result_text.map(str::to_string),
             tool_names: vec!["cognition_grapheme_run".to_string()],
             termination_reason: termination_reason.map(str::to_string),
+            needs_synthesis: None,
             error: None,
             user_ack: "On it".to_string(),
             provider: "openai".to_string(),
@@ -2502,6 +2516,17 @@ mod tests {
             Some("cognition_turn_finish"),
             Some("Here is the report.")
         )));
+    }
+
+    #[test]
+    fn explicit_synthesis_decision_overrides_legacy_finish_heuristic() {
+        let mut synth = sample_record(Some("cognition_turn_finish"), Some("raw evidence"));
+        synth.needs_synthesis = Some(true);
+        assert!(!worker_synthesis_pass_through(&synth));
+
+        let mut complete = sample_record(Some("direct_prose"), Some("complete answer"));
+        complete.needs_synthesis = Some(false);
+        assert!(worker_synthesis_pass_through(&complete));
     }
 
     #[test]

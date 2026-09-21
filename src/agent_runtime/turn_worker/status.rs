@@ -83,6 +83,7 @@ mod tests {
             result_text: None,
             tool_names: Vec::new(),
             termination_reason: None,
+            needs_synthesis: None,
             error: None,
             user_ack: "On it".to_string(),
             provider: "openai".to_string(),

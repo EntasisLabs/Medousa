@@ -198,6 +198,24 @@ pub async fn maybe_resume_host_after_parallel_worker(
         cohort.len()
     ))
     .await;
+    if cohort.len() == 1
+        && let Some(worker) = cohort.first()
+        && super::run::worker_synthesis_pass_through(worker)
+    {
+        let text = worker
+            .result_text
+            .clone()
+            .unwrap_or_else(|| "(worker produced no text)".to_string());
+        sink.notice(format!(
+            "◈ host_resume work_id={} pass-through (worker declared complete response)",
+            worker.work_id
+        ))
+        .await;
+        super::run::deliver_synthesis_response(worker, &sink, worker.parent_stream_turn_id, text)
+            .await;
+        cohort.acknowledge();
+        return;
+    }
     if run_host_resume_turn(ctx, execution_registry, agent, &cohort, sink.clone()).await {
         cohort.acknowledge();
     } else {
@@ -211,7 +229,7 @@ pub async fn maybe_resume_host_after_parallel_worker(
 
 #[allow(clippy::too_many_arguments)]
 async fn run_host_resume_turn(
-    ctx: &WorkerRuntimeContext,
+    _ctx: &WorkerRuntimeContext,
     execution_registry: &TurnExecutionRegistry,
     agent: &TuiRuntime,
     cohort: &[TurnWorkRecord],
@@ -240,11 +258,15 @@ async fn run_host_resume_turn(
     }
 
     let prompt = truncate_text_for_budget(&host_resume_prompt(cohort), MAX_REQUEST_PROMPT_CHARS);
+    // Resume with the execution contract snapshotted on the worker. Rebuilding
+    // from daemon process defaults silently downgraded user-selected models.
+    let resume_provider = primary.provider.clone();
+    let resume_model = primary.model.clone();
     let mut request = build_interactive_turn_request_for_ingest(
         &primary.session_id,
         prompt,
-        &ctx.provider,
-        &ctx.model,
+        &resume_provider,
+        &resume_model,
         &primary.response_depth_mode,
         crate::reasoning_effort::REASONING_EFFORT_DEFAULT,
         None,
@@ -256,9 +278,9 @@ async fn run_host_resume_turn(
     request.agent_mode = parent_agent_mode(cohort);
     request.code_context = parent_code_context(cohort);
     request.identity_user_id = Some(identity_user_id.clone());
-    request.provider = ctx.provider.clone();
-    request.model = ctx.model.clone();
-    request.stage_routing = StageRoutingMatrix::default_for(&ctx.provider, &ctx.model);
+    request.provider = resume_provider.clone();
+    request.model = resume_model.clone();
+    request.stage_routing = StageRoutingMatrix::default_for(&resume_provider, &resume_model);
     request.max_tool_rounds = Some(primary.max_tool_rounds.max(1));
 
     let ports = HOST_RESUME_PORTS.get();
@@ -627,6 +649,7 @@ mod tests {
             result_text: result.map(str::to_string),
             tool_names: vec!["cognition_web_search".to_string()],
             termination_reason: None,
+            needs_synthesis: None,
             error: error.map(str::to_string),
             user_ack: "On it".to_string(),
             provider: "openai".to_string(),

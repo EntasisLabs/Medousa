@@ -581,7 +581,11 @@ impl ToolRegistry for AllowlistToolRegistry {
                         "properties": {
                             "action": { "type": "string", "enum": ["turn.finish"] },
                             "message": { "type": "string", "minLength": 1 },
-                            "reason": { "type": "string" }
+                            "reason": { "type": "string" },
+                            "needs_synthesis": {
+                                "type": "boolean",
+                                "description": "False when this message is already a complete principal-facing answer."
+                            }
                         },
                         "required": ["action", "message"],
                         "additionalProperties": false
