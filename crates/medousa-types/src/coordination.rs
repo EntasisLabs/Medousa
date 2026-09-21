@@ -148,6 +148,131 @@ pub struct PeerOwnerIntakeAcknowledgment {
     pub decision_digest: String,
 }
 
+/// Source-neutral, durable input for one owning Assistant session. Payloads
+/// carry exact references or receipts; they are evidence, never executable text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct OwnerEvent {
+    pub schema_version: u16,
+    pub event_id: String,
+    pub owner_principal_id: String,
+    pub owner_session: SessionRef,
+    pub channel: CoordinationChannelRef,
+    pub source: OwnerEventSource,
+    pub occurred_at: chrono::DateTime<chrono::Utc>,
+    pub payload: OwnerEventPayload,
+    #[serde(default)]
+    pub limits: OwnerContinuationLimits,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum OwnerEventSource {
+    ExternalPeer {
+        receipt_id: String,
+    },
+    Assignment {
+        assignment_id: String,
+    },
+    Approval {
+        approval_ref: String,
+    },
+    HumanMessage {
+        message_ref: String,
+    },
+    Schedule {
+        schedule_id: String,
+        occurrence_id: String,
+    },
+    Delivery {
+        delivery_id: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum OwnerEventPayload {
+    AssignmentTerminal {
+        assignment_id: String,
+        receipt: ExternalPeerAssignmentReceipt,
+    },
+    Approval {
+        assignment_id: Option<String>,
+        approval_ref: String,
+    },
+    AddressedMessage {
+        message_ref: String,
+    },
+    ScheduleOccurrence {
+        schedule_id: String,
+        occurrence_id: String,
+    },
+    Stall {
+        assignment_id: String,
+        evidence_ref: String,
+    },
+    DeliveryFailure {
+        delivery_id: String,
+        receipt_ref: String,
+    },
+}
+
+/// Immutable ceilings copied onto the event so restart cannot reset a budget.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct OwnerContinuationLimits {
+    pub causal_depth: u16,
+    pub wake_count: u16,
+    pub elapsed_seconds: u32,
+    pub cost_microusd: u64,
+    pub retry_count: u16,
+    pub review_rounds: u16,
+}
+impl Default for OwnerContinuationLimits {
+    fn default() -> Self {
+        Self {
+            causal_depth: 8,
+            wake_count: 8,
+            elapsed_seconds: 120,
+            cost_microusd: 0,
+            retry_count: 8,
+            review_rounds: 2,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct OwnerEventIntakeAttempt {
+    pub event: OwnerEvent,
+    pub attempt: u32,
+    pub turn_id: String,
+}
+
+/// Consumption requires a committed owner decision and durable correlation to
+/// every resulting command and the terminal delivery (when one was requested).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct OwnerEventIntakeAcknowledgment {
+    pub intake: OwnerEventIntakeAttempt,
+    pub decision: crate::TranscriptEntryRef,
+    pub decision_digest: String,
+    #[serde(default)]
+    pub command_refs: Vec<String>,
+    pub terminal_delivery_ref: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct OwnerEventBlocked {
+    pub event_id: String,
+    pub reason: String,
+    pub blocked_at: chrono::DateTime<chrono::Utc>,
+    pub requires_user_decision: bool,
+}
+
 /// Immutable snapshot offered to the owner for explicit approval. No execution
 /// authority exists merely because a proposal was submitted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

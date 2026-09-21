@@ -28,6 +28,13 @@ pub enum OwnerIntakeClaim {
     Consumed(PeerOwnerIntakeAcknowledgment),
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum OwnerEventIntakeClaim {
+    Started(OwnerEventIntakeAttempt),
+    Unresolved(OwnerEventIntakeAttempt),
+    Consumed(OwnerEventIntakeAcknowledgment),
+}
+
 pub fn terminal_receipt_id(binding: &ExternalPeerAssignmentBinding) -> String {
     let mut hash = Sha256::new();
     for part in [
@@ -44,6 +51,78 @@ pub fn terminal_receipt_id(binding: &ExternalPeerAssignmentBinding) -> String {
 }
 
 impl CoordinationStore {
+    pub(crate) fn peer_owner_event(
+        &self,
+        receipt: &ExternalPeerAssignmentReceipt,
+    ) -> Result<OwnerEvent> {
+        self.validate_receipt_binding(receipt)?;
+        let request = self.assignment(&receipt.binding.channel, &receipt.binding.assignment_id)?;
+        Ok(OwnerEvent {
+            schema_version: 1,
+            event_id: receipt.receipt_id.clone(),
+            owner_principal_id: request.owner_principal_id,
+            owner_session: request.owner_session,
+            channel: receipt.binding.channel.clone(),
+            source: OwnerEventSource::ExternalPeer {
+                receipt_id: receipt.receipt_id.clone(),
+            },
+            occurred_at: chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+            payload: OwnerEventPayload::AssignmentTerminal {
+                assignment_id: receipt.binding.assignment_id.clone(),
+                receipt: receipt.clone(),
+            },
+            limits: OwnerContinuationLimits::default(),
+        })
+    }
+
+    pub fn pending_local_owner_events(
+        &self,
+        authority: &medousa_types::AuthorityId,
+        runtime_id: &str,
+        limit: usize,
+        after_event_id: Option<&str>,
+    ) -> Result<Vec<OwnerEvent>> {
+        self.pending_local_owner_receipts(authority, runtime_id, limit, after_event_id)?
+            .iter()
+            .map(|receipt| self.peer_owner_event(receipt))
+            .collect()
+    }
+
+    pub fn begin_owner_event_intake(
+        &self,
+        event: &OwnerEvent,
+        lease: &OwnerIntakeLease,
+    ) -> Result<OwnerEventIntakeClaim> {
+        let OwnerEventPayload::AssignmentTerminal { receipt, .. } = &event.payload else {
+            bail!("owner event source has no admitted continuation policy");
+        };
+        if event.schema_version != 1 || self.peer_owner_event(receipt)? != *event {
+            bail!("owner event identity mismatch");
+        }
+        let map_attempt = |intake: PeerOwnerIntakeAttempt| OwnerEventIntakeAttempt {
+            event: event.clone(),
+            attempt: intake.attempt,
+            turn_id: intake.turn_id,
+        };
+        Ok(match self.begin_owner_intake(receipt, lease)? {
+            OwnerIntakeClaim::Started(intake) => {
+                OwnerEventIntakeClaim::Started(map_attempt(intake))
+            }
+            OwnerIntakeClaim::Unresolved(intake) => {
+                OwnerEventIntakeClaim::Unresolved(map_attempt(intake))
+            }
+            OwnerIntakeClaim::Consumed(ack) => {
+                OwnerEventIntakeClaim::Consumed(OwnerEventIntakeAcknowledgment {
+                    intake: map_attempt(ack.intake),
+                    decision: ack.decision,
+                    decision_digest: ack.decision_digest,
+                    command_refs: Vec::new(),
+                    terminal_delivery_ref: None,
+                })
+            }
+        })
+    }
+
     /// Host recovery index. Source permissions and current approval must still
     /// be checked at intake; this list is never an anonymous public surface.
     pub fn pending_local_owner_receipts(

@@ -1599,4 +1599,40 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn legacy_peer_receipt_projects_to_one_stable_generic_owner_event() {
+        let (_temp, store, request, receipt) = receipt_fixture();
+        store.record_receipt(&receipt).unwrap();
+        let first = store.peer_owner_event(&receipt).unwrap();
+        let second = store.peer_owner_event(&receipt).unwrap();
+        assert_eq!(first, second);
+        assert_eq!(first.event_id, receipt.receipt_id);
+        assert_eq!(first.owner_session, request.owner_session);
+        assert!(matches!(
+            first.payload,
+            medousa_types::coordination::OwnerEventPayload::AssignmentTerminal { .. }
+        ));
+    }
+
+    #[test]
+    fn generic_claim_reuses_legacy_lineage_and_rejects_unadmitted_sources() {
+        let (_temp, store, request, receipt) = receipt_fixture();
+        store.record_receipt(&receipt).unwrap();
+        let event = store.peer_owner_event(&receipt).unwrap();
+        let lease = store.try_owner_intake_lease(&request).unwrap().unwrap();
+        assert!(matches!(
+            store.begin_owner_event_intake(&event, &lease).unwrap(),
+            store::intake::OwnerEventIntakeClaim::Started(_)
+        ));
+        assert!(matches!(
+            store.begin_owner_event_intake(&event, &lease).unwrap(),
+            store::intake::OwnerEventIntakeClaim::Unresolved(_)
+        ));
+        let mut unadmitted = event;
+        unadmitted.payload = medousa_types::coordination::OwnerEventPayload::AddressedMessage {
+            message_ref: "message-1".into(),
+        };
+        assert!(store.begin_owner_event_intake(&unadmitted, &lease).is_err());
+    }
 }

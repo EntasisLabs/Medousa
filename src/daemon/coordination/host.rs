@@ -98,7 +98,7 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
                 ExecutionClass::StoreIo,
                 medousa_forge::execution::MAX_STORE_PAYLOAD_BYTES,
                 move || {
-                    Ok(store.pending_local_owner_receipts(
+                    Ok(store.pending_local_owner_events(
                         &authority,
                         &runtime_id,
                         8,
@@ -107,8 +107,8 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
                 },
             )
             .await;
-        let receipts = match pending {
-            Ok(Ok(receipts)) => receipts,
+        let events = match pending {
+            Ok(Ok(events)) => events,
             other => {
                 tracing::warn!(error = ?other, "coordination inbox recovery scan failed closed");
                 continue;
@@ -119,12 +119,12 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
         }
         // Rotate through the bounded inbox: blocked receipts must not starve
         // later pages. Reconciliation fences survive pagination until restart.
-        if receipts.is_empty() {
+        if events.is_empty() {
             cursor = None;
         }
         retry_after.retain(|_, when| *when > tokio::time::Instant::now());
-        for receipt in receipts {
-            let id = receipt.receipt_id.clone();
+        for event in events {
+            let id = event.event_id.clone();
             if workers.len() >= 4 {
                 break;
             }
@@ -140,15 +140,19 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
             active.insert(id.clone());
             let host = host.clone();
             workers.spawn(async move {
-                let principal =
-                    RequestPrincipal::continuation(receipt.binding.owner_principal_id.clone());
-                let result = host
-                    .resume_owner_intake(
-                        &principal,
-                        receipt.binding.channel,
-                        &receipt.binding.assignment_id,
-                    )
-                    .await;
+                let principal = RequestPrincipal::continuation(event.owner_principal_id.clone());
+                let result = match event.payload {
+                    medousa_types::coordination::OwnerEventPayload::AssignmentTerminal {
+                        assignment_id,
+                        ..
+                    } => {
+                        host.resume_owner_intake(&principal, event.channel, &assignment_id)
+                            .await
+                    }
+                    _ => Err(anyhow::anyhow!(
+                        "owner event source has no admitted continuation policy"
+                    )),
+                };
                 (id, result)
             });
         }
