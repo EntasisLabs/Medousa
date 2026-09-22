@@ -96,6 +96,8 @@ class IngressTests(unittest.TestCase):
                     body = json.loads(self.rfile.read(length)) if length else None
                     received.append((self.command, self.path, body, dict(self.headers)))
                     responses = {
+                        "/v1/coding-engine": {"available": True},
+                        "/v1/shell-sessions": {"available": True},
                         "/v1/runtime/defaults": defaults,
                         "/v1/sessions": {"session_id": "ses_test"},
                         "/v1/forge/items/start": {"id": "work-1", "state": "ready",
@@ -127,6 +129,9 @@ class IngressTests(unittest.TestCase):
                 server.server_close()
                 thread.join()
             self.assertEqual(result["outcome"], "completed")
+            self.assertEqual(json.loads((root / "sidecars.json").read_text()), {
+                "medousa-code": {"available": True}, "medousa-session": {"available": True},
+            })
             self.assertEqual((root / "final.txt").read_text(), "final answer")
             turns = [body for method, path, body, _ in received if path == "/v1/interactive/turn"]
             self.assertEqual(len(turns), 1)
@@ -146,12 +151,26 @@ class IngressTests(unittest.TestCase):
 
     def test_rejects_workspace_mismatch_before_sending_prompt(self):
         client = Mock()
-        client.request.side_effect = [{}, {"session_id": "s"}, {
+        client.request.side_effect = [{"available": True}, {"available": True}, {}, {"session_id": "s"}, {
             "state": "ready", "environment": {"worktree": "/different"}
         }]
-        with self.assertRaisesRegex(RuntimeError, "workspace differs"):
-            runner.run_coder(client, "task", Path("/workspace"), "main", Path("/logs"), Mock())
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(RuntimeError, "workspace differs"):
+                runner.run_coder(client, "task", Path("/workspace"), "main", Path(directory), Mock())
         self.assertFalse(any(call.args[0] == "/v1/interactive/turn" for call in client.request.call_args_list))
+
+    def test_unavailable_sidecar_stops_before_session_or_paid_turn(self):
+        for name in ("medousa-code", "medousa-session"):
+            with self.subTest(binary=name), tempfile.TemporaryDirectory() as directory:
+                client = Mock()
+                failure = {"available": False, "message": "binary failed to start"}
+                client.request.side_effect = ([{"available": True}] if name == "medousa-session" else []) + [failure]
+                output = Path(directory)
+                with self.assertRaisesRegex(RuntimeError, f"{name} is unavailable: binary failed to start"):
+                    runner.run_coder(client, "task", Path("/workspace"), "main", output, Mock())
+                self.assertEqual(json.loads((output / "sidecars.json").read_text())[name], failure)
+                self.assertTrue(all(call.args[0] in ("/v1/coding-engine", "/v1/shell-sessions")
+                                    for call in client.request.call_args_list))
 
     def test_credentials_never_follow_a_different_stream_origin(self):
         client = runner.DaemonClient("http://127.0.0.1:1234", "secret")
@@ -179,6 +198,19 @@ class RepositoryTests(unittest.TestCase):
             child.mkdir()
             with self.assertRaisesRegex(ValueError, "repository root"):
                 runner.prepare_repository(child)
+
+
+class BinaryTests(unittest.TestCase):
+    def test_missing_sidecars_are_rejected_without_searching_host(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            daemon = root / "medousa_daemon"
+            daemon.touch()
+            with self.assertRaisesRegex(ValueError, "Required medousa-code binary is missing"):
+                runner.resolve_binaries(daemon)
+            (root / "medousa-code").touch()
+            with self.assertRaisesRegex(ValueError, "Required medousa-session binary is missing"):
+                runner.resolve_binaries(daemon)
 
 
 if __name__ == "__main__":

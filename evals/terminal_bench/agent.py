@@ -9,6 +9,8 @@ from harbor.agents.installed.base import BaseInstalledAgent, PackageSpec
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 
+from .runner import resolve_binaries
+
 
 class MedousaCoder(BaseInstalledAgent):
     SYSTEM_PACKAGES = {
@@ -16,17 +18,19 @@ class MedousaCoder(BaseInstalledAgent):
         "python3": PackageSpec.standard("python3"),
     }
 
-    def __init__(self, *args, daemon_path: str, workspace: str | None = None,
+    def __init__(self, *args, daemon_path: str, code_path: str | None = None,
+                 session_path: str | None = None, workspace: str | None = None,
                  defaults_path: str | None = None, reasoning_effort: str | None = None,
                  base_url: str | None = None, **kwargs):
         super().__init__(*args, **kwargs)
         if not self.model_name or "/" not in self.model_name:
             raise ValueError("Use --model PROVIDER/MODEL (Medousa provider id)")
         self.provider, self.model = self.model_name.split("/", 1)
-        self.daemon = Path(daemon_path).resolve(strict=True)
-        with self.daemon.open("rb") as binary:
-            if binary.read(4) != b"\x7fELF":
-                raise ValueError("daemon_path must be a Linux medousa_daemon binary")
+        self.binaries = resolve_binaries(daemon_path, code_path, session_path)
+        for name, path in self.binaries.items():
+            with path.open("rb") as binary:
+                if binary.read(4) != b"\x7fELF":
+                    raise ValueError(f"{name} must be a Linux binary: {path}")
         self.workspace = workspace
         self.defaults = Path(defaults_path).resolve(strict=True) if defaults_path else None
         self.reasoning_effort = reasoning_effort
@@ -41,16 +45,19 @@ class MedousaCoder(BaseInstalledAgent):
     async def install(self, environment: BaseEnvironment) -> None:
         await self.ensure_system_dependencies(environment, ("python3", "git"))
         await self.exec_as_root(environment, command=f"mkdir -p {self.remote}")
-        await environment.upload_file(self.daemon, str(self.remote / "medousa_daemon"))
+        for name, path in self.binaries.items():
+            await environment.upload_file(path, str(self.remote / name))
         await environment.upload_file(Path(__file__).with_name("runner.py"), str(self.remote / "runner.py"))
         if self.defaults:
             await environment.upload_file(self.defaults, str(self.remote / "defaults.json"))
         await self.exec_as_root(
             environment,
-            command=f"chmod 755 {self.remote}/medousa_daemon; chmod 644 {self.remote}/*.py",
+            command="chmod 755 " + " ".join(str(self.remote / name) for name in self.binaries)
+                    + f" && chmod 644 {self.remote}/*.py",
         )
         # Detect architecture/shared-library mismatches during setup, before a paid turn.
-        await self.exec_as_agent(environment, command=f"{self.remote}/medousa_daemon --help")
+        for name in self.binaries:
+            await self.exec_as_agent(environment, command=shlex.join([str(self.remote / name), "--help"]))
 
     async def run(self, instruction: str, environment: BaseEnvironment, context: AgentContext) -> None:
         instruction_path = self.logs_dir / "instruction.txt"

@@ -2,6 +2,7 @@
 """One ordinary daemon + Coder conversation inside a disposable task environment."""
 
 import argparse
+from contextlib import ExitStack
 import hashlib
 import json
 import os
@@ -20,6 +21,52 @@ import uuid
 
 def write_json(path, value):
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+
+
+def resolve_binaries(daemon, code=None, session=None):
+    daemon = Path(daemon).resolve(strict=True)
+    binaries = {"medousa_daemon": daemon,
+                "medousa-code": Path(code) if code else daemon.with_name("medousa-code"),
+                "medousa-session": Path(session) if session else daemon.with_name("medousa-session")}
+    for name, path in binaries.items():
+        if not path.is_file():
+            raise ValueError(f"Required {name} binary is missing: {path}; supply a complete Medousa build")
+    return {name: path.resolve(strict=True) for name, path in binaries.items()}
+
+
+def binary_sha256(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as binary:
+        for chunk in iter(lambda: binary.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def sidecar_environment(binaries):
+    # Hold all three reservations together so this trial cannot select the same
+    # port for two services. The daemon still owns normal sidecar startup.
+    with ExitStack() as stack:
+        binds = []
+        for _ in range(3):
+            sock = stack.enter_context(socket.socket())
+            sock.bind(("127.0.0.1", 0))
+            binds.append(f"127.0.0.1:{sock.getsockname()[1]}")
+    return binds[0], {
+        "MEDOUSA_CODE_BIN": str(binaries["medousa-code"]),
+        "MEDOUSA_SESSION_BIN": str(binaries["medousa-session"]),
+        "MEDOUSA_CODE_BIND": binds[1], "MEDOUSA_SESSION_BIND": binds[2],
+    }
+
+
+def check_sidecars(client, output):
+    checks = {}
+    for name, endpoint in (("medousa-code", "/v1/coding-engine"),
+                           ("medousa-session", "/v1/shell-sessions")):
+        info = client.request(endpoint)
+        checks[name] = info
+        write_json(output / "sidecars.json", checks)
+        if info.get("available") is not True:
+            raise RuntimeError(f"{name} is unavailable: {info.get('message', 'unknown readiness response')}")
 
 
 def git(workspace, *args):
@@ -151,6 +198,7 @@ def follow_turn(client, turn, output, process, deadline=None):
 
 
 def run_coder(client, instruction, workspace, branch, output, process, deadline=None, control_path=None):
+    check_sidecars(client, output)
     defaults = client.request("/v1/runtime/defaults")
     session = client.request("/v1/sessions", "POST", {"display_name": "Terminal-Bench"})
     session_id = session["session_id"]
@@ -227,7 +275,11 @@ def stop_daemon(state, wait=False):
 
 def run(args):
     workspace = args.workspace.resolve(strict=True)
-    daemon = args.daemon.resolve(strict=True)
+    binaries = resolve_binaries(args.daemon, args.code_bin, args.session_bin)
+    daemon = binaries["medousa_daemon"]
+    for name, path in binaries.items():
+        if not os.access(path, os.X_OK):
+            raise ValueError(f"Required {name} binary is not executable: {path}")
     instruction = args.instruction.read_text(encoding="utf-8")
     output = args.output.resolve()
     state = args.state.resolve()
@@ -256,26 +308,21 @@ def run(args):
     if args.base_url is not None:
         defaults["base_url"] = args.base_url
     write_json(data / "tui_defaults.json", defaults)
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        port = sock.getsockname()[1]
+    bind, sidecar_env = sidecar_environment(binaries)
     env = dict(os.environ, MEDOUSA_DATA_DIR=str(data), MEDOUSA_CONFIG_DIR=str(config),
-               STASIS_ENV_FILE=str(config / ".env"))
-    command = [str(daemon), "--backend", "in-memory", "--bind", f"127.0.0.1:{port}",
+               STASIS_ENV_FILE=str(config / ".env"), **sidecar_env)
+    command = [str(daemon), "--backend", "in-memory", "--bind", bind,
                "--provider", args.provider, "--model", args.model]
     if args.base_url:
         command.extend(["--base-url", args.base_url])
-    digest = hashlib.sha256()
-    with daemon.open("rb") as binary:
-        for chunk in iter(lambda: binary.read(1024 * 1024), b""):
-            digest.update(chunk)
+    binary_hashes = {name: binary_sha256(path) for name, path in binaries.items()}
     write_json(output / "manifest.json", {
-        "daemon_sha256": digest.hexdigest(),
+        "daemon_sha256": binary_hashes["medousa_daemon"], "binary_sha256": binary_hashes,
         "backend": "in-memory", "workspace": str(workspace), "baseline": baseline,
         "provider": args.provider, "model": args.model, "workspace_mode": "attached_checkout",
         "memory": "fresh daemon data directory per trial",
     })
-    client = DaemonClient(f"http://127.0.0.1:{port}", token)
+    client = DaemonClient(f"http://{bind}", token)
     with (output / "daemon.log").open("w") as log:
         process = subprocess.Popen(command, cwd=config, env=env, stdout=log,
                                    stderr=subprocess.STDOUT, start_new_session=True)
@@ -324,6 +371,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stop", type=Path, help="Stop the daemon belonging to this trial state directory")
     parser.add_argument("--daemon", type=Path)
+    parser.add_argument("--code-bin", type=Path, help="medousa-code build; defaults to daemon's sibling")
+    parser.add_argument("--session-bin", type=Path, help="medousa-session build; defaults to daemon's sibling")
     parser.add_argument("--instruction", type=Path)
     parser.add_argument("--workspace", type=Path, default=Path.cwd())
     parser.add_argument("--output", type=Path)

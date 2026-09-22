@@ -21,18 +21,23 @@ Only use disposable benchmark environments with this runner.
 
 ## Install and run
 
-Use Python 3.12 or newer on the Harbor host. Build `medousa_daemon` from the
-revision you want to measure on Linux, using the repository's normal build:
+Use Python 3.12 or newer on the Harbor host. Build `medousa_daemon`,
+`medousa-code`, and `medousa-session` from the same revision on Linux:
 
 ```bash
-cargo build --release --bin medousa_daemon
+cargo build --release -p medousa -p medousa-code -p medousa-session \
+  --bin medousa_daemon --bin medousa-code --bin medousa-session
 ```
 
-The binary must match the task container's CPU architecture and shared libraries.
+All three binaries must match the task container's CPU architecture and shared libraries.
 The repository's Cargo configuration puts release artifacts in
 `../.cache/cargo-target/release/` unless `CARGO_TARGET_DIR` overrides it. A macOS
-daemon build cannot run in a Linux task container. Setup checks that the uploaded
-binary starts before submitting a prompt.
+build cannot run in a Linux task container. Keep the binaries beside each other;
+the adapter requires both sidecars beside `daemon_path` unless you supply explicit
+`code_path` and `session_path` arguments. Setup checks that each uploaded binary
+starts. Before submitting a prompt, the runner asks the daemon to start and check
+both sidecars through `/v1/coding-engine` and `/v1/shell-sessions`. An unavailable
+sidecar fails the attempt before model inference.
 
 From the repository root on the Harbor host:
 
@@ -57,7 +62,9 @@ PYTHONPATH="$PWD" /tmp/medousa-tbench-venv/bin/harbor run \
 The environment-variable example is for OpenAI; replace it for your provider.
 Harbor resolves the environment reference. Keep credentials out of constructor
 arguments and prompts. The adapter installs Python and Git as needed and uploads
-the prebuilt daemon and runner into the task environment.
+all three prebuilt binaries and the runner into the task environment. The daemon
+uses explicit paths to those sidecars and manages their lifecycle normally.
+Language servers and task-specific dependencies still come from the task environment.
 
 Start with `-i TASK_NAME` for one chosen task. The default workspace is the task
 container's working directory. If that is `/`, a subdirectory of a repository,
@@ -79,6 +86,8 @@ provider/model settings. Optional agent arguments are:
 
 | Argument | Meaning |
 |---|---|
+| `code_path` | Host path to the Linux `medousa-code` binary; defaults to a sibling of `daemon_path` |
+| `session_path` | Host path to the Linux `medousa-session` binary; defaults to a sibling of `daemon_path` |
 | `defaults_path` | Host path to an explicitly chosen `tui_defaults.json`; copied into fresh trial state before daemon startup |
 | `reasoning_effort` | Normal Medousa reasoning setting |
 | `base_url` | Provider endpoint reachable from inside the task environment |
@@ -93,7 +102,8 @@ It neither imports personal memory nor seeds another trial's solution.
 
 Harbor collects `agent/medousa/` under each trial's logs:
 
-- `manifest.json`: daemon binary hash, model, backend, workspace, and baseline commit.
+- `manifest.json`: hashes of all three binaries, model, backend, workspace, and baseline commit.
+- `sidecars.json`: coding-engine and shell-session readiness responses from the daemon.
 - `request.json`, `undertaking.json`, `turn.json`: the actual request and bindings.
 - `events.jsonl`, `result.json`, `final.txt`: native events, completion outcome, and response.
 - `daemon.log`, `turn_ledger/`: daemon diagnostics and native inference receipts.
@@ -128,6 +138,9 @@ MEDOUSA_BENCH_TEST_DAEMON=/absolute/path/to/medousa_daemon \
   python3 -m unittest evals.terminal_bench.test_native_daemon -v
 ```
 
-The native smoke check runs on the host's native daemon build. It verifies that
-Coder's real shell tool writes to the attached workspace, that the final response
-arrives over SSE, and that the daemon is stopped afterward.
+The native smoke check stages the host's native daemon and both sidecars in a
+temporary bundle. Set `MEDOUSA_BENCH_TEST_CODE` and `MEDOUSA_BENCH_TEST_SESSION` if
+the sidecar builds are not beside the daemon. The check requires that bundle rather
+than finding installed sidecars on the host. It verifies both sidecars are ready,
+Coder's real shell tool writes to the attached workspace, the final response
+arrives over SSE, and the daemon is stopped afterward.

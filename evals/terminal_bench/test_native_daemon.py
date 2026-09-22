@@ -9,12 +9,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import shutil
 import tempfile
 import threading
 import unittest
 from unittest.mock import patch
 
-from evals.terminal_bench.runner import run
+from evals.terminal_bench.runner import resolve_binaries, run
 
 
 @unittest.skipUnless(os.environ.get("MEDOUSA_BENCH_TEST_DAEMON"), "set MEDOUSA_BENCH_TEST_DAEMON")
@@ -89,14 +90,23 @@ class NativeDaemonTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {
                 "OPENAI_API_KEY": "smoke-placeholder", "STASIS_LLM_API_KEY": "smoke-placeholder",
                 "MEDOUSA_TEST_HERMETIC": "1", "RUST_LOG": "warn",
+                "MEDOUSA_CODE_BIN": "/missing/ambient-medousa-code",
+                "MEDOUSA_SESSION_BIN": "/missing/ambient-medousa-session",
             }):
                 root = Path(directory).resolve()
+                bundle = root / "bundle"
+                bundle.mkdir()
+                binaries = resolve_binaries(os.environ["MEDOUSA_BENCH_TEST_DAEMON"],
+                                            os.environ.get("MEDOUSA_BENCH_TEST_CODE"),
+                                            os.environ.get("MEDOUSA_BENCH_TEST_SESSION"))
+                for name, path in binaries.items():
+                    shutil.copy2(path, bundle / name)
                 workspace = root / "workspace"
                 workspace.mkdir()
                 instruction = root / "instruction.txt"
                 instruction.write_text("Write native-coder-ok to result.txt, then reply benchmark-smoke-ok.")
                 result = run(Namespace(
-                    workspace=workspace, daemon=Path(os.environ["MEDOUSA_BENCH_TEST_DAEMON"]),
+                    workspace=workspace, daemon=bundle / "medousa_daemon", code_bin=None, session_bin=None,
                     instruction=instruction, output=root / "output", state=root / "state",
                     defaults=None, provider="openai", model="gpt-4o", reasoning_effort=None,
                     base_url=f"http://127.0.0.1:{server.server_port}/v1/", timeout=45,
@@ -110,6 +120,11 @@ class NativeDaemonTests(unittest.TestCase):
                 self.assertIn("cognition_coder_shell_run", result["tool_names"])
                 self.assertEqual((root / "output" / "final.txt").read_text(), "benchmark-smoke-ok")
                 self.assertFalse((root / "state" / "daemon.pid").exists())
+                sidecars = json.loads((root / "output" / "sidecars.json").read_text())
+                self.assertTrue(sidecars["medousa-code"]["available"])
+                self.assertTrue(sidecars["medousa-session"]["available"])
+                manifest = json.loads((root / "output" / "manifest.json").read_text())
+                self.assertEqual(set(manifest["binary_sha256"]), set(binaries))
         finally:
             server.shutdown()
             server.server_close()
