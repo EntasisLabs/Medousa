@@ -1681,6 +1681,7 @@ async fn run_worker_turn_inner(
         orchestration: None,
         budget: None,
         max_tool_rounds: worker_max_rounds,
+        enforce_tool_round_limit: medousa_runtime::tool_round_limit_enabled(),
         max_text_only_stuck_continues: turn_loop_settings.max_text_only_stuck_continues,
         scratch_out: Some(&mut worker_scratch),
         parent_turn_correlation_id: record.parent_turn_correlation_id.clone(),

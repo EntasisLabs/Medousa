@@ -634,9 +634,16 @@ fn memory_lifecycle_task_path(task: &CoderMemoryPromotionTask) -> PathBuf {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoderMemoryRecallQuery {
     pub query: String,
+    pub scope: CoderMemoryRecallScope,
     pub kind: Option<String>,
     pub path: Option<String>,
     pub limit: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoderMemoryRecallScope {
+    Lineage,
+    AllAccepted,
 }
 
 pub fn tool_definitions() -> Vec<Tool> {
@@ -653,12 +660,17 @@ pub fn tool_definitions() -> Vec<Tool> {
             })),
         Tool::new(COGNITION_CODER_MEMORY_RECALL)
             .with_description(
-                "Recall bounded STTP working-memory nodes from project and repository knowledge.",
+                "Ask a natural-language question over bounded Coder memory. Defaults to the current environment lineage; use all_accepted to discover review-promoted knowledge across repositories.",
             )
             .with_schema(json!({
                 "type": "object",
                 "properties": {
                     "query": { "type": "string", "maxLength": MAX_SUMMARY_CHARS },
+                    "scope": {
+                        "type": "string",
+                        "enum": ["lineage", "all_accepted"],
+                        "description": "lineage searches current/parent/undertaking/repository memory; all_accepted searches only accepted Coder knowledge across repositories"
+                    },
                     "kind": { "type": "string", "enum": MEMORY_KINDS },
                     "path": { "type": "string", "description": "Optional repository-relative path" },
                     "limit": { "type": "integer", "minimum": 1, "maximum": MAX_RECALL_LIMIT }
@@ -720,6 +732,21 @@ pub fn overview_limit(input: &Value) -> usize {
 
 pub fn parse_recall_query(input: &Value) -> Result<CoderMemoryRecallQuery> {
     let query = required_text(input, "query", MAX_SUMMARY_CHARS)?;
+    let scope = match input
+        .get("scope")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("lineage")
+    {
+        "lineage" => CoderMemoryRecallScope::Lineage,
+        "all_accepted" => CoderMemoryRecallScope::AllAccepted,
+        other => {
+            return Err(input_error(format!(
+                "unknown Coder memory scope '{other}'; expected lineage or all_accepted"
+            )));
+        }
+    };
     let kind = optional_text(input, "kind", 64)?;
     if let Some(kind) = kind.as_deref()
         && !MEMORY_KINDS.contains(&kind)
@@ -742,6 +769,7 @@ pub fn parse_recall_query(input: &Value) -> Result<CoderMemoryRecallQuery> {
         .clamp(1, MAX_RECALL_LIMIT);
     Ok(CoderMemoryRecallQuery {
         query,
+        scope,
         kind,
         path,
         limit,
@@ -1063,6 +1091,43 @@ pub fn project_lineage_recall(
     })
 }
 
+/// Project review-promoted Coder knowledge discovered outside the current
+/// repository lineage. These nodes remain useful context, but their Git-bound
+/// validity must be rechecked in the repository that originally produced them.
+pub fn project_cross_repository_recall(
+    scope: &CoderMemoryScope,
+    result: &Value,
+    include_raw: bool,
+    limit: usize,
+) -> Value {
+    let limit = limit.clamp(1, MAX_RECALL_LIMIT);
+    let nodes = result
+        .get("nodes")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|node| {
+            node_has_tag(node, "coder-memory") && node_has_tag(node, "knowledge:accepted")
+        })
+        .take(limit)
+        .map(|node| {
+            let mut projected = project_node(node, "", include_raw);
+            projected["stale"] = Value::Null;
+            projected["requires_revalidation"] = Value::Bool(true);
+            projected["memory_origin"] = Value::String("accepted_cross_repository".into());
+            projected["accepted_knowledge"] = Value::Bool(true);
+            projected
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "ok": true,
+        "scope": scope.public_descriptor(),
+        "recall_scope": "all_accepted",
+        "retrieved": nodes.len(),
+        "nodes": nodes,
+    })
+}
+
 fn projected_source_nodes<F>(
     result: Option<&Value>,
     current_head: &str,
@@ -1302,6 +1367,8 @@ fn project_node(node: &Value, current_head: &str, include_raw: bool) -> Value {
         .collect::<Vec<_>>();
     let observed_head = tag_value(&tags, "head:").map(|value| decode_parser_string(&value));
     let kind = tag_value(&tags, "kind:").map(|value| decode_parser_string(&value));
+    let repo_id = tag_value(&tags, "repo:").map(|value| decode_parser_string(&value));
+    let work_id = tag_value(&tags, "work:").map(|value| decode_parser_string(&value));
     let paths = tags
         .iter()
         .filter_map(|tag| tag.strip_prefix("path:"))
@@ -1337,6 +1404,8 @@ fn project_node(node: &Value, current_head: &str, include_raw: bool) -> Value {
     let mut projected = json!({
         "node_id": node.get("sync_key").or_else(|| node.get("node_id")),
         "kind": kind,
+        "repo_id": repo_id,
+        "work_id": work_id,
         "summary": summary,
         "timestamp": node.get("timestamp"),
         "observed_head": observed_head,
@@ -2248,5 +2317,69 @@ mod tests {
         assert!(content.contains("quoted ⍉⟨ marker"));
         assert!(content.contains("keep me"));
         assert!(!content.contains("rho: 0.9"));
+    }
+
+    #[test]
+    fn recall_scope_defaults_to_lineage_and_accepts_cross_repository_discovery() {
+        let lineage = parse_recall_query(&json!({
+            "query": "why did we choose the durable journal"
+        }))
+        .expect("lineage query");
+        assert_eq!(lineage.scope, CoderMemoryRecallScope::Lineage);
+
+        let accepted = parse_recall_query(&json!({
+            "query": "why did we choose the durable journal",
+            "scope": "all_accepted"
+        }))
+        .expect("accepted query");
+        assert_eq!(accepted.scope, CoderMemoryRecallScope::AllAccepted);
+
+        let error = parse_recall_query(&json!({
+            "query": "journal",
+            "scope": "every_scratchpad"
+        }))
+        .expect_err("unknown scope");
+        assert!(error.to_string().contains("lineage or all_accepted"));
+    }
+
+    #[test]
+    fn cross_repository_recall_exposes_origin_and_requires_revalidation() {
+        let scope = CoderMemoryScope::for_entry(&entry("worktree/demo-a1", 1));
+        let projected = project_cross_repository_recall(
+            &scope,
+            &json!({
+                "nodes": [
+                    {
+                        "sync_key": "accepted-node",
+                        "context_summary": "decision: keep the durable journal",
+                        "timestamp": "2026-09-22T00:00:00Z",
+                        "semantic_tags": [
+                            "coder-memory",
+                            "knowledge:accepted",
+                            "memory-scope:repository",
+                            "kind:decision",
+                            "repo:repo-other",
+                            "work:work-other",
+                            "head:other-head"
+                        ]
+                    },
+                    {
+                        "sync_key": "scratch-node",
+                        "semantic_tags": ["coder-memory", "memory-scope:environment"]
+                    }
+                ]
+            }),
+            false,
+            10,
+        );
+        assert_eq!(projected["retrieved"], 1);
+        assert_eq!(projected["nodes"][0]["repo_id"], "repo-other");
+        assert_eq!(projected["nodes"][0]["work_id"], "work-other");
+        assert_eq!(projected["nodes"][0]["stale"], Value::Null);
+        assert_eq!(projected["nodes"][0]["requires_revalidation"], true);
+        assert_eq!(
+            projected["nodes"][0]["memory_origin"],
+            "accepted_cross_repository"
+        );
     }
 }

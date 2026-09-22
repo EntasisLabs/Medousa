@@ -1949,6 +1949,31 @@ impl CoderBoundToolRegistry {
             super::coder_memory::COGNITION_CODER_MEMORY_RECALL => {
                 let query = super::coder_memory::parse_recall_query(input)?;
                 let semantic_tags = super::coder_memory::recall_semantic_tags(&query);
+                if query.scope == super::coder_memory::CoderMemoryRecallScope::AllAccepted {
+                    let mut accepted_tags =
+                        vec!["coder-memory".to_string(), "knowledge:accepted".to_string()];
+                    accepted_tags.extend(semantic_tags);
+                    let result = self
+                        .invoke_locus_tool(
+                            crate::public_api::COGNITION_MEMORY_QUERY,
+                            json!({
+                                "action": "memory.recall",
+                                "session_id": null,
+                                "query": query.query,
+                                "semantic_tags": accepted_tags,
+                                "limit": query.limit.saturating_mul(2).clamp(1, 24),
+                            }),
+                        )
+                        .await?;
+                    let mut recalled = super::coder_memory::project_cross_repository_recall(
+                        &self.memory_scope,
+                        &result,
+                        true,
+                        query.limit,
+                    );
+                    recalled["memory_status"] = Value::String("available".into());
+                    return Ok(recalled);
+                }
                 let parent_scope = self.memory_scope.parent_environment_scope();
                 let undertaking_scope = self.memory_scope.accepted_undertaking_scope();
                 let repository_scope = self.memory_scope.accepted_repository_scope();

@@ -4841,28 +4841,6 @@ dependencies = [
 
 [[package]]
 name = "genai"
-version = "0.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98221799e645192a607502de51a6423ebb6f36729938a9351f1ca488a1a62d7e"
-dependencies = [
- "base64 0.22.1",
- "bytes",
- "derive_more 2.1.1",
- "eventsource-stream",
- "futures",
- "mime_guess",
- "reqwest 0.13.3",
- "serde",
- "serde_json",
- "serde_with",
- "tokio",
- "tokio-stream",
- "tracing",
- "value-ext",
-]
-
-[[package]]
-name = "genai"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d12aba7e9dc2c4d54654566dc3dc8383b5cb52e0cfc5754989afe0480d933e3"
@@ -5213,6 +5191,20 @@ dependencies = [
  "surrealdb",
  "tokio",
  "websearch",
+]
+
+[[package]]
+name = "grapheme-wasm"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f9ff8c6f1cac9b7f68c3fee0e5707ca64e6a11d40774784668f2f455be9c70e"
+dependencies = [
+ "grapheme-artifact",
+ "grapheme-compiler",
+ "grapheme-runtime",
+ "grapheme-stdlib",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -6135,6 +6127,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d3067d79b975e8844ca9eb072e16b31c3c1c36928edf9c6789548c524d0d954"
 
 [[package]]
+name = "idb"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6554f394e990a1af530a528a7fdcad6e01b29cb1b990f89df3ffd62cf15f7828"
+dependencies = [
+ "indexmap 2.14.0",
+ "js-sys",
+ "num-traits",
+ "thiserror 2.0.18",
+ "tokio",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "ident_case"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6329,6 +6336,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "79cf5c93f93228cf8efb3ba362535fb11199ac548a09ce117c9b1adc3030d706"
 dependencies = [
  "rustversion",
+]
+
+[[package]]
+name = "indxdb"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7835f5cf2250500e7c878a6694fdffb9d25cd466608668fb822bdc09bc81110c"
+dependencies = [
+ "js-sys",
+ "rexie",
+ "thiserror 2.0.18",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]
@@ -7167,18 +7187,16 @@ dependencies = [
 
 [[package]]
 name = "locus-sdk"
-version = "0.3.1"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00025c5e8fadbb09a74291b5a13b7dcdfd01c94a51f4143e86054bb7a94762f8"
+checksum = "1dda350fe00d3f8e6c17fd8c983d40ae61411f2ac8583e7dc2e4971d873260f0"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "genai 0.5.3",
  "getrandom 0.2.17",
  "getrandom 0.4.2",
  "locus-core-rs",
- "reqwest 0.12.28",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -7186,9 +7204,9 @@ dependencies = [
 
 [[package]]
 name = "locus-surreal-adapter"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88b05abeb5ccfd38e1be3080cc17041cd5e03ec21269f55b8f64ceadbfbdcc83"
+checksum = "53705d1f39ff8a2f1df0daf2e570f30f18bd02bdada9d315e6bdee51476e5ea3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7567,7 +7585,7 @@ dependencies = [
  "flate2",
  "fs2",
  "futures-util",
- "genai 0.6.5",
+ "genai",
  "grapheme-compiler",
  "grapheme-lsp",
  "grapheme-runtime",
@@ -7971,7 +7989,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "futures-util",
- "genai 0.6.5",
+ "genai",
  "medousa-engine",
  "reqwest 0.13.3",
  "serde",
@@ -12196,6 +12214,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rexie"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "887466cfa8a12c08ee4b174998135cea8ff0fd84858627cd793e56535a045bc9"
+dependencies = [
+ "idb",
+ "thiserror 1.0.69",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "rfc6979"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12457,9 +12486,9 @@ dependencies = [
 
 [[package]]
 name = "rust-embed"
-version = "8.11.0"
+version = "8.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04113cb9355a377d83f06ef1f0a45b8ab8cd7d8b1288160717d66df5c7988d27"
+checksum = "e9e7760e252aaba7b09f4be00e36476cf585bdb68a53552ac954cdf504ab4bc9"
 dependencies = [
  "rust-embed-impl",
  "rust-embed-utils",
@@ -12468,10 +12497,11 @@ dependencies = [
 
 [[package]]
 name = "rust-embed-impl"
-version = "8.11.0"
+version = "8.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da0902e4c7c8e997159ab384e6d0fc91c221375f6894346ae107f47dd0f3ccaa"
+checksum = "3bcfc4d6f53af43755f7a723e4b6b8794fcce052a178dd8c6c1dadc5f5343097"
 dependencies = [
+ "mime_guess",
  "proc-macro2",
  "quote",
  "rust-embed-utils",
@@ -12481,11 +12511,11 @@ dependencies = [
 
 [[package]]
 name = "rust-embed-utils"
-version = "8.11.0"
+version = "8.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5bcdef0be6fe7f6fa333b1073c949729274b05f123a0ad7efcb8efd878e5c3b1"
+checksum = "42ffa149f6aa81b58a5b3011d01a857c4ed12c7a732d2c51947a4c7c692185f0"
 dependencies = [
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "walkdir",
 ]
 
@@ -14194,9 +14224,9 @@ dependencies = [
 
 [[package]]
 name = "stasis-rs"
-version = "0.10.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2bfd45cfd1cad819d2e91b72249b7e42caf948bb29eb8e56fc8b07373d5ff306"
+checksum = "72e6a562c6e0cd46ea3d75dc2fcf212856da5575003f26fd6f2f9a313c7ee7d2"
 dependencies = [
  "anyhow",
  "askama",
@@ -14208,12 +14238,15 @@ dependencies = [
  "cron",
  "dotenvy",
  "futures-util",
- "genai 0.6.5",
+ "genai",
+ "getrandom 0.2.17",
  "grapheme-compiler",
  "grapheme-sdk",
+ "grapheme-wasm",
  "hex",
  "locus-core-rs",
  "locus-sdk",
+ "locus-surreal-adapter",
  "opentelemetry 0.29.1",
  "opentelemetry-otlp 0.29.0",
  "opentelemetry_sdk 0.29.0",
@@ -14228,6 +14261,9 @@ dependencies = [
  "surrealdb",
  "surrealdb-types",
  "tokio",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-time",
 ]
 
 [[package]]
@@ -14540,6 +14576,7 @@ dependencies = [
  "hex",
  "http 1.4.0",
  "humantime",
+ "indxdb",
  "ipnet",
  "jsonwebtoken",
  "lexicmp",

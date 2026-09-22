@@ -13,6 +13,18 @@ use crate::ports::RuntimePorts;
 use crate::turn_context::ToolRoundContextProvider;
 
 pub const DEFAULT_FOREGROUND_MAX_TOOL_ROUNDS: usize = 30;
+pub const TOOL_ROUND_LIMIT_ENV: &str = "MEDOUSA_TOOL_ROUND_LIMIT_ENABLED";
+
+/// Tool-round ceilings are a compatibility policy, not the runtime's loop
+/// safety mechanism. Modern models may continue useful work for an unknown
+/// number of rounds; cancellation, deadlines, stuck-text detection, and the
+/// repeated-tool-error lock remain active independently.
+pub fn tool_round_limit_enabled() -> bool {
+    std::env::var(TOOL_ROUND_LIMIT_ENV)
+        .ok()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "yes" | "on"))
+}
 
 /// Per-execution state and optional host effects consumed by the foreground
 /// tool loop. The gate carries no daemon, transport, or UI implementation.
@@ -23,6 +35,8 @@ pub struct ToolLoopCompletionGate<'a> {
     pub budget: Option<&'a TurnBudget>,
     /// Configured model-round budget for this tool-loop execution.
     pub max_tool_rounds: usize,
+    /// Compatibility switch for enforcing `max_tool_rounds`. Off by default.
+    pub enforce_tool_round_limit: bool,
     /// Consecutive text-only continues without new tools before the turn stops.
     pub max_text_only_stuck_continues: usize,
     /// Latest scratchpad snapshot from the tool loop (for failure explanation / debugging).
@@ -60,6 +74,7 @@ pub struct ToolLoopCompletionGateConfig {
     pub stream_turn_id: u64,
     pub runtime_ports: RuntimePorts,
     pub max_text_only_stuck_continues: usize,
+    pub enforce_tool_round_limit: bool,
     pub parent_turn_correlation_id: Option<String>,
     pub skip_avec_ritual_check: bool,
     pub hard_tool_round_ceiling: Option<usize>,
@@ -89,6 +104,7 @@ impl ToolLoopCompletionGateConfig {
             orchestration: Some(orchestration),
             budget: Some(budget),
             max_tool_rounds,
+            enforce_tool_round_limit: self.enforce_tool_round_limit,
             max_text_only_stuck_continues: self.max_text_only_stuck_continues,
             scratch_out: Some(scratch_out),
             parent_turn_correlation_id: self.parent_turn_correlation_id.clone(),
@@ -123,6 +139,7 @@ impl ToolLoopCompletionGate<'_> {
             orchestration: None,
             budget: None,
             max_tool_rounds,
+            enforce_tool_round_limit: tool_round_limit_enabled(),
             max_text_only_stuck_continues: resolve_max_text_only_stuck_continues(max_tool_rounds),
             scratch_out: None,
             parent_turn_correlation_id: None,

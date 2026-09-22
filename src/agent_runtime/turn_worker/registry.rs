@@ -795,7 +795,7 @@ mod tests {
         let tools = registry.list_tools().await.unwrap();
         let finish = tools
             .iter()
-            .find(|tool| tool.name == crate::public_api::COGNITION_TURN)
+            .find(|tool| tool.name.as_str() == crate::public_api::COGNITION_TURN)
             .expect("delegated finish tool");
         assert_eq!(
             finish.schema.as_ref().unwrap()["required"],

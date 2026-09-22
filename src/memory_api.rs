@@ -110,8 +110,9 @@ pub struct MemoryList {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct MemoryRecall {
+    /// Natural-language question or phrase to retrieve
     query: String,
-    /// Omit for the current turn; JSON null searches globally
+    /// Omit for the current turn; JSON null searches across sessions in the backing memory authority
     #[serde(default)]
     session_id: MemorySessionScopeInput,
     #[serde(default)]
@@ -248,7 +249,7 @@ pub fn memory_type_schemas() -> Vec<TypedActionSchema> {
         typed_action_schema::<MemoryRecall>(
             MEMORY_QUERY_ID,
             "memory.recall",
-            "Keyword recall (prefer memory.context with explicit AVEC)",
+            "Natural-language memory recall for the current session or across sessions",
         ),
         typed_action_schema::<MemoryTags>(
             MEMORY_QUERY_ID,
@@ -337,7 +338,7 @@ pub fn register_memory_tools(
 
 #[medousa_tool(id = MEMORY_QUERY_ID)]
 impl CognitionMemoryQueryTool {
-    /// Read Locus memory: schema, AVEC context, list, recall, tags, or mood presets. action is a typed name (memory.context, memory.recall, …). Fetch fields with cognition_schema types=[...].
+    /// Read Locus memory: schema, AVEC context, list, natural-language recall, tags, or mood presets. memory.recall accepts a question; omit session_id for the current turn or pass null for cross-session retrieval. Fetch action fields with cognition_schema types=[...].
     async fn invoke_typed(
         &self,
         action: MemoryQueryAction,

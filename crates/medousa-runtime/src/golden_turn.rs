@@ -478,6 +478,9 @@ async fn run_golden(
         .with_tool_run_events(capturing_ports.clone())
         .with_turn_presentation(capturing_ports.clone());
     let mut gate = ToolLoopCompletionGate::new_for_execution(1, runtime_ports, max_rounds);
+    // Golden fixtures exercise the legacy ceiling contract explicitly. Product
+    // executions default to unlimited rounds unless the compatibility flag is on.
+    gate.enforce_tool_round_limit = true;
 
     let request = ToolLoopExecutionRequest {
         user_prompt: user_prompt.to_string(),

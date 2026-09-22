@@ -146,6 +146,10 @@ impl TurnScratchpad {
     }
 
     pub fn format_control_body(&self, tool_rounds_remaining: usize) -> String {
+        self.format_control_body_with_budget(Some(tool_rounds_remaining))
+    }
+
+    pub fn format_control_body_with_budget(&self, tool_rounds_remaining: Option<usize>) -> String {
         let phase = match self.phase {
             TurnScratchPhase::Discover => "discover",
             TurnScratchPhase::Execute => "execute",
@@ -156,10 +160,18 @@ impl TurnScratchpad {
                 "goal={}",
                 truncate_field(&self.goal, GOAL_DISPLAY_MAX_CHARS)
             ),
-            format!(
-                "phase={phase} step={} rounds_remaining={tool_rounds_remaining}",
-                self.step
-            ),
+            match tool_rounds_remaining {
+                Some(remaining) => {
+                    format!(
+                        "phase={phase} step={} rounds_remaining={remaining}",
+                        self.step
+                    )
+                }
+                None => format!(
+                    "phase={phase} step={} rounds_remaining=unlimited",
+                    self.step
+                ),
+            },
         ];
         if !self.tools_this_turn.is_empty() {
             lines.push(format!(

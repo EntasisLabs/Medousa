@@ -52,7 +52,7 @@ use crate::ports::{
     ToolRunFinish, ToolRunStart, TurnBudgetApprovalRequest, TurnBudgetApprovalResolution,
 };
 use crate::turn_context::{
-    HostTurnContext, push_round_context, push_turn_scratch_message_with_budget,
+    HostTurnContext, push_round_context, push_turn_scratch_message_with_optional_budget,
     record_round_digest_from_invocations,
 };
 use crate::turn_control::{
@@ -75,6 +75,8 @@ const SILENT_FINISH_GUIDANCE: &str = concat!(
     "Emit the complete final answer as assistant prose alongside turn.finish, or provide it in ",
     "turn.finish.message. intent and reason are control metadata and are not shown to the principal."
 );
+const MAX_CONSECUTIVE_FAILED_TOOL_BATCHES: usize = 3;
+const REPEATED_TOOL_ERROR_LOCK_REASON: &str = "repeated_tool_error_lock";
 
 fn turn_boundary_failure(operation: &str, error: TurnExecutionBoundaryError) -> StasisError {
     StasisError::PortFailure(format!("{error} during {operation}"))
@@ -232,6 +234,10 @@ impl MedousaToolLoopPipeline {
         } = request;
 
         let mut effective_max_tool_rounds = max_tool_rounds.max(1);
+        let enforce_tool_round_limit = completion_gate
+            .as_ref()
+            .map(|gate| gate.enforce_tool_round_limit)
+            .unwrap_or(false);
         let shared_inputs = ToolLoopSharedInputs {
             user_prompt: Arc::<str>::from(user_prompt),
             system_prompt: system_prompt.map(Arc::<str>::from),
@@ -312,6 +318,7 @@ impl MedousaToolLoopPipeline {
             .filter(|resume| resume.restore_turn_budget)
             .map(|resume| resume.counters.tool_batches_completed)
             .unwrap_or(0);
+        let mut consecutive_failed_tool_batches = 0usize;
         let max_text_only_stuck = completion_gate
             .as_ref()
             .map(|gate| gate.max_text_only_stuck_continues)
@@ -378,7 +385,7 @@ impl MedousaToolLoopPipeline {
 
         let mut previous_request = None;
         if !tools.is_empty() {
-            while rounds_executed < effective_max_tool_rounds {
+            while !enforce_tool_round_limit || rounds_executed < effective_max_tool_rounds {
                 rounds_executed += 1;
                 if let Some(gate) = completion_gate.as_ref() {
                     if let Some(work_id) = gate.cancel_poll_work_id.as_deref() {
@@ -426,14 +433,16 @@ impl MedousaToolLoopPipeline {
                         }
                     }
                 }
-                let tool_rounds_remaining =
-                    effective_max_tool_rounds.saturating_sub(rounds_executed);
+                let tool_rounds_remaining = enforce_tool_round_limit
+                    .then(|| effective_max_tool_rounds.saturating_sub(rounds_executed));
                 turn_ctx.scratchpad.on_tool_round_start(rounds_executed);
-                push_turn_control_message(
-                    &mut turn_ctx.tool_lane.messages,
-                    &loop_awareness.loop_budget_message(tool_rounds_remaining),
-                );
-                push_turn_scratch_message_with_budget(
+                if let Some(remaining) = tool_rounds_remaining {
+                    push_turn_control_message(
+                        &mut turn_ctx.tool_lane.messages,
+                        &loop_awareness.loop_budget_message(remaining),
+                    );
+                }
+                push_turn_scratch_message_with_optional_budget(
                     &mut turn_ctx.tool_lane.messages,
                     &turn_ctx.scratchpad,
                     tool_rounds_remaining,
@@ -591,6 +600,7 @@ impl MedousaToolLoopPipeline {
                                 draft_text: text.clone(),
                                 rounds_executed,
                                 max_tool_rounds: effective_max_tool_rounds,
+                                enforce_tool_round_limit,
                                 completion_profile,
                             })
                         };
@@ -912,7 +922,41 @@ impl MedousaToolLoopPipeline {
                 let round_invocations = &invocations[invocations_before..];
                 tool_batches_completed = tool_batches_completed.saturating_add(1);
                 record_round_digest_from_invocations(&mut turn_ctx.scratchpad, round_invocations);
+                if failed_tool_batch(round_invocations) {
+                    consecutive_failed_tool_batches =
+                        consecutive_failed_tool_batches.saturating_add(1);
+                } else {
+                    consecutive_failed_tool_batches = 0;
+                }
                 sync_scratch_snapshot(completion_gate.as_deref_mut(), &turn_ctx.scratchpad);
+                if consecutive_failed_tool_batches >= MAX_CONSECUTIVE_FAILED_TOOL_BATCHES {
+                    persist_checkpoint!(
+                        SafeCheckpointBoundary::AwaitingUser,
+                        ActiveTurnCheckpointStatus::AwaitingUser,
+                        Some(REPEATED_TOOL_ERROR_LOCK_REASON),
+                        Some(OutstandingTurnBoundary::UserInput {
+                            reason: "Repeated tool failures require a changed approach".into(),
+                        }),
+                        &round_tool_names,
+                        &round_provider_call_ids,
+                    );
+                    let last = invocations
+                        .last()
+                        .cloned()
+                        .expect("failed batch invocation");
+                    return Ok(ToolLoopExecutionResponse {
+                        text: repeated_tool_error_lock_message(
+                            consecutive_failed_tool_batches,
+                            &last,
+                        ),
+                        metadata: shared_inputs.context_clone(),
+                        tool_name: last.tool_name,
+                        tool_output: last.tool_output,
+                        tool_invocations: invocations,
+                        rounds_executed,
+                        termination_reason: REPEATED_TOOL_ERROR_LOCK_REASON.to_string(),
+                    });
+                }
                 if let Some(provider) = completion_gate
                     .as_ref()
                     .and_then(|gate| gate.round_context_provider.as_ref())
@@ -990,6 +1034,13 @@ impl MedousaToolLoopPipeline {
                 );
 
                 if let Some(payload) = request_more_rounds_from_invocations(round_invocations) {
+                    if !enforce_tool_round_limit {
+                        push_turn_control_message(
+                            &mut turn_ctx.tool_lane.messages,
+                            "Tool rounds are unlimited for this turn; continue the task without requesting an extension.",
+                        );
+                        continue;
+                    }
                     if let Some(gate) = completion_gate.as_ref()
                         && !gate.require_operator_budget_gate
                     {
@@ -1461,7 +1512,7 @@ async fn apply_fsm_continue_loop(
     turn_ctx: &mut HostTurnContext,
     loop_awareness: &mut TurnLoopAwareness,
     discipline: &mut TurnLoopDiscipline,
-    tool_rounds_remaining: usize,
+    tool_rounds_remaining: Option<usize>,
     mut completion_gate: Option<&mut ToolLoopCompletionGate<'_>>,
     shared_inputs: &ToolLoopSharedInputs,
     rounds_executed: usize,
@@ -1504,9 +1555,11 @@ async fn apply_fsm_continue_loop(
     }
     push_turn_control_message(
         &mut turn_ctx.tool_lane.messages,
-        &loop_awareness.wrap_control_body(tool_rounds_remaining, control_message),
+        &tool_rounds_remaining
+            .map(|remaining| loop_awareness.wrap_control_body(remaining, control_message))
+            .unwrap_or_else(|| control_message.to_string()),
     );
-    push_turn_scratch_message_with_budget(
+    push_turn_scratch_message_with_optional_budget(
         &mut turn_ctx.tool_lane.messages,
         &turn_ctx.scratchpad,
         tool_rounds_remaining,
@@ -1532,6 +1585,32 @@ async fn apply_fsm_continue_loop(
         )?));
     }
     Ok(None)
+}
+
+fn tool_invocation_failed(invocation: &ToolInvocation) -> bool {
+    invocation.tool_output.get("ok").and_then(Value::as_bool) == Some(false)
+        || invocation
+            .tool_output
+            .get("error")
+            .is_some_and(|error| !error.is_null())
+}
+
+fn failed_tool_batch(invocations: &[ToolInvocation]) -> bool {
+    !invocations.is_empty() && invocations.iter().all(tool_invocation_failed)
+}
+
+fn repeated_tool_error_lock_message(failed_batches: usize, last: &ToolInvocation) -> String {
+    let detail = last
+        .tool_output
+        .get("error")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("the tool returned a failure");
+    format!(
+        "I stopped after {failed_batches} consecutive failed tool batches so I would not repeat a broken action indefinitely. Last failure from {}: {detail}. Change the approach or provide the missing input, then continue.",
+        last.tool_name
+    )
 }
 
 async fn finish_stuck_turn(
@@ -2133,9 +2212,10 @@ fn sanitize_tool_name_for_model(name: &str) -> String {
 mod tests {
     use super::{
         MALFORMED_TOOL_JSON_GUIDANCE, TOOL_OBSERVATION_MARKER, assistant_tool_round_message,
-        ensure_assistant_tool_turn_reasoning, hydrate_tool_observation_batch,
+        ensure_assistant_tool_turn_reasoning, failed_tool_batch, hydrate_tool_observation_batch,
         is_serde_json_completion_error, prune_transient_tool_observation_messages,
-        recoverable_tool_error_value, tool_output_from_invoke, tool_round_budget_exhausted_message,
+        recoverable_tool_error_value, repeated_tool_error_lock_message, tool_output_from_invoke,
+        tool_round_budget_exhausted_message,
     };
     use crate::completion_fsm::TurnCompletionProfile;
     use crate::ports::{
@@ -2361,6 +2441,40 @@ mod tests {
     }
 
     #[test]
+    fn repeated_tool_error_lock_requires_a_wholly_failed_batch() {
+        use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
+
+        let failed = ToolInvocation {
+            tool_name: "broken_tool".into(),
+            tool_input: json!({}),
+            tool_output: json!({"ok": false, "error": "boom"}),
+        };
+        let succeeded = ToolInvocation {
+            tool_name: "working_tool".into(),
+            tool_input: json!({}),
+            tool_output: json!({"ok": true}),
+        };
+
+        assert!(!failed_tool_batch(&[]));
+        assert!(failed_tool_batch(&[failed.clone()]));
+        assert!(!failed_tool_batch(&[failed, succeeded]));
+    }
+
+    #[test]
+    fn repeated_tool_error_lock_names_the_last_failure() {
+        use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
+
+        let failed = ToolInvocation {
+            tool_name: "broken_tool".into(),
+            tool_input: json!({}),
+            tool_output: json!({"ok": false, "error": "missing capability"}),
+        };
+        let message = repeated_tool_error_lock_message(3, &failed);
+        assert!(message.contains("broken_tool"));
+        assert!(message.contains("missing capability"));
+    }
+
+    #[test]
     fn foreground_prose_after_tools_keeps_active_work_running() {
         use crate::completion_fsm::{
             AfterToolsRoundContext, ContinueReason, TurnRoundAction, decide_after_tools_text_round,
@@ -2373,6 +2487,7 @@ mod tests {
             draft_text: preamble.to_string(),
             rounds_executed: 3,
             max_tool_rounds: 10,
+            enforce_tool_round_limit: true,
             completion_profile: TurnCompletionProfile::ForegroundPrincipal,
         });
         assert!(matches!(

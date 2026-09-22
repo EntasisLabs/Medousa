@@ -68,6 +68,19 @@ Source: `src/tool_bootstrap.rs`
 | Grapheme secrets | `cognition_grapheme_request_secret` — trusted UI prompt; authorizes an ephemeral credential capability for one native run |
 | Finish | `cognition_turn action=turn.finish` — ends tool loop |
 
+### Memory retrieval
+
+`cognition_memory_query action=memory.recall` accepts a natural-language
+question. Omitting `session_id` searches the current turn's session; an explicit
+JSON `null` searches across sessions in the backing memory authority. Indexed
+`semantic_tags` remain available to bound that broader search.
+
+Coder normally recalls only its current environment lineage: the current and
+bounded parent environments plus accepted undertaking and repository knowledge.
+`cognition_coder_memory_recall` can use `scope=all_accepted` for natural-language
+discovery across repositories. That scope excludes unreviewed environment memory
+and labels every result as requiring repository-local revalidation before use.
+
 ### Workshop execution placement
 
 `workshop.spawn` accepts an optional `execution_target`:

@@ -1293,6 +1293,7 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
         stream_turn_id: turn_id,
         runtime_ports,
         max_text_only_stuck_continues: turn_loop_settings.max_text_only_stuck_continues,
+        enforce_tool_round_limit: medousa_runtime::tool_round_limit_enabled(),
         parent_turn_correlation_id: parent_turn_correlation_id.clone(),
         skip_avec_ritual_check: false,
         hard_tool_round_ceiling,
