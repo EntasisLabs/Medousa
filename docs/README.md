@@ -64,6 +64,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Channels & chat commands](cookbook/channels-and-chat.md) | Discord, Telegram, Slack, WhatsApp, slash commands |
 | [Skills & specialties](cookbook/skills-and-specialties.md) | Manuscripts, Hermes/Cursor/OpenClaw import |
 | [Build from source](cookbook/build-from-source.md) | Cargo, Tauri dev, release builds, iPhone dev |
+| [Benchmark Coder](guides/terminal-bench.md) | Normal daemon Coder mode through the Terminal-Bench 4.0 Harbor shim |
 | [Integrate without the app](cookbook/integrate-without-the-app.md) | HTTP-only, jobs, ingest, MCP, corp patterns |
 | [Mobile & LAN](cookbook/mobile-and-lan.md) | Phone pairing, iOS dev, workshop transport |
 | [Peers, portals, and LAN sharing](cookbook/lan-discovery-and-sharing.md) | Portal vs peer, Iroh, Nearby toggle |

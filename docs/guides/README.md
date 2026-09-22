@@ -4,6 +4,8 @@ End-user how-tos for **Medousa the app**. No terminal required.
 
 Integrator / self-host cookbooks: [../cookbook/README.md](../cookbook/README.md).
 
+Operator evaluation: [Benchmark Coder with Terminal-Bench](terminal-bench.md).
+
 | Guide | You want to… |
 |-------|----------------|
 | [Getting started](getting-started.md) | Download → welcome → first chat |
