@@ -337,6 +337,19 @@ impl CognitionJobEnqueueTool {
         }
 
         self.runtime.enqueue_job(job).await?;
+        if let Some(scope) =
+            crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope).await
+        {
+            let _ = crate::assistant_assignments::project_runtime_origin(
+                medousa_types::assistant_assignment::AssistantAssignmentKind::Job,
+                &job_id,
+                input.note.as_deref().unwrap_or(job_type),
+                Some(1),
+                &scope,
+                Some("stasis".to_string()),
+                Some(COGNITION_JOB_ENQUEUE_ID.as_str().to_string()),
+            );
+        }
 
         let _ = self
             .event_tx

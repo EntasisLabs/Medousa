@@ -15,6 +15,7 @@ include!("full_daemon.rs");
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 #[path = "embedded_agent_runtime.rs"]
 pub mod agent_runtime;
+pub mod assistant_assignments;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub use agent_runtime::execution_context;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
@@ -74,10 +75,9 @@ pub mod mcp_policy;
 pub mod mobile_tool_registry;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod openai_codex_chat_client;
+pub mod peer_coordination_mesh;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod peer_execution_policy;
-pub mod peer_coordination_mesh;
-pub mod remote_peer_tools;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 #[path = "runtime/persistent_locus.rs"]
 pub mod persistent_locus;
@@ -87,6 +87,7 @@ pub mod portable_coder;
 pub mod reasoning_effort;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod recurring_schedule;
+pub mod remote_peer_tools;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod request_principal;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]

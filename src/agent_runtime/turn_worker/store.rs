@@ -505,6 +505,9 @@ impl TurnWorkerStore {
         changed.sort_by(|left, right| left.work_id.cmp(&right.work_id));
         changed.dedup_by(|left, right| left.work_id == right.work_id);
         for record in changed {
+            if let Err(error) = crate::assistant_assignments::project_turn_worker(&record) {
+                tracing::warn!(work_id = %record.work_id, %error, "assistant assignment projection failed");
+            }
             let _ = crate::workspace::persist::queue_mutation(
                 crate::workspace::persist::WorkspaceMutation::UpsertTurnWorker {
                     record: Box::new(record),

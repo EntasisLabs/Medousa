@@ -3,6 +3,7 @@
 //! Used by the server, SDK clients, and channel adapters to prevent contract drift.
 
 pub mod api_error;
+pub mod assistant_assignment;
 pub mod authority_id;
 pub mod bot;
 pub mod browser;
@@ -21,8 +22,8 @@ pub mod forge;
 pub mod grapheme_extras;
 pub mod inference;
 pub mod layout;
-pub mod local;
 pub mod liquid;
+pub mod local;
 pub mod mcp_gateway;
 pub mod mcp_gateway_api;
 pub mod mcp_turn_token;
@@ -41,6 +42,7 @@ pub mod world_recipe;
 pub mod world_timeline;
 
 pub use api_error::*;
+pub use assistant_assignment::*;
 pub use authority_id::*;
 pub use bot::*;
 pub use browser::*;
@@ -52,8 +54,8 @@ pub use environment::*;
 pub use feed::*;
 pub use grapheme_extras::*;
 pub use layout::*;
-pub use local::*;
 pub use liquid::*;
+pub use local::*;
 pub use mcp_gateway::*;
 pub use mcp_gateway_api::*;
 pub use mcp_turn_token::*;
