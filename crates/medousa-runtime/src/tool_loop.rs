@@ -56,12 +56,12 @@ use crate::turn_context::{
     record_round_digest_from_invocations,
 };
 use crate::turn_control::{
-    ABSOLUTE_MAX_TOOL_ROUNDS, COGNITION_TURN, COGNITION_WORKSHOP_MUTATE,
-    begin_work_note_from_invocations, checkpoint_turn_from_invocations,
-    finish_turn_from_invocations, is_begin_work_tool_name, is_terminal_turn_tool_name,
-    is_workshop_spawn_call, request_input_from_invocations, request_more_rounds_from_invocations,
-    terminal_text_for_fsm_end, turn_progress_message_from_invocations,
-    worker_spawn_from_invocations, workshop_entered_from_invocations,
+    ABSOLUTE_MAX_TOOL_ROUNDS, COGNITION_TURN, begin_work_note_from_invocations,
+    checkpoint_turn_from_invocations, finish_turn_from_invocations, is_begin_work_tool_name,
+    is_terminal_turn_tool_name, is_workshop_spawn_call, request_input_from_invocations,
+    request_more_rounds_from_invocations, terminal_text_for_fsm_end,
+    turn_progress_message_from_invocations, worker_spawn_from_invocations,
+    workshop_entered_from_invocations,
 };
 
 const DEFAULT_MAX_TOOL_ROUNDS: usize = DEFAULT_FOREGROUND_MAX_TOOL_ROUNDS;
@@ -1321,7 +1321,7 @@ impl MedousaToolLoopPipeline {
                                 stream_turn_id: gate.stream_turn_id,
                                 kind: TurnLedgerEventKind::WorkDelegated,
                                 detail: format!(
-                                    "host_turn_ended work_id={work_id} intent={intent} parent_turn_correlation_id={parent_corr} scratch_digest={digest}"
+                                    "peer_spawned host_turn_continues work_id={work_id} intent={intent} parent_turn_correlation_id={parent_corr} scratch_digest={digest}"
                                 ),
                                 tools_invoked: ledger_tool_names(&invocations),
                                 missing_tools: Vec::new(),
@@ -1333,28 +1333,21 @@ impl MedousaToolLoopPipeline {
                             },
                         );
                     }
-                    let last = invocations.last().cloned().unwrap_or(ToolInvocation {
-                        tool_name: COGNITION_WORKSHOP_MUTATE.to_string(),
-                        tool_input: Value::Null,
-                        tool_output: Value::Null,
-                    });
                     persist_checkpoint!(
-                        SafeCheckpointBoundary::Terminal,
-                        ActiveTurnCheckpointStatus::Completed,
-                        Some("worker_spawned"),
+                        SafeCheckpointBoundary::ToolBatchCompleted,
+                        ActiveTurnCheckpointStatus::Active,
+                        None,
                         None,
                         &round_tool_names,
                         &round_provider_call_ids,
                     );
-                    return Ok(ToolLoopExecutionResponse {
-                        text: ack,
-                        metadata: shared_inputs.context_clone(),
-                        tool_name: last.tool_name,
-                        tool_output: last.tool_output,
-                        tool_invocations: invocations,
-                        rounds_executed,
-                        termination_reason: "worker_spawned".to_string(),
-                    });
+                    push_turn_control_message(
+                        &mut turn_ctx.tool_lane.messages,
+                        &format!(
+                            "{TURN_CONTROL_PREFIX}\n{ack}\nThe peer now runs concurrently. Continue any complementary work in this host turn without polling or duplicating the delegated task, then emit the appropriate typed terminal outcome."
+                        ),
+                    );
+                    continue;
                 }
             }
 

@@ -587,7 +587,7 @@ impl ToolRegistry for AllowlistToolRegistry {
                                 "description": "False when this message is already a complete principal-facing answer."
                             }
                         },
-                        "required": ["action", "message"],
+                        "required": ["action"],
                         "additionalProperties": false
                     }));
                     tool.strict = Some(true);
@@ -779,6 +779,28 @@ mod tests {
         ] {
             assert!(!exact.allows(name), "result-only turn exposed {name}");
         }
+    }
+
+    #[tokio::test]
+    async fn delegated_finish_schema_does_not_require_duplicate_prose() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let registry = AllowlistToolRegistry::delegated(
+            Arc::new(RecordingRegistry {
+                tool_name: crate::public_api::COGNITION_TURN,
+                seen,
+            }),
+            HashSet::from([crate::public_api::COGNITION_TURN.to_string()]),
+        );
+
+        let tools = registry.list_tools().await.unwrap();
+        let finish = tools
+            .iter()
+            .find(|tool| tool.name == crate::public_api::COGNITION_TURN)
+            .expect("delegated finish tool");
+        assert_eq!(
+            finish.schema.as_ref().unwrap()["required"],
+            json!(["action"])
+        );
     }
 
     #[tokio::test]

@@ -539,6 +539,7 @@
     prompt: string,
     mode: "interactive" | "background",
     codeProjectSetupAuthorized = false,
+    onAccepted?: () => void,
   ) {
     await submitChatTurn({
       userContent,
@@ -550,6 +551,7 @@
         agentSession.agentConfigOptions = [];
       },
       scrollToLatest: () => scrollToLatest(true),
+      onAccepted,
     });
   }
 
@@ -581,6 +583,7 @@
   type FailedSend = {
     display: string;
     prompt: string;
+    draft: string;
     mode: "interactive" | "background";
     codeProjectSetupAuthorized: boolean;
   };
@@ -592,15 +595,27 @@
     if (!payload) return;
     lastFailedSend = null;
     chat.clearStreamError(panelSessionId);
+    let accepted = false;
+    if (chat.draft === payload.draft) {
+      chat.clearComposerDraft();
+    }
     try {
       await submitTurn(
         payload.display,
         payload.prompt,
         payload.mode,
         payload.codeProjectSetupAuthorized,
+        () => {
+          accepted = true;
+        },
       );
     } catch (err) {
-      lastFailedSend = payload;
+      if (!accepted) {
+        lastFailedSend = payload;
+        if (!chat.draft.trim()) {
+          chat.draft = payload.draft;
+        }
+      }
       chat.setError(err instanceof Error ? err.message : String(err));
     }
   }
@@ -614,6 +629,7 @@
     event.preventDefault();
     if (connection.offline || runtime.savingControls || chat.pendingMediaUploading) return;
     const scopeForSend = chat.vaultNoteContext;
+    const draftForSend = chat.draft;
     const basePrompt = ensureVaultSelectionInPrompt(chat.draft.trim(), scopeForSend);
     const prompt = panelBot ? basePrompt : applyActiveAgentPrompt(basePrompt);
     const hasAttachments = chat.pendingMediaRefs.length > 0;
@@ -635,6 +651,7 @@
     const askPrompt = parseDaemonAskPrompt(prompt);
     const slash = parseChatSlashInput(prompt);
     let pendingSend: FailedSend | null = null;
+    let accepted = false;
     lastFailedSend = null;
     chat.clearComposerDraft();
     if (!chat.pinVaultNoteContext) {
@@ -681,10 +698,15 @@
       const display =
         prompt ||
         (hasAttachments ? `[${pendingMediaLabels(chat.pendingMediaRefs)}]` : "");
-      pendingSend = { display, prompt, mode, codeProjectSetupAuthorized };
-      await submitTurn(display, prompt, mode, codeProjectSetupAuthorized);
+      pendingSend = { display, prompt, draft: draftForSend, mode, codeProjectSetupAuthorized };
+      await submitTurn(display, prompt, mode, codeProjectSetupAuthorized, () => {
+        accepted = true;
+      });
     } catch (err) {
-      lastFailedSend = pendingSend;
+      lastFailedSend = accepted ? null : pendingSend;
+      if (!accepted && pendingSend && !chat.draft.trim()) {
+        chat.draft = pendingSend.draft;
+      }
       chat.setError(err instanceof Error ? err.message : String(err));
     }
   }
@@ -744,16 +766,22 @@
     if (mobile) haptic("light");
     const mode = chat.hasLiveInteractiveTurn() ? "background" : "interactive";
     const fullPrompt = ensureVaultSelectionInPrompt(prompt, chat.vaultNoteContext);
+    let accepted = false;
     try {
       lastFailedSend = null;
-      await submitTurn(fullPrompt, fullPrompt, mode);
+      await submitTurn(fullPrompt, fullPrompt, mode, false, () => {
+        accepted = true;
+      });
     } catch (err) {
-      lastFailedSend = {
-        display: fullPrompt,
-        prompt: fullPrompt,
-        mode,
-        codeProjectSetupAuthorized: false,
-      };
+      lastFailedSend = accepted
+        ? null
+        : {
+            display: fullPrompt,
+            prompt: fullPrompt,
+            draft: "",
+            mode,
+            codeProjectSetupAuthorized: false,
+          };
       chat.setError(err instanceof Error ? err.message : String(err));
     }
   }

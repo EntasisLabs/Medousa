@@ -676,24 +676,14 @@ export async function reconcileOnResume(
     host.sessionId.trim() === sessionId;
 
   try {
-    const attached = await host.tryReattachActiveTurn(cards);
+    await host.tryReattachActiveTurn(cards);
     if (!stillSameSession()) return;
 
-    const liveStream =
-      attached &&
-      (host.messages.some(
-        (message) =>
-          message.streaming &&
-          message.lane !== "worker" &&
-          message.phase !== "budget_blocked",
-      ) ||
-        hasLiveInteractiveTurn(host));
-
-    if (liveStream) {
-      host.sanitizeTranscript();
-      return;
-    }
-
+    // Reattaching a live ticket and reconciling committed history are separate
+    // responsibilities. A daemon may commit one turn while another ticket is
+    // still active, especially after a mobile client was suspended. Always
+    // merge the durable projection so reconnecting clients see those commits;
+    // mergeTranscript preserves the live placeholder for the attached turn.
     const history = await recentHistoryForMerge(
       sessionId,
       host.messages,
@@ -710,15 +700,6 @@ export async function reconcileOnResume(
   } catch (err) {
     host.noteResumeFailure(err);
   }
-}
-
-function hasLiveInteractiveTurn(host: ChatStoreHost): boolean {
-  for (const turn of host.turns.values()) {
-    if (turn.mode !== "interactive" || turn.terminal) continue;
-    if (host.isComposerOpenDuringHandoff(turn.turnId, turn.phase)) continue;
-    return true;
-  }
-  return false;
 }
 
 export async function reloadCurrentSession(

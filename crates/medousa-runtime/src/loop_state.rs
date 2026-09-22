@@ -214,7 +214,7 @@ pub fn stuck_turn_user_message(
          new tool receipts (turn budget: {max_tool_rounds} rounds; used {rounds_executed} this turn). \
          What should we do next — run the missing ritual (calibrate, moods), call cognition_turn action=turn.checkpoint \
          for a mid-task handoff, cognition_turn action=turn.finish when fully done, \
-         with the complete answer, or extend the budget?"
+         alongside the complete answer, or extend the budget?"
     )
 }
 
