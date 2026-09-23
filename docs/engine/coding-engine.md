@@ -35,6 +35,12 @@ Without `attempt_id`, the existing user-facing undertaking projection remains
 the default. The daemon replaces these identifiers with an internal
 `workspace_root`; clients must not send workshop paths as authority.
 
+The daemon passes its Forge store path to `medousa-code`. The coding engine
+checks roots outside its static allowlist against the exact Forge work and,
+when supplied, attempt before using them. Its health API revision is `2`; the
+daemon rejects older or differently configured sidecars. Rebuild and install
+the daemon and `medousa-code` together when changing this contract.
+
 `POST /v1/code/request` accepts the whitelisted actions `references`, `rename`,
 `format`, `code_actions`, and `organize_imports`. Results remain native LSP
 values so the caller can preserve provider-specific detail. Home checks the

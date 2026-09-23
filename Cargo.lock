@@ -7741,6 +7741,7 @@ dependencies = [
  "dirs 5.0.1",
  "futures-util",
  "grapheme-lsp",
+ "medousa-forge",
  "medousa-host",
  "serde",
  "serde_json",

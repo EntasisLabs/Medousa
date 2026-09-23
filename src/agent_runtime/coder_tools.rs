@@ -2526,49 +2526,54 @@ impl CoderBoundToolRegistry {
 }
 
 fn attached_shell_command_mutates_git_authority(command: &str) -> bool {
+    // This is a UX guard for obvious command forms, not a shell sandbox. Keep
+    // matching local to command segments so unrelated search/heredoc text does
+    // not turn ordinary inspection into a refusal.
+    command
+        .split([';', '\n', '|', '&'])
+        .any(|segment| attached_shell_segment_mutates_git_authority(segment))
+}
+
+fn attached_shell_segment_mutates_git_authority(command: &str) -> bool {
     let lowercase = command.to_ascii_lowercase();
     let tokens = lowercase
         .split(|character: char| {
-            character.is_whitespace()
-                || matches!(character, '\'' | '"' | ';' | '&' | '|' | '(' | ')')
+            character.is_whitespace() || matches!(character, '\'' | '"' | '(' | ')')
         })
         .filter(|token| !token.is_empty())
         .map(|token| token.trim_matches(|character| matches!(character, ',' | ':' | '=')))
         .collect::<Vec<_>>();
-    if tokens.iter().any(|token| {
+    if tokens.first().is_some_and(|token| {
+        *token == "rm" || token.ends_with("/rm") || token.ends_with("\\rm.exe")
+    }) && tokens.iter().skip(1).any(|token| {
         *token == ".git"
             || token.starts_with(".git/")
-            || token.starts_with(".git\\")
             || token.contains("/.git/")
-            || token.contains("\\.git\\")
             || token.ends_with("/.git")
-            || token.ends_with("\\.git")
-            || matches!(
-                *token,
-                "git_dir" | "git_index_file" | "--git-dir" | "--git-dir=" | "--work-tree"
-            )
-            || token.starts_with("git_dir=")
-            || token.starts_with("git_index_file=")
-            || token.starts_with("--git-dir=")
     }) {
         return true;
     }
-
     let mut cursor = 0;
     while cursor < tokens.len() {
         let token = tokens[cursor];
+        if matches!(token, "env" | "sudo" | "command" | "exec")
+            || token.ends_with('=')
+            || token.contains('=') && !token.starts_with('-')
+        {
+            cursor += 1;
+            continue;
+        }
         if !matches!(token, "git" | "git.exe" | "git.cmd")
             && !token.ends_with("/git")
             && !token.ends_with("/git.exe")
             && !token.ends_with("\\git.exe")
         {
-            cursor += 1;
-            continue;
+            return false;
         }
         cursor += 1;
         while cursor < tokens.len() {
             match tokens[cursor] {
-                "-c" => cursor = cursor.saturating_add(2),
+                "-c" | "--git-dir" | "--work-tree" => cursor = cursor.saturating_add(2),
                 option if option.starts_with('-') => cursor += 1,
                 _ => break,
             }
@@ -2581,13 +2586,11 @@ fn attached_shell_command_mutates_git_authority(command: &str) -> bool {
             "add"
                 | "am"
                 | "bisect"
-                | "branch"
                 | "checkout"
                 | "cherry-pick"
                 | "clean"
                 | "clone"
                 | "commit"
-                | "config"
                 | "gc"
                 | "init"
                 | "maintenance"
@@ -2619,12 +2622,69 @@ fn attached_shell_command_mutates_git_authority(command: &str) -> bool {
         ) {
             return true;
         }
+        let args = &tokens[cursor + 1..];
         if subcommand == "apply"
-            && tokens[cursor + 1..]
+            && args
                 .iter()
                 .any(|option| matches!(*option, "--index" | "--cached" | "--3way"))
         {
             return true;
+        }
+        if subcommand == "branch" {
+            let mutating = args
+                .iter()
+                .any(|arg| matches!(*arg, "-d" | "--delete" | "-m" | "--move" | "-c" | "--copy"));
+            let read_only = !mutating
+                && (args.is_empty()
+                    || args.iter().any(|arg| {
+                        matches!(
+                            *arg,
+                            "--list"
+                                | "-l"
+                                | "--show-current"
+                                | "--contains"
+                                | "--merged"
+                                | "--no-merged"
+                                | "--all"
+                                | "-a"
+                                | "--remotes"
+                                | "-r"
+                        )
+                    }));
+            if !read_only {
+                return true;
+            }
+        }
+        if subcommand == "config" {
+            let mutating = args.iter().any(|arg| {
+                matches!(
+                    *arg,
+                    "set"
+                        | "--add"
+                        | "--unset"
+                        | "--unset-all"
+                        | "--replace-all"
+                        | "--rename-section"
+                        | "--remove-section"
+                )
+            });
+            let read_only = !mutating
+                && args.iter().any(|arg| {
+                    matches!(
+                        *arg,
+                        "get"
+                            | "list"
+                            | "--get"
+                            | "-get"
+                            | "--get-all"
+                            | "--get-regexp"
+                            | "--list"
+                            | "-l"
+                    )
+                });
+            if !read_only {
+                return true;
+            }
         }
     }
     false
@@ -5418,10 +5478,15 @@ mod tests {
     fn attached_shell_blocks_git_authority_mutations_but_keeps_inspection_and_tests() {
         for command in [
             "git commit -am done",
+            "git branch new-name",
+            "git config remote.origin.url https://example.invalid/repo",
+            "git config set remote.origin.url https://example.invalid/repo",
+            "git config --show-origin remote.origin.url https://example.invalid/repo",
             "git -C . reset --hard HEAD",
             "git checkout other",
             "git apply --index fix.patch",
             "rm -rf .git",
+            "/bin/rm -rf /repo/.git/config",
             "GIT_INDEX_FILE=/tmp/index git add .",
         ] {
             assert!(
@@ -5433,8 +5498,17 @@ mod tests {
             "git status --short",
             "git diff -- src/lib.rs",
             "git fetch origin",
+            "git branch --show-current",
+            "git config --get remote.origin.url",
+            "git config get remote.origin.url",
+            "git branch --list 'feature/*'",
+            "git branch --contains HEAD",
             "git apply fix.patch",
             "cargo test -p medousa-forge",
+            "find . -maxdepth 2 -not -path './.git/*'",
+            "python - <<'PY'\nprint('.git')\nPY",
+            "rm temp; find . -path .git",
+            "printf 'git commit'",
             "printf 'target' >> .gitignore",
         ] {
             assert!(

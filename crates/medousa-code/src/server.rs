@@ -29,6 +29,11 @@ use crate::session::{
     SessionPool, initialization_options, workspace_configuration_response, workspace_settings,
 };
 use crate::{ENGINE_API_REVISION, ENGINE_NAME, ENGINE_VERSION};
+use medousa_forge::{
+    execution::{ExecutionClass, ForgeExecutionService},
+    forge::Forge,
+    model::{AttemptId, WorkId},
+};
 
 #[derive(Clone)]
 pub struct OrchestratorConfig {
@@ -36,6 +41,8 @@ pub struct OrchestratorConfig {
     pub workspace_root: PathBuf,
     /// Allowed path prefixes (scripts, forge worktrees, …). Empty = allow workspace_root only.
     pub allowed_roots: Vec<PathBuf>,
+    /// Daemon-owned Forge store used to admit exact governed attached checkouts.
+    pub forge_root: Option<PathBuf>,
 }
 
 #[derive(Clone)]
@@ -47,6 +54,7 @@ pub struct OrchestratorState {
     pub language_sessions: Arc<LanguageSessionStore>,
     pub editor_sessions: Arc<AtomicUsize>,
     pub started: Instant,
+    forge_execution: Arc<ForgeExecutionService>,
 }
 
 impl OrchestratorState {
@@ -60,6 +68,7 @@ impl OrchestratorState {
             language_sessions,
             editor_sessions: Arc::new(AtomicUsize::new(0)),
             started: Instant::now(),
+            forge_execution: Arc::new(ForgeExecutionService::new()),
         }
     }
 
@@ -123,6 +132,7 @@ pub struct HealthResponse {
     pub workspace_root: String,
     pub languages: Vec<String>,
     pub allowed_roots: Vec<String>,
+    pub forge_root: Option<PathBuf>,
 }
 
 #[derive(Deserialize)]
@@ -136,6 +146,10 @@ pub struct LspQuery {
     /// Active document used to select the closest language root.
     #[serde(default)]
     pub document_uri: Option<String>,
+    #[serde(default)]
+    pub work_id: Option<String>,
+    #[serde(default)]
+    pub attempt_id: Option<String>,
 }
 
 fn default_language() -> String {
@@ -212,6 +226,7 @@ async fn health(State(state): State<Arc<OrchestratorState>>) -> Json<HealthRespo
             .iter()
             .map(|p| p.display().to_string())
             .collect(),
+        forge_root: state.config.forge_root.clone(),
     })
 }
 
@@ -227,20 +242,66 @@ async fn lsp_ws(
             query.language,
             query.workspace_root,
             query.document_uri,
+            query.work_id,
+            query.attempt_id,
         )
     })
 }
 
-fn requested_workspace_root(
+async fn requested_workspace_root(
     state: &OrchestratorState,
     requested: Option<PathBuf>,
+    work_id: Option<String>,
+    attempt_id: Option<String>,
 ) -> anyhow::Result<PathBuf> {
     let root = requested.unwrap_or_else(|| state.config.workspace_root.clone());
-    let root = root.canonicalize()?;
-    if !state.path_allowed(&root) {
-        anyhow::bail!("workspace root is outside the coding engine allowlist");
+    let root = tokio::fs::canonicalize(root).await?;
+    if state.path_allowed(&root) {
+        return Ok(root);
     }
-    Ok(root)
+    let forge_root =
+        state.config.forge_root.clone().ok_or_else(|| {
+            anyhow::anyhow!("workspace root is outside the coding engine allowlist")
+        })?;
+    let work_id = work_id
+        .ok_or_else(|| anyhow::anyhow!("attached checkout workspace requires a Forge work_id"))?;
+    let estimated_bytes = 16 * 1024;
+    let forge = state.forge_execution.clone();
+    let requested_root = root.clone();
+    let governed_root = forge
+        .run(
+            ExecutionClass::RepositoryMetadata,
+            estimated_bytes,
+            move || {
+                let forge = Forge::open(forge_root).map_err(|error| {
+                    medousa_forge::error::ForgeError::EnvironmentDrift(error.to_string())
+                })?;
+                let item = forge.load(&WorkId::from(work_id))?;
+                let environment = match attempt_id {
+                    Some(attempt_id) => {
+                        let attempt_id = AttemptId::from(attempt_id);
+                        item.attempt(&attempt_id)
+                            .and_then(|_| item.environment_for_attempt(&attempt_id))
+                    }
+                    None => item.workspace_environment(),
+                }
+                .ok_or_else(|| {
+                    medousa_forge::error::ForgeError::EnvironmentDrift(
+                        "Forge work has no governed workspace".into(),
+                    )
+                })?;
+                let governed = environment.worktree.canonicalize()?;
+                if governed != requested_root {
+                    return Err(medousa_forge::error::ForgeError::EnvironmentDrift(
+                        "workspace root does not match the requested governed Forge worktree"
+                            .into(),
+                    ));
+                }
+                Ok(governed)
+            },
+        )
+        .await?;
+    Ok(governed_root)
 }
 
 fn document_path_for_project(uri: &str, project_root: &Path) -> anyhow::Result<PathBuf> {
@@ -428,15 +489,18 @@ async fn handle_client(
     language: String,
     requested_root: Option<PathBuf>,
     document_uri: Option<String>,
+    work_id: Option<String>,
+    attempt_id: Option<String>,
 ) {
     let language = LanguageId::new(language);
-    let project_root = match requested_workspace_root(&state, requested_root) {
-        Ok(root) => root,
-        Err(err) => {
-            tracing::warn!(error = %err, "rejected coding workspace root");
-            return;
-        }
-    };
+    let project_root =
+        match requested_workspace_root(&state, requested_root, work_id, attempt_id).await {
+            Ok(root) => root,
+            Err(err) => {
+                tracing::warn!(error = %err, "rejected coding workspace root");
+                return;
+            }
+        };
     let language_root =
         match resolve_language_root(&state, &project_root, &language, document_uri.as_deref()) {
             Ok(root) => root,
@@ -711,6 +775,10 @@ pub struct AgentDocQuery {
     pub language: Option<String>,
     #[serde(default)]
     pub workspace_root: Option<PathBuf>,
+    #[serde(default)]
+    pub work_id: Option<String>,
+    #[serde(default)]
+    pub attempt_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -723,6 +791,10 @@ pub struct AgentWorkspaceQuery {
     pub query: Option<String>,
     #[serde(default)]
     pub uri: Option<String>,
+    #[serde(default)]
+    pub work_id: Option<String>,
+    #[serde(default)]
+    pub attempt_id: Option<String>,
 }
 
 fn language_for_uri(uri: &str, override_lang: Option<&str>) -> LanguageId {
@@ -760,7 +832,8 @@ async fn language_root(
     Query(q): Query<AgentDocQuery>,
 ) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
     let language = language_for_uri(&q.uri, q.language.as_deref());
-    let project_root = requested_workspace_root(&state, q.workspace_root)
+    let project_root = requested_workspace_root(&state, q.workspace_root, q.work_id, q.attempt_id)
+        .await
         .map_err(|err| (axum::http::StatusCode::BAD_REQUEST, err.to_string()))?;
     let root = resolve_language_root(&state, &project_root, &language, Some(&q.uri))
         .map_err(|err| (axum::http::StatusCode::BAD_REQUEST, err.to_string()))?;
@@ -782,7 +855,8 @@ async fn language_sessions(
     Query(q): Query<AgentDocQuery>,
 ) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
     let language = language_for_uri(&q.uri, q.language.as_deref());
-    let project_root = requested_workspace_root(&state, q.workspace_root)
+    let project_root = requested_workspace_root(&state, q.workspace_root, q.work_id, q.attempt_id)
+        .await
         .map_err(|err| (axum::http::StatusCode::BAD_REQUEST, err.to_string()))?;
     let language_root = resolve_language_root(&state, &project_root, &language, Some(&q.uri))
         .map_err(|err| (axum::http::StatusCode::BAD_REQUEST, err.to_string()))?;
@@ -839,7 +913,13 @@ async fn session_for_doc(
     q: &AgentDocQuery,
 ) -> anyhow::Result<Arc<crate::session::LiveSession>> {
     let language = language_for_uri(&q.uri, q.language.as_deref());
-    let project_root = requested_workspace_root(state, q.workspace_root.clone())?;
+    let project_root = requested_workspace_root(
+        state,
+        q.workspace_root.clone(),
+        q.work_id.clone(),
+        q.attempt_id.clone(),
+    )
+    .await?;
     let language_root = resolve_language_root(state, &project_root, &language, Some(&q.uri))?;
     let session = state
         .pool
@@ -923,8 +1003,10 @@ async fn agent_diagnostics(
     Query(q): Query<AgentDocQuery>,
 ) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
     let language = language_for_uri(&q.uri, q.language.as_deref());
-    let project_root = requested_workspace_root(&state, q.workspace_root.clone())
-        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
+    let project_root =
+        requested_workspace_root(&state, q.workspace_root.clone(), q.work_id, q.attempt_id)
+            .await
+            .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
     let language_root = resolve_language_root(&state, &project_root, &language, Some(&q.uri))
         .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
     let diagnostics = if let Some(session) = state
@@ -956,7 +1038,8 @@ async fn workspace_diagnostics(
     State(state): State<Arc<OrchestratorState>>,
     Query(q): Query<AgentWorkspaceQuery>,
 ) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
-    let project_root = requested_workspace_root(&state, q.workspace_root)
+    let project_root = requested_workspace_root(&state, q.workspace_root, q.work_id, q.attempt_id)
+        .await
         .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
     let requested_language = q.language.filter(|language| !language.trim().is_empty());
     let sessions = if let Some(language) = requested_language.as_deref() {
@@ -1038,7 +1121,8 @@ async fn workspace_symbols(
     Query(q): Query<AgentWorkspaceQuery>,
 ) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
     let language = LanguageId::new(q.language.as_deref().unwrap_or("plaintext"));
-    let project_root = requested_workspace_root(&state, q.workspace_root)
+    let project_root = requested_workspace_root(&state, q.workspace_root, q.work_id, q.attempt_id)
+        .await
         .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
     let language_root = resolve_language_root(&state, &project_root, &language, q.uri.as_deref())
         .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
@@ -1076,8 +1160,10 @@ async fn agent_conventions(
     State(state): State<Arc<OrchestratorState>>,
     Query(q): Query<AgentDocQuery>,
 ) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
-    let workspace_root = requested_workspace_root(&state, q.workspace_root)
-        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
+    let workspace_root =
+        requested_workspace_root(&state, q.workspace_root, q.work_id, q.attempt_id)
+            .await
+            .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
     let path = q
         .uri
         .strip_prefix("file://")
@@ -1177,6 +1263,10 @@ pub struct AgentRequest {
     #[serde(default)]
     pub workspace_root: Option<PathBuf>,
     #[serde(default)]
+    pub work_id: Option<String>,
+    #[serde(default)]
+    pub attempt_id: Option<String>,
+    #[serde(default)]
     pub new_name: Option<String>,
     #[serde(default)]
     pub range: Option<Value>,
@@ -1196,6 +1286,8 @@ async fn agent_request(
         character: request.character,
         language: request.language,
         workspace_root: request.workspace_root,
+        work_id: request.work_id,
+        attempt_id: request.attempt_id,
     };
     let session = session_for_doc(&state, &query)
         .await
@@ -1285,13 +1377,134 @@ async fn detamu_handles(State(state): State<Arc<OrchestratorState>>) -> Json<Val
 #[cfg(test)]
 mod tests {
     use super::{
-        AgentDocQuery, OrchestratorConfig, OrchestratorState, apply_editorconfig,
+        AgentDocQuery, Forge, OrchestratorConfig, OrchestratorState, apply_editorconfig,
         document_path_for_project, language_matrix, language_root, language_sessions,
-        path_to_file_uri, resolve_language_root, rewrite_initialize_params,
+        path_to_file_uri, requested_workspace_root, resolve_language_root,
+        rewrite_initialize_params,
     };
     use crate::language_session::{LanguageSessionIdentity, LanguageSessionKind};
     use crate::registry::{LanguageId, ServerRegistry};
     use serde_json::{Map, Value};
+
+    #[tokio::test]
+    async fn attached_workspace_requires_exact_forge_work_and_attempt_authority() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let repo = temp.path().join("attached");
+        let forge_root = temp.path().join("forge");
+        let static_root = temp.path().join("scripts");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::create_dir_all(&static_root).unwrap();
+        let git = |args: &[&str]| {
+            let output = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&repo)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "git {:?}: {}",
+                args,
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        git(&["init", "-b", "main"]);
+        git(&["config", "user.name", "Medousa test"]);
+        git(&["config", "user.email", "test@example.invalid"]);
+        std::fs::write(repo.join("main.rs"), "fn main() {}\n").unwrap();
+        git(&["add", "main.rs"]);
+        git(&["commit", "-m", "initial"]);
+
+        let forge = Forge::open(&forge_root).unwrap();
+        let actor = Forge::system_actor();
+        let item = forge
+            .register_with_workspace_mode(
+                "Attached workspace",
+                "diagnostics admission test",
+                &repo,
+                "main",
+                "test-owner",
+                medousa_forge::model::WorkspaceMode::AttachedCheckout,
+                &actor,
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &actor).unwrap();
+        let (_, lease) = forge
+            .begin_attempt(
+                &item.id,
+                medousa_forge::model::ExecutorDescriptor {
+                    kind: "medousa-coder".into(),
+                    detail: serde_json::json!({}),
+                },
+                None,
+                &actor,
+            )
+            .unwrap();
+        let work_id = item.id.to_string();
+        let attempt_id = lease.attempt_id.to_string();
+        let static_root = static_root.canonicalize().unwrap();
+        let config = OrchestratorConfig {
+            bind: "127.0.0.1:0".parse().unwrap(),
+            workspace_root: static_root.clone(),
+            allowed_roots: vec![static_root.clone()],
+            forge_root: Some(forge_root),
+        };
+        let state = OrchestratorState::new(config, ServerRegistry::with_defaults());
+
+        assert_eq!(
+            requested_workspace_root(
+                &state,
+                Some(repo.clone()),
+                Some(work_id.clone()),
+                Some(attempt_id.clone()),
+            )
+            .await
+            .unwrap(),
+            repo.canonicalize().unwrap()
+        );
+        assert!(
+            requested_workspace_root(&state, Some(repo.clone()), None, Some(attempt_id.clone()))
+                .await
+                .is_err()
+        );
+        assert!(
+            requested_workspace_root(&state, Some(repo.clone()), Some(work_id.clone()), None)
+                .await
+                .is_ok()
+        );
+        assert!(
+            requested_workspace_root(
+                &state,
+                Some(repo.clone()),
+                Some("unknown-work".into()),
+                Some(attempt_id.clone())
+            )
+            .await
+            .is_err()
+        );
+        assert!(
+            requested_workspace_root(
+                &state,
+                Some(repo.clone()),
+                Some(work_id.clone()),
+                Some("unknown-attempt".into())
+            )
+            .await
+            .is_err()
+        );
+        assert!(
+            requested_workspace_root(&state, Some(static_root.clone()), None, None)
+                .await
+                .is_ok()
+        );
+
+        let mismatched = temp.path().join("mismatched");
+        std::fs::create_dir_all(&mismatched).unwrap();
+        assert!(
+            requested_workspace_root(&state, Some(mismatched), Some(work_id), Some(attempt_id))
+                .await
+                .is_err()
+        );
+    }
 
     #[test]
     fn editorconfig_applies_matching_language_section() {
@@ -1358,6 +1571,7 @@ mod tests {
                 bind: "127.0.0.1:0".parse().unwrap(),
                 workspace_root: project.clone(),
                 allowed_roots: vec![project.clone()],
+                forge_root: None,
             },
             ServerRegistry::with_defaults(),
         );
@@ -1430,6 +1644,7 @@ mod tests {
                 bind: "127.0.0.1:0".parse().unwrap(),
                 workspace_root: project.clone(),
                 allowed_roots: vec![project.clone()],
+                forge_root: None,
             },
             ServerRegistry::with_defaults(),
         ));
@@ -1442,6 +1657,8 @@ mod tests {
                 character: None,
                 language: Some("typescript".into()),
                 workspace_root: Some(project),
+                work_id: None,
+                attempt_id: None,
             }),
         )
         .await
@@ -1471,6 +1688,7 @@ mod tests {
                 bind: "127.0.0.1:0".parse().unwrap(),
                 workspace_root: project.clone(),
                 allowed_roots: vec![project.clone()],
+                forge_root: None,
             },
             ServerRegistry::with_defaults(),
         ));
@@ -1493,6 +1711,8 @@ mod tests {
                 character: None,
                 language: Some("typescript".into()),
                 workspace_root: Some(project),
+                work_id: None,
+                attempt_id: None,
             }),
         )
         .await
@@ -1513,6 +1733,7 @@ mod tests {
                 bind: "127.0.0.1:0".parse().unwrap(),
                 workspace_root: project.clone(),
                 allowed_roots: vec![project],
+                forge_root: None,
             },
             ServerRegistry::with_defaults(),
         ));

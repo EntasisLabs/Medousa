@@ -313,8 +313,10 @@ pub struct CodeWrite {
     edits: Option<Vec<crate::code_edits::CodeEdit>>,
     /// Path relative to root
     path: String,
-    /// Hash from read, or missing for a new file
-    expected_sha256: String,
+    /// Hash from read, or missing for a new file; omitted/null receives a recoverable validation error.
+    #[serde(default)]
+    #[schemars(with = "String", skip_serializing_if = "CompatOption::is_none")]
+    expected_sha256: CompatOption<String>,
     /// Full file contents
     #[serde(default)]
     content: Option<String>,
@@ -835,6 +837,7 @@ impl ArtifactsDelete {
 
 impl CodeWrite {
     async fn execute(self) -> stasis::prelude::Result<Value> {
+        let expected_sha256 = self.expected_sha256.into_option().unwrap_or_default();
         #[cfg(feature = "full-daemon")]
         if let Some(invocation) = crate::work_environment_tools::EnvironmentToolInvocation::active(
             COGNITION_STORE_WRITE,
@@ -843,7 +846,7 @@ impl CodeWrite {
                 &invocation,
                 crate::work_environment_tools::EnvironmentCodeWriteRequest {
                     path: self.path,
-                    expected_sha256: self.expected_sha256,
+                    expected_sha256: expected_sha256.clone(),
                     edits: self.edits,
                     content: self.content,
                     find: self.find,
@@ -863,7 +866,7 @@ impl CodeWrite {
             content: CompatOption::from(self.content),
             find: CompatOption::from(self.find),
             replace: CompatOption::from(self.replace),
-            expected_sha256: self.expected_sha256,
+            expected_sha256: CompatOption::from(Some(expected_sha256)),
             edits: self.edits,
         })
         .await
@@ -923,7 +926,7 @@ mod tests {
                 ..
             }) => {
                 assert_eq!(path, "src/lib.rs");
-                assert_eq!(expected_sha256, "missing");
+                assert_eq!(expected_sha256.into_option().as_deref(), Some("missing"));
             }
             other => panic!("expected code.write, got {other:?}"),
         }
@@ -949,6 +952,17 @@ mod tests {
     fn code_write_schema_and_dispatch_expose_bounded_batch_edits() {
         let schema = serde_json::to_value(schemars::schema_for!(CodeWrite)).unwrap();
         assert_eq!(schema["properties"]["edits"]["maxItems"], 128);
+        assert!(
+            !schema["required"]
+                .as_array()
+                .is_some_and(|required| required.iter().any(|field| field == "expected_sha256"))
+        );
+        for input in [
+            json!({"action": "code.write", "path": "src/lib.rs", "expected_sha256": null, "content": "x"}),
+            json!({"action": "code.write", "path": "src/lib.rs", "content": "x"}),
+        ] {
+            assert!(serde_json::from_value::<StoreWriteAction>(input).is_ok());
+        }
         let input: StoreWriteAction = serde_json::from_value(json!({
             "action": "code.write", "path": "src/lib.rs", "expected_sha256": "sha256:observed",
             "edits": [{"find": "before", "replace": "after"}]

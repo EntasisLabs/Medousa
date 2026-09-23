@@ -193,13 +193,21 @@ fn accept_shell_ready_watermark(next_sequence: &mut u64, sequence: u64) {
 }
 
 fn verify_expected_digest(path: &Path, expected: &str) -> StasisResult<Option<Vec<u8>>> {
+    let expected = expected.trim();
+    let expected = expected.strip_prefix("sha256:").unwrap_or(expected);
+    let expected = if expected.len() == 64 && expected.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        format!("sha256:{}", expected.to_ascii_lowercase())
+    } else {
+        expected.to_owned()
+    };
     match std::fs::read(path) {
         Ok(bytes) => {
             let actual = content_digest(&bytes);
             if expected != actual {
                 return Err(StasisError::PortFailure(format!(
-                    "stale file digest for {}: expected {expected}, found {actual}",
-                    path.display()
+                    "file {} changed since it was read: expected digest {expected}, current digest is {actual}; read it again before retrying",
+                    path.display(),
                 )));
             }
             Ok(Some(bytes))
@@ -207,8 +215,8 @@ fn verify_expected_digest(path: &Path, expected: &str) -> StasisResult<Option<Ve
         Err(err) if err.kind() == std::io::ErrorKind::NotFound && expected == "missing" => Ok(None),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             Err(StasisError::PortFailure(format!(
-                "stale file digest for {}: expected {expected}, found missing",
-                path.display()
+                "file {} no longer exists: expected digest {expected}; for an intended creation, retry with expected_sha256: 'missing'",
+                path.display(),
             )))
         }
         Err(err) => Err(StasisError::PortFailure(format!(
@@ -1277,8 +1285,14 @@ pub(crate) struct CodeApplyPatchInput {
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
     pub(crate) replace: CompatOption<String>,
-    /// Required current digest from code_read, or `missing` for a new file
-    pub(crate) expected_sha256: String,
+    /// Digest returned by code_read, or `missing` for a new file. Null/missing
+    /// values receive a recoverable tool error rather than a schema failure.
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    pub(crate) expected_sha256: CompatOption<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
@@ -1375,10 +1389,11 @@ impl CognitionCodeApplyPatchTool {
         )
         .map_err(StasisError::PortFailure)?;
         let (root, path) = root_and_path(&input.path, requested_root.as_deref())?;
-        let expected_digest = input.expected_sha256.trim();
+        let expected_digest = input.expected_sha256.into_option().unwrap_or_default();
+        let expected_digest = expected_digest.trim();
         if expected_digest.is_empty() {
             return Err(StasisError::PortFailure(
-                "expected_sha256 is required".into(),
+                "expected_sha256 must be the digest returned by code_read, or 'missing' for a new file; read the file and retry".into(),
             ));
         }
         let existing = verify_expected_digest(&path, expected_digest)?;
@@ -2680,12 +2695,22 @@ mod tests {
             verify_expected_digest(&path, &digest).expect("matching digest"),
             Some(b"current".to_vec())
         );
+        assert_eq!(
+            verify_expected_digest(&path, digest.trim_start_matches("sha256:"))
+                .expect("bare SHA-256 hex is accepted"),
+            Some(b"current".to_vec())
+        );
         assert!(verify_expected_digest(&path, "sha256:stale").is_err());
         assert_eq!(
             verify_expected_digest(&temp.path().join("new.txt"), "missing")
                 .expect("missing sentinel"),
             None
         );
+        let null_digest = serde_json::from_value::<CodeApplyPatchInput>(json!({
+            "path": "new.txt", "content": "text", "expected_sha256": null
+        }))
+        .expect("null digest reaches recoverable tool validation");
+        assert!(null_digest.expected_sha256.into_option().is_none());
     }
 
     #[test]
