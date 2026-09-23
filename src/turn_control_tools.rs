@@ -251,12 +251,12 @@ impl CognitionTurnBeginWorkTool {
     }
 }
 
-/// Short principal-facing status while the turn continues (not a final answer).
+/// Record nonterminal progress for the principal; the turn continues.
 pub struct CognitionTurnUpdateUserTool;
 
 #[derive(Debug, JsonSchema)]
 pub struct TurnUpdateUserInput {
-    /// Short principal-facing status line
+    /// Short principal-facing progress update; does not end or pause the turn.
     #[schemars(required, with = "String")]
     pub(crate) message: Option<String>,
 }
@@ -509,7 +509,7 @@ pub enum TurnFinishOutput {
 
 #[medousa_tool(id = COGNITION_TURN_FINISH_ID)]
 impl CognitionTurnFinishTool {
-    /// End ActiveWork. Prefer assistant prose plus turn.finish with no message; message is a fallback only when the response contains no prose. Set needs_synthesis=false when the prose is already the complete principal-facing answer. Mid-task handoffs use turn.checkpoint.
+    /// End ActiveWork only after the full requested outcome is complete and verified, or when a concrete blocker prevents further authorized progress and is clearly reported. Prefer assistant prose plus turn.finish with no message; message is a fallback only when the response contains no prose. Set needs_synthesis=false when the prose is already the complete principal-facing answer. Progress is not completion.
     pub(crate) async fn invoke_typed(
         &self,
         input: TurnFinishInput,
@@ -528,12 +528,12 @@ impl CognitionTurnFinishTool {
     }
 }
 
-/// Hand a mid-task update to the principal and end this agent turn (await their reply to continue).
+/// Deliberately hand the turn back to the principal and wait for their reply; use only when their input is needed or work must pause.
 pub struct CognitionTurnCheckpointTool;
 
 #[derive(Debug, JsonSchema)]
 pub struct TurnCheckpointInput {
-    /// Principal-facing update: what you did, what you found, and what happens next or what you need from them
+    /// Principal-facing handback: what is done, what remains, and what input is needed or why work must pause
     #[schemars(required, with = "String")]
     pub(crate) message: Option<String>,
     /// Optional: what you need from the principal before more tool work (decision, confirmation, missing detail)
@@ -589,7 +589,7 @@ pub enum TurnCheckpointOutput {
 
 #[medousa_tool(id = COGNITION_TURN_CHECKPOINT_ID)]
 impl CognitionTurnCheckpointTool {
-    /// Share a substantive mid-task update with the principal and hand the turn back to them. The conversation is not over — you may continue after they reply. Use when tool work produced real progress but you are not done (not a final answer). Prefer this over streaming long interim prose that the runtime may loop on.
+    /// Deliberately end this agent turn and wait for the principal's reply. Use only when principal input is needed or work must pause; include what is done and what remains. For ordinary progress, use turn.update_user or prose and continue working; progress alone is not a reason to hand back.
     pub(crate) async fn invoke_typed(
         &self,
         input: TurnCheckpointInput,

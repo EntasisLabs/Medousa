@@ -315,7 +315,7 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
     ),
     (
         "cognition_turn",
-        "Record turn progress or set its outcome by typed action (turn.finish / turn.checkpoint / …)",
+        "Use turn.update_user for nonterminal progress; turn.checkpoint deliberately waits for principal input; turn.finish ends the turn after the full outcome is complete or a blocker prevents further authorized progress",
     ),
     (
         "cognition_ui_build",

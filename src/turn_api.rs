@@ -239,7 +239,7 @@ pub fn register_turn_tools(
 
 #[medousa_tool(id = TURN_ID)]
 impl CognitionTurnTool {
-    /// Record turn progress or set its outcome. action is a typed name (turn.finish, turn.checkpoint, …). Fetch fields with cognition_schema types=[...].
+    /// Record nonterminal progress with turn.update_user and continue, deliberately hand back with turn.checkpoint only when principal input is needed or work must pause, or end with turn.finish after the full requested outcome is complete and verified or a concrete blocker prevents further authorized progress. Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(&self, action: TurnAction) -> stasis::prelude::Result<ExternalJson> {
         Ok(ExternalJson::new(dispatch(self, action).await?))
     }

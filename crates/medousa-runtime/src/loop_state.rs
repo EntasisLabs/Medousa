@@ -36,7 +36,16 @@ pub fn ledger_tool_names(invocations: &[ToolInvocation]) -> Vec<String> {
 
 /// Dynamic loop HUD appended to interactive tool-loop prompts.
 pub fn append_tool_loop_policy(prompt: &str, max_tool_rounds: usize) -> String {
-    let max_tool_rounds = max_tool_rounds.max(1);
+    append_tool_loop_policy_with_limit(
+        prompt,
+        crate::loop_gate::tool_round_limit_enabled().then_some(max_tool_rounds),
+    )
+}
+
+fn append_tool_loop_policy_with_limit(prompt: &str, max_tool_rounds: Option<usize>) -> String {
+    let max_tool_rounds = max_tool_rounds
+        .map(|limit| limit.max(1).to_string())
+        .unwrap_or_else(|| "unlimited".to_string());
     format!(
         "{prompt}\n\n[MEDOUSA_HUD]\n\
          max_tool_rounds={max_tool_rounds}"
@@ -364,10 +373,27 @@ mod tests {
 
     #[test]
     fn hud_contains_only_dynamic_round_state() {
-        let policy = append_tool_loop_policy("hello", 12);
+        let policy = append_tool_loop_policy_with_limit("hello", Some(12));
         assert!(policy.contains("max_tool_rounds=12"));
         assert!(!policy.contains("typed_terminal="));
         assert!(!policy.contains("unlock"));
         assert!(!policy.contains("[MEDOUSA_SCRATCH_POLICY]"));
+    }
+
+    #[test]
+    fn hud_only_advertises_enforced_round_limits() {
+        assert_eq!(
+            append_tool_loop_policy_with_limit("hello", None),
+            "hello\n\n[MEDOUSA_HUD]\nmax_tool_rounds=unlimited"
+        );
+        assert_eq!(
+            append_tool_loop_policy_with_limit("hello", Some(0)),
+            "hello\n\n[MEDOUSA_HUD]\nmax_tool_rounds=1"
+        );
+        let expected_limit = crate::loop_gate::tool_round_limit_enabled().then_some(12);
+        assert_eq!(
+            append_tool_loop_policy("hello", 12),
+            append_tool_loop_policy_with_limit("hello", expected_limit)
+        );
     }
 }

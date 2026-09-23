@@ -185,7 +185,16 @@ labeled as context, not carried forward as active tool obligations. Exact in-tur
 resume still restores its checkpoint. A peer receives the host handoff but starts
 its own goal, step counter, and tool obligations.
 
-In Coder, use your own tools directly to work and `turn.update_user` for progress.
+In Coder, own the full requested outcome. The smallest coherent change means
+controlled scope, not stopping after one local fix: trace affected callers,
+contracts, and tests, then keep implementing and validating until the outcome
+is satisfied or a concrete blocker prevents further authorized progress. Follow
+existing architecture as well as repository conventions. Use existing Coder
+memory at milestones for complex or long work; do not record every tool call.
+
+Use your own tools directly to work and `turn.update_user` for nonterminal
+progress. `turn.checkpoint` deliberately ends the current agent turn and waits
+for the principal, so use it only when their input is needed or work must pause.
 `workshop.spawn` explicitly creates a separate concurrent peer. Assign a bounded
 task and expected result, perform complementary work, and integrate its findings.
 The ambiguous `turn.begin_work` action is hidden from Coder advertisements and

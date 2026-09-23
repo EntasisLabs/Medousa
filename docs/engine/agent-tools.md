@@ -66,7 +66,9 @@ Source: `src/tool_bootstrap.rs`
 | Shell | `cognition_shell_status` / `cognition_shell_run` — direct on the host for short diagnostics; opt-in and bounded by Runtime Controls → Shell |
 | OpenShell secrets | `cognition_openshell_request_secret` — trusted UI prompt; returns an opaque one-use grant, never the credential value |
 | Grapheme secrets | `cognition_grapheme_request_secret` — trusted UI prompt; authorizes an ephemeral credential capability for one native run |
-| Finish | `cognition_turn action=turn.finish` — ends tool loop |
+| Progress | `cognition_turn action=turn.update_user` — nonterminal status; work continues |
+| Handback | `cognition_turn action=turn.checkpoint` — ends this agent turn and waits for principal input; use only when input is needed or work must pause |
+| Finish | `cognition_turn action=turn.finish` — ends tool loop after the full requested outcome is complete or a concrete blocker is reported |
 
 ### Memory retrieval
 
