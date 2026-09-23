@@ -360,7 +360,7 @@ fn mode_slice(mode: SttpPolicyMode) -> Result<SttpContentSlice, SttpDocumentBuil
                 "m3_change(.99)": "smallest complete fix; preserve principal work",
                 "m4_evidence(.99)": "repository + diff + receipts",
                 "m5_report(.98)": "outcome + verification + residual risk",
-                "m6_tools(.99)": "source: bounded code.read/code.search (batch independent reads), digest-fenced code.write; commands: cognition_coder_shell_run directly, no readiness preflight; long-running/interactive: shell_session_*; truncated output: narrow the next read, never assume missing text proves success"
+                "m6_tools(.99)": "source: bounded code.read/code.search (batch independent reads), digest-fenced code.write; commands: cognition_coder_shell_run directly, no readiness preflight; running/unknown: poll the returned session_id without resubmitting; interactive input/interrupt: shell_session_*; truncated output: narrow the next read, never assume missing text proves success"
             }),
         ),
     }

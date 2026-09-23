@@ -27,6 +27,7 @@ use tokio::sync::Mutex;
 use super::coder_activity::{CoderActivityStore, CoderAgentIdentity, CoderToolActivityAdmission};
 use super::coder_claims::CoderClaimScope;
 use super::coder_mode::CoderEntryContext;
+use crate::coding_tools::CoderShellState;
 use crate::typed_tools::{
     CompatOption, ModeToolAdapter, ToolCatalog, ToolDomainId, ToolExposureRef, ToolId,
     ToolPlacementIndex, ToolRegistrar,
@@ -1248,13 +1249,6 @@ pub struct CoderBoundToolRegistry {
     shell_state: Arc<Mutex<CoderShellState>>,
 }
 
-#[derive(Default)]
-struct CoderShellState {
-    owned_sessions: HashSet<String>,
-    preferred_session: Option<String>,
-    cursors: HashMap<String, u64>,
-}
-
 impl CoderBoundToolRegistry {
     pub fn new(
         inner: Arc<dyn ToolRegistry>,
@@ -2317,6 +2311,7 @@ impl CoderBoundToolRegistry {
             let mut state = self.shell_state.lock().await;
             state.preferred_session = None;
             state.cursors.clear();
+            state.busy_sessions.clear();
             state.owned_sessions.drain().collect::<Vec<_>>()
         };
         for session_id in session_ids {
@@ -2474,7 +2469,15 @@ impl CoderBoundToolRegistry {
         {
             let mut state = self.shell_state.lock().await;
             state.owned_sessions.insert(session_id.to_string());
-            state.preferred_session = Some(session_id.to_string());
+            if tool_name == crate::coding_tools::COGNITION_SHELL_SESSION_RUN
+                || output.get("status").and_then(Value::as_str) == Some("exited")
+            {
+                if state.preferred_session.as_deref() == Some(session_id) {
+                    state.preferred_session = None;
+                }
+            } else {
+                state.preferred_session = Some(session_id.to_string());
+            }
             if let Some(sequence) = output.get("next_sequence").and_then(Value::as_u64) {
                 state.cursors.insert(session_id.to_string(), sequence);
             }
@@ -2496,7 +2499,14 @@ impl CoderBoundToolRegistry {
             .map(str::to_string);
         let state = self.shell_state.lock().await;
         if session_id.is_none() && tool_name == crate::coding_tools::COGNITION_CODER_SHELL_RUN {
-            session_id.clone_from(&state.preferred_session);
+            session_id = state
+                .preferred_session
+                .as_ref()
+                .filter(|id| {
+                    input.get("poll").and_then(Value::as_bool) == Some(true)
+                        || !state.busy_sessions.contains(*id)
+                })
+                .cloned();
         }
         let cursor = session_id
             .as_deref()
@@ -2816,7 +2826,8 @@ impl ToolRegistry for CoderBoundToolRegistry {
             ));
             return Err(err);
         }
-        let result =
+        let result = crate::coding_tools::with_coder_shell_state(
+            self.shell_state.clone(),
             crate::coding_tools::with_coder_tool_root(self.entry.worktree.clone(), async {
                 if super::coder_memory::CODER_MEMORY_TOOL_NAMES.contains(&tool_name) {
                     self.invoke_coder_memory_tool(&authority, tool_name, &input)
@@ -2908,8 +2919,9 @@ impl ToolRegistry for CoderBoundToolRegistry {
                 } else {
                     self.inner.invoke_tool(tool_name, input.clone()).await
                 }
-            })
-            .await;
+            }),
+        )
+        .await;
         if let Ok(output) = &result {
             self.record_shell_session(tool_name, output).await;
         }
@@ -5710,6 +5722,44 @@ mod tests {
 
         assert_eq!(input["session_id"], "shell-fresh");
         assert_eq!(input["after_sequence"], 9);
+    }
+
+    #[tokio::test]
+    async fn coder_shell_only_reuses_a_busy_session_for_polling() {
+        let fixture = fixture();
+        let authority = authority(&fixture);
+        let registry = CoderBoundToolRegistry::new(
+            Arc::new(RecordingRegistry::default()),
+            &authority,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+        registry
+            .record_shell_session(
+                crate::coding_tools::COGNITION_CODER_SHELL_RUN,
+                &json!({"session_id": "busy", "next_sequence": 5}),
+            )
+            .await;
+        registry
+            .shell_state
+            .lock()
+            .await
+            .busy_sessions
+            .insert("busy".into());
+        let mut new_command = json!({"command": "echo independent"});
+        registry
+            .prepare_turn_shell_session(
+                crate::coding_tools::COGNITION_CODER_SHELL_RUN,
+                &mut new_command,
+            )
+            .await;
+        assert!(new_command.get("session_id").is_none());
+        let mut poll = json!({"poll": true});
+        registry
+            .prepare_turn_shell_session(crate::coding_tools::COGNITION_CODER_SHELL_RUN, &mut poll)
+            .await;
+        assert_eq!(poll["session_id"], "busy");
+        assert_eq!(poll["after_sequence"], 5);
     }
 
     #[tokio::test]

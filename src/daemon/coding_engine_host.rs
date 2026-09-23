@@ -48,6 +48,7 @@ impl CodingEngineHost {
 #[derive(Debug, Clone, Serialize)]
 pub struct CodingEngineInfo {
     pub available: bool,
+    pub starting: bool,
     pub url: String,
     pub health_url: String,
     /// Direct orchestrator WS (local workshop only). Prefer `daemon_lsp_path`.
@@ -231,6 +232,7 @@ pub async fn ensure_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
 
     let info = |available: bool, message: String| CodingEngineInfo {
         available,
+        starting: false,
         url: base.clone(),
         health_url: health_url.clone(),
         lsp_url: lsp_url.clone(),
@@ -271,8 +273,10 @@ pub async fn ensure_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
                 }
                 Ok(None) => {}
                 Err(err) => {
-                    tracing::warn!(error = %err, "failed to inspect medousa-code process");
-                    *guard = None;
+                    return info(
+                        false,
+                        format!("failed to inspect medousa-code process: {err}"),
+                    );
                 }
             }
         }
@@ -284,7 +288,7 @@ pub async fn ensure_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
                 .arg(&workspace_root)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
-                .stderr(Stdio::null())
+                .stderr(Stdio::inherit())
                 .kill_on_drop(true);
             medousa_host::hide_tokio_subprocess_window(&mut cmd);
             for root in &required_roots {
@@ -303,6 +307,26 @@ pub async fn ensure_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
     }
 
     for _ in 0..HEALTH_WAIT_ATTEMPTS {
+        {
+            let mut guard = host.child.lock().await;
+            if let Some(child) = guard.as_mut() {
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        *guard = None;
+                        return info(
+                            false,
+                            format!(
+                                "medousa-code exited during startup: {status}; see daemon logs"
+                            ),
+                        );
+                    }
+                    Err(error) => {
+                        return info(false, format!("cannot inspect medousa-code: {error}"));
+                    }
+                    Ok(None) => {}
+                }
+            }
+        }
         tokio::time::sleep(std::time::Duration::from_millis(HEALTH_WAIT_INTERVAL_MS)).await;
         match probe_health(&health_url, &required_roots).await {
             HealthProbe::Compatible => return info(true, "coding engine started".into()),
@@ -316,20 +340,21 @@ pub async fn ensure_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
         }
     }
 
-    {
-        let mut guard = host.child.lock().await;
-        if let Some(mut child) = guard.take() {
-            let _ = child.start_kill();
-            tracing::warn!(
-                "killed medousa-code after health timeout so the next request can respawn"
-            );
+    let mut pending = info(
+        false,
+        "medousa-code is starting; its process is still alive".into(),
+    );
+    pending.starting = true;
+    pending
+}
+
+async fn wait_for_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
+    loop {
+        let info = ensure_coding_engine(host).await;
+        if !info.starting {
+            return info;
         }
     }
-
-    info(
-        false,
-        "medousa-code spawned but health check timed out".into(),
-    )
 }
 
 pub fn coding_engine_surface() -> DeclaredRouter<AppState> {
@@ -452,7 +477,7 @@ pub async fn code_lsp_ws(
     lease: Option<Extension<CredentialLease>>,
 ) -> axum::response::Response {
     let host = state.coding_engine.clone().unwrap_or_default();
-    let info = ensure_coding_engine(&host).await;
+    let info = wait_for_coding_engine(&host).await;
     if !info.available {
         return (axum::http::StatusCode::SERVICE_UNAVAILABLE, info.message).into_response();
     }
@@ -478,7 +503,7 @@ async fn proxy_lsp_socket(
     lease: Option<CredentialLease>,
 ) {
     let host = state.coding_engine.clone().unwrap_or_default();
-    let info = ensure_coding_engine(&host).await;
+    let info = wait_for_coding_engine(&host).await;
     if !info.available {
         tracing::warn!(message = %info.message, "coding engine unavailable for LSP proxy");
         return;
@@ -673,7 +698,7 @@ async fn proxy_agent_get(
     q: &std::collections::HashMap<String, String>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
     let host = state.coding_engine.clone().unwrap_or_default();
-    let info = ensure_coding_engine(&host).await;
+    let info = wait_for_coding_engine(&host).await;
     if !info.available {
         return Err((axum::http::StatusCode::SERVICE_UNAVAILABLE, info.message));
     }
@@ -745,7 +770,7 @@ async fn proxy_agent_post(
     mut body: serde_json::Value,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
     let host = state.coding_engine.clone().unwrap_or_default();
-    let info = ensure_coding_engine(&host).await;
+    let info = wait_for_coding_engine(&host).await;
     if !info.available {
         return Err((axum::http::StatusCode::SERVICE_UNAVAILABLE, info.message));
     }

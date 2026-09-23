@@ -236,6 +236,24 @@ impl StasisTool for DataProbeTool {
     }
 }
 
+struct FailedProbeTool;
+
+#[async_trait]
+impl StasisTool for FailedProbeTool {
+    fn name(&self) -> &'static str {
+        "failed_probe"
+    }
+    async fn invoke(&self, input: Value) -> StasisResult<Value> {
+        if input["transport_error"] == true {
+            Err(StasisError::PortFailure(
+                "temporary connection failure".into(),
+            ))
+        } else {
+            Ok(json!({"ok": false, "completed": true, "exit_code": 1, "output": "test failed"}))
+        }
+    }
+}
+
 struct LargeDataProbeTool;
 
 #[async_trait]
@@ -464,6 +482,7 @@ async fn run_golden(
 ) -> GoldenOutcome {
     let registry = InMemoryToolRegistry::default();
     registry.register_tool(DataProbeTool).unwrap();
+    registry.register_tool(FailedProbeTool).unwrap();
     register_golden_turn_tool(&registry);
 
     let client = Arc::new(ScriptedClient::new(steps));
@@ -1193,4 +1212,24 @@ fn usage_counts_shared_intent_once_and_batch_children_as_requests() {
     assert!(!serialized.contains("secret.rs"));
     assert!(!serialized.contains("Find α callers"));
     assert!(!serialized.contains("private"));
+}
+
+#[tokio::test]
+async fn golden_failed_observations_allow_recovery_after_three_batches() {
+    for transport_error in [false, true] {
+        let mut steps = (0..4)
+            .map(|_| {
+                tool_response(vec![tool_call(
+                    "failed_probe",
+                    json!({"transport_error": transport_error}),
+                )])
+            })
+            .collect::<Vec<_>>();
+        steps.push(tool_response(vec![tool_call("data_probe", json!({}))]));
+        steps.push(tool_response(vec![finish_call("Recovered and finished.")]));
+        let outcome = run_golden("recover from failed tools", steps, 10, false).await;
+        assert_eq!(outcome.termination_reason, "cognition_turn_finish");
+        assert_eq!(outcome.text, "Recovered and finished.");
+        assert_eq!(outcome.rounds_executed, 6);
+    }
 }

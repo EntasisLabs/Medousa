@@ -135,6 +135,22 @@ impl ShellOutput {
         self.projection.completed
     }
 
+    /// Drain display text without losing a split completion marker or terminal
+    /// escape sequence. Polling must continue the same parser across attachments.
+    pub(super) fn take_output(&mut self) -> (String, bool) {
+        let projection = &mut self.projection;
+        let pending_marker = projection.marker.as_ref().is_some_and(|marker| {
+            !projection.line_flushed
+                && (marker.starts_with(&projection.line) || projection.line.starts_with(marker))
+        });
+        if projection.started && !pending_marker && !projection.line.is_empty() {
+            projection.text.push(&projection.line);
+            projection.line.clear();
+            projection.line_flushed = true;
+        }
+        std::mem::take(&mut projection.text).finish()
+    }
+
     pub(super) fn finish(mut self) -> (String, bool) {
         if self.projection.started && self.projection.completed.is_none() {
             self.projection.text.push(&self.projection.line);
@@ -146,6 +162,21 @@ impl ShellOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn polling_preserves_split_markers_utf8_and_terminal_sequences() {
+        let mut output = ShellOutput::new(Some("__DONE__"));
+        output.push(b"__DONE__:begin\nprogress");
+        assert_eq!(output.take_output().0, "progress");
+        output.push(b"\n\x1b[3");
+        assert_eq!(output.take_output().0, "\n");
+        output.push("1mλ\x1b[0m\n__DONE__:".as_bytes());
+        assert_eq!(output.take_output().0, "λ\n");
+        assert_eq!(output.exit_code(), None);
+        output.push(b"0\n");
+        assert_eq!(output.exit_code(), Some(0));
+        assert_eq!(output.take_output().0, "");
+    }
 
     #[test]
     fn control_sequences_and_utf8_survive_arbitrary_transport_chunking() {

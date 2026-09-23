@@ -37,7 +37,8 @@ the adapter requires both sidecars beside `daemon_path` unless you supply explic
 `code_path` and `session_path` arguments. Setup checks that each uploaded binary
 starts. Before submitting a prompt, the runner asks the daemon to start and check
 both sidecars through `/v1/coding-engine` and `/v1/shell-sessions`. An unavailable
-sidecar fails the attempt before model inference.
+sidecar fails the attempt before model inference. A live sidecar reporting
+`starting: true` is polled until ready; a slow start does not restart its process.
 
 From the repository root on the Harbor host:
 

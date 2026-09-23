@@ -292,6 +292,9 @@ fn run_daemon_runtime() -> Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("medousa-daemon-worker")
+        // Turn execution needs the same stack allowance as daemon bootstrap,
+        // particularly with unoptimized async state in development builds.
+        .thread_stack_size(DAEMON_BOOTSTRAP_STACK_SIZE)
         .build()
         .context("failed to build daemon Tokio runtime")?;
     runtime.block_on(start_daemon())

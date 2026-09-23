@@ -71,6 +71,11 @@ class StreamTests(unittest.TestCase):
         data = b': heartbeat\nevent: turn_stream_v3\ndata: {"seq":\ndata: 1}\n\ndata: {"seq": 2}'
         self.assertEqual(list(runner.sse_events(io.BytesIO(data))), [{"seq": 1}])
 
+    def test_sse_error_preserves_daemon_diagnostic(self):
+        data = b"event: error\ndata: turn replay failed\n\n"
+        with self.assertRaisesRegex(RuntimeError, "Daemon event stream failed: turn replay failed"):
+            list(runner.sse_events(io.BytesIO(data)))
+
 
 class IngressTests(unittest.TestCase):
     def test_normal_http_ingress_preserves_prompt_settings_and_workspace(self):
@@ -201,6 +206,23 @@ class RepositoryTests(unittest.TestCase):
 
 
 class BinaryTests(unittest.TestCase):
+    def test_sidecar_startup_respects_explicit_benchmark_deadline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            client = Mock()
+            client.request.return_value = {"available": False, "starting": True}
+            with self.assertRaisesRegex(TimeoutError, "Benchmark deadline"):
+                runner.check_sidecars(client, Path(directory), time.monotonic() + 0.1)
+            self.assertEqual(client.request.call_count, 1)
+
+    def test_sidecar_startup_waits_for_readiness(self):
+        with tempfile.TemporaryDirectory() as directory:
+            client = Mock()
+            client.request.side_effect = [{"available": False, "starting": True},
+                                          {"available": True}, {"available": True}]
+            runner.check_sidecars(client, Path(directory))
+            self.assertEqual([call.args[0] for call in client.request.call_args_list],
+                             ["/v1/coding-engine", "/v1/coding-engine", "/v1/shell-sessions"])
+
     def test_missing_sidecars_are_rejected_without_searching_host(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

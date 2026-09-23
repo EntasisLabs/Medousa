@@ -345,6 +345,17 @@ async fn handle_ws(
     query: SessionAttachQuery,
 ) {
     let Some(session) = session else {
+        let mut socket = socket;
+        let _ = socket
+            .send(Message::Text(
+                json!({
+                    "type": "error", "code": "session_not_found",
+                    "message": "shell session no longer exists",
+                })
+                .to_string()
+                .into(),
+            ))
+            .await;
         return;
     };
     session.touch().await;

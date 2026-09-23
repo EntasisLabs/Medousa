@@ -514,6 +514,7 @@ export async function getGraphemeLspWorkspace(): Promise<GraphemeLspWorkspaceRes
 
 export type CodingEngineInfoResponse = {
   available: boolean;
+  starting?: boolean;
   url: string;
   health_url: string;
   lsp_url: string;

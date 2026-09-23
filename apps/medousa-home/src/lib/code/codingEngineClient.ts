@@ -24,6 +24,7 @@ export { pathToFileUri } from "$lib/code/codeDocumentUri";
 import {
   daemonWebSocketUrl,
   getCodingEngineInfo,
+  type CodingEngineInfoResponse,
   getDaemonUrl,
   getGraphemeLspWorkspace,
   OPERATIONS,
@@ -330,17 +331,7 @@ export async function createWebSocketTransport(uri: string): Promise<Transport> 
   return (await createCloseableWebSocketTransport(uri)).transport;
 }
 
-export type CodingEngineInfo = {
-  available: boolean;
-  url: string;
-  health_url: string;
-  lsp_url: string;
-  daemon_lsp_path: string;
-  workspace_root: string;
-  workspace_root_uri: string;
-  bind: string;
-  message: string;
-};
+export type CodingEngineInfo = CodingEngineInfoResponse;
 
 export type ConnectOrchestratorLspOptions = {
   language?: string;
@@ -365,7 +356,7 @@ export async function connectOrchestratorLspClient(options?: ConnectOrchestrator
 
   try {
     const info = await getCodingEngineInfo();
-    if (info.available) {
+    if (info.available || info.starting) {
       const query = new URLSearchParams({ language });
       if (options?.workId) query.set("work_id", options.workId);
       if (options?.documentUri) query.set("document_uri", options.documentUri);

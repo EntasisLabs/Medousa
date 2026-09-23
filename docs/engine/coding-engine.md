@@ -8,6 +8,13 @@ on the workshop machine.
 
 ## Daemon routes
 
+`GET /v1/coding-engine` and `GET /v1/shell-sessions` report `available` and
+`starting`. When `starting: true`, the managed process is alive but has not
+answered a compatible health probe yet. Poll the same endpoint; the daemon
+preserves the process across observation windows. Execution routes wait for
+readiness. A missing binary, incompatible service, or process exit reports
+`available: false, starting: false`; sidecar stderr is retained in daemon logs.
+
 The daemon exposes `/v1/code/lsp` as a WebSocket and proxies the following HTTP
 routes:
 

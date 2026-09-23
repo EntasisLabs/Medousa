@@ -793,6 +793,9 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
     }
 
     async fn agent_error(&self, _turn_id: u64, message: String) {
+        if self.emit_cancelled_if_needed().await {
+            return;
+        }
         let failure = crate::turn_failure::TurnFailure::from_debug(&message);
 
         // Do not persist raw provider/runtime errors as assistant transcript turns.

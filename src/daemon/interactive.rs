@@ -15,8 +15,8 @@ use uuid::Uuid;
 
 use crate::channel_delivery;
 use crate::daemon::ingest::{
-    publish_interactive_turn_event, record_job_delivery_pending, resolve_api_model_routing,
-    resolve_session_runtime_config, stream_events_from_registry,
+    record_job_delivery_pending, resolve_api_model_routing, resolve_session_runtime_config,
+    stream_events_from_registry,
 };
 use crate::daemon_api::{
     CreateTurnTicketRequest, InteractiveTurnRequest, InteractiveTurnResponse,
@@ -681,21 +681,9 @@ pub async fn cancel_active_session_turn_for_session(
         .cancel_matching_turn(&typed_session_id, &active.turn_id);
     crate::turn_ticket::mark_cancelled(&state.turn_tickets, &active.turn_id).await;
 
-    if let Some(entry) = state
-        .interactive_turn_streams
-        .read()
-        .await
-        .get(&active.turn_id)
-        .cloned()
-    {
-        publish_interactive_turn_event(
-            &entry,
-            crate::interactive_turn_runtime::error_stream_event(
-                &active.turn_id,
-                "interactive turn cancelled",
-            ),
-        );
-    }
+    // The running turn observes cancellation and publishes its terminal event
+    // through the existing pipeline. Appending a second legacy event here races
+    // that pipeline's journal sequence and cannot be replayed by v3 clients.
 
     state
         .channel_deliveries

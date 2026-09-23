@@ -328,9 +328,27 @@ use the configured login shell.
 
 One-shot commands execute in a child shell with explicit start/completion
 boundaries, so multiline scripts, quoted text, syntax errors, and `exit` cannot
-corrupt the persistent command shell. Coder can call the one-shot tool directly;
-a readiness tool call is not required. Its existing 15-second wait/interrupt
-bound remains; use session tools for sustained processes.
+corrupt the persistent command shell. Coder can call the command tool directly;
+a readiness tool call is not required. Startup observes retained output from
+sequence zero and waits for the shell's readiness marker. Slow login initialization
+does not kill the session; cancellation remains owned by the turn.
+
+`cognition_coder_shell_run.wait_ms` is an observation window (default and maximum
+15 seconds), not a command lifetime. When it expires, the command keeps running
+and returns `ok: true`, `status: "running"`, `completed: false`, and `session_id`.
+Call the same tool with that `session_id`, `poll: true`, and no `command` to observe
+more output and the eventual exit code. Output cursors and the completion parser
+stay in the existing turn-owned shell state, including across connection loss.
+Polling never resubmits the command. An uncertain transport result reports
+`status: "unknown"`; reconnect by polling before deciding whether to retry work.
+
+An independent command uses another session while the preferred one is busy.
+Explicitly targeting a busy session with another command is rejected. Session
+tools can send raw `input` or poll an existing command; use
+`cognition_shell_session_interrupt` for an explicit interrupt. Turn cancellation
+and turn cleanup still interrupt owned sessions before releasing Forge authority.
+Nonzero exit codes and recoverable tool failures remain observations for the
+agent to act on; three failed batches do not automatically terminate its turn.
 
 The model receives plain text with terminal styling, titles and other control
 sequences removed. PTY responses retain at most 32 KiB of text (head and tail,

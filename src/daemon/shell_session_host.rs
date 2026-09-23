@@ -48,6 +48,8 @@ impl ShellSessionHost {
 #[derive(Debug, Clone, Serialize)]
 pub struct ShellSessionInfo {
     pub available: bool,
+    /// A live managed process has not answered health yet; callers may wait.
+    pub starting: bool,
     pub url: String,
     pub health_url: String,
     pub daemon_base_path: String,
@@ -200,6 +202,7 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
 
     let info = |available: bool, message: String| ShellSessionInfo {
         available,
+        starting: false,
         url: base.clone(),
         health_url: health_url.clone(),
         daemon_base_path: "/v1/sessions/shell".into(),
@@ -238,8 +241,10 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
                 }
                 Ok(None) => {}
                 Err(err) => {
-                    tracing::warn!(error = %err, "failed to inspect medousa-session process");
-                    *guard = None;
+                    return info(
+                        false,
+                        format!("failed to inspect medousa-session process: {err}"),
+                    );
                 }
             }
         }
@@ -253,7 +258,7 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
                 .arg(&forge_root)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
-                .stderr(Stdio::null())
+                .stderr(Stdio::inherit())
                 .kill_on_drop(true);
             medousa_host::hide_tokio_subprocess_window(&mut cmd);
             for root in &required_roots {
@@ -272,6 +277,26 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
     }
 
     for _ in 0..HEALTH_WAIT_ATTEMPTS {
+        {
+            let mut guard = host.child.lock().await;
+            if let Some(child) = guard.as_mut() {
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        *guard = None;
+                        return info(
+                            false,
+                            format!(
+                                "medousa-session exited during startup: {status}; see daemon logs"
+                            ),
+                        );
+                    }
+                    Err(error) => {
+                        return info(false, format!("cannot inspect medousa-session: {error}"));
+                    }
+                    Ok(None) => {}
+                }
+            }
+        }
         tokio::time::sleep(std::time::Duration::from_millis(HEALTH_WAIT_INTERVAL_MS)).await;
         match probe_health(&health_url, &required_roots, &forge_root).await {
             HealthProbe::Compatible => return info(true, "session host started".into()),
@@ -287,17 +312,21 @@ pub async fn ensure_shell_session_host(host: &ShellSessionHost) -> ShellSessionI
         }
     }
 
-    {
-        let mut guard = host.child.lock().await;
-        if let Some(mut child) = guard.take() {
-            let _ = child.start_kill();
-            tracing::warn!(
-                "killed medousa-session after health timeout so the next request can respawn"
-            );
+    let mut pending = info(
+        false,
+        "medousa-session is starting; its process is still alive".into(),
+    );
+    pending.starting = true;
+    pending
+}
+
+async fn wait_for_shell_session_host(host: &ShellSessionHost) -> ShellSessionInfo {
+    loop {
+        let info = ensure_shell_session_host(host).await;
+        if !info.starting {
+            return info;
         }
     }
-
-    info(false, "medousa-session spawned but health timed out".into())
 }
 
 pub fn shell_session_surface() -> DeclaredRouter<AppState> {
@@ -567,7 +596,7 @@ async fn proxy_http(
     body: Option<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
     let host = state.shell_sessions.clone().unwrap_or_default();
-    let info = ensure_shell_session_host(&host).await;
+    let info = wait_for_shell_session_host(&host).await;
     if !info.available {
         return Err((axum::http::StatusCode::SERVICE_UNAVAILABLE, info.message));
     }
@@ -662,7 +691,7 @@ async fn proxy_ws(
     lease: Option<CredentialLease>,
 ) {
     let host = state.shell_sessions.clone().unwrap_or_default();
-    let info = ensure_shell_session_host(&host).await;
+    let info = wait_for_shell_session_host(&host).await;
     if !info.available {
         tracing::warn!(message = %info.message, "session host unavailable for WS proxy");
         return;

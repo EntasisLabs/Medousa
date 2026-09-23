@@ -58,15 +58,22 @@ def sidecar_environment(binaries):
     }
 
 
-def check_sidecars(client, output):
+def check_sidecars(client, output, deadline=None):
     checks = {}
     for name, endpoint in (("medousa-code", "/v1/coding-engine"),
                            ("medousa-session", "/v1/shell-sessions")):
-        info = client.request(endpoint)
-        checks[name] = info
-        write_json(output / "sidecars.json", checks)
-        if info.get("available") is not True:
-            raise RuntimeError(f"{name} is unavailable: {info.get('message', 'unknown readiness response')}")
+        while True:
+            remaining = deadline - time.monotonic() if deadline is not None else 60
+            if remaining <= 0:
+                raise TimeoutError(f"Benchmark deadline reached while {name} was starting")
+            info = client.request(endpoint, timeout=min(60, remaining))
+            checks[name] = info
+            write_json(output / "sidecars.json", checks)
+            if info.get("available") is True:
+                break
+            if info.get("starting") is not True:
+                raise RuntimeError(f"{name} is unavailable: {info.get('message', 'unknown readiness response')}")
+            time.sleep(0.2)
 
 
 def git(workspace, *args):
@@ -145,14 +152,21 @@ class DaemonHTTPError(RuntimeError):
 
 def sse_events(response):
     data = []
+    event_type = "message"
     for raw in response:
         line = raw.decode("utf-8").rstrip("\r\n")
         if not line:
             if data:
-                yield json.loads("\n".join(data))
+                payload = "\n".join(data)
+                if event_type == "error":
+                    raise RuntimeError(f"Daemon event stream failed: {payload}")
+                yield json.loads(payload)
                 data = []
+            event_type = "message"
         elif line.startswith("data:"):
             data.append(line[5:].removeprefix(" "))
+        elif line.startswith("event:"):
+            event_type = line[6:].strip()
     # An incomplete frame is replayed on reconnect, never treated as completion.
 
 
@@ -198,7 +212,7 @@ def follow_turn(client, turn, output, process, deadline=None):
 
 
 def run_coder(client, instruction, workspace, branch, output, process, deadline=None, control_path=None):
-    check_sidecars(client, output)
+    check_sidecars(client, output, deadline)
     defaults = client.request("/v1/runtime/defaults")
     session = client.request("/v1/sessions", "POST", {"display_name": "Terminal-Bench"})
     session_id = session["session_id"]
