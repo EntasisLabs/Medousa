@@ -96,6 +96,9 @@ reason instead of assuming that a protocol enum is ready to enter.
 **Stream query:** `GET …/stream?since=<seq>` (optional `u64`, default `0`). Replays events with `seq > since` from the **durable turn journal** on disk, then tails live events. Each SSE payload includes monotonic **`seq`** per turn — clients track the last seen `seq` and reconnect with `?since=` after drops.
 
 See [interactive-streaming.md](interactive-streaming.md). **Do not** expect SSE on the POST itself.
+An admitted interactive turn has no implicit whole-turn wall-clock deadline;
+the session-scoped cancel route remains available while it runs. Provider
+transport timeouts are separate from the turn lifetime.
 
 `InteractiveTurnRequest.host_context` carries a typed, bounded editor, note, or
 page snapshot separately from `prompt`. The daemon persists the human prompt as
@@ -1067,7 +1070,19 @@ cancellation is itself terminal and idempotent. Responses are signed
 The model uses the same `cognition_workshop_query` and
 `cognition_workshop_mutate` contract for local and bound-remote execution. A
 remote `workshop.spawn` returns the source daemon's durable `work_id`
-immediately and ends the foreground turn with a worker handoff receipt.
+immediately and ends the foreground turn with a worker handoff receipt. On a
+mobile source that must discover a bound remote target, the source first stores
+the request and parent context locally, then returns `status: "queued"`,
+`worker_queued: true`, `worker_spawned: false`, the `work_id`, and the requested
+target; resolved placement remains `null` until discovery completes. A fresh
+authenticated inventory pass resolves and authorizes one destination, and the
+source checkpoints that exact route before dispatch. Retry uses the checkpointed
+route, while the destination independently enforces its policy. Queued status is
+available through `workshop.status`; canceling before dispatch prevents startup.
+Remote discovery and worker startup do not hold the foreground request open.
+An unavailable exact target on a local desktop still fails before enqueue; a
+mobile remote request instead remains queued for bounded retry and eventually
+reports failure if placement cannot be completed.
 `workshop.status` observes that same source ticket. Terminal output is committed
 once to the initiating session and emitted as worker synthesis on the original
 chronological turn stream; Home does not own a polling or result-merging loop.

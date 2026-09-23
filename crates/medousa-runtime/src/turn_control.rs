@@ -249,32 +249,59 @@ pub fn is_workshop_spawn_call(tool_name: &str, input: &Value) -> bool {
         && input.get("action").and_then(Value::as_str) == Some("workshop.spawn")
 }
 
-pub fn worker_spawn_from_invocations(invocations: &[ToolInvocation]) -> Option<(String, String)> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkerSpawnDisposition {
+    Started,
+    Queued,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkerSpawnControl {
+    pub work_id: String,
+    pub ack: String,
+    pub disposition: WorkerSpawnDisposition,
+}
+
+pub fn worker_spawn_control_from_invocations(
+    invocations: &[ToolInvocation],
+) -> Option<WorkerSpawnControl> {
     invocations.iter().rev().find_map(|invocation| {
-        if !is_workshop_spawn_call(&invocation.tool_name, &invocation.tool_input)
-            || !invocation
-                .tool_output
-                .get("worker_spawned")
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
-        {
+        if !is_workshop_spawn_call(&invocation.tool_name, &invocation.tool_input) {
             return None;
         }
-        let work_id = invocation.tool_output.get("work_id")?.as_str()?.to_string();
-        let ack = invocation
-            .tool_output
+        let output = &invocation.tool_output;
+        let disposition = if output
+            .get("worker_spawned")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            WorkerSpawnDisposition::Started
+        } else if output
+            .get("worker_queued")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            WorkerSpawnDisposition::Queued
+        } else {
+            return None;
+        };
+        let work_id = output.get("work_id")?.as_str()?.to_string();
+        let ack = output
             .get("user_ack")
             .and_then(Value::as_str)
-            .or_else(|| {
-                invocation
-                    .tool_output
-                    .get("message")
-                    .and_then(Value::as_str)
-            })
+            .or_else(|| output.get("message").and_then(Value::as_str))
             .unwrap_or("Working on that in the background.")
             .to_string();
-        Some((work_id, ack))
+        Some(WorkerSpawnControl {
+            work_id,
+            ack,
+            disposition,
+        })
     })
+}
+
+pub fn worker_spawn_from_invocations(invocations: &[ToolInvocation]) -> Option<(String, String)> {
+    worker_spawn_control_from_invocations(invocations).map(|control| (control.work_id, control.ack))
 }
 
 fn message_from_payload(payload: &Value) -> Option<String> {
@@ -306,6 +333,14 @@ mod tests {
         ToolInvocation {
             tool_name: COGNITION_TURN.to_string(),
             tool_input,
+            tool_output: output,
+        }
+    }
+
+    fn workshop_spawn(output: Value) -> ToolInvocation {
+        ToolInvocation {
+            tool_name: COGNITION_WORKSHOP_MUTATE.to_string(),
+            tool_input: json!({ "action": "workshop.spawn", "intent": "general" }),
             tool_output: output,
         }
     }
@@ -386,5 +421,42 @@ mod tests {
             json!({ "ok": true }),
         );
         assert!(request_more_rounds_from_invocations(&[older, latest]).is_none());
+    }
+
+    #[test]
+    fn queued_workshop_spawn_is_handoff_compatible_without_claiming_started() {
+        let queued = workshop_spawn(json!({
+            "ok": true,
+            "worker_spawned": false,
+            "worker_queued": true,
+            "work_id": "work-queued-1",
+            "user_ack": "Accepted for background target discovery."
+        }));
+        let control = worker_spawn_control_from_invocations(std::slice::from_ref(&queued))
+            .expect("queued workshop admission");
+        assert_eq!(control.work_id, "work-queued-1");
+        assert_eq!(control.disposition, WorkerSpawnDisposition::Queued);
+        assert_eq!(control.ack, "Accepted for background target discovery.");
+        assert_eq!(
+            worker_spawn_from_invocations(&[queued]),
+            Some((
+                "work-queued-1".to_string(),
+                "Accepted for background target discovery.".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn legacy_worker_spawn_remains_started() {
+        let spawned = workshop_spawn(json!({
+            "ok": true,
+            "worker_spawned": true,
+            "work_id": "work-started-1",
+            "message": "Worker admitted."
+        }));
+        let control =
+            worker_spawn_control_from_invocations(&[spawned]).expect("legacy spawned worker");
+        assert_eq!(control.work_id, "work-started-1");
+        assert_eq!(control.disposition, WorkerSpawnDisposition::Started);
     }
 }

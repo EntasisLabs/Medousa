@@ -44,10 +44,10 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Secure credential handoff](guides/secure-credential-handoff.md) | Give OpenShell or Grapheme an API key without putting it in chat |
 | [Desktop companion](guides/desktop-companion.md) | Floating pet for chat, approvals, notes, Web, and views |
 | [Drawing](guides/drawing.md) | Sketch inside notes or use a full drawing note |
-| [Chat drawings and generated images](guides/chat-media-and-images.md) | Draw in chat, generate images, refine them, and save or share the result |
+| [Chat drawings and generated images](guides/chat-media-and-images.md) | Draw, generate, refine, and revisit images in chat |
 | [Interactive recipes](guides/interactive-recipes.md) | Follow guided recipes/procedures with durable step timers |
 | [Undertakings & ForgeLens](guides/undertakings.md) | Governed work, chat review, comments, commits, pull requests |
-| [Delegation approvals](guides/delegation-approvals.md) | Review immutable agent-work proposals (native preview) |
+| [Delegation approvals](guides/delegation-approvals.md) | Review agent-work proposals and queue remote background workers |
 | Full index | [guides/README.md](guides/README.md) |
 
 ---

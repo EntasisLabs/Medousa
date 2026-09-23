@@ -158,7 +158,6 @@ impl medousa_mcp_gateway::McpPolicyEvaluator for EmbeddedMcpPolicyEvaluator {
 
 const EMBEDDED_STREAM_SCHEME: &str = "medousa-embedded://turn";
 const EMBEDDED_NODE_LEASE_SECONDS: i64 = 300;
-const DEFAULT_FOREGROUND_TURN_TIMEOUT: Duration = Duration::from_secs(180);
 const EMBEDDED_RECOVERY_MAX_JOBS: usize = 32;
 const STREAM_DELTA_CAPACITY: usize = 128;
 const EMBEDDED_RUNTIME_EVENT_CAPACITY: usize = 64;
@@ -1334,7 +1333,7 @@ pub struct EmbeddedDaemonConfig {
     chatgpt_oauth: Option<Arc<crate::chatgpt_oauth::ChatGptOAuthBroker>>,
     mcp_oauth: Option<Arc<medousa_mcp_gateway::McpOAuthBroker>>,
     tool_registry_recipe: Arc<dyn EmbeddedToolRegistryRecipe>,
-    foreground_turn_timeout: Duration,
+    foreground_turn_timeout: Option<Duration>,
     max_live_turns: usize,
     delegated_task_transport: Option<Arc<dyn crate::delegated_task::DelegatedTaskTransport>>,
 }
@@ -1441,7 +1440,7 @@ impl EmbeddedDaemonConfig {
             chatgpt_oauth: None,
             mcp_oauth: None,
             tool_registry_recipe: Arc::new(EmptyEmbeddedToolRegistryRecipe),
-            foreground_turn_timeout: DEFAULT_FOREGROUND_TURN_TIMEOUT,
+            foreground_turn_timeout: None,
             max_live_turns: 1,
             delegated_task_transport: None,
         }
@@ -1468,8 +1467,10 @@ impl EmbeddedDaemonConfig {
         self
     }
 
+    /// Opt into a total foreground execution limit. Interactive turns have no
+    /// wall-clock cap by default; provider/tool stall limits remain independent.
     pub fn with_foreground_turn_timeout(mut self, timeout: Duration) -> Self {
-        self.foreground_turn_timeout = timeout.max(Duration::from_secs(1));
+        self.foreground_turn_timeout = Some(timeout.max(Duration::from_secs(1)));
         self
     }
 
@@ -1800,7 +1801,7 @@ pub struct EmbeddedDaemon {
     turn_stream_port: TurnStreamRegistryPortAdapter,
     turn_tickets: TurnTicketRegistry,
     executions: TurnExecutionRegistry,
-    foreground_turn_timeout: Duration,
+    foreground_turn_timeout: Option<Duration>,
     backgrounded: AtomicBool,
     lifecycle_epoch: AtomicU64,
     recovery_lock: AsyncMutex<()>,
@@ -2372,7 +2373,17 @@ impl EmbeddedDaemon {
             }))
             .with_turn_presentation(Arc::new(EmbeddedTurnPresentation {
                 tx: runtime_tx.clone(),
-            }));
+            }))
+            .with_optional_tool_observation_hydration(
+                crate::media_vision::supports_vision(
+                    context.route().provider(),
+                    context.route().model(),
+                )
+                .then(|| {
+                    Arc::new(crate::chat_history_tools::ChatHistoryMediaHydrationPort)
+                        as Arc<dyn medousa_runtime::ToolObservationHydrationPort>
+                }),
+            );
         let mut completion_gate = ToolLoopCompletionGate::new_for_execution(
             0,
             runtime_ports,
@@ -5576,7 +5587,12 @@ impl EmbeddedDaemonClient {
         let prior_messages = history_to_chat_messages(
             self.daemon.session_store.load_history(&session_id),
             agent_mode,
-        );
+            session_id.as_str(),
+            &media_refs,
+            &provider,
+            &model,
+        )
+        .await;
         let turn_id = format!("daemon-turn-{}", Uuid::new_v4().simple());
         let stream_url = format!("{EMBEDDED_STREAM_SCHEME}/{turn_id}/stream");
         let accepted_at_utc = Utc::now();
@@ -5637,7 +5653,9 @@ impl EmbeddedDaemonClient {
                 browser_host: surface.supports_browser_host,
             },
             cancellation,
-            Instant::now() + self.daemon.foreground_turn_timeout,
+            self.daemon
+                .foreground_turn_timeout
+                .map(|timeout| Instant::now() + timeout),
             scope,
         );
         if let Some(target) = worker_execution_target {
@@ -6015,32 +6033,47 @@ async fn register_or_heartbeat_node(
         .context("register embedded Stasis node")
 }
 
-fn history_to_chat_messages(
+async fn history_to_chat_messages(
     history: Vec<ConversationTurn>,
     agent_mode: AgentModeId,
+    session_id: &str,
+    current_media_refs: &[medousa_types::daemon_api::MediaRef],
+    provider: &str,
+    model: &str,
 ) -> Vec<ChatMessage> {
-    let Some(limits) = crate::agent_mode_context::context_limits_for_mode(agent_mode) else {
-        return history
-            .into_iter()
+    let mut messages = if let Some(limits) = crate::agent_mode_context::context_limits_for_mode(agent_mode) {
+        let mut remaining = limits.max_prior_total_chars;
+        let mut messages = Vec::new();
+        for mut turn in history.iter().rev().take(limits.hot_window_turns).cloned() {
+            if remaining == 0 {
+                break;
+            }
+            let message_budget = limits.max_single_prior_message_chars.min(remaining);
+            turn.content = crate::text_budget::truncate_text_for_budget(&turn.content, message_budget);
+            let message_chars = turn.content.chars().count();
+            if let Some(message) = conversation_turn_to_chat_message(turn) {
+                remaining = remaining.saturating_sub(message_chars);
+                messages.push(message);
+            }
+        }
+        messages.reverse();
+        messages
+    } else {
+        history
+            .iter()
+            .cloned()
             .filter_map(conversation_turn_to_chat_message)
-            .collect();
+            .collect()
     };
-
-    let mut remaining = limits.max_prior_total_chars;
-    let mut messages = Vec::new();
-    for mut turn in history.into_iter().rev().take(limits.hot_window_turns) {
-        if remaining == 0 {
-            break;
-        }
-        let message_budget = limits.max_single_prior_message_chars.min(remaining);
-        turn.content = crate::text_budget::truncate_text_for_budget(&turn.content, message_budget);
-        let message_chars = turn.content.chars().count();
-        if let Some(message) = conversation_turn_to_chat_message(turn) {
-            remaining = remaining.saturating_sub(message_chars);
-            messages.push(message);
-        }
-    }
-    messages.reverse();
+    crate::media_vision::append_recent_history_images(
+        &mut messages,
+        session_id,
+        &history,
+        current_media_refs,
+        provider,
+        model,
+    )
+    .await;
     messages
 }
 
@@ -6192,6 +6225,25 @@ mod tests {
     }
 
     const INSTALLATION_ID: &str = crate::workshop_authority::TEST_INSTALLATION_ID;
+
+    #[test]
+    fn foreground_total_deadline_is_opt_in() {
+        let config = EmbeddedDaemonConfig::with_chat_client(
+            std::env::temp_dir(),
+            InstallationId::parse(INSTALLATION_ID).unwrap(),
+            "openai",
+            "embedded-test-model",
+            Arc::new(LifecycleChatClient::default()),
+        );
+        assert_eq!(config.foreground_turn_timeout, None);
+        assert_eq!(
+            config
+                .with_foreground_turn_timeout(Duration::from_secs(5))
+                .foreground_turn_timeout,
+            Some(Duration::from_secs(5))
+        );
+    }
+
     const SECRET_CANARY: &str = "embedded-secret-must-never-escape";
     const FIRST_REPLY: &str = "The embedded daemon owns this foreground turn.";
     const BACKGROUND_REPLY: &str = "The turn survived the app lifecycle transition.";
@@ -6311,12 +6363,20 @@ query MobileProbe {
         assert!(!prompt.contains("catalog_tool=cognition_tools_discover"));
     }
 
-    #[test]
-    fn instant_embedded_history_only_loads_the_recent_window() {
+    #[tokio::test]
+    async fn instant_embedded_history_only_loads_the_recent_window() {
         let history = (0..12)
             .map(|index| crate::turn_parts::user_conversation_turn(format!("turn {index}")))
             .collect();
-        let messages = history_to_chat_messages(history, AgentModeId::Instant);
+        let messages = history_to_chat_messages(
+            history,
+            AgentModeId::Instant,
+            "session-1",
+            &[],
+            "openai",
+            "gpt-3.5-turbo",
+        )
+        .await;
         assert_eq!(messages.len(), 6);
     }
 

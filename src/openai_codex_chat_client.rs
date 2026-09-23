@@ -11,11 +11,14 @@ use stasis::domain::errors::{Result as StasisResult, StasisError};
 #[cfg(feature = "full-daemon")]
 use stasis::infrastructure::llm::genai_chat_client::GenaiChatClient;
 use stasis::ports::outbound::ai_chat_client::{AiChatClient, StreamDelta, send_stream_delta};
+use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::chatgpt_oauth::ChatGptOAuthBroker;
 
 const DEFAULT_RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
+const RESPONSES_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+const RESPONSES_READ_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 pub const OPENAI_CODEX_PROVIDER_ID: &str = "openai-codex";
 
 #[derive(Debug)]
@@ -84,7 +87,7 @@ impl OpenAiCodexChatClient {
         }
     }
 
-    #[cfg(all(test, feature = "full-daemon"))]
+    #[cfg(test)]
     fn with_url(model: impl Into<String>, responses_url: impl Into<String>) -> Self {
         struct EmptyStore;
         impl crate::chatgpt_oauth::ChatGptCredentialStore for EmptyStore {
@@ -109,6 +112,7 @@ impl OpenAiCodexChatClient {
         let headers = request_headers(access_token, account_id);
         let url = self.responses_url.clone();
         Client::builder()
+            .with_web_config(responses_web_config())
             .with_auth_resolver_fn(move |_| {
                 Ok(Some(AuthData::RequestOverride {
                     url: url.clone(),
@@ -250,6 +254,16 @@ impl OpenAiCodexChatClient {
             captured_raw_body: None,
             response_id: None,
         })
+    }
+}
+
+fn responses_web_config() -> genai::WebConfig {
+    // reqwest's read timeout is an idle bound: it covers waiting for the initial
+    // response and resets after each successful response-body read. Leave the
+    // total request timeout unset so long but active reasoning streams can finish.
+    genai::WebConfig {
+        read_timeout: Some(RESPONSES_READ_IDLE_TIMEOUT),
+        ..genai::WebConfig::default().with_connect_timeout(RESPONSES_CONNECT_TIMEOUT)
     }
 }
 
@@ -421,7 +435,7 @@ fn stream_once_error(model: &str, error: StreamOnceError) -> StasisError {
     }
 }
 
-#[cfg(all(test, feature = "full-daemon"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use axum::extract::State;
@@ -429,6 +443,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     #[test]
+    #[cfg(feature = "full-daemon")]
     fn provider_stream_options_enable_tool_call_capture() {
         let incoming = ChatOptions::default().with_temperature(0.2);
         let options = provider_stream_options(Some(&incoming));
@@ -437,6 +452,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "full-daemon")]
     fn route_selection_keeps_api_key_and_chatgpt_clients_distinct() {
         assert!(matches!(
             RoutedChatClient::new("openai", "gpt-5.6-sol", None),

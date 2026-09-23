@@ -122,7 +122,10 @@ slot. Independent sessions and explicitly parallel workers remain concurrent.
 
 ### 4. Cancellation is hierarchical and exact
 
-Every execution owns a cancellation root, deadline, and tracked task group.
+Every execution owns a cancellation root, optional deadline, and tracked task
+group. Interactive execution may have no whole-turn deadline; explicitly
+configured embedded foreground limits and scheduled/worker grant expiries remain
+enforced. Provider transport timeouts are independent of this execution limit.
 Provider pumps, tool calls, pipeline admission, workers, browser waits, and
 blocking-job permits receive child tokens. Cancelling a turn targets its
 `TurnHandle` and accepted generation; cancelling a parent cancels descendants,
@@ -134,10 +137,10 @@ deadline, aborts only tasks owned by the execution, and reports incomplete
 children/resources. Detached tasks that retain turn authority are forbidden.
 
 Provider and tool futures are awaited through the active execution boundary,
-which races each leaf against the root token and absolute deadline. Parallel
-tool tasks reinstall the same immutable context before invocation. Stream and
-attempt pumps are owned resources: normal completion drains them, while owner
-drop aborts them even if another sender clone remains live.
+which races each leaf against the root token and optional absolute deadline.
+Parallel tool tasks reinstall the same immutable context before invocation.
+Stream and attempt pumps are owned resources: normal completion drains them,
+while owner drop aborts them even if another sender clone remains live.
 
 Same-session cancel and steer operations must name the target turn/generation
 or be resolved by the session owner under one atomic admission rule. A stale

@@ -16,15 +16,18 @@ use tokio_util::sync::CancellationToken;
 #[derive(Clone)]
 pub struct TurnExecutionBoundary {
     cancellation: CancellationToken,
-    deadline: Instant,
+    deadline: Option<Instant>,
     host_context: Option<Arc<dyn Any + Send + Sync>>,
 }
 
 impl TurnExecutionBoundary {
-    pub fn new(cancellation: CancellationToken, deadline: Instant) -> Self {
+    /// Interactive work can omit a total execution deadline. Individual
+    /// transports/tools still own their stall timeouts, and cancellation is
+    /// always enforced. Jobs with an explicit budget retain an absolute limit.
+    pub fn new(cancellation: CancellationToken, deadline: impl Into<Option<Instant>>) -> Self {
         Self {
             cancellation,
-            deadline,
+            deadline: deadline.into(),
             host_context: None,
         }
     }
@@ -41,7 +44,7 @@ impl TurnExecutionBoundary {
         &self.cancellation
     }
 
-    pub fn deadline(&self) -> Instant {
+    pub fn deadline(&self) -> Option<Instant> {
         self.deadline
     }
 
@@ -108,7 +111,7 @@ impl fmt::Display for TurnExecutionBoundaryError {
 impl std::error::Error for TurnExecutionBoundaryError {}
 
 /// Await one provider/tool leaf under the active turn's cancellation root and
-/// absolute deadline. An unscoped leaf fails closed before it is polled.
+/// optional absolute deadline. An unscoped leaf fails closed before it is polled.
 pub async fn await_turn_boundary<F, T>(future: F) -> Result<T, TurnExecutionBoundaryError>
 where
     F: Future<Output = T>,
@@ -118,16 +121,24 @@ where
         return Err(TurnExecutionBoundaryError::MissingContext);
     };
     let cancellation = boundary.cancellation().clone();
-    let deadline = tokio::time::Instant::from_std(boundary.deadline());
     tokio::pin!(future);
     tokio::select! {
         biased;
         () = cancellation.cancelled() => Err(TurnExecutionBoundaryError::Cancelled),
-        () = tokio::time::sleep_until(deadline) => {
+        () = wait_for_turn_deadline(boundary.deadline()) => {
             cancellation.cancel();
             Err(TurnExecutionBoundaryError::DeadlineExceeded)
         }
         output = &mut future => Ok(output),
+    }
+}
+
+/// Wait for an explicitly configured total execution limit. With no limit this
+/// branch stays pending, leaving completion and cancellation to the caller.
+pub async fn wait_for_turn_deadline(deadline: Option<Instant>) {
+    match deadline {
+        Some(deadline) => tokio::time::sleep_until(deadline.into()).await,
+        None => std::future::pending::<()>().await,
     }
 }
 
@@ -182,6 +193,69 @@ mod tests {
 
         let result = with_turn_execution_boundary(active, async {
             await_turn_boundary(std::future::pending::<()>()).await
+        })
+        .await;
+
+        assert_eq!(result, Err(TurnExecutionBoundaryError::DeadlineExceeded));
+        assert!(cancellation.is_cancelled());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn interactive_execution_can_outlive_previous_turn_caps() {
+        let cancellation = CancellationToken::new();
+        let active = Arc::new(TurnExecutionBoundary::new(cancellation.clone(), None));
+        let started = tokio::time::Instant::now();
+
+        with_turn_execution_boundary(active, async {
+            // Model and tool leaves share cancellation, not a dwindling budget
+            // from the start of the conversation turn.
+            for _ in 0..3 {
+                assert_eq!(
+                    await_turn_boundary(async {
+                        tokio::time::sleep(Duration::from_secs(3_000)).await;
+                        "completed"
+                    })
+                    .await,
+                    Ok("completed")
+                );
+            }
+        })
+        .await;
+
+        assert!(started.elapsed() > Duration::from_secs(2 * 60 * 60));
+        assert!(!cancellation.is_cancelled());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn execution_without_deadline_still_stops_on_user_cancellation() {
+        let cancellation = CancellationToken::new();
+        let active = Arc::new(TurnExecutionBoundary::new(cancellation.clone(), None));
+        let cancel = async {
+            tokio::time::sleep(Duration::from_secs(181)).await;
+            cancellation.cancel();
+        };
+        let (_, result) = tokio::join!(
+            cancel,
+            with_turn_execution_boundary(active, async {
+                await_turn_boundary(std::future::pending::<()>()).await
+            })
+        );
+
+        assert_eq!(result, Err(TurnExecutionBoundaryError::Cancelled));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn explicit_deadline_still_bounds_multiple_successful_leaves() {
+        let cancellation = CancellationToken::new();
+        let active = Arc::new(TurnExecutionBoundary::new(
+            cancellation.clone(),
+            (tokio::time::Instant::now() + Duration::from_secs(180)).into_std(),
+        ));
+        let result = with_turn_execution_boundary(active, async {
+            await_turn_boundary(tokio::time::sleep(Duration::from_secs(120)))
+                .await
+                .unwrap();
+            await_turn_boundary(tokio::time::sleep(Duration::from_secs(120))).await
         })
         .await;
 

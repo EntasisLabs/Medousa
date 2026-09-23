@@ -2,6 +2,7 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest as _, Sha256};
 use stasis::domain::errors::{Result as StasisResult, StasisError};
 
 use crate::semantic_values::TrimmedText;
@@ -24,7 +25,8 @@ const MAX_READ_TURNS: usize = 40;
 const DEFAULT_READ_CHARS: usize = 12_000;
 const MAX_READ_CHARS: usize = 24_000;
 const MAX_MESSAGE_CHARS: usize = 2_400;
-#[cfg(test)]
+const MAX_CHAT_HISTORY_IMAGE_BYTES: usize = 8 * 1024 * 1024;
+const CHAT_HISTORY_IMAGE_MIMES: &[&str] = &["image/png", "image/jpeg", "image/webp", "image/gif"];
 const SEARCH_EXCERPT_CHARS: usize = 420;
 
 pub fn register_chat_history_tools(
@@ -84,13 +86,142 @@ fn require_visible_session(
     )))
 }
 
+fn active_history_access() -> Result<HistoryAccess, String> {
+    let context = crate::agent_runtime::execution_context::active_turn_execution_context()
+        .ok_or_else(|| "chat-history image requires an active turn".to_string())?;
+    let scope = context.legacy_scope();
+    let source_session_id = TrimmedText::new(scope.session_id.clone())
+        .map(TrimmedText::into_string)
+        .map_err(|_| "chat-history image requires an active session".to_string())?;
+    let profile_id = scope
+        .identity_user_id
+        .clone()
+        .and_then(|value| TrimmedText::new(value).ok())
+        .map(TrimmedText::into_string)
+        .ok_or_else(|| "chat-history image requires an active profile".to_string())?;
+    Ok(HistoryAccess {
+        source_session_id,
+        profile_id,
+    })
+}
+
+fn validate_image_receipt_shape(receipt: &ChatHistoryImageReceipt) -> Result<(), String> {
+    let valid_media_id =
+        receipt.media_id.starts_with("usr:") || receipt.media_id.starts_with("gen:");
+    let valid_digest =
+        receipt.sha256.len() == 64 && receipt.sha256.bytes().all(|byte| byte.is_ascii_hexdigit());
+    crate::session_storage::SessionId::parse(&receipt.session_id)
+        .map_err(|_| "chat-history image session id is invalid".to_string())?;
+    if !valid_media_id
+        || receipt.media_id.len() > 256
+        || !CHAT_HISTORY_IMAGE_MIMES.contains(&receipt.mime.as_str())
+        || receipt.byte_size == 0
+        || receipt.byte_size > MAX_CHAT_HISTORY_IMAGE_BYTES
+        || !valid_digest
+    {
+        return Err("chat-history image receipt failed validation".to_string());
+    }
+    Ok(())
+}
+
+fn transcript_attaches_media(turns: &[ConversationTurn], media_id: &str) -> bool {
+    turns.iter().any(|turn| {
+        crate::media_vision::media_refs_from_turn(turn)
+            .iter()
+            .any(|media_ref| media_ref.media_id == media_id)
+    })
+}
+
+fn validate_image_record_and_bytes(
+    session_id: &str,
+    media_id: &str,
+    record: &crate::media_store::MediaRecord,
+    bytes: Vec<u8>,
+) -> Result<(ChatHistoryImageReceipt, Vec<u8>), String> {
+    if record.session_id != session_id
+        || record.media_id != media_id
+        || !CHAT_HISTORY_IMAGE_MIMES.contains(&record.mime.as_str())
+        || record.byte_size == 0
+        || record.byte_size > MAX_CHAT_HISTORY_IMAGE_BYTES as u64
+    {
+        return Err("stored image metadata failed validation".to_string());
+    }
+    if bytes.is_empty()
+        || bytes.len() > MAX_CHAT_HISTORY_IMAGE_BYTES
+        || bytes.len() as u64 != record.byte_size
+    {
+        return Err("stored image size does not match its media record".to_string());
+    }
+    let receipt = ChatHistoryImageReceipt {
+        session_id: session_id.to_string(),
+        media_id: media_id.to_string(),
+        mime: record.mime.clone(),
+        byte_size: bytes.len(),
+        sha256: format!("{:x}", Sha256::digest(&bytes)),
+    };
+    Ok((receipt, bytes))
+}
+
+fn receipts_match(left: &ChatHistoryImageReceipt, right: &ChatHistoryImageReceipt) -> bool {
+    left.session_id == right.session_id
+        && left.media_id == right.media_id
+        && left.mime == right.mime
+        && left.byte_size == right.byte_size
+        && left.sha256.eq_ignore_ascii_case(&right.sha256)
+}
+
+fn load_chat_history_image_payload(
+    source_session_id: &str,
+    session_id: &str,
+    media_id: &str,
+    profile_id: &str,
+) -> Result<(ChatHistoryImageReceipt, Vec<u8>), String> {
+    if !crate::session_history::session_visible_to_profile(source_session_id, profile_id)
+        || !crate::session_history::session_visible_to_profile(session_id, profile_id)
+    {
+        return Err("session is not visible to the active profile".to_string());
+    }
+    let parsed_session_id = crate::session_storage::SessionId::parse(session_id)
+        .map_err(|_| "chat-history image session id is invalid".to_string())?;
+    let turns = crate::session_store::get_session_store().load_history(&parsed_session_id);
+    if !transcript_attaches_media(&turns, media_id) {
+        return Err("image is not attached to the durable session transcript".to_string());
+    }
+    let record = crate::media_store::get_media_record(session_id, media_id)
+        .ok_or_else(|| "image record is unavailable in this session".to_string())?;
+    if record.session_id != session_id
+        || record.media_id != media_id
+        || !CHAT_HISTORY_IMAGE_MIMES.contains(&record.mime.as_str())
+        || record.byte_size == 0
+        || record.byte_size > MAX_CHAT_HISTORY_IMAGE_BYTES as u64
+    {
+        return Err("stored image metadata failed validation".to_string());
+    }
+    let bytes = crate::media_store::open_media_payload(&record)?;
+    validate_image_record_and_bytes(session_id, media_id, &record, bytes)
+}
+
 fn visible_turn_text(turn: &ConversationTurn) -> Option<String> {
     if !matches!(turn.role.as_str(), "user" | "assistant" | "agent") {
         return None;
     }
     let content = turn.content.trim();
+    let media_refs = crate::media_vision::media_refs_from_turn(turn);
+    let attachment_text = media_refs
+        .iter()
+        .map(|media_ref| {
+            let label = bounded_text(media_ref.label.as_deref().unwrap_or("attachment"), 120);
+            let media_id = bounded_text(&media_ref.media_id, 160);
+            format!("[attachment label={label} media_id={media_id}]")
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
     if !content.is_empty() {
-        return Some(content.to_string());
+        return Some(if attachment_text.is_empty() {
+            content.to_string()
+        } else {
+            format!("{content}\n{attachment_text}")
+        });
     }
     let parts = turn.parts.as_deref()?;
     let visible = parts
@@ -113,7 +244,67 @@ fn visible_turn_text(turn: &ConversationTurn) -> Option<String> {
         .filter(|text| !text.is_empty())
         .collect::<Vec<_>>()
         .join("\n\n");
-    (!visible.is_empty()).then_some(visible)
+    if !visible.is_empty() {
+        return Some(if attachment_text.is_empty() {
+            visible
+        } else {
+            format!("{visible}\n{attachment_text}")
+        });
+    }
+    if media_refs.is_empty() {
+        return None;
+    }
+    let has_image = media_refs.iter().any(|media_ref| {
+        media_ref
+            .mime
+            .trim()
+            .to_ascii_lowercase()
+            .starts_with("image/")
+    });
+    Some(format!(
+        "{}\n{attachment_text}",
+        if has_image {
+            "[image attachment]"
+        } else {
+            "[attachment]"
+        }
+    ))
+}
+
+fn visible_turn_window(
+    turns: &[ConversationTurn],
+    before_turn: usize,
+    last_k: usize,
+) -> (Vec<(usize, &ConversationTurn, String)>, bool) {
+    let mut visible = turns
+        .iter()
+        .enumerate()
+        .rev()
+        .filter(|(index, _)| index.saturating_add(1) < before_turn)
+        .filter_map(|(index, turn)| visible_turn_text(turn).map(|content| (index, turn, content)))
+        .take(last_k + 1)
+        .collect::<Vec<_>>();
+    let truncated = visible.len() > last_k;
+    visible.truncate(last_k);
+    visible.reverse();
+    (visible, truncated)
+}
+
+fn matching_history_turn(
+    entries: &[medousa_types::session::TranscriptEntry],
+    query: &str,
+) -> Option<(usize, String, String)> {
+    let query = query.to_ascii_lowercase();
+    entries.iter().rev().find_map(|entry| {
+        let content = visible_turn_text(&entry.turn)?;
+        content.to_ascii_lowercase().contains(&query).then(|| {
+            (
+                entry.entry_seq as usize,
+                display_role(&entry.turn.role),
+                search_excerpt(&content, &query),
+            )
+        })
+    })
 }
 
 fn display_role(role: &str) -> String {
@@ -128,7 +319,6 @@ fn bounded_text(text: &str, max_chars: usize) -> String {
     crate::agent_runtime::prompt_prep::truncate_text_for_budget(text, max_chars)
 }
 
-#[cfg(test)]
 fn search_excerpt(text: &str, query: &str) -> String {
     let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
     let lower = collapsed.to_ascii_lowercase();
@@ -270,6 +460,65 @@ impl CognitionChatHistorySearchTool {
             }
 
             if results.len() < limit {
+                let mut attachment_candidates = summaries.values().cloned().collect::<Vec<_>>();
+                attachment_candidates
+                    .sort_by_key(|summary| std::cmp::Reverse(summary.last_timestamp));
+                let remaining = limit - results.len();
+                let query = query_text.to_string();
+                let matches = crate::media_vision::media_execution_service()
+                    .run(
+                        medousa_forge::execution::ExecutionClass::StoreIo,
+                        medousa_forge::execution::MAX_STORE_PAYLOAD_BYTES,
+                        move || {
+                            let mut matches = Vec::new();
+                            for summary in attachment_candidates {
+                                if matches.len() >= remaining {
+                                    break;
+                                }
+                                let Ok(target_session_id) =
+                                    crate::session_storage::SessionId::parse(&summary.session_id)
+                                else {
+                                    continue;
+                                };
+                                let entries = crate::session_store::get_session_store()
+                                    .load_transcript_entries_page(
+                                        &target_session_id,
+                                        MAX_TURNS_SCANNED_PER_SESSION,
+                                        None,
+                                    )
+                                    .entries;
+                                let Some((turn_index, role, excerpt)) =
+                                    matching_history_turn(&entries, &query)
+                                else {
+                                    continue;
+                                };
+                                matches.push(search_match_from_summary(
+                                    summary,
+                                    Some(turn_index),
+                                    Some(role),
+                                    Some(excerpt),
+                                ));
+                            }
+                            Ok(matches)
+                        },
+                    )
+                    .await
+                    .map_err(|error| {
+                        StasisError::PortFailure(format!(
+                            "{COGNITION_CHAT_HISTORY_SEARCH}: attachment scan failed: {error}"
+                        ))
+                    })?;
+                let matched_sessions = matches
+                    .iter()
+                    .map(|item| item.session_id.as_str())
+                    .collect::<std::collections::HashSet<_>>();
+                for session_id in matched_sessions {
+                    summaries.remove(session_id);
+                }
+                results.extend(matches);
+            }
+
+            if results.len() < limit {
                 let mut metadata_hits = summaries
                     .into_values()
                     .filter(|summary| metadata_matches(summary, query_text))
@@ -329,6 +578,50 @@ pub struct ChatHistoryReadInput {
         skip_serializing_if = "CompatOption::is_none"
     )]
     max_chars: CompatOption<usize>,
+    /// Return turns before this exclusive, one-based transcript turn index.
+    /// Use the oldest returned message's turn_index to continue paging backward.
+    #[serde(default)]
+    #[schemars(with = "usize", skip_serializing_if = "CompatOption::is_none")]
+    before_turn: CompatOption<usize>,
+    /// Reopen an attached image by its returned media_id so a vision-capable model can inspect its pixels.
+    #[serde(default)]
+    #[schemars(with = "String", skip_serializing_if = "CompatOption::is_none")]
+    media_id: CompatOption<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) struct ChatHistoryImageReceipt {
+    pub(crate) session_id: String,
+    pub(crate) media_id: String,
+    pub(crate) mime: String,
+    pub(crate) byte_size: usize,
+    pub(crate) sha256: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct ChatHistoryAttachment {
+    media_id: String,
+    kind: String,
+    mime: String,
+    label: Option<String>,
+    source_media_id: Option<String>,
+    generation_id: Option<String>,
+    parent_generation_id: Option<String>,
+}
+
+impl From<crate::daemon_api::MediaRef> for ChatHistoryAttachment {
+    fn from(media_ref: crate::daemon_api::MediaRef) -> Self {
+        Self {
+            media_id: media_ref.media_id,
+            kind: media_ref.kind,
+            mime: media_ref.mime,
+            label: media_ref.label,
+            source_media_id: media_ref.source_media_id,
+            generation_id: media_ref.generation_id,
+            parent_generation_id: media_ref.parent_generation_id,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -338,17 +631,110 @@ pub struct ChatHistoryMessage {
     timestamp: String,
     content: String,
     tool_names: Vec<String>,
+    attachments: Vec<ChatHistoryAttachment>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct ChatHistoryReadOutput {
     ok: bool,
+    source_session_id: String,
     session_id: String,
     display_name: Option<String>,
     total_turns: usize,
     returned_turns: usize,
     truncated: bool,
     messages: Vec<ChatHistoryMessage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image: Option<ChatHistoryImageReceipt>,
+}
+
+/// Reopens a transcript image only after checking the active profile, durable
+/// attachment membership, the media record, and the payload digest.
+#[derive(Default)]
+pub struct ChatHistoryMediaHydrationPort;
+
+impl medousa_runtime::ToolObservationHydrationPort for ChatHistoryMediaHydrationPort {
+    fn accepts(&self, tool_name: &str) -> bool {
+        tool_name == COGNITION_CHAT_HISTORY_READ
+    }
+
+    fn hydrate(
+        &self,
+        request: medousa_runtime::ToolObservationHydrationRequest,
+    ) -> medousa_runtime::RuntimePortFuture<
+        Result<Option<medousa_runtime::HydratedToolObservation>, String>,
+    > {
+        Box::pin(async move {
+            if request.tool_name != COGNITION_CHAT_HISTORY_READ {
+                return Ok(None);
+            }
+            let Some(image_value) = request.tool_output.get("image") else {
+                return Ok(None);
+            };
+            if image_value.is_null() {
+                return Ok(None);
+            }
+            let receipt: ChatHistoryImageReceipt = serde_json::from_value(image_value.clone())
+                .map_err(|_| "chat-history image receipt is malformed".to_string())?;
+            let output_session_id = request
+                .tool_output
+                .get("session_id")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| "chat-history image source session is missing".to_string())?;
+            if output_session_id != receipt.session_id {
+                return Err("chat-history image does not match the returned session".to_string());
+            }
+            validate_image_receipt_shape(&receipt)?;
+
+            let access = active_history_access()?;
+            let output_source_session_id = request
+                .tool_output
+                .get("source_session_id")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| "chat-history image source scope is missing".to_string())?;
+            if output_source_session_id != access.source_session_id {
+                return Err("chat-history image does not match the active source scope".to_string());
+            }
+            let source_session_id = access.source_session_id;
+            let session_id = receipt.session_id.clone();
+            let media_id = receipt.media_id.clone();
+            let profile_id = access.profile_id;
+            let expected = receipt.clone();
+            let execution = crate::media_vision::media_execution_service();
+            let observation = execution
+                .run(
+                    medousa_forge::execution::ExecutionClass::Observation,
+                    receipt.byte_size.max(1),
+                    move || {
+                        let (verified, bytes) = load_chat_history_image_payload(
+                            &source_session_id,
+                            &session_id,
+                            &media_id,
+                            &profile_id,
+                        )
+                        .map_err(medousa_forge::error::ForgeError::Store)?;
+                        if !receipts_match(&verified, &expected) {
+                            return Err(medousa_forge::error::ForgeError::Store(
+                                "chat-history image does not match its durable receipt".to_string(),
+                            ));
+                        }
+                        let sha256 = format!("{:x}", Sha256::digest(&bytes));
+                        Ok(medousa_runtime::HydratedToolObservation {
+                            tool_name: request.tool_name,
+                            source_call_id: request.source_call_id,
+                            artifact_id: verified.media_id,
+                            content_type: verified.mime,
+                            bytes,
+                            sha256,
+                            untrusted_content: true,
+                        })
+                    },
+                )
+                .await
+                .map_err(|error| format!("chat-history image lookup failed: {error}"))?;
+            Ok(Some(observation))
+        })
+    }
 }
 
 pub struct CognitionChatHistoryReadTool {
@@ -357,7 +743,7 @@ pub struct CognitionChatHistoryReadTool {
 
 #[medousa_tool(id = COGNITION_CHAT_HISTORY_READ_ID)]
 impl CognitionChatHistoryReadTool {
-    /// Read a bounded window from one prior Medousa chat. Returns user and assistant messages plus compact tool names.
+    /// Read messages and attachment IDs from a Medousa chat. Use before_turn to page backward, or media_id to reopen an attached image for visual inspection.
     async fn invoke_typed(
         &self,
         input: ChatHistoryReadInput,
@@ -381,21 +767,11 @@ impl CognitionChatHistoryReadTool {
             .into_option()
             .unwrap_or(DEFAULT_READ_CHARS)
             .clamp(512, MAX_READ_CHARS);
+        let before_turn = input.before_turn.into_option().unwrap_or(usize::MAX).max(1);
 
         let turns = load_history(&session_id);
         let total_turns = turns.len();
-        let mut visible = turns
-            .iter()
-            .enumerate()
-            .rev()
-            .filter_map(|(index, turn)| {
-                visible_turn_text(turn).map(|content| (index, turn, content))
-            })
-            .take(last_k + 1)
-            .collect::<Vec<_>>();
-        let mut truncated = visible.len() > last_k;
-        visible.truncate(last_k);
-        visible.reverse();
+        let (visible, mut truncated) = visible_turn_window(&turns, before_turn, last_k);
 
         let mut remaining = max_chars;
         let mut messages = Vec::new();
@@ -414,19 +790,65 @@ impl CognitionChatHistoryReadTool {
                 timestamp: turn.timestamp.to_rfc3339(),
                 content: bounded,
                 tool_names: turn.tool_names.iter().take(16).cloned().collect(),
+                attachments: crate::media_vision::media_refs_from_turn(turn)
+                    .into_iter()
+                    .take(crate::media_vision::MAX_MEDIA_REFS_PER_TURN)
+                    .map(ChatHistoryAttachment::from)
+                    .collect(),
             });
         }
+
+        let image = if let Some(media_id) = input.media_id.into_option() {
+            let media_id = TrimmedText::new(media_id)
+                .map(TrimmedText::into_string)
+                .map_err(|_| {
+                    StasisError::PortFailure(
+                        "cognition_chat_history_read: media_id must not be empty".to_string(),
+                    )
+                })?;
+            let image_session_id = session_id.clone();
+            let image_media_id = media_id.clone();
+            let source_session_id = access.source_session_id.clone();
+            let profile_id = access.profile_id.clone();
+            Some(
+                crate::media_vision::media_execution_service()
+                    .run(
+                        medousa_forge::execution::ExecutionClass::Observation,
+                        MAX_CHAT_HISTORY_IMAGE_BYTES,
+                        move || {
+                            load_chat_history_image_payload(
+                                &source_session_id,
+                                &image_session_id,
+                                &image_media_id,
+                                &profile_id,
+                            )
+                            .map(|(receipt, _bytes)| receipt)
+                            .map_err(medousa_forge::error::ForgeError::Store)
+                        },
+                    )
+                    .await
+                    .map_err(|error| {
+                        StasisError::PortFailure(format!(
+                            "{COGNITION_CHAT_HISTORY_READ}: image lookup failed: {error}"
+                        ))
+                    })?,
+            )
+        } else {
+            None
+        };
 
         let display_name = crate::session_history::display_name(&session_id);
         let returned_turns = messages.len();
         Ok(ChatHistoryReadOutput {
             ok: true,
+            source_session_id: access.source_session_id,
             session_id,
             display_name,
             total_turns,
             returned_turns,
             truncated,
             messages,
+            image,
         })
     }
 }
@@ -447,6 +869,19 @@ mod tests {
             slice_summary: None,
             speaker_profile_id: None,
         }
+    }
+
+    fn image_turn(media_id: &str, label: &str) -> ConversationTurn {
+        turn(
+            "user",
+            "",
+            Some(vec![TurnPart::UserMedia {
+                media_id: media_id.to_string(),
+                mime: "image/png".to_string(),
+                label: Some(label.to_string()),
+                byte_size: Some(4),
+            }]),
+        )
     }
 
     #[test]
@@ -501,6 +936,113 @@ mod tests {
         let excerpt = search_excerpt(&text, "pager sentinel");
         assert!(excerpt.contains("pager sentinel"));
         assert!(excerpt.chars().count() <= SEARCH_EXCERPT_CHARS + 1);
+    }
+
+    #[test]
+    fn image_only_history_turn_is_visible_with_searchable_attachment_metadata() {
+        let image = image_turn("usr:session-a:photo-1", "pager screenshot");
+        let visible = visible_turn_text(&image).expect("image-only turn should be visible");
+        assert!(visible.contains("[image attachment]"));
+        assert!(visible.contains("pager screenshot"));
+        assert!(visible.contains("usr:session-a:photo-1"));
+        assert!(transcript_attaches_media(
+            std::slice::from_ref(&image),
+            "usr:session-a:photo-1"
+        ));
+        assert!(!transcript_attaches_media(
+            &[turn("user", "text only", None)],
+            "usr:session-a:photo-1"
+        ));
+    }
+
+    #[test]
+    fn attachment_labels_and_ids_match_history_search_queries() {
+        let image = image_turn("usr:session-a:photo-1", "pager screenshot");
+        let entries = [medousa_types::session::TranscriptEntry {
+            entry_id: medousa_types::TranscriptEntryId::parse(
+                "ent_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            )
+            .expect("entry id"),
+            entry_seq: 7,
+            caused_by: None,
+            source: None,
+            content_digest: "sha256:test".to_string(),
+            turn: image,
+        }];
+        assert_eq!(
+            matching_history_turn(&entries, "pager screenshot")
+                .map(|(index, role, _)| (index, role)),
+            Some((7, "user".to_string()))
+        );
+        assert!(matching_history_turn(&entries, "usr:session-a:photo-1").is_some());
+    }
+
+    #[test]
+    fn history_reader_pages_older_than_the_returned_window() {
+        let turns = vec![
+            turn("user", "first", None),
+            image_turn("usr:session-a:photo-1", "middle image"),
+            turn("assistant", "last", None),
+        ];
+        let (recent, truncated) = visible_turn_window(&turns, usize::MAX, 2);
+        assert!(truncated);
+        assert_eq!(recent[0].0 + 1, 2);
+        assert_eq!(recent[1].0 + 1, 3);
+        let (older, has_more) = visible_turn_window(&turns, recent[0].0 + 1, 2);
+        assert!(!has_more);
+        assert_eq!(older.len(), 1);
+        assert_eq!(older[0].0 + 1, 1);
+    }
+
+    #[test]
+    fn history_image_receipt_rejects_foreign_records_oversize_payload_and_tampering() {
+        let bytes = b"png!".to_vec();
+        let record = crate::media_store::MediaRecord {
+            media_id: "usr:session-a:photo-1".to_string(),
+            session_id: "session-a".to_string(),
+            mime: "image/png".to_string(),
+            kind: "image".to_string(),
+            byte_size: bytes.len() as u64,
+            stored_at_utc: Utc::now(),
+            payload_path: "ignored-by-test".to_string(),
+            label: Some("photo".to_string()),
+            extract_path: None,
+            extract_chars: None,
+            extract_truncated: false,
+        };
+        let (receipt, observed) = validate_image_record_and_bytes(
+            "session-a",
+            "usr:session-a:photo-1",
+            &record,
+            bytes.clone(),
+        )
+        .expect("valid image receipt");
+        assert_eq!(observed, bytes);
+        validate_image_receipt_shape(&receipt).expect("valid receipt shape");
+
+        let mut foreign_record = record.clone();
+        foreign_record.session_id = "session-b".to_string();
+        assert!(
+            validate_image_record_and_bytes(
+                "session-a",
+                &foreign_record.media_id,
+                &foreign_record,
+                bytes.clone(),
+            )
+            .is_err()
+        );
+        assert!(
+            validate_image_record_and_bytes(
+                "session-a",
+                &record.media_id,
+                &record,
+                b"png!!".to_vec(),
+            )
+            .is_err()
+        );
+        let mut tampered = receipt.clone();
+        tampered.sha256 = "0".repeat(64);
+        assert!(!receipts_match(&receipt, &tampered));
     }
 
     #[tokio::test]

@@ -1271,7 +1271,7 @@ pub async fn run_agent_turn(
         ),
     );
     let cancellation = execution_context.cancellation().clone();
-    let deadline = tokio::time::Instant::from_std(execution_context.deadline());
+    let deadline = execution_context.deadline();
     let scoped_turn =
         super::execution_context::with_turn_execution_context(execution_context, turn_future);
     tokio::pin!(scoped_turn);
@@ -1285,7 +1285,7 @@ pub async fn run_agent_turn(
             // to a principal-owned attached checkout.
             scoped_turn.await;
         }
-        () = tokio::time::sleep_until(deadline) => {
+        () = medousa_runtime::wait_for_turn_deadline(deadline) => {
             cancellation.cancel();
             tracking_sink
                 .agent_error(0, "turn execution deadline exceeded".to_string())
@@ -2174,7 +2174,8 @@ async fn run_agent_turn_inner(
             .map(|registry| registry as Arc<dyn super::coder_evidence::CompactEvidenceReceiptSink>),
         active_turn_checkpoint_sink,
         active_turn_resume,
-    });
+    })
+    .await;
 
     if let Some(route_notice) = assembled.pipeline_selection.route_dispatch_notice {
         sink.notice(route_notice).await;

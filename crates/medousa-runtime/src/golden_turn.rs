@@ -208,6 +208,36 @@ impl AiChatClient for ScriptedClient {
     }
 }
 
+/// Scripted provider that advances Tokio's paused clock before each response.
+/// This keeps long-running loop tests deterministic without replacing any
+/// production tool-loop decisions.
+struct DelayedScriptedClient {
+    inner: ScriptedClient,
+    delay: Duration,
+}
+
+#[async_trait]
+impl AiChatClient for DelayedScriptedClient {
+    async fn complete(
+        &self,
+        request: ChatRequest,
+        options: Option<&ChatOptions>,
+    ) -> StasisResult<ChatResponse> {
+        tokio::time::sleep(self.delay).await;
+        self.inner.complete(request, options).await
+    }
+
+    async fn complete_stream(
+        &self,
+        request: ChatRequest,
+        options: Option<&ChatOptions>,
+        chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
+    ) -> StasisResult<ChatResponse> {
+        tokio::time::sleep(self.delay).await;
+        self.inner.complete_stream(request, options, chunk_tx).await
+    }
+}
+
 // ── Generic data tool (stands in for any non-control tool) ───────────────────
 
 struct DataProbeTool;
@@ -569,6 +599,87 @@ async fn run_golden(
 }
 
 // ── Golden cases ─────────────────────────────────────────────────────────────
+
+#[tokio::test(start_paused = true)]
+async fn golden_streaming_tool_loop_can_finish_after_180_virtual_seconds() {
+    let registry = InMemoryToolRegistry::default();
+    registry.register_tool(DataProbeTool).unwrap();
+    register_golden_turn_tool(&registry);
+    let client = Arc::new(DelayedScriptedClient {
+        inner: ScriptedClient::new(vec![
+            prose_and_tool_response(
+                "First progress update.",
+                tool_call("data_probe", json!({ "q": "first" })),
+            ),
+            prose_and_tool_response(
+                "Second progress update.",
+                tool_call("data_probe", json!({ "q": "second" })),
+            ),
+            tool_response(vec![finish_call("Both checks are complete.")]),
+        ]),
+        delay: Duration::from_secs(91),
+    });
+    let pipeline = MedousaToolLoopPipeline::new(
+        PromptExecutionPipeline::new(client.clone()),
+        Arc::new(registry),
+    );
+    let mut gate = ToolLoopCompletionGate::new_for_execution(1, RuntimePorts::new(), 4);
+    let request = ToolLoopExecutionRequest {
+        user_prompt: "check two items, then report the result".to_string(),
+        system_prompt: None,
+        context: PromptExecutionContext::default(),
+        tool_name: String::new(),
+        tool_input: Value::Null,
+        tool_call_mode: ToolCallMode::Auto,
+    };
+    let cancellation = CancellationToken::new();
+    let start = tokio::time::Instant::now();
+    let (chunk_tx, mut chunk_rx) = mpsc::channel::<StreamDelta>(8);
+    let bridge = tokio::spawn(async move {
+        let mut streamed = Vec::new();
+        while let Some(delta) = chunk_rx.recv().await {
+            if let StreamDelta::Content(text) = delta {
+                streamed.push(text);
+            }
+        }
+        streamed
+    });
+
+    let response = with_turn_execution_boundary(
+        Arc::new(TurnExecutionBoundary::new(cancellation.clone(), None)),
+        pipeline.execute_with_stream_prior_messages_max_rounds(
+            request,
+            Vec::new(),
+            Some(&chunk_tx),
+            4,
+            Some(&mut gate),
+            None,
+        ),
+    )
+    .await
+    .expect("streaming tool loop should survive multiple long model rounds");
+
+    drop(chunk_tx);
+    let streamed = bridge.await.expect("stream bridge");
+    assert!(start.elapsed() > Duration::from_secs(180));
+    assert!(!cancellation.is_cancelled());
+    assert_eq!(response.termination_reason, "cognition_turn_finish");
+    assert_eq!(response.rounds_executed, 3);
+    assert_eq!(response.text, "Both checks are complete.");
+    assert_eq!(
+        response
+            .tool_invocations
+            .iter()
+            .map(|invocation| invocation.tool_name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["data_probe", "data_probe", COGNITION_TURN]
+    );
+    assert_eq!(
+        streamed,
+        vec!["First progress update.", "Second progress update."]
+    );
+    assert_eq!(client.inner.requests().len(), 3);
+}
 
 #[tokio::test]
 async fn golden_screenshot_pixels_are_transient_between_model_rounds() {

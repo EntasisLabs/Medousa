@@ -235,7 +235,7 @@ pub async fn spawn_turn_ticket(
             browser_host: continuation_scope.supports_browser_host,
         },
         tokio_util::sync::CancellationToken::new(),
-        std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60),
+        None,
         continuation_scope.clone(),
     );
     if let Some(bot_identity) = bot_identity {

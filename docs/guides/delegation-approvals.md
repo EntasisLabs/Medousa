@@ -6,6 +6,28 @@ and prepare a delegation proposal. In Assistant mode on mobile, it can also
 prepare that proposal on an authorized paired workshop selected from active-work
 discovery. Cloud adapters and autonomous chains are not yet connected.
 
+## Background Medousa workers
+
+Assistant mode on mobile can also queue a Medousa background worker on the
+workshop bound to the chat. This is separate from the Codex, Cursor, or Hermes
+approval proposals described below. Medousa saves the request and its parent
+chat context on the phone, then returns a work id while the request is queued.
+The phone resolves and authorizes a destination from a fresh authenticated
+workshop inventory before dispatch, and records that exact route before the
+worker starts. Retries keep using that route; the destination applies its own
+execution policy. You can check queued work with the workshop status control,
+and cancel a request while it is still queued to prevent dispatch.
+
+The phone must stay active long enough to deliver a queued request. If it sleeps
+or loses its connection first, delivery resumes when it wakes and reconnects.
+Once the paired Mac accepts the worker, that worker continues there if the phone
+goes away. If the requested target stays unavailable, Medousa reports a failure
+after its bounded retry period. This flow does not add push notifications or
+indefinite phone background execution. Completed results return to the original
+chat after the workshop is reachable again.
+
+## Agent approval proposals
+
 You can also ask what work is active without first opening a project-bound chat.
 Medousa can list your non-terminal governed projects and visible agent sessions
 across the current and authorized paired workshops. Offline or unavailable

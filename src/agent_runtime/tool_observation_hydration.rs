@@ -73,6 +73,9 @@ struct ValidatedScreenshotReceipt {
 
 impl ToolObservationHydrationPort for DaemonToolObservationHydrationPort {
     fn accepts(&self, tool_name: &str) -> bool {
+        if tool_name == crate::chat_history_tools::COGNITION_CHAT_HISTORY_READ {
+            return true;
+        }
         matches!(
             tool_name,
             COGNITION_BROWSER_SNAPSHOT | COGNITION_COMPUTER_SNAPSHOT
@@ -83,6 +86,9 @@ impl ToolObservationHydrationPort for DaemonToolObservationHydrationPort {
         &self,
         request: ToolObservationHydrationRequest,
     ) -> RuntimePortFuture<Result<Option<HydratedToolObservation>, String>> {
+        if request.tool_name == crate::chat_history_tools::COGNITION_CHAT_HISTORY_READ {
+            return crate::chat_history_tools::ChatHistoryMediaHydrationPort.hydrate(request);
+        }
         let session_id = self.session_id.clone();
         Box::pin(async move {
             if !matches!(

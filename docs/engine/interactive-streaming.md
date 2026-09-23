@@ -39,6 +39,21 @@ sequenceDiagram
 
 SDK: [`docs/sdk/interactive-streaming.md`](../sdk/interactive-streaming.md)
 
+## Turn duration and provider timeouts
+
+Interactive chat from the embedded mobile app, HTTP daemon, and TUI has no
+implicit whole-turn wall-clock deadline. The turn remains governed by context
+admission and accepted cancellation; an explicit embedded foreground timeout
+still applies when configured. Scheduled work and workers retain their own
+grant or configured expiry limits. This is not a guarantee that a mobile turn
+will keep running while iOS suspends the app.
+
+Provider transport limits are separate from the turn lifetime. The native
+ChatGPT Responses transport allows 15 seconds to connect and up to five minutes
+without response-body bytes. Body traffic resets that idle timer, and there is
+no total response-duration limit for that transport. Other providers retain
+their own transport behavior.
+
 For `InteractiveTurnRequest.scheduled_tool_allowlist`, omission preserves normal
 tool selection. An explicitly empty list requests a result-only turn: no tools,
 including implicit public API tools. A nonempty list retains the existing
@@ -57,6 +72,10 @@ boundary. Parallel tool invocations retain the same turn authority and are
 aborted with their batch owner. Model-stream pumps are drained on normal
 completion and aborted if the turn or inference attempt is dropped, preventing
 late detached deltas from outliving the cancelled turn.
+
+Cancellation and execution-context admission still apply when no whole-turn
+deadline is configured. The embedded host can opt into a foreground deadline;
+the default is unset.
 
 ---
 

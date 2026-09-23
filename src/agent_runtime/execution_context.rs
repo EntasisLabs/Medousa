@@ -158,7 +158,7 @@ pub struct TurnExecutionContext {
     route: ProviderRoute,
     surface: SurfaceCapabilities,
     cancellation: CancellationToken,
-    deadline: Instant,
+    deadline: Option<Instant>,
     legacy_scope: Arc<TurnContinuationScope>,
     bot: Option<BotTurnIdentity>,
     worker_execution_target: Option<crate::workshop_contract::ExecutionTargetSelection>,
@@ -178,7 +178,7 @@ impl TurnExecutionContext {
         route: ProviderRoute,
         surface: SurfaceCapabilities,
         cancellation: CancellationToken,
-        deadline: Instant,
+        deadline: impl Into<Option<Instant>>,
         legacy_scope: TurnContinuationScope,
     ) -> Self {
         let tasks = Arc::new(TurnTaskGroup::new(cancellation.clone(), 64));
@@ -191,7 +191,7 @@ impl TurnExecutionContext {
             route,
             surface,
             cancellation,
-            deadline,
+            deadline: deadline.into(),
             legacy_scope: Arc::new(legacy_scope),
             bot: None,
             worker_execution_target: None,
@@ -209,7 +209,7 @@ impl TurnExecutionContext {
         turn_id: impl Into<Arc<str>>,
         principal: RequestPrincipal,
         cancellation: CancellationToken,
-        deadline: Instant,
+        deadline: impl Into<Option<Instant>>,
         scope: TurnContinuationScope,
     ) -> Result<Self, crate::session_storage::InvalidSessionId> {
         let session_id = SessionId::parse(&scope.session_id)?;
@@ -265,7 +265,7 @@ impl TurnExecutionContext {
         &self.cancellation
     }
 
-    pub fn deadline(&self) -> Instant {
+    pub fn deadline(&self) -> Option<Instant> {
         self.deadline
     }
 
@@ -999,7 +999,7 @@ mod tests {
     #[tokio::test]
     async fn leaf_boundary_enforces_absolute_deadline() {
         let mut expired = context("session-a", "provider-a");
-        expired.deadline = Instant::now();
+        expired.deadline = Some(Instant::now());
         let cancellation = expired.cancellation().clone();
         let result = with_turn_execution_context(Arc::new(expired), async {
             await_turn_boundary(std::future::pending::<()>()).await
@@ -1008,6 +1008,32 @@ mod tests {
 
         assert_eq!(result, Err(TurnExecutionBoundaryError::DeadlineExceeded));
         assert!(cancellation.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn interactive_context_preserves_optional_deadline_and_cancellation() {
+        let mut interactive = context("session-a", "provider-a");
+        interactive.deadline = None;
+        let cancellation = interactive.cancellation().clone();
+        let active = Arc::new(interactive);
+        let expected = active.handle();
+        let child = tokio::spawn(with_turn_execution_context(active, async move {
+            assert_eq!(active_turn_execution_context().unwrap().handle(), expected);
+            assert_eq!(
+                medousa_runtime::active_turn_execution_boundary()
+                    .unwrap()
+                    .deadline(),
+                None
+            );
+            await_turn_boundary(std::future::pending::<()>()).await
+        }));
+        tokio::task::yield_now().await;
+        cancellation.cancel();
+
+        assert_eq!(
+            child.await.unwrap(),
+            Err(TurnExecutionBoundaryError::Cancelled)
+        );
     }
 
     #[tokio::test]

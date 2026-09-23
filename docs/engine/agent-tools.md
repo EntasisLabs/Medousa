@@ -51,6 +51,7 @@ Source: `src/tool_bootstrap.rs`
 | Runtime | `cognition_runtime_query` / `cognition_runtime_mutate` (`action=job.list\|job.enqueue\|workflow.run\|…`) |
 | Turn | `cognition_turn` (`action=turn.finish\|turn.checkpoint\|turn.begin_work\|…`) |
 | Memory | `cognition_memory_query` / `cognition_memory_mutate` (`action=memory.context\|memory.store\|…`) |
+| Chat history | `cognition_chat_history_read` — committed turns and attachment references; can reopen an image from a chat visible to the active profile |
 | Identity | `cognition_identity_query` / `cognition_identity_mutate` (`action=identity.recall\|identity.remember\|…`) |
 | Calendar | `cognition_calendar_query` / `cognition_calendar_mutate` (`action=calendar.list\|calendar.create\|…`) — [calendar.md](calendar.md) |
 | Workshop | `cognition_workshop_query` / `cognition_workshop_mutate` (`action=workshop.status\|workshop.spawn\|workshop.cancel\|workshop.steer`) |
@@ -83,6 +84,24 @@ bounded parent environments plus accepted undertaking and repository knowledge.
 discovery across repositories. That scope excludes unreviewed environment memory
 and labels every result as requiring repository-local revalidation before use.
 
+### Image context from chat history
+
+Interactive turns can reuse images attached to recent messages in the same
+session. The runtime considers the latest 20 transcript turns and includes at
+most five images across those turns and the current request. A vision-capable
+provider/model route is required; text-only routes do not receive the image
+content. Missing or deleted media is skipped without failing the chat.
+
+`cognition_chat_history_read` returns committed message attachment references,
+including image-only messages. Use `before_turn` with the oldest returned
+`turn_index` to page backward. Its optional `media_id` reopens one stored image
+only when that image is attached to the authorized session transcript and the
+caller has profile/session access. The daemon verifies the media bytes (maximum
+8 MiB) and provides them as image input to the next model response, not as
+base64 or image data in tool JSON. This lets an agent reopen an older image
+explicitly; it does not make media from an unauthorized session or deleted media
+available.
+
 ### Workshop execution placement
 
 `workshop.spawn` accepts an optional `execution_target`:
@@ -95,14 +114,26 @@ and labels every result as requiring repository-local revalidation before use.
   through Stasis placement constraints (`required_capabilities`, `platform`,
   `architecture`, and `region`).
 
-Every durable worker record and spawn result includes `parent_runtime_id` plus
+Every resolved worker record and local spawn result includes `parent_runtime_id` plus
 `execution_placement` with the requested selection, resolved runtime, reason,
 and resolution time. Legacy records deserialize with `unknown` provenance; the
 daemon does not relabel them as local. Runtime ids are opaque identities, not
-URLs. An unavailable exact target fails before work is enqueued with an
+URLs. For local execution, an unavailable exact target fails before work is enqueued with an
 `execution_target_unavailable` error. Resolved workers are also enqueued with
 the same runtime id as their Stasis exact target-node constraint; legacy work
 with unknown provenance remains unconstrained so upgrade recovery still works.
+
+On mobile with a bound remote workshop, a spawn is
+first persisted locally with its parent context and returns immediately as
+`status: "queued"`, `worker_queued: true`, and `worker_spawned: false`. The
+response includes `work_id` and `requested_execution_target`; its
+`execution_placement` is `null` until an authenticated inventory pass resolves
+and authorizes one exact runtime. The source checkpoints that resolved route
+before dispatch, and retries stay pinned to it. The destination still applies
+its own execution policy. `workshop.status` can inspect the queued request, and
+canceling it before dispatch prevents the worker from starting. This keeps
+remote discovery and startup out of the foreground tool call; it does not
+grant authority or make an unavailable target eligible.
 
 ---
 

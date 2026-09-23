@@ -710,14 +710,21 @@ impl DelegatedTaskTransport for HomeDelegatedTaskTransport {
         .map_err(|_| DelegatedTaskError::transport("workshop inventory lookup failed"))?
         .map_err(DelegatedTaskError::transport)?;
 
-        let mut authorized = Vec::new();
-        for target in targets {
-            if let Ok(candidate) = probe_delegation_target(target).await {
-                if candidate.candidate.user_selectable {
-                    authorized.push(candidate);
-                }
-            }
-        }
+        // One unreachable pairing must not hold up the reachable workshops.
+        // Bound the entire probe, including Iroh connection and body reads.
+        let probes = targets.into_iter().map(|target| async move {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                probe_delegation_target(target),
+            )
+            .await
+        });
+        let mut authorized = futures_util::future::join_all(probes)
+            .await
+            .into_iter()
+            .filter_map(|result| result.ok().and_then(Result::ok))
+            .filter(|candidate| candidate.candidate.user_selectable)
+            .collect::<Vec<_>>();
         authorized.sort_by(|left, right| {
             left.candidate
                 .label

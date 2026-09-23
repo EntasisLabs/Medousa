@@ -48,7 +48,8 @@ pub use credentialed_ai::{
 };
 pub use execution_boundary::{
     TurnExecutionBoundary, TurnExecutionBoundaryError, active_turn_execution_boundary,
-    await_turn_boundary, missing_turn_execution_boundary_invocations, with_turn_execution_boundary,
+    await_turn_boundary, missing_turn_execution_boundary_invocations, wait_for_turn_deadline,
+    with_turn_execution_boundary,
 };
 pub use loop_gate::{
     DEFAULT_FOREGROUND_MAX_TOOL_ROUNDS, TOOL_ROUND_LIMIT_ENV, ToolLoopCompletionGate,
