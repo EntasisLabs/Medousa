@@ -289,6 +289,13 @@ async fn run_persist_writer(
                         Ok(Ok(_)) => {
                             projection.generation = generation;
                             for mutation in mutations {
+                                if let WorkspaceMutation::UpsertTurnWorker { record } = &mutation
+                                    && let Err(error) =
+                                        crate::assistant_assignments::project_turn_worker(record)
+                                            .await
+                                {
+                                    tracing::warn!(work_id = %record.work_id, %error, "assistant assignment projection failed");
+                                }
                                 projection.apply(mutation);
                             }
                             journal_bytes = journal_bytes.saturating_add(size);

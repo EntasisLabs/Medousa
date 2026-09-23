@@ -4,7 +4,7 @@
 
 use super::{LocalPeerDispatcher, MAX_CONTEXT_BYTES, actor};
 use crate::request_principal::{Capability, RequestPrincipal};
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use medousa_acp_client::coordination::store::CoordinationStore;
 use medousa_acp_client::coordination::store::intake::OwnerIntakeClaim;
 use medousa_forge::execution::ExecutionClass;
@@ -49,6 +49,141 @@ impl LocalPeerDispatcher {
                 Ok(work(&store))
             })
             .await?
+    }
+
+    /// Return a completion only when the authenticated source's exact durable
+    /// proposal route has a committed owner acknowledgment and decision.
+    pub async fn remote_peer_completion_result(
+        &self,
+        source_device_id: &str,
+        route: &crate::peer_coordination_mesh::RemotePeerCompletionDestination,
+    ) -> Result<Option<crate::peer_coordination_mesh::RemotePeerCompletionResult>> {
+        use crate::peer_coordination_mesh::RemotePeerCompletionResult;
+
+        let source_device_id = source_device_id.to_string();
+        let mut route = route.clone();
+        let local_runtime_id = self.local_runtime_id.clone();
+        let route_and_ack = self
+            .stored(move |store| {
+                if route.source_device_id != source_device_id {
+                    bail!("completion route does not match authenticated source peer");
+                }
+                // Dispatch persists canonical custody before updating the mesh
+                // route. Recover that exact binding after a crash between those
+                // writes; absence remains pending and never triggers dispatch.
+                if route.binding.is_none() {
+                    let expected = route
+                        .expected_binding
+                        .as_ref()
+                        .context("remote completion route has no expected assignment identity")?;
+                    route.binding =
+                        store.peer_if_recorded(&expected.channel, &route.assignment_id)?;
+                }
+                let Some(binding) = route.binding.as_ref() else {
+                    return Ok(None);
+                };
+                if binding.target.execution_runtime_id != local_runtime_id
+                    || route.assignment_id != binding.assignment_id
+                    || route
+                        .expected_binding
+                        .as_ref()
+                        .is_none_or(|expected| !expected.matches(binding))
+                {
+                    bail!("remote completion route binding does not match this destination");
+                }
+                let Some(receipt) =
+                    store.receipt_if_recorded(&binding.channel, &binding.assignment_id)?
+                else {
+                    return Ok(None);
+                };
+                if receipt.binding != *binding {
+                    bail!("persisted terminal receipt differs from the completion route");
+                }
+                let Some(ack) = store.owner_intake_acknowledgment(&receipt)? else {
+                    return Ok(None);
+                };
+                if route.remote_owner_session != ack.decision.session
+                    || ack.intake.receipt != receipt
+                    || ack.decision.entry_seq == 0
+                    || ack.decision_digest.trim().is_empty()
+                {
+                    bail!("durable owner acknowledgment does not match the completion route");
+                }
+                Ok(Some((route, receipt, ack)))
+            })
+            .await?;
+        let Some((route, receipt, acknowledgment)) = route_and_ack else {
+            return Ok(None);
+        };
+
+        let store = crate::session_store::get_session_store();
+        let decision_session = acknowledgment.decision.session.session_id.clone();
+        let decision_ref = acknowledgment.decision.clone();
+        let decision_digest = acknowledgment.decision_digest.clone();
+        let lookup_decision_digest = decision_digest.clone();
+        let owner_profile_id = acknowledgment
+            .intake
+            .receipt
+            .binding
+            .owner_principal_id
+            .clone();
+        let decision = self
+            .state
+            .forge_execution
+            .run(
+                ExecutionClass::StoreIo,
+                medousa_forge::execution::MAX_STORE_PAYLOAD_BYTES,
+                move || {
+                    Ok((|| -> Result<_> {
+                        if !crate::session_catalog::session_visible_to_profile(
+                            decision_session.as_str(),
+                            &owner_profile_id,
+                        ) {
+                            bail!("remote owner session is no longer visible to its owner");
+                        }
+                        let mut before = decision_ref.entry_seq.checked_add(1);
+                        for _ in 0..80 {
+                            let page = store.load_transcript_entries_page(
+                                &decision_session,
+                                128,
+                                before,
+                            );
+                            if let Some(entry) = page.entries.into_iter().find(|entry| {
+                                entry.entry_id == decision_ref.entry_id
+                                    && entry.entry_seq == decision_ref.entry_seq
+                            }) {
+                                if entry.turn.role != "assistant"
+                                    || entry.turn.content.trim().is_empty()
+                                    || entry.content_digest != lookup_decision_digest
+                                    || crate::session_store::transcript_content_digest(&entry.turn)?
+                                        != lookup_decision_digest
+                                {
+                                    bail!("durable owner decision content does not match its acknowledgment");
+                                }
+                                return Ok(entry.turn);
+                            }
+                            before = page.next_cursor;
+                            if before.is_none() {
+                                break;
+                            }
+                        }
+                        bail!("committed owner decision entry is missing from the remote session")
+                    })())
+                },
+            )
+            .await??;
+        Ok(Some(RemotePeerCompletionResult {
+            schema_version: crate::peer_coordination_mesh::PEER_COMPLETION_RESULT_SCHEMA_VERSION,
+            source_device_id: route.source_device_id,
+            request_digest: route.source_request_digest,
+            proposal_id: route.proposal_id,
+            proposal_request_digest: route.proposal_request_digest,
+            binding: route.binding.expect("binding checked"),
+            receipt,
+            owner_acknowledgment: acknowledgment,
+            committed_decision: decision,
+            committed_decision_digest: decision_digest,
+        }))
     }
 
     pub async fn approve_owner_continuation(
@@ -212,6 +347,24 @@ impl LocalPeerDispatcher {
         }
     }
 
+    pub(super) async fn block_owner_event(
+        &self,
+        event: &OwnerEvent,
+        reason: &str,
+        requires_user_decision: bool,
+    ) -> Result<OwnerIntakeResult> {
+        let blocked = OwnerEventBlocked {
+            event_id: event.event_id.clone(),
+            reason: reason.to_string(),
+            blocked_at: chrono::Utc::now(),
+            requires_user_decision,
+        };
+        let channel = event.channel.clone();
+        self.stored(move |store| store.block_owner_event(&channel, &blocked))
+            .await?;
+        Ok(OwnerIntakeResult::NeedsReconciliation)
+    }
+
     async fn acknowledge_if_completed(
         &self,
         intake: PeerOwnerIntakeAttempt,
@@ -226,7 +379,7 @@ impl LocalPeerDispatcher {
         if ticket.is_some_and(|ticket| ticket.phase != TurnTicketPhase::Done) {
             return Ok(OwnerIntakeResult::NeedsReconciliation);
         }
-        let delivered = self
+        let acknowledgment = self
             .stored(move |store| {
                 let request =
                     store.require_owner_continuation(&intake.receipt, chrono::Utc::now())?;
@@ -241,7 +394,7 @@ impl LocalPeerDispatcher {
                 let Some(entry) =
                     committed_owner_decision(&entries, &request.owner_session, &intake.turn_id)
                 else {
-                    return Ok(false);
+                    return Ok(None);
                 };
                 let ack = PeerOwnerIntakeAcknowledgment {
                     intake,
@@ -253,14 +406,14 @@ impl LocalPeerDispatcher {
                     decision_digest: entry.content_digest.clone(),
                 };
                 store.acknowledge_owner_intake(&ack, &lease)?;
-                Ok(true)
+                Ok(Some(ack))
             })
             .await?;
-        Ok(if delivered {
-            OwnerIntakeResult::Delivered
+        if acknowledgment.is_some() {
+            Ok(OwnerIntakeResult::Delivered)
         } else {
-            OwnerIntakeResult::NeedsReconciliation
-        })
+            Ok(OwnerIntakeResult::NeedsReconciliation)
+        }
     }
 
     pub async fn drain_pending_owner_intake(

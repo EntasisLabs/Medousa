@@ -31,6 +31,12 @@ fn identity(owner: &str, session: &SessionRef, key: &str) -> String {
 }
 
 impl LocalPeerDispatcher {
+    pub async fn execution_target_inventory(
+        &self,
+    ) -> crate::workshop_contract::ExecutionTargetInventory {
+        crate::daemon::core::execution_target_inventory_for_state(&self.state).await
+    }
+
     pub(crate) async fn require_owned_work(&self, owner: &str, work_id: &str) -> Result<()> {
         let forge = self.state.forge.clone();
         let owner = owner.to_string();
@@ -82,7 +88,7 @@ impl LocalPeerDispatcher {
                             && (include_terminal || !item.state.is_terminal())
                     })
                     .collect::<Vec<_>>();
-                items.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
+                items.sort_by_key(|item| std::cmp::Reverse(item.updated_at));
                 let truncated = items.len() > 128;
                 items.truncate(128);
                 let projects = items

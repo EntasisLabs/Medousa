@@ -5,6 +5,8 @@
 //! authority, session, turn, and runtime modules without server/desktop hosts.
 
 pub mod agent_mode_context;
+#[cfg(any(feature = "full-daemon", feature = "embedded-daemon"))]
+pub mod assistant_placement;
 
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod active_work_tools;
@@ -15,6 +17,7 @@ include!("full_daemon.rs");
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 #[path = "embedded_agent_runtime.rs"]
 pub mod agent_runtime;
+#[cfg(feature = "full-daemon")]
 pub mod assistant_assignments;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub use agent_runtime::execution_context;
@@ -76,6 +79,8 @@ pub mod mobile_tool_registry;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod openai_codex_chat_client;
 pub mod peer_coordination_mesh;
+#[cfg(any(feature = "full-daemon", feature = "embedded-daemon"))]
+pub mod peer_completion_delivery;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod peer_execution_policy;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]

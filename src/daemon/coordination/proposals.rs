@@ -26,7 +26,7 @@ impl LocalPeerDispatcher {
                 ExecutionClass::StoreIo,
                 medousa_forge::execution::MAX_STORE_PAYLOAD_BYTES,
                 move || {
-                    Ok((|| -> Result<_> {
+                    Ok(
                         if crate::session_catalog::session_visible_to_profile(
                             session_id.as_str(),
                             &owner,
@@ -45,8 +45,8 @@ impl LocalPeerDispatcher {
                                 &session_id,
                                 after.as_deref(),
                             )
-                        }
-                    })())
+                        },
+                    )
                 },
             )
             .await??;
@@ -88,10 +88,8 @@ impl LocalPeerDispatcher {
         self.state
             .forge_execution
             .run(ExecutionClass::StoreIo, MAX_CONTEXT_BYTES, move || {
-                Ok(store.record_proposal_with_source_sessions(
-                    &saved,
-                    &projected_source_session_ids,
-                ))
+                Ok(store
+                    .record_proposal_with_source_sessions(&saved, &projected_source_session_ids))
             })
             .await??;
         Ok(proposal)
@@ -197,6 +195,12 @@ impl LocalPeerDispatcher {
             true,
         )
         .await?;
-        self.dispatch(principal, &proposal.request).await
+        let binding = self.dispatch(principal, &proposal.request).await?;
+        crate::peer_coordination_mesh::record_remote_peer_completion_destination_binding_admitted(
+            &proposal.proposal_id,
+            &binding,
+        )
+        .await?;
+        Ok(binding)
     }
 }

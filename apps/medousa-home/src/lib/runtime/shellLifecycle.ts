@@ -1,5 +1,6 @@
 import { initMobileNative } from "$lib/mobileNative";
 import { startPeerMessageNotificationPolling } from "$lib/peerNotifications";
+import { startRemotePeerCompletionSync, requestRemotePeerCompletionSync } from "$lib/remotePeerCompletionSync";
 import { layout } from "$lib/runtime/layout.svelte";
 import { toast } from "$lib/runtime/toast.svelte";
 import { wizard } from "$lib/stores/wizard.svelte";
@@ -49,9 +50,11 @@ export function startShellRootResources(): () => void {
   bindAllFeaturePorts();
   setUndertakingGroupIdPort(() => shellTabs.activeGroupId);
   setActiveWorkshopKindPort(() => workshops.activeWorkshop?.kind);
-  setWorkshopReconnectPort((onHealthChange) =>
-    reconnectWorkshop(onHealthChange ?? (() => {})),
-  );
+  setWorkshopReconnectPort(async (onHealthChange) => {
+    const health = await reconnectWorkshop(onHealthChange ?? (() => {}));
+    if (health) void requestRemotePeerCompletionSync();
+    return health;
+  });
   setArtifactSessionTitlePort((sessionId) => {
     const match = chat.sessions.find((session) => session.session_id === sessionId);
     return match?.display_name?.trim() || sessionId;
@@ -172,6 +175,10 @@ export function startShellRootResources(): () => void {
     "peer-message-notifications",
     startPeerMessageNotificationPolling(),
   );
+  const stopRemotePeerCompletionSync = bindRootResource(
+    "remote-peer-completion-sync",
+    startRemotePeerCompletionSync(),
+  );
   const onKeydown = (event: KeyboardEvent) => {
     if (layout.isMobile) return;
 
@@ -228,6 +235,7 @@ export function startShellRootResources(): () => void {
     stopMobileViewport();
     stopNative();
     stopPeerNotifications();
+    stopRemotePeerCompletionSync();
     stopHotkeys();
     stopWorkAskFocus();
     setActiveWorkshopKindPort(() => undefined);

@@ -32,8 +32,12 @@ use crate::mesh::{
 };
 use crate::pairing::{PairedDeviceRecord, PairingService};
 use crate::peer_coordination_mesh::{
-    REMOTE_PEER_PROPOSAL_SCHEMA_VERSION, RemotePeerProposalRequest, RemotePeerProposalResponse,
-    materialize_remote_peer_proposal_context, validate_remote_peer_proposal_request,
+    PEER_COMPLETION_QUERY_SCHEMA_VERSION, REMOTE_PEER_PROPOSAL_SCHEMA_VERSION,
+    RemotePeerCompletionQuery, RemotePeerCompletionResponse, RemotePeerProposalRequest,
+    RemotePeerProposalResponse, materialize_remote_peer_proposal_context,
+    record_remote_peer_completion_destination_binding_admitted,
+    record_remote_peer_completion_destination_proposal_admitted,
+    remote_peer_completion_destination_for_query_admitted, validate_remote_peer_proposal_request,
 };
 use crate::peer_execution_policy::{
     AssistantWorkAdmission, PeerExecutionPolicyStore, TaskExecutionGrant, execution_tool_domain,
@@ -211,6 +215,14 @@ pub fn mesh_surface() -> DeclaredRouter<MeshApiState> {
                 1024 * 1024,
             ),
             post(propose_remote_peer),
+        )
+        .route(
+            peer_policy(
+                axum::http::Method::POST,
+                "/v1/mesh/peer-assignment-results/query",
+                64 * 1024,
+            ),
+            post(query_remote_peer_completion),
         )
         .route(
             peer_policy(
@@ -1046,6 +1058,7 @@ async fn propose_remote_peer(
     })?;
     let last = entries.last().expect("non-empty checked");
     let proposal_principal = RequestPrincipal::continuation(owner);
+    let route_request = request.clone();
     let proposal = host
         .propose_for_turn(
             &proposal_principal,
@@ -1062,6 +1075,13 @@ async fn propose_remote_peer(
         )
         .await
         .map_err(internal)?;
+    record_remote_peer_completion_destination_proposal_admitted(
+        &sender.phone_id,
+        &route_request,
+        &proposal,
+    )
+    .await
+    .map_err(internal)?;
     let binding = if policy.permits_unattended_agent_launch(chrono::Utc::now()) {
         // The signed peer request has already been authenticated and admitted
         // by the destination-owned policy. Re-materialize operator authority
@@ -1079,20 +1099,27 @@ async fn propose_remote_peer(
         )
         .await
         .map_err(internal)?;
-        Some(
-            host.dispatch_approved_proposal(
+        let binding = host
+            .dispatch_approved_proposal(
                 &operator,
                 proposal.request.channel.clone(),
                 proposal.proposal_id.clone(),
             )
             .await
-            .map_err(internal)?,
-        )
+            .map_err(internal)?;
+        record_remote_peer_completion_destination_binding_admitted(&proposal.proposal_id, &binding)
+            .await
+            .map_err(internal)?;
+        Some(binding)
     } else {
         None
     };
     let response = RemotePeerProposalResponse {
         schema_version: REMOTE_PEER_PROPOSAL_SCHEMA_VERSION,
+        source_request_digest: Some(
+            crate::peer_coordination_mesh::remote_peer_proposal_request_digest(&route_request)
+                .map_err(internal)?,
+        ),
         proposal,
         binding,
     };
@@ -1112,6 +1139,136 @@ async fn propose_remote_peer(
     )
     .map_err(internal)?;
     let seq = registry::allocate_outbound_seq(&sender.phone_id).map_err(internal)?;
+    let response_envelope = sign_envelope(
+        pairing.identity().signing_key(),
+        &state.local_device_id,
+        &sender.phone_id,
+        seq,
+        MeshCapability::TaskResult,
+        &payload_hash,
+        chrono::Duration::seconds(DEFAULT_ENVELOPE_TTL_SECS),
+    );
+    let receipt = delivery::receipt_header_value(&accepted.receipt).map_err(internal)?;
+    Ok((
+        [("x-medousa-mesh-receipt", receipt)],
+        Json(MeshEnvelopedRequest {
+            envelope: response_envelope,
+            payload: response,
+        }),
+    )
+        .into_response())
+}
+
+async fn query_remote_peer_completion(
+    State(state): State<MeshApiState>,
+    Extension(principal): Extension<RequestPrincipal>,
+    Json(body): Json<MeshInboundBody<RemotePeerCompletionQuery>>,
+) -> Result<Response, (StatusCode, String)> {
+    require_pairing_principal(&principal)?;
+    let sender = authorize_remote_peer(&state, &principal)?;
+    if !record_has_capability(&sender, CAP_TASK_REQUEST) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "task.request grant required to retrieve a peer completion".to_string(),
+        ));
+    }
+    let (envelope, query) = body.into_parts();
+    let envelope = envelope.ok_or_else(|| {
+        (
+            StatusCode::UNAUTHORIZED,
+            "signed mesh envelope required for completion query".to_string(),
+        )
+    })?;
+    if envelope.sender_device_id.trim() != sender.phone_id.trim()
+        || envelope.recipient_device_id.trim() != state.local_device_id.trim()
+        || query.source_device_id != sender.phone_id
+        || query.schema_version != PEER_COMPLETION_QUERY_SCHEMA_VERSION
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "completion query identities or schema do not match the authenticated peer".into(),
+        ));
+    }
+    let query_hash =
+        payload_hash_hex(&query).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    verify_enveloped_payload(
+        &MeshEnvelopedRequest {
+            envelope: envelope.clone(),
+            payload: query.clone(),
+        },
+        &sender.phone_public_key,
+        &sender.phone_id,
+        &state.local_device_id,
+        MeshCapability::TaskRequest,
+        true,
+    )
+    .map_err(|error| (StatusCode::UNAUTHORIZED, error.to_string()))?;
+    let destination =
+        remote_peer_completion_destination_for_query_admitted(&sender.phone_id, &query)
+            .await
+            .map_err(internal)?;
+    let proposal = destination.as_ref().and_then(|route| {
+        route
+            .proposal
+            .clone()
+            .map(|proposal| RemotePeerProposalResponse {
+                schema_version: REMOTE_PEER_PROPOSAL_SCHEMA_VERSION,
+                source_request_digest: Some(route.source_request_digest.clone()),
+                proposal,
+                binding: route.binding.clone(),
+            })
+    });
+    let completion = match destination.as_ref() {
+        Some(route) => {
+            let host = crate::daemon::coordination::local_coordination_host().ok_or_else(|| {
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "peer coordination is unavailable".to_string(),
+                )
+            })?;
+            host.remote_peer_completion_result(&sender.phone_id, route)
+                .await
+                .map_err(internal)?
+        }
+        _ => None,
+    };
+    let response = RemotePeerCompletionResponse {
+        schema_version: PEER_COMPLETION_QUERY_SCHEMA_VERSION,
+        source_request_digest: query.source_request_digest.clone(),
+        proposal,
+        completion,
+    };
+    let pairing = state.pairing.as_ref().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "LAN pairing is not enabled on this workshop".to_string(),
+        )
+    })?;
+    let payload_hash = payload_hash_hex(&response)
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    let pairing_for_io = Arc::clone(pairing);
+    let local_device_id_for_io = state.local_device_id.clone();
+    let sender_device_id_for_io = sender.phone_id.clone();
+    let envelope_for_io = envelope.clone();
+    let query_hash_for_io = query_hash.clone();
+    let (accepted, seq) = crate::peer_completion_delivery::completion_execution_service()
+        .run(
+            medousa_forge::execution::ExecutionClass::StoreIo,
+            64 * 1024,
+            move || {
+                let accepted = delivery::accept_inbound_delivery(
+                    pairing_for_io.identity().signing_key(),
+                    &local_device_id_for_io,
+                    &envelope_for_io,
+                    &query_hash_for_io,
+                );
+                let seq = registry::allocate_outbound_seq(&sender_device_id_for_io);
+                Ok((accepted, seq))
+            },
+        )
+        .await
+        .map_err(internal)?;
+    let (accepted, seq) = (accepted.map_err(internal)?, seq.map_err(internal)?);
     let response_envelope = sign_envelope(
         pairing.identity().signing_key(),
         &state.local_device_id,
@@ -1610,7 +1767,7 @@ mod tests {
     #[test]
     fn mesh_inventory_is_complete_and_peer_scoped() {
         let entries = mesh_surface().inventory().entries().collect::<Vec<_>>();
-        assert_eq!(entries.len(), 18);
+        assert_eq!(entries.len(), 19);
         assert!(entries.iter().all(|entry| {
             entry.group == RouteGroup::PeerExchange
                 && entry.required_capability == Some("peer.exchange")
@@ -1640,6 +1797,11 @@ mod tests {
             entry.method == "POST"
                 && entry.path == "/v1/mesh/peer-proposals"
                 && entry.body_limit == 1024 * 1024
+        }));
+        assert!(entries.iter().any(|entry| {
+            entry.method == "POST"
+                && entry.path == "/v1/mesh/peer-assignment-results/query"
+                && entry.body_limit == 64 * 1024
         }));
         assert!(entries.iter().any(|entry| {
             entry.method == "POST" && entry.path == "/v1/mesh/tasks/{work_id}/control"

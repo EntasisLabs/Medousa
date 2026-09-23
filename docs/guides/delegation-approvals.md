@@ -53,13 +53,37 @@ deploy, or inherit the completed peer's authority. Every follow-up still appears
 as a separate approval card before execution.
 
 For work executed on a paired workshop, the originating phone chat also projects
-the immutable terminal outcome and result into the delegation card. This keeps
-completion visible even though the canonical owner continuation is committed by
-the execution workshop's request-scoped shadow session. A follow-up proposal
-prepared by that continuation is projected into the originating chat as a new
-approval card.
+the immutable terminal outcome and result into the delegation card. When owner
+continuation was included, the execution workshop commits Medousa's answer while
+the phone is away. On return or reconnect, the phone retrieves that committed
+answer and adds it to the original chat once. Reopening a previously visited
+chat also refreshes its history. A follow-up proposal prepared by that
+continuation is projected into the originating chat as a new approval card.
+
+This return requires the original paired workshop to be reachable. Keep the
+workshop daemon running while the phone is away; closing Live or the phone app
+does not cancel accepted work. The return flow refreshes while the app is open;
+it does not send a background notification or start Live automatically. Proposals
+created before source-chat return tracking was available retain their existing
+card-based result view.
 
 This surface requires operator execution access on the workshop that owns the
 proposal. Unsupported workshops do not show it. The phone aggregates proposal
 inboxes from Personal and paired workshops while the chat stays on Personal;
 approval and launch are still executed by the exact destination workshop.
+
+## Trying the delegation and return flow
+
+1. In Assistant mode on the phone, ask what work is active and select an exact
+   project and available agent on a paired workshop.
+2. Ask for a small, verifiable task. Review the proposal and its shared context,
+   include owner continuation, then choose **Approve & start**. For existing
+   running work, use **Approve & adopt** instead.
+3. Leave the chat or close Live while the workshop completes the task. Return to
+   Personal and open the original chat with the paired workshop reachable.
+4. Check that Medousa's answer appears once in that chat and describes the actual
+   result. Reopen the chat and reconnect again to check that it stays a single
+   answer. Any proposed next step still needs its own approval card.
+
+A terminal agent result is evidence that its prompt finished. Inspect the changes
+and relevant checks before treating the project as reviewed or ready to publish.

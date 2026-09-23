@@ -12,6 +12,10 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 
 use crate::bridge_tools::{BridgeObject, CognitionMcpPromoteToJobTool, McpPromoteToJobInput};
+#[cfg(feature = "full-daemon")]
+use crate::daemon::coordination::assignments::{
+    AssignmentEventsQuery, AssignmentGetQuery, AssignmentListQuery, OwnerEventsQuery,
+};
 use crate::events::TuiEvent;
 use crate::public_api::{COGNITION_RUNTIME_MUTATE, COGNITION_RUNTIME_QUERY};
 use crate::recurring_delivery::RecurringDeliverySpec;
@@ -60,6 +64,18 @@ enum RuntimeFrom {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action")]
 pub enum RuntimeQueryAction {
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "assignment.list")]
+    AssignmentList(AssignmentListQuery),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "assignment.get")]
+    AssignmentGet(AssignmentGetQuery),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "assignment.events")]
+    AssignmentEvents(AssignmentEventsQuery),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "owner.events")]
+    OwnerEvents(OwnerEventsQuery),
     #[serde(rename = "job.list")]
     JobList(JobList),
     #[serde(rename = "job.status")]
@@ -311,19 +327,28 @@ impl JsonSchema for RuntimeQueryAction {
     }
 
     fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> Schema {
-        advertised_object_schema(&[(
-            "action",
-            string_enum_schema(&[
-                "job.list",
-                "job.status",
-                "recurring.list",
-                "recurring.doctor",
-                "recurring.preview",
-                "workflow.status",
-                "delivery.status",
-            ]),
-            true,
-        )])
+        let mut actions = vec![
+            "job.list",
+            "job.status",
+            "recurring.list",
+            "recurring.doctor",
+            "recurring.preview",
+            "workflow.status",
+            "delivery.status",
+        ];
+        #[cfg(feature = "full-daemon")]
+        actions
+            .splice(
+                0..0,
+                [
+                    "assignment.list",
+                    "assignment.get",
+                    "assignment.events",
+                    "owner.events",
+                ],
+            )
+            .for_each(drop);
+        advertised_object_schema(&[("action", string_enum_schema(&actions), true)])
     }
 }
 
@@ -352,7 +377,7 @@ impl JsonSchema for RuntimeMutateAction {
 }
 
 pub fn runtime_type_schemas() -> Vec<TypedActionSchema> {
-    vec![
+    let mut schemas = vec![
         typed_action_schema::<JobList>(QUERY_ID, "job.list", "List durable jobs"),
         typed_action_schema::<JobStatus>(QUERY_ID, "job.status", "Status for one job"),
         typed_action_schema::<RecurringList>(
@@ -421,7 +446,35 @@ pub fn runtime_type_schemas() -> Vec<TypedActionSchema> {
             "workflow.plan",
             "Draft a durable workflow from a natural-language goal",
         ),
-    ]
+    ];
+    #[cfg(feature = "full-daemon")]
+    {
+        let mut assignment_schemas = vec![
+            typed_action_schema::<AssignmentListQuery>(
+                QUERY_ID,
+                "assignment.list",
+                "List your owned assignments across native executors on this workshop",
+            ),
+            typed_action_schema::<AssignmentGetQuery>(
+                QUERY_ID,
+                "assignment.get",
+                "Inspect one owned assignment and exact execution provenance",
+            ),
+            typed_action_schema::<AssignmentEventsQuery>(
+                QUERY_ID,
+                "assignment.events",
+                "Read an owned assignment's durable event history",
+            ),
+            typed_action_schema::<OwnerEventsQuery>(
+                QUERY_ID,
+                "owner.events",
+                "Inspect your durable pending, consumed, and blocked owner events",
+            ),
+        ];
+        assignment_schemas.append(&mut schemas);
+        schemas = assignment_schemas;
+    }
+    schemas
 }
 
 pub struct CognitionRuntimeQueryTool {
@@ -460,7 +513,7 @@ pub fn register_runtime_api_tools(
 
 #[medousa_tool(id = QUERY_ID)]
 impl CognitionRuntimeQueryTool {
-    /// Inspect jobs, recurring, workflows, or delivery. action is a typed name (job.list, workflow.status, …). Fetch fields with cognition_schema types=[...].
+    /// Inspect owned assignments, jobs, recurring, workflows, or delivery. action is a typed name (job.list, workflow.status, …). Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(
         &self,
         action: RuntimeQueryAction,
@@ -480,11 +533,56 @@ impl CognitionRuntimeMutateTool {
     }
 }
 
+#[cfg(feature = "full-daemon")]
+fn runtime_error(error: impl std::fmt::Display) -> stasis::prelude::StasisError {
+    stasis::prelude::StasisError::PortFailure(error.to_string())
+}
+
+#[cfg(feature = "full-daemon")]
+fn admitted_assignment_query() -> stasis::prelude::Result<(
+    Arc<crate::daemon::coordination::LocalPeerDispatcher>,
+    Arc<crate::agent_runtime::execution_context::TurnExecutionContext>,
+)> {
+    let turn = crate::agent_runtime::execution_context::active_turn_execution_context()
+        .ok_or_else(|| runtime_error("assignment queries require an admitted owner turn"))?;
+    let host = crate::daemon::coordination::local_coordination_host()
+        .ok_or_else(|| runtime_error("assignment ledger is not available on this workshop"))?;
+    Ok((host, turn))
+}
+
 async fn dispatch_query(
     tool: &CognitionRuntimeQueryTool,
     action: RuntimeQueryAction,
 ) -> stasis::prelude::Result<Value> {
     match action {
+        #[cfg(feature = "full-daemon")]
+        RuntimeQueryAction::AssignmentList(params) => {
+            let (host, turn) = admitted_assignment_query()?;
+            host.list_assignments(turn.principal(), params)
+                .await
+                .map_err(runtime_error)
+        }
+        #[cfg(feature = "full-daemon")]
+        RuntimeQueryAction::AssignmentGet(params) => {
+            let (host, turn) = admitted_assignment_query()?;
+            host.get_assignment(turn.principal(), params)
+                .await
+                .map_err(runtime_error)
+        }
+        #[cfg(feature = "full-daemon")]
+        RuntimeQueryAction::AssignmentEvents(params) => {
+            let (host, turn) = admitted_assignment_query()?;
+            host.assignment_events(turn.principal(), params)
+                .await
+                .map_err(runtime_error)
+        }
+        #[cfg(feature = "full-daemon")]
+        RuntimeQueryAction::OwnerEvents(params) => {
+            let (host, turn) = admitted_assignment_query()?;
+            host.owner_events(turn.principal(), params)
+                .await
+                .map_err(runtime_error)
+        }
         RuntimeQueryAction::JobList(params) => params.execute(tool).await,
         RuntimeQueryAction::JobStatus(params) => params.execute(tool).await,
         RuntimeQueryAction::RecurringList(params) => params.execute(tool).await,
@@ -845,6 +943,63 @@ fn present(value: Option<&str>) -> bool {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[cfg(feature = "full-daemon")]
+    #[test]
+    fn assignment_queries_do_not_accept_model_supplied_owners() {
+        assert!(
+            serde_json::from_value::<RuntimeQueryAction>(json!({
+                "action": "assignment.list", "principal_id": "someone-else"
+            }))
+            .is_err()
+        );
+        assert!(matches!(
+            serde_json::from_value::<RuntimeQueryAction>(json!({
+                "action": "assignment.list", "kind": "external_peer", "limit": 5
+            }))
+            .unwrap(),
+            RuntimeQueryAction::AssignmentList(_)
+        ));
+        assert!(admitted_assignment_query().is_err());
+        assert!(
+            serde_json::from_value::<RuntimeQueryAction>(json!({
+                "action": "owner.events", "owner_principal_id": "someone-else"
+            }))
+            .is_err()
+        );
+        for name in [
+            "assignment.list",
+            "assignment.get",
+            "assignment.events",
+            "owner.events",
+        ] {
+            assert!(
+                runtime_type_schemas()
+                    .iter()
+                    .any(|entry| entry.name == name)
+            );
+        }
+    }
+
+    #[cfg(not(feature = "full-daemon"))]
+    #[test]
+    fn embedded_runtime_does_not_advertise_workshop_assignment_queries() {
+        for action in [
+            "assignment.list",
+            "assignment.get",
+            "assignment.events",
+            "owner.events",
+        ] {
+            assert!(
+                serde_json::from_value::<RuntimeQueryAction>(json!({ "action": action })).is_err()
+            );
+            assert!(
+                !runtime_type_schemas()
+                    .iter()
+                    .any(|entry| entry.name == action)
+            );
+        }
+    }
 
     #[test]
     fn job_list_deserializes_from_action_only() {

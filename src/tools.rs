@@ -336,7 +336,7 @@ impl CognitionJobEnqueueTool {
             .await;
         }
 
-        self.runtime.enqueue_job(job).await?;
+        #[cfg(feature = "full-daemon")]
         if let Some(scope) =
             crate::agent_runtime::execution_context::turn_continuation_scope(&self.turn_scope).await
         {
@@ -348,7 +348,21 @@ impl CognitionJobEnqueueTool {
                 &scope,
                 Some("stasis".to_string()),
                 Some(COGNITION_JOB_ENQUEUE_ID.as_str().to_string()),
-            );
+            )
+            .await;
+        }
+        if let Err(error) = self.runtime.enqueue_job(job).await {
+            #[cfg(feature = "full-daemon")]
+            let _ = crate::assistant_assignments::project_runtime_event(
+                medousa_types::assistant_assignment::AssistantAssignmentKind::Job,
+                &job_id,
+                medousa_types::assistant_assignment::AssistantAssignmentStatus::Failed,
+                0,
+                "runtime:stasis",
+                Some(format!("enqueue rejected: {error}")),
+            )
+            .await;
+            return Err(error);
         }
 
         let _ = self

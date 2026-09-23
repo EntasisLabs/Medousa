@@ -34,6 +34,7 @@ pub const INSTANT_TOOL_NAMES: &[&str] = &[
 /// Every proposal and launch still passes through its existing authenticated
 /// approval and execution-admission boundaries.
 pub const ASSISTANT_ELEVATED_TOOL_NAMES: &[&str] = &[
+    "cognition_assistant_placement",
     "cognition_peer_delegate",
     "cognition_peer_discover",
     "cognition_peer_propose",
@@ -123,7 +124,8 @@ mod tests {
     #[test]
     fn assistant_elevated_surface_is_coordination_only() {
         let tools = assistant_elevated_tool_names();
-        assert_eq!(tools.len(), 3);
+        assert_eq!(tools.len(), 4);
+        assert!(tools.contains("cognition_assistant_placement"));
         assert!(tools.contains("cognition_peer_delegate"));
         assert!(tools.contains("cognition_peer_discover"));
         assert!(tools.contains("cognition_peer_propose"));

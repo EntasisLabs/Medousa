@@ -2011,6 +2011,13 @@ pub const MEDIA_UPLOAD_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const MESH_ACTIVE_WORK_POST: Operation = Operation {
+    id: "mesh.active_work.post",
+    method: "POST",
+    path: "/v1/mesh/active-work",
+    streaming: false,
+};
+
 pub const MESH_EXECUTION_TARGET_POST: Operation = Operation {
     id: "mesh.execution_target.post",
     method: "POST",
@@ -2078,6 +2085,20 @@ pub const MESH_OUTBOX_POST: Operation = Operation {
     id: "mesh.outbox.post",
     method: "POST",
     path: "/v1/mesh/outbox",
+    streaming: false,
+};
+
+pub const MESH_PEER_ASSIGNMENT_RESULTS_QUERY_POST: Operation = Operation {
+    id: "mesh.peer_assignment_results.query.post",
+    method: "POST",
+    path: "/v1/mesh/peer-assignment-results/query",
+    streaming: false,
+};
+
+pub const MESH_PEER_PROPOSALS_POST: Operation = Operation {
+    id: "mesh.peer_proposals.post",
+    method: "POST",
+    path: "/v1/mesh/peer-proposals",
     streaming: false,
 };
 
@@ -3474,6 +3495,7 @@ pub static ALL: &[Operation] = &[
     MCP_POLICY_EVALUATE_POST,
     MEDIA_BY_MEDIA_ID_GET,
     MEDIA_UPLOAD_POST,
+    MESH_ACTIVE_WORK_POST,
     MESH_EXECUTION_TARGET_POST,
     MESH_INBOX_GET,
     MESH_INTROS_BY_INTRO_ID_ACCEPT_POST,
@@ -3484,6 +3506,8 @@ pub static ALL: &[Operation] = &[
     MESH_OUTBOX_BY_ITEM_ID_FLUSH_POST,
     MESH_OUTBOX_GET,
     MESH_OUTBOX_POST,
+    MESH_PEER_ASSIGNMENT_RESULTS_QUERY_POST,
+    MESH_PEER_PROPOSALS_POST,
     MESH_PEERS_BY_DEVICE_ID_PATCH,
     MESH_PEERS_GET,
     MESH_RECEIPTS_GET,

@@ -28,6 +28,7 @@ describe("root resource probe", () => {
       "mobile-viewport",
       "mobile-native",
       "peer-message-notifications",
+      "remote-peer-completion-sync",
       "command-spotlight-hotkeys",
       "work-ask-focus",
     ]);

@@ -1019,7 +1019,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_coder_memory_recall",
-      "description": "Recall bounded STTP working-memory nodes from project and repository knowledge.",
+      "description": "Ask a natural-language question over bounded Coder memory. Defaults to the current environment lineage; use all_accepted to discover review-promoted knowledge across repositories.",
       "input_schema": {
         "properties": {
           "intent": {
@@ -1055,6 +1055,14 @@
           },
           "query": {
             "maxLength": 2000,
+            "type": "string"
+          },
+          "scope": {
+            "description": "lineage searches current/parent/undertaking/repository memory; all_accepted searches only accepted Coder knowledge across repositories",
+            "enum": [
+              "all_accepted",
+              "lineage"
+            ],
             "type": "string"
           }
         },
@@ -1185,14 +1193,14 @@
     {
       "registry": "coder_bound",
       "name": "cognition_coder_shell_run",
-      "description": "Run a bounded POSIX command in the Coder workspace; no preflight needed. Plain-text head/tail and exit status; session tools handle sustained commands.",
+      "description": "Start a POSIX command, or poll its session_id with poll=true and no command. wait_ms only bounds observation; running commands keep executing. Use shell_session_interrupt to cancel.",
       "input_schema": {
         "properties": {
           "attempt_id": {
             "type": "string"
           },
           "command": {
-            "description": "POSIX shell script; quoting and completion are handled by the runtime.",
+            "description": "POSIX shell script to start. Omit when polling an existing command.",
             "type": "string"
           },
           "intent": {
@@ -1206,12 +1214,16 @@
           "lease_id": {
             "type": "string"
           },
+          "poll": {
+            "description": "Observe the existing command without submitting it again. Supply its session_id.",
+            "type": "boolean"
+          },
           "session_id": {
             "description": "Reuse a turn-owned session when provided by the runtime",
             "type": "string"
           },
           "wait_ms": {
-            "description": "How long to wait for command completion (default 15000, max 15000)",
+            "description": "Observation window in milliseconds (default 15000, max 15000). Expiry leaves the command running; poll its session_id.",
             "type": "integer"
           },
           "work_id": {
@@ -1219,7 +1231,6 @@
           }
         },
         "required": [
-          "command",
           "intent"
         ],
         "type": "object"
@@ -1736,7 +1747,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_memory_query",
-      "description": "Read Locus memory: schema, AVEC context, list, recall, tags, or mood presets. action is a typed name (memory.context, memory.recall, …). Fetch fields with cognition_schema types=[...].",
+      "description": "Read Locus memory: schema, AVEC context, list, natural-language recall, tags, or mood presets. memory.recall accepts a question; omit session_id for the current turn or pass null for cross-session retrieval. Fetch action fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
@@ -1810,15 +1821,19 @@
     {
       "registry": "coder_bound",
       "name": "cognition_runtime_query",
-      "description": "Inspect jobs, recurring, workflows, or delivery. action is a typed name (job.list, workflow.status, …). Fetch fields with cognition_schema types=[...].",
+      "description": "Inspect owned assignments, jobs, recurring, workflows, or delivery. action is a typed name (job.list, workflow.status, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
           "action": {
             "enum": [
+              "assignment.events",
+              "assignment.get",
+              "assignment.list",
               "delivery.status",
               "job.list",
               "job.status",
+              "owner.events",
               "recurring.doctor",
               "recurring.list",
               "recurring.preview",
@@ -1876,6 +1891,9 @@
                 "artifacts.read",
                 "artifacts.search",
                 "artifacts.write",
+                "assignment.events",
+                "assignment.get",
+                "assignment.list",
                 "calendar.create",
                 "calendar.delete",
                 "calendar.export",
@@ -1910,6 +1928,7 @@
                 "memory.schema",
                 "memory.store",
                 "memory.tags",
+                "owner.events",
                 "recurring.cancel",
                 "recurring.doctor",
                 "recurring.list",
@@ -2409,8 +2428,211 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:peers",
         "general:authorized",
         "general:domain:peers"
+      ]
+    },
+    {
+      "registry": "general_runtime",
+      "name": "cognition_assistant_placement",
+      "description": "Rank currently observed workshop and local ACP candidates against explicit task needs, requested or forbidden runtime/workshop constraints, governed work, and context locality. The result is read-only placement guidance; it never grants authority, adopts work, approves, or dispatches an executor.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "include_terminal": {
+            "default": false,
+            "description": "Include accepted, discarded, and failed Forge work as candidate bindings.",
+            "type": "boolean"
+          },
+          "requirements": {
+            "description": "Explicit placement constraints. This query cannot authorize or launch work.",
+            "properties": {
+              "context_locality": {
+                "default": "any_authorized",
+                "oneOf": [
+                  {
+                    "description": "Any currently authorized location may be considered.",
+                    "enum": [
+                      "any_authorized"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "description": "Prefer work colocated with the source context, but allow other eligible targets.",
+                    "enum": [
+                      "prefer_source_workshop"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "description": "Require the exact authority that owns the source context.",
+                    "enum": [
+                      "require_source_workshop"
+                    ],
+                    "type": "string"
+                  }
+                ]
+              },
+              "forbidden_adapters": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              "forbidden_executors": {
+                "default": [],
+                "items": {
+                  "enum": [
+                    "inline",
+                    "internal_worker",
+                    "local_acp",
+                    "workflow",
+                    "workshop"
+                  ],
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              "forbidden_runtime_ids": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              "forbidden_workshop_authority_ids": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              "forbidden_workshop_ids": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              "governed_work": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "forge_work_id": {
+                        "type": "string"
+                      },
+                      "workshop_authority_id": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "forge_work_id",
+                      "workshop_authority_id"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "requested_adapter": {
+                "default": null,
+                "description": "Exact external adapter name, e.g. `cursor`; meaningful for local ACP.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "requested_adoptable_agent_session_id": {
+                "default": null,
+                "description": "Exact ACP session requested for adoption. This must match inventory evidence.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "requested_executor": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "inline",
+                      "internal_worker",
+                      "local_acp",
+                      "workflow",
+                      "workshop"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "requested_runtime_id": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "requested_workshop_authority_id": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "requested_workshop_id": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "required_capabilities": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              "schema_version": {
+                "default": 1,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "source_workshop_authority_id": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "requirements"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "assistant:authorized",
+        "assistant:domain:peers"
       ]
     },
     {
@@ -2628,6 +2850,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:browser",
         "general:authorized",
         "general:domain:browser",
         "workshop:authorized:general",
@@ -2658,6 +2882,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:browser",
         "general:authorized",
         "general:domain:browser",
         "workshop:authorized:general",
@@ -2709,6 +2935,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:browser",
         "general:authorized",
         "general:domain:browser",
         "workshop:authorized:general",
@@ -2740,6 +2968,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:calendar",
         "general:authorized",
         "general:bootstrap",
         "general:domain:calendar",
@@ -2773,6 +3004,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:calendar",
         "general:authorized",
         "general:bootstrap",
         "general:domain:calendar",
@@ -2810,6 +3044,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:catalog",
         "general:authorized",
         "general:bootstrap",
         "general:domain:catalog",
@@ -2852,6 +3089,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:history",
         "general:authorized",
         "general:domain:history"
       ]
@@ -2883,6 +3122,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:history",
         "general:authorized",
         "general:domain:history"
       ]
@@ -3014,14 +3255,14 @@
     {
       "registry": "general_runtime",
       "name": "cognition_coder_shell_run",
-      "description": "Run a bounded POSIX command in the Coder workspace; no preflight needed. Plain-text head/tail and exit status; session tools handle sustained commands.",
+      "description": "Start a POSIX command, or poll its session_id with poll=true and no command. wait_ms only bounds observation; running commands keep executing. Use shell_session_interrupt to cancel.",
       "input_schema": {
         "properties": {
           "attempt_id": {
             "type": "string"
           },
           "command": {
-            "description": "POSIX shell script; quoting and completion are handled by the runtime.",
+            "description": "POSIX shell script to start. Omit when polling an existing command.",
             "type": "string"
           },
           "lease_generation": {
@@ -3030,21 +3271,22 @@
           "lease_id": {
             "type": "string"
           },
+          "poll": {
+            "description": "Observe the existing command without submitting it again. Supply its session_id.",
+            "type": "boolean"
+          },
           "session_id": {
             "description": "Reuse a turn-owned session when provided by the runtime",
             "type": "string"
           },
           "wait_ms": {
-            "description": "How long to wait for command completion (default 15000, max 15000)",
+            "description": "Observation window in milliseconds (default 15000, max 15000). Expiry leaves the command running; poll its session_id.",
             "type": "integer"
           },
           "work_id": {
             "type": "string"
           }
         },
-        "required": [
-          "command"
-        ],
         "type": "object"
       },
       "output_schema_present": true,
@@ -3170,6 +3412,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3196,6 +3439,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3222,6 +3466,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3242,6 +3487,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3297,6 +3543,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3370,6 +3617,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:computer",
         "general:authorized",
         "general:domain:computer",
         "workshop:authorized:general",
@@ -3428,6 +3677,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:computer",
         "general:authorized",
         "general:domain:computer",
         "workshop:authorized:general",
@@ -3455,6 +3706,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3471,6 +3723,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3566,6 +3819,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3610,6 +3864,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3785,6 +4040,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3809,6 +4065,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3829,6 +4086,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3867,6 +4125,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3983,6 +4242,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -4025,6 +4285,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -4077,6 +4338,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -4111,6 +4373,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -4153,6 +4416,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:skill",
         "general:authorized",
         "general:bootstrap",
         "general:domain:skill"
@@ -4181,6 +4447,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:identity",
         "general:authorized",
         "general:bootstrap",
         "general:domain:identity",
@@ -4214,6 +4483,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:identity",
         "general:authorized",
         "general:bootstrap",
         "general:domain:identity",
@@ -4315,6 +4587,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:media",
         "general:authorized",
         "general:bootstrap",
         "general:domain:media"
@@ -4339,6 +4614,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -4390,6 +4666,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -4416,6 +4693,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -4442,6 +4720,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -4467,6 +4746,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:catalog",
         "general:authorized",
         "general:domain:catalog"
       ]
@@ -4487,6 +4768,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:overlay",
         "general:domain:overlay"
       ]
     },
@@ -4521,6 +4803,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:overlay",
         "general:domain:overlay"
       ]
     },
@@ -4546,6 +4829,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:catalog",
         "general:authorized",
         "general:domain:catalog"
       ]
@@ -4573,6 +4858,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:memory",
         "general:authorized",
         "general:bootstrap",
         "general:domain:memory",
@@ -4587,7 +4875,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_memory_query",
-      "description": "Read Locus memory: schema, AVEC context, list, recall, tags, or mood presets. action is a typed name (memory.context, memory.recall, …). Fetch fields with cognition_schema types=[...].",
+      "description": "Read Locus memory: schema, AVEC context, list, natural-language recall, tags, or mood presets. memory.recall accepts a question; omit session_id for the current turn or pass null for cross-session retrieval. Fetch action fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
@@ -4610,6 +4898,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:memory",
         "general:authorized",
         "general:bootstrap",
         "general:domain:memory",
@@ -4654,6 +4945,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:skill",
         "general:authorized",
         "general:bootstrap",
         "general:domain:skill"
@@ -4735,10 +5029,70 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:skill",
         "general:authorized",
         "general:domain:skill",
         "workshop:authorized:research",
         "workshop:domain:openshell"
+      ]
+    },
+    {
+      "registry": "general_runtime",
+      "name": "cognition_peer_delegate",
+      "description": "Delegate an immutable Codex/Cursor/Hermes assignment to the exact remote workshop that owns a discovered Forge work item. This transfers a bounded, digest-checked slice of this chat. A trusted owner-level Assistant policy launches it immediately; narrower policies return a human approval proposal. Use only exact ids returned by cognition_active_work_discover. Reuse request_key only for an exact retry.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "continue_owner": {
+            "description": "Ask for a separately approved result-only continuation in this chat.",
+            "type": "boolean"
+          },
+          "execution_runtime_id": {
+            "description": "Exact agent-selectable execution_runtime_id from active-work discovery.",
+            "type": "string"
+          },
+          "existing_agent_session_id": {
+            "description": "Exact adoptable ACP session id from inventory; omission starts new work.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "forge_work_id": {
+            "description": "Exact forge_work_id from that same workshop inventory row.",
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "request_key": {
+            "description": "Stable retry key for this exact assignment intent.",
+            "type": "string"
+          },
+          "runtime": {
+            "enum": [
+              "codex",
+              "cursor",
+              "hermes"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "continue_owner",
+          "execution_runtime_id",
+          "forge_work_id",
+          "instructions",
+          "request_key",
+          "runtime"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "assistant:authorized",
+        "assistant:domain:remote_peers"
       ]
     },
     {
@@ -4752,8 +5106,8 @@
       },
       "output_schema_present": true,
       "placements": [
-        "general:authorized",
-        "general:domain:peers"
+        "assistant:authorized",
+        "assistant:domain:peers"
       ]
     },
     {
@@ -4812,8 +5166,8 @@
       },
       "output_schema_present": true,
       "placements": [
-        "general:authorized",
-        "general:domain:peers"
+        "assistant:authorized",
+        "assistant:domain:peers"
       ]
     },
     {
@@ -4845,6 +5199,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:runtime",
         "general:authorized",
         "general:bootstrap",
         "general:domain:runtime",
@@ -4859,15 +5216,19 @@
     {
       "registry": "general_runtime",
       "name": "cognition_runtime_query",
-      "description": "Inspect jobs, recurring, workflows, or delivery. action is a typed name (job.list, workflow.status, …). Fetch fields with cognition_schema types=[...].",
+      "description": "Inspect owned assignments, jobs, recurring, workflows, or delivery. action is a typed name (job.list, workflow.status, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
           "action": {
             "enum": [
+              "assignment.events",
+              "assignment.get",
+              "assignment.list",
               "delivery.status",
               "job.list",
               "job.status",
+              "owner.events",
               "recurring.doctor",
               "recurring.list",
               "recurring.preview",
@@ -4883,6 +5244,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:runtime",
         "general:authorized",
         "general:bootstrap",
         "general:domain:runtime",
@@ -4922,6 +5286,9 @@
                 "artifacts.read",
                 "artifacts.search",
                 "artifacts.write",
+                "assignment.events",
+                "assignment.get",
+                "assignment.list",
                 "calendar.create",
                 "calendar.delete",
                 "calendar.export",
@@ -4956,6 +5323,7 @@
                 "memory.schema",
                 "memory.store",
                 "memory.tags",
+                "owner.events",
                 "recurring.cancel",
                 "recurring.doctor",
                 "recurring.list",
@@ -4999,6 +5367,10 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:catalog",
+        "assistant:domain:runtime",
         "general:authorized",
         "general:bootstrap",
         "general:domain:catalog",
@@ -5057,6 +5429,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:execute",
         "general:authorized",
         "general:domain:execute",
         "workshop:authorized:general",
@@ -5178,6 +5552,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:execute",
         "general:authorized",
         "general:domain:execute",
         "workshop:authorized:general",
@@ -5204,6 +5580,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:skill",
         "general:authorized",
         "general:domain:skill",
         "workshop:authorized:research",
@@ -5276,6 +5654,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:skill",
         "general:authorized",
         "general:domain:skill",
         "workshop:authorized:research",
@@ -5313,6 +5693,12 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:catalog",
+        "assistant:domain:documents",
+        "assistant:domain:presentation",
+        "assistant:domain:vault",
         "general:authorized",
         "general:bootstrap",
         "general:domain:catalog",
@@ -5356,6 +5742,12 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:catalog",
+        "assistant:domain:documents",
+        "assistant:domain:presentation",
+        "assistant:domain:vault",
         "general:authorized",
         "general:bootstrap",
         "general:domain:catalog",
@@ -5403,6 +5795,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:history",
         "general:authorized",
         "general:domain:history"
       ]
@@ -5436,6 +5830,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
         "general:authorized",
         "general:bootstrap"
       ]
@@ -5471,6 +5867,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
         "general:authorized",
         "general:bootstrap",
         "workshop:authorized:general",
@@ -5483,7 +5881,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_turn",
-      "description": "Record turn progress or set its outcome. action is a typed name (turn.finish, turn.checkpoint, …). Fetch fields with cognition_schema types=[...].",
+      "description": "Record nonterminal progress with turn.update_user and continue, deliberately hand back with turn.checkpoint only when principal input is needed or work must pause, or end with turn.finish after the full requested outcome is complete and verified or a concrete blocker prevents further authorized progress. Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
@@ -5507,6 +5905,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
         "general:authorized",
         "general:bootstrap",
         "workshop:authorized:general",
@@ -6002,6 +6402,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:bootstrap",
+        "assistant:domain:presentation",
         "general:bootstrap",
         "general:domain:presentation",
         "workshop:authorized:general",
@@ -6063,6 +6465,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:bootstrap",
+        "assistant:domain:documents",
+        "assistant:domain:presentation",
         "general:bootstrap",
         "general:domain:documents",
         "general:domain:presentation",
@@ -6103,6 +6508,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:bootstrap",
+        "assistant:domain:presentation",
         "general:bootstrap",
         "general:domain:presentation",
         "workshop:authorized:general",
@@ -6126,6 +6533,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
         "general:authorized",
         "workshop:authorized:general",
         "workshop:authorized:memory_avec_calibrate",
@@ -6143,6 +6551,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
         "general:authorized",
         "workshop:authorized:general",
         "workshop:authorized:memory_avec_calibrate",
@@ -6165,6 +6574,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
         "general:authorized",
         "workshop:authorized:general",
         "workshop:authorized:memory_avec_calibrate",
@@ -6219,6 +6629,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
         "general:authorized",
         "general:bootstrap",
         "workshop:authorized:general",
@@ -6250,6 +6662,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
         "general:authorized",
         "general:bootstrap",
         "workshop:authorized:general",
@@ -6281,6 +6695,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
         "general:authorized",
         "general:bootstrap",
         "workshop:authorized:general",

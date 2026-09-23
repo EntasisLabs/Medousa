@@ -6,7 +6,6 @@ use anyhow::{Result, bail};
 use fs2::FileExt;
 use medousa_store::StorePath;
 use medousa_types::coordination::*;
-use sha2::{Digest, Sha256};
 use std::fs::File;
 
 pub const MAX_RECEIPT_BYTES: usize = 64 * 1024;
@@ -15,10 +14,10 @@ const MAX_INTAKE_ATTEMPTS: u32 = 8;
 /// Held across the owner turn. Kernel release on process exit does not erase
 /// the durable attempt: an uncertain turn still requires reconciliation.
 pub struct OwnerIntakeLease {
-    _file: File,
-    store_identity: std::sync::Arc<()>,
-    session: medousa_types::SessionRef,
-    owner: String,
+    pub(super) _file: File,
+    pub(super) store_identity: std::sync::Arc<()>,
+    pub(super) session: medousa_types::SessionRef,
+    pub(super) owner: String,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -36,18 +35,7 @@ pub enum OwnerEventIntakeClaim {
 }
 
 pub fn terminal_receipt_id(binding: &ExternalPeerAssignmentBinding) -> String {
-    let mut hash = Sha256::new();
-    for part in [
-        "medousa/peer-terminal/v1",
-        binding.channel.authority_id.as_str(),
-        &binding.channel.channel_id,
-        &binding.assignment_id,
-        &binding.agent_session_id,
-    ] {
-        hash.update((part.len() as u64).to_be_bytes());
-        hash.update(part.as_bytes());
-    }
-    format!("peer_terminal_{:x}", hash.finalize())
+    medousa_types::coordination::peer_terminal_receipt_id(binding)
 }
 
 impl CoordinationStore {
@@ -69,7 +57,7 @@ impl CoordinationStore {
             occurred_at: chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
             payload: OwnerEventPayload::AssignmentTerminal {
                 assignment_id: receipt.binding.assignment_id.clone(),
-                receipt: receipt.clone(),
+                receipt: Box::new(receipt.clone()),
             },
             limits: OwnerContinuationLimits::default(),
         })
@@ -82,10 +70,67 @@ impl CoordinationStore {
         limit: usize,
         after_event_id: Option<&str>,
     ) -> Result<Vec<OwnerEvent>> {
-        self.pending_local_owner_receipts(authority, runtime_id, limit, after_event_id)?
-            .iter()
-            .map(|receipt| self.peer_owner_event(receipt))
-            .collect()
+        if !(1..=256).contains(&limit) {
+            bail!("invalid recovery limit");
+        }
+        let mut page = std::collections::BTreeMap::new();
+        let entries = self.root.list_root_utf8()?;
+        if entries.len() > 10_000 {
+            bail!("coordination recovery scan budget exhausted");
+        }
+        for entry in entries {
+            if !entry.name.starts_with("r1-") {
+                continue;
+            }
+            let receipt: ExternalPeerAssignmentReceipt = match self
+                .read(&StorePath::parse(&entry.name)?)
+            {
+                Ok(receipt) => receipt,
+                Err(error) => {
+                    tracing::warn!(record = %entry.name, %error, "skipping poisoned peer receipt during bounded owner recovery scan");
+                    continue;
+                }
+            };
+            let binding = &receipt.binding;
+            if binding.channel.authority_id != *authority
+                || binding.target.authority_id != *authority
+                || binding.execution_session.authority_id != *authority
+                || binding.target.execution_runtime_id != runtime_id
+            {
+                continue;
+            }
+            let event = match (|| -> Result<Option<OwnerEvent>> {
+                if self.receipt(&binding.channel, &binding.assignment_id)? != receipt {
+                    bail!("recovery receipt identity mismatch");
+                }
+                self.validate_receipt_binding(&receipt)?;
+                if self.owner_ack(&receipt)?.is_some() {
+                    return Ok(None);
+                }
+                Ok(Some(self.peer_owner_event(&receipt)?))
+            })() {
+                Ok(Some(event)) => event,
+                Ok(None) => continue,
+                Err(error) => {
+                    tracing::warn!(record = %entry.name, %error, "skipping invalid peer receipt during bounded owner recovery scan");
+                    continue;
+                }
+            };
+            let key = super::owner_inbox::owner_event_cursor_key(&event);
+            if after_event_id.is_none_or(|after| key.as_str() > after) {
+                page.insert(key, event);
+                if page.len() > 256 {
+                    page.pop_last();
+                }
+            }
+        }
+        for event in self.pending_local_owner_event_records(authority, 256, after_event_id)? {
+            page.insert(super::owner_inbox::owner_event_cursor_key(&event), event);
+        }
+        while page.len() > limit {
+            page.pop_last();
+        }
+        Ok(page.into_values().collect())
     }
 
     pub fn begin_owner_event_intake(
@@ -145,8 +190,15 @@ impl CoordinationStore {
             if !entry.name.starts_with("r1-") {
                 continue;
             }
-            let receipt: ExternalPeerAssignmentReceipt =
-                self.read(&StorePath::parse(&entry.name)?)?;
+            let receipt: ExternalPeerAssignmentReceipt = match self
+                .read(&StorePath::parse(&entry.name)?)
+            {
+                Ok(receipt) => receipt,
+                Err(error) => {
+                    tracing::warn!(record = %entry.name, %error, "skipping poisoned peer receipt during bounded acknowledgment recovery scan");
+                    continue;
+                }
+            };
             let binding = &receipt.binding;
             if binding.channel.authority_id != *authority
                 || binding.target.authority_id != *authority
@@ -174,6 +226,7 @@ impl CoordinationStore {
         }
         Ok(page)
     }
+
     pub fn assignment(
         &self,
         channel: &CoordinationChannelRef,
@@ -305,21 +358,36 @@ impl CoordinationStore {
     ) -> Result<Option<OwnerIntakeLease>> {
         self.require_owner(&request.channel, &request.owner_principal_id)?;
         // Shared by all channels addressing this owner session, not just one receipt.
+        self.try_owner_session_intake_lease(&request.owner_session, &request.owner_principal_id)
+    }
+
+    pub fn try_owner_event_intake_lease(
+        &self,
+        event: &OwnerEvent,
+    ) -> Result<Option<OwnerIntakeLease>> {
+        self.require_owner(&event.channel, &event.owner_principal_id)?;
+        self.try_owner_session_intake_lease(&event.owner_session, &event.owner_principal_id)
+    }
+
+    fn try_owner_session_intake_lease(
+        &self,
+        session: &medousa_types::SessionRef,
+        owner: &str,
+    ) -> Result<Option<OwnerIntakeLease>> {
+        // Shared by every event/channel addressing this owner session.
         let scope = CoordinationChannelRef {
-            authority_id: request.owner_session.authority_id.clone(),
-            channel_id: request.owner_session.session_id.to_string(),
+            authority_id: session.authority_id.clone(),
+            channel_id: session.session_id.to_string(),
         };
-        let file = self.root.open_lock_file(&object_path(
-            &scope,
-            "owner-lock",
-            &request.owner_principal_id,
-        )?)?;
+        let file = self
+            .root
+            .open_lock_file(&object_path(&scope, "owner-lock", owner)?)?;
         match file.try_lock_exclusive() {
             Ok(()) => Ok(Some(OwnerIntakeLease {
                 _file: file,
                 store_identity: self.intake_identity.clone(),
-                session: request.owner_session.clone(),
-                owner: request.owner_principal_id.clone(),
+                session: session.clone(),
+                owner: owner.to_string(),
             })),
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
             Err(error) => Err(error.into()),
@@ -447,7 +515,7 @@ impl CoordinationStore {
         }
     }
 
-    fn owner_ack(
+    pub(super) fn owner_ack(
         &self,
         receipt: &ExternalPeerAssignmentReceipt,
     ) -> Result<Option<PeerOwnerIntakeAcknowledgment>> {
@@ -469,6 +537,15 @@ impl CoordinationStore {
         self.validate_intake(&ack.intake)?;
         self.require_not_rejected(&ack.intake)?;
         Ok(Some(ack))
+    }
+
+    /// Read a completed peer owner intake only after validating its exact
+    /// receipt, owning session, committed decision reference, and attempt.
+    pub fn owner_intake_acknowledgment(
+        &self,
+        receipt: &ExternalPeerAssignmentReceipt,
+    ) -> Result<Option<PeerOwnerIntakeAcknowledgment>> {
+        self.owner_ack(receipt)
     }
 
     pub fn acknowledge_owner_intake(

@@ -240,9 +240,10 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             #[cfg(feature = "full-daemon")]
             ToolDomainCatalogEntry {
                 domain: "peers",
-                summary: "Inspect active project/agent work, discover local Codex/Cursor/Hermes, and propose project work for human approval; never grants or launches work",
+                summary: "Inspect active work, rank Assistant placement candidates, discover local Codex/Cursor/Hermes, and propose project work for human approval; never grants or launches work",
                 tools: &[
                     "cognition_active_work_discover",
+                    "cognition_assistant_placement",
                     "cognition_peer_discover",
                     "cognition_peer_propose",
                 ],

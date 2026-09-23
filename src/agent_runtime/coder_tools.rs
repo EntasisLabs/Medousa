@@ -2531,7 +2531,7 @@ fn attached_shell_command_mutates_git_authority(command: &str) -> bool {
     // not turn ordinary inspection into a refusal.
     command
         .split([';', '\n', '|', '&'])
-        .any(|segment| attached_shell_segment_mutates_git_authority(segment))
+        .any(attached_shell_segment_mutates_git_authority)
 }
 
 fn attached_shell_segment_mutates_git_authority(command: &str) -> bool {

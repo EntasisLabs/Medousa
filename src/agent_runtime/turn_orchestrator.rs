@@ -975,6 +975,9 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
             .as_ref()
             .map(|scope| scope.turn_correlation_id.clone()),
         parent_runtime_id: worker_scheduler.execution_runtime_id(),
+        parent_continuation_route: continuation_stage_route
+            .as_ref()
+            .map(crate::agent_runtime::turn_worker::ParentContinuationRoute::from_stage_route),
         delivery_target: scope_snapshot
             .as_ref()
             .and_then(|scope| scope.delivery_target.as_ref())

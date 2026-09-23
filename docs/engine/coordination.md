@@ -24,6 +24,58 @@ explicit unavailable rows; they are never represented as empty. Consequently
 `coverage.complete_mesh` is true only when every configured authorized workshop
 answered. Inventory authority does not imply adoption or execution authority.
 
+Assistant also exposes `cognition_assistant_placement`. Its `requirements`
+describe required capabilities, requested/forbidden executors, adapters,
+runtimes and workshops, exact governed work, an optional exact adoptable ACP
+session, and context locality. Source locality is derived from the admitted
+workshop. The query ranks observed workshop and local ACP candidates with
+rejection reasons; unavailable targets remain visible. Missing capability or
+target evidence cannot satisfy a constraint, and incomplete discovery remains
+explicit. General and Teacher do not receive this tool. Ranking neither issues
+a grant nor starts or adopts work; native execution admission still applies.
+
+## Assignment inspection
+
+On a full workshop daemon, `cognition_runtime_query` exposes `assignment.list`,
+`assignment.get`, `assignment.events`, and `owner.events`. The admitted turn supplies the
+principal; these actions do not accept an owner or principal override. Every
+read also rechecks visibility of the assignment's source session.
+
+`assignment.list` accepts optional `kind`, `terminal`, `limit` (1–100, default
+20), and `after_assignment_id`. Its `next_cursor` is the next
+`after_assignment_id`. `assignment.get` takes an exact `assignment_id`.
+`assignment.events` accepts `assignment_id`, optional `limit`, and an opaque
+`cursor`; use its returned `next_cursor` unchanged. Event cursors distinguish
+observations sharing a native sequence. Use `cognition_schema` for the typed
+action parameter schemas.
+
+`owner.events` accepts optional `limit` and `cursor` and returns durable event
+state: pending, started, consumed, or blocked, with exact acknowledgment or
+blocker evidence. Only events owned by the authenticated principal with a
+currently visible source session are returned. Approval observations are
+inspectable but do not spend the grant reserved for terminal-result intake;
+waking on approval requires a separate event-scoped continuation grant.
+
+The ledger projects registered internal workers, external peers, jobs,
+workflows, recurring schedule definitions, and scheduled workflow occurrences.
+It reports current-workshop coverage explicitly; it is not an inventory of
+every job on every paired workshop. Native engines retain execution authority.
+Recurring definitions and their occurrences have distinct identities. A
+terminal execution is not evidence that code was reviewed or verified.
+
+Snapshot replay preserves original observation timestamps, and immutable
+identity conflicts fail closed. Event folding is qualified by workshop
+authority, so equal native ids on different workshops cannot mix histories.
+Projections from async services use bounded store admission. Worker projections
+follow the native workspace journal commit; projection failure does not change
+the worker's native execution state.
+
+An interrupted projection with a terminal observation but no committed terminal
+marker reports `unknown` until native snapshot replay reconciles it. A corrupt
+or conflicting terminal marker fails closed.
+
+## Conversational peer proposals
+
 Peer discovery reports local ACP availability and the current chat's project
 binding and committed range.
 Proposal input contains only `request_key`, `runtime`, `instructions`,
@@ -44,8 +96,8 @@ the live registry after daemon restart is not invented from Forge metadata.
 
 Proposals use a one-hour expiry and a stable owner/session/authority-scoped
 request key. Exact retries reuse the immutable snapshot and repair its index;
-changed intent under the same key fails closed. Neither tool approves or launches
-work. On embedded mobile, `cognition_peer_delegate` accepts only an exact
+changed intent under the same key fails closed. Local discovery and proposal
+tools do not approve or launch work. On embedded mobile, `cognition_peer_delegate` accepts only an exact
 agent-selectable runtime and Forge work id returned by active-work discovery. It
 sends a signed, bounded, digest-checked context grant to
 `/v1/mesh/peer-proposals`. The destination rechecks directional `assistant.work`
@@ -54,6 +106,46 @@ before creating a request-scoped shadow session and the normal immutable local
 proposal. The transfer carries no approval or execution grant. Exact retries
 reuse the shadow; another request key from the same phone chat gets an independent
 immutable shadow. Worker and remote-delegated ceilings remain unchanged.
+An existing destination-owned trusted Assistant policy may approve and launch
+the remote proposal; otherwise the destination returns an approval card.
+Discovery, pairing, and model-written instructions never create that policy.
+
+## Returning a paired-workshop result
+
+New mobile proposals persist an exact source association before sending intent,
+then bind it to the verified signed proposal response. The destination records
+the authenticated sender and expected assignment identity before dispatch.
+This association is independent of whichever chat the user currently has open.
+
+`POST /v1/mesh/peer-assignment-results/query` accepts a signed `TaskRequest`
+containing `schemaVersion`, `sourceDeviceId`, and `sourceRequestDigest`. A finalized
+source also supplies the complete `proposalId`, `proposalRequestDigest`, and
+`assignmentId` tuple. Partial tuples and mismatches are rejected. Only the
+originally authenticated source peer can query that exact association. The signed
+`TaskResult` echoes the source request digest and returns the saved immutable
+proposal, when available, plus either a pending `completion: null` or the native
+receipt, committed owner acknowledgment, assistant decision, and content digest.
+The proposal response also echoes the source request digest, preventing a valid
+response for a different request from being attached to this chat.
+
+If the original proposal response was lost, the source recovers its saved proposal
+through this read-only query before accepting a completion. Recovery never sends
+the proposal again or starts an executor. A missing destination record stays
+pending rather than being treated as evidence that execution failed.
+
+Home performs a bounded rotating sweep on foreground, reconnect, and periodic
+refresh. It verifies the pinned workshop signature and the saved proposal,
+assignment, session, receipt, and decision identities before appending to the
+canonical source transcript. The append carries the remote decision reference
+and a deterministic execution correlation. Exact replay after a restart is a
+no-op; conflicting content or revoked source visibility fails closed. The source
+marks delivery complete only after the transcript commit, and merges committed
+history into the visible chat without replacing an active response stream.
+
+This is foreground result retrieval, not background push or Live invitation
+delivery. Proposals without owner continuation retain their terminal result in
+the delegation card. Older proposals without a durable source association are
+not retroactively bound by title, session-name matching, or model inference.
 
 ## Native operator approval
 

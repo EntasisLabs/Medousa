@@ -7,6 +7,7 @@ export const APP_SHELL_ROOT_RESOURCE_IDS = [
   "mobile-viewport",
   "mobile-native",
   "peer-message-notifications",
+  "remote-peer-completion-sync",
   "command-spotlight-hotkeys",
   "work-ask-focus",
 ] as const;

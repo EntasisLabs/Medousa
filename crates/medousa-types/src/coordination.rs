@@ -101,6 +101,25 @@ pub struct ExternalPeerAssignmentBinding {
     pub agent_session_id: String,
 }
 
+/// Stable identity for one terminal external-peer assignment receipt.
+/// Kept in the shared types crate so the portable Home client and full daemon
+/// use identical replay keys without depending on the ACP storage crate.
+pub fn peer_terminal_receipt_id(binding: &ExternalPeerAssignmentBinding) -> String {
+    use sha2::{Digest as _, Sha256};
+    let mut hash = Sha256::new();
+    for part in [
+        "medousa/peer-terminal/v1",
+        binding.channel.authority_id.as_str(),
+        &binding.channel.channel_id,
+        &binding.assignment_id,
+        &binding.agent_session_id,
+    ] {
+        hash.update((part.len() as u64).to_be_bytes());
+        hash.update(part.as_bytes());
+    }
+    format!("peer_terminal_{:x}", hash.finalize())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -196,7 +215,7 @@ pub enum OwnerEventSource {
 pub enum OwnerEventPayload {
     AssignmentTerminal {
         assignment_id: String,
-        receipt: ExternalPeerAssignmentReceipt,
+        receipt: Box<ExternalPeerAssignmentReceipt>,
     },
     Approval {
         assignment_id: Option<String>,
@@ -271,6 +290,31 @@ pub struct OwnerEventBlocked {
     pub reason: String,
     pub blocked_at: chrono::DateTime<chrono::Utc>,
     pub requires_user_decision: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum OwnerEventStatus {
+    Pending,
+    Started,
+    Consumed,
+    Blocked,
+}
+
+/// Bounded owner inbox inspection projection. Event evidence and lifecycle
+/// references remain exact; this view grants no authority to execute it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct OwnerEventView {
+    pub event: OwnerEvent,
+    pub status: OwnerEventStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_attempt: Option<OwnerEventIntakeAttempt>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acknowledgment: Option<OwnerEventIntakeAcknowledgment>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocked: Option<OwnerEventBlocked>,
 }
 
 /// Immutable snapshot offered to the owner for explicit approval. No execution

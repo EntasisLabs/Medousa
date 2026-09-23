@@ -389,7 +389,10 @@ fn bind_world_tool_schema(tool: &mut Tool, world_ids: &BTreeSet<String>) {
         .or_insert_with(|| serde_json::json!([]));
     if let Some(required) = required.as_array_mut() {
         required.retain(|field| field.as_str() != Some("driver_id"));
-        if !required.iter().any(|field| field.as_str() == Some("world_id")) {
+        if !required
+            .iter()
+            .any(|field| field.as_str() == Some("world_id"))
+        {
             required.push(Value::String("world_id".to_string()));
         }
     }
@@ -403,16 +406,10 @@ fn take_world_id(tool_name: &str, input: &mut Value) -> Result<String> {
         .remove("world_id")
         .and_then(|value| value.as_str().map(str::to_string))
         .filter(|value| !value.trim().is_empty() && value.trim() == value)
-        .ok_or_else(|| {
-            StasisError::PortFailure(format!("{tool_name}: exact world_id is required"))
-        })
+        .ok_or_else(|| StasisError::PortFailure(format!("{tool_name}: exact world_id is required")))
 }
 
-fn bind_computer_driver(
-    tool_name: &str,
-    input: &mut Value,
-    driver_id: &str,
-) -> Result<()> {
+fn bind_computer_driver(tool_name: &str, input: &mut Value, driver_id: &str) -> Result<()> {
     let input = input.as_object_mut().ok_or_else(|| {
         StasisError::PortFailure(format!("{tool_name}: world tool input must be an object"))
     })?;
@@ -872,12 +869,7 @@ mod tests {
             tool_name: "cognition_browser_snapshot",
             seen,
         });
-        let empty = WorldScopedToolRegistry::new(
-            inner.clone(),
-            Vec::new(),
-            "worker:test",
-            None,
-        );
+        let empty = WorldScopedToolRegistry::new(inner.clone(), Vec::new(), "worker:test", None);
         assert!(empty.list_tools().await.unwrap().is_empty());
 
         let scoped = WorldScopedToolRegistry::new(

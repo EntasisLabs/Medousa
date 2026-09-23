@@ -1,15 +1,21 @@
 //! Tauri ownership for the in-process mobile deployment of `medousa_daemon`.
 
 #[cfg(any(target_os = "ios", target_os = "android"))]
+use serde::Serialize;
+#[cfg(any(target_os = "ios", target_os = "android"))]
+use std::collections::HashMap;
+#[cfg(any(target_os = "ios", target_os = "android"))]
 use std::sync::{Arc, OnceLock};
+#[cfg(any(target_os = "ios", target_os = "android"))]
+use std::time::{Duration, Instant};
 
 #[cfg(any(target_os = "ios", target_os = "android"))]
 use medousa::chatgpt_oauth::{ChatGptCredentialStore, ChatGptOAuthBroker};
 #[cfg(any(target_os = "ios", target_os = "android"))]
 use medousa::delegated_task::{
-    DelegatedTaskControlObservation, DelegatedTaskControlRequest, DelegatedTaskError,
-    DelegatedTaskObservation, DelegatedTaskRequest, DelegatedTaskTransport, delegated_work_id,
-    validate_task_control_observation,
+    delegated_work_id, validate_task_control_observation, DelegatedTaskControlObservation,
+    DelegatedTaskControlRequest, DelegatedTaskError, DelegatedTaskObservation,
+    DelegatedTaskRequest, DelegatedTaskTransport,
 };
 #[cfg(any(target_os = "ios", target_os = "android"))]
 use medousa::embedded_daemon::{
@@ -341,6 +347,200 @@ pub async fn embedded_clear_delegation_binding(
 }
 
 #[cfg(any(target_os = "ios", target_os = "android"))]
+#[derive(Debug, Default, Serialize)]
+pub struct RemotePeerCompletionSyncReport {
+    pub checked: usize,
+    pub applied: usize,
+    pub pending: usize,
+    pub unavailable: usize,
+    pub applied_session_ids: Vec<String>,
+}
+
+#[cfg(any(target_os = "ios", target_os = "android"))]
+static REMOTE_COMPLETION_RETRY_AFTER: OnceLock<
+    tokio::sync::Mutex<HashMap<String, (Instant, u32)>>,
+> = OnceLock::new();
+
+/// Pulls exact committed completions from paired workshops for durable source
+/// associations. Runs independently of proposal-card visibility and does not
+/// start another owner model turn.
+#[cfg(any(target_os = "ios", target_os = "android"))]
+#[tauri::command]
+pub async fn coordination_sync_remote_peer_completions(
+    state: tauri::State<'_, EmbeddedDaemonState>,
+) -> Result<RemotePeerCompletionSyncReport, String> {
+    let Some(client) = state.client_if_active().await? else {
+        return Ok(RemotePeerCompletionSyncReport::default());
+    };
+    let origins = medousa::peer_coordination_mesh::next_remote_peer_origin_sync_page_admitted(4)
+        .await
+        .map_err(|error| format!("load remote completion routes: {error:#}"))?;
+    let backoff =
+        REMOTE_COMPLETION_RETRY_AFTER.get_or_init(|| tokio::sync::Mutex::new(HashMap::new()));
+    let mut report = RemotePeerCompletionSyncReport::default();
+    for mut origin in origins {
+        report.checked += 1;
+        let key = format!("{}:{}", origin.target_device_id, origin.request_digest);
+        {
+            let entries = backoff.lock().await;
+            if entries
+                .get(&key)
+                .is_some_and(|(until, _)| *until > Instant::now())
+            {
+                report.pending += 1;
+                continue;
+            }
+        }
+        let result = async {
+            let runtime_id = origin.target_device_id.clone();
+            let config = medousa::peer_completion_delivery::completion_execution_service()
+                .run(
+                    medousa::peer_completion_delivery::ExecutionClass::StoreIo,
+                    64 * 1024,
+                    move || {
+                        Ok(crate::active_workshop::transport_config_for_runtime_id(
+                            &runtime_id,
+                        ))
+                    },
+                )
+                .await
+                .map_err(|error| format!("admit paired workshop lookup: {error}"))??;
+            if config.phone_id != origin.source_device_id {
+                return Err("saved source device identity no longer matches pairing".to_string());
+            }
+            let query = medousa::peer_coordination_mesh::RemotePeerCompletionQuery {
+                schema_version:
+                    medousa::peer_coordination_mesh::PEER_COMPLETION_QUERY_SCHEMA_VERSION,
+                source_device_id: origin.source_device_id.clone(),
+                source_request_digest: origin.request_digest.clone(),
+                proposal_id: origin.proposal_id.clone(),
+                proposal_request_digest: origin.proposal_request_digest.clone(),
+                assignment_id: origin.assignment_id.clone(),
+            };
+            let config_for_wrap = config.clone();
+            let wrapped = medousa::peer_completion_delivery::completion_execution_service()
+                .run(
+                    medousa::peer_completion_delivery::ExecutionClass::StoreIo,
+                    64 * 1024,
+                    move || {
+                        Ok(crate::mesh_envelope::wrap_payload_for_workshop(
+                            &config_for_wrap,
+                            crate::mesh_envelope::CAP_TASK_REQUEST,
+                            query,
+                        ))
+                    },
+                )
+                .await
+                .map_err(|error| format!("admit completion query signing: {error}"))??;
+            let response: crate::mesh_envelope::MeshEnvelopedRequest<
+                medousa::peer_coordination_mesh::RemotePeerCompletionResponse,
+            > = tokio::time::timeout(
+                Duration::from_secs(8),
+                crate::workshop_transport::workshop_post_json(
+                    &config,
+                    "/v1/mesh/peer-assignment-results/query",
+                    &wrapped,
+                ),
+            )
+            .await
+            .map_err(|_| "remote completion query timed out".to_string())??;
+            if serde_json::to_vec(&response)
+                .map_err(|error| format!("encode completion response: {error}"))?
+                .len()
+                > medousa::peer_completion_delivery::MAX_REMOTE_COMPLETION_PAYLOAD_BYTES
+            {
+                return Err("remote completion response exceeds its byte budget".into());
+            }
+            let config_for_verify = config.clone();
+            let response_for_verify = response.clone();
+            medousa::peer_completion_delivery::completion_execution_service()
+                .run(
+                    medousa::peer_completion_delivery::ExecutionClass::StoreIo,
+                    medousa::peer_completion_delivery::MAX_REMOTE_COMPLETION_PAYLOAD_BYTES,
+                    move || {
+                        Ok(crate::mesh_envelope::verify_payload_from_workshop(
+                            &config_for_verify,
+                            &response_for_verify,
+                            crate::mesh_envelope::CAP_TASK_RESULT,
+                        ))
+                    },
+                )
+                .await
+                .map_err(|error| format!("admit completion signature verification: {error}"))??;
+            if response.payload.schema_version
+                != medousa::peer_coordination_mesh::PEER_COMPLETION_QUERY_SCHEMA_VERSION
+            {
+                return Err("unsupported remote completion response schema".to_string());
+            }
+            if response.payload.source_request_digest != origin.request_digest {
+                return Err(
+                    "completion response is not correlated to the saved outgoing request".into(),
+                );
+            }
+            if let Some(proposal_response) = response.payload.proposal.as_ref() {
+                origin =
+                    medousa::peer_coordination_mesh::record_remote_peer_origin_response_admitted(
+                        &origin.target_device_id,
+                        &origin.request,
+                        proposal_response,
+                    )
+                    .await
+                    .map_err(|error| format!("recover exact remote proposal route: {error:#}"))?;
+            }
+            let Some(completion) = response.payload.completion else {
+                return Ok(None);
+            };
+            let appended = client
+                .apply_remote_peer_completion(&origin, &completion)
+                .await
+                .map_err(|error| format!("apply remote completion: {error:#}"))?;
+            medousa::peer_coordination_mesh::mark_remote_peer_origin_applied_admitted(
+                &origin.source_device_id,
+                &origin.target_device_id,
+                &origin.request_digest,
+                &completion.proposal_id,
+            )
+            .await
+            .map_err(|error| format!("mark remote completion applied: {error:#}"))?;
+            Ok(Some((
+                appended,
+                origin.request.owner_session_id.to_string(),
+            )))
+        }
+        .await;
+        match result {
+            Ok(Some((appended, session_id))) => {
+                backoff.lock().await.remove(&key);
+                if appended {
+                    report.applied += 1;
+                }
+                report.applied_session_ids.push(session_id);
+            }
+            Ok(None) => {
+                let mut entries = backoff.lock().await;
+                let attempts = entries
+                    .get(&key)
+                    .map_or(1, |(_, attempts)| attempts.saturating_add(1));
+                let delay = 15u64.saturating_mul(1u64 << attempts.min(4)).min(240);
+                entries.insert(key, (Instant::now() + Duration::from_secs(delay), attempts));
+                report.pending += 1;
+            }
+            Err(error) => {
+                let mut entries = backoff.lock().await;
+                let attempts = entries
+                    .get(&key)
+                    .map_or(1, |(_, attempts)| attempts.saturating_add(1));
+                let delay = 5u64.saturating_mul(1u64 << attempts.min(6)).min(300);
+                entries.insert(key, (Instant::now() + Duration::from_secs(delay), attempts));
+                eprintln!("[medousa-home] remote completion pull deferred: {error}");
+                report.unavailable += 1;
+            }
+        }
+    }
+    Ok(report)
+}
+
+#[cfg(any(target_os = "ios", target_os = "android"))]
 async fn embedded_workshop_selected() -> Result<bool, String> {
     tokio::task::spawn_blocking(|| {
         Ok(matches!(
@@ -583,6 +783,13 @@ impl DelegatedTaskTransport for HomeDelegatedTaskTransport {
             .await
             .map_err(|_| DelegatedTaskError::transport("paired transport lookup failed"))?
             .map_err(DelegatedTaskError::transport)?;
+        medousa::peer_coordination_mesh::record_remote_peer_origin_pending_for_current_profile_admitted(
+            &config.phone_id,
+            &config.workshop_device_id,
+            &request,
+        )
+        .await
+        .map_err(|error| DelegatedTaskError::internal(error.to_string()))?;
         let wrapped = crate::mesh_envelope::wrap_payload_for_workshop(
             &config,
             crate::mesh_envelope::CAP_TASK_REQUEST,
@@ -606,23 +813,31 @@ impl DelegatedTaskTransport for HomeDelegatedTaskTransport {
         .map_err(DelegatedTaskError::transport)?;
         if response.payload.schema_version
             != medousa::peer_coordination_mesh::REMOTE_PEER_PROPOSAL_SCHEMA_VERSION
-            || response.payload.proposal.request.target.execution_runtime_id
-            != request.target_runtime_id
-            || response.payload.proposal.request.target.runtime != request.runtime
-            || response.payload.proposal.request.forge_work_id != request.forge_work_id
-            || response.payload.proposal.request.instructions != request.instructions
-            || response.payload.proposal.continue_owner != request.continue_owner
             || response
                 .payload
                 .proposal
                 .request
-                .existing_agent_session_id
+                .target
+                .execution_runtime_id
+                != request.target_runtime_id
+            || response.payload.proposal.request.target.runtime != request.runtime
+            || response.payload.proposal.request.forge_work_id != request.forge_work_id
+            || response.payload.proposal.request.instructions != request.instructions
+            || response.payload.proposal.continue_owner != request.continue_owner
+            || response.payload.proposal.request.existing_agent_session_id
                 != request.existing_agent_session_id
         {
             return Err(DelegatedTaskError::conflict(
                 "remote proposal does not match the signed request",
             ));
         }
+        medousa::peer_coordination_mesh::record_remote_peer_origin_response_admitted(
+            &config.workshop_device_id,
+            &request,
+            &response.payload,
+        )
+        .await
+        .map_err(|error| DelegatedTaskError::internal(error.to_string()))?;
         Ok(response.payload)
     }
 

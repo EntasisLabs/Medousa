@@ -17,6 +17,12 @@ use std::collections::BTreeMap;
 const MAX_LEDGER_ENTRIES: usize = 20_000;
 const MAX_PAGE_SIZE: usize = 256;
 
+fn is_missing(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<medousa_store::StoreRootError>()
+        .is_some_and(|error| error.is_not_found())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssistantCommandClaim {
     Claimed,
@@ -79,16 +85,65 @@ fn validate_event(value: &AssistantAssignmentEvent) -> Result<()> {
 }
 
 impl CoordinationStore {
+    /// Projection retries retain the first observation time. Only immutable
+    /// origin fields may replay; a different owner or execution is a conflict.
+    pub fn ensure_assistant_assignment(&self, value: &AssistantAssignment) -> Result<bool> {
+        let mut candidate = value.clone();
+        let path = object_path(
+            &scope(&value.source.authority_id),
+            "assistant-assignment",
+            &value.assignment_id,
+        )?;
+        match self.read::<AssistantAssignment>(&path) {
+            Ok(existing) => {
+                candidate.created_at = existing.created_at;
+                candidate.updated_at = existing.updated_at;
+                self.create_assistant_assignment(&candidate)
+            }
+            Err(error) if is_missing(&error) => match self.create_assistant_assignment(value) {
+                Ok(created) => Ok(created),
+                Err(error) => {
+                    // Another observer may have published the same origin.
+                    let existing: AssistantAssignment = self.read(&path).map_err(|_| error)?;
+                    candidate.created_at = existing.created_at;
+                    candidate.updated_at = existing.updated_at;
+                    self.create_assistant_assignment(&candidate)
+                }
+            },
+            Err(error) => Err(error),
+        }
+    }
+
+    /// A snapshot observation has a stable id, but its wall-clock read time may
+    /// differ on replay. Preserve the original observation and reject changes
+    /// to evidence under an already-used event id.
+    pub fn observe_assistant_assignment_event(
+        &self,
+        authority_id: &AuthorityId,
+        event: &AssistantAssignmentEvent,
+    ) -> Result<bool> {
+        let path = object_path(&scope(authority_id), "assistant-event", &event.event_id)?;
+        let mut candidate = event.clone();
+        match self.read::<AssistantAssignmentEvent>(&path) {
+            Ok(existing) => candidate.observed_at = existing.observed_at,
+            Err(error) if is_missing(&error) => {}
+            Err(error) => return Err(error),
+        }
+        match self.record_assistant_assignment_event(authority_id, &candidate) {
+            Ok(created) => Ok(created),
+            Err(error) => {
+                // Two snapshot readers can race the first observation.
+                let existing: AssistantAssignmentEvent = self.read(&path).map_err(|_| error)?;
+                candidate.observed_at = existing.observed_at;
+                self.record_assistant_assignment_event(authority_id, &candidate)
+            }
+        }
+    }
+
     pub(crate) fn project_external_request(
         &self,
         request: &ExternalPeerAssignmentRequest,
     ) -> Result<()> {
-        if self
-            .assistant_assignment(&request.channel.authority_id, &request.assignment_id)
-            .is_ok()
-        {
-            return Ok(());
-        }
         let now = chrono::Utc::now();
         let origin = AssistantAssignment {
             schema_version: ASSISTANT_ASSIGNMENT_SCHEMA_VERSION,
@@ -122,20 +177,8 @@ impl CoordinationStore {
             created_at: now,
             updated_at: now,
         };
-        match self.create_assistant_assignment(&origin) {
-            Ok(_) => Ok(()),
-            Err(error) => match self
-                .assistant_assignment(&request.channel.authority_id, &request.assignment_id)
-            {
-                Ok(existing)
-                    if existing.assignment.owner_id == request.owner_principal_id
-                        && existing.assignment.execution.native_id == request.assignment_id =>
-                {
-                    Ok(())
-                }
-                _ => Err(error),
-            },
-        }
+        self.ensure_assistant_assignment(&origin)?;
+        Ok(())
     }
 
     pub(crate) fn project_external_binding(
@@ -254,10 +297,18 @@ impl CoordinationStore {
             "assistant-assignment",
             &event.assignment_id,
         )?)?;
-        if origin.source.authority_id != *authority_id {
+        if origin.source.authority_id != *authority_id
+            || origin.assignment_id != event.assignment_id
+        {
             bail!("assistant assignment authority mismatch");
         }
 
+        // Claim the event identity before the terminal fence: a conflicting
+        // event id must never publish a terminal that the caller rejected.
+        let created = self.create(
+            &object_path(&scope(authority_id), "assistant-event", &event.event_id)?,
+            event,
+        )?;
         if event.status.is_terminal() && !origin.status.is_terminal() {
             // First terminal wins permanently. A conflicting terminal cannot be
             // smuggled in as a later/out-of-order native lifecycle event.
@@ -270,10 +321,7 @@ impl CoordinationStore {
                 event,
             )?;
         }
-        self.create(
-            &object_path(&scope(authority_id), "assistant-event", &event.event_id)?,
-            event,
-        )
+        Ok(created)
     }
 
     pub fn claim_assistant_assignment_command(
@@ -291,6 +339,17 @@ impl CoordinationStore {
             require_text(label, field)?;
         }
         let view = self.assistant_assignment(authority_id, &command.assignment_id)?;
+        let path = object_path(
+            &scope(authority_id),
+            "assistant-command",
+            &command.command_id,
+        )?;
+        match self.read::<AssistantAssignmentCommand>(&path) {
+            Ok(existing) if existing == *command => return Ok(AssistantCommandClaim::Existing),
+            Ok(_) => bail!("conflicting assistant assignment command"),
+            Err(error) if is_missing(&error) => {}
+            Err(error) => return Err(error),
+        }
         if view.assignment.status.is_terminal() {
             bail!("terminal assistant assignment cannot accept a command");
         }
@@ -329,6 +388,17 @@ impl CoordinationStore {
                 continue;
             }
             let value: AssistantAssignment = self.read(&StorePath::parse(&entry.name)?)?;
+            validate_assignment(&value)?;
+            if entry.name
+                != object_path(
+                    &scope(&value.source.authority_id),
+                    "assistant-assignment",
+                    &value.assignment_id,
+                )?
+                .file_name()
+            {
+                bail!("assistant assignment storage identity mismatch");
+            }
             if value.source.authority_id != *authority_id
                 || after_assignment_id.is_some_and(|after| value.assignment_id.as_str() <= after)
                 || filter
@@ -385,6 +455,22 @@ impl CoordinationStore {
         limit: usize,
         after_native_sequence: Option<u64>,
     ) -> Result<Vec<AssistantAssignmentEvent>> {
+        self.assistant_assignment_events_after(
+            authority_id,
+            assignment_id,
+            limit,
+            after_native_sequence.map(|sequence| (sequence, "\u{10ffff}")),
+        )
+    }
+
+    /// Compound cursor preserves events sharing a native sequence at page edges.
+    pub fn assistant_assignment_events_after(
+        &self,
+        authority_id: &AuthorityId,
+        assignment_id: &str,
+        limit: usize,
+        after: Option<(u64, &str)>,
+    ) -> Result<Vec<AssistantAssignmentEvent>> {
         if !(1..=MAX_PAGE_SIZE).contains(&limit) {
             bail!("invalid assistant assignment event page size");
         }
@@ -399,8 +485,12 @@ impl CoordinationStore {
                 continue;
             }
             let event: AssistantAssignmentEvent = self.read(&StorePath::parse(&entry.name)?)?;
-            if event.assignment_id == view.assignment.assignment_id
-                && after_native_sequence.is_none_or(|after| event.native_sequence > after)
+            if entry.name
+                == object_path(&scope(authority_id), "assistant-event", &event.event_id)?
+                    .file_name()
+                && event.assignment_id == view.assignment.assignment_id
+                && after
+                    .is_none_or(|after| (event.native_sequence, event.event_id.as_str()) > after)
             {
                 events.insert((event.native_sequence, event.event_id.clone()), event);
                 if events.len() > limit {
@@ -415,6 +505,7 @@ impl CoordinationStore {
         &self,
         mut origin: AssistantAssignment,
     ) -> Result<AssistantAssignmentView> {
+        validate_assignment(&origin)?;
         let entries = self.root.list_root_utf8()?;
         if entries.len() > MAX_LEDGER_ENTRIES {
             bail!("assistant assignment scan budget exhausted");
@@ -425,7 +516,16 @@ impl CoordinationStore {
                 continue;
             }
             let event: AssistantAssignmentEvent = self.read(&StorePath::parse(&entry.name)?)?;
-            if event.assignment_id == origin.assignment_id {
+            if entry.name
+                == object_path(
+                    &scope(&origin.source.authority_id),
+                    "assistant-event",
+                    &event.event_id,
+                )?
+                .file_name()
+                && event.assignment_id == origin.assignment_id
+            {
+                validate_event(&event)?;
                 let key = (event.native_sequence, event.event_id.clone());
                 if events.insert(key, event).is_some() {
                     bail!("duplicate assistant assignment event order");
@@ -456,10 +556,19 @@ impl CoordinationStore {
             apply_assignment_event(&mut origin, event).map_err(anyhow::Error::msg)?;
         }
         if let Some(event) = &terminal {
-            if event.assignment_id != origin.assignment_id || !event.status.is_terminal() {
+            if event.assignment_id != origin.assignment_id
+                || !event.status.is_terminal()
+                || events.get(&(event.native_sequence, event.event_id.clone())) != Some(event)
+            {
                 bail!("assistant terminal fence identity mismatch");
             }
             apply_assignment_event(&mut origin, event).map_err(anyhow::Error::msg)?;
+        } else if events.values().any(|event| event.status.is_terminal()) {
+            // The process may have stopped between creating the observation
+            // and its terminal fence. Native snapshot replay can finish that
+            // write; do not claim a completed or still-running execution here.
+            origin.status = AssistantAssignmentStatus::Unknown;
+            origin.next_action = Some("reconcile native terminal observation".into());
         }
         Ok(AssistantAssignmentView {
             assignment: origin,
@@ -550,6 +659,40 @@ mod tests {
             },
             observed_at: at(sequence as u32),
         }
+    }
+
+    #[test]
+    fn incomplete_terminal_projection_is_unknown_until_native_replay() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = CoordinationStore::open(temp.path()).unwrap();
+        let origin = assignment("crash", AssistantAssignmentKind::Job);
+        store.create_assistant_assignment(&origin).unwrap();
+        let terminal = event("crash", "terminal", 2, AssistantAssignmentStatus::Completed);
+        store
+            .create(
+                &object_path(&scope(&authority()), "assistant-event", "terminal").unwrap(),
+                &terminal,
+            )
+            .unwrap();
+        drop(store);
+        let store = CoordinationStore::open(temp.path()).unwrap();
+        let unresolved = store.assistant_assignment(&authority(), "crash").unwrap();
+        assert_eq!(
+            unresolved.assignment.status,
+            AssistantAssignmentStatus::Unknown
+        );
+        assert!(unresolved.terminal_event_id.is_none());
+        assert!(
+            !store
+                .record_assistant_assignment_event(&authority(), &terminal)
+                .unwrap()
+        );
+        let repaired = store.assistant_assignment(&authority(), "crash").unwrap();
+        assert_eq!(
+            repaired.assignment.status,
+            AssistantAssignmentStatus::Completed
+        );
+        assert_eq!(repaired.terminal_event_id.as_deref(), Some("terminal"));
     }
 
     #[test]
@@ -712,6 +855,148 @@ mod tests {
         assert!(
             store
                 .claim_assistant_assignment_command(&authority(), &conflict)
+                .is_err()
+        );
+    }
+    #[test]
+    fn projection_replays_keep_first_timestamp_but_reject_changed_identity() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = CoordinationStore::open(temp.path()).unwrap();
+        let mut origin = assignment("retry", AssistantAssignmentKind::Job);
+        assert!(store.ensure_assistant_assignment(&origin).unwrap());
+        origin.created_at = at(3);
+        origin.updated_at = at(3);
+        assert!(!store.ensure_assistant_assignment(&origin).unwrap());
+        origin.principal_id = "user:mallory".into();
+        assert!(store.ensure_assistant_assignment(&origin).is_err());
+        let mut observation = event("retry", "running", 1, AssistantAssignmentStatus::Running);
+        assert!(
+            store
+                .observe_assistant_assignment_event(&authority(), &observation)
+                .unwrap()
+        );
+        observation.observed_at = at(4);
+        assert!(
+            !store
+                .observe_assistant_assignment_event(&authority(), &observation)
+                .unwrap()
+        );
+        observation.status = AssistantAssignmentStatus::Completed;
+        assert!(
+            store
+                .observe_assistant_assignment_event(&authority(), &observation)
+                .is_err()
+        );
+        assert_eq!(
+            store
+                .assistant_assignment(&authority(), "retry")
+                .unwrap()
+                .assignment
+                .status,
+            AssistantAssignmentStatus::Running
+        );
+    }
+
+    #[test]
+    fn matching_native_ids_do_not_mix_workshop_events() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = CoordinationStore::open(temp.path()).unwrap();
+        let a = assignment("same-native-id", AssistantAssignmentKind::Job);
+        let mut b = a.clone();
+        b.source.authority_id = format!("auth_{}", "b".repeat(64)).parse().unwrap();
+        b.execution.workshop_authority_id = b.source.authority_id.clone();
+        store.create_assistant_assignment(&a).unwrap();
+        store.create_assistant_assignment(&b).unwrap();
+        store
+            .record_assistant_assignment_event(
+                &b.source.authority_id,
+                &event(
+                    &b.assignment_id,
+                    "other-workshop-running",
+                    1,
+                    AssistantAssignmentStatus::Running,
+                ),
+            )
+            .unwrap();
+        let view = store
+            .assistant_assignment(&a.source.authority_id, &a.assignment_id)
+            .unwrap();
+        assert_eq!(view.assignment.status, AssistantAssignmentStatus::Pending);
+        assert_eq!(view.event_count, 0);
+        assert!(
+            store
+                .assistant_assignment_events(&a.source.authority_id, &a.assignment_id, 10, None)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn event_cursor_retains_observations_with_equal_sequence() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = CoordinationStore::open(temp.path()).unwrap();
+        store
+            .create_assistant_assignment(&assignment("a", AssistantAssignmentKind::Job))
+            .unwrap();
+        for id in ["first", "second"] {
+            store
+                .record_assistant_assignment_event(
+                    &authority(),
+                    &event("a", id, 1, AssistantAssignmentStatus::Running),
+                )
+                .unwrap();
+        }
+        let page = store
+            .assistant_assignment_events_after(&authority(), "a", 1, None)
+            .unwrap();
+        assert_eq!(page[0].event_id, "first");
+        let next = store
+            .assistant_assignment_events_after(
+                &authority(),
+                "a",
+                1,
+                Some((page[0].native_sequence, &page[0].event_id)),
+            )
+            .unwrap();
+        assert_eq!(next[0].event_id, "second");
+    }
+
+    #[test]
+    fn exact_command_replay_remains_safe_after_completion() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = CoordinationStore::open(temp.path()).unwrap();
+        store
+            .create_assistant_assignment(&assignment("a", AssistantAssignmentKind::Job))
+            .unwrap();
+        let command = AssistantAssignmentCommand {
+            command_id: "cancel-a".into(),
+            assignment_id: "a".into(),
+            action: "cancel".into(),
+            actor_id: "user:alice".into(),
+            correlation_id: "corr".into(),
+            causation_id: None,
+            claimed_at: at(1),
+        };
+        store
+            .claim_assistant_assignment_command(&authority(), &command)
+            .unwrap();
+        store
+            .record_assistant_assignment_event(
+                &authority(),
+                &event("a", "cancelled", 2, AssistantAssignmentStatus::Cancelled),
+            )
+            .unwrap();
+        assert_eq!(
+            store
+                .claim_assistant_assignment_command(&authority(), &command)
+                .unwrap(),
+            AssistantCommandClaim::Existing
+        );
+        let mut fresh = command;
+        fresh.command_id = "other".into();
+        assert!(
+            store
+                .claim_assistant_assignment_command(&authority(), &fresh)
                 .is_err()
         );
     }

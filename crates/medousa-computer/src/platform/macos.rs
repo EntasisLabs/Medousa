@@ -713,6 +713,10 @@ fn redaction_scan_incomplete() -> PlatformDriverError {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "bounded traversal shares the exact window identity and output collections"
+)]
 fn snapshot_window(
     window: &OwnedCf,
     window_resource_id: &WorldResourceId,

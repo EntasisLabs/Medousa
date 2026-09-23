@@ -576,6 +576,8 @@ pub enum DaemonOperation {
     MediaByMediaIdGet,
     #[serde(rename = "media.upload.post")]
     MediaUploadPost,
+    #[serde(rename = "mesh.active_work.post")]
+    MeshActiveWorkPost,
     #[serde(rename = "mesh.execution_target.post")]
     MeshExecutionTargetPost,
     #[serde(rename = "mesh.inbox.get")]
@@ -596,6 +598,10 @@ pub enum DaemonOperation {
     MeshOutboxGet,
     #[serde(rename = "mesh.outbox.post")]
     MeshOutboxPost,
+    #[serde(rename = "mesh.peer_assignment_results.query.post")]
+    MeshPeerAssignmentResultsQueryPost,
+    #[serde(rename = "mesh.peer_proposals.post")]
+    MeshPeerProposalsPost,
     #[serde(rename = "mesh.peers.by_device_id.patch")]
     MeshPeersByDeviceIdPatch,
     #[serde(rename = "mesh.peers.get")]
@@ -1203,6 +1209,7 @@ impl DaemonOperation {
             Self::McpPolicyEvaluatePost => "mcp.policy.evaluate.post",
             Self::MediaByMediaIdGet => "media.by_media_id.get",
             Self::MediaUploadPost => "media.upload.post",
+            Self::MeshActiveWorkPost => "mesh.active_work.post",
             Self::MeshExecutionTargetPost => "mesh.execution_target.post",
             Self::MeshInboxGet => "mesh.inbox.get",
             Self::MeshIntrosByIntroIdAcceptPost => "mesh.intros.by_intro_id.accept.post",
@@ -1213,6 +1220,8 @@ impl DaemonOperation {
             Self::MeshOutboxByItemIdFlushPost => "mesh.outbox.by_item_id.flush.post",
             Self::MeshOutboxGet => "mesh.outbox.get",
             Self::MeshOutboxPost => "mesh.outbox.post",
+            Self::MeshPeerAssignmentResultsQueryPost => "mesh.peer_assignment_results.query.post",
+            Self::MeshPeerProposalsPost => "mesh.peer_proposals.post",
             Self::MeshPeersByDeviceIdPatch => "mesh.peers.by_device_id.patch",
             Self::MeshPeersGet => "mesh.peers.get",
             Self::MeshReceiptsGet => "mesh.receipts.get",

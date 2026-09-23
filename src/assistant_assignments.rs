@@ -10,8 +10,35 @@ use medousa_types::{SessionId, SessionRef};
 
 use crate::agent_runtime::turn_worker::{TurnWorkRecord, TurnWorkStatus};
 
-fn ledger() -> Result<CoordinationStore> {
-    CoordinationStore::open(&crate::paths::medousa_data_dir().join("coordination"))
+pub async fn project_job_snapshot(job: &stasis::domain::runtime::job::Job) -> Result<()> {
+    use stasis::domain::runtime::job::JobState;
+    let (status, phase) = match job.state {
+        JobState::Enqueued | JobState::Leased => (AssistantAssignmentStatus::Pending, 0),
+        JobState::Running => (AssistantAssignmentStatus::Running, 1),
+        JobState::Succeeded => (AssistantAssignmentStatus::Completed, 3),
+        JobState::Canceled => (AssistantAssignmentStatus::Cancelled, 3),
+        JobState::Failed if job.attempts < job.max_attempts => {
+            (AssistantAssignmentStatus::Pending, 2)
+        }
+        JobState::Failed | JobState::DeadLetter => (AssistantAssignmentStatus::Failed, 3),
+    };
+    project_runtime_event(
+        AssistantAssignmentKind::Job,
+        &job.id,
+        status,
+        u64::from(job.attempts) * 4 + phase,
+        "runtime:stasis",
+        job.last_error.clone(),
+    )
+    .await
+}
+
+async fn with_ledger<T: Send + 'static>(
+    work: impl FnOnce(&CoordinationStore) -> Result<T> + Send + 'static,
+) -> Result<T> {
+    let host = crate::daemon::coordination::local_coordination_host()
+        .context("assignment ledger host is unavailable")?;
+    host.with_assignment_store(work).await
 }
 
 fn worker_status(status: TurnWorkStatus) -> AssistantAssignmentStatus {
@@ -34,7 +61,7 @@ fn worker_sequence(status: TurnWorkStatus) -> u64 {
 
 /// Idempotently projects one current worker snapshot. Event ids are stable per
 /// native state, so repeated persistence cannot inflate the journal.
-pub fn project_turn_worker(record: &TurnWorkRecord) -> Result<()> {
+pub async fn project_turn_worker(record: &TurnWorkRecord) -> Result<()> {
     let authority = crate::workshop_authority::current()
         .map_err(anyhow::Error::msg)?
         .clone();
@@ -91,10 +118,6 @@ pub fn project_turn_worker(record: &TurnWorkRecord) -> Result<()> {
         created_at: record.created_at,
         updated_at: record.created_at,
     };
-    let store = ledger()?;
-    store
-        .create_assistant_assignment(&origin)
-        .context("create turn-worker assignment origin")?;
     let status = worker_status(record.status);
     let event = AssistantAssignmentEvent {
         event_id: format!(
@@ -102,7 +125,7 @@ pub fn project_turn_worker(record: &TurnWorkRecord) -> Result<()> {
             record.work_id,
             worker_sequence(record.status)
         ),
-        assignment_id: origin.assignment_id,
+        assignment_id: origin.assignment_id.clone(),
         native_sequence: worker_sequence(record.status),
         status,
         actor_id: format!("runtime:{}", record.parent_runtime_id),
@@ -120,10 +143,16 @@ pub fn project_turn_worker(record: &TurnWorkRecord) -> Result<()> {
         references: AssistantAssignmentReferencePatch::default(),
         observed_at: record.updated_at,
     };
-    store
-        .record_assistant_assignment_event(&authority, &event)
-        .context("record turn-worker assignment event")?;
-    Ok(())
+    with_ledger(move |store| {
+        store
+            .ensure_assistant_assignment(&origin)
+            .context("create turn-worker assignment origin")?;
+        store
+            .observe_assistant_assignment_event(&authority, &event)
+            .context("record turn-worker assignment event")?;
+        Ok(())
+    })
+    .await
 }
 
 fn assignment_prefix(kind: AssistantAssignmentKind) -> &'static str {
@@ -132,13 +161,14 @@ fn assignment_prefix(kind: AssistantAssignmentKind) -> &'static str {
         AssistantAssignmentKind::ExternalPeer => "peer",
         AssistantAssignmentKind::Job => "job",
         AssistantAssignmentKind::Workflow => "workflow",
+        AssistantAssignmentKind::RecurringSchedule => "schedule",
         AssistantAssignmentKind::ScheduledOccurrence => "scheduled",
     }
 }
 
 /// Persist the exact admitted owner/session before a native runtime side effect
 /// can outlive the turn that requested it.
-pub fn project_runtime_origin(
+pub async fn project_runtime_origin(
     kind: AssistantAssignmentKind,
     native_id: &str,
     intent: &str,
@@ -186,10 +216,8 @@ pub fn project_runtime_origin(
         source: AssistantAssignmentSource {
             authority_id: authority.clone(),
             session,
-            coordination_channel_id: scope
-                .delivery_target
-                .as_ref()
-                .map(|target| target.channel_id.clone()),
+            // Ingress/delivery channel ids are not coordination channels.
+            coordination_channel_id: None,
         },
         execution: AssistantExecutionBinding {
             kind,
@@ -215,13 +243,16 @@ pub fn project_runtime_origin(
         created_at: now,
         updated_at: now,
     };
-    ledger()?
-        .create_assistant_assignment(&origin)
-        .context("create runtime assignment origin")?;
-    Ok(())
+    with_ledger(move |store| {
+        store
+            .ensure_assistant_assignment(&origin)
+            .context("create runtime assignment origin")?;
+        Ok(())
+    })
+    .await
 }
 
-pub fn project_runtime_event(
+pub async fn project_runtime_event(
     kind: AssistantAssignmentKind,
     native_id: &str,
     status: AssistantAssignmentStatus,
@@ -233,70 +264,78 @@ pub fn project_runtime_event(
         .map_err(anyhow::Error::msg)?
         .clone();
     let assignment_id = format!("{}:{native_id}", assignment_prefix(kind));
-    let store = ledger()?;
-    let view = store
-        .assistant_assignment(&authority, &assignment_id)
-        .context("read runtime assignment origin")?;
-    store
-        .record_assistant_assignment_event(
-            &authority,
-            &AssistantAssignmentEvent {
-                event_id: format!("{assignment_id}:{native_sequence}:{status:?}"),
-                assignment_id,
-                native_sequence,
-                status,
-                actor_id: actor_id.to_string(),
-                correlation_id: view.assignment.correlation_id,
-                causation_id: Some(native_id.to_string()),
-                detail,
-                next_action: Some(
-                    if status.is_terminal() {
-                        "inspect native result"
-                    } else {
-                        "await native executor"
-                    }
-                    .into(),
-                ),
-                references: AssistantAssignmentReferencePatch::default(),
-                observed_at: chrono::Utc::now(),
-            },
-        )
-        .context("record runtime assignment event")?;
-    Ok(())
+    let actor_id = actor_id.to_string();
+    let native_id = native_id.to_string();
+    with_ledger(move |store| {
+        let view = store
+            .assistant_assignment(&authority, &assignment_id)
+            .context("read runtime assignment origin")?;
+        store
+            .observe_assistant_assignment_event(
+                &authority,
+                &AssistantAssignmentEvent {
+                    event_id: format!("{assignment_id}:{native_sequence}:{status:?}"),
+                    assignment_id,
+                    native_sequence,
+                    status,
+                    actor_id: actor_id.to_string(),
+                    correlation_id: view.assignment.correlation_id,
+                    causation_id: Some(native_id.to_string()),
+                    detail,
+                    next_action: Some(
+                        if status.is_terminal() {
+                            "inspect native result"
+                        } else {
+                            "await native executor"
+                        }
+                        .into(),
+                    ),
+                    references: AssistantAssignmentReferencePatch::default(),
+                    observed_at: chrono::Utc::now(),
+                },
+            )
+            .context("record runtime assignment event")?;
+        Ok(())
+    })
+    .await
 }
 
 /// Create one occurrence record from the durable workflow origin retained when
 /// the recurring definition was registered.
-pub fn project_scheduled_occurrence(parent_workflow_id: &str, job_id: &str) -> Result<()> {
+pub async fn project_scheduled_occurrence(parent_workflow_id: &str, job_id: &str) -> Result<()> {
     let authority = crate::workshop_authority::current()
         .map_err(anyhow::Error::msg)?
         .clone();
-    let store = ledger()?;
-    let parent = store
-        .assistant_assignment(&authority, &format!("workflow:{parent_workflow_id}"))?
-        .assignment;
-    let now = chrono::Utc::now();
-    let origin = AssistantAssignment {
-        assignment_id: format!("scheduled:{job_id}"),
-        intent: parent.intent.clone(),
-        source: parent.source.clone(),
-        execution: AssistantExecutionBinding {
-            kind: AssistantAssignmentKind::ScheduledOccurrence,
-            native_id: job_id.to_string(),
-            runtime_id: parent.execution.runtime_id.clone(),
-            execution_session: parent.execution.execution_session.clone(),
-            workshop_authority_id: parent.execution.workshop_authority_id.clone(),
-            forge_work_id: parent.execution.forge_work_id.clone(),
-        },
-        status: AssistantAssignmentStatus::Pending,
-        references: parent.references.clone(),
-        correlation_id: parent_workflow_id.to_string(),
-        causation_id: Some(parent.assignment_id),
-        next_action: Some("await scheduled executor".into()),
-        created_at: now,
-        updated_at: now,
-        ..parent
-    };
-    store.create_assistant_assignment(&origin)?;
-    Ok(())
+    let parent_workflow_id = parent_workflow_id.to_string();
+    let job_id = job_id.to_string();
+    with_ledger(move |store| {
+        let parent = store
+            .assistant_assignment(&authority, &format!("workflow:{parent_workflow_id}"))?
+            .assignment;
+        let now = chrono::Utc::now();
+        let origin = AssistantAssignment {
+            assignment_id: format!("scheduled:{job_id}"),
+            intent: parent.intent.clone(),
+            source: parent.source.clone(),
+            execution: AssistantExecutionBinding {
+                kind: AssistantAssignmentKind::ScheduledOccurrence,
+                native_id: job_id.to_string(),
+                runtime_id: parent.execution.runtime_id.clone(),
+                execution_session: parent.execution.execution_session.clone(),
+                workshop_authority_id: parent.execution.workshop_authority_id.clone(),
+                forge_work_id: parent.execution.forge_work_id.clone(),
+            },
+            status: AssistantAssignmentStatus::Pending,
+            references: parent.references.clone(),
+            correlation_id: parent_workflow_id.to_string(),
+            causation_id: Some(parent.assignment_id),
+            next_action: Some("await scheduled executor".into()),
+            created_at: now,
+            updated_at: now,
+            ..parent
+        };
+        store.ensure_assistant_assignment(&origin)?;
+        Ok(())
+    })
+    .await
 }

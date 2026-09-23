@@ -64,13 +64,13 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
             _ = host.wake.notified() => { cursor = None; },
             finished = workers.join_next(), if !workers.is_empty() => {
                 match finished {
-                    Some(Ok((id, outcome))) => {
-                        active.remove(&id);
+                    Some(Ok((key, id, outcome))) => {
+                        active.remove(&key);
                         match outcome {
-                            Ok(OwnerIntakeResult::NeedsReconciliation) => { tracing::warn!(receipt_id = %id, "owner intake retained for explicit reconciliation"); reconcile.insert(id); },
-                            Ok(OwnerIntakeResult::DeferredBusy) => { retry_after.insert(id, tokio::time::Instant::now() + std::time::Duration::from_secs(30)); },
+                            Ok(OwnerIntakeResult::NeedsReconciliation) => { tracing::warn!(event_id = %id, "owner intake retained for explicit reconciliation"); reconcile.insert(key); },
+                            Ok(OwnerIntakeResult::DeferredBusy) => { retry_after.insert(key, tokio::time::Instant::now() + std::time::Duration::from_secs(30)); },
                             Ok(_) => {},
-                            Err(error) => { tracing::warn!(receipt_id = %id, %error, "owner receipt retained; recovery approval/visibility unavailable"); retry_after.insert(id, tokio::time::Instant::now() + std::time::Duration::from_secs(300)); },
+                            Err(error) => { tracing::warn!(event_id = %id, %error, "owner event retained; recovery approval/visibility unavailable"); retry_after.insert(key, tokio::time::Instant::now() + std::time::Duration::from_secs(300)); },
                         }
                     },
                     Some(Err(error)) => { tracing::error!(%error, "owner intake worker lost; retaining its in-process fence until restart"); },
@@ -125,35 +125,50 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
         retry_after.retain(|_, when| *when > tokio::time::Instant::now());
         for event in events {
             let id = event.event_id.clone();
+            let key = medousa_acp_client::coordination::store::owner_inbox::owner_event_cursor_key(
+                &event,
+            );
             if workers.len() >= 4 {
                 break;
             }
-            cursor = Some(id.clone());
-            if active.contains(&id)
-                || reconcile.contains(&id)
+            cursor = Some(key.clone());
+            if active.contains(&key)
+                || reconcile.contains(&key)
                 || retry_after
-                    .get(&id)
+                    .get(&key)
                     .is_some_and(|when| *when > tokio::time::Instant::now())
             {
                 continue;
             }
-            active.insert(id.clone());
+            active.insert(key.clone());
             let host = host.clone();
             workers.spawn(async move {
                 let principal = RequestPrincipal::continuation(event.owner_principal_id.clone());
-                let result = match event.payload {
+                let result = match &event.payload {
                     medousa_types::coordination::OwnerEventPayload::AssignmentTerminal {
                         assignment_id,
                         ..
                     } => {
-                        host.resume_owner_intake(&principal, event.channel, &assignment_id)
+                        host.resume_owner_intake(&principal, event.channel.clone(), assignment_id)
                             .await
                     }
-                    _ => Err(anyhow::anyhow!(
-                        "owner event source has no admitted continuation policy"
-                    )),
+                    medousa_types::coordination::OwnerEventPayload::Approval { .. } => {
+                        host.block_owner_event(
+                            &event,
+                            "approval observation requires a separate event-scoped continuation grant",
+                            true,
+                        )
+                        .await
+                    }
+                    _ => host
+                        .block_owner_event(
+                            &event,
+                            "owner event source has no admitted native continuation adapter",
+                            true,
+                        )
+                        .await,
                 };
-                (id, result)
+                (key, id, result)
             });
         }
     }

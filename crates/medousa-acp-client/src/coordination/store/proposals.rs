@@ -295,10 +295,47 @@ impl CoordinationStore {
         if decision.approved && proposal.expires_at <= chrono::Utc::now() {
             bail!("expired proposal cannot be approved");
         }
-        self.create(
+        let created = self.create(
             &object_path(channel, "proposal-decision", &decision.proposal_id)?,
             decision,
-        )
+        )?;
+        if decision.approved && proposal.continue_owner {
+            let event = OwnerEvent {
+                schema_version: 1,
+                event_id: format!("proposal-approval:{}", proposal.proposal_id),
+                owner_principal_id: proposal.request.owner_principal_id.clone(),
+                owner_session: proposal.request.owner_session.clone(),
+                channel: channel.clone(),
+                source: OwnerEventSource::Approval {
+                    approval_ref: proposal.proposal_id.clone(),
+                },
+                occurred_at: chrono::Utc::now(),
+                payload: OwnerEventPayload::Approval {
+                    assignment_id: Some(proposal.request.assignment_id.clone()),
+                    approval_ref: proposal.proposal_id.clone(),
+                },
+                limits: OwnerContinuationLimits {
+                    elapsed_seconds: 86_400,
+                    ..OwnerContinuationLimits::default()
+                },
+            };
+            match self.record_owner_event(&event) {
+                Ok(_) => {}
+                Err(error) => {
+                    // The event id is proposal-scoped. A retry after the
+                    // decision was committed may carry a later observation
+                    // time; accept only an otherwise exact replay and retain
+                    // the first timestamp on disk.
+                    let existing = self.owner_event(channel, &event.event_id)?;
+                    let mut comparable = event;
+                    comparable.occurred_at = existing.occurred_at;
+                    if existing != comparable {
+                        return Err(error);
+                    }
+                }
+            }
+        }
+        Ok(created)
     }
 
     pub fn require_approved_proposal(

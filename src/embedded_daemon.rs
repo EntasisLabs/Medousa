@@ -5217,6 +5217,23 @@ impl EmbeddedDaemonClient {
         Ok(self.daemon.session_store.load_history(&session_id))
     }
 
+    pub async fn apply_remote_peer_completion(
+        &self,
+        origin: &crate::peer_coordination_mesh::RemotePeerOriginAssociation,
+        result: &crate::peer_coordination_mesh::RemotePeerCompletionResult,
+    ) -> Result<bool> {
+        self.require(Capability::ContentWrite)?;
+        let owner_profile_id = self.active_profile_id()?;
+        crate::peer_completion_delivery::apply_remote_peer_completion(
+            Arc::clone(&self.daemon.session_store),
+            origin,
+            result,
+            &self.daemon.authority_id,
+            &owner_profile_id,
+        )
+        .await
+    }
+
     pub async fn live_context(&self, session_id: &str) -> Result<EmbeddedLiveContext> {
         self.require(Capability::ContentRead)?;
         let session = SessionId::parse(session_id).map_err(|error| anyhow!(error))?;

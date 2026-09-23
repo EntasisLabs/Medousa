@@ -893,6 +893,12 @@ pub async fn deliver_outbox_webhook(
         .await
     };
 
+    // Observe the authoritative native state even if no client is watching.
+    // The outbox message alone is not terminal evidence and never creates an owner.
+    if let Ok(Some(job)) = state.composition().get_job(&payload.job_id).await {
+        let _ = crate::assistant_assignments::project_job_snapshot(&job).await;
+    }
+
     match payload.event_type.as_str() {
         "job_succeeded" => {
             if maybe_resume_agent_turn_from_child_job(&state, &payload.job_id).await {

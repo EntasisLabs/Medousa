@@ -278,6 +278,7 @@ embedded-daemon = [
     "dep:futures-util",
     "dep:medousa-browser-lite",
     "dep:medousa-browser-bridge",
+    "dep:medousa-forge",
     "dep:medousa-mcp-gateway",
     "dep:medousa-secrets",
     "dep:medousa-tool-macros",

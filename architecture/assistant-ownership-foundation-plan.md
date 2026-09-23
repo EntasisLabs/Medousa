@@ -1,7 +1,7 @@
 # Assistant ownership foundation
 
-Status: locked phased implementation plan; no runtime capabilities are added by this document.
-Date: 2026-09-17; rebaselined against the runtime on 2026-09-21.
+Status: implementation in progress; phase exit gates remain authoritative.
+Date: 2026-09-17; latest implementation audit 2026-09-23.
 Branch: `codex/assistant-ownership-foundation`, based on the validated iOS Live branch.
 
 ## Product decision
@@ -92,6 +92,69 @@ ACP spawn adapter simply because of its name.
 
 ## Implementation progress
 
+### September 23 closeout audit
+
+The current increment fixes parent continuation routing, exposes the ownership
+ledger, persists additional owner-event observations, and adds constrained
+placement discovery. These are executable slices of the plan; they do not close
+the later phases by themselves.
+
+| Phase | Current implementation | Remaining exit evidence or implementation |
+| --- | --- | --- |
+| 0 | Versioned parent final-response route captured with workers; bound synthesis and cohort resume resolve it independently of the worker model; explicit legacy fallback; failed synthesis stays retryable and checkpoints do not acknowledge intake | Full busy/restart/delivery-retry scenario tests, checkpoint and uncertain-handoff reconciliation, and live model-route verification |
+| 1 | Immutable mixed-executor ledger with authenticated list/get/events, authority-qualified identity, native lifecycle projections, compound event cursor, and uncertain terminal-write reconciliation | Live projections across supported native executors and all restart paths; coverage remains current-workshop diagnostics |
+| 2 | Durable event records, serialized peer-terminal intake, blocked approval observations, owner-event inspection, and isolated poisoned recovery rows | Event-scoped authorization/adapters for non-peer wake sources, plan-wide ceilings, and remaining crash/timeout scenarios |
+| 3 | Assistant-only ranking of observed workshop/local ACP candidates with exact constraints, explicit unavailable evidence, and exact adoption candidates | Unified start/adopt/observe/steer/cancel commands across adapters and target-disappearance scenario validation |
+| 4 | Existing Stasis jobs/workflows/recurrence remain the scheduler; assignment projections include scheduled workflow occurrences | Durable step/dependency relations, one-shot scheduling, plan-wide ceilings, exact-revision review/fix/re-review coordination |
+| 5 | Existing channel/outbox/push transports and identity interruption preferences remain available | One durable contact-policy decision above those transports, batching/snooze/quiet-hours/fallback and receipt tests |
+| 6 | Existing user-initiated Live launch and resume remain available | Persisted topic/evidence-bound invitations, explicit acceptance/decline/expiry, and cross-device exact-session return |
+
+The phone return path must use the embedded source daemon, which does not host a
+full workshop mesh receiver. The completion-delivery increment therefore pulls
+an authenticated committed owner decision on foreground/reconnect and appends it
+idempotently to the exact originating chat. It does not imply background push,
+contact-policy selection, or Live invitation support. Native ACP custody that
+cannot be reconstructed after an executor restart remains a reconciliation
+boundary; an uncertain claim never authorizes a replacement process.
+
+Internal parallel-worker intake still needs broader crash reconciliation. A
+handoff acknowledgment now requires the exact persisted child and a nonempty
+final decision is distinct from a checkpoint, but the stream sink has no durable
+delivery acknowledgment. Checkpoint retries and an unverified handoff can still
+repeat continuation effects; this is an open Phase 0/2 gate, not an exactly-once
+claim. The signed external-peer completion path has its own persisted receipt,
+owner-decision acknowledgment, and source-transcript replay key.
+
+Validation results and live acceptance evidence must be recorded before changing
+any phase to complete. The full foundation is still gated on Phases 0–5 below.
+
+### Automated validation on September 23
+
+- Workspace Clippy with all targets and `-D warnings`, excluding
+  `medousa-sdk-iroh`: passed.
+- Workspace library tests, excluding `medousa-sdk-iroh`: 2,454 passed,
+  four intentionally ignored.
+- `scripts/ci/test-hermetic.sh`: both passes succeeded, each with 1,747
+  passed and three intentionally ignored.
+- Home: clean install, Svelte/TypeScript check with zero errors and warnings,
+  and 1,658 tests across 326 files passed.
+- API contract generation/parity and SDK helper checks: passed.
+- Locked Home/embedded-daemon compilation for `aarch64-apple-ios-sim`: passed.
+
+Rust tests use hermetic mode and a fresh canonical `/private/tmp` data directory.
+The final workspace and hermetic test runs disable incremental caches and debug symbols to
+fit the available disk; debug assertions remain enabled. An earlier workspace
+run exhausted disk during storage tests, and an earlier main-library run had an
+intermittent screenshot-artifact setup failure. The final workspace run passed
+both areas without changing the artifact implementation; both final hermetic
+passes also succeeded.
+
+Physical-device/ACP acceptance has not been performed. Rebuild both the phone app
+and paired workshop daemon from this branch before following
+[`docs/guides/delegation-approvals.md`](../docs/guides/delegation-approvals.md#trying-the-delegation-and-return-flow).
+
+### Earlier foundation slices
+
 The first product-facing seam is the Assistant mode contract itself. It reuses
 General's host lane, context path, identity, and completion scheduler while
 selecting an explicit ownership policy. Full and embedded daemons expose the same
@@ -121,7 +184,7 @@ It may prepare one user-requested follow-up handoff against the same governed
 work, but every launch remains behind a separate approval card. On-device
 end-to-end validation of this chained loop is still pending.
 
-The General host now registers a `peers` domain for conversation-bound local
+The Assistant host registers a `peers` domain for conversation-bound local
 agent discovery and immutable proposals. It derives identity, bound Forge work,
 and committed context digests from the admitted owner turn; model input cannot
 issue grants or launch agents. Home's exact-snapshot approval/start controls
@@ -145,7 +208,8 @@ mobile owner across configured paired workshops through signed mesh envelopes.
 Each destination rechecks its directional execution policy and resolves its own
 active workshop identity. Offline/erroring workshops remain explicit, and the
 aggregate is complete only when every configured workshop answered. Cross-
-workshop adoption and delegation from an inventory row remain the next boundary.
+workshop adoption and delegation now use the signed proposal adapter described
+above; the inventory itself grants no execution authority.
 
 Slice 0 has an initial, additive contract seam in
 `crates/medousa-types/src/coordination.rs` and an adapter-independent admission

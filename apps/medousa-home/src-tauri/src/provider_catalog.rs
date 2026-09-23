@@ -31,24 +31,24 @@ const PROVIDERS: &[ProviderSpec] = &[
         id: "openai",
         label: "OpenAI",
         category: "featured",
-        default_model: "gpt-5.4-mini",
+        default_model: "gpt-6-sol",
         needs_api_key: true,
         supports_custom_base_url: true,
         default_base_url: Some("https://api.openai.com/v1"),
         key_hint: Some("sk-…"),
-        blurb: "GPT-5.4 family and reasoning models",
+        blurb: "GPT-6 Sol and Luna with API access",
         validation: ProviderValidation::OpenAiCompatible,
     },
     ProviderSpec {
         id: "openai-codex",
         label: "OpenAI · ChatGPT account",
         category: "featured",
-        default_model: "gpt-5.6-sol",
+        default_model: "gpt-6-sol",
         needs_api_key: false,
         supports_custom_base_url: false,
         default_base_url: None,
         key_hint: None,
-        blurb: "ChatGPT subscription models with the Medousa runtime",
+        blurb: "GPT-6 Sol and Luna through your ChatGPT account",
         validation: ProviderValidation::AcceptKey,
     },
     ProviderSpec {
@@ -470,6 +470,20 @@ mod tests {
                 .iter()
                 .any(|entry| entry.id == "openai-codex")
         );
+    }
+
+    #[test]
+    fn openai_routes_default_to_gpt6_sol_and_advertise_luna() {
+        let catalog = providers_catalog();
+        for provider in ["openai", "openai-codex"] {
+            let entry = catalog
+                .providers
+                .iter()
+                .find(|entry| entry.id == provider)
+                .expect("OpenAI route metadata");
+            assert_eq!(entry.default_model, "gpt-6-sol");
+            assert!(entry.blurb.contains("GPT-6 Sol and Luna"));
+        }
     }
 
     #[test]

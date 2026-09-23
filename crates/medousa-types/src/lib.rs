@@ -4,6 +4,7 @@
 
 pub mod api_error;
 pub mod assistant_assignment;
+pub mod assistant_placement;
 pub mod authority_id;
 pub mod bot;
 pub mod browser;

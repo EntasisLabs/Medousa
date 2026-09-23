@@ -304,10 +304,22 @@ impl CredentialedAiChatClient {
         config: &CredentialedAiChatConfig,
         options: Option<&ChatOptions>,
     ) -> ChatOptions {
-        apply_model_reasoning_suffix(
+        let mut options = apply_model_reasoning_suffix(
             &Self::model_target_for(config),
             options.cloned().unwrap_or_default(),
-        )
+        );
+        if config.provider == "openai"
+            && config.base_url.is_none()
+            && (config.model.starts_with("gpt-6-astra")
+                || config.model.starts_with("gpt-6-sol")
+                || config.model.starts_with("gpt-6-luna"))
+        {
+            // GPT-6 reasoning models use reasoning effort instead of sampling
+            // controls on the native OpenAI Responses route.
+            options.temperature = None;
+            options.top_p = None;
+        }
+        options
     }
 
     fn stream_options_for(
@@ -510,7 +522,7 @@ pub fn resolve_genai_adapter_kind(
         // route. Medousa Local likewise belongs to the local inference port.
         "openai-codex" | "medousa-local" | "bedrock" => return None,
         "openai" => {
-            if !has_custom_endpoint && model.starts_with("gpt-5") {
+            if !has_custom_endpoint && (model.starts_with("gpt-5") || model.starts_with("gpt-6")) {
                 AdapterKind::OpenAIResp
             } else {
                 AdapterKind::OpenAI
@@ -638,6 +650,8 @@ fn normalize_base_url(base_url: String) -> Result<String, CredentialedAiChatConf
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex;
+
+    use genai::chat::ReasoningEffort;
 
     use super::*;
 
@@ -816,6 +830,13 @@ mod tests {
         );
         assert_eq!(custom.adapter_kind(), AdapterKind::OpenAI);
         assert_eq!(custom.model_target(), "openai::gpt-5.6-sol");
+
+        let gpt6 = client(
+            config("gpt-6-luna", None),
+            Arc::new(MissingCredentialProvider::default()),
+        );
+        assert_eq!(gpt6.adapter_kind(), AdapterKind::OpenAIResp);
+        assert_eq!(gpt6.model_target(), "openai_resp::gpt-6-luna");
     }
 
     #[test]
@@ -845,6 +866,26 @@ mod tests {
         assert_eq!(options.capture_tool_calls, Some(true));
         assert_eq!(options.capture_reasoning_content, Some(true));
         assert_eq!(options.normalize_reasoning_content, Some(true));
+    }
+
+    #[test]
+    fn gpt6_responses_options_drop_sampling_controls() {
+        let client = client(
+            config("gpt-6-luna", None),
+            Arc::new(MissingCredentialProvider::default()),
+        );
+        let options = client.stream_options(Some(
+            &ChatOptions::default()
+                .with_temperature(0.2)
+                .with_top_p(0.8)
+                .with_reasoning_effort(ReasoningEffort::High),
+        ));
+        assert!(options.temperature.is_none());
+        assert!(options.top_p.is_none());
+        assert!(matches!(
+            options.reasoning_effort,
+            Some(ReasoningEffort::High)
+        ));
     }
 
     #[tokio::test]

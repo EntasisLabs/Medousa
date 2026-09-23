@@ -1340,7 +1340,7 @@ mod tests {
         let job_id = parallel_child_job_id(parent_job_id, &child.child_id).unwrap();
         let mut job = runtime.job_store.get(&job_id).await.unwrap().unwrap();
         let checkpoint = result.map(|result| result.checkpoint.clone());
-        job.state = state.clone();
+        job.state = state;
         job.finished_at = Some(Utc::now());
         job.last_error = (state != JobState::Succeeded).then(|| "child failed".to_string());
         job.output_provenance = checkpoint

@@ -161,6 +161,7 @@ fn add_effects_and_capabilities(index: &mut ToolPlacementIndex) {
         "cognition_utility_uuid",
         #[cfg(feature = "full-daemon")]
         "cognition_active_work_discover",
+        "cognition_assistant_placement",
         #[cfg(feature = "full-daemon")]
         "cognition_peer_discover",
         crate::public_api::COGNITION_STORE_READ,

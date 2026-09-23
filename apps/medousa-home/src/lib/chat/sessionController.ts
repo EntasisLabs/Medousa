@@ -841,7 +841,7 @@ export async function switchSession(host: ChatStoreHost, sessionId: string) {
     const { workshops } = await import("$lib/stores/workshops.svelte");
     if (host.workshopEpoch !== workshopEpoch) return;
     void workshops.saveActiveSession(trimmed);
-    void host.tryReattachActiveTurn();
+    void reconcileOnResume(host, { notice: false });
     mirrorShellChat();
     return;
   }

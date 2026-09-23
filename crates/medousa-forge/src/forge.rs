@@ -1252,6 +1252,7 @@ impl Forge {
         }
     }
 
+    #[expect(clippy::too_many_arguments, reason = "shared admission boundary keeps the caller's exact executor, revision, and collaboration policy together")]
     fn begin_attempt_inner(
         &self,
         work_id: &WorkId,

@@ -346,7 +346,9 @@ mod tests {
         };
         let prompt = system_prompt_for_mode(&mode);
         assert!(prompt.contains("p2_mode_coder_work(.99)"));
-        assert!(prompt.contains("inspect -> hypothesize -> change -> verify -> reconcile"));
+        assert!(prompt.contains(
+            "inspect relevant code and affected callers/contracts/tests -> hypothesize -> change -> verify the full outcome -> reconcile"
+        ));
         assert!(prompt.contains("p3_actor_host(.99)"));
         assert!(!prompt.contains("p2_mode_general(.99)"));
     }

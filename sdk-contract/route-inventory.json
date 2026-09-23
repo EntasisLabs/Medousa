@@ -4787,6 +4787,22 @@
       ],
       "feature_profile": "core",
       "method": "POST",
+      "operation_id": "mesh.active_work.post",
+      "path": "/v1/mesh/active-work",
+      "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "peer_exchange"
+    },
+    {
+      "body_limit": 16384,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "peer.exchange"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
       "operation_id": "mesh.execution_target.post",
       "path": "/v1/mesh/execution-target",
       "rate_limit_class": "peer_exchange",
@@ -4933,6 +4949,38 @@
       "method": "POST",
       "operation_id": "mesh.outbox.by_item_id.flush.post",
       "path": "/v1/mesh/outbox/{item_id}/flush",
+      "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "peer_exchange"
+    },
+    {
+      "body_limit": 65536,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "peer.exchange"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "mesh.peer_assignment_results.query.post",
+      "path": "/v1/mesh/peer-assignment-results/query",
+      "rate_limit_class": "peer_exchange",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "peer_exchange"
+    },
+    {
+      "body_limit": 1048576,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "peer.exchange"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "mesh.peer_proposals.post",
+      "path": "/v1/mesh/peer-proposals",
       "rate_limit_class": "peer_exchange",
       "stream_transport": null,
       "streaming": false,

@@ -18,6 +18,7 @@ pub enum AssistantAssignmentKind {
     ExternalPeer,
     Job,
     Workflow,
+    RecurringSchedule,
     ScheduledOccurrence,
 }
 

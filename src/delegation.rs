@@ -773,6 +773,10 @@ impl DelegationService {
         self.host.authorized_targets().await
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "exact peer proposal scope is explicit at the service boundary"
+    )]
     pub async fn propose_remote_peer(
         &self,
         target_runtime_id: &str,
@@ -1383,6 +1387,42 @@ pub fn install_delegation_runtime(
         host,
         active_drivers: Mutex::new(HashSet::new()),
     }))
+}
+
+#[cfg(test)]
+pub(crate) fn contract_fixture_delegation_service(
+    runtime: Arc<RuntimeComposition>,
+) -> Arc<DelegationService> {
+    struct NoEffectPeerTransport;
+
+    #[async_trait::async_trait]
+    impl DelegatedTaskTransport for NoEffectPeerTransport {
+        async fn submit_or_observe(
+            &self,
+            _target: &crate::delegation::DelegationTarget,
+            _request: DelegatedTaskRequest,
+        ) -> Result<DelegatedTaskObservation, DelegatedTaskError> {
+            Err(DelegatedTaskError::transport(
+                "contract fixture does not execute remote work",
+            ))
+        }
+    }
+
+    let session_store = crate::session_store::get_session_store();
+    let waits: Arc<dyn TurnWaitStore> = Arc::new(RuntimeDelegationWaitStore::new(runtime.as_ref()));
+    let delivery = Arc::new(DelegationResultDelivery::new(session_store.clone()));
+    let endpoints = RuntimeFactory::resolve_delivery_endpoint_store(runtime.as_ref(), None);
+    Arc::new(DelegationService {
+        runtime,
+        authority_id: AuthorityId::parse(format!("auth_{}", "f".repeat(64)))
+            .expect("static contract fixture authority"),
+        session_store,
+        endpoints,
+        waits,
+        delivery,
+        host: Arc::new(NoEffectPeerTransport),
+        active_drivers: Mutex::new(HashSet::new()),
+    })
 }
 
 #[cfg(test)]

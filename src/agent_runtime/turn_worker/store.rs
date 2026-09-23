@@ -13,10 +13,9 @@ use tokio_util::sync::CancellationToken;
 use crate::agent_runtime::turn_context::WorkerHandoffCapsule;
 use crate::peer_execution_policy::TaskExecutionGrant;
 use crate::session;
+use crate::stage_routing::StageRoute;
 use crate::turn_continuation::StoredDeliveryTarget;
-use crate::workshop_contract::{
-    ExecutionPlacementResolution, default_unknown_runtime_id,
-};
+use crate::workshop_contract::{ExecutionPlacementResolution, default_unknown_runtime_id};
 
 const TURN_WORKERS_FILE: &str = "workspace/turn_workers.json";
 const LEGACY_TURN_WORKERS_FILE: &str = "turn_workers.json";
@@ -93,6 +92,83 @@ fn default_parent_stream_turn_id() -> u64 {
     0
 }
 
+/// The parent's user-facing route, captured before the worker can resolve its
+/// own execution model. Versioned so future routing policy can evolve without
+/// reinterpreting durable work records.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ParentContinuationRoute {
+    pub schema_version: u16,
+    pub stage_role: String,
+    pub policy_profile: String,
+    pub provider: String,
+    pub model: String,
+    /// Route policy labels selected by the parent StageRoutingMatrix.
+    #[serde(default)]
+    pub fallback_chain: Vec<String>,
+}
+
+impl ParentContinuationRoute {
+    pub const SCHEMA_VERSION: u16 = 1;
+
+    pub fn from_stage_route(route: &StageRoute) -> Self {
+        Self {
+            schema_version: Self::SCHEMA_VERSION,
+            stage_role: route.role.clone(),
+            policy_profile: route.policy_profile.clone(),
+            provider: route.provider.clone(),
+            model: route.model.clone(),
+            fallback_chain: route.fallback_chain.clone(),
+        }
+    }
+
+    pub fn stage_route(&self) -> Option<StageRoute> {
+        if self.schema_version != Self::SCHEMA_VERSION
+            || self.stage_role.trim() != "final_response"
+            || self.policy_profile.trim().is_empty()
+            || self.provider.trim().is_empty()
+            || self.model.trim().is_empty()
+        {
+            return None;
+        }
+        Some(StageRoute {
+            role: self.stage_role.clone(),
+            provider: self.provider.clone(),
+            model: self.model.clone(),
+            policy_profile: self.policy_profile.clone(),
+            fallback_chain: self.fallback_chain.clone(),
+        })
+    }
+}
+
+/// Resolve old records through an explicit legacy policy. Parallel records
+/// can still recover the parent provider/model from their spawn contract;
+/// bound records use the currently configured workshop final-response route.
+/// The worker's resolved provider/model is intentionally never consulted.
+pub fn continuation_route_for_record(
+    record: &TurnWorkRecord,
+    legacy_route: &StageRoute,
+) -> Option<StageRoute> {
+    if let Some(contract) = record.parent_continuation_route.as_ref() {
+        // An unknown or malformed future contract must not silently degrade
+        // to today's defaults or a worker model.
+        return contract.stage_route();
+    }
+
+    if let Some(parent) = record.worker_spawn_spec.as_ref().map(|spec| &spec.parent)
+        && !parent.provider.trim().is_empty()
+        && !parent.model.trim().is_empty()
+    {
+        return Some(
+            crate::stage_routing::StageRoutingMatrix::default_for(&parent.provider, &parent.model)
+                .final_response,
+        );
+    }
+
+    // The caller supplies its already-admitted host fallback. Resolving a
+    // legacy record must not perform synchronous settings I/O on the turn task.
+    ParentContinuationRoute::from_stage_route(legacy_route).stage_route()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TurnWorkRecord {
     pub work_id: String,
@@ -106,6 +182,10 @@ pub struct TurnWorkRecord {
     /// explicit unknown value rather than pretending they ran locally.
     #[serde(default = "default_unknown_runtime_id")]
     pub parent_runtime_id: String,
+    /// Parent final-response route. Missing on legacy records, which use the
+    /// explicit compatibility resolver above.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_continuation_route: Option<ParentContinuationRoute>,
     /// Requested and resolved execution target captured before enqueue.
     #[serde(default)]
     pub execution_placement: ExecutionPlacementResolution,
@@ -223,6 +303,7 @@ impl TurnWorkRecord {
             parent_turn_correlation_id: Some(parent_turn_correlation_id),
             parent_stream_turn_id: 0,
             parent_runtime_id,
+            parent_continuation_route: None,
             execution_placement,
             task_execution_grant: Some(task_execution_grant),
             worker_spawn_spec: None,
@@ -505,9 +586,6 @@ impl TurnWorkerStore {
         changed.sort_by(|left, right| left.work_id.cmp(&right.work_id));
         changed.dedup_by(|left, right| left.work_id == right.work_id);
         for record in changed {
-            if let Err(error) = crate::assistant_assignments::project_turn_worker(&record) {
-                tracing::warn!(work_id = %record.work_id, %error, "assistant assignment projection failed");
-            }
             let _ = crate::workspace::persist::queue_mutation(
                 crate::workspace::persist::WorkspaceMutation::UpsertTurnWorker {
                     record: Box::new(record),
@@ -992,7 +1070,10 @@ impl TurnWorkerStore {
         if record.identity_user_id.as_deref() != Some(identity_user_id) {
             return Err(DelegatedWorkControlError::ForeignIdentity);
         }
-        if !matches!(record.status, TurnWorkStatus::Pending | TurnWorkStatus::Running) {
+        if !matches!(
+            record.status,
+            TurnWorkStatus::Pending | TurnWorkStatus::Running
+        ) {
             return Err(DelegatedWorkControlError::NotActive);
         }
         if record
@@ -1176,6 +1257,238 @@ mod tests {
     use super::*;
 
     #[test]
+    fn parent_continuation_route_wins_over_worker_model_and_round_trips() {
+        let mut record = test_record("work-route", "session-route", 1, TurnWorkStatus::Completed);
+        record.provider = "worker-provider".to_string();
+        record.model = "worker-model".to_string();
+        record.parent_continuation_route =
+            Some(ParentContinuationRoute::from_stage_route(&StageRoute {
+                role: "final_response".to_string(),
+                provider: "host-provider".to_string(),
+                model: "host-model".to_string(),
+                policy_profile: "careful".to_string(),
+                fallback_chain: vec!["safe-default".to_string()],
+            }));
+
+        let serialized = serde_json::to_vec(&record).expect("serialize durable route");
+        let restored: TurnWorkRecord =
+            serde_json::from_slice(&serialized).expect("restore durable route");
+        let route = continuation_route_for_record(
+            &restored,
+            &crate::stage_routing::StageRoutingMatrix::default_for("legacy", "default")
+                .final_response,
+        )
+        .expect("parent route");
+        assert_eq!(route.provider, "host-provider");
+        assert_eq!(route.model, "host-model");
+        assert_eq!(route.policy_profile, "careful");
+        assert_eq!(route.fallback_chain, ["safe-default"]);
+    }
+
+    #[test]
+    fn legacy_parallel_route_uses_parent_spawn_contract_not_worker_target() {
+        let mut record = test_record(
+            "work-legacy-route",
+            "session-legacy",
+            1,
+            TurnWorkStatus::Completed,
+        );
+        record.provider = "worker-provider".to_string();
+        record.model = "worker-model".to_string();
+        record.worker_spawn_spec = Some(crate::delegated_task::WorkerSpawnSpec {
+            schema_version: crate::delegated_task::WORKER_SPAWN_SPEC_SCHEMA_VERSION,
+            intent: "research".to_string(),
+            task: "task".to_string(),
+            user_ack: "On it".to_string(),
+            manuscript_ids: Vec::new(),
+            manuscript: None,
+            stage_role: None,
+            model_hint: None,
+            parent: crate::delegated_task::WorkerParentSpec {
+                stream_turn_id: 1,
+                turn_correlation_id: "turn-parent".to_string(),
+                agent_mode: None,
+                original_user_prompt: "question".to_string(),
+                provider: "host-provider".to_string(),
+                model: "host-model".to_string(),
+                response_depth_mode: "normal".to_string(),
+                code_work_id: None,
+                bot: None,
+                supports_ui_artifacts: false,
+                supports_liquid_markdown: false,
+                supports_browser_host: false,
+            },
+            code_project: None,
+            execution_placement: Default::default(),
+            world_ids: Vec::new(),
+            max_tool_rounds: 8,
+            tools: crate::delegated_task::WorkerToolRequest { names: Vec::new() },
+        });
+
+        let route = continuation_route_for_record(
+            &record,
+            &crate::stage_routing::StageRoutingMatrix::default_for("legacy", "default")
+                .final_response,
+        )
+        .expect("legacy parent route");
+        assert_eq!(route.provider, "host-provider");
+        assert_eq!(route.model, "host-model");
+    }
+
+    #[test]
+    fn legacy_bound_route_is_explicit_and_malformed_contract_never_falls_back() {
+        let mut record = test_record("legacy-bound", "owner", 1, TurnWorkStatus::Completed);
+        record.provider = "worker-provider".into();
+        record.model = "worker-small".into();
+        let fallback =
+            crate::stage_routing::StageRoutingMatrix::default_for("host-provider", "host-fallback")
+                .final_response;
+        assert_eq!(
+            continuation_route_for_record(&record, &fallback),
+            Some(fallback.clone())
+        );
+        let mut contract = ParentContinuationRoute::from_stage_route(&fallback);
+        contract.schema_version = 999;
+        record.parent_continuation_route = Some(contract);
+        assert!(continuation_route_for_record(&record, &fallback).is_none());
+        record
+            .parent_continuation_route
+            .as_mut()
+            .unwrap()
+            .schema_version = 1;
+        record
+            .parent_continuation_route
+            .as_mut()
+            .unwrap()
+            .stage_role = "worker".into();
+        assert!(continuation_route_for_record(&record, &fallback).is_none());
+    }
+
+    #[test]
+    fn reopened_snapshot_keeps_parent_route_across_worker_and_delivery_updates() {
+        let temp = tempfile::tempdir().expect("temporary worker store");
+        let canonical = TurnWorkerStore::path_in(temp.path());
+        let legacy = TurnWorkerStore::legacy_path_in(temp.path());
+        fs::create_dir_all(canonical.parent().expect("workspace directory"))
+            .expect("create workspace directory");
+
+        let mut original = test_record(
+            "work-reopen-route",
+            "session-reopen",
+            7,
+            TurnWorkStatus::Pending,
+        );
+        original.provider = "worker-provider".into();
+        original.model = "worker-model".into();
+        original.parent_continuation_route = Some(ParentContinuationRoute {
+            schema_version: ParentContinuationRoute::SCHEMA_VERSION,
+            stage_role: "final_response".into(),
+            policy_profile: "host-careful".into(),
+            provider: "host-provider".into(),
+            model: "host-model".into(),
+            fallback_chain: vec!["host-fallback".into()],
+        });
+        let snapshot = HashMap::from([(original.work_id.clone(), original)]);
+        fs::write(
+            &canonical,
+            serde_json::to_vec(&snapshot).expect("serialize snapshot"),
+        )
+        .expect("persist initial route snapshot");
+
+        // Reopen through the store's supported snapshot loader, then preserve
+        // the route through execution and its separate delivery acknowledgment.
+        let mut reopened = TurnWorkerStore::empty_for_tests();
+        reopened.reload_from_paths(&canonical, &legacy);
+        let fallback =
+            crate::stage_routing::StageRoutingMatrix::default_for("changed", "changed-model")
+                .final_response;
+        for (status, delivered) in [
+            (TurnWorkStatus::Running, false),
+            (TurnWorkStatus::Completed, false),
+            (TurnWorkStatus::Completed, true),
+        ] {
+            let mut records = reopened.records.lock().expect("worker records");
+            let record = records
+                .get_mut("work-reopen-route")
+                .expect("reopened record");
+            record.status = status;
+            record.synthesis_delivered = delivered;
+            record.updated_at = Utc::now();
+            assert_eq!(record.provider, "worker-provider");
+            assert_eq!(record.model, "worker-model");
+            assert_eq!(
+                record
+                    .parent_continuation_route
+                    .as_ref()
+                    .map(|route| route.provider.as_str()),
+                Some("host-provider")
+            );
+            drop(records);
+
+            // Worker completion and its delivery acknowledgment can be
+            // separated by a daemon restart.
+            let snapshot = reopened.records.lock().expect("worker records").clone();
+            fs::write(
+                &canonical,
+                serde_json::to_vec(&snapshot).expect("serialize lifecycle snapshot"),
+            )
+            .expect("persist lifecycle snapshot");
+            let restarted = TurnWorkerStore::empty_for_tests();
+            restarted.reload_from_paths(&canonical, &legacy);
+            let durable = restarted
+                .get("work-reopen-route")
+                .expect("record after lifecycle restart");
+            assert_eq!(durable.status, status);
+            let route = continuation_route_for_record(&durable, &fallback)
+                .expect("parent route after lifecycle restart");
+            assert_eq!(route.provider, "host-provider");
+            assert_eq!(route.model, "host-model");
+            assert_eq!(route.policy_profile, "host-careful");
+            assert_eq!(route.fallback_chain, ["host-fallback"]);
+            reopened = restarted;
+        }
+        let persisted = reopened.records.lock().expect("worker records").clone();
+        fs::write(
+            &canonical,
+            serde_json::to_vec(&persisted).expect("serialize retry state"),
+        )
+        .expect("persist retry state");
+
+        let recovered = TurnWorkerStore::empty_for_tests();
+        recovered.reload_from_paths(&canonical, &legacy);
+        let record = recovered
+            .get("work-reopen-route")
+            .expect("recovered record");
+        assert_eq!(record.status, TurnWorkStatus::Completed);
+        assert_eq!(record.provider, "worker-provider");
+        assert_eq!(record.model, "worker-model");
+        let route = continuation_route_for_record(&record, &fallback).expect("parent route");
+        assert_eq!(route.provider, "host-provider");
+        assert_eq!(route.model, "host-model");
+        assert_eq!(route.policy_profile, "host-careful");
+        assert_eq!(route.fallback_chain, ["host-fallback"]);
+
+        let mut malformed = record;
+        malformed
+            .parent_continuation_route
+            .as_mut()
+            .expect("persisted parent route")
+            .schema_version = ParentContinuationRoute::SCHEMA_VERSION + 1;
+        fs::write(
+            &canonical,
+            serde_json::to_vec(&HashMap::from([(malformed.work_id.clone(), malformed)]))
+                .expect("serialize future route contract"),
+        )
+        .expect("persist future route contract");
+        let future_contract = TurnWorkerStore::empty_for_tests();
+        future_contract.reload_from_paths(&canonical, &legacy);
+        let recovered = future_contract
+            .get("work-reopen-route")
+            .expect("future contract record");
+        assert!(continuation_route_for_record(&recovered, &fallback).is_none());
+    }
+
+    #[test]
     fn canonical_snapshot_lives_in_workspace_directory() {
         let root = Path::new("/tmp/medousa-test-data");
         assert_eq!(
@@ -1252,6 +1565,7 @@ mod tests {
             parent_turn_correlation_id: None,
             parent_stream_turn_id,
             parent_runtime_id: "runtime-test".to_string(),
+            parent_continuation_route: None,
             execution_placement: Default::default(),
             task_execution_grant: None,
             worker_spawn_spec: None,

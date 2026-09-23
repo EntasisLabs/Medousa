@@ -103,14 +103,16 @@ than being falsely advertised as account-model capabilities.
 The adapter carries a separately versioned Codex-backend compatibility identity;
 Medousa's own app version is never sent as the Codex protocol version.
 
-Choose **GPT-6 Astra** under **OpenAI · ChatGPT account** when your account has
-access. Astra supports text and image input, streamed replies, and Medousa's
-tools. Its reasoning levels are **Low**, **Medium**, **High**, **Extra high**, and
-**Max**; **Model default** lets the model decide. An incompatible saved setting
-uses **Model default**, with a notice in the reasoning picker. Medousa omits temperature and top-p sampling settings for
-Astra, as required by the [OpenAI model guide](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra).
-Selecting Astra does not change your other model assignments or grant account
-access; availability follows [OpenAI's account and rollout settings](https://learn.chatgpt.com/docs/models#gpt-6-astra).
+Choose **GPT-6 Astra**, **GPT-6 Sol**, or **GPT-6 Luna** under **OpenAI ·
+ChatGPT account** when your account has access. These models support streamed
+replies and Medousa's tools; the picker also keeps their image-input capability
+visible. Astra offers **Low**, **Medium**, **High**, **Extra high**, and **Max**;
+Sol and Luna also offer **Off**. **Model default** lets the model decide. An
+incompatible saved setting uses **Model default**, with a notice in the
+reasoning picker. Medousa omits temperature and top-p sampling settings for the
+GPT-6 reasoning models, as required by the [OpenAI model guide](https://developers.openai.com/api/docs/guides/latest-model#update-api-and-model-parameters).
+Selecting one of these models does not change your other model assignments or
+grant account access; availability follows [OpenAI's account and rollout settings](https://learn.chatgpt.com/docs/models).
 
 Completed Medousa replies show a small model receipt below the answer. This is
 the successful provider/model route observed by the daemon after fallback, so

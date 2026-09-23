@@ -5,6 +5,7 @@
   import { connection } from "$lib/stores/connection.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { isTauri } from "$lib/platform";
+  import { requestRemotePeerCompletionSync } from "$lib/remotePeerCompletionSync";
 
   let { sessionId, mobile = false }: { sessionId: string | null; mobile?: boolean } = $props();
   let rows = $state<PeerProposalReviewRecord[]>([]);
@@ -48,6 +49,7 @@
     let loading = false;
     const refresh = async () => {
       if (loading || untrack(() => busy) || document.visibilityState === "hidden") return;
+      void requestRemotePeerCompletionSync();
       loading = true;
       const requestRevision = revision;
       try {

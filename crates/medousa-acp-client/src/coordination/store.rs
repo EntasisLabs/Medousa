@@ -18,6 +18,7 @@ const MAX_RECORD_BYTES: u64 = 2 * 1024 * 1024;
 const SCHEMA_VERSION: u16 = 1;
 pub mod assistant_ledger;
 pub mod intake;
+pub mod owner_inbox;
 pub mod proposals;
 
 #[derive(Serialize, Deserialize)]
@@ -53,6 +54,11 @@ fn object_path(channel: &CoordinationChannelRef, kind: &str, id: &str) -> Result
         "{}-{:x}.json",
         match kind {
             "receipt" => "r1",
+            "owner-event" => "oe1",
+            "owner-event-attempt" => "oia1",
+            "owner-event-rejected" => "oir1",
+            "owner-event-ack" => "oic1",
+            "owner-event-blocked" => "oib1",
             "proposal-index" => "p1",
             "assistant-assignment" => "aa1",
             "assistant-event" => "ae1",

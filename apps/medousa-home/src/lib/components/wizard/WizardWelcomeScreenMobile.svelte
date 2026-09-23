@@ -23,7 +23,7 @@
   } from "$lib/utils/chatgptOAuth";
   import { validateProviderKey } from "$lib/utils/providersApi";
 
-  const CHATGPT_DEFAULT_MODEL = "gpt-5.6-sol";
+  const CHATGPT_DEFAULT_MODEL = "gpt-6-sol";
 
   let provider = $state("openai");
   let model = $state("gpt-5.4-mini");

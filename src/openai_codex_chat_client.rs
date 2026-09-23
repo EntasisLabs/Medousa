@@ -130,8 +130,11 @@ impl OpenAiCodexChatClient {
             options,
         );
         let (_, model) = ReasoningEffort::from_model_name(self.model.trim());
-        if model == "gpt-6-astra" {
-            // Astra accepts reasoning effort instead of sampling controls.
+        if model.starts_with("gpt-6-astra")
+            || model.starts_with("gpt-6-sol")
+            || model.starts_with("gpt-6-luna")
+        {
+            // GPT-6 reasoning models accept reasoning effort instead of sampling controls.
             // Preserve supported efforts and let an unset effort use its default.
             options.temperature = None;
             options.top_p = None;
@@ -488,7 +491,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn astra_requests_use_supported_options_and_preserve_stream_content() {
+    async fn gpt6_requests_use_supported_options_and_preserve_stream_content() {
         for (model, effort, expected_effort) in [
             ("gpt-6-astra", None, None),
             ("gpt-6-astra", Some(ReasoningEffort::None), None),
@@ -501,10 +504,19 @@ mod tests {
             ("gpt-6-astra-minimal", None, None),
             ("gpt-6-astra-max", None, Some("max")),
             ("gpt-6-astra-max", Some(ReasoningEffort::High), Some("high")),
+            ("gpt-6-sol", None, None),
+            ("gpt-6-sol", Some(ReasoningEffort::None), Some("none")),
+            ("gpt-6-sol", Some(ReasoningEffort::Low), Some("low")),
+            ("gpt-6-luna", None, None),
+            ("gpt-6-luna", Some(ReasoningEffort::High), Some("high")),
         ] {
             let mut options = ChatOptions::default().with_temperature(0.2).with_top_p(0.8);
             options.reasoning_effort = effort;
-            assert_sse_fixture(model, Some(options), "gpt-6-astra", expected_effort).await;
+            let expected_model = model
+                .strip_suffix("-minimal")
+                .or_else(|| model.strip_suffix("-max"))
+                .unwrap_or(model);
+            assert_sse_fixture(model, Some(options), expected_model, expected_effort).await;
         }
     }
 

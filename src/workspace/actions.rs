@@ -385,6 +385,7 @@ mod tests {
             parent_turn_correlation_id: None,
             parent_stream_turn_id: 0,
             parent_runtime_id: "runtime-test".to_string(),
+            parent_continuation_route: None,
             execution_placement: Default::default(),
             task_execution_grant: None,
             worker_spawn_spec: None,

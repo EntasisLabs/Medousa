@@ -525,6 +525,8 @@ fn run_home() {
             embedded_daemon::embedded_set_delegation_binding,
             #[cfg(any(target_os = "ios", target_os = "android"))]
             embedded_daemon::embedded_clear_delegation_binding,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            embedded_daemon::coordination_sync_remote_peer_completions,
             workshop_registry::workshops_load,
             workshop_registry::workshops_set_active,
             workshop_registry::workshops_add_local,

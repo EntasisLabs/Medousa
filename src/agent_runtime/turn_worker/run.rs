@@ -416,6 +416,7 @@ pub struct ActiveWorkerBusSession {
     pub parent_turn_correlation_id: Option<String>,
     /// Stable runtime identity of the daemon admitting this parent turn.
     pub parent_runtime_id: String,
+    pub parent_continuation_route: Option<super::store::ParentContinuationRoute>,
     pub delivery_target: Option<crate::turn_continuation::StoredDeliveryTarget>,
     pub host_handoff_slot: Arc<tokio::sync::RwLock<Option<WorkerHandoffCapsule>>>,
     pub host_continuity_bundle:
@@ -939,6 +940,7 @@ impl TurnWorkerScheduler {
             parent_turn_correlation_id,
             parent_stream_turn_id: bus.stream_turn_id,
             parent_runtime_id: parent_runtime_id.clone(),
+            parent_continuation_route: bus.parent_continuation_route.clone(),
             execution_placement: execution_placement.clone(),
             task_execution_grant: None,
             worker_spawn_spec: Some(worker_spawn_spec),
@@ -1152,6 +1154,7 @@ impl TurnWorkerScheduler {
             parent_turn_correlation_id,
             parent_stream_turn_id: bus.stream_turn_id,
             parent_runtime_id: parent_runtime_id.clone(),
+            parent_continuation_route: bus.parent_continuation_route.clone(),
             execution_placement: execution_placement.clone(),
             task_execution_grant: None,
             worker_spawn_spec: None,
@@ -2080,6 +2083,19 @@ async fn run_synthesis_turn(
         deliver_synthesis_response(&record, &sink, synthesis_turn_id, text).await;
         return;
     }
+    let legacy_route =
+        crate::stage_routing::StageRoutingMatrix::default_for(&ctx.provider, &ctx.model)
+            .final_response;
+    let Some(parent_route) = super::store::continuation_route_for_record(&record, &legacy_route)
+    else {
+        tracing::warn!(work_id = %record.work_id, "worker synthesis has no usable parent continuation route");
+        sink.agent_error(
+            synthesis_turn_id,
+            "Worker synthesis has no usable parent continuation route".to_string(),
+        )
+        .await;
+        return;
+    };
     let parent_prompt = record
         .parent_user_prompt
         .clone()
@@ -2123,10 +2139,18 @@ async fn run_synthesis_turn(
         record.work_id
     ))
     .await;
+    tracing::info!(
+        work_id = %record.work_id,
+        provider = %parent_route.provider,
+        model = %parent_route.model,
+        policy_profile = %parent_route.policy_profile,
+        fallback_chain = %parent_route.fallback_chain.join(","),
+        "synthesizing worker result with parent continuation route"
+    );
 
-    crate::workshop_env::apply_provider_llm_env(&record.provider);
-    let resolved_provider = crate::resolve_llm_provider(Some(record.provider.as_str()));
-    let resolved_model = crate::resolve_llm_model(Some(record.model.as_str()));
+    crate::workshop_env::apply_provider_llm_env(&parent_route.provider);
+    let resolved_provider = crate::resolve_llm_provider(Some(parent_route.provider.as_str()));
+    let resolved_model = crate::resolve_llm_model(Some(parent_route.model.as_str()));
     let resolved_base_url = crate::model_route::resolve_route_base_url(
         &resolved_provider,
         &ctx.provider,
@@ -2149,9 +2173,6 @@ async fn run_synthesis_turn(
     let response = match pipeline.execute(request).await {
         Ok(response) => response,
         Err(err) => {
-            turn_worker_store().update(&record.work_id, |worker| {
-                worker.synthesis_delivered = true;
-            });
             sink.agent_error(synthesis_turn_id, format!("Worker synthesis failed: {err}"))
                 .await;
             return;
@@ -2440,6 +2461,7 @@ mod tests {
             response_depth_mode: "standard".to_string(),
             parent_turn_correlation_id: Some(format!("turn-{session_id}")),
             parent_runtime_id: "runtime-local".to_string(),
+            parent_continuation_route: None,
             delivery_target: None,
             host_handoff_slot: Arc::new(RwLock::new(None)),
             host_continuity_bundle: None,
@@ -2465,6 +2487,7 @@ mod tests {
             parent_turn_correlation_id: None,
             parent_stream_turn_id: 0,
             parent_runtime_id: "runtime-test".to_string(),
+            parent_continuation_route: None,
             execution_placement: Default::default(),
             task_execution_grant: None,
             worker_spawn_spec: None,
@@ -2528,6 +2551,39 @@ mod tests {
         let mut complete = sample_record(Some("direct_prose"), Some("complete answer"));
         complete.needs_synthesis = Some(false);
         assert!(worker_synthesis_pass_through(&complete));
+    }
+
+    #[test]
+    fn synthesis_resume_selects_parent_route_when_worker_requires_host_synthesis() {
+        let mut record = sample_record(Some("cognition_turn_finish"), Some("partial evidence"));
+        record.provider = "worker-provider".into();
+        record.model = "worker-model".into();
+        record.needs_synthesis = Some(true);
+        record.parent_continuation_route = Some(super::super::store::ParentContinuationRoute {
+            schema_version: super::super::store::ParentContinuationRoute::SCHEMA_VERSION,
+            stage_role: "final_response".into(),
+            policy_profile: "host-careful".into(),
+            provider: "host-provider".into(),
+            model: "host-model".into(),
+            fallback_chain: vec!["host-fallback".into()],
+        });
+        let restored: TurnWorkRecord = serde_json::from_slice(
+            &serde_json::to_vec(&record).expect("serialize synthesis record"),
+        )
+        .expect("restore synthesis record");
+
+        // run_synthesis_turn bypasses route selection only for pass-through
+        // prose; synthesized work must retain and resolve the original route.
+        assert!(!worker_synthesis_pass_through(&restored));
+        let fallback =
+            crate::stage_routing::StageRoutingMatrix::default_for("changed", "changed-model")
+                .final_response;
+        let route = super::super::store::continuation_route_for_record(&restored, &fallback)
+            .expect("parent synthesis route");
+        assert_eq!(route.provider, "host-provider");
+        assert_eq!(route.model, "host-model");
+        assert_eq!(route.policy_profile, "host-careful");
+        assert_eq!(route.fallback_chain, ["host-fallback"]);
     }
 
     #[test]

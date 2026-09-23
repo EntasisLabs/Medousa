@@ -13,6 +13,7 @@
         "description": "Behavioral runtime profile for an agent turn.\n\nThis is distinct from [`TurnTicketMode`], which selects interactive versus background delivery. Agent modes preserve one Medousa identity while changing context, tools, lane policy, and completion behavior.",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -3467,6 +3468,30 @@
         ],
         "type": "object"
       },
+      "ExternalPeerAssignmentReceipt": {
+        "description": "Receipt identity is used for owner-inbox deduplication, not text matching.",
+        "properties": {
+          "binding": {
+            "$ref": "#/components/schemas/ExternalPeerAssignmentBinding"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/PeerAssignmentOutcome"
+          },
+          "receipt_id": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "binding",
+          "outcome",
+          "receipt_id",
+          "result"
+        ],
+        "type": "object"
+      },
       "ExternalPeerAssignmentRequest": {
         "description": "Caller intent only. Grant checks occur outside the model before dispatch.",
         "properties": {
@@ -5189,6 +5214,15 @@
         "title": "ModelDownloadProgress",
         "type": "object"
       },
+      "PeerAssignmentOutcome": {
+        "enum": [
+          "completed",
+          "failed",
+          "cancelled",
+          "interrupted"
+        ],
+        "type": "string"
+      },
       "PeerAssignmentProposal": {
         "description": "Immutable snapshot offered to the owner for explicit approval. No execution authority exists merely because a proposal was submitted.",
         "properties": {
@@ -5307,6 +5341,17 @@
           },
           "proposal": {
             "$ref": "#/components/schemas/PeerAssignmentProposal"
+          },
+          "receipt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExternalPeerAssignmentReceipt"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present for source-session projections so a remote owner can observe the immutable terminal even though execution belongs to another workshop."
           }
         },
         "required": [
@@ -27179,6 +27224,57 @@
         }
       }
     },
+    "/v1/mesh/active-work": {
+      "post": {
+        "operationId": "mesh.active_work.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "MESH_ACTIVE_WORK_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "mesh.active_work.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mesh.active_work.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mesh.active_work.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "peer.exchange"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "peer_exchange",
+          "trust_group": "peer_exchange"
+        }
+      }
+    },
     "/v1/mesh/execution-target": {
       "post": {
         "operationId": "mesh.execution_target.post",
@@ -27700,6 +27796,108 @@
         },
         "x-medousa-policy": {
           "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "peer.exchange"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "peer_exchange",
+          "trust_group": "peer_exchange"
+        }
+      }
+    },
+    "/v1/mesh/peer-assignment-results/query": {
+      "post": {
+        "operationId": "mesh.peer_assignment_results.query.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "MESH_PEER_ASSIGNMENT_RESULTS_QUERY_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "mesh.peer_assignment_results.query.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mesh.peer_assignment_results.query.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mesh.peer_assignment_results.query.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "peer.exchange"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "peer_exchange",
+          "trust_group": "peer_exchange"
+        }
+      }
+    },
+    "/v1/mesh/peer-proposals": {
+      "post": {
+        "operationId": "mesh.peer_proposals.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "MESH_PEER_PROPOSALS_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "mesh.peer_proposals.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mesh.peer_proposals.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "mesh.peer_proposals.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1048576,
           "bootstrap_public": false,
           "browser_policy": "native_only",
           "capabilities": [

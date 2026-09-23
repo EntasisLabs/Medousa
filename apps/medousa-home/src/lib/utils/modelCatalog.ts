@@ -17,7 +17,8 @@ export const MAX_FAVORITE_MODELS = 8;
 
 /** Default model when switching to a provider (frontier-aware, June 2026). */
 export const PROVIDER_DEFAULT_MODELS: Record<string, string> = {
-  openai: "gpt-5.4-mini",
+  openai: "gpt-6-sol",
+  "openai-codex": "gpt-6-sol",
   anthropic: "claude-sonnet-4-6",
   google: "gemini-3.1-pro-preview",
   gemini: "gemini-3.1-pro-preview",
@@ -54,10 +55,24 @@ export const CURATED_MODEL_PICKS: ModelPick[] = [
   },
   {
     provider: "openai-codex",
+    model: "gpt-6-sol",
+    label: "GPT-6 Sol",
+    hint: "ChatGPT account",
+  },
+  {
+    provider: "openai-codex",
+    model: "gpt-6-luna",
+    label: "GPT-6 Luna",
+    hint: "ChatGPT account",
+  },
+  {
+    provider: "openai-codex",
     model: "gpt-5.6-sol",
     label: "GPT-5.6 Sol",
     hint: "ChatGPT account",
   },
+  { provider: "openai", model: "gpt-6-sol", label: "GPT-6 Sol", hint: "OpenAI flagship" },
+  { provider: "openai", model: "gpt-6-luna", label: "GPT-6 Luna", hint: "OpenAI efficient" },
   { provider: "openai", model: "gpt-5.4", label: "GPT-5.4", hint: "OpenAI flagship" },
   { provider: "openai", model: "gpt-5.4-mini", label: "GPT-5.4 Mini", hint: "Fast & efficient" },
   { provider: "anthropic", model: "claude-sonnet-4-6", label: "Sonnet 4.6", hint: "Best balance" },
