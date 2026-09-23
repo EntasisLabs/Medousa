@@ -513,7 +513,7 @@ mod tests {
             effective_world_ids: Vec::new(),
             network_policy: crate::peer_execution_policy::PeerNetworkPolicy::WebOnly,
             issued_at: now,
-            expires_at: now + chrono::Duration::minutes(5),
+            expires_at: Some(now + chrono::Duration::minutes(5)),
         };
 
         let names = remote_delegated_tool_ceiling_for_grant(Some(&grant));

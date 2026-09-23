@@ -284,6 +284,19 @@ impl StasisTool for FailedProbeTool {
     }
 }
 
+struct PendingProbeTool;
+
+#[async_trait]
+impl StasisTool for PendingProbeTool {
+    fn name(&self) -> &'static str {
+        "pending_probe"
+    }
+
+    async fn invoke(&self, _input: Value) -> StasisResult<Value> {
+        Ok(json!({"ok": false, "status": "running", "work_id": "work-pending"}))
+    }
+}
+
 struct LargeDataProbeTool;
 
 #[async_trait]
@@ -414,7 +427,43 @@ enum Ev {
 struct CapturingPorts {
     ledger: Arc<Mutex<Vec<crate::loop_state::TurnLedgerRecord>>>,
     events: Arc<Mutex<Vec<Ev>>>,
+    notices: Arc<Mutex<Vec<String>>>,
     next_tool_run_id: Arc<AtomicU64>,
+}
+
+#[derive(Clone, Default)]
+struct CapturingCheckpoints {
+    states: Arc<Mutex<Vec<crate::checkpoint::ToolLoopCheckpointState>>>,
+}
+
+impl crate::checkpoint::ActiveTurnCheckpointSink for CapturingCheckpoints {
+    fn persist_boundary(
+        &self,
+        state: crate::checkpoint::ToolLoopCheckpointState,
+    ) -> std::result::Result<(), String> {
+        self.states.lock().unwrap().push(state);
+        Ok(())
+    }
+
+    fn mark_status(
+        &self,
+        _status: crate::checkpoint::ActiveTurnCheckpointStatus,
+        _boundary: crate::checkpoint::SafeCheckpointBoundary,
+        _reason: Option<&str>,
+        _orchestration: Option<&crate::budget::TurnOrchestrationState>,
+    ) -> std::result::Result<(), String> {
+        Ok(())
+    }
+
+    fn latest_safe_resume(
+        &self,
+    ) -> std::result::Result<Option<crate::checkpoint::ActiveTurnResumeState>, String> {
+        Ok(None)
+    }
+
+    fn set_model_route(&self, _provider: &str, _model: &str) -> std::result::Result<(), String> {
+        Ok(())
+    }
 }
 
 impl crate::ports::TurnLedgerSink for CapturingPorts {
@@ -465,7 +514,8 @@ impl ToolRunEventPort for CapturingPorts {
 }
 
 impl TurnPresentationPort for CapturingPorts {
-    fn notice(&self, _message: String) -> RuntimePortFuture<()> {
+    fn notice(&self, message: String) -> RuntimePortFuture<()> {
+        self.notices.lock().unwrap().push(message);
         Box::pin(async {})
     }
 
@@ -484,6 +534,8 @@ impl TurnPresentationPort for CapturingPorts {
 
 struct GoldenOutcome {
     ledger: Vec<crate::loop_state::TurnLedgerRecord>,
+    checkpoints: Vec<crate::checkpoint::ToolLoopCheckpointState>,
+    notices: Vec<String>,
     text: String,
     termination_reason: String,
     rounds_executed: usize,
@@ -492,6 +544,7 @@ struct GoldenOutcome {
     event_kinds: Vec<String>,
     streamed: Vec<String>,
     request_count: usize,
+    request_messages: Vec<String>,
 }
 
 fn golden_execution_boundary() -> Arc<TurnExecutionBoundary> {
@@ -513,6 +566,7 @@ async fn run_golden(
     let registry = InMemoryToolRegistry::default();
     registry.register_tool(DataProbeTool).unwrap();
     registry.register_tool(FailedProbeTool).unwrap();
+    registry.register_tool(PendingProbeTool).unwrap();
     register_golden_turn_tool(&registry);
 
     let client = Arc::new(ScriptedClient::new(steps));
@@ -526,7 +580,9 @@ async fn run_golden(
         .with_ledger_sink(capturing_ports.clone())
         .with_tool_run_events(capturing_ports.clone())
         .with_turn_presentation(capturing_ports.clone());
+    let checkpoints = CapturingCheckpoints::default();
     let mut gate = ToolLoopCompletionGate::new_for_execution(1, runtime_ports, max_rounds);
+    gate.active_turn_checkpoint_sink = Some(Arc::new(checkpoints.clone()));
     // Golden fixtures exercise the legacy ceiling contract explicitly. Product
     // executions default to unlimited rounds unless the compatibility flag is on.
     gate.enforce_tool_round_limit = true;
@@ -581,8 +637,11 @@ async fn run_golden(
         let _ = handle.await;
     }
 
+    let model_requests = client.requests();
     GoldenOutcome {
         ledger: capturing_ports.ledger.lock().unwrap().clone(),
+        checkpoints: checkpoints.states.lock().unwrap().clone(),
+        notices: capturing_ports.notices.lock().unwrap().clone(),
         text: response.text,
         termination_reason: response.termination_reason,
         rounds_executed: response.rounds_executed,
@@ -594,7 +653,11 @@ async fn run_golden(
         events: capturing_ports.snapshot(),
         event_kinds: capturing_ports.kinds(),
         streamed: streamed.lock().unwrap().clone(),
-        request_count: client.requests().len(),
+        request_count: model_requests.len(),
+        request_messages: model_requests
+            .iter()
+            .map(|request| format!("{:?}", request.messages))
+            .collect(),
     }
 }
 
@@ -1326,13 +1389,105 @@ fn usage_counts_shared_intent_once_and_batch_children_as_requests() {
 }
 
 #[tokio::test]
-async fn golden_failed_observations_allow_recovery_after_three_batches() {
+async fn golden_identical_failed_batches_stop_with_recoverable_failure() {
+    let failure = tool_response(vec![tool_call(
+        "failed_probe",
+        json!({"transport_error": false, "attempt": 1}),
+    )]);
+    let outcome = run_golden(
+        "run the probe",
+        vec![failure.clone(), failure.clone(), failure],
+        10,
+        false,
+    )
+    .await;
+
+    assert_eq!(outcome.termination_reason, "repeated_tool_failure");
+    assert_eq!(outcome.rounds_executed, 3);
+    assert!(outcome.text.contains("same failure 3 times"));
+    assert!(outcome.request_messages[2].contains("Do not repeat that failed batch unchanged"));
+    assert!(
+        outcome
+            .notices
+            .iter()
+            .any(|notice| { notice.contains("Repeated identical tool failure") })
+    );
+    let final_checkpoint = outcome.checkpoints.last().expect("terminal checkpoint");
+    assert_eq!(
+        final_checkpoint.boundary,
+        crate::checkpoint::SafeCheckpointBoundary::RecoverableFailure
+    );
+    assert_eq!(
+        final_checkpoint.status,
+        crate::checkpoint::ActiveTurnCheckpointStatus::RecoverableFailure
+    );
+    assert_eq!(
+        final_checkpoint.termination_reason.as_deref(),
+        Some("repeated_tool_failure")
+    );
+    assert!(
+        outcome
+            .ledger
+            .iter()
+            .any(|record| { record.kind == crate::loop_state::TurnLedgerEventKind::WorkFailed })
+    );
+}
+
+#[tokio::test]
+async fn golden_pending_work_does_not_trip_repeated_failure_guard() {
+    let pending = tool_response(vec![tool_call(
+        "pending_probe",
+        json!({"work_id": "work-pending"}),
+    )]);
+    let mut steps = vec![
+        pending.clone(),
+        pending.clone(),
+        pending.clone(),
+        pending.clone(),
+    ];
+    steps.push(tool_response(vec![tool_call(
+        "data_probe",
+        json!({"ready": true}),
+    )]));
+    steps.push(tool_response(vec![finish_call("The work completed.")]));
+    let outcome = run_golden("check this work", steps, 10, false).await;
+
+    assert_eq!(outcome.termination_reason, "cognition_turn_finish");
+    assert_eq!(outcome.text, "The work completed.");
+    assert_eq!(outcome.rounds_executed, 6);
+    assert!(!outcome.checkpoints.iter().any(|checkpoint| {
+        checkpoint.status == crate::checkpoint::ActiveTurnCheckpointStatus::RecoverableFailure
+    }));
+}
+
+#[tokio::test]
+async fn golden_long_productive_sequence_is_not_stopped_by_failure_guard() {
+    let mut steps = (0..100)
+        .map(|index| {
+            tool_response(vec![ToolCall {
+                call_id: format!("call-data-probe-{index}"),
+                fn_name: "data_probe".to_string(),
+                fn_arguments: json!({"index": index}),
+                thought_signatures: None,
+            }])
+        })
+        .collect::<Vec<_>>();
+    steps.push(tool_response(vec![finish_call("All 100 checks passed.")]));
+    let outcome = run_golden("check all 100 items", steps, 101, false).await;
+
+    assert_eq!(outcome.termination_reason, "cognition_turn_finish");
+    assert_eq!(outcome.rounds_executed, 101);
+    assert_eq!(outcome.text, "All 100 checks passed.");
+}
+
+#[tokio::test]
+async fn golden_changed_failed_batches_allow_recovery() {
     for transport_error in [false, true] {
         let mut steps = (0..4)
-            .map(|_| {
+            .map(|attempt| {
                 tool_response(vec![tool_call(
                     "failed_probe",
-                    json!({"transport_error": transport_error}),
+                    json!({"transport_error": transport_error, "attempt": attempt}),
                 )])
             })
             .collect::<Vec<_>>();

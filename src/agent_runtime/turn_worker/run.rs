@@ -111,7 +111,7 @@ fn delegated_task_grant_error(
     if grant.schema_version != crate::peer_execution_policy::TASK_EXECUTION_GRANT_SCHEMA_VERSION {
         return Some("unsupported task execution grant");
     }
-    if grant.expires_at <= Utc::now() {
+    if grant.expires_at.is_some_and(|expiry| expiry <= Utc::now()) {
         return Some("task execution grant expired before execution");
     }
     if grant.work_id != record.work_id
@@ -1372,18 +1372,23 @@ pub async fn run_worker_turn(
             return;
         }
     };
-    let execution_budget = record
+    let execution_deadline = record
         .task_execution_grant
         .as_ref()
-        .and_then(|grant| {
-            grant
-                .expires_at
-                .signed_duration_since(Utc::now())
+        .and_then(|grant| grant.expires_at)
+        .map(|deadline| {
+            let now = Utc::now();
+            let instant_now = std::time::Instant::now();
+            if deadline <= now {
+                return instant_now;
+            }
+            deadline
+                .signed_duration_since(now)
                 .to_std()
                 .ok()
-        })
-        .map(|remaining| remaining.min(std::time::Duration::from_secs(2 * 60 * 60)))
-        .unwrap_or_else(|| std::time::Duration::from_secs(2 * 60 * 60));
+                .and_then(|remaining| instant_now.checked_add(remaining))
+                .unwrap_or(instant_now)
+        });
     let scope = worker_turn_scope(&record);
     let execution_context = Arc::new(
         crate::agent_runtime::execution_context::TurnExecutionContext::new(
@@ -1404,7 +1409,7 @@ pub async fn run_worker_turn(
                 browser_host: record.supports_browser_host,
             },
             execution_lease.cancellation().clone(),
-            std::time::Instant::now() + execution_budget,
+            execution_deadline,
             scope.clone(),
         ),
     );
@@ -1749,6 +1754,25 @@ async fn run_worker_turn_inner(
 
     release_worker_coder(prepared_coder).await;
 
+    // The tool loop returns a recoverable failure receipt as an Ok response so
+    // callers can retain its checkpoint. It must still follow the worker's
+    // failure delivery path, never publish a successful work completion.
+    let result = result.and_then(|response| {
+        if response.termination_reason != "repeated_tool_failure" {
+            return Ok(response);
+        }
+        store.update(&work_id, |worker| {
+            worker.termination_reason = Some(response.termination_reason.clone());
+            worker.tool_names = response
+                .tool_invocations
+                .iter()
+                .map(|invocation| invocation.tool_name.clone())
+                .collect();
+            worker.worker_scratch = worker_scratch.clone();
+        });
+        Err(stasis::domain::errors::StasisError::PortFailure(response.text))
+    });
+
     match result {
         Ok(response) => {
             if store.is_work_cancelled(&work_id) {
@@ -1961,7 +1985,7 @@ pub async fn resume_synthesis_if_needed(
         format!("{}-synthesis", record.work_id),
         crate::request_principal::RequestPrincipal::worker(identity_user_id),
         tokio_util::sync::CancellationToken::new(),
-        std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60),
+        None::<std::time::Instant>,
         scope,
     ) {
         Ok(execution) => execution,

@@ -1580,6 +1580,7 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
                 response.termination_reason.as_str(),
                 "max_rounds_fuse"
                     | "stuck_text_only_continue"
+                    | "repeated_tool_failure"
                     | super::coder_turn_checkpoint::TOOL_ROUND_BUDGET_EXHAUSTED_REASON
                     | "workshop_cancelled"
             ) {

@@ -209,6 +209,15 @@ impl CoordinationStore {
                             blocked: None,
                         });
                     }
+                    if let Some(blocked) = self.owner_event_blocked(&event)? {
+                        return Ok(OwnerEventView {
+                            event,
+                            status: OwnerEventStatus::Blocked,
+                            latest_attempt: None,
+                            acknowledgment: None,
+                            blocked: Some(blocked),
+                        });
+                    }
                     for attempt in (0..MAX_ATTEMPTS).rev() {
                         let key = format!("{}:{attempt}", receipt.receipt_id);
                         let path = object_path(&receipt.binding.channel, "owner-attempt", &key)?;
@@ -422,7 +431,17 @@ impl CoordinationStore {
         channel: &medousa_types::coordination::CoordinationChannelRef,
         blocked: &OwnerEventBlocked,
     ) -> Result<bool> {
-        let event = self.owner_event(channel, &blocked.event_id)?;
+        let event = match self.owner_event(channel, &blocked.event_id) {
+            Ok(event) => event,
+            Err(error)
+                if error
+                    .downcast_ref::<medousa_store::StoreRootError>()
+                    .is_some_and(|error| error.is_not_found()) =>
+            {
+                self.peer_owner_event_by_id(channel, &blocked.event_id)?
+            }
+            Err(error) => return Err(error),
+        };
         if blocked.reason.trim().is_empty() || blocked.reason.len() > 2048 {
             bail!("invalid owner event block reason");
         }
@@ -475,7 +494,10 @@ impl CoordinationStore {
         Ok(Some(ack))
     }
 
-    fn owner_event_blocked(&self, event: &OwnerEvent) -> Result<Option<OwnerEventBlocked>> {
+    pub(super) fn owner_event_blocked(
+        &self,
+        event: &OwnerEvent,
+    ) -> Result<Option<OwnerEventBlocked>> {
         let path = object_path(&event.channel, "owner-event-blocked", &event.event_id)?;
         match self.root.metadata(&path) {
             Ok(_) => {
@@ -619,9 +641,20 @@ mod tests {
     }
 
     fn terminal_fixture(path: &std::path::Path) -> (CoordinationStore, OwnerEvent) {
+        terminal_fixture_with_placement(path, false)
+    }
+
+    fn terminal_fixture_with_placement(
+        path: &std::path::Path,
+        local: bool,
+    ) -> (CoordinationStore, OwnerEvent) {
         let store = CoordinationStore::open(path).unwrap();
         let owner_authority = AuthorityId::parse(format!("auth_{}", "a".repeat(64))).unwrap();
-        let target_authority = AuthorityId::parse(format!("auth_{}", "b".repeat(64))).unwrap();
+        let target_authority = if local {
+            owner_authority.clone()
+        } else {
+            AuthorityId::parse(format!("auth_{}", "b".repeat(64))).unwrap()
+        };
         let owner_session = SessionRef {
             authority_id: owner_authority.clone(),
             session_id: "ses_owner_approval_test".parse().unwrap(),
@@ -744,6 +777,55 @@ mod tests {
                 .pending_local_owner_event_records(&event.owner_session.authority_id, 10, None,)
                 .unwrap(),
             vec![event]
+        );
+    }
+
+    #[test]
+    fn legacy_terminal_receipt_can_be_blocked_without_an_oe1_copy() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, event) = terminal_fixture_with_placement(temp.path(), true);
+        assert!(store.owner_event(&event.channel, &event.event_id).is_err());
+        assert!(
+            store
+                .pending_local_owner_events(
+                    &event.owner_session.authority_id,
+                    "worker-host",
+                    10,
+                    None,
+                )
+                .unwrap()
+                .iter()
+                .any(|candidate| candidate.event_id == event.event_id)
+        );
+
+        let blocked = OwnerEventBlocked {
+            event_id: event.event_id.clone(),
+            reason: "owner continuation failed; review required".into(),
+            blocked_at: chrono::Utc::now(),
+            requires_user_decision: true,
+        };
+        assert!(store.block_owner_event(&event.channel, &blocked).unwrap());
+        let views = store
+            .list_owner_events(
+                &event.owner_session.authority_id,
+                &event.owner_principal_id,
+                10,
+                None,
+            )
+            .unwrap();
+        let view = views
+            .iter()
+            .find(|view| view.event.event_id == event.event_id)
+            .expect("legacy receipt remains inspectable");
+        assert_eq!(view.status, OwnerEventStatus::Blocked);
+        assert_eq!(view.blocked.as_ref(), Some(&blocked));
+        let pending = store
+            .pending_local_owner_events(&event.owner_session.authority_id, "worker-host", 10, None)
+            .unwrap();
+        assert!(
+            !pending
+                .iter()
+                .any(|candidate| candidate.event_id == event.event_id)
         );
     }
 

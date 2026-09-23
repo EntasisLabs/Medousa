@@ -20,7 +20,6 @@ use serde_json::{Value, json};
 #[path = "shell_sandbox_windows.rs"]
 mod windows_job;
 
-const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_MAX_OUTPUT_BYTES: usize = 256 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,17 +36,15 @@ pub struct ShellPermissionProfile {
     /// Network access. Default deny.
     #[serde(default)]
     pub network: bool,
-    #[serde(default = "default_timeout_ms")]
-    pub timeout_ms: u64,
+    /// Optional command execution deadline. `None` leaves execution lifetime
+    /// to the owning workflow/job rather than imposing an implicit 30s cutoff.
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
     #[serde(default = "default_max_output_bytes")]
     pub max_output_bytes: usize,
     /// Optional allowlist of executable basenames (e.g. `["ls", "git"]`). Empty = any.
     #[serde(default)]
     pub allowed_binaries: Vec<String>,
-}
-
-fn default_timeout_ms() -> u64 {
-    DEFAULT_TIMEOUT_MS
 }
 
 fn default_max_output_bytes() -> usize {
@@ -61,7 +58,7 @@ impl Default for ShellPermissionProfile {
             writable_roots: Vec::new(),
             readonly_roots: Vec::new(),
             network: false,
-            timeout_ms: DEFAULT_TIMEOUT_MS,
+            timeout_ms: None,
             max_output_bytes: DEFAULT_MAX_OUTPUT_BYTES,
             allowed_binaries: Vec::new(),
         }
@@ -106,7 +103,12 @@ impl ShellPermissionProfile {
             .and_then(Value::as_u64)
             .or_else(|| args.get("timeout").and_then(Value::as_u64))
         {
-            profile.timeout_ms = timeout_ms.max(100).min(charter.timeout_ms);
+            let requested = timeout_ms.max(100);
+            profile.timeout_ms = Some(
+                charter
+                    .timeout_ms
+                    .map_or(requested, |ceiling| requested.min(ceiling)),
+            );
         }
 
         if let Some(max_output) = args.get("max_output_bytes").and_then(Value::as_u64) {
@@ -188,7 +190,7 @@ impl ShellPermissionProfile {
 #[derive(Debug, Clone)]
 pub struct ShellCharterDefaults {
     pub network: bool,
-    pub timeout_ms: u64,
+    pub timeout_ms: Option<u64>,
     pub max_output_bytes: usize,
     pub allowed_binaries: Vec<String>,
     pub writable_roots: Vec<PathBuf>,
@@ -198,7 +200,7 @@ impl ShellCharterDefaults {
     pub fn sensitive() -> Self {
         Self {
             network: false,
-            timeout_ms: DEFAULT_TIMEOUT_MS,
+            timeout_ms: None,
             max_output_bytes: DEFAULT_MAX_OUTPUT_BYTES,
             allowed_binaries: Vec::new(),
             writable_roots: Vec::new(),
@@ -215,7 +217,7 @@ impl ShellCharterDefaults {
             charter.network = network;
         }
         if let Some(timeout_ms) = defaults.shell_timeout_ms {
-            charter.timeout_ms = timeout_ms.max(100);
+            charter.timeout_ms = Some(timeout_ms.max(100));
         }
         if let Some(max_output) = defaults.shell_max_output_bytes {
             charter.max_output_bytes = (max_output as usize).max(1024);
@@ -759,6 +761,11 @@ fn wait_command(
 ) -> Result<ShellRunResult, String> {
     let started = Instant::now();
     let max_output = profile.max_output_bytes;
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
     let mut child = cmd
         .spawn()
         .map_err(|err| format!("failed to spawn shell backend '{backend}': {err}"))?;
@@ -772,14 +779,21 @@ fn wait_command(
         .take()
         .map(|pipe| std::thread::spawn(move || read_limited(pipe, max_output)));
 
-    let timeout = Duration::from_millis(profile.timeout_ms);
     let mut timed_out = false;
+    let mut cancelled = false;
     let status = loop {
+        if crate::shell_grapheme::workflow_cancellation_requested() {
+            terminate_process_tree(&mut child);
+            cancelled = true;
+            break child.wait().unwrap_or_default();
+        }
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) => {
-                if started.elapsed() >= timeout {
-                    let _ = child.kill();
+                if profile.timeout_ms.is_some_and(|timeout_ms| {
+                    started.elapsed() >= Duration::from_millis(timeout_ms)
+                }) {
+                    terminate_process_tree(&mut child);
                     timed_out = true;
                     break child.wait().unwrap_or_default();
                 }
@@ -789,11 +803,44 @@ fn wait_command(
         }
     };
 
+    // A shell can exit while a descendant still holds stdout/stderr open. Keep
+    // supervising that owned process group through pipe drains so explicit
+    // cancellation and operator deadlines remain effective during the drain.
+    while stdout_thread
+        .as_ref()
+        .is_some_and(|handle| !handle.is_finished())
+        || stderr_thread
+            .as_ref()
+            .is_some_and(|handle| !handle.is_finished())
+    {
+        if crate::shell_grapheme::workflow_cancellation_requested() {
+            terminate_process_tree(&mut child);
+            cancelled = true;
+            break;
+        }
+        if profile
+            .timeout_ms
+            .is_some_and(|timeout_ms| started.elapsed() >= Duration::from_millis(timeout_ms))
+        {
+            terminate_process_tree(&mut child);
+            timed_out = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
     let stdout = stdout_thread
         .and_then(|handle| handle.join().ok())
         .unwrap_or_default();
-    let stderr = if timed_out {
-        let mut msg = format!("shell.run timed out after {}ms", profile.timeout_ms);
+    let stderr = if timed_out || cancelled {
+        let mut msg = if cancelled {
+            "shell.run cancelled with its owning Grapheme job".to_string()
+        } else {
+            format!(
+                "shell.run timed out after {}ms",
+                profile.timeout_ms.unwrap_or_default()
+            )
+        };
         let captured = stderr_thread
             .and_then(|handle| handle.join().ok())
             .unwrap_or_default();
@@ -809,7 +856,7 @@ fn wait_command(
     };
 
     Ok(ShellRunResult {
-        exit_code: if timed_out {
+        exit_code: if timed_out || cancelled {
             -1
         } else {
             status.code().unwrap_or(-1)
@@ -824,6 +871,14 @@ fn wait_command(
     })
 }
 
+fn terminate_process_tree(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    if child.id() != 0 {
+        let _ = medousa_host::force_process_tree_stop_by_pid(child.id());
+    }
+    let _ = child.kill();
+}
+
 pub(super) fn read_limited(mut pipe: impl Read, max_bytes: usize) -> String {
     let mut buf = Vec::new();
     let mut chunk = [0u8; 8192];
@@ -832,10 +887,12 @@ pub(super) fn read_limited(mut pipe: impl Read, max_bytes: usize) -> String {
             Ok(0) => break,
             Ok(n) => {
                 let remaining = max_bytes.saturating_sub(buf.len());
-                if remaining == 0 {
-                    break;
+                if remaining > 0 {
+                    buf.extend_from_slice(&chunk[..n.min(remaining)]);
                 }
-                buf.extend_from_slice(&chunk[..n.min(remaining)]);
+                // Continue draining after the retained output cap. Dropping
+                // the pipe here can make a verbose child receive SIGPIPE and
+                // fail even though only its captured output should truncate.
             }
             Err(_) => break,
         }
@@ -896,7 +953,7 @@ mod tests {
     #[test]
     fn charter_caps_timeout() {
         let charter = ShellCharterDefaults {
-            timeout_ms: 5_000,
+            timeout_ms: Some(5_000),
             ..ShellCharterDefaults::sensitive()
         };
         let profile = ShellPermissionProfile::from_args_with_charter(
@@ -907,7 +964,26 @@ mod tests {
             &charter,
         )
         .expect("parse");
-        assert_eq!(profile.timeout_ms, 5_000);
+        assert_eq!(profile.timeout_ms, Some(5_000));
+    }
+
+    #[test]
+    fn shell_profile_has_no_implicit_execution_deadline() {
+        let profile = ShellPermissionProfile::from_args_with_charter(
+            &json!({"command":"sleep 1"}),
+            &ShellCharterDefaults::sensitive(),
+        )
+        .expect("parse");
+        assert_eq!(profile.timeout_ms, None);
+    }
+
+    #[test]
+    fn output_limit_truncates_capture_but_still_drains_pipe() {
+        let bytes = b"0123456789";
+        let mut cursor = std::io::Cursor::new(bytes.as_slice());
+        let captured = read_limited(&mut cursor, 4);
+        assert_eq!(captured, "0123");
+        assert_eq!(cursor.position(), bytes.len() as u64);
     }
 
     #[test]
@@ -950,5 +1026,31 @@ mod tests {
             result.stderr,
             result.backend
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workflow_cancellation_stops_the_owned_shell_process_tree() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let cancellation = std::sync::Arc::new(AtomicBool::new(false));
+        let signal = std::sync::Arc::clone(&cancellation);
+        let cancel_thread = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            signal.store(true, Ordering::Release);
+        });
+        let request = ShellRunRequest::from_args(&json!({"command":"sleep 30"})).expect("parse");
+        let started = Instant::now();
+        let result =
+            crate::shell_grapheme::with_blocking_cancellation_scope(Some(cancellation), || {
+                run_sandboxed(&request)
+            })
+            .expect("sandbox");
+        cancel_thread.join().expect("cancellation signal");
+
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert_eq!(result.exit_code, -1);
+        assert!(result.stderr.contains("cancelled"));
+        assert!(!result.timed_out);
     }
 }

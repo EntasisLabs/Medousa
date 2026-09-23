@@ -1261,7 +1261,7 @@ mod tests {
                 working_directory: Some("/workspace".to_string()),
                 environment: BTreeMap::new(),
                 stdin: None,
-                timeout_seconds: 60,
+                timeout_seconds: Some(60),
                 max_output_bytes: 1024,
             },
             checkpoint: WorkEnvironmentCheckpointPolicy::default(),

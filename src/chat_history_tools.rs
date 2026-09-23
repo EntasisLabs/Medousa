@@ -25,7 +25,7 @@ const MAX_READ_TURNS: usize = 40;
 const DEFAULT_READ_CHARS: usize = 12_000;
 const MAX_READ_CHARS: usize = 24_000;
 const MAX_MESSAGE_CHARS: usize = 2_400;
-const MAX_CHAT_HISTORY_IMAGE_BYTES: usize = 8 * 1024 * 1024;
+const MAX_CHAT_HISTORY_IMAGE_BYTES: usize = crate::media_vision::MAX_MODEL_IMAGE_BYTES as usize;
 const CHAT_HISTORY_IMAGE_MIMES: &[&str] = &["image/png", "image/jpeg", "image/webp", "image/gif"];
 const SEARCH_EXCERPT_CHARS: usize = 420;
 
@@ -142,20 +142,21 @@ fn validate_image_record_and_bytes(
         || record.media_id != media_id
         || !CHAT_HISTORY_IMAGE_MIMES.contains(&record.mime.as_str())
         || record.byte_size == 0
-        || record.byte_size > MAX_CHAT_HISTORY_IMAGE_BYTES as u64
+        || record.byte_size > crate::media_store::MAX_UPLOAD_BYTES
     {
         return Err("stored image metadata failed validation".to_string());
     }
     if bytes.is_empty()
-        || bytes.len() > MAX_CHAT_HISTORY_IMAGE_BYTES
+        || bytes.len() as u64 > crate::media_store::MAX_UPLOAD_BYTES
         || bytes.len() as u64 != record.byte_size
     {
         return Err("stored image size does not match its media record".to_string());
     }
+    let (mime, bytes) = crate::media_vision::prepare_model_image(record, bytes)?;
     let receipt = ChatHistoryImageReceipt {
         session_id: session_id.to_string(),
         media_id: media_id.to_string(),
-        mime: record.mime.clone(),
+        mime,
         byte_size: bytes.len(),
         sha256: format!("{:x}", Sha256::digest(&bytes)),
     };
@@ -193,7 +194,7 @@ fn load_chat_history_image_payload(
         || record.media_id != media_id
         || !CHAT_HISTORY_IMAGE_MIMES.contains(&record.mime.as_str())
         || record.byte_size == 0
-        || record.byte_size > MAX_CHAT_HISTORY_IMAGE_BYTES as u64
+        || record.byte_size > crate::media_store::MAX_UPLOAD_BYTES
     {
         return Err("stored image metadata failed validation".to_string());
     }
@@ -700,38 +701,35 @@ impl medousa_runtime::ToolObservationHydrationPort for ChatHistoryMediaHydration
             let media_id = receipt.media_id.clone();
             let profile_id = access.profile_id;
             let expected = receipt.clone();
-            let execution = crate::media_vision::media_execution_service();
-            let observation = execution
-                .run(
-                    medousa_forge::execution::ExecutionClass::Observation,
-                    receipt.byte_size.max(1),
-                    move || {
-                        let (verified, bytes) = load_chat_history_image_payload(
-                            &source_session_id,
-                            &session_id,
-                            &media_id,
-                            &profile_id,
-                        )
-                        .map_err(medousa_forge::error::ForgeError::Store)?;
-                        if !receipts_match(&verified, &expected) {
-                            return Err(medousa_forge::error::ForgeError::Store(
-                                "chat-history image does not match its durable receipt".to_string(),
-                            ));
-                        }
-                        let sha256 = format!("{:x}", Sha256::digest(&bytes));
-                        Ok(medousa_runtime::HydratedToolObservation {
-                            tool_name: request.tool_name,
-                            source_call_id: request.source_call_id,
-                            artifact_id: verified.media_id,
-                            content_type: verified.mime,
-                            bytes,
-                            sha256,
-                            untrusted_content: true,
-                        })
-                    },
-                )
-                .await
-                .map_err(|error| format!("chat-history image lookup failed: {error}"))?;
+            let observation = crate::media_vision::run_image_operation(
+                receipt.byte_size.max(1),
+                move || {
+                    let (verified, bytes) = load_chat_history_image_payload(
+                        &source_session_id,
+                        &session_id,
+                        &media_id,
+                        &profile_id,
+                    )
+                    .map_err(medousa_forge::error::ForgeError::Store)?;
+                    if !receipts_match(&verified, &expected) {
+                        return Err(medousa_forge::error::ForgeError::Store(
+                            "chat-history image does not match its durable receipt".to_string(),
+                        ));
+                    }
+                    let sha256 = format!("{:x}", Sha256::digest(&bytes));
+                    Ok(medousa_runtime::HydratedToolObservation {
+                        tool_name: request.tool_name,
+                        source_call_id: request.source_call_id,
+                        artifact_id: verified.media_id,
+                        content_type: verified.mime,
+                        bytes,
+                        sha256,
+                        untrusted_content: true,
+                    })
+                },
+            )
+            .await
+            .map_err(|error| format!("chat-history image lookup failed: {error}"))?;
             Ok(Some(observation))
         })
     }
@@ -811,27 +809,25 @@ impl CognitionChatHistoryReadTool {
             let source_session_id = access.source_session_id.clone();
             let profile_id = access.profile_id.clone();
             Some(
-                crate::media_vision::media_execution_service()
-                    .run(
-                        medousa_forge::execution::ExecutionClass::Observation,
-                        MAX_CHAT_HISTORY_IMAGE_BYTES,
-                        move || {
-                            load_chat_history_image_payload(
-                                &source_session_id,
-                                &image_session_id,
-                                &image_media_id,
-                                &profile_id,
-                            )
-                            .map(|(receipt, _bytes)| receipt)
-                            .map_err(medousa_forge::error::ForgeError::Store)
-                        },
-                    )
-                    .await
-                    .map_err(|error| {
-                        StasisError::PortFailure(format!(
-                            "{COGNITION_CHAT_HISTORY_READ}: image lookup failed: {error}"
-                        ))
-                    })?,
+                crate::media_vision::run_image_operation(
+                    MAX_CHAT_HISTORY_IMAGE_BYTES,
+                    move || {
+                        load_chat_history_image_payload(
+                            &source_session_id,
+                            &image_session_id,
+                            &image_media_id,
+                            &profile_id,
+                        )
+                        .map(|(receipt, _bytes)| receipt)
+                        .map_err(medousa_forge::error::ForgeError::Store)
+                    },
+                )
+                .await
+                .map_err(|error| {
+                    StasisError::PortFailure(format!(
+                        "{COGNITION_CHAT_HISTORY_READ}: image lookup failed: {error}"
+                    ))
+                })?,
             )
         } else {
             None
@@ -1043,6 +1039,40 @@ mod tests {
         let mut tampered = receipt.clone();
         tampered.sha256 = "0".repeat(64);
         assert!(!receipts_match(&receipt, &tampered));
+    }
+
+    #[test]
+    fn large_attachment_receipt_describes_the_same_pixels_on_reopen() {
+        let source = image::DynamicImage::new_rgb8(2, 3);
+        let mut encoded = std::io::Cursor::new(Vec::new());
+        source
+            .write_to(&mut encoded, image::ImageFormat::Png)
+            .unwrap();
+        let mut bytes = encoded.into_inner();
+        bytes.resize(9 * 1024 * 1024, 0);
+        let record = crate::media_store::MediaRecord {
+            media_id: "usr:session-a:large-image".to_string(),
+            session_id: "session-a".to_string(),
+            mime: "image/png".to_string(),
+            kind: "image".to_string(),
+            byte_size: bytes.len() as u64,
+            stored_at_utc: Utc::now(),
+            payload_path: "ignored-by-test".to_string(),
+            label: None,
+            extract_path: None,
+            extract_chars: None,
+            extract_truncated: false,
+        };
+        let initial = crate::media_vision::prepare_model_image(&record, bytes.clone()).unwrap();
+        let (receipt, reopened) =
+            validate_image_record_and_bytes(&record.session_id, &record.media_id, &record, bytes)
+                .unwrap();
+        validate_image_receipt_shape(&receipt).unwrap();
+        assert_eq!(receipt.mime, initial.0);
+        assert_eq!(reopened, initial.1);
+        assert_eq!(receipt.byte_size, reopened.len());
+        assert_eq!(receipt.sha256, format!("{:x}", Sha256::digest(&reopened)));
+        assert!(receipt.byte_size < record.byte_size as usize);
     }
 
     #[tokio::test]

@@ -664,8 +664,7 @@ async fn exchange_mesh_task(
         .as_deref()
         .expect("validated delegated turn id");
     let work_id = delegated_work_id(&record.phone_id, turn_id);
-    let task_execution_grant =
-        resolve_task_execution_grant(&state, &record, &payload, &work_id, envelope.expires_at)?;
+    let task_execution_grant = resolve_task_execution_grant(&state, &record, &payload, &work_id)?;
 
     let payload_hash =
         payload_hash_hex(&payload).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
@@ -1375,7 +1374,10 @@ async fn control_mesh_task(
             .cancel_delegated_exact(&request.work_id, &expected_identity)
             .map_err(map_delegated_control_error)?,
         DelegatedTaskControlAction::Steer => {
-            if grant.expires_at <= chrono::Utc::now() {
+            if grant
+                .expires_at
+                .is_some_and(|expiry| expiry <= chrono::Utc::now())
+            {
                 let _ = store.cancel_delegated_exact(&request.work_id, &expected_identity);
                 return Err((
                     StatusCode::FORBIDDEN,
@@ -1475,7 +1477,6 @@ fn resolve_task_execution_grant(
     sender: &PairedDeviceRecord,
     request: &DelegatedTaskRequest,
     work_id: &str,
-    envelope_expires_at: chrono::DateTime<chrono::Utc>,
 ) -> Result<TaskExecutionGrant, (StatusCode, String)> {
     let store = crate::agent_runtime::turn_worker::turn_worker_store();
     if let Some(existing) = store.get(work_id) {
@@ -1498,7 +1499,13 @@ fn resolve_task_execution_grant(
                     "delegated work carries a conflicting execution grant".to_string(),
                 ));
             }
-            if grant.expires_at <= chrono::Utc::now()
+            // Legacy grants retain their original expiry: the stored policy
+            // revision proves who admitted them, but not whether the request
+            // carried an explicit task expiry. New admissions use the distinct
+            // task_deadline_at field and never inherit envelope freshness.
+            if grant
+                .expires_at
+                .is_some_and(|expiry| expiry <= chrono::Utc::now())
                 && matches!(
                     existing.status,
                     crate::agent_runtime::turn_worker::TurnWorkStatus::Pending
@@ -1521,15 +1528,19 @@ fn resolve_task_execution_grant(
             "task.request grant required".to_string(),
         ));
     }
-    let request_expires_at = request
-        .grant
-        .payload
-        .get("deadline_at")
-        .and_then(|value| {
-            serde_json::from_value::<chrono::DateTime<chrono::Utc>>(value.clone()).ok()
-        })
-        .map(|deadline| deadline.min(envelope_expires_at))
-        .unwrap_or(envelope_expires_at);
+    let task_expires_at = match request.grant.payload.get("task_deadline_at") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(value) => Some(
+            serde_json::from_value::<chrono::DateTime<chrono::Utc>>(value.clone()).map_err(
+                |error| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        format!("invalid task_deadline_at: {error}"),
+                    )
+                },
+            )?,
+        ),
+    };
     let (worker_intent, bot_id, project_id, requested_tool_names, requested_world_ids) =
         request.worker.as_ref().map_or_else(
             || {
@@ -1593,7 +1604,7 @@ fn resolve_task_execution_grant(
             requested_tool_domains: &requested_tool_domains,
             requested_tool_names: &requested_tool_name_refs,
             requested_world_ids: &requested_world_id_refs,
-            request_expires_at,
+            task_expires_at,
             legacy_task_request_granted,
         })
         .map_err(internal)?

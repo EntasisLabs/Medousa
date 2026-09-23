@@ -368,12 +368,13 @@ async fn unauthorized_agent_candidate_is_never_submitted() {
 }
 
 #[tokio::test]
-async fn stalled_transport_attempt_is_bounded_by_delegation_deadline() {
+async fn stalled_transport_attempt_is_bounded_by_explicit_task_deadline() {
     let runtime = Arc::new(RuntimeComposition::InMemory(InMemoryRuntime::new()));
     let (mut job, request) = pending_job("delegation-job-stalled-transport");
     let mut pending: PendingDelegationSpawn =
         serde_json::from_str(&job.payload_ref).expect("pending job payload");
-    pending.deadline_at = Utc::now() + chrono::Duration::milliseconds(1_500);
+    pending.deadline_at = Some(Utc::now() + chrono::Duration::milliseconds(1_500));
+    pending.lifetime_policy_version = 1;
     job.payload_ref = serde_json::to_string(&pending).expect("deadline payload");
     let session_store = Arc::new(MemorySessionStore::default());
     session_store.seed_parent_receipt(&request);
@@ -405,18 +406,21 @@ async fn stalled_transport_attempt_is_bounded_by_delegation_deadline() {
 }
 
 #[tokio::test]
-async fn expired_queued_spawn_fails_without_discovery_or_submission() {
+async fn expired_legacy_spawn_deadline_does_not_block_useful_work() {
     let runtime = Arc::new(RuntimeComposition::InMemory(InMemoryRuntime::new()));
     let (mut job, request) = pending_job("delegation-job-expired-before-discovery");
     let mut pending: PendingDelegationSpawn =
         serde_json::from_str(&job.payload_ref).expect("pending job payload");
-    pending.deadline_at = Utc::now() - chrono::Duration::seconds(1);
-    job.payload_ref = serde_json::to_string(&pending).expect("expired payload");
+    pending.deadline_at = Some(Utc::now() - chrono::Duration::seconds(1));
+    pending.lifetime_policy_version = 0;
+    pending.grant.payload["deadline_at"] =
+        serde_json::json!(Utc::now() - chrono::Duration::seconds(1));
+    job.payload_ref = serde_json::to_string(&pending).expect("legacy expired payload");
     let session_store = Arc::new(MemorySessionStore::default());
     session_store.seed_parent_receipt(&request);
     let host = Arc::new(RetryAfterCheckpointTransport {
         target: DelegationTarget {
-            route_ref: "route-expired".into(),
+            route_ref: "route-legacy-expired".into(),
             peer_device_id: "remote-daemon".into(),
             label: None,
         },
@@ -435,23 +439,38 @@ async fn expired_queued_spawn_fails_without_discovery_or_submission() {
     runtime
         .enqueue_job(job.clone())
         .await
-        .expect("enqueue expired job");
+        .expect("enqueue legacy job");
 
     process_once(runtime.as_ref(), "async-spawn-expired")
         .await
-        .expect("expired job pass");
+        .expect("legacy job pass");
     let wait = super::RuntimeDelegationWaitStore::new(runtime.as_ref())
         .get(request.grant.turn_id.as_deref().expect("turn id"))
         .await
-        .expect("load timeout wait")
-        .expect("timeout wait exists");
+        .expect("load legacy wait")
+        .expect("legacy wait exists");
 
     assert_eq!(
         wait.status,
-        stasis::domain::agent::turn_wait::TurnWaitStatus::TimedOut
+        stasis::domain::agent::turn_wait::TurnWaitStatus::Pending
     );
-    assert_eq!(host.discoveries.load(Ordering::SeqCst), 0);
-    assert_eq!(host.submissions.load(Ordering::SeqCst), 0);
+    assert_eq!(host.discoveries.load(Ordering::SeqCst), 1);
+    assert_eq!(host.submissions.load(Ordering::SeqCst), 1);
+
+    tokio::time::sleep(Duration::from_millis(1_100)).await;
+    process_once(runtime.as_ref(), "async-spawn-legacy-reconcile")
+        .await
+        .expect("legacy request resumes from its durable checkpoint");
+    let completed = super::RuntimeDelegationWaitStore::new(runtime.as_ref())
+        .get(request.grant.turn_id.as_deref().expect("turn id"))
+        .await
+        .expect("load completed legacy wait")
+        .expect("completed legacy wait exists");
+    assert_eq!(
+        completed.status,
+        stasis::domain::agent::turn_wait::TurnWaitStatus::Completed
+    );
+    assert_eq!(host.submissions.load(Ordering::SeqCst), 2);
 }
 
 fn pending_job(job_id: &str) -> (NewJob, DelegatedTaskRequest) {
@@ -460,7 +479,6 @@ fn pending_job(job_id: &str) -> (NewJob, DelegatedTaskRequest) {
         job_id.trim_start_matches("delegation-job-")
     );
     let request = request_for(job_id, &turn_id);
-    let deadline_at = Utc::now() + chrono::Duration::seconds(60);
     let mut spawn = pending_worker();
     spawn.task = request.grant.payload["user_prompt"]
         .as_str()
@@ -474,7 +492,8 @@ fn pending_job(job_id: &str) -> (NewJob, DelegatedTaskRequest) {
         grant: request.grant.clone(),
         source_execution: request.source_execution.clone(),
         context: request.context.clone(),
-        deadline_at,
+        deadline_at: None,
+        lifetime_policy_version: 1,
     };
     (
         NewJob {

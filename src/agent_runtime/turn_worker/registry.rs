@@ -149,7 +149,9 @@ impl WorldScopedToolRegistry {
             ));
         }
         match policies.world_grant_is_active(grant) {
-            Ok(true) => Ok(u64::try_from(grant.expires_at.timestamp_millis()).ok()),
+            Ok(true) => Ok(grant
+                .expires_at
+                .and_then(|expiry| u64::try_from(expiry.timestamp_millis()).ok())),
             Ok(false) => Err(StasisError::PortFailure(
                 "governed world authority was revoked by the destination workshop".to_string(),
             )),

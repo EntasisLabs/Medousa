@@ -1,6 +1,8 @@
 //! Portable Stasis handler set shared by every daemon deployment.
 
 use std::sync::Arc;
+#[cfg(feature = "full-daemon")]
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use stasis::application::orchestration::tool_registry::ToolRegistry;
 use stasis::application::runtime::agent_session_job_handler::AgentSessionJobHandler;
@@ -47,6 +49,9 @@ pub(crate) fn register_daemon_runtime_handlers<R>(
 where
     R: DaemonRuntimeRegistrar,
 {
+    #[cfg(feature = "full-daemon")]
+    runtime.register_daemon_handler(CancellableGraphemeJobHandler::new(workflow_engine.clone()))?;
+    #[cfg(not(feature = "full-daemon"))]
     runtime.register_daemon_handler(GraphemeJobHandler::new(workflow_engine.clone()))?;
     runtime.register_daemon_handler(GraphemeHealthcheckJobHandler::new(workflow_engine.clone()))?;
     runtime.register_daemon_handler(GraphemeEchoJobHandler::new(workflow_engine.clone()))?;
@@ -118,6 +123,87 @@ where
         cluster_store.clone(),
     ))?;
     Ok(())
+}
+
+#[cfg(feature = "full-daemon")]
+struct CancellableGraphemeJobHandler {
+    inner: GraphemeJobHandler,
+}
+
+#[cfg(feature = "full-daemon")]
+struct GraphemeCancellationWatcher {
+    handle: Option<tokio::task::JoinHandle<()>>,
+    cancellation: Arc<AtomicBool>,
+}
+
+#[cfg(feature = "full-daemon")]
+impl Drop for GraphemeCancellationWatcher {
+    fn drop(&mut self) {
+        self.cancellation.store(true, Ordering::Release);
+        if let Some(handle) = self.handle.take() {
+            handle.abort();
+        }
+    }
+}
+
+#[cfg(feature = "full-daemon")]
+impl CancellableGraphemeJobHandler {
+    fn new(engine: Arc<dyn WorkflowEngine>) -> Self {
+        Self {
+            inner: GraphemeJobHandler::new(engine),
+        }
+    }
+}
+
+#[cfg(feature = "full-daemon")]
+#[async_trait::async_trait]
+impl stasis::application::runtime::in_memory_runtime::JobHandler for CancellableGraphemeJobHandler {
+    fn job_type(&self) -> &'static str {
+        "workflow.grapheme.run"
+    }
+
+    async fn execute(
+        &self,
+        job: &stasis::domain::runtime::job::Job,
+    ) -> stasis::prelude::Result<stasis::application::runtime::in_memory_runtime::JobExecutionOutcome>
+    {
+        self.inner.execute(job).await
+    }
+
+    async fn execute_with_context(
+        &self,
+        job: &stasis::domain::runtime::job::Job,
+        ctx: stasis::application::runtime::job_context::JobContext,
+    ) -> stasis::prelude::Result<stasis::application::runtime::in_memory_runtime::JobExecutionOutcome>
+    {
+        let cancellation = Arc::new(AtomicBool::new(false));
+        if ctx.is_cancelled() {
+            cancellation.store(true, Ordering::Release);
+        }
+        let watch = ctx.cancellation.clone();
+        let watcher_cancellation = Arc::clone(&cancellation);
+        let watcher = tokio::spawn(async move {
+            let mut watch = watch;
+            loop {
+                if *watch.borrow() {
+                    watcher_cancellation.store(true, Ordering::Release);
+                    return;
+                }
+                if watch.changed().await.is_err() {
+                    return;
+                }
+            }
+        });
+        let _watcher = GraphemeCancellationWatcher {
+            handle: Some(watcher),
+            cancellation: Arc::clone(&cancellation),
+        };
+        crate::shell_grapheme::with_workflow_cancellation_scope(
+            cancellation,
+            self.inner.execute_with_context(job, ctx),
+        )
+        .await
+    }
 }
 
 pub(crate) trait DaemonRuntimeRegistrar {

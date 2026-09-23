@@ -48,7 +48,6 @@ use crate::workshop_api::WorkshopPlacementRequest;
 use crate::workshop_contract::{ExecutionPlacementResolution, ExecutionTargetResolutionError};
 
 pub const DELEGATION_ENDPOINT_ID: &str = "stasisd:endpoint:medousa-delegation";
-const DELEGATION_TIMEOUT_SECONDS: u64 = 120;
 const DELEGATION_JOB_PREFIX: &str = "delegation-job-";
 const DELEGATION_TURN_PREFIX: &str = "delegation-turn-";
 const DELEGATION_WAIT_SIGNAL_TYPE: &str = "medousa.delegated_turn";
@@ -105,6 +104,9 @@ impl RuntimeDelegationWaitStore {
                 "delegation wait identity does not match its durable record".to_string(),
             ));
         }
+        // TurnWaitRecord predates optional durable wait deadlines. Its timestamp
+        // is a compatibility projection only; the durable wait has no expiry.
+        record.deadline_at = DateTime::<Utc>::MAX_UTC;
         match durable.status {
             DurableWaitStatus::Pending if record.status != TurnWaitStatus::Pending => {
                 return Err(StasisError::PortFailure(
@@ -141,7 +143,7 @@ impl TurnWaitStore for RuntimeDelegationWaitStore {
                 signal_type: DELEGATION_WAIT_SIGNAL_TYPE.to_string(),
                 correlation_key: record.turn_id,
                 status: DurableWaitStatus::Pending,
-                deadline_at: Some(record.deadline_at),
+                deadline_at: None,
                 created_at: record.created_at,
                 updated_at: record.updated_at,
                 signal_payload: Some(payload),
@@ -282,7 +284,10 @@ struct DelegationJobPayload {
     intent: String,
     #[serde(default)]
     user_ack: String,
-    deadline_at: DateTime<Utc>,
+    #[serde(default)]
+    deadline_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    lifetime_policy_version: u32,
     poll_interval_seconds: u64,
 }
 
@@ -297,7 +302,10 @@ struct PendingDelegationSpawn {
     grant: AgentEnvelope,
     source_execution: medousa_types::session::ExecutionRef,
     context: crate::delegated_task::DelegatedContextGrant,
-    deadline_at: DateTime<Utc>,
+    #[serde(default)]
+    deadline_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    lifetime_policy_version: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -329,9 +337,16 @@ impl PendingDelegationSpawn {
             ));
         }
         let worker = self.spawn.resolve(&checkpoint.execution_placement)?;
+        let mut grant = self.grant.clone();
+        if let Some(deadline) = self.deadline_at {
+            grant.payload["task_deadline_at"] = json!(deadline);
+        } else if let Some(payload) = grant.payload.as_object_mut() {
+            payload.remove("task_deadline_at");
+            payload.remove("deadline_at");
+        }
         let request = DelegatedTaskRequest {
             schema_version: DELEGATED_TASK_SCHEMA_VERSION,
-            grant: self.grant.clone(),
+            grant,
             source_execution: self.source_execution.clone(),
             parent_runtime_id: self.placement.parent_runtime_id.clone(),
             execution_placement: checkpoint.execution_placement,
@@ -346,6 +361,7 @@ impl PendingDelegationSpawn {
             intent: self.spawn.intent.clone(),
             user_ack: self.spawn.user_ack.clone(),
             deadline_at: self.deadline_at,
+            lifetime_policy_version: self.lifetime_policy_version,
             poll_interval_seconds: 1,
         })
     }
@@ -353,7 +369,28 @@ impl PendingDelegationSpawn {
 
 impl StoredDelegationPayload {
     fn parse(job: &Job) -> StasisResult<Self> {
-        let stored: Self = serde_json::from_str(&job.payload_ref).map_err(port_failure)?;
+        let mut stored: Self = serde_json::from_str(&job.payload_ref).map_err(port_failure)?;
+        match &mut stored {
+            Self::Resolved(payload) if payload.lifetime_policy_version == 0 => {
+                // The old deadline was the daemon's implicit 120-second task
+                // cap, not an operator-selected lifetime.
+                payload.deadline_at = None;
+                payload.lifetime_policy_version = 1;
+                if let Some(grant_payload) = payload.request.grant.payload.as_object_mut() {
+                    grant_payload.remove("deadline_at");
+                    grant_payload.remove("task_deadline_at");
+                }
+            }
+            Self::Pending(pending) if pending.lifetime_policy_version == 0 => {
+                pending.deadline_at = None;
+                pending.lifetime_policy_version = 1;
+                if let Some(grant_payload) = pending.grant.payload.as_object_mut() {
+                    grant_payload.remove("deadline_at");
+                    grant_payload.remove("task_deadline_at");
+                }
+            }
+            Self::Resolved(_) | Self::Pending(_) => {}
+        }
         match stored {
             Self::Resolved(_) => {
                 DelegationJobHandler::parse(job).map(|payload| Self::Resolved(Box::new(payload)))
@@ -767,7 +804,7 @@ impl DelegationJobHandler {
                         correlation_id: job.correlation_id.clone(),
                         participant_id: "paired-medousa-daemon".to_string(),
                         status: TurnWaitStatus::Pending,
-                        deadline_at: pending.deadline_at,
+                        deadline_at: pending.deadline_at.unwrap_or(DateTime::<Utc>::MAX_UTC),
                         created_at: pending.grant.occurred_at,
                         updated_at: Utc::now(),
                         result_payload: None,
@@ -776,10 +813,10 @@ impl DelegationJobHandler {
                     .await?
             }
         }
-        let remaining = (pending.deadline_at - Utc::now())
-            .to_std()
-            .unwrap_or_default();
-        if remaining.is_zero() {
+        let remaining = pending
+            .deadline_at
+            .map(|deadline| (deadline - Utc::now()).to_std().unwrap_or_default());
+        if remaining.is_some_and(|remaining| remaining.is_zero()) {
             let last_attempt = job
                 .last_error
                 .as_deref()
@@ -795,7 +832,9 @@ impl DelegationJobHandler {
                 .await;
         }
         let candidates = match tokio::time::timeout(
-            remaining.min(DELEGATION_TRANSPORT_ATTEMPT_TIMEOUT),
+            remaining
+                .unwrap_or(DELEGATION_TRANSPORT_ATTEMPT_TIMEOUT)
+                .min(DELEGATION_TRANSPORT_ATTEMPT_TIMEOUT),
             self.host.authorized_targets(),
         )
         .await
@@ -883,6 +922,16 @@ impl DelegationJobHandler {
     fn parse(job: &Job) -> StasisResult<DelegationJobPayload> {
         let mut payload: DelegationJobPayload = serde_json::from_str(&job.payload_ref)
             .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+        if payload.lifetime_policy_version == 0 {
+            // The legacy value represented the implicit daemon-side 120s
+            // timeout, never an operator-selected task expiry.
+            payload.deadline_at = None;
+            payload.lifetime_policy_version = 1;
+            if let Some(grant_payload) = payload.request.grant.payload.as_object_mut() {
+                grant_payload.remove("deadline_at");
+                grant_payload.remove("task_deadline_at");
+            }
+        }
         if payload.work_id.trim().is_empty() {
             let identity = job
                 .id
@@ -1077,7 +1126,7 @@ impl DelegationJobHandler {
                         .clone()
                         .unwrap_or_else(|| "paired-medousa-daemon".to_string()),
                     status: TurnWaitStatus::Pending,
-                    deadline_at: payload.deadline_at,
+                    deadline_at: payload.deadline_at.unwrap_or(DateTime::<Utc>::MAX_UTC),
                     created_at: payload.request.grant.occurred_at,
                     updated_at: now,
                     result_payload: None,
@@ -1085,7 +1134,7 @@ impl DelegationJobHandler {
                 })
                 .await?;
         }
-        if now >= payload.deadline_at {
+        if payload.deadline_at.is_some_and(|deadline| now >= deadline) {
             return self
                 .complete_failure(
                     &payload,
@@ -1096,11 +1145,13 @@ impl DelegationJobHandler {
                 .await;
         }
 
-        let remaining = (payload.deadline_at - Utc::now())
-            .to_std()
-            .unwrap_or_default();
+        let remaining = payload
+            .deadline_at
+            .map(|deadline| (deadline - Utc::now()).to_std().unwrap_or_default());
         let observation = match tokio::time::timeout(
-            remaining.min(DELEGATION_TRANSPORT_ATTEMPT_TIMEOUT),
+            remaining
+                .unwrap_or(DELEGATION_TRANSPORT_ATTEMPT_TIMEOUT)
+                .min(DELEGATION_TRANSPORT_ATTEMPT_TIMEOUT),
             self.host
                 .submit_or_observe(&payload.target, payload.request.clone()),
         )
@@ -1227,7 +1278,6 @@ impl DelegationService {
         let work_id = format!("work-delegation-{identity}");
         if self.runtime.get_job(&job_id).await?.is_none() {
             let now = Utc::now();
-            let deadline_at = now + chrono::Duration::seconds(DELEGATION_TIMEOUT_SECONDS as i64);
             let grant = AgentEnvelope {
                 schema_version: AGENT_ENVELOPE_SCHEMA_VERSION_V1,
                 kind: AgentEnvelopeKind::TurnGranted,
@@ -1240,7 +1290,7 @@ impl DelegationService {
                 causation_id: execution.turn_id().to_string(),
                 participant_id: Some("paired-medousa-daemon".to_string()),
                 occurred_at: now,
-                payload: json!({"user_prompt":spawn.task, "system_prompt":null, "deadline_at":deadline_at}),
+                payload: json!({"user_prompt":spawn.task, "system_prompt":null}),
             };
             let source_execution =
                 source_execution_from_grant(&self.authority_id, &grant).map_err(port_failure)?;
@@ -1260,7 +1310,8 @@ impl DelegationService {
                 grant,
                 source_execution,
                 context,
-                deadline_at,
+                deadline_at: None,
+                lifetime_policy_version: 1,
             };
             self.runtime
                 .enqueue_job(NewJob {
@@ -1484,7 +1535,6 @@ impl DelegationService {
         let work_id = format!("work-delegation-{identity}");
         if self.runtime.get_job(&job_id).await?.is_none() {
             let now = Utc::now();
-            let deadline_at = now + chrono::Duration::seconds(DELEGATION_TIMEOUT_SECONDS as i64);
             let grant = AgentEnvelope {
                 schema_version: AGENT_ENVELOPE_SCHEMA_VERSION_V1,
                 kind: AgentEnvelopeKind::TurnGranted,
@@ -1500,7 +1550,6 @@ impl DelegationService {
                 payload: json!({
                     "user_prompt": task,
                     "system_prompt": null,
-                    "deadline_at": deadline_at,
                 }),
             };
             let context = build_bounded_context_grant(
@@ -1528,7 +1577,8 @@ impl DelegationService {
                 },
                 intent: worker.intent.clone(),
                 user_ack: user_ack.to_string(),
-                deadline_at,
+                deadline_at: None,
+                lifetime_policy_version: 1,
                 poll_interval_seconds: 1,
             };
             self.runtime
@@ -2362,7 +2412,8 @@ mod tests {
             request: request.clone(),
             intent: "research".to_string(),
             user_ack: "Working on it.".to_string(),
-            deadline_at: Utc::now() + chrono::Duration::seconds(30),
+            deadline_at: None,
+            lifetime_policy_version: 1,
             poll_interval_seconds: 1,
         };
 
@@ -2478,7 +2529,8 @@ mod tests {
             target,
             intent: "research".to_string(),
             user_ack: "Working on it.".to_string(),
-            deadline_at: Utc::now() + chrono::Duration::seconds(30),
+            deadline_at: None,
+            lifetime_policy_version: 1,
             poll_interval_seconds: 1,
             request,
         };

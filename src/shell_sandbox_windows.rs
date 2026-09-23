@@ -17,7 +17,7 @@ use rappct::{
     AppContainerProfile, JobLimits, KnownCapability, LaunchOptions, SecurityCapabilitiesBuilder,
     StdioConfig, launch_in_container_with_io,
 };
-use windows::Win32::Foundation::{CloseHandle, HANDLE};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT};
 use windows::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
     JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
@@ -30,6 +30,7 @@ use windows::Win32::System::JobObjects::{
     JobObjectBasicUIRestrictions, JobObjectExtendedLimitInformation,
     JobObjectNetRateControlInformation, SetInformationJobObject, TerminateJobObject,
 };
+use windows::Win32::System::Threading::WaitForSingleObject;
 use windows::core::PCWSTR;
 
 use super::{ShellPermissionProfile, ShellRunRequest, ShellRunResult, default_path, read_limited};
@@ -154,18 +155,74 @@ fn run_with_appcontainer(request: &ShellRunRequest, cwd: &Path) -> Result<ShellR
     // Drop stdin so the child isn't blocked waiting for input.
     drop(launched.stdin.take());
 
-    let timeout = Duration::from_millis(request.profile.timeout_ms);
-    let wait_result = launched.wait(Some(timeout));
-    let (exit_code, timed_out) = match wait_result {
-        Ok(code) => (code as i32, false),
-        Err(_) => (-1, true),
+    let job_guard = launched
+        .job_guard
+        .as_ref()
+        .ok_or_else(|| "AppContainer launch omitted its process job".to_string())?;
+    let started = Instant::now();
+    let mut timed_out = false;
+    let mut cancelled = false;
+    let exit_code = loop {
+        if crate::shell_grapheme::workflow_cancellation_requested() {
+            let _ = unsafe { TerminateJobObject(job_guard.as_handle(), 1) };
+            cancelled = true;
+            break launched.wait(Some(Duration::from_secs(2))).unwrap_or(-1) as i32;
+        }
+        if request
+            .profile
+            .timeout_ms
+            .is_some_and(|timeout_ms| started.elapsed() >= Duration::from_millis(timeout_ms))
+        {
+            let _ = unsafe { TerminateJobObject(job_guard.as_handle(), 1) };
+            timed_out = true;
+            break launched.wait(Some(Duration::from_secs(2))).unwrap_or(-1) as i32;
+        }
+        let wait = unsafe { WaitForSingleObject(job_guard.as_handle(), 20) };
+        if wait == WAIT_OBJECT_0 {
+            break launched.wait(Some(Duration::ZERO)).unwrap_or(-1) as i32;
+        }
+        if wait != WAIT_TIMEOUT {
+            let _ = unsafe { TerminateJobObject(job_guard.as_handle(), 1) };
+            return Err("waiting for AppContainer process job failed".into());
+        }
     };
+
+    while stdout_thread
+        .as_ref()
+        .is_some_and(|handle| !handle.is_finished())
+        || stderr_thread
+            .as_ref()
+            .is_some_and(|handle| !handle.is_finished())
+    {
+        if crate::shell_grapheme::workflow_cancellation_requested() {
+            let _ = unsafe { TerminateJobObject(job_guard.as_handle(), 1) };
+            cancelled = true;
+            break;
+        }
+        if request
+            .profile
+            .timeout_ms
+            .is_some_and(|timeout_ms| started.elapsed() >= Duration::from_millis(timeout_ms))
+        {
+            let _ = unsafe { TerminateJobObject(job_guard.as_handle(), 1) };
+            timed_out = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
 
     let stdout = stdout_thread
         .and_then(|handle| handle.join().ok())
         .unwrap_or_default();
-    let stderr = if timed_out {
-        let mut msg = format!("shell.run timed out after {}ms", request.profile.timeout_ms);
+    let stderr = if timed_out || cancelled {
+        let mut msg = if cancelled {
+            "shell.run cancelled with its owning Grapheme job".to_string()
+        } else {
+            format!(
+                "shell.run timed out after {}ms",
+                request.profile.timeout_ms.unwrap_or_default()
+            )
+        };
         let captured = stderr_thread
             .and_then(|handle| handle.join().ok())
             .unwrap_or_default();
@@ -181,7 +238,11 @@ fn run_with_appcontainer(request: &ShellRunRequest, cwd: &Path) -> Result<ShellR
     };
 
     Ok(ShellRunResult {
-        exit_code,
+        exit_code: if timed_out || cancelled {
+            -1
+        } else {
+            exit_code
+        },
         stdout,
         stderr,
         backend: "appcontainer".to_string(),
@@ -411,13 +472,21 @@ fn wait_with_job(
         .take()
         .map(|pipe| std::thread::spawn(move || read_limited(pipe, max_output)));
 
-    let timeout = Duration::from_millis(profile.timeout_ms);
     let mut timed_out = false;
+    let mut cancelled = false;
     let status = loop {
+        if crate::shell_grapheme::workflow_cancellation_requested() {
+            job.terminate();
+            let _ = child.kill();
+            cancelled = true;
+            break child.wait().unwrap_or_default();
+        }
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) => {
-                if started.elapsed() >= timeout {
+                if profile.timeout_ms.is_some_and(|timeout_ms| {
+                    started.elapsed() >= Duration::from_millis(timeout_ms)
+                }) {
                     job.terminate();
                     let _ = child.kill();
                     timed_out = true;
@@ -429,13 +498,43 @@ fn wait_with_job(
         }
     };
 
-    drop(job);
+    while stdout_thread
+        .as_ref()
+        .is_some_and(|handle| !handle.is_finished())
+        || stderr_thread
+            .as_ref()
+            .is_some_and(|handle| !handle.is_finished())
+    {
+        if crate::shell_grapheme::workflow_cancellation_requested() {
+            job.terminate();
+            let _ = child.kill();
+            cancelled = true;
+            break;
+        }
+        if profile
+            .timeout_ms
+            .is_some_and(|timeout_ms| started.elapsed() >= Duration::from_millis(timeout_ms))
+        {
+            job.terminate();
+            let _ = child.kill();
+            timed_out = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
 
     let stdout = stdout_thread
         .and_then(|handle| handle.join().ok())
         .unwrap_or_default();
-    let stderr = if timed_out {
-        let mut msg = format!("shell.run timed out after {}ms", profile.timeout_ms);
+    let stderr = if timed_out || cancelled {
+        let mut msg = if cancelled {
+            "shell.run cancelled with its owning Grapheme job".to_string()
+        } else {
+            format!(
+                "shell.run timed out after {}ms",
+                profile.timeout_ms.unwrap_or_default()
+            )
+        };
         let captured = stderr_thread
             .and_then(|handle| handle.join().ok())
             .unwrap_or_default();
@@ -449,9 +548,10 @@ fn wait_with_job(
             .and_then(|handle| handle.join().ok())
             .unwrap_or_default()
     };
+    drop(job);
 
     Ok(ShellRunResult {
-        exit_code: if timed_out {
+        exit_code: if timed_out || cancelled {
             -1
         } else {
             status.code().unwrap_or(-1)

@@ -7,7 +7,7 @@ use anyhow::{Result, bail};
 use medousa_acp_client::coordination::store::CoordinationStore;
 use medousa_forge::execution::ExecutionClass;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::{Arc, OnceLock},
 };
 use tokio::sync::watch;
@@ -50,9 +50,9 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut workers = tokio::task::JoinSet::new();
-    let mut active = HashSet::new();
-    let mut reconcile = HashSet::new();
+    let mut active = HashMap::new();
     let mut retry_after = HashMap::new();
+    let mut worker_keys = HashMap::new();
     let mut cursor: Option<String> = None;
     loop {
         if *shutdown.borrow() {
@@ -62,18 +62,29 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
             changed = shutdown.changed() => { if changed.is_err() || *shutdown.borrow() { break; } },
             _ = interval.tick() => {},
             _ = host.wake.notified() => { cursor = None; },
-            finished = workers.join_next(), if !workers.is_empty() => {
+            finished = workers.join_next_with_id(), if !workers.is_empty() => {
                 match finished {
-                    Some(Ok((key, id, outcome))) => {
+                    Some(Ok((worker_id, (key, id, outcome)))) => {
+                        worker_keys.remove(&worker_id);
                         active.remove(&key);
                         match outcome {
-                            Ok(OwnerIntakeResult::NeedsReconciliation) => { tracing::warn!(event_id = %id, "owner intake retained for explicit reconciliation"); reconcile.insert(key); },
+                            Ok(OwnerIntakeResult::NeedsReconciliation) => {
+                                tracing::warn!(event_id = %id, "owner intake retained for durable reconciliation");
+                                retry_after.insert(key, tokio::time::Instant::now() + std::time::Duration::from_secs(30));
+                            },
                             Ok(OwnerIntakeResult::DeferredBusy) => { retry_after.insert(key, tokio::time::Instant::now() + std::time::Duration::from_secs(30)); },
                             Ok(_) => {},
                             Err(error) => { tracing::warn!(event_id = %id, %error, "owner event retained; recovery approval/visibility unavailable"); retry_after.insert(key, tokio::time::Instant::now() + std::time::Duration::from_secs(300)); },
                         }
                     },
-                    Some(Err(error)) => { tracing::error!(%error, "owner intake worker lost; retaining its in-process fence until restart"); },
+                    Some(Err(error)) => {
+                        let key = worker_keys.remove(&error.id());
+                        tracing::error!(%error, "owner intake worker lost; retry will reconcile the durable attempt without relaunching it");
+                        if let Some(key) = key {
+                            active.remove(&key);
+                            retry_after.insert(key, tokio::time::Instant::now() + std::time::Duration::from_secs(30));
+                        }
+                    },
                     None => {},
                 }
             },
@@ -118,7 +129,8 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
             break;
         }
         // Rotate through the bounded inbox: blocked receipts must not starve
-        // later pages. Reconciliation fences survive pagination until restart.
+        // later pages. Started attempts are reconciled from their durable ticket
+        // and transcript before any retry can consider a new admission.
         if events.is_empty() {
             cursor = None;
         }
@@ -132,17 +144,17 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
                 break;
             }
             cursor = Some(key.clone());
-            if active.contains(&key)
-                || reconcile.contains(&key)
+            if active.contains_key(&key)
                 || retry_after
                     .get(&key)
                     .is_some_and(|when| *when > tokio::time::Instant::now())
             {
                 continue;
             }
-            active.insert(key.clone());
+            active.insert(key.clone(), ());
             let host = host.clone();
-            workers.spawn(async move {
+            let worker_key = key.clone();
+            let abort_handle = workers.spawn(async move {
                 let principal = RequestPrincipal::continuation(event.owner_principal_id.clone());
                 let result = match &event.payload {
                     medousa_types::coordination::OwnerEventPayload::AssignmentTerminal {
@@ -168,8 +180,9 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
                         )
                         .await,
                 };
-                (key, id, result)
+                (worker_key, id, result)
             });
+            worker_keys.insert(abort_handle.id(), key);
         }
     }
     workers.abort_all();

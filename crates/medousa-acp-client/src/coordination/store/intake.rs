@@ -39,6 +39,36 @@ pub fn terminal_receipt_id(binding: &ExternalPeerAssignmentBinding) -> String {
 }
 
 impl CoordinationStore {
+    pub(crate) fn peer_owner_event_by_id(
+        &self,
+        channel: &CoordinationChannelRef,
+        event_id: &str,
+    ) -> Result<OwnerEvent> {
+        let entries = self.root.list_root_utf8()?;
+        if entries.len() > 10_000 {
+            bail!("peer event lookup scan budget exhausted");
+        }
+        for entry in entries {
+            if !entry.name.starts_with("r1-") {
+                continue;
+            }
+            let receipt: ExternalPeerAssignmentReceipt = match self
+                .read(&StorePath::parse(&entry.name)?)
+            {
+                Ok(receipt) => receipt,
+                Err(error) => {
+                    tracing::warn!(record = %entry.name, %error, "skipping poisoned peer receipt during event lookup");
+                    continue;
+                }
+            };
+            if receipt.receipt_id != event_id || receipt.binding.channel != *channel {
+                continue;
+            }
+            return self.peer_owner_event(&receipt);
+        }
+        bail!("peer owner event was not found for this channel")
+    }
+
     pub(crate) fn peer_owner_event(
         &self,
         receipt: &ExternalPeerAssignmentReceipt,
@@ -107,7 +137,11 @@ impl CoordinationStore {
                 if self.owner_ack(&receipt)?.is_some() {
                     return Ok(None);
                 }
-                Ok(Some(self.peer_owner_event(&receipt)?))
+                let event = self.peer_owner_event(&receipt)?;
+                if self.owner_event_blocked(&event)?.is_some() {
+                    return Ok(None);
+                }
+                Ok(Some(event))
             })() {
                 Ok(Some(event)) => event,
                 Ok(None) => continue,

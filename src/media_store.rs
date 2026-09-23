@@ -18,7 +18,7 @@ pub struct MediaPromptMergeOptions {
 }
 
 const MEDIA_INDEX_FILE: &str = "index.jsonl";
-const MAX_UPLOAD_BYTES: u64 = 25 * 1024 * 1024;
+pub(crate) const MAX_UPLOAD_BYTES: u64 = 25 * 1024 * 1024;
 const MAX_EXTRACT_BYTES: u64 = (crate::media_text_extract::MAX_MEDIA_EXTRACT_CHARS as u64) * 4;
 const MEDIA_PAYLOAD_DOMAIN: &[u8] = b"media-payload";
 const MEDIA_EXTRACT_DOMAIN: &[u8] = b"media-extract";

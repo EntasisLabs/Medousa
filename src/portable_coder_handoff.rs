@@ -379,7 +379,7 @@ impl PortableCoderHandoffService {
                 working_directory: Some("/workspace".to_string()),
                 environment: BTreeMap::new(),
                 stdin: None,
-                timeout_seconds: 60,
+                timeout_seconds: Some(60),
                 max_output_bytes: 64 * 1024,
             },
             portable_coder: Some(task),

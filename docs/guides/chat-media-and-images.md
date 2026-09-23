@@ -25,8 +25,10 @@ never silently replaced.
 In a later message, you can refer to an image already attached to this chat;
 you normally do not need to upload it again. Medousa can include images from the
 latest 20 transcript turns, with a limit of five images across the recent
-history and the current request. Reopening supports PNG, JPEG, WebP, and GIF
-images up to 8 MiB each. To revisit an older picture, ask Medousa to
+history and the current request. PNG, JPEG, WebP, and GIF uploads use the same
+image representation on the first turn and when reopened. Large images are
+scaled to fit the model's input budget; the original upload is retained.
+To revisit an older picture, ask Medousa to
 reopen it from this chat. It can only use an image that is still available in
 this session's workshop media. Deleted or unavailable images may be skipped.
 

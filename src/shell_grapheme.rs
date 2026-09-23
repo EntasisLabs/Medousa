@@ -1,5 +1,10 @@
 //! Grapheme `shell.run` MirV1 host module — OS-native sandboxed command execution.
 
+use std::cell::RefCell;
+use std::future::Future;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use grapheme_runtime::host::{CapabilityCall, HostCallError};
 use grapheme_runtime::{EffectKind, ExportedOp, ModuleAbi, ModuleManifest, ResourceLimits};
 use serde_json::Value;
@@ -7,6 +12,52 @@ use serde_json::Value;
 use crate::shell_sandbox::{ShellRunRequest, probe_shell_sandbox, run_sandboxed};
 
 pub const SHELL_MODULE: &str = "shell";
+
+tokio::task_local! {
+    static WORKFLOW_CANCELLATION: Arc<AtomicBool>;
+}
+
+thread_local! {
+    static BLOCKING_WORKFLOW_CANCELLATION: RefCell<Option<Arc<AtomicBool>>> = const { RefCell::new(None) };
+}
+
+pub(crate) async fn with_workflow_cancellation_scope<F: Future>(
+    cancellation: Arc<AtomicBool>,
+    future: F,
+) -> F::Output {
+    WORKFLOW_CANCELLATION.scope(cancellation, future).await
+}
+
+pub(crate) fn current_workflow_cancellation_token() -> Option<Arc<AtomicBool>> {
+    WORKFLOW_CANCELLATION.try_with(Arc::clone).ok()
+}
+
+pub(crate) fn with_blocking_cancellation_scope<T>(
+    cancellation: Option<Arc<AtomicBool>>,
+    operation: impl FnOnce() -> T,
+) -> T {
+    struct Restore(Option<Arc<AtomicBool>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = self.0.take();
+            BLOCKING_WORKFLOW_CANCELLATION.with(|slot| {
+                slot.replace(previous);
+            });
+        }
+    }
+
+    let previous = BLOCKING_WORKFLOW_CANCELLATION.with(|slot| slot.replace(cancellation));
+    let _restore = Restore(previous);
+    operation()
+}
+
+pub(crate) fn workflow_cancellation_requested() -> bool {
+    BLOCKING_WORKFLOW_CANCELLATION.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .is_some_and(|token| token.load(Ordering::Acquire))
+    })
+}
 
 pub fn shell_host_module_manifest() -> ModuleManifest {
     ModuleManifest {
@@ -48,6 +99,11 @@ pub fn intercept_shell_call(call: &CapabilityCall) -> Option<Result<Value, HostC
     if !is_shell_call(call) {
         return None;
     }
+    if workflow_cancellation_requested() {
+        return Some(Err(HostCallError::Fatal(
+            "Grapheme execution was cancelled".to_string(),
+        )));
+    }
     let op = resolve_shell_op(call);
     match op.as_str() {
         "run" => Some(handle_shell_run(&call.args)),
@@ -85,6 +141,11 @@ fn resolve_shell_op(call: &CapabilityCall) -> String {
 fn handle_shell_run(args: &Value) -> Result<Value, HostCallError> {
     let request = ShellRunRequest::from_args(args).map_err(HostCallError::Fatal)?;
     let result = run_sandboxed(&request).map_err(HostCallError::Fatal)?;
+    if workflow_cancellation_requested() {
+        return Err(HostCallError::Fatal(
+            "Grapheme execution was cancelled".to_string(),
+        ));
+    }
     Ok(result.to_json())
 }
 
@@ -137,13 +198,17 @@ pub fn synthesize_shell_run_source(args: &Value) -> Result<String, String> {
         format!(",\n    writable_roots: [{items}]")
     };
 
+    let timeout = request
+        .profile
+        .timeout_ms
+        .map(|timeout_ms| format!(",\n    timeout_ms: {timeout_ms}"))
+        .unwrap_or_default();
     Ok(format!(
         r#"import core from "grapheme/core"
 query ShellRun {{
   shell.run(
     {command_or_argv}{cwd}{writable},
-    network: {},
-    timeout_ms: {}
+    network: {}{timeout}
   ) {{ exit_code stdout stderr backend sandboxed timed_out duration_ms warning }}
 }}"#,
         if request.profile.network {
@@ -151,7 +216,6 @@ query ShellRun {{
         } else {
             "false"
         },
-        request.profile.timeout_ms,
     ))
 }
 

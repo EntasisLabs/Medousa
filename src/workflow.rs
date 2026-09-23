@@ -408,7 +408,7 @@ impl WorkflowExecutor {
             #[cfg(feature = "full-daemon")]
             crate::grapheme_medousa_bridge::medousa_workflow_engine(),
             #[cfg(not(feature = "full-daemon"))]
-            stasis::prelude::RuntimeFactory::default_workflow_engine(),
+            crate::portable_grapheme_engine::workflow_engine(),
             prompt_pipeline,
             Arc::new(McpGatewayClient::from_env()),
             registry,

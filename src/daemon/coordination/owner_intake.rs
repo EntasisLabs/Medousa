@@ -14,6 +14,26 @@ use std::sync::Arc;
 
 const OWNER_CONTINUATION_MAX_TOOL_ROUNDS: usize = 2;
 const OWNER_CONTINUATION_TOOLS: &[&str] = &["cognition_peer_discover", "cognition_peer_propose"];
+const OWNER_INTAKE_MONITOR_LEASE: std::time::Duration = std::time::Duration::from_secs(60);
+
+fn owner_monitor_lease_expired(
+    started_at: tokio::time::Instant,
+    now: tokio::time::Instant,
+) -> bool {
+    now.duration_since(started_at) >= OWNER_INTAKE_MONITOR_LEASE
+}
+
+fn owner_terminal_failure_reason(phase: TurnTicketPhase) -> Option<&'static str> {
+    match phase {
+        TurnTicketPhase::Error => {
+            Some("owner continuation ended with an error; user review is required")
+        }
+        TurnTicketPhase::Cancelled => {
+            Some("owner continuation was cancelled; user review is required")
+        }
+        _ => None,
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OwnerIntakeResult {
@@ -23,17 +43,17 @@ pub enum OwnerIntakeResult {
     NeedsReconciliation,
 }
 
-/// An intake monitor never abandons its admitted model turn on timeout/shutdown.
-/// Exact matching protects a newer human turn in the same owner session.
-struct OwnerTurnGuard {
-    registry: crate::agent_runtime::execution_context::TurnExecutionRegistry,
-    session: medousa_types::SessionId,
-    turn_id: String,
+enum OwnerClaimAction {
+    Consumed,
+    Reconcile(PeerOwnerIntakeAttempt),
+    Start(PeerOwnerIntakeAttempt),
 }
-impl Drop for OwnerTurnGuard {
-    fn drop(&mut self) {
-        self.registry
-            .cancel_matching_turn(&self.session, &self.turn_id);
+
+fn owner_claim_action(claim: OwnerIntakeClaim) -> OwnerClaimAction {
+    match claim {
+        OwnerIntakeClaim::Consumed(_) => OwnerClaimAction::Consumed,
+        OwnerIntakeClaim::Unresolved(intake) => OwnerClaimAction::Reconcile(intake),
+        OwnerIntakeClaim::Started(intake) => OwnerClaimAction::Start(intake),
     }
 }
 
@@ -261,12 +281,12 @@ impl LocalPeerDispatcher {
         let claim = self
             .stored(move |store| store.begin_owner_intake(&saved, &claimed_lease))
             .await?;
-        let intake = match claim {
-            OwnerIntakeClaim::Consumed(_) => return Ok(OwnerIntakeResult::AlreadyConsumed),
-            OwnerIntakeClaim::Unresolved(intake) => {
+        let intake = match owner_claim_action(claim) {
+            OwnerClaimAction::Consumed => return Ok(OwnerIntakeResult::AlreadyConsumed),
+            OwnerClaimAction::Reconcile(intake) => {
                 return self.acknowledge_if_completed(intake, lease).await;
             }
-            OwnerIntakeClaim::Started(intake) => intake,
+            OwnerClaimAction::Start(intake) => intake,
         };
         // A receipt is evidence, not permission or executable instructions.
         // This exact ceiling can only inspect local peer scope and prepare a
@@ -320,27 +340,24 @@ impl LocalPeerDispatcher {
             tracing::info!(message, "owner intake deferred after admission rejection");
             return Ok(OwnerIntakeResult::DeferredBusy);
         }
-        // The canonical runner publishes terminal success only after transcript
-        // persistence. Keep the owner-session fence until then, not just acceptance.
-        let _owner_turn = OwnerTurnGuard {
-            registry: self
-                .state
-                .platform
-                .agent_handle()
-                .execution_registry
-                .clone(),
-            session: request.owner_session.session_id.clone(),
-            turn_id: intake.turn_id.clone(),
-        };
-        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(120);
+        // This lease bounds only the watcher, never the admitted task. On detach
+        // the Started attempt remains durable and host retries only reconcile it;
+        // they cannot launch a second turn. Shutdown likewise does not cancel.
+        let monitor_started_at = tokio::time::Instant::now();
         loop {
-            if let Some(ticket) =
-                crate::turn_ticket::get_turn(&self.state.turn_tickets, &intake.turn_id).await
-                && ticket.phase.terminal()
-            {
-                return self.acknowledge_if_completed(intake, lease).await;
+            match crate::turn_ticket::get_turn(&self.state.turn_tickets, &intake.turn_id).await {
+                Some(ticket) if ticket.phase.terminal() => {
+                    return self.acknowledge_if_completed(intake, lease).await;
+                }
+                None => {
+                    // Successful tickets are cleared after the correlated assistant
+                    // entry is committed. The transcript is the durable completion
+                    // record; an absent ticket alone is never permission to relaunch.
+                    return self.acknowledge_if_completed(intake, lease).await;
+                }
+                Some(_) => {}
             }
-            if tokio::time::Instant::now() >= deadline {
+            if owner_monitor_lease_expired(monitor_started_at, tokio::time::Instant::now()) {
                 return Ok(OwnerIntakeResult::NeedsReconciliation);
             }
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
@@ -376,7 +393,21 @@ impl LocalPeerDispatcher {
         // from an execution-correlated assistant entry already committed to the
         // canonical transcript. Absence of both forms of evidence never reruns
         // or acknowledges the uncertain turn.
-        if ticket.is_some_and(|ticket| ticket.phase != TurnTicketPhase::Done) {
+        let ticket_phase = ticket.map(|ticket| ticket.phase);
+        if ticket_phase.is_some_and(|phase| phase != TurnTicketPhase::Done) {
+            if let Some(phase) = ticket_phase
+                && let Some(reason) = owner_terminal_failure_reason(phase)
+            {
+                let blocked = OwnerEventBlocked {
+                    event_id: intake.receipt.receipt_id.clone(),
+                    reason: reason.to_string(),
+                    blocked_at: chrono::Utc::now(),
+                    requires_user_decision: true,
+                };
+                let channel = intake.receipt.binding.channel.clone();
+                self.stored(move |store| store.block_owner_event(&channel, &blocked))
+                    .await?;
+            }
             return Ok(OwnerIntakeResult::NeedsReconciliation);
         }
         let acknowledgment = self
@@ -391,9 +422,12 @@ impl LocalPeerDispatcher {
                 }
                 let entries = crate::session_store::get_session_store()
                     .load_transcript_entries(&request.owner_session.session_id);
-                let Some(entry) =
-                    committed_owner_decision(&entries, &request.owner_session, &intake.turn_id)
-                else {
+                let Some(entry) = owner_decision_for_reconciliation(
+                    &entries,
+                    &request.owner_session,
+                    &intake.turn_id,
+                    ticket_phase,
+                ) else {
                     return Ok(None);
                 };
                 let ack = PeerOwnerIntakeAcknowledgment {
@@ -457,6 +491,18 @@ fn committed_owner_decision<'a>(
     })
 }
 
+fn owner_decision_for_reconciliation<'a>(
+    entries: &'a [medousa_types::TranscriptEntry],
+    owner_session: &medousa_types::SessionRef,
+    turn_id: &str,
+    ticket_phase: Option<TurnTicketPhase>,
+) -> Option<&'a medousa_types::TranscriptEntry> {
+    if ticket_phase.is_some_and(|phase| phase != TurnTicketPhase::Done) {
+        return None;
+    }
+    committed_owner_decision(entries, owner_session, turn_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -515,5 +561,89 @@ mod tests {
         let decision = committed_owner_decision(&entries, &owner, "turn-owner").unwrap();
         assert_eq!(decision.turn.content, "verified result");
         assert!(committed_owner_decision(&entries, &owner, "missing").is_none());
+    }
+
+    #[test]
+    fn missing_ticket_reconciles_only_from_correlated_committed_transcript() {
+        let owner = medousa_types::SessionRef {
+            authority_id: medousa_types::AuthorityId::parse(format!("auth_{}", "a".repeat(64)))
+                .unwrap(),
+            session_id: medousa_types::SessionId::parse("ses_owner").unwrap(),
+        };
+        let entries = vec![entry(&owner, "turn-owner", "assistant", "durable result")];
+
+        assert!(owner_decision_for_reconciliation(&entries, &owner, "turn-owner", None,).is_some());
+        assert!(
+            owner_decision_for_reconciliation(
+                &entries,
+                &owner,
+                "turn-owner",
+                Some(TurnTicketPhase::Error),
+            )
+            .is_none()
+        );
+        assert!(owner_decision_for_reconciliation(&[], &owner, "turn-owner", None,).is_none());
+    }
+
+    #[test]
+    fn monitor_lease_detaches_watcher_without_a_task_deadline() {
+        let started = tokio::time::Instant::now();
+        assert!(!owner_monitor_lease_expired(
+            started,
+            started + OWNER_INTAKE_MONITOR_LEASE - std::time::Duration::from_millis(1),
+        ));
+        assert!(owner_monitor_lease_expired(
+            started,
+            started + OWNER_INTAKE_MONITOR_LEASE,
+        ));
+    }
+
+    #[test]
+    fn definitive_owner_turn_failure_requires_user_review() {
+        assert!(owner_terminal_failure_reason(TurnTicketPhase::Error).is_some());
+        assert!(owner_terminal_failure_reason(TurnTicketPhase::Cancelled).is_some());
+        assert!(owner_terminal_failure_reason(TurnTicketPhase::Streaming).is_none());
+        assert!(owner_terminal_failure_reason(TurnTicketPhase::Done).is_none());
+    }
+
+    #[test]
+    fn unresolved_started_attempt_is_reconciled_without_starting_another_turn() {
+        let authority =
+            medousa_types::AuthorityId::parse(format!("auth_{}", "a".repeat(64))).unwrap();
+        let owner = medousa_types::SessionRef {
+            authority_id: authority.clone(),
+            session_id: medousa_types::SessionId::parse("ses_owner").unwrap(),
+        };
+        let channel = CoordinationChannelRef {
+            authority_id: authority.clone(),
+            channel_id: "channel-test".to_string(),
+        };
+        let binding = ExternalPeerAssignmentBinding {
+            assignment_id: "assignment-1".to_string(),
+            owner_principal_id: "profile-owner".to_string(),
+            channel,
+            target: ExternalPeerTarget {
+                authority_id: authority,
+                execution_runtime_id: "runtime-peer".to_string(),
+                runtime: ExternalPeerRuntime::Codex,
+            },
+            execution_session: owner,
+            agent_session_id: "agent-session".to_string(),
+        };
+        let attempt = PeerOwnerIntakeAttempt {
+            receipt: ExternalPeerAssignmentReceipt {
+                receipt_id: "receipt-1".to_string(),
+                binding,
+                outcome: PeerAssignmentOutcome::Completed,
+                result: "result".to_string(),
+            },
+            attempt: 1,
+            turn_id: "turn-owner".to_string(),
+        };
+
+        assert!(matches!(
+            owner_claim_action(OwnerIntakeClaim::Unresolved(attempt)),
+            OwnerClaimAction::Reconcile(_)
+        ));
     }
 }

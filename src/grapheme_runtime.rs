@@ -1,17 +1,28 @@
 //! Shared Stasis-backed execution path for portable Grapheme scripts.
 
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use tokio::time::Instant;
 
 use chrono::Utc;
+use grapheme_compiler::{Compiler, CompilerOptions};
 use serde_json::{Value, json};
 use stasis::domain::errors::StasisError;
 use stasis::domain::runtime::job::JobState;
 use stasis::domain::runtime::job_attempt::{JobAttempt, JobAttemptOutcome};
 use stasis::prelude::RuntimeComposition;
 use uuid::Uuid;
+
+use medousa_forge::execution::{ExecutionClass, ForgeExecutionService};
+
+const MAX_GRAPHEME_PREFLIGHT_SOURCE_BYTES: usize = 128 * 1024;
+
+fn grapheme_preflight_execution() -> &'static Arc<ForgeExecutionService> {
+    static EXECUTION: OnceLock<Arc<ForgeExecutionService>> = OnceLock::new();
+    EXECUTION.get_or_init(|| Arc::new(ForgeExecutionService::new()))
+}
 
 use crate::runtime_composition_ext::{RuntimeCompositionExt, process_once};
 use crate::runtime_job_spec::ToolJobSpec;
@@ -186,31 +197,111 @@ pub async fn validate_grapheme_source_for_schedule(
     runtime: &Arc<RuntimeComposition>,
     source: &str,
 ) -> stasis::prelude::Result<Value> {
-    let result = run_grapheme_via_runtime(runtime, source, "cognition_tui_preflight").await?;
-    let succeeded = result
-        .get("succeeded")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let diagnostics_value = result
-        .get("diagnostics")
-        .cloned()
-        .unwrap_or_else(|| json!({}));
+    validate_grapheme_source_for_schedule_with_allowlist(
+        runtime,
+        source,
+        crate::grapheme_workshop::enforce_grapheme_allowlist,
+    )
+    .await
+}
+
+async fn validate_grapheme_source_for_schedule_with_allowlist(
+    _runtime: &Arc<RuntimeComposition>,
+    source: &str,
+    allowlist_validator: fn(&str) -> Result<(), String>,
+) -> stasis::prelude::Result<Value> {
+    let source = source.to_string();
+    let estimated_bytes = source.len().max(1);
+    let preflight = grapheme_preflight_execution()
+        .run(
+            ExecutionClass::Compaction,
+            estimated_bytes,
+            move || {
+                let validate = || -> Result<_, String> {
+                    if source.len() > MAX_GRAPHEME_PREFLIGHT_SOURCE_BYTES {
+                        return Err(format!(
+                            "Grapheme source exceeds {MAX_GRAPHEME_PREFLIGHT_SOURCE_BYTES} bytes"
+                        ));
+                    }
+                    if crate::grapheme_grants::source_contains_secret_grant(&source) {
+                        return Err(
+                            "ephemeral Grapheme grants require grapheme.invoke with matching secret_grant_ids"
+                                .to_string(),
+                        );
+                    }
+                    validate_grapheme_preflight_imports(&source)?;
+                    allowlist_validator(&source)?;
+                    let compiled = Compiler::compile_source(&source, CompilerOptions::default())
+                        .map_err(|err| err.to_string())?;
+                    let warnings = compiled
+                        .compilation
+                        .lint_warnings
+                        .iter()
+                        .map(|warning| format!("{warning:?}"))
+                        .collect::<Vec<_>>();
+                    Ok((compiled.artifact.artifact_id, warnings))
+                };
+                Ok(validate())
+            },
+        )
+        .await
+        .map_err(|err| {
+            StasisError::PortFailure(format!("Grapheme preflight admission failed: {err}"))
+        })?
+        .map_err(StasisError::PortFailure)?;
+    let artifact_id = preflight.0.clone();
+    let lint_warnings = preflight.1.clone();
+    let diagnostics_value = json!({
+        "provider": "grapheme-compiler",
+        "status": "validated",
+        "artifact_id": artifact_id,
+        "lint_warnings": lint_warnings,
+    });
     let diagnostics_preview = truncate_for_error(
         &serde_json::to_string_pretty(&diagnostics_value).unwrap_or_else(|_| "{}".to_string()),
         1_600,
     );
 
     Ok(json!({
-        "validated": if result.get("completed").and_then(Value::as_bool) == Some(false) { Value::Null } else { Value::Bool(succeeded) },
-        "status": result.get("status").cloned().unwrap_or(Value::Null),
-        "completed": result.get("completed").cloned().unwrap_or(Value::Null),
+        "validated": true,
+        "status": "validated",
+        "completed": true,
         "mode": "runtime_preflight",
-        "job_id": result.get("job_id").cloned().unwrap_or(Value::Null),
-        "execution_id": result.get("execution_id").cloned().unwrap_or(Value::Null),
-        "attempt_outcome": result.get("attempt_outcome").cloned().unwrap_or(Value::Null),
+        "artifact_id": preflight.0,
+        "attempt_outcome": "Preflight",
+        "job_id": Value::Null,
+        "execution_id": Value::Null,
         "diagnostics": diagnostics_value,
         "diagnostics_preview": diagnostics_preview
     }))
+}
+
+fn validate_grapheme_preflight_imports(source: &str) -> Result<(), String> {
+    for line in source.lines() {
+        let trimmed = line.trim();
+        let Some(import) = trimmed.strip_prefix("import ") else {
+            continue;
+        };
+        let import = import.trim();
+        // Grapheme permits both `import "grapheme/foo"` and the usual
+        // `import foo from "grapheme/foo"` form. Use the first quoted module
+        // specifier on the line so named imports receive the same policy check.
+        let Some((start, quote)) = import
+            .char_indices()
+            .find(|(_, quote)| *quote == '"' || *quote == '\'')
+        else {
+            continue;
+        };
+        let Some(name) = import[start + quote.len_utf8()..].split(quote).next() else {
+            continue;
+        };
+        if !name.starts_with("grapheme/") {
+            return Err(format!(
+                "grapheme policy violation: import '{name}' is not allowlisted"
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn truncate_for_error(text: &str, max_chars: usize) -> String {
@@ -233,6 +324,17 @@ mod tests {
     use stasis::ports::outbound::runtime::job_attempt_store::JobAttemptStore;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tokio::sync::Notify;
+
+    #[test]
+    fn named_import_from_foreign_namespace_is_rejected_by_preflight() {
+        assert!(
+            validate_grapheme_preflight_imports("import secrets from \"grapheme/secrets\"\n")
+                .is_ok()
+        );
+        let error = validate_grapheme_preflight_imports("import readFile from \"node:fs\"\n")
+            .expect_err("foreign named imports must be rejected");
+        assert!(error.contains("node:fs"));
+    }
 
     struct Handler {
         calls: Arc<AtomicUsize>,
@@ -361,6 +463,24 @@ mod tests {
             runtime.list_job_attempts("unrelated").await.unwrap().len(),
             1
         );
+    }
+
+    #[tokio::test]
+    async fn scheduling_preflight_compiles_without_enqueuing_or_executing_source() {
+        let (runtime, calls, _, _) = setup(false, false, false);
+        let validation = validate_grapheme_source_for_schedule_with_allowlist(
+            &runtime,
+            "query Probe { shell.status }",
+            |_| Ok(()),
+        )
+        .await
+        .expect("source preflight");
+
+        assert_eq!(validation["validated"], true);
+        assert_eq!(validation["completed"], true);
+        assert_eq!(validation["status"], "validated");
+        assert!(validation["job_id"].is_null());
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]

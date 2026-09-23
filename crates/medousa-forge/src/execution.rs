@@ -646,10 +646,39 @@ async fn terminate_and_reap(child: &mut tokio::process::Child) {
     let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
 }
 
+struct ProcessTreeOnDrop(Option<u32>);
+
+impl ProcessTreeOnDrop {
+    fn new(pid: Option<u32>) -> Self {
+        Self(pid)
+    }
+
+    fn disarm(&mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for ProcessTreeOnDrop {
+    fn drop(&mut self) {
+        if let Some(pid) = self.0.take() {
+            medousa_host::force_process_tree_stop_by_pid(pid);
+        }
+    }
+}
+
 async fn supervise_child_with_input(
     command: &mut tokio::process::Command,
     input: Option<Vec<u8>>,
     timeout: Duration,
+    max_output: usize,
+) -> Result<(Vec<u8>, Vec<u8>, bool, std::process::ExitStatus)> {
+    supervise_child_with_optional_timeout(command, input, Some(timeout), max_output).await
+}
+
+async fn supervise_child_with_optional_timeout(
+    command: &mut tokio::process::Command,
+    input: Option<Vec<u8>>,
+    timeout: Option<Duration>,
     max_output: usize,
 ) -> Result<(Vec<u8>, Vec<u8>, bool, std::process::ExitStatus)> {
     command
@@ -663,6 +692,7 @@ async fn supervise_child_with_input(
     let mut child = command
         .spawn()
         .map_err(|err| ForgeError::Command(format!("failed to spawn command: {err}")))?;
+    let mut process_tree = ProcessTreeOnDrop::new(child.id());
     let stdin_task = match input {
         Some(input) => {
             let mut stdin = child
@@ -688,23 +718,33 @@ async fn supervise_child_with_input(
     let stdout_task = tokio::spawn(drain_capped_output(stdout, Arc::clone(&remaining)));
     let stderr_task = tokio::spawn(drain_capped_output(stderr, remaining));
 
-    let status = match tokio::time::timeout(timeout, child.wait()).await {
-        Ok(Ok(status)) => status,
-        Ok(Err(err)) => {
-            if let Some(stdin_task) = stdin_task {
-                let _ = stdin_task.await;
-            }
-            let _ = stdout_task.await;
-            let _ = stderr_task.await;
-            return Err(ForgeError::Command(format!("command wait failed: {err}")));
-        }
-        Err(_) => {
+    let waited = match timeout {
+        Some(timeout) => tokio::time::timeout(timeout, child.wait())
+            .await
+            .map_err(|_| ())
+            .and_then(|status| status.map_err(|_| ())),
+        None => child.wait().await.map_err(|_| ()),
+    };
+    let status = match waited {
+        Ok(status) => status,
+        Err(()) if timeout.is_none() => {
             terminate_and_reap(&mut child).await;
             if let Some(stdin_task) = stdin_task {
                 let _ = stdin_task.await;
             }
             let _ = stdout_task.await;
             let _ = stderr_task.await;
+            process_tree.disarm();
+            return Err(ForgeError::Command("command wait failed".into()));
+        }
+        Err(()) => {
+            terminate_and_reap(&mut child).await;
+            if let Some(stdin_task) = stdin_task {
+                let _ = stdin_task.await;
+            }
+            let _ = stdout_task.await;
+            let _ = stderr_task.await;
+            process_tree.disarm();
             return Err(ForgeError::Command("command timed out".into()));
         }
     };
@@ -716,6 +756,9 @@ async fn supervise_child_with_input(
     }
     let (stdout, stdout_trunc) = stdout_task.await.unwrap_or_else(|_| (Vec::new(), false));
     let (stderr, stderr_trunc) = stderr_task.await.unwrap_or_else(|_| (Vec::new(), false));
+    // Keep cancellation/future-drop ownership through pipe drains: descendants
+    // can outlive the leader while retaining the captured output descriptors.
+    process_tree.disarm();
     Ok((stdout, stderr, stdout_trunc || stderr_trunc, status))
 }
 
@@ -744,6 +787,45 @@ pub async fn supervise_command(
     }
     command.envs(environment);
     supervise_child(&mut command, timeout, max_output).await
+}
+
+/// Supervise a non-interactive command with a bounded output capture and an
+/// optional execution deadline. `None` waits for command completion; cancelling
+/// the future still kills the owned child process tree.
+pub async fn supervise_command_with_optional_timeout(
+    program: impl AsRef<Path>,
+    cwd: Option<std::path::PathBuf>,
+    args: Vec<String>,
+    environment: Vec<(String, String)>,
+    timeout: Option<Duration>,
+    max_output: usize,
+) -> Result<(Vec<u8>, Vec<u8>, bool, std::process::ExitStatus)> {
+    let mut command = tokio::process::Command::new(program.as_ref());
+    command.args(args);
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
+    command.envs(environment);
+    supervise_child_with_optional_timeout(&mut command, None, timeout, max_output).await
+}
+
+/// Input variant of [`supervise_command_with_optional_timeout`].
+pub async fn supervise_command_with_input_optional_timeout(
+    program: impl AsRef<Path>,
+    cwd: Option<std::path::PathBuf>,
+    args: Vec<String>,
+    environment: Vec<(String, String)>,
+    input: Vec<u8>,
+    timeout: Option<Duration>,
+    max_output: usize,
+) -> Result<(Vec<u8>, Vec<u8>, bool, std::process::ExitStatus)> {
+    let mut command = tokio::process::Command::new(program.as_ref());
+    command.args(args);
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
+    command.envs(environment);
+    supervise_child_with_optional_timeout(&mut command, Some(input), timeout, max_output).await
 }
 
 /// Supervise a non-interactive child with bounded stdin, timeout, output caps,

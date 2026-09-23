@@ -12,6 +12,8 @@ use crate::completion_fsm::ContinueReason;
 pub const MAX_TEXT_ONLY_STUCK_CONTINUES: usize = 3;
 pub const USER_RESPONSE_PREVIEW_MAX_CHARS: usize = 100;
 pub const TURN_CONTROL_PREFIX: &str = "[MEDOUSA_TURN_CONTROL]";
+pub const REPEATED_TOOL_FAILURE_WARNING_AT: usize = 2;
+pub const REPEATED_TOOL_FAILURE_STOP_AT: usize = 3;
 
 pub fn resolve_max_text_only_stuck_continues(max_tool_rounds: usize) -> usize {
     max_tool_rounds.max(1)
@@ -32,6 +34,63 @@ pub fn ledger_tool_names(invocations: &[ToolInvocation]) -> Vec<String> {
         .iter()
         .map(|invocation| invocation.tool_name.clone())
         .collect()
+}
+
+/// Detects only adjacent, identical batches whose every tool receipt is an
+/// explicit failure. Successful, pending, running, or changed batches reset it.
+#[derive(Debug, Default)]
+pub struct RepeatedToolFailureGuard {
+    last_fingerprint: Option<String>,
+    repetitions: usize,
+}
+
+impl RepeatedToolFailureGuard {
+    /// Returns the consecutive repetition count, or zero when the batch made
+    /// progress, remained pending, or changed its approach.
+    pub fn observe_batch(&mut self, invocations: &[ToolInvocation]) -> usize {
+        if invocations.is_empty() || !invocations.iter().all(is_explicit_tool_failure) {
+            self.reset();
+            return 0;
+        }
+
+        let mut calls = invocations
+            .iter()
+            .map(|invocation| {
+                serde_json::to_string(&(
+                    invocation.tool_name.as_str(),
+                    &invocation.tool_input,
+                    &invocation.tool_output,
+                ))
+                .expect("tool failure fingerprint serializes")
+            })
+            .collect::<Vec<_>>();
+        calls.sort_unstable();
+        let fingerprint = serde_json::to_string(&calls).expect("tool failure batch serializes");
+        if self.last_fingerprint.as_deref() == Some(fingerprint.as_str()) {
+            self.repetitions = self.repetitions.saturating_add(1);
+        } else {
+            self.last_fingerprint = Some(fingerprint);
+            self.repetitions = 1;
+        }
+        self.repetitions
+    }
+
+    pub fn reset(&mut self) {
+        self.last_fingerprint = None;
+        self.repetitions = 0;
+    }
+}
+
+fn is_explicit_tool_failure(invocation: &ToolInvocation) -> bool {
+    let status = invocation
+        .tool_output
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    if matches!(status, "pending" | "queued" | "running") {
+        return false;
+    }
+    invocation.tool_output.get("ok") == Some(&serde_json::Value::Bool(false))
 }
 
 /// Dynamic loop HUD appended to interactive tool-loop prompts.
@@ -326,6 +385,31 @@ pub fn record_stuck(
     }
 }
 
+pub fn record_repeated_tool_failure(
+    stream_turn_id: u64,
+    rounds_executed: usize,
+    tools_invoked: &[String],
+    repetitions: usize,
+    scratch: &TurnScratchpad,
+) -> TurnLedgerRecord {
+    TurnLedgerRecord {
+        execution_id: None,
+        parent_turn_id: None,
+        inference: None,
+        timestamp: Utc::now(),
+        stream_turn_id,
+        kind: TurnLedgerEventKind::WorkFailed,
+        detail: format!("identical failed tool batch repeated {repetitions} times"),
+        tools_invoked: tools_invoked.to_vec(),
+        missing_tools: Vec::new(),
+        rounds_executed,
+        scratch: Some(scratch.clone()),
+        active_profile_id: None,
+        bot_id: None,
+        bot_profile_revision: None,
+    }
+}
+
 pub fn truncate_user_response_preview(text: &str, max_chars: usize) -> String {
     let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if collapsed.chars().count() <= max_chars {
@@ -339,6 +423,95 @@ pub fn truncate_user_response_preview(text: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+    use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
+
+    fn invocation(input: serde_json::Value, output: serde_json::Value) -> ToolInvocation {
+        ToolInvocation {
+            tool_name: "cognition_shell_run".to_string(),
+            tool_input: input,
+            tool_output: output,
+        }
+    }
+
+    #[test]
+    fn repeated_failure_guard_requires_adjacent_identical_failed_batches() {
+        let mut guard = RepeatedToolFailureGuard::default();
+        let failed = invocation(
+            json!({"command":"cargo test"}),
+            json!({
+                "ok": false,
+                "error": "exit code 1",
+            }),
+        );
+        assert_eq!(guard.observe_batch(std::slice::from_ref(&failed)), 1);
+        assert_eq!(guard.observe_batch(std::slice::from_ref(&failed)), 2);
+        assert_eq!(guard.observe_batch(std::slice::from_ref(&failed)), 3);
+
+        let changed_args = invocation(
+            json!({"command":"cargo test -p crate"}),
+            json!({
+                "ok": false,
+                "error": "exit code 1",
+            }),
+        );
+        assert_eq!(guard.observe_batch(&[changed_args]), 1);
+
+        let changed_failure = invocation(
+            json!({"command":"cargo test -p crate"}),
+            json!({
+                "ok": false,
+                "error": "missing linker",
+            }),
+        );
+        assert_eq!(guard.observe_batch(&[changed_failure]), 1);
+
+        let success = invocation(
+            json!({"command":"cargo test -p crate"}),
+            json!({
+                "ok": true,
+                "exit_code": 0,
+            }),
+        );
+        assert_eq!(guard.observe_batch(&[success]), 0);
+    }
+
+    #[test]
+    fn pending_and_running_work_never_count_as_repeated_failures() {
+        let mut guard = RepeatedToolFailureGuard::default();
+        let failed = invocation(
+            json!({"work_id":"w1"}),
+            json!({
+                "ok": false,
+                "error": "worker unavailable",
+            }),
+        );
+        assert_eq!(guard.observe_batch(&[failed.clone()]), 1);
+        for status in ["pending", "queued", "running"] {
+            let pending = invocation(
+                json!({"work_id":"w1"}),
+                json!({
+                    "ok": false,
+                    "status": status,
+                    "error": "worker still working",
+                }),
+            );
+            assert_eq!(guard.observe_batch(&[pending]), 0);
+            assert_eq!(guard.observe_batch(&[failed.clone()]), 1);
+        }
+    }
+
+    #[test]
+    fn productive_long_sequence_does_not_reach_failure_boundary() {
+        let mut guard = RepeatedToolFailureGuard::default();
+        for round in 0..200 {
+            let result = invocation(
+                json!({"path":format!("src/file_{round}.rs")}),
+                json!({"ok":true,"matches":round}),
+            );
+            assert_eq!(guard.observe_batch(&[result]), 0);
+        }
+    }
 
     #[test]
     fn discipline_is_bounded_and_resets_on_new_tools() {

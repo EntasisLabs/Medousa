@@ -1818,7 +1818,9 @@ async fn run_agent_turn_inner(
             &request.media_refs,
             &active_inference_target.provider,
             &active_inference_target.model,
-        ) {
+        )
+        .await
+        {
             Ok(plan) => plan,
             Err(err) => {
                 sink.agent_error(1, err).await;

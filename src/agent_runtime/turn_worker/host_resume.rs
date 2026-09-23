@@ -324,7 +324,7 @@ async fn run_host_resume_turn(
         turn_id.clone(),
         crate::request_principal::RequestPrincipal::continuation(identity_user_id),
         tokio_util::sync::CancellationToken::new(),
-        std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60),
+        None::<std::time::Instant>,
         scope.clone(),
     ) {
         Ok(execution) => execution,

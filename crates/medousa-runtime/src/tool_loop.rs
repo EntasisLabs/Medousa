@@ -41,10 +41,11 @@ use crate::loop_gate::{
     DEFAULT_FOREGROUND_MAX_TOOL_ROUNDS, ToolLoopCompletionGate, collect_tool_names,
 };
 use crate::loop_state::{
+    REPEATED_TOOL_FAILURE_STOP_AT, REPEATED_TOOL_FAILURE_WARNING_AT, RepeatedToolFailureGuard,
     TURN_CONTROL_PREFIX, TurnLedgerEventKind, TurnLedgerRecord, TurnLoopAwareness,
     TurnLoopDiscipline, ledger_tool_names, push_turn_control_message, record_finalized,
-    record_fsm_continue, record_stuck, record_tool_round, resolve_max_text_only_stuck_continues,
-    stuck_turn_user_message,
+    record_fsm_continue, record_repeated_tool_failure, record_stuck, record_tool_round,
+    resolve_max_text_only_stuck_continues, stuck_turn_user_message,
 };
 use crate::perception::ToolPerceptionGovernor;
 use crate::ports::{
@@ -381,6 +382,7 @@ impl MedousaToolLoopPipeline {
         );
 
         let mut previous_request = None;
+        let mut repeated_tool_failures = RepeatedToolFailureGuard::default();
         if !tools.is_empty() {
             while !enforce_tool_round_limit || rounds_executed < effective_max_tool_rounds {
                 rounds_executed += 1;
@@ -985,6 +987,78 @@ impl MedousaToolLoopPipeline {
                             &turn_ctx.scratchpad,
                         ),
                     );
+                }
+
+                let repeated_failure_count =
+                    repeated_tool_failures.observe_batch(round_invocations);
+                if repeated_failure_count == REPEATED_TOOL_FAILURE_WARNING_AT {
+                    push_turn_control_message(
+                        &mut turn_ctx.tool_lane.messages,
+                        "The last tool batch failed with exactly the same calls, arguments, and errors as the previous batch. Change the approach, correct the cause, or ask for input. Do not repeat that failed batch unchanged.",
+                    );
+                    if let Some(gate) = completion_gate.as_ref()
+                        && let Some(presentation) = gate.runtime_ports.turn_presentation()
+                    {
+                        presentation
+                            .notice("Repeated identical tool failure; the next retry must change the approach.".to_string())
+                            .await;
+                    }
+                }
+                if repeated_failure_count >= REPEATED_TOOL_FAILURE_STOP_AT {
+                    let termination_reason = "repeated_tool_failure";
+                    if let Some(gate) = completion_gate.as_ref() {
+                        persist_gate_ledger(
+                            gate,
+                            &record_repeated_tool_failure(
+                                gate.stream_turn_id,
+                                rounds_executed,
+                                &round_tool_names,
+                                repeated_failure_count,
+                                &turn_ctx.scratchpad,
+                            ),
+                        );
+                    }
+                    let checkpoint_persisted = persist_checkpoint!(
+                        SafeCheckpointBoundary::RecoverableFailure,
+                        ActiveTurnCheckpointStatus::RecoverableFailure,
+                        Some(termination_reason),
+                        None,
+                        &round_tool_names,
+                        &round_provider_call_ids,
+                    );
+                    let text = if checkpoint_persisted {
+                        format!(
+                            "I stopped after the same tool calls with the same arguments returned the same failure {repeated_failure_count} times. This action is blocked; completed results and the failure are saved in a recoverable checkpoint. Change the approach or tell me how you want to proceed."
+                        )
+                    } else {
+                        format!(
+                            "I stopped after the same tool calls with the same arguments returned the same failure {repeated_failure_count} times. This action is blocked. I could not confirm a recoverable checkpoint, so verify current state before retrying. Change the approach or tell me how you want to proceed."
+                        )
+                    };
+                    if let Some(gate) = completion_gate.as_ref()
+                        && let Some(presentation) = gate.runtime_ports.turn_presentation()
+                    {
+                        let notice = if checkpoint_persisted {
+                            "Stopped after repeated identical failures; recoverable turn checkpoint saved."
+                        } else {
+                            "Stopped after repeated identical failures; checkpoint persistence was not confirmed."
+                        };
+                        presentation.notice(notice.to_string()).await;
+                    }
+                    let last = invocations.last().cloned().unwrap_or(ToolInvocation {
+                        tool_name: String::new(),
+                        tool_input: Value::Null,
+                        tool_output: Value::Null,
+                    });
+                    return Ok(ToolLoopExecutionResponse {
+                        text,
+                        metadata: shared_inputs.context_clone(),
+                        tool_name: last.tool_name,
+                        tool_output: last.tool_output,
+                        tool_invocations: invocations,
+                        rounds_executed,
+                        termination_reason: termination_reason.to_string(),
+                    });
                 }
 
                 persist_checkpoint!(

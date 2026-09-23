@@ -1178,7 +1178,9 @@ fn validate_task_execution_grant(
         || grant.parent_session_id != request.grant.session_id
         || grant.origin_runtime_id != request.parent_runtime_id
         || grant.correlation_id != request.grant.correlation_id
-        || grant.expires_at <= grant.issued_at
+        || grant
+            .expires_at
+            .is_some_and(|expiry| expiry <= grant.issued_at)
         || !grant
             .effective_tool_domains
             .iter()

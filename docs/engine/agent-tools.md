@@ -17,6 +17,11 @@ Deep dive: [turn-runtime-and-lanes.md](../../architecture/turn-runtime-and-lanes
 
 Worker allowlists can strip UI-only tools when `supports_ui_artifacts=false`, and browser tools when `supports_browser_host=false`.
 
+`cognition_tools_discover` selects its lane from the authenticated execution
+principal: durable workers receive the worker catalog; other turns receive the
+host catalog. The legacy `lane` input remains accepted for wire compatibility,
+but it cannot select or widen the caller's surface.
+
 See [agent-browser-host.md](../../architecture/agent-browser-host.md) for search/fetch/CAPTCHA design.
 
 ---
@@ -71,6 +76,43 @@ Source: `src/tool_bootstrap.rs`
 | Handback | `cognition_turn action=turn.checkpoint` — ends this agent turn and waits for principal input; use only when input is needed or work must pause |
 | Finish | `cognition_turn action=turn.finish` — ends tool loop after the full requested outcome is complete or a concrete blocker is reported |
 
+### Grapheme and shell execution
+
+Grapheme scheduling preflight checks source policy and compiles the source; it
+does not enqueue or execute the workflow. A scheduled/run operation is a separate
+step. Workflow execution has no implicit total deadline. On the full daemon,
+operators who need a Grapheme workflow deadline can explicitly configure
+`MEDOUSA_GRAPHEME_EXECUTION_TIMEOUT_MS` (or the older
+`STASIS_GRAPHEME_EXECUTION_TIMEOUT_MS` / `GRAPHEME_EXECUTION_TIMEOUT_MS` names).
+
+`cognition_shell_run` retains the configured filesystem, network, and binary
+permissions. Native shell commands have no implicit execution timeout; explicit
+`timeout_ms` and operator-configured shell limits still apply. Output beyond the
+capture budget is drained and discarded so truncation does not break the command.
+
+For `cognition_coder_shell_run`, `wait_ms` bounds observation of PTY sessions.
+Its one-shot work-environment route waits for completion and currently has no
+per-call timeout. For OCI-backed environments, interruption of the request does
+not prove the command stopped inside the container. An uncertain result is not
+automatically replayed, to avoid duplicating side effects.
+
+### Repeated failed tool calls
+
+The tool loop detects only consecutive, identical batches where every tool
+receipt explicitly reports `ok: false`. It compares tool names, arguments, and
+failure outputs. A changed call, changed failure, successful result, or
+pending/queued/running result resets the sequence. At the second identical
+failure, the model receives a warning to change the approach or ask for input.
+At the third, the loop stops, writes a `RecoverableFailure` checkpoint when the
+checkpoint store is available, and returns a failed/blocking outcome. If the
+checkpoint cannot be confirmed, the response says to verify current state
+before retrying.
+
+This guard targets repeated failed actions, not elapsed time or productive
+tool use. Long sequences of changing or successful calls remain governed by
+the configured turn-round policy; pending asynchronous work is not mistaken
+for failure.
+
 ### Memory retrieval
 
 `cognition_memory_query action=memory.recall` accepts a natural-language
@@ -96,9 +138,12 @@ content. Missing or deleted media is skipped without failing the chat.
 including image-only messages. Use `before_turn` with the oldest returned
 `turn_index` to page backward. Its optional `media_id` reopens one stored image
 only when that image is attached to the authorized session transcript and the
-caller has profile/session access. The daemon verifies the media bytes (maximum
-8 MiB) and provides them as image input to the next model response, not as
-base64 or image data in tool JSON. This lets an agent reopen an older image
+caller has profile/session access. Accepted images up to the 25 MiB upload limit
+use one shared rendition path for current-turn vision, recent history, and
+explicit reopening. Payloads over 8 MiB are decoded with allocation/dimension
+limits and scaled into a PNG of at most 8 MiB; originals remain unchanged.
+The daemon verifies the rendition bytes and provides them as image input to the
+next model response, not as base64 or image data in tool JSON. This lets an agent reopen an older image
 explicitly; it does not make media from an unauthorized session or deleted media
 available.
 

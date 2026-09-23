@@ -2169,7 +2169,7 @@ struct CoderShellRunOutput {
 
 #[medousa_tool(id = COGNITION_CODER_SHELL_RUN_ID)]
 impl CognitionCoderShellRunTool {
-    /// Start a POSIX command, or poll its session_id with poll=true and no command. wait_ms only bounds observation; running commands keep executing. Use shell_session_interrupt to cancel.
+    /// Start a POSIX command, or poll its session_id with poll=true and no command. `wait_ms` bounds PTY observation only; a one-shot work-environment command waits for completion and currently has no per-call timeout. For OCI work environments, interrupting the request does not guarantee the container command stopped, and an unknown outcome is not replayed. Use shell_session_interrupt to cancel PTY sessions.
     async fn invoke_typed(
         &self,
         input: CoderShellRunInput,
@@ -2189,19 +2189,13 @@ impl CognitionCoderShellRunTool {
                     "this work environment does not support PTY command polling".into(),
                 )
             })?;
-            let wait_ms = input
-                .wait_ms
-                .as_ref()
-                .copied()
-                .unwrap_or(15_000)
-                .clamp(100, 15_000);
             let result = crate::work_environment_tools::shell_exec(
                 &invocation,
                 "/bin/sh".to_string(),
                 vec!["-lc".to_string(), command.clone()],
                 None,
                 None,
-                wait_ms,
+                None,
                 MAX_SHELL_OUTPUT_BYTES as u64,
             )
             .await?;

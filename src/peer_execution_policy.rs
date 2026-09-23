@@ -337,7 +337,11 @@ pub struct TaskExecutionGrant {
     pub effective_world_ids: Vec<String>,
     pub network_policy: PeerNetworkPolicy,
     pub issued_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    /// Optional task lifetime. Signed-envelope expiry is checked at ingress and
+    /// never copied here; absence means the admitted task may run until
+    /// cancellation or policy revocation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -395,7 +399,7 @@ pub struct AssistantWorkAdmission<'a> {
     pub requested_tool_domains: &'a [&'a str],
     pub requested_tool_names: &'a [&'a str],
     pub requested_world_ids: &'a [&'a str],
-    pub request_expires_at: DateTime<Utc>,
+    pub task_expires_at: Option<DateTime<Utc>>,
     pub legacy_task_request_granted: bool,
 }
 
@@ -692,10 +696,12 @@ impl PeerExecutionPolicyStore {
         {
             Err(PeerExecutionDenialReason::ToolDomainDenied)
         } else {
-            let expires_at = policy
-                .expires_at
-                .map(|expiry| expiry.min(admission.request_expires_at))
-                .unwrap_or(admission.request_expires_at);
+            let expires_at = Some(
+                policy
+                    .expires_at
+                    .map(|expiry| expiry.min(admission.request_expires_at))
+                    .unwrap_or(admission.request_expires_at),
+            );
             Ok(TaskExecutionGrant {
                 schema_version: TASK_EXECUTION_GRANT_SCHEMA_VERSION,
                 grant_id: task_grant_id(peer_device_id, work_id, policy.revision),
@@ -765,7 +771,7 @@ impl PeerExecutionPolicyStore {
     /// destination-owned policy may narrow or revoke future operations.
     pub fn coder_grant_is_active(&self, grant: &TaskExecutionGrant) -> Result<bool> {
         if grant.worker_intent != "coder"
-            || grant.expires_at <= Utc::now()
+            || grant.expires_at.is_some_and(|expiry| expiry <= Utc::now())
             || grant.policy_source != PeerExecutionPolicySource::Stored
         {
             return Ok(false);
@@ -805,7 +811,7 @@ impl PeerExecutionPolicyStore {
     /// destination policy can still stop the next browser/computer boundary.
     pub fn world_grant_is_active(&self, grant: &TaskExecutionGrant) -> Result<bool> {
         if grant.schema_version != TASK_EXECUTION_GRANT_SCHEMA_VERSION
-            || grant.expires_at <= Utc::now()
+            || grant.expires_at.is_some_and(|expiry| expiry <= Utc::now())
             || grant.policy_source != PeerExecutionPolicySource::Stored
             || grant.effective_world_ids.is_empty()
             || !grant
@@ -1065,7 +1071,10 @@ fn evaluate_assistant_work(
     if policy.is_expired_at(now) {
         return Err(PeerExecutionDenialReason::PolicyExpired);
     }
-    if admission.request_expires_at <= now {
+    if admission
+        .task_expires_at
+        .is_some_and(|expiry| expiry <= now)
+    {
         return Err(PeerExecutionDenialReason::RequestExpired);
     }
     let is_coder = admission.worker_intent.eq_ignore_ascii_case("coder");
@@ -1119,10 +1128,11 @@ fn evaluate_assistant_work(
         return Err(PeerExecutionDenialReason::ToolDomainDenied);
     }
     let effective_world_ids = requested_world_ids.clone();
-    let expires_at = policy
-        .expires_at
-        .map(|policy_expiry| policy_expiry.min(admission.request_expires_at))
-        .unwrap_or(admission.request_expires_at);
+    let expires_at = match (policy.expires_at, admission.task_expires_at) {
+        (Some(policy_expiry), Some(task_expiry)) => Some(policy_expiry.min(task_expiry)),
+        (Some(policy_expiry), None) => Some(policy_expiry),
+        (None, task_expiry) => task_expiry,
+    };
     let grant_id = task_grant_id(admission.peer_device_id, admission.work_id, policy.revision);
     Ok(TaskExecutionGrant {
         schema_version: TASK_EXECUTION_GRANT_SCHEMA_VERSION,
@@ -1284,7 +1294,7 @@ mod tests {
             requested_tool_domains: &SAFE_ASSISTANT_TOOL_DOMAINS,
             requested_tool_names: &TEST_ASSISTANT_TOOL_NAMES,
             requested_world_ids: &[],
-            request_expires_at: Utc::now() + chrono::Duration::minutes(5),
+            task_expires_at: Some(Utc::now() + chrono::Duration::minutes(5)),
             legacy_task_request_granted: false,
         }
     }
@@ -1308,7 +1318,7 @@ mod tests {
             requested_tool_domains: &TEST_CODER_TOOL_DOMAINS,
             requested_tool_names: &TEST_CODER_TOOL_NAMES,
             requested_world_ids: &[],
-            request_expires_at: Utc::now() + chrono::Duration::minutes(5),
+            task_expires_at: Some(Utc::now() + chrono::Duration::minutes(5)),
             legacy_task_request_granted: false,
         }
     }
@@ -1441,6 +1451,34 @@ mod tests {
                 .map(|name| (*name).to_string())
                 .collect::<Vec<_>>()
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn assistant_task_lifetime_is_independent_of_request_freshness() {
+        let (store, root) = test_store();
+        store
+            .update_policy(
+                "peer-a",
+                "pairing-1",
+                PeerExecutionPolicyUpdate {
+                    preset: PeerExecutionPolicyPreset::AssistantWork,
+                    ..Default::default()
+                },
+                "local:operator",
+            )
+            .unwrap();
+        let mut request = admission("peer-a", "work-unbounded");
+        request.task_expires_at = None;
+
+        let grant = store.admit_assistant_work(request).unwrap().unwrap();
+        assert_eq!(grant.expires_at, None);
+
+        let mut explicit = admission("peer-a", "work-explicit");
+        let deadline = Utc::now() + chrono::Duration::minutes(3);
+        explicit.task_expires_at = Some(deadline);
+        let grant = store.admit_assistant_work(explicit).unwrap().unwrap();
+        assert_eq!(grant.expires_at, Some(deadline));
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -1707,7 +1745,7 @@ mod tests {
                 requested_tool_domains: &requested_domains,
                 requested_tool_names: &requested_tools,
                 requested_world_ids: &requested_world_ids,
-                request_expires_at: Utc::now() + chrono::Duration::minutes(5),
+                task_expires_at: Some(Utc::now() + chrono::Duration::minutes(5)),
                 legacy_task_request_granted: false,
             })
             .expect("evaluate world policy")

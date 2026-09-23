@@ -265,6 +265,7 @@
     "daemon_service::engine_clear_stale_lock",
     "daemon_service::engine_diagnose",
     "daemon_service::workshop_ensure_engine",
+    "embedded_daemon::coordination_sync_remote_peer_completions",
     "embedded_daemon::embedded_clear_delegation_binding",
     "embedded_daemon::embedded_delegation_binding",
     "embedded_daemon::embedded_set_delegation_binding",

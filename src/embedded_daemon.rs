@@ -2009,7 +2009,7 @@ impl EmbeddedDaemon {
             .context("finalize runtime tool catalog")?;
         let thread_store = RuntimeFactory::resolve_thread_store(runtime.as_ref(), None);
         let cluster_node_store = RuntimeFactory::resolve_cluster_node_store(runtime.as_ref(), None);
-        let workflow_engine = RuntimeFactory::default_workflow_engine();
+        let workflow_engine = crate::portable_grapheme_engine::workflow_engine();
         let memory_reader = Some(memory_reader);
         let memory_writer_for_runtime = Some(memory_writer.clone());
         let memory_operations_for_runtime = Some(memory_operations.clone());
@@ -5523,6 +5523,7 @@ impl EmbeddedDaemonClient {
             &provider,
             &model,
         )
+        .await
         .map_err(anyhow::Error::msg)?;
         let effective_prompt = crate::media_store::merge_media_refs_into_prompt(
             &prompt,
@@ -6154,6 +6155,7 @@ fn embedded_completion_outcome(termination_reason: &str) -> TurnCompletionOutcom
         medousa_runtime::TOOL_ROUND_BUDGET_EXHAUSTED_REASON | "stuck_text_only_continue" => {
             TurnCompletionOutcomeV3::FuseExhausted
         }
+        "repeated_tool_failure" => TurnCompletionOutcomeV3::Failed,
         _ => TurnCompletionOutcomeV3::Completed,
     }
 }

@@ -42,7 +42,7 @@ pub struct ToolsDiscoverInput {
     /// Domain id — host: memory|catalog|runtime|execute|vault|history|identity|skill|overlay|environment|browser; worker: execute|discover|memory|vault|openshell|scripts
     #[schemars(required, with = "String")]
     domain: Option<String>,
-    /// Surface lane (default auto from active turn scope)
+    /// Deprecated hint; the returned lane is inferred from the admitted principal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "DiscoverLaneInput", skip_serializing_if = "Option::is_none")]
     lane: Option<DiscoverLaneInput>,
@@ -109,6 +109,27 @@ mod tests {
         assert!(input.session_id.is_none());
         assert!(input.list_only.is_none());
     }
+
+    #[test]
+    fn discovery_lane_comes_from_authenticated_principal_not_wire_hint() {
+        use crate::request_principal::PrincipalKind;
+
+        assert_eq!(
+            lane_for_principal(
+                Some(PrincipalKind::Worker),
+                Some(DiscoverLaneInput::Host)
+            ),
+            ToolSurfaceLane::Worker
+        );
+        assert_eq!(
+            lane_for_principal(
+                Some(PrincipalKind::LocalApp),
+                Some(DiscoverLaneInput::Worker)
+            ),
+            ToolSurfaceLane::Host
+        );
+        assert_eq!(lane_for_principal(None, None), ToolSurfaceLane::Host);
+    }
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -174,7 +195,7 @@ impl CognitionToolsDiscoverTool {
             "cognition_tools_discover",
         )
         .await?;
-        let lane = resolve_lane(&self.turn_scope, input.lane);
+        let lane = resolve_lane(input.lane);
         let _list_only = input.list_only.unwrap_or(false);
 
         if input
@@ -239,17 +260,19 @@ fn list_domains_catalog(session_id: &str, lane: ToolSurfaceLane) -> ToolsDiscove
     }
 }
 
-fn resolve_lane(
-    _turn_scope: &crate::agent_runtime::execution_context::TurnScopeAccess,
-    lane: Option<DiscoverLaneInput>,
+fn resolve_lane(requested_lane: Option<DiscoverLaneInput>) -> ToolSurfaceLane {
+    let principal = crate::agent_runtime::execution_context::active_turn_execution_context()
+        .map(|context| context.principal().kind());
+    lane_for_principal(principal, requested_lane)
+}
+
+fn lane_for_principal(
+    principal: Option<crate::request_principal::PrincipalKind>,
+    _requested_lane: Option<DiscoverLaneInput>,
 ) -> ToolSurfaceLane {
-    match lane {
-        Some(DiscoverLaneInput::Worker) => return ToolSurfaceLane::Worker,
-        Some(DiscoverLaneInput::Host) => return ToolSurfaceLane::Host,
-        Some(DiscoverLaneInput::Auto) | None => {}
+    if principal == Some(crate::request_principal::PrincipalKind::Worker) {
+        ToolSurfaceLane::Worker
+    } else {
+        ToolSurfaceLane::Host
     }
-    if crate::agent_runtime::execution_context::active_turn_execution_context().is_none() {
-        // Worker loops may run without host scope — caller should pass lane=worker.
-    }
-    ToolSurfaceLane::Host
 }
