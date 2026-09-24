@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/artifact.postcss";
   import { ExternalLink, X } from "@lucide/svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { haptic } from "$lib/haptics";

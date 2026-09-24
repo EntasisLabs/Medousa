@@ -4,6 +4,7 @@
   import LazyFeatureView from "$lib/components/layout/LazyFeatureView.svelte";
   import ShellChunkError from "$lib/components/layout/ShellChunkError.svelte";
   import ToastHost from "$lib/components/layout/ToastHost.svelte";
+  import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
   import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
@@ -82,6 +83,17 @@
       <ShellChunkError onRetry={() => { shellEpoch += 1; }} />
     {/await}
   {/key}
+{/if}
+
+{#if chat.browserChallenge}
+  <div
+    class="pointer-events-none fixed inset-x-0 z-[105] flex justify-center px-2 sm:px-4"
+    style="top: calc(env(safe-area-inset-top, 0px) + 3.5rem)"
+  >
+    <div class="pointer-events-auto w-full max-w-xl">
+      <AgentBrowserPanel mobile={layout.isMobile} />
+    </div>
+  </div>
 {/if}
 
 {#if commandSpotlight.open}

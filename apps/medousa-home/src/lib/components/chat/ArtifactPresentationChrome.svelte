@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "$lib/styles/artifact.postcss";
   import type { Snippet } from "svelte";
   import { Maximize2, X } from "@lucide/svelte";
   import ArtifactExportMenu from "$lib/components/chat/ArtifactExportMenu.svelte";

@@ -8,6 +8,7 @@ pub mod ports;
 pub mod receipt;
 pub mod scratch;
 pub mod stream_sink;
+pub mod tool_sink_context;
 pub mod transcript_cursor;
 pub mod turn_event;
 pub mod turn_event_log;
@@ -21,6 +22,7 @@ pub use ports::{
 pub use receipt::ArtifactReceiptMeta;
 pub use scratch::{TurnScratchPhase, TurnScratchpad, WorkerDelegateScratch};
 pub use stream_sink::{AgentStreamSink, SharedAgentStreamSink, ToolInputParam};
+pub use tool_sink_context::{active_tool_sink, with_active_tool_sink};
 pub use transcript_cursor::{TranscriptCursor, digest_events, reconstruct_from_journal};
 pub use turn_event::{
     Principal, PrincipalKind, SequencedTurnEvent, TurnEnvelope, TurnEvent, TurnSurface,

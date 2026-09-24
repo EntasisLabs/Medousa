@@ -746,14 +746,26 @@ impl MedousaToolLoopPipeline {
                                     TurnExecutionBoundaryError::MissingContext,
                                 )
                             })?;
+                        // Tokio task locals do not cross JoinSet::spawn. Capture
+                        // the owning turn's event sink here and restore it in
+                        // the child so UI-dependent tools can deliver handoffs.
+                        let tool_sink = medousa_engine::active_tool_sink().await;
                         join_set.spawn(async move {
-                            let output = with_turn_execution_boundary(execution_boundary, async {
-                                await_turn_boundary(
-                                    registry.invoke_tool(&call.fn_name, call.fn_arguments.clone()),
-                                )
-                                .await
-                            })
-                            .await;
+                            let invocation =
+                                with_turn_execution_boundary(execution_boundary, async {
+                                    await_turn_boundary(
+                                        registry
+                                            .invoke_tool(&call.fn_name, call.fn_arguments.clone()),
+                                    )
+                                    .await
+                                });
+                            let output = match tool_sink {
+                                Some(tool_sink) => {
+                                    medousa_engine::with_active_tool_sink(tool_sink, invocation)
+                                        .await
+                                }
+                                None => invocation.await,
+                            };
                             (call, output, tool_run_id)
                         });
                     }

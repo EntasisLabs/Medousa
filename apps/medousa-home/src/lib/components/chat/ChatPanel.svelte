@@ -19,7 +19,6 @@
   import ModeProposalBar from "$lib/components/chat/ModeProposalBar.svelte";
   import AgentPermissionBar from "$lib/components/chat/AgentPermissionBar.svelte";
   import AgentSecretBar from "$lib/components/chat/AgentSecretBar.svelte";
-  import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
   import ScriptChatContextChip from "$lib/components/grapheme/ScriptChatContextChip.svelte";
@@ -1118,7 +1117,6 @@
           {activeSubagentCount} subagent{activeSubagentCount === 1 ? "" : "s"} working
         </button>
       {/if}
-      <AgentBrowserPanel />
     {/if}
     <form
       bind:this={composerFormEl}

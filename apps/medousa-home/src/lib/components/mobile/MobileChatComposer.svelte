@@ -8,7 +8,6 @@
   import ModeProposalBar from "$lib/components/chat/ModeProposalBar.svelte";
   import AgentPermissionBar from "$lib/components/chat/AgentPermissionBar.svelte";
   import AgentSecretBar from "$lib/components/chat/AgentSecretBar.svelte";
-  import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
   import { applyActiveAgentPrompt } from "$lib/utils/activeAgentPrompt";
@@ -251,7 +250,6 @@
   />
   <AgentPermissionBar mobile />
   <AgentSecretBar mobile />
-  <AgentBrowserPanel mobile />
   <div class="flex min-w-0 items-center justify-between gap-2">
   <div class="min-w-0 flex-1">
     <MobileChatContext disabled={connection.offline || chat.composerBlocked || runtime.savingControls}/>
