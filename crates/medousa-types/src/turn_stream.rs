@@ -339,6 +339,9 @@ pub enum TurnCompletionOutcomeV3 {
     Completed,
     NeedsInput,
     Checkpointed,
+    /// An explicitly classified terminal loop failure. Unlike the broad
+    /// `Failed` outcome, this is eligible for an unconditional operator alert.
+    Fatal,
     Failed,
     Cancelled,
     FuseExhausted,

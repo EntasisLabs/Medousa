@@ -129,11 +129,20 @@ answer is outside the loaded history page, the transcript stays available as
 a standalone transcript until history is reloaded with that answer. This does
 not rewrite or remove transcripts saved by earlier versions.
 
-Successful turns do not send a separate completion notification while their
-conversation is visible in Medousa. Background completions still notify, and
-failed turns still notify even when the conversation is visible. Settled chat
-timelines show identical result text and repeated tool-run identities once;
-the stored transcript is preserved.
+Medousa notifications follow separate content settings and delivery routes.
+Turn update alerts are off by default; needs-input alerts are on by default.
+An explicitly classified fatal failure is eligible for an alert regardless of
+those category settings. A tool error, retryable failure, or cancellation is
+not a fatal alert. Local presentation requires iOS notification permission;
+Remote push must also be enabled for APNs delivery to a paired phone. Peer
+messages and user-created calendar or timer reminders have separate settings.
+Scheduled work set to **Stay in Medousa** alerts only after the result is
+recorded; **Run quietly** remains silent.
+These rules cover failures reported by a running daemon; detecting a daemon
+process crash requires a separate watchdog.
+
+Settled chat timelines show identical result text and repeated tool-run
+identities once; the stored transcript is preserved.
 
 - **The control says Live is unavailable:** use the installed iOS app rather
   than a desktop or browser build.

@@ -96,6 +96,32 @@ pub fn inject_display_name_into_payload(payload_ref: &str, display_name: Option<
     payload.to_string()
 }
 
+pub fn notify_on_delivery_from_payload(payload_ref: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(payload_ref)
+        .ok()
+        .and_then(|payload| payload.get("notify_on_delivery").and_then(serde_json::Value::as_bool))
+        .unwrap_or(true)
+}
+
+pub fn inject_notify_on_delivery_into_payload(
+    payload_ref: &str,
+    notify_on_delivery: Option<bool>,
+) -> String {
+    let Some(notify_on_delivery) = notify_on_delivery else {
+        return payload_ref.to_string();
+    };
+    let Ok(mut payload) = serde_json::from_str::<serde_json::Value>(payload_ref) else {
+        return payload_ref.to_string();
+    };
+    if let Some(object) = payload.as_object_mut() {
+        object.insert(
+            "notify_on_delivery".to_string(),
+            serde_json::Value::Bool(notify_on_delivery),
+        );
+    }
+    payload.to_string()
+}
+
 pub fn execution_mode_from_definition(definition: &RecurringDefinition) -> String {
     if matches!(
         definition.job_type.as_str(),
@@ -364,6 +390,12 @@ pub async fn update_recurring(
             request.display_name.as_deref(),
         );
     }
+    if request.notify_on_delivery.is_some() {
+        definition.payload_template_ref = inject_notify_on_delivery_into_payload(
+            &definition.payload_template_ref,
+            request.notify_on_delivery,
+        );
+    }
 
     if request.cron_expr.is_some() || request.timezone.is_some() {
         recurring_delivery::validate_recurring_cron(&definition.cron_expr, &definition.timezone)?;
@@ -462,6 +494,16 @@ mod tests {
         let encoded = inject_display_name_into_payload(payload, Some("Morning brief"));
         let value: serde_json::Value = serde_json::from_str(&encoded).expect("json");
         assert_eq!(value["display_name"], "Morning brief");
+    }
+
+    #[test]
+    fn scheduled_notification_mode_defaults_on_and_can_be_quiet() {
+        let payload = r#"{"user_prompt":"brief"}"#;
+        assert!(notify_on_delivery_from_payload(payload));
+        let quiet = inject_notify_on_delivery_into_payload(payload, Some(false));
+        assert!(!notify_on_delivery_from_payload(&quiet));
+        let in_app = inject_notify_on_delivery_into_payload(&quiet, Some(true));
+        assert!(notify_on_delivery_from_payload(&in_app));
     }
 
     #[test]

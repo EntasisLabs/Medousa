@@ -21,6 +21,11 @@ import {
 const DARK_MODE_KEY = "medousa-home-dark-mode";
 const COLOR_THEME_KEY = "medousa-home-color-theme";
 const NOTIFICATIONS_KEY = "medousa-home-notifications";
+const NOTIFICATIONS_MIGRATION_KEY = "medousa-home-notifications-migration-v1";
+const TURN_UPDATES_KEY = "medousa-home-notify-turn-updates";
+const NEEDS_INPUT_KEY = "medousa-home-notify-needs-input";
+const PEER_MESSAGES_KEY = "medousa-home-notify-peer-messages";
+const REMINDERS_KEY = "medousa-home-notify-reminders";
 const LIVE_ACTIVITY_KEY = "medousa-home-live-activity";
 const REMOTE_PUSH_KEY = "medousa-home-remote-push";
 const TECHNICAL_ACTIVITY_KEY = "medousa-home-technical-activity";
@@ -34,12 +39,16 @@ const CHAT_MODEL_PICKER_KEY = "medousa-home-chat-model-picker";
 
 const DEFAULT_WORK_HIDE_HOURS = 24;
 const DEFAULT_WORK_WIPE_DAYS = 7;
+const notificationPreferences = loadNotificationPreferences();
 
 export class SettingsStore {
   darkMode = $state(loadDarkMode());
   colorTheme = $state(loadColorTheme());
   medousaMark = $state(loadMedousaMark());
-  notificationsEnabled = $state(loadNotifications());
+  turnUpdatesEnabled = $state(notificationPreferences.turnUpdatesEnabled);
+  needsInputEnabled = $state(notificationPreferences.needsInputEnabled);
+  peerMessagesEnabled = $state(notificationPreferences.peerMessagesEnabled);
+  remindersEnabled = $state(notificationPreferences.remindersEnabled);
   liveActivityEnabled = $state(loadLiveActivity());
   remotePushEnabled = $state(loadRemotePush());
   showTechnicalActivity = $state(loadTechnicalActivity());
@@ -93,9 +102,46 @@ export class SettingsStore {
     if (options?.broadcast !== false) broadcastMedousaMark(mark);
   }
 
-  setNotificationsEnabled(enabled: boolean) {
-    this.notificationsEnabled = enabled;
-    localStorage.setItem(NOTIFICATIONS_KEY, enabled ? "1" : "0");
+  setTurnUpdatesEnabled(enabled: boolean) {
+    this.turnUpdatesEnabled = enabled;
+    localStorage.setItem(TURN_UPDATES_KEY, enabled ? "1" : "0");
+    this.syncNotificationPreferences();
+  }
+
+  setNeedsInputEnabled(enabled: boolean) {
+    this.needsInputEnabled = enabled;
+    localStorage.setItem(NEEDS_INPUT_KEY, enabled ? "1" : "0");
+    this.syncNotificationPreferences();
+  }
+
+  setPeerMessagesEnabled(enabled: boolean) {
+    this.peerMessagesEnabled = enabled;
+    localStorage.setItem(PEER_MESSAGES_KEY, enabled ? "1" : "0");
+    this.syncNotificationPreferences();
+  }
+
+  setRemindersEnabled(enabled: boolean) {
+    this.remindersEnabled = enabled;
+    localStorage.setItem(REMINDERS_KEY, enabled ? "1" : "0");
+    this.syncNotificationPreferences();
+  }
+
+  private notificationPreferencePayload() {
+    return {
+      turnUpdatesEnabled: this.turnUpdatesEnabled,
+      needsInputEnabled: this.needsInputEnabled,
+      peerMessagesEnabled: this.peerMessagesEnabled,
+      remindersEnabled: this.remindersEnabled,
+      remotePushEnabled: this.remotePushEnabled,
+    };
+  }
+
+  private syncNotificationPreferences() {
+    if (isTauriMobilePlatform()) {
+      void import("$lib/pushRegistration").then(({ syncNotificationPreferences }) => {
+        syncNotificationPreferences(this.notificationPreferencePayload());
+      });
+    }
   }
 
   setLiveActivityEnabled(enabled: boolean) {
@@ -122,7 +168,7 @@ export class SettingsStore {
     localStorage.setItem(REMOTE_PUSH_KEY, enabled ? "1" : "0");
     if (isTauriMobilePlatform()) {
       void import("$lib/pushRegistration").then(({ setRemotePushEnabled }) => {
-        setRemotePushEnabled(enabled);
+        setRemotePushEnabled(enabled, this.notificationPreferencePayload());
       });
     }
   }
@@ -269,11 +315,43 @@ function clampWorkWipeDays(value: number): number {
   return Math.min(90, Math.max(1, Math.round(value)));
 }
 
-function loadNotifications(): boolean {
-  if (typeof localStorage === "undefined") return true;
-  const stored = localStorage.getItem(NOTIFICATIONS_KEY);
-  if (stored === "0") return false;
-  return true;
+function loadNotificationPreferences() {
+  const defaults = {
+    turnUpdatesEnabled: false,
+    needsInputEnabled: true,
+    peerMessagesEnabled: true,
+    remindersEnabled: true,
+  };
+  if (typeof localStorage === "undefined") return defaults;
+
+  if (localStorage.getItem(NOTIFICATIONS_MIGRATION_KEY) !== "1") {
+    const legacy = localStorage.getItem(NOTIFICATIONS_KEY);
+    const migrated = legacy === "0"
+      ? {
+          turnUpdatesEnabled: false,
+          needsInputEnabled: false,
+          peerMessagesEnabled: false,
+          remindersEnabled: false,
+        }
+      : defaults;
+    localStorage.setItem(TURN_UPDATES_KEY, migrated.turnUpdatesEnabled ? "1" : "0");
+    localStorage.setItem(NEEDS_INPUT_KEY, migrated.needsInputEnabled ? "1" : "0");
+    localStorage.setItem(PEER_MESSAGES_KEY, migrated.peerMessagesEnabled ? "1" : "0");
+    localStorage.setItem(REMINDERS_KEY, migrated.remindersEnabled ? "1" : "0");
+    localStorage.setItem(NOTIFICATIONS_MIGRATION_KEY, "1");
+    return migrated;
+  }
+
+  const read = (key: string, fallback: boolean) => {
+    const value = localStorage.getItem(key);
+    return value === "1" ? true : value === "0" ? false : fallback;
+  };
+  return {
+    turnUpdatesEnabled: read(TURN_UPDATES_KEY, defaults.turnUpdatesEnabled),
+    needsInputEnabled: read(NEEDS_INPUT_KEY, defaults.needsInputEnabled),
+    peerMessagesEnabled: read(PEER_MESSAGES_KEY, defaults.peerMessagesEnabled),
+    remindersEnabled: read(REMINDERS_KEY, defaults.remindersEnabled),
+  };
 }
 
 function loadLiveActivity(): boolean {

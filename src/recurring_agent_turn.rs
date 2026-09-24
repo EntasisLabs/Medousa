@@ -119,7 +119,47 @@ struct RecurringAgentTurnJobHandler {
 }
 
 struct CapturingAgentSink {
-    output: Arc<Mutex<Option<String>>>,
+    result: Arc<Mutex<Option<CapturedAgentResult>>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CapturedTurnOutcome {
+    Completed,
+    NeedsInput,
+    Checkpointed,
+    Failed(crate::turn_failure::TurnFailure),
+}
+
+impl CapturedTurnOutcome {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::Completed => "completed",
+            Self::NeedsInput => "needs_input",
+            Self::Checkpointed => "checkpointed",
+            Self::Failed(failure)
+                if failure.category == crate::turn_failure::TurnFailureCategory::Cancelled =>
+            {
+                "cancelled"
+            }
+            Self::Failed(failure) if !failure.retryable => "fatal",
+            Self::Failed(_) => "failed",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CapturedAgentResult {
+    outcome: CapturedTurnOutcome,
+    output_text: String,
+}
+
+impl CapturingAgentSink {
+    async fn capture(&self, outcome: CapturedTurnOutcome, output_text: String) {
+        *self.result.lock().await = Some(CapturedAgentResult {
+            outcome,
+            output_text,
+        });
+    }
 }
 
 #[async_trait]
@@ -129,12 +169,24 @@ impl AgentStreamSink for CapturingAgentSink {
     async fn reasoning_chunk(&self, _turn_id: u64, _delta: String) {}
 
     async fn agent_response(&self, _turn_id: u64, text: String, _tool_names: Vec<String>) {
-        *self.output.lock().await = Some(text);
+        self.capture(CapturedTurnOutcome::Completed, text).await;
+    }
+
+    async fn agent_needs_input(&self, _turn_id: u64, text: String, _tool_names: Vec<String>) {
+        self.capture(CapturedTurnOutcome::NeedsInput, text).await;
+    }
+
+    async fn agent_turn_checkpoint(&self, _turn_id: u64, text: String, _tool_names: Vec<String>) {
+        self.capture(CapturedTurnOutcome::Checkpointed, text).await;
     }
 
     async fn agent_error(&self, _turn_id: u64, message: String) {
         let failure = crate::turn_failure::TurnFailure::from_debug(&message);
-        *self.output.lock().await = Some(failure.operator_message);
+        self.capture(
+            CapturedTurnOutcome::Failed(failure.clone()),
+            failure.operator_message,
+        )
+        .await;
     }
 
     async fn notice(&self, _message: String) {}
@@ -273,9 +325,9 @@ impl JobHandler for RecurringAgentTurnJobHandler {
             })?;
         let execution_context = execution_lease.context().clone();
 
-        let output = Arc::new(Mutex::new(None));
+        let result = Arc::new(Mutex::new(None));
         let sink: Arc<dyn AgentStreamSink> = Arc::new(CapturingAgentSink {
-            output: output.clone(),
+            result: result.clone(),
         });
 
         run_agent_turn(
@@ -292,12 +344,22 @@ impl JobHandler for RecurringAgentTurnJobHandler {
         .await;
         drop(execution_lease);
 
-        let text =
-            output.lock().await.clone().unwrap_or_else(|| {
-                "recurring agent turn completed without assistant text".to_string()
+        let result = result
+            .lock()
+            .await
+            .clone()
+            .unwrap_or_else(|| CapturedAgentResult {
+                outcome: CapturedTurnOutcome::Failed(
+                    crate::turn_failure::TurnFailure::from_debug(
+                        "agent turn finished without a terminal result",
+                    ),
+                ),
+                output_text: "The scheduled turn ended without a result.".to_string(),
             });
+        let text = result.output_text.clone();
 
-        if let Some(manuscript_id) = manuscript_id.as_deref()
+        if result.outcome == CapturedTurnOutcome::Completed
+            && let Some(manuscript_id) = manuscript_id.as_deref()
             && let Ok(manuscript) = build_manuscript_context(manuscript_id)
             && manuscript_wants_locus_store_on_complete(&manuscript)
             && let Err(err) =
@@ -308,20 +370,54 @@ impl JobHandler for RecurringAgentTurnJobHandler {
 
         let diagnostics = json!({
             "provider": "medousa-agent-runtime",
-            "status": "success",
+            "status": match &result.outcome {
+                CapturedTurnOutcome::Completed => "success",
+                CapturedTurnOutcome::NeedsInput => "needs_input",
+                CapturedTurnOutcome::Checkpointed => "checkpointed",
+                CapturedTurnOutcome::Failed(failure) if failure.category == crate::turn_failure::TurnFailureCategory::Cancelled => "cancelled",
+                CapturedTurnOutcome::Failed(_) => "failure",
+            },
+            "turn_outcome": result.outcome.label(),
             "job_type": RECURRING_AGENT_TURN_JOB_TYPE,
             "output_text": text,
+            "failure": match &result.outcome {
+                CapturedTurnOutcome::Failed(failure) => Some(failure),
+                _ => None,
+            },
             "policy_profile": payload.policy_profile,
             "model_hint": payload.model_hint,
             "manuscript_id": manuscript_id,
         })
         .to_string();
 
-        Ok(JobExecutionOutcome::Success {
+        Ok(job_execution_outcome(result.outcome, Some(diagnostics)))
+    }
+}
+
+fn job_execution_outcome(
+    outcome: CapturedTurnOutcome,
+    diagnostics: Option<String>,
+) -> JobExecutionOutcome {
+    match outcome {
+        CapturedTurnOutcome::Completed
+        | CapturedTurnOutcome::NeedsInput
+        | CapturedTurnOutcome::Checkpointed => JobExecutionOutcome::Success {
             output_provenance: None,
             execution_id: None,
-            diagnostics: Some(diagnostics),
-        })
+            diagnostics,
+        },
+        CapturedTurnOutcome::Failed(failure) if failure.retryable => {
+            JobExecutionOutcome::RetryableFailure {
+                message: failure.operator_message,
+                execution_id: None,
+                diagnostics,
+            }
+        }
+        CapturedTurnOutcome::Failed(failure) => JobExecutionOutcome::FatalFailure {
+            message: failure.operator_message,
+            execution_id: None,
+            diagnostics,
+        },
     }
 }
 
@@ -399,6 +495,66 @@ fn fatal_outcome(message: &str) -> JobExecutionOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn captured_agent_error_is_preserved_as_failure() {
+        let result = Arc::new(Mutex::new(None));
+        let sink = CapturingAgentSink {
+            result: result.clone(),
+        };
+
+        sink.agent_error(1, "openai HTTP 429: rate limit exceeded".to_string())
+            .await;
+
+        let result = result.lock().await.clone().expect("captured result");
+        assert_eq!(result.outcome.label(), "failed");
+        assert_eq!(
+            result.output_text,
+            "The model provider is rate-limiting requests. Wait a moment and try again."
+        );
+        assert!(matches!(
+            job_execution_outcome(result.outcome, None),
+            JobExecutionOutcome::RetryableFailure { .. }
+        ));
+    }
+
+    #[test]
+    fn needs_input_and_checkpoint_settle_without_becoming_completed_turns() {
+        for outcome in [
+            CapturedTurnOutcome::NeedsInput,
+            CapturedTurnOutcome::Checkpointed,
+        ] {
+            let label = outcome.label();
+            assert!(matches!(
+                job_execution_outcome(outcome, None),
+                JobExecutionOutcome::Success { .. }
+            ));
+            assert_ne!(label, "completed");
+        }
+    }
+
+    #[test]
+    fn unknown_agent_error_is_a_fatal_job_failure() {
+        let failure = crate::turn_failure::TurnFailure::from_debug(
+            "provider returned an unexplained response",
+        );
+        assert_eq!(CapturedTurnOutcome::Failed(failure.clone()).label(), "fatal");
+        assert!(matches!(
+            job_execution_outcome(CapturedTurnOutcome::Failed(failure), None),
+            JobExecutionOutcome::FatalFailure { .. }
+        ));
+    }
+
+    #[test]
+    fn cancellation_is_not_reported_as_a_fatal_turn_outcome() {
+        let failure = crate::turn_failure::TurnFailure::from_debug("turn cancelled");
+        let outcome = CapturedTurnOutcome::Failed(failure);
+        assert_eq!(outcome.label(), "cancelled");
+        assert!(matches!(
+            job_execution_outcome(outcome, None),
+            JobExecutionOutcome::FatalFailure { .. }
+        ));
+    }
 
     #[test]
     fn payload_roundtrips_manuscript_metadata() {

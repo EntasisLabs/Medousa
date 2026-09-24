@@ -227,6 +227,16 @@ pub struct PairHeartbeatRequest {
     pub push_platform: Option<String>,
     #[serde(default)]
     pub live_activity_push_token: Option<String>,
+    #[serde(default)]
+    pub remote_push_enabled: Option<bool>,
+    #[serde(default)]
+    pub turn_updates_enabled: Option<bool>,
+    #[serde(default)]
+    pub needs_input_enabled: Option<bool>,
+    #[serde(default)]
+    pub peer_messages_enabled: Option<bool>,
+    #[serde(default)]
+    pub reminders_enabled: Option<bool>,
     /// Optional dial-back endpoint for mesh reverse delivery (M3 registry).
     #[serde(default)]
     pub mesh_lan_base_url: Option<String>,
@@ -332,6 +342,10 @@ impl PairingAdmission {
 pub struct ApnsPushTarget {
     pub phone_id: String,
     pub device_token: String,
+    pub turn_updates_enabled: bool,
+    pub needs_input_enabled: bool,
+    pub peer_messages_enabled: bool,
+    pub reminders_enabled: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -681,6 +695,11 @@ impl PairingService {
             profile_id: pending.bound_profile_id,
             mesh_grants: crate::mesh::default_mesh_grants_for_role(pending.role),
             apns_device_token: None,
+            remote_push_enabled: false,
+            turn_updates_enabled: false,
+            needs_input_enabled: true,
+            peer_messages_enabled: true,
+            reminders_enabled: true,
             push_platform: None,
             push_updated_at: None,
             live_activity_push_token: None,
@@ -903,20 +922,43 @@ impl PairingService {
         let mut updated = record.clone();
         let mut mesh_endpoints = None;
         if let Some(body) = body {
-            if let Some(push_token) = body
-                .apns_device_token
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-            {
-                updated.apns_device_token = Some(push_token.to_string());
-                updated.push_platform = body
-                    .push_platform
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .map(str::to_string)
-                    .or_else(|| Some("ios".to_string()));
+            if let Some(enabled) = body.remote_push_enabled {
+                updated.remote_push_enabled = enabled;
+            }
+            if let Some(enabled) = body.turn_updates_enabled {
+                updated.turn_updates_enabled = enabled;
+            }
+            if let Some(enabled) = body.needs_input_enabled {
+                updated.needs_input_enabled = enabled;
+            }
+            if let Some(enabled) = body.peer_messages_enabled {
+                updated.peer_messages_enabled = enabled;
+            }
+            if let Some(enabled) = body.reminders_enabled {
+                updated.reminders_enabled = enabled;
+            }
+            if body.remote_push_enabled == Some(false) {
+                updated.apns_device_token = None;
+                updated.push_platform = None;
+                updated.push_updated_at = Some(Utc::now());
+            } else if let Some(token) = body.apns_device_token.as_deref() {
+                let token = token.trim();
+                updated.apns_device_token = if token.is_empty() {
+                    None
+                } else {
+                    Some(token.to_string())
+                };
+                if token.is_empty() {
+                    updated.push_platform = None;
+                } else {
+                    updated.push_platform = body
+                        .push_platform
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_string)
+                        .or_else(|| Some("ios".to_string()));
+                }
                 updated.push_updated_at = Some(Utc::now());
             }
             if let Some(live_token) = body.live_activity_push_token.as_deref() {
@@ -975,6 +1017,9 @@ impl PairingService {
             if !pairing_trust_active(&record, Utc::now()) {
                 continue;
             }
+            if !record.remote_push_enabled {
+                continue;
+            }
             let Some(token) = record
                 .apns_device_token
                 .as_deref()
@@ -993,6 +1038,10 @@ impl PairingService {
             out.push(ApnsPushTarget {
                 phone_id: record.phone_id,
                 device_token: token.to_string(),
+                turn_updates_enabled: record.turn_updates_enabled,
+                needs_input_enabled: record.needs_input_enabled,
+                peer_messages_enabled: record.peer_messages_enabled,
+                reminders_enabled: record.reminders_enabled,
             });
         }
         Ok(out)
@@ -1753,6 +1802,57 @@ mod tests {
             "unauthorized"
         );
         service.store.delete_record(&phone_id).expect("cleanup");
+    }
+
+    #[tokio::test]
+    async fn heartbeat_persists_notification_preferences_and_disables_apns_targeting() {
+        let service = test_service();
+        let (pairing_id, _, _, _) = pair_test_phone(&service, None).await;
+        let enabled = service
+            .pair_heartbeat(
+                Some(&pairing_id),
+                Some(PairHeartbeatRequest {
+                    apns_device_token: Some("apns-token".into()),
+                    push_platform: Some("ios".into()),
+                    remote_push_enabled: Some(true),
+                    turn_updates_enabled: Some(true),
+                    needs_input_enabled: Some(false),
+                    peer_messages_enabled: Some(true),
+                    reminders_enabled: Some(false),
+                    ..PairHeartbeatRequest::default()
+                }),
+            )
+            .await
+            .expect("enable push");
+        assert_eq!(enabled.status, "ok");
+        let targets = service.list_apns_targets().expect("APNs targets");
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].device_token, "apns-token");
+        assert!(targets[0].turn_updates_enabled);
+        assert!(!targets[0].needs_input_enabled);
+        assert!(targets[0].peer_messages_enabled);
+        assert!(!targets[0].reminders_enabled);
+
+        service
+            .pair_heartbeat(
+                Some(&pairing_id),
+                Some(PairHeartbeatRequest {
+                    remote_push_enabled: Some(false),
+                    ..PairHeartbeatRequest::default()
+                }),
+            )
+            .await
+            .expect("disable push");
+        assert!(service.list_apns_targets().expect("targets").is_empty());
+        let record = service
+            .store
+            .list_paired()
+            .expect("paired devices")
+            .into_iter()
+            .find(|record| record.pairing_id == pairing_id)
+            .expect("record");
+        assert!(!record.remote_push_enabled);
+        assert_eq!(record.apns_device_token, None);
     }
 
     #[tokio::test]

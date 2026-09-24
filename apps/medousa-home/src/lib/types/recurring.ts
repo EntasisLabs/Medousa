@@ -47,6 +47,7 @@ export interface UpdateRecurringRequest {
   cron_expr?: string;
   timezone?: string;
   display_name?: string;
+  notify_on_delivery?: boolean;
   delivery?: Record<string, unknown> | null;
 }
 

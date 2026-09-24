@@ -18511,6 +18511,14 @@
           "null"
         ]
       },
+      "notify_on_delivery": {
+        "description": "Whether a successful in-app delivery should raise a notification. Absent preserves the legacy in-app behavior.",
+        "default": null,
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
       "policy_profile": {
         "type": [
           "string",
@@ -23261,14 +23269,25 @@
   "TurnCompletionOutcomeV3": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "TurnCompletionOutcomeV3",
-    "type": "string",
-    "enum": [
-      "completed",
-      "needs_input",
-      "checkpointed",
-      "failed",
-      "cancelled",
-      "fuse_exhausted"
+    "oneOf": [
+      {
+        "type": "string",
+        "enum": [
+          "completed",
+          "needs_input",
+          "checkpointed",
+          "failed",
+          "cancelled",
+          "fuse_exhausted"
+        ]
+      },
+      {
+        "description": "An explicitly classified terminal loop failure. Unlike the broad `Failed` outcome, this is eligible for an unconditional operator alert.",
+        "type": "string",
+        "enum": [
+          "fatal"
+        ]
+      }
     ]
   },
   "TurnStreamEnvelopeV2": {
@@ -24505,14 +24524,25 @@
         }
       },
       "TurnCompletionOutcomeV3": {
-        "type": "string",
-        "enum": [
-          "completed",
-          "needs_input",
-          "checkpointed",
-          "failed",
-          "cancelled",
-          "fuse_exhausted"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "completed",
+              "needs_input",
+              "checkpointed",
+              "failed",
+              "cancelled",
+              "fuse_exhausted"
+            ]
+          },
+          {
+            "description": "An explicitly classified terminal loop failure. Unlike the broad `Failed` outcome, this is eligible for an unconditional operator alert.",
+            "type": "string",
+            "enum": [
+              "fatal"
+            ]
+          }
         ]
       },
       "TurnStreamEventV3": {
@@ -27047,14 +27077,25 @@
         }
       },
       "TurnCompletionOutcomeV3": {
-        "type": "string",
-        "enum": [
-          "completed",
-          "needs_input",
-          "checkpointed",
-          "failed",
-          "cancelled",
-          "fuse_exhausted"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "completed",
+              "needs_input",
+              "checkpointed",
+              "failed",
+              "cancelled",
+              "fuse_exhausted"
+            ]
+          },
+          {
+            "description": "An explicitly classified terminal loop failure. Unlike the broad `Failed` outcome, this is eligible for an unconditional operator alert.",
+            "type": "string",
+            "enum": [
+              "fatal"
+            ]
+          }
         ]
       },
       "WorkerAckKind": {
@@ -27352,6 +27393,13 @@
       "feeds": {
         "description": "Replace feed binding; pass `{ \"feeds\": null }` to clear feed publish.",
         "default": null
+      },
+      "notify_on_delivery": {
+        "default": null,
+        "type": [
+          "boolean",
+          "null"
+        ]
       },
       "timezone": {
         "default": null,
@@ -28169,6 +28217,17 @@
           }
         ]
       },
+      "notification": {
+        "description": "Canonical daemon-authored notification intent. Clients present this fact; they do not re-classify cards or turn events themselves.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/HomeNotificationIntent"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "snapshot": {
         "anyOf": [
           {
@@ -28200,6 +28259,67 @@
       }
     },
     "definitions": {
+      "HomeNotificationIntent": {
+        "description": "One logical alert shared by the local-notification and APNs transports.",
+        "type": "object",
+        "required": [
+          "body",
+          "emitted_at_utc",
+          "kind",
+          "notification_id",
+          "subject_id",
+          "title"
+        ],
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "card_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "emitted_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "kind": {
+            "$ref": "#/definitions/HomeNotificationKind"
+          },
+          "notification_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subject_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "HomeNotificationKind": {
+        "description": "User-visible notification categories emitted by the daemon. Delivery transports must not infer policy from workspace columns or raw tool events.",
+        "type": "string",
+        "enum": [
+          "fatal_turn",
+          "turn_update",
+          "needs_input",
+          "scheduled_delivery"
+        ]
+      },
       "ToolInputParam": {
         "description": "One redacted key/value from a tool's arguments, for chat-adjacent tool evidence. Values are truncated at the emit site; `truncated` tells the UI to say so.",
         "type": "object",

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import RoomShellOptions from "$lib/components/settings/RoomShellOptions.svelte";
+  import NotificationPreferenceControls from "$lib/components/settings/NotificationPreferenceControls.svelte";
   import SettingsSiriSection from "$lib/components/settings/SettingsSiriSection.svelte";
   import { environment } from "$lib/stores/environment.svelte";
   import { settings, COLOR_THEME_OPTIONS } from "$lib/stores/settings.svelte";
@@ -673,19 +674,7 @@
     </div>
 
     <div class="prefs-grid">
-      <label class="prefs-tile">
-        <span class="prefs-tile-copy">
-          <span class="prefs-tile-title">Work done alerts</span>
-          <span class="prefs-tile-meta">Notify when a card finishes</span>
-        </span>
-        <input
-          type="checkbox"
-          class="prefs-switch"
-          checked={settings.notificationsEnabled}
-          onchange={(event) =>
-            settings.setNotificationsEnabled((event.currentTarget as HTMLInputElement).checked)}
-        />
-      </label>
+      <NotificationPreferenceControls />
 
       <label class="prefs-tile">
         <span class="prefs-tile-copy">

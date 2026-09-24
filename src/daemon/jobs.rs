@@ -853,6 +853,10 @@ pub async fn register_recurring_prompt(
         &payload_template_ref,
         request.display_name.as_deref(),
     );
+    let payload_template_ref = crate::recurring_handlers::inject_notify_on_delivery_into_payload(
+        &payload_template_ref,
+        request.notify_on_delivery,
+    );
 
     let definition = RecurringScheduleSpec::new(
         recurring_id.clone(),

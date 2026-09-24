@@ -49,6 +49,7 @@ pub fn spawn_workspace_stream(
         let mut heartbeat = tokio::time::interval(Duration::from_secs(HEARTBEAT_SECS));
         heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let _ = heartbeat.tick().await;
+        let mut notification_rx = crate::home_notifications::subscribe();
 
         loop {
             tokio::select! {
@@ -81,9 +82,32 @@ pub fn spawn_workspace_stream(
                         counts: None,
                         snapshot: None,
                         worker_progress: None,
+                        notification: None,
                     };
                     if tx.send(frame).await.is_err() {
                         return;
+                    }
+                }
+                notification = notification_rx.recv() => {
+                    match notification {
+                        Ok(notification) => {
+                            let frame = WorkspaceStreamEvent {
+                                workspace_revision: workspace_store().revision(),
+                                stream_event_type: "notification".to_string(),
+                                emitted_at_utc: Utc::now(),
+                                card: None,
+                                feed_event: None,
+                                counts: None,
+                                snapshot: None,
+                                worker_progress: None,
+                                notification: Some(notification),
+                            };
+                            if tx.send(frame).await.is_err() {
+                                return;
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
                     }
                 }
             }
@@ -117,6 +141,7 @@ async fn initial_snapshot_event(
         counts: Some(filtered.counts_by_column.clone()),
         snapshot: Some(filtered),
         worker_progress: None,
+        notification: None,
     })
 }
 
@@ -197,6 +222,7 @@ async fn emit_snapshot_delta(
                 counts: None,
                 snapshot: None,
                 worker_progress: None,
+                notification: None,
             };
             tx.send(frame).await?;
         }
@@ -234,6 +260,7 @@ async fn emit_snapshot_delta(
                 counts: None,
                 snapshot: None,
                 worker_progress: None,
+                notification: None,
             };
             tx.send(frame).await?;
         }
@@ -250,6 +277,7 @@ async fn emit_snapshot_delta(
             counts: Some(counts),
             snapshot: None,
             worker_progress: None,
+            notification: None,
         };
         tx.send(frame).await?;
         *last_revision = revision;
@@ -274,6 +302,7 @@ async fn send_card_upserted(
         counts: None,
         snapshot: None,
         worker_progress,
+        notification: None,
     })
     .await
     .map_err(Box::new)
@@ -319,5 +348,6 @@ fn stream_error_event() -> WorkspaceStreamEvent {
         counts: None,
         snapshot: None,
         worker_progress: None,
+        notification: None,
     }
 }

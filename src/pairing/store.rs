@@ -84,6 +84,17 @@ pub struct PairedDeviceRecord {
     pub mesh_grants: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub apns_device_token: Option<String>,
+    /// Missing on older records; infer enabled because they only carried a token after opt-in.
+    #[serde(default = "default_true")]
+    pub remote_push_enabled: bool,
+    #[serde(default)]
+    pub turn_updates_enabled: bool,
+    #[serde(default = "default_true")]
+    pub needs_input_enabled: bool,
+    #[serde(default = "default_true")]
+    pub peer_messages_enabled: bool,
+    #[serde(default = "default_true")]
+    pub reminders_enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub push_platform: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -92,6 +103,10 @@ pub struct PairedDeviceRecord {
     pub live_activity_push_token: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub live_activity_push_updated_at: Option<DateTime<Utc>>,
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 const fn initial_credential_generation() -> u64 {
@@ -360,6 +375,11 @@ mod tests {
             profile_id: None,
             mesh_grants: Vec::new(),
             apns_device_token: None,
+            remote_push_enabled: false,
+            turn_updates_enabled: false,
+            needs_input_enabled: true,
+            peer_messages_enabled: true,
+            reminders_enabled: true,
             push_platform: None,
             push_updated_at: None,
             live_activity_push_token: None,
@@ -389,6 +409,11 @@ mod tests {
         assert_eq!(record.trust_expires_at, None);
         assert_eq!(record.idle_timeout_seconds, None);
         assert_eq!(record.credential_generation, 1);
+        assert!(record.remote_push_enabled);
+        assert!(!record.turn_updates_enabled);
+        assert!(record.needs_input_enabled);
+        assert!(record.peer_messages_enabled);
+        assert!(record.reminders_enabled);
     }
 
     #[test]

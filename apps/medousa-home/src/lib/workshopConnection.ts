@@ -13,12 +13,6 @@ import { userProfiles } from "$lib/stores/userProfiles.svelte";
 import { identity } from "$lib/stores/identity.svelte";
 import { workshops } from "$lib/stores/workshops.svelte";
 import { ensureMobileDaemonUrl } from "$lib/daemonConnection";
-import {
-  budgetRequestIdFromStreamEvent,
-  notifyBudgetApprovalRequired,
-  notifyTurnTicketTerminal,
-  notifyWorkerHandoff,
-} from "$lib/notifications";
 import { isRecoverableStreamError } from "$lib/utils/streamEvents";
 import {
   DEFAULT_INTERACTIVE_BACKOFF,
@@ -246,38 +240,18 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
   unlisteners.push(
     onInteractiveEvent<TurnStreamEnvelopeV3>((envelope) => {
       if (workshopTransitioning) return;
-      const turnBefore = chat.turns.get(envelope.turn_id);
-      const turnSessionId = chat.streamOwners.get(envelope.turn_id)?.sessionId;
       chat.applyStreamEvent(envelope);
       if (!isTauriMobilePlatform()) return;
 
       if (envelope.event.type === "budget_approval_required") {
-        const requestId = budgetRequestIdFromStreamEvent(envelope);
-        if (requestId) {
-          void notifyBudgetApprovalRequired(
-            envelope.event.reason.split(".")[0]?.trim() || "Turn paused",
-            requestId,
-            envelope.event.reason,
-          );
-          haptic("warning");
-        }
+        haptic("warning");
         return;
       }
 
       if (
-        envelope.event.type === "worker_ack" &&
-        envelope.event.ack_kind === "worker"
+        envelope.event.type === "turn_completed" &&
+        envelope.event.outcome === "completed"
       ) {
-        void notifyWorkerHandoff(envelope, turnBefore?.workspaceCardId);
-        haptic("light");
-        return;
-      }
-
-      if (envelope.event.type === "turn_completed") {
-        void notifyTurnTicketTerminal(envelope, turnBefore?.workspaceCardId, {
-          viewingConversation: document.visibilityState === "visible"
-            && layout.mobileTab === "chat" && chat.sessionId === turnSessionId,
-        });
         haptic("success");
       }
     }),

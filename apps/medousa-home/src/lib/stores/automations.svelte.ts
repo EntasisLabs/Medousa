@@ -220,6 +220,7 @@ export class AutomationsStore {
         max_attempts: 1,
         queue: "default",
         delivery,
+        notify_on_delivery: (request.delivery_mode ?? "in_app") === "in_app",
       });
       if (workshopEpoch !== this.workshopEpoch) return response;
       this.registerMessage = `Scheduled · next ${this.formatNextRun(response.next_run_at_utc)}`;
@@ -257,7 +258,10 @@ export class AutomationsStore {
     this.updatingId = recurringId;
     try {
       const delivery = this.buildDeliveryPayload(mode, telegramChatId);
-      await updateRecurring(recurringId, { delivery });
+      await updateRecurring(recurringId, {
+        delivery,
+        notify_on_delivery: mode === "in_app",
+      });
       if (workshopEpoch !== this.workshopEpoch) return;
       await this.refresh();
       if (workshopEpoch !== this.workshopEpoch) return;

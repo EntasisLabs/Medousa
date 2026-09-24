@@ -2760,6 +2760,7 @@ impl EmbeddedDaemonClient {
                 counts: None,
                 snapshot: Some(snapshot),
                 worker_progress: None,
+                notification: None,
             };
             if tx.send(initial).await.is_err() {
                 return;
@@ -2779,6 +2780,7 @@ impl EmbeddedDaemonClient {
                     counts: None,
                     snapshot: None,
                     worker_progress: None,
+                    notification: None,
                 };
                 if tx.send(event).await.is_err() {
                     return;
@@ -4599,6 +4601,11 @@ impl EmbeddedDaemonClient {
             &payload_template_ref,
             request.display_name.as_deref(),
         );
+        let payload_template_ref =
+            crate::recurring_handlers::inject_notify_on_delivery_into_payload(
+                &payload_template_ref,
+                request.notify_on_delivery,
+            );
         let definition = crate::recurring_schedule::RecurringScheduleSpec::new(
             recurring_id.clone(),
             queue.clone(),
@@ -6165,6 +6172,7 @@ fn embedded_answer_state(outcome: TurnCompletionOutcomeV3) -> Option<&'static st
         TurnCompletionOutcomeV3::Checkpointed => Some("checkpoint"),
         TurnCompletionOutcomeV3::NeedsInput => Some("needs_input"),
         TurnCompletionOutcomeV3::FuseExhausted => Some("fuse_exhausted"),
+        TurnCompletionOutcomeV3::Fatal => Some("fatal"),
         TurnCompletionOutcomeV3::Failed => Some("failed"),
         TurnCompletionOutcomeV3::Cancelled => Some("cancelled"),
         TurnCompletionOutcomeV3::Completed => None,
@@ -6176,7 +6184,8 @@ fn embedded_ticket_phase(outcome: TurnCompletionOutcomeV3) -> &'static str {
         TurnCompletionOutcomeV3::Completed => "done",
         TurnCompletionOutcomeV3::NeedsInput => "awaiting_operator",
         TurnCompletionOutcomeV3::Checkpointed => "handoff",
-        TurnCompletionOutcomeV3::Failed
+        TurnCompletionOutcomeV3::Fatal
+        | TurnCompletionOutcomeV3::Failed
         | TurnCompletionOutcomeV3::Cancelled
         | TurnCompletionOutcomeV3::FuseExhausted => "error",
     }

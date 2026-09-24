@@ -227,6 +227,7 @@ pub mod bot_handlers;
 pub mod client_tools;
 pub mod home_live_activity;
 pub mod home_push;
+pub mod home_notifications;
 pub mod home_widget_push;
 pub mod ingest_stream;
 pub mod interactive_turn_runtime;

@@ -23,10 +23,22 @@ Related: [How Medousa fits together](guide:architecture) · [Desktop, web, and p
 |------|----------|
 | **Look** | Light/dark, color theme, what chrome to show |
 | **Work cards** | How long finished Work stays on the board |
-| **Everyday** | Alerts and guidance; on phone, push / Live Activity |
+| **Everyday** | Notification categories, guidance, and phone-only Live Activity |
 | **More display** | Model picker, Liquid chat, technical detail in chat |
 
 Motion calming follows your **system** reduced-motion setting — there’s no separate Medousa toggle.
+
+Notification category settings are separate from delivery routes. Turn update
+alerts are off by default; needs-input alerts are on by default. Explicitly
+classified fatal turn failures remain eligible regardless of category toggles.
+Local notifications require device permission. **Remote push** enables APNs
+delivery to a paired phone. Peer messages and user-created calendar or timer
+reminders have separate notification settings. Tool errors, progress, worker
+starts, routine work-card changes, and cancellations do not alert. Scheduled
+work set to **Stay in Medousa** alerts after its result is recorded; **Run
+quietly** does not. Fatal
+notifications cover failures reported by a running daemon; detecting a daemon
+process crash requires a separate watchdog.
 
 ## Medousa Agent
 
@@ -47,7 +59,7 @@ Advanced: which tools are allowed, shell access, network limits, and optional no
 ```callout
 tone: tip
 title: Older name
-body: If you remember Settings → Rhythm, that content now lives under Preferences.
+body: If you remember Settings → Rhythm, those settings now live under Preferences.
 ```
 
 Next: [Desktop, web, and phone](guide:platform-matrix).

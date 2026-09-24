@@ -79,6 +79,16 @@ pub struct PairHeartbeatInvokeRequest {
     pub push_platform: Option<String>,
     #[serde(default)]
     pub live_activity_push_token: Option<String>,
+    #[serde(default)]
+    pub remote_push_enabled: Option<bool>,
+    #[serde(default)]
+    pub turn_updates_enabled: Option<bool>,
+    #[serde(default)]
+    pub needs_input_enabled: Option<bool>,
+    #[serde(default)]
+    pub peer_messages_enabled: Option<bool>,
+    #[serde(default)]
+    pub reminders_enabled: Option<bool>,
     /// Optional mesh dial-back hints (M4+ rendezvous).
     #[serde(default)]
     pub mesh_lan_base_url: Option<String>,
@@ -299,13 +309,17 @@ pub async fn pairing_send_heartbeat(
     request: Option<PairHeartbeatInvokeRequest>,
 ) -> Result<(), String> {
     let base = daemon_base(&state)?;
-    if let Some(token) = request
-        .as_ref()
-        .and_then(|body| body.apns_device_token.as_deref())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        crate::push::set_apns_device_token(Some(token.to_string()));
+    if let Some(body) = request.as_ref() {
+        if body.remote_push_enabled == Some(false) {
+            crate::push::set_apns_device_token(None);
+        } else if let Some(token) = body
+            .apns_device_token
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            crate::push::set_apns_device_token(Some(token.to_string()));
+        }
     }
     crate::pairing_client::send_pair_heartbeat(&base, request.as_ref()).await
 }

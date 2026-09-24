@@ -211,6 +211,11 @@ impl SchedulerTickSideEffects for DaemonSchedulerSideEffects {
         );
         medousa::feed_sink::maybe_publish_recurring_job_feed(self.state.composition(), job_id)
             .await;
+        medousa::home_notifications::maybe_publish_processed_recurring_job(
+            self.state.composition(),
+            job_id,
+        )
+        .await;
         if job_succeeded(self.state.composition(), job_id).await {
             let _ = maybe_resume_agent_turn_from_child_job(&self.state, job_id).await;
         }

@@ -33,7 +33,7 @@ End users only pair their phone and enable **Remote push** in settings. They nev
 | APNs metadata (`teamId`, `keyId`, `sandbox`) | Release engineering | `~/Library/Application Support/medousa/apns/config.json` |
 | Push Notifications capability | iOS build (Xcode) | App entitlements (`aps-environment`) |
 | Device token | Automatic | Phone → daemon via `POST /pair/heartbeat` |
-| Remote push toggle | End user | Medousa Home → Settings → Rhythm |
+| Remote push toggle | End user | Medousa Home → Settings → Preferences |
 
 ---
 
@@ -149,8 +149,23 @@ export MEDOUSA_APNS_SANDBOX=true
 1. Install Medousa Home (TestFlight or App Store).
 2. Mac: official Medousa / daemon running with APNs already configured.
 3. Pair: **You → Settings → Connection** → Mac LAN URL (`http://<mac-ip>:7419`).
-4. Enable **Remote push** (Settings → Rhythm) and allow iOS notifications.
-5. Background or quit the app — pushes arrive when work state changes on the Mac.
+4. In **Settings → Preferences**, enable **Remote push** and allow iOS
+   notifications. Remote push controls APNs delivery; notification category
+   preferences control which content is eligible for an alert.
+5. Background or quit the app. Eligible notifications can arrive over APNs when
+   the daemon and APNs are configured and reachable.
+
+Notification categories are independent of delivery routes. Turn update alerts
+are off by default; needs-input alerts are on by default. Explicitly classified
+fatal turn failures remain eligible regardless of those category switches.
+Local alerts require iOS notification permission. APNs alerts additionally
+require Remote push to be enabled. Peer messages and user-created calendar or
+timer reminders are separate notification categories. Tool-level errors,
+progress, worker starts, routine work-card changes, and cancellations do not
+produce alerts. Scheduled work using **Stay in Medousa** alerts only after the
+result is recorded; **Run quietly** stays silent. Fatal alerts cover failures
+reported by a running daemon; a
+daemon process crash requires an independent watchdog.
 
 ---
 
@@ -162,7 +177,7 @@ export MEDOUSA_APNS_SANDBOX=true
 | Paired device tokens | Encrypted at rest in daemon pairing store |
 | Revoke pairing (`DELETE /pair/{id}`) | Loopback (`127.0.0.1`) without token, or remote with that device's `Authorization: Bearer` session token |
 | LAN transport | HTTP today — pairing tokens can be sniffed on hostile Wi‑Fi; use trusted networks |
-| Push content | Work card titles in notification body — visible on lock screen |
+| Push content | Notification intent title and body — visible on lock screen |
 
 Admin remove from the Mac:
 
@@ -180,7 +195,7 @@ medousa pair remove <full-pairing-uuid>
 - [ ] iOS app has Push Notifications entitlement
 - [ ] Phone paired; heartbeat succeeds (connection green)
 - [ ] Remote push enabled in app settings; iOS permission granted
-- [ ] Force-quit app; complete work on Mac → push received
+- [ ] Force-quit app; trigger an enabled notification category → push received
 - [ ] TestFlight: `sandbox: true`; App Store: `sandbox: false` / `--production`
 
 ---

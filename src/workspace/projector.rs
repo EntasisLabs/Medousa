@@ -385,7 +385,6 @@ fn apply_item_column_transition(item: &ProjectedWorkItem) {
         tracing::warn!(%card_id, %error, "workspace column projection persistence admission failed");
         return;
     }
-    crate::home_push::notify_column_transition(&item.detail, previous, item.card.column);
 }
 
 pub(crate) fn apply_projection_to_store(items: &[ProjectedWorkItem]) {

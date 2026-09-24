@@ -35,6 +35,24 @@ export interface WorkspaceSnapshot {
   feed_tail: WorkspaceEvent[];
 }
 
+export type HomeNotificationKind =
+  | "fatal_turn"
+  | "turn_update"
+  | "needs_input"
+  | "scheduled_delivery";
+
+export interface HomeNotificationIntent {
+  notification_id: string;
+  kind: HomeNotificationKind;
+  subject_id: string;
+  title: string;
+  body: string;
+  card_id?: string | null;
+  session_id?: string | null;
+  url?: string | null;
+  emitted_at_utc: string;
+}
+
 export interface WorkspaceStreamEvent {
   workspace_revision: number;
   stream_event_type: string;
@@ -45,6 +63,7 @@ export interface WorkspaceStreamEvent {
   snapshot?: WorkspaceSnapshot;
   /** Live subagent transcript slice, present on `card_upserted` for worker cards. */
   worker_progress?: import("$lib/types/card").WorkerProgress;
+  notification?: HomeNotificationIntent;
 }
 
 export function columnLabel(column: string): string {

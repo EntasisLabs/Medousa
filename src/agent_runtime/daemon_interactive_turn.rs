@@ -315,7 +315,7 @@ impl InteractiveTurnStreamSink {
     ) -> bool {
         if let Err(error) = self.persist_via_spine(assistant_turn, event).await {
             let message = format!("turn persistence failed: {error}");
-            self.publish_failure(TurnCompletionOutcomeV3::Failed, message.clone(), None)
+            self.publish_failure(TurnCompletionOutcomeV3::Fatal, message.clone(), None)
                 .await;
             self.sync_ask_job_failed(message).await;
             return false;
@@ -480,7 +480,8 @@ fn stream_tracking(event: &TurnStreamEventV3) -> (&str, &str, bool) {
             TurnCompletionOutcomeV3::Completed => ("turn_completed", "complete", true),
             TurnCompletionOutcomeV3::NeedsInput => ("turn_completed", "awaiting_operator", true),
             TurnCompletionOutcomeV3::Checkpointed => ("turn_completed", "handoff", true),
-            TurnCompletionOutcomeV3::Failed
+            TurnCompletionOutcomeV3::Fatal
+            | TurnCompletionOutcomeV3::Failed
             | TurnCompletionOutcomeV3::Cancelled
             | TurnCompletionOutcomeV3::FuseExhausted => ("turn_completed", "failed", true),
         },

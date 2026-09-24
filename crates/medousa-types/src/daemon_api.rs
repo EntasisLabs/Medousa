@@ -743,6 +743,10 @@ pub struct RegisterRecurringPromptRequest {
     /// Human-readable title for Automations list rows.
     #[serde(default)]
     pub display_name: Option<String>,
+    /// Whether a successful in-app delivery should raise a notification.
+    /// Absent preserves the legacy in-app behavior.
+    #[serde(default)]
+    pub notify_on_delivery: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -805,6 +809,8 @@ pub struct UpdateRecurringRequest {
     pub timezone: Option<String>,
     #[serde(default)]
     pub display_name: Option<String>,
+    #[serde(default)]
+    pub notify_on_delivery: Option<bool>,
     /// Replace delivery binding; pass `{ "delivery": null }` to clear channel push.
     #[serde(default)]
     pub delivery: Option<serde_json::Value>,
@@ -2805,6 +2811,36 @@ pub struct WorkspaceStreamQuery {
     pub feed_tail_limit: Option<usize>,
 }
 
+/// User-visible notification categories emitted by the daemon. Delivery
+/// transports must not infer policy from workspace columns or raw tool events.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum HomeNotificationKind {
+    FatalTurn,
+    TurnUpdate,
+    NeedsInput,
+    ScheduledDelivery,
+}
+
+/// One logical alert shared by the local-notification and APNs transports.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct HomeNotificationIntent {
+    pub notification_id: String,
+    pub kind: HomeNotificationKind,
+    pub subject_id: String,
+    pub title: String,
+    pub body: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    pub emitted_at_utc: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WorkspaceStreamEvent {
@@ -2823,6 +2859,10 @@ pub struct WorkspaceStreamEvent {
     /// cards so chat can tick without a detail round trip.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worker_progress: Option<WorkerProgressDto>,
+    /// Canonical daemon-authored notification intent. Clients present this
+    /// fact; they do not re-classify cards or turn events themselves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notification: Option<HomeNotificationIntent>,
 }
 
 /// Streaming slice of a worker's live transcript — the `live_*` fields of
