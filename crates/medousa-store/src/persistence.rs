@@ -10,7 +10,9 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 
-use crate::store_root::{StoreRoot, StoreRootError, StoreRootPath};
+use crate::store_root::{
+    AtomicWriteError, AtomicWriteStage, StoreRoot, StoreRootError, StoreRootPath,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -244,6 +246,59 @@ impl FileTransaction {
         Ok(bytes.len())
     }
 
+    /// Serialize a snapshot directly to an atomically published file. Snapshot
+    /// size is independent of the bounded journal/transport record size.
+    pub fn replace_snapshot_json<T: serde::Serialize>(
+        &self,
+        path: &impl StoreRootPath,
+        value: &T,
+    ) -> Result<(), PersistenceError> {
+        self.check(TransactionFaultPoint::BeforeWrite)?;
+        self.check(TransactionFaultPoint::BeforePublish)?;
+        self.check(TransactionFaultPoint::BeforeSnapshotPublish)?;
+        self.check(TransactionFaultPoint::BeforeTempWrite)?;
+        self.root
+            .atomic_write_with_stages(
+                path,
+                |file| {
+                    use std::io::Write as _;
+                    let mut buffered = std::io::BufWriter::new(file);
+                    serde_json::to_writer(&mut buffered, value).map_err(std::io::Error::other)?;
+                    buffered.flush()
+                },
+                |stage| match stage {
+                    AtomicWriteStage::AfterTempWrite => {
+                        self.check(TransactionFaultPoint::AfterTempWrite)
+                    }
+                    AtomicWriteStage::BeforeFileSync => {
+                        self.check(TransactionFaultPoint::BeforeFileSync)
+                    }
+                    AtomicWriteStage::AfterFileSync => {
+                        self.check(TransactionFaultPoint::AfterFileSync)
+                    }
+                    AtomicWriteStage::BeforeRename => {
+                        self.check(TransactionFaultPoint::BeforeRenamePublish)
+                    }
+                    AtomicWriteStage::AfterRename => {
+                        self.check(TransactionFaultPoint::AfterRenamePublish)
+                    }
+                    AtomicWriteStage::BeforeParentSync => {
+                        self.check(TransactionFaultPoint::BeforeParentSync)
+                    }
+                    AtomicWriteStage::AfterParentSync => {
+                        self.check(TransactionFaultPoint::AfterParentSync)
+                    }
+                },
+            )
+            .map_err(|error| match error {
+                AtomicWriteError::Store(error) => PersistenceError::from(error),
+                AtomicWriteError::Stage(error) => error,
+            })?;
+        self.check(TransactionFaultPoint::AfterPublish)?;
+        self.check(TransactionFaultPoint::AfterSnapshotPublish)?;
+        Ok(())
+    }
+
     /// Create-only publication: fails if the destination already exists.
     pub fn create_only(
         &self,
@@ -409,6 +464,64 @@ mod tests {
         let path = directory.path().canonicalize().unwrap();
         let root = Arc::new(StoreRoot::open_or_create_nofollow(&path).unwrap());
         (directory, FileTransaction::new(root))
+    }
+
+    #[test]
+    fn streaming_snapshot_failure_keeps_previous_file() {
+        struct Broken;
+        impl serde::Serialize for Broken {
+            fn serialize<S: serde::Serializer>(&self, _: S) -> Result<S::Ok, S::Error> {
+                Err(serde::ser::Error::custom("injected serialization failure"))
+            }
+        }
+        let (_directory, transaction) = transaction();
+        let path = StorePath::parse("snapshot.json").unwrap();
+        transaction
+            .replace_snapshot_json(&path, &vec![1, 2, 3])
+            .unwrap();
+        assert!(transaction.replace_snapshot_json(&path, &Broken).is_err());
+        assert_eq!(
+            transaction.root().read_limited(&path, 100).unwrap(),
+            b"[1,2,3]"
+        );
+    }
+
+    #[test]
+    fn streaming_snapshot_faults_bracket_the_real_rename_boundary() {
+        let directory = tempfile::tempdir().unwrap();
+        let path_root = directory.path().canonicalize().unwrap();
+        let root = Arc::new(StoreRoot::open_or_create_nofollow(&path_root).unwrap());
+        let path = StorePath::parse("snapshot.json").unwrap();
+
+        let before_rename = FileTransaction::with_faults(
+            Arc::clone(&root),
+            Arc::new(FailAt {
+                target: TransactionFaultPoint::BeforeRenamePublish,
+                hits: AtomicUsize::new(0),
+            }),
+        );
+        before_rename
+            .replace_snapshot(&path, b"old", DurabilityLevel::Synced)
+            .unwrap();
+        assert!(before_rename.replace_snapshot_json(&path, &"new").is_err());
+        assert_eq!(root.read_limited(&path, 100).unwrap(), b"old");
+        assert!(std::fs::read_dir(&path_root).unwrap().all(|entry| {
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".medousa-tmp-")
+        }));
+
+        let after_rename = FileTransaction::with_faults(
+            Arc::clone(&root),
+            Arc::new(FailAt {
+                target: TransactionFaultPoint::AfterRenamePublish,
+                hits: AtomicUsize::new(0),
+            }),
+        );
+        assert!(after_rename.replace_snapshot_json(&path, &"new").is_err());
+        assert_eq!(root.read_limited(&path, 100).unwrap(), b"\"new\"");
     }
 
     #[test]

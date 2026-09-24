@@ -397,7 +397,19 @@ impl DelegatedTaskExecutor for DaemonDelegatedTaskExecutor {
                             "delegated Stasis turn identity was already used for different work",
                         )
                     }
+                    DelegatedWorkAdmissionError::Persistence(error) => {
+                        DelegatedTaskError::internal(format!(
+                            "could not persist delegated worker admission: {error}"
+                        ))
+                    }
                 })?;
+        crate::workspace::flush_persist_writer()
+            .await
+            .map_err(|error| {
+                DelegatedTaskError::internal(format!(
+                    "delegated worker admission was not durable: {error}"
+                ))
+            })?;
         self.ensure_worker_job(&work_id, created).await?;
         let current = turn_worker_store()
             .get(&work_id)

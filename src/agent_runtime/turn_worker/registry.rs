@@ -589,7 +589,11 @@ impl ToolRegistry for AllowlistToolRegistry {
                         "required": ["action"],
                         "additionalProperties": false
                     }));
-                    tool.strict = Some(true);
+                    // `message`, `reason`, and `needs_synthesis` intentionally
+                    // stay optional: provider strict mode requires every
+                    // declared property to be required, which makes a sparse
+                    // complete-response finish call unrepresentable.
+                    tool.strict = Some(false);
                 }
                 Some(tool)
             })
@@ -796,10 +800,48 @@ mod tests {
             .iter()
             .find(|tool| tool.name.as_str() == crate::public_api::COGNITION_TURN)
             .expect("delegated finish tool");
+        let schema = finish.schema.as_ref().unwrap();
+        assert_eq!(finish.strict, Some(false));
+        assert_eq!(schema["required"], json!(["action"]));
+        assert_eq!(schema["additionalProperties"], json!(false));
         assert_eq!(
-            finish.schema.as_ref().unwrap()["required"],
-            json!(["action"])
+            schema["properties"]["action"]["enum"],
+            json!(["turn.finish"])
         );
+        for optional in ["message", "reason", "needs_synthesis"] {
+            assert!(schema["properties"].get(optional).is_some());
+            assert!(!schema["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|name| name.as_str() == Some(optional)));
+        }
+    }
+
+    #[tokio::test]
+    async fn delegated_finish_registry_still_rejects_other_turn_actions() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let registry = AllowlistToolRegistry::delegated(
+            Arc::new(RecordingRegistry {
+                tool_name: crate::public_api::COGNITION_TURN,
+                seen: Arc::clone(&seen),
+            }),
+            HashSet::from([crate::public_api::COGNITION_TURN.to_string()]),
+        );
+
+        let error = registry
+            .invoke_tool(
+                crate::public_api::COGNITION_TURN,
+                json!({"action":"turn.checkpoint"}),
+            )
+            .await
+            .expect_err("delegated worker should only finish");
+        assert!(
+            error
+                .to_string()
+                .contains("may only use cognition_turn action=turn.finish")
+        );
+        assert!(seen.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

@@ -990,7 +990,18 @@ impl TurnWorkerScheduler {
             updated_at: now,
         };
 
-        self.store.insert(record);
+        self.store.try_insert(record).map_err(|error| {
+            stasis::domain::errors::StasisError::PortFailure(format!(
+                "cognition_workshop_mutate: could not persist worker admission: {error}"
+            ))
+        })?;
+        crate::workspace::flush_persist_writer()
+            .await
+            .map_err(|error| {
+                stasis::domain::errors::StasisError::PortFailure(format!(
+                    "cognition_workshop_mutate: worker admission was not durable: {error}"
+                ))
+            })?;
         ledger_bus_event(
             &bus.session_id,
             bus.stream_turn_id,
@@ -1210,6 +1221,11 @@ impl TurnWorkerScheduler {
                         "A bound workshop is already active for this session ({work_id}); steer or cancel that exact generation first."
                     )
                 }
+                super::store::BoundWorkshopAdmissionError::Persistence(error) => {
+                    return Err(stasis::domain::errors::StasisError::PortFailure(format!(
+                        "cognition_turn_begin_work: could not persist bound workshop admission: {error}"
+                    )));
+                }
             };
             return Ok(EnterBoundWorkshopOutput::Failure {
                 ok: false,
@@ -1217,6 +1233,13 @@ impl TurnWorkerScheduler {
                 error,
             });
         }
+        crate::workspace::flush_persist_writer()
+            .await
+            .map_err(|error| {
+                stasis::domain::errors::StasisError::PortFailure(format!(
+                    "cognition_turn_begin_work: bound workshop admission was not durable: {error}"
+                ))
+            })?;
         ledger_bus_event(
             &bus.session_id,
             bus.stream_turn_id,

@@ -415,9 +415,14 @@
     {
       "registry": "coder_bound",
       "name": "cognition_chat_history_read",
-      "description": "Read a bounded window from one prior Medousa chat. Returns user and assistant messages plus compact tool names.",
+      "description": "Read messages and attachment IDs from a Medousa chat. Use before_turn to page backward, or media_id to reopen an attached image for visual inspection.",
       "input_schema": {
         "properties": {
+          "before_turn": {
+            "description": "Return turns before this exclusive, one-based transcript turn index. Use the oldest returned message's turn_index to continue paging backward.",
+            "minimum": 0,
+            "type": "integer"
+          },
           "intent": {
             "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
@@ -434,6 +439,10 @@
             "maximum": 24000,
             "minimum": 512,
             "type": "integer"
+          },
+          "media_id": {
+            "description": "Reopen an attached image by its returned media_id so a vision-capable model can inspect its pixels.",
+            "type": "string"
           },
           "session_id": {
             "description": "Session returned by cognition_chat_history_search.",
@@ -1193,7 +1202,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_coder_shell_run",
-      "description": "Start a POSIX command, or poll its session_id with poll=true and no command. wait_ms only bounds observation; running commands keep executing. Use shell_session_interrupt to cancel.",
+      "description": "Start a POSIX command, or poll its session_id with poll=true and no command. `wait_ms` bounds PTY observation only; a one-shot work-environment command waits for completion and currently has no per-call timeout. For OCI work environments, interrupting the request does not guarantee the container command stopped, and an unknown outcome is not replayed. Use shell_session_interrupt to cancel PTY sessions.",
       "input_schema": {
         "properties": {
           "attempt_id": {
@@ -3062,9 +3071,14 @@
     {
       "registry": "general_runtime",
       "name": "cognition_chat_history_read",
-      "description": "Read a bounded window from one prior Medousa chat. Returns user and assistant messages plus compact tool names.",
+      "description": "Read messages and attachment IDs from a Medousa chat. Use before_turn to page backward, or media_id to reopen an attached image for visual inspection.",
       "input_schema": {
         "properties": {
+          "before_turn": {
+            "description": "Return turns before this exclusive, one-based transcript turn index. Use the oldest returned message's turn_index to continue paging backward.",
+            "minimum": 0,
+            "type": "integer"
+          },
           "last_k": {
             "description": "Number of most recent visible turns (default 12, maximum 40).",
             "maximum": 40,
@@ -3076,6 +3090,10 @@
             "maximum": 24000,
             "minimum": 512,
             "type": "integer"
+          },
+          "media_id": {
+            "description": "Reopen an attached image by its returned media_id so a vision-capable model can inspect its pixels.",
+            "type": "string"
           },
           "session_id": {
             "description": "Session returned by cognition_chat_history_search.",
@@ -3255,7 +3273,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_coder_shell_run",
-      "description": "Start a POSIX command, or poll its session_id with poll=true and no command. wait_ms only bounds observation; running commands keep executing. Use shell_session_interrupt to cancel.",
+      "description": "Start a POSIX command, or poll its session_id with poll=true and no command. `wait_ms` bounds PTY observation only; a one-shot work-environment command waits for completion and currently has no per-call timeout. For OCI work environments, interrupting the request does not guarantee the container command stopped, and an unknown outcome is not replayed. Use shell_session_interrupt to cancel PTY sessions.",
       "input_schema": {
         "properties": {
           "attempt_id": {
@@ -5416,6 +5434,7 @@
             "type": "boolean"
           },
           "timeout_ms": {
+            "description": "Optional command execution deadline. Omitting it waits for command completion; it does not bound how long the workflow caller waits.",
             "type": "integer"
           },
           "writable_roots": {
@@ -5847,7 +5866,7 @@
             "type": "string"
           },
           "lane": {
-            "description": "Surface lane (default auto from active turn scope)",
+            "description": "Deprecated hint; the returned lane is inferred from the admitted principal.",
             "enum": [
               "auto",
               "host",

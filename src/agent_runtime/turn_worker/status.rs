@@ -10,7 +10,14 @@ pub fn append_active_workers_hint(prompt: &str, session_id: &str) -> String {
 }
 
 pub fn format_active_workers_block(session_id: &str) -> Option<String> {
-    let active = turn_worker_store()
+    format_active_workers_for_store(&turn_worker_store(), session_id)
+}
+
+fn format_active_workers_for_store(
+    store: &super::store::TurnWorkerStore,
+    session_id: &str,
+) -> Option<String> {
+    let active = store
         .list_for_session(session_id)
         .into_iter()
         .filter(|record| {
@@ -66,7 +73,7 @@ mod tests {
 
     #[test]
     fn active_workers_block_lists_pending_and_running() {
-        let store = turn_worker_store();
+        let store = super::super::store::TurnWorkerStore::empty_for_tests();
         store.insert(TurnWorkRecord {
             work_id: "work-status-test".to_string(),
             session_id: "sess-active".to_string(),
@@ -120,7 +127,7 @@ mod tests {
             updated_at: chrono::Utc::now(),
         });
 
-        let block = format_active_workers_block("sess-active").expect("block");
+        let block = format_active_workers_for_store(&store, "sess-active").expect("block");
         assert!(block.contains("[MEDOUSA_ACTIVE_WORKERS]"));
         assert!(block.contains("work-status-test"));
         assert!(block.contains("extractor"));

@@ -31,6 +31,12 @@ fn active_profile_snapshot(
 pub async fn health(
     State(state): State<AppState>,
 ) -> Result<Json<HealthResponse>, (StatusCode, String)> {
+    crate::workspace::persist::ensure_persistence_available().map_err(|error| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("workspace persistence unavailable: {error}"),
+        )
+    })?;
     let (active_profile_id, active_profile_display_name) = state
         .profile_registry
         .read()

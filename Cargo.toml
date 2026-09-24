@@ -113,6 +113,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 axum = { version = "0.8", features = ["multipart", "ws"], optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "stream", "blocking"], optional = true }
+genai-reqwest = { package = "reqwest", version = "0.13", default-features = false, optional = true }
 zeroize = { version = "1", optional = true }
 uuid = { version = "1", features = ["v4"] }
 dirs = { version = "5", optional = true }
@@ -218,6 +219,7 @@ full-daemon = [
     "dep:icalendar",
     "dep:axum",
     "dep:reqwest",
+    "dep:genai-reqwest",
     "dep:zeroize",
     "dep:dirs",
     "dep:ratatui",
@@ -285,6 +287,7 @@ embedded-daemon = [
     "dep:medousa-tool-macros",
     "dep:pdf-extract",
     "dep:reqwest",
+    "dep:genai-reqwest",
     "dep:schemars",
     "dep:serde_yaml",
     "dep:toml",

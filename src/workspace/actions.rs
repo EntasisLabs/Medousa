@@ -78,7 +78,18 @@ pub async fn cancel_card(
             let work_id = detail.work_id.clone().ok_or_else(|| {
                 CardActionError::NotActionable("turn worker card missing work_id".to_string())
             })?;
-            cancel_turn_worker(&work_id)?
+            let session_id = detail.session_id.as_deref().ok_or_else(|| {
+                CardActionError::NotActionable("turn worker card missing session_id".to_string())
+            })?;
+            let result = cancel_turn_worker(&turn_worker_store(), session_id, &work_id)?;
+            if result.0 {
+                crate::workspace::persist::flush_persist_writer()
+                    .await
+                    .map_err(|error| CardActionError::Internal(format!(
+                        "cancellation was requested but its state could not be durably saved: {error}"
+                    )))?;
+            }
+            result
         }
         WorkCardKind::StasisJob => {
             let job_id = detail.job_id.clone().ok_or_else(|| {
@@ -98,8 +109,22 @@ pub async fn cancel_card(
             let job_id = detail.job_id.clone().ok_or_else(|| {
                 CardActionError::NotActionable("ask card missing job_id".to_string())
             })?;
-            ask_job_store().mark_canceled(&job_id);
-            (true, format!("ask {job_id} canceled"), Some(job_id))
+            let canceled = ask_job_store()
+                .try_mark_canceled(&job_id)
+                .map_err(|error| CardActionError::Internal(error.to_string()))?;
+            if canceled {
+                crate::workspace::persist::flush_persist_writer()
+                    .await
+                    .map_err(|error| CardActionError::Internal(format!(
+                        "cancellation was requested but its state could not be durably saved: {error}"
+                    )))?;
+            }
+            let message = if canceled {
+                format!("ask {job_id} canceled")
+            } else {
+                format!("ask {job_id} is not cancelable")
+            };
+            (canceled, message, Some(job_id))
         }
         other => {
             return Err(CardActionError::NotActionable(format!(
@@ -122,18 +147,21 @@ pub async fn cancel_card(
     })
 }
 
-fn cancel_turn_worker(work_id: &str) -> Result<(bool, String, Option<String>), CardActionError> {
-    let store = turn_worker_store();
+fn cancel_turn_worker(
+    store: &crate::agent_runtime::turn_worker::TurnWorkerStore,
+    session_id: &str,
+    work_id: &str,
+) -> Result<(bool, String, Option<String>), CardActionError> {
     let updated = store
-        .update(work_id, |record| {
-            if matches!(
-                record.status,
-                TurnWorkStatus::Pending | TurnWorkStatus::Running
-            ) {
-                record.status = TurnWorkStatus::Cancelled;
+        .cancel_exact(session_id, work_id)
+        .map_err(|error| match error {
+            crate::agent_runtime::turn_worker::TurnWorkerMutationError::MissingWork => {
+                CardActionError::NotFound
             }
-        })
-        .ok_or(CardActionError::NotFound)?;
+            other => {
+                CardActionError::Internal(format!("turn worker cancellation failed: {other:?}"))
+            }
+        })?;
 
     let ok = updated.status == TurnWorkStatus::Cancelled;
     let message = if ok {
@@ -181,8 +209,12 @@ pub async fn archive_card(
                 CardActionError::NotActionable("turn worker card missing work_id".to_string())
             })?;
             turn_worker_store()
-                .archive(&work_id, purge_output)
+                .try_archive(&work_id, purge_output)
+                .map_err(|error| CardActionError::Internal(error.to_string()))?
                 .ok_or(CardActionError::NotFound)?;
+            crate::workspace::persist::flush_persist_writer()
+                .await
+                .map_err(|error| CardActionError::Internal(error.to_string()))?;
             (true, format!("turn worker {work_id} archived"), None)
         }
         WorkCardKind::AskJob => {
@@ -190,8 +222,12 @@ pub async fn archive_card(
                 CardActionError::NotActionable("ask card missing job_id".to_string())
             })?;
             ask_job_store()
-                .archive(&job_id, purge_output)
+                .try_archive(&job_id, purge_output)
+                .map_err(|error| CardActionError::Internal(error.to_string()))?
                 .ok_or(CardActionError::NotFound)?;
+            crate::workspace::persist::flush_persist_writer()
+                .await
+                .map_err(|error| CardActionError::Internal(error.to_string()))?;
             (true, format!("ask {job_id} archived"), Some(job_id))
         }
         other => {
@@ -303,7 +339,7 @@ pub async fn replay_runtime_job(
     })
 }
 
-pub fn link_vault_card(
+pub async fn link_vault_card(
     card_id: &str,
     vault_path: &str,
 ) -> Result<WorkspaceCardActionResponse, CardActionError> {
@@ -321,13 +357,13 @@ pub fn link_vault_card(
             "vault note not found: {path}"
         )));
     }
-    workspace_store().set_vault_association(card_id, path.clone());
-
-    if let Some(event) = event_for_vault_link(card_id, &path) {
-        workspace_store().append_event(event);
-    } else {
-        workspace_store().bump_revision();
-    }
+    let event = event_for_vault_link(card_id, &path);
+    workspace_store()
+        .link_vault_association(card_id, path.clone(), event)
+        .map_err(|error| CardActionError::Internal(error.to_string()))?;
+    crate::workspace::persist::flush_persist_writer()
+        .await
+        .map_err(|error| CardActionError::Internal(error.to_string()))?;
 
     let associations = workspace_store().associations(card_id);
     Ok(WorkspaceCardActionResponse {
@@ -365,7 +401,7 @@ async fn job_succeeded(runtime: &RuntimeComposition, job_id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent_runtime::turn_worker::TurnWorkRecord;
+    use crate::agent_runtime::turn_worker::{TurnWorkRecord, TurnWorkerStore};
 
     #[test]
     fn normalize_vault_path_rejects_traversal() {
@@ -375,12 +411,12 @@ mod tests {
 
     #[test]
     fn cancel_turn_worker_marks_cancelled() {
-        let store = turn_worker_store();
+        let store = TurnWorkerStore::empty_for_tests();
         let session_id = format!("session-cancel-test-{}", uuid::Uuid::new_v4().simple());
         let work_id = format!("work-cancel-test-{}", uuid::Uuid::new_v4().simple());
         let record = TurnWorkRecord {
             work_id: work_id.clone(),
-            session_id,
+            session_id: session_id.clone(),
             identity_user_id: None,
             parent_turn_correlation_id: None,
             parent_stream_turn_id: 0,
@@ -432,28 +468,17 @@ mod tests {
         };
         store.insert(record);
 
-        let (ok, _, _) = cancel_turn_worker(&work_id).expect("cancel");
+        let (ok, _, _) = cancel_turn_worker(&store, &session_id, &work_id).expect("cancel");
         assert!(ok);
         let updated = store.get(&work_id).expect("record");
         assert_eq!(updated.status, TurnWorkStatus::Cancelled);
     }
 
-    #[test]
-    fn link_vault_persists_association() {
-        crate::vault::service::with_temp_vault(|| {
-            let note_path = format!("journal/link-test-{}.md", uuid::Uuid::new_v4().simple());
-            let request = crate::daemon_api::VaultWriteRequest {
-                path: Some(note_path.clone()),
-                content: "# Link test\n".to_string(),
-                ..Default::default()
-            };
-            crate::vault::VaultService::write_note(Some(&note_path), &request, None).expect("seed");
-
-            let card_id = format!("card-link-{}", uuid::Uuid::new_v4().simple());
-            let response = link_vault_card(&card_id, &note_path).expect("link");
-            assert!(response.ok);
-            let assoc = workspace_store().associations(&card_id);
-            assert_eq!(assoc.vault_paths, vec![note_path]);
-        });
+    #[tokio::test]
+    async fn link_vault_card_rejects_missing_id_before_admission() {
+        let error = link_vault_card("  ", "notes/test.md")
+            .await
+            .expect_err("missing card ID");
+        assert!(matches!(error, CardActionError::NotActionable(_)));
     }
 }

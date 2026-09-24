@@ -19,17 +19,53 @@ use crate::chatgpt_oauth::ChatGptOAuthBroker;
 const DEFAULT_RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
 const RESPONSES_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const RESPONSES_READ_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const RESPONSES_MAX_ATTEMPTS: usize = 3;
+const RESPONSES_RETRY_BACKOFF: Duration = Duration::from_millis(250);
 pub const OPENAI_CODEX_PROVIDER_ID: &str = "openai-codex";
 
 #[derive(Debug)]
 enum StreamOnceError {
-    Transport(genai::Error),
+    Transport {
+        error: genai::Error,
+        observable_output_delivered: bool,
+    },
+    IncompleteStream {
+        observable_output_delivered: bool,
+    },
     Delivery(StasisError),
 }
 
 impl From<genai::Error> for StreamOnceError {
     fn from(error: genai::Error) -> Self {
-        Self::Transport(error)
+        Self::Transport {
+            error,
+            observable_output_delivered: false,
+        }
+    }
+}
+
+impl StreamOnceError {
+    fn can_retry_before_output(&self) -> bool {
+        match self {
+            Self::Transport {
+                error,
+                observable_output_delivered: false,
+            } => is_retryable_responses_error(error),
+            Self::IncompleteStream {
+                observable_output_delivered: false,
+            } => true,
+            Self::Transport { .. } | Self::IncompleteStream { .. } | Self::Delivery(_) => false,
+        }
+    }
+
+    fn unauthorized_before_output(&self) -> bool {
+        matches!(
+            self,
+            Self::Transport {
+                error,
+                observable_output_delivered: false,
+            } if is_unauthorized(error)
+        )
     }
 }
 
@@ -196,10 +232,17 @@ impl OpenAiCodexChatClient {
         let mut reasoning_text = String::new();
         let mut captured_content: Option<MessageContent> = None;
         let mut captured_reasoning_content: Option<String> = None;
+        let mut captured_stop_reason = None;
+        let mut captured_response_id = None;
         let mut usage = Usage::default();
+        let mut observable_output_delivered = false;
 
         while let Some(event) = stream_response.stream.next().await {
-            match event? {
+            let event = event.map_err(|error| StreamOnceError::Transport {
+                error,
+                observable_output_delivered,
+            })?;
+            match event {
                 ChatStreamEvent::Chunk(chunk) => {
                     if !chunk.content.is_empty() {
                         streamed_text.push_str(&chunk.content);
@@ -207,6 +250,7 @@ impl OpenAiCodexChatClient {
                             send_stream_delta(tx, StreamDelta::Content(chunk.content))
                                 .await
                                 .map_err(StreamOnceError::Delivery)?;
+                            observable_output_delivered = true;
                         }
                     }
                 }
@@ -217,6 +261,7 @@ impl OpenAiCodexChatClient {
                             send_stream_delta(tx, StreamDelta::Reasoning(chunk.content))
                                 .await
                                 .map_err(StreamOnceError::Delivery)?;
+                            observable_output_delivered = true;
                         }
                     }
                 }
@@ -227,9 +272,20 @@ impl OpenAiCodexChatClient {
                         send_stream_delta(tx, StreamDelta::ThoughtSignature(chunk.content))
                             .await
                             .map_err(StreamOnceError::Delivery)?;
+                        observable_output_delivered = true;
                     }
                 }
                 ChatStreamEvent::End(end) => {
+                    // This client only talks to the Responses API. GenAI emits
+                    // an End event at both a terminal response and raw SSE EOF;
+                    // only terminal Responses events carry the response ID.
+                    let Some(response_id) = end.captured_response_id else {
+                        return Err(StreamOnceError::IncompleteStream {
+                            observable_output_delivered,
+                        });
+                    };
+                    captured_response_id = Some(response_id);
+                    captured_stop_reason = end.captured_stop_reason;
                     captured_content = end.captured_content;
                     captured_reasoning_content = end.captured_reasoning_content;
                     usage = end.captured_usage.unwrap_or_default();
@@ -238,6 +294,9 @@ impl OpenAiCodexChatClient {
             }
         }
 
+        let response_id = captured_response_id.ok_or(StreamOnceError::IncompleteStream {
+            observable_output_delivered,
+        })?;
         let mut content = captured_content.unwrap_or_default();
         if content.first_text().is_none() && !streamed_text.is_empty() {
             content.extend_front(MessageContent::from_text(streamed_text));
@@ -249,11 +308,36 @@ impl OpenAiCodexChatClient {
             reasoning_content,
             model_iden: model_iden.clone(),
             provider_model_iden: model_iden,
-            stop_reason: None,
+            stop_reason: captured_stop_reason,
             usage,
             captured_raw_body: None,
-            response_id: None,
+            response_id: Some(response_id),
         })
+    }
+
+    async fn stream_with_retries(
+        &self,
+        credentials: &(String, String),
+        request: ChatRequest,
+        options: Option<&ChatOptions>,
+        chunk_tx: Option<&mpsc::Sender<StreamDelta>>,
+    ) -> Result<ChatResponse, StreamOnceError> {
+        for attempt in 1..=RESPONSES_MAX_ATTEMPTS {
+            match self
+                .stream_once(credentials, request.clone(), options, chunk_tx)
+                .await
+            {
+                Ok(response) => return Ok(response),
+                Err(error)
+                    if attempt < RESPONSES_MAX_ATTEMPTS && error.can_retry_before_output() =>
+                {
+                    let multiplier = u32::try_from(attempt).unwrap_or(u32::MAX);
+                    tokio::time::sleep(RESPONSES_RETRY_BACKOFF.saturating_mul(multiplier)).await;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        unreachable!("at least one Responses attempt is configured")
     }
 }
 
@@ -276,13 +360,13 @@ impl AiChatClient for OpenAiCodexChatClient {
     ) -> StasisResult<ChatResponse> {
         let credentials = self.credentials().await?;
         match self
-            .stream_once(&credentials, request.clone(), options, None)
+            .stream_with_retries(&credentials, request.clone(), options, None)
             .await
         {
             Ok(response) => Ok(response),
-            Err(StreamOnceError::Transport(error)) if is_unauthorized(&error) => {
+            Err(error) if error.unauthorized_before_output() => {
                 let refreshed = self.refreshed_credentials(&credentials.0).await?;
-                self.stream_once(&refreshed, request, options, None)
+                self.stream_with_retries(&refreshed, request, options, None)
                     .await
                     .map_err(|error| stream_once_error(&self.model, error))
             }
@@ -298,13 +382,13 @@ impl AiChatClient for OpenAiCodexChatClient {
     ) -> StasisResult<ChatResponse> {
         let credentials = self.credentials().await?;
         match self
-            .stream_once(&credentials, request.clone(), options, chunk_tx)
+            .stream_with_retries(&credentials, request.clone(), options, chunk_tx)
             .await
         {
             Ok(response) => Ok(response),
-            Err(StreamOnceError::Transport(error)) if is_unauthorized(&error) => {
+            Err(error) if error.unauthorized_before_output() => {
                 let refreshed = self.refreshed_credentials(&credentials.0).await?;
-                self.stream_once(&refreshed, request.clone(), options, chunk_tx)
+                self.stream_with_retries(&refreshed, request.clone(), options, chunk_tx)
                     .await
                     .map_err(|error| stream_once_error(&self.model, error))
             }
@@ -418,8 +502,53 @@ fn is_unauthorized(error: &genai::Error) -> bool {
             webc_error: genai::webc::Error::ResponseFailedStatus { status, .. },
             ..
         } => status.as_u16() == 401,
+        genai::Error::WebStream { error, .. } => error
+            .downcast_ref::<genai::Error>()
+            .is_some_and(|nested| matches!(nested, genai::Error::HttpError { status, .. } if status.as_u16() == 401)),
         _ => false,
     }
+}
+
+fn is_retryable_responses_error(error: &genai::Error) -> bool {
+    match error {
+        genai::Error::HttpError { status, .. } => is_retryable_status(*status),
+        genai::Error::WebModelCall { webc_error, .. }
+        | genai::Error::WebAdapterCall { webc_error, .. } => {
+            is_retryable_web_error(webc_error)
+        }
+        genai::Error::WebStream { error, .. } => {
+            error
+                .downcast_ref::<genai_reqwest::Error>()
+                .is_some_and(is_retryable_reqwest_error)
+                || error.downcast_ref::<genai::Error>().is_some_and(|nested| {
+                    matches!(nested, genai::Error::HttpError { status, .. } if is_retryable_status(*status))
+                })
+        }
+        _ => false,
+    }
+}
+
+fn is_retryable_web_error(error: &genai::webc::Error) -> bool {
+    match error {
+        genai::webc::Error::ResponseFailedStatus { status, .. } => is_retryable_status(*status),
+        genai::webc::Error::Reqwest(error) => is_retryable_reqwest_error(error),
+        _ => false,
+    }
+}
+
+fn is_retryable_status(status: genai_reqwest::StatusCode) -> bool {
+    matches!(
+        status,
+        genai_reqwest::StatusCode::TOO_MANY_REQUESTS
+            | genai_reqwest::StatusCode::INTERNAL_SERVER_ERROR
+            | genai_reqwest::StatusCode::BAD_GATEWAY
+            | genai_reqwest::StatusCode::SERVICE_UNAVAILABLE
+            | genai_reqwest::StatusCode::GATEWAY_TIMEOUT
+    )
+}
+
+fn is_retryable_reqwest_error(error: &genai_reqwest::Error) -> bool {
+    error.is_connect() || error.is_timeout() || error.is_body() || error.is_request()
 }
 
 fn transport_error(model: &str, operation: &str, error: genai::Error) -> StasisError {
@@ -430,7 +559,10 @@ fn transport_error(model: &str, operation: &str, error: genai::Error) -> StasisE
 
 fn stream_once_error(model: &str, error: StreamOnceError) -> StasisError {
     match error {
-        StreamOnceError::Transport(error) => transport_error(model, "stream", error),
+        StreamOnceError::Transport { error, .. } => transport_error(model, "stream", error),
+        StreamOnceError::IncompleteStream { .. } => StasisError::PortFailure(format!(
+            "ChatGPT Responses stream ended before a terminal response for model '{model}'"
+        )),
         StreamOnceError::Delivery(error) => error,
     }
 }
@@ -439,7 +571,9 @@ fn stream_once_error(model: &str, error: StreamOnceError) -> StasisError {
 mod tests {
     use super::*;
     use axum::extract::State;
-    use axum::http::HeaderMap;
+    use axum::http::{HeaderMap, StatusCode};
+    use futures_util::stream;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
 
     #[test]
@@ -499,6 +633,66 @@ mod tests {
         let client = OpenAiCodexChatClient::with_url("gpt-5.6-sol", "http://localhost/responses");
         assert_eq!(client.model_target(), "openai_resp::gpt-5.6-sol");
         assert_eq!(client.responses_url, "http://localhost/responses");
+    }
+
+    #[test]
+    fn retry_status_allowlist_excludes_auth_schema_and_protocol_failures() {
+        for status in [
+            genai_reqwest::StatusCode::TOO_MANY_REQUESTS,
+            genai_reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            genai_reqwest::StatusCode::BAD_GATEWAY,
+            genai_reqwest::StatusCode::SERVICE_UNAVAILABLE,
+            genai_reqwest::StatusCode::GATEWAY_TIMEOUT,
+        ] {
+            assert!(is_retryable_status(status), "{status}");
+        }
+        for status in [
+            genai_reqwest::StatusCode::BAD_REQUEST,
+            genai_reqwest::StatusCode::UNAUTHORIZED,
+            genai_reqwest::StatusCode::FORBIDDEN,
+            genai_reqwest::StatusCode::NOT_IMPLEMENTED,
+            genai_reqwest::StatusCode::HTTP_VERSION_NOT_SUPPORTED,
+            genai_reqwest::StatusCode::NETWORK_AUTHENTICATION_REQUIRED,
+        ] {
+            assert!(!is_retryable_status(status), "{status}");
+        }
+    }
+
+    #[test]
+    fn nested_stream_401_is_refreshable_only_before_any_output() {
+        fn nested_unauthorized() -> genai::Error {
+            let nested = genai::Error::HttpError {
+                status: genai_reqwest::StatusCode::UNAUTHORIZED,
+                canonical_reason: "Unauthorized".to_string(),
+                body: "expired".to_string(),
+            };
+            genai::Error::WebStream {
+                model_iden: genai::ModelIden::new(
+                    genai::adapter::AdapterKind::OpenAIResp,
+                    "gpt-5.6-sol",
+                ),
+                cause: nested.to_string(),
+                error: Box::new(nested),
+            }
+        }
+
+        let error = nested_unauthorized();
+        assert!(
+            StreamOnceError::Transport {
+                error,
+                observable_output_delivered: false,
+            }
+            .unauthorized_before_output()
+        );
+
+        let error = nested_unauthorized();
+        assert!(
+            !StreamOnceError::Transport {
+                error,
+                observable_output_delivered: true,
+            }
+            .unauthorized_before_output()
+        );
     }
 
     #[tokio::test]
@@ -651,5 +845,313 @@ mod tests {
                 .as_str()
                 .is_some_and(|url| url.starts_with("data:image/png;base64,"))
         );
+    }
+
+    fn completed_sse(model: &str, text: &str) -> String {
+        let completed = serde_json::json!({
+            "type": "response.completed",
+            "response": {
+                "id": "resp_retry",
+                "status": "completed",
+                "model": model,
+                "output": [],
+                "usage": { "input_tokens": 1, "output_tokens": 1, "total_tokens": 2 }
+            }
+        });
+        format!(
+            "event: response.output_text.delta\ndata: {{\"type\":\"response.output_text.delta\",\"delta\":{}}}\n\nevent: response.completed\ndata: {}\n\n",
+            serde_json::to_string(text).unwrap(),
+            completed
+        )
+    }
+
+    fn test_request() -> ChatRequest {
+        ChatRequest::new(vec![genai::chat::ChatMessage::user("hello")])
+    }
+
+    #[tokio::test]
+    async fn transient_http_failure_retries_then_succeeds_without_exposing_credentials() {
+        #[derive(Clone)]
+        struct StateData {
+            calls: Arc<AtomicUsize>,
+            headers: Arc<Mutex<Vec<HeaderMap>>>,
+        }
+
+        async fn respond(
+            State(state): State<StateData>,
+            headers: HeaderMap,
+            axum::Json(body): axum::Json<serde_json::Value>,
+        ) -> axum::response::Response {
+            let call = state.calls.fetch_add(1, Ordering::SeqCst);
+            state.headers.lock().unwrap().push(headers);
+            if call == 0 {
+                return axum::response::Response::builder()
+                    .status(StatusCode::SERVICE_UNAVAILABLE)
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from("temporary backend outage"))
+                    .unwrap();
+            }
+            axum::response::Response::builder()
+                .header("content-type", "text/event-stream")
+                .body(axum::body::Body::from(completed_sse(
+                    body["model"].as_str().unwrap_or("gpt-5.6-sol"),
+                    "recovered",
+                )))
+                .unwrap()
+        }
+
+        let state = StateData {
+            calls: Arc::new(AtomicUsize::new(0)),
+            headers: Arc::new(Mutex::new(Vec::new())),
+        };
+        let router = axum::Router::new()
+            .route("/responses", axum::routing::post(respond))
+            .with_state(state.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+
+        let client =
+            OpenAiCodexChatClient::with_url("gpt-5.6-sol", format!("http://{address}/responses"));
+        let token = "mock-oauth-secret".to_string();
+        let account = "mock-account".to_string();
+        let response = client
+            .stream_with_retries(
+                &(token.clone(), account.clone()),
+                test_request(),
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(state.calls.load(Ordering::SeqCst), 2);
+        assert_eq!(response.first_text(), Some("recovered"));
+        let headers = state.headers.lock().unwrap();
+        assert_eq!(headers.len(), 2);
+        for request_headers in headers.iter() {
+            assert_eq!(
+                request_headers["authorization"].to_str().unwrap(),
+                format!("Bearer {token}")
+            );
+            assert_eq!(
+                request_headers["chatgpt-account-id"].to_str().unwrap(),
+                account
+            );
+            assert!(!request_headers.contains_key("x-api-key"));
+        }
+    }
+
+    #[tokio::test]
+    async fn schema_bad_request_is_not_retried_and_does_not_leak_auth() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        async fn reject(State(calls): State<Arc<AtomicUsize>>) -> axum::response::Response {
+            calls.fetch_add(1, Ordering::SeqCst);
+            axum::response::Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .header("content-type", "application/json")
+                .body(axum::body::Body::from("invalid request schema"))
+                .unwrap()
+        }
+
+        let router = axum::Router::new()
+            .route("/responses", axum::routing::post(reject))
+            .with_state(calls.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+
+        let client =
+            OpenAiCodexChatClient::with_url("gpt-5.6-sol", format!("http://{address}/responses"));
+        let error = client
+            .stream_with_retries(
+                &("mock-oauth-secret".to_string(), "mock-account".to_string()),
+                test_request(),
+                None,
+                None,
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        let rendered = format!("{error:?}");
+        assert!(rendered.contains("invalid request schema"));
+        assert!(!rendered.contains("mock-oauth-secret"));
+        assert!(!rendered.contains("mock-account"));
+    }
+
+    #[tokio::test]
+    async fn exhausted_transient_statuses_stop_after_three_total_attempts() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        async fn unavailable(State(calls): State<Arc<AtomicUsize>>) -> axum::response::Response {
+            calls.fetch_add(1, Ordering::SeqCst);
+            axum::response::Response::builder()
+                .status(StatusCode::BAD_GATEWAY)
+                .header("content-type", "application/json")
+                .body(axum::body::Body::from("temporary gateway failure"))
+                .unwrap()
+        }
+
+        let router = axum::Router::new()
+            .route("/responses", axum::routing::post(unavailable))
+            .with_state(calls.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+
+        let client =
+            OpenAiCodexChatClient::with_url("gpt-5.6-sol", format!("http://{address}/responses"));
+        let error = client
+            .stream_with_retries(
+                &("mock-oauth-secret".to_string(), "mock-account".to_string()),
+                test_request(),
+                None,
+                None,
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(calls.load(Ordering::SeqCst), RESPONSES_MAX_ATTEMPTS);
+        assert!(matches!(error, StreamOnceError::Transport { .. }));
+    }
+
+    #[tokio::test]
+    async fn clean_eof_before_terminal_response_retries_when_no_output_was_delivered() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        async fn partial_then_complete(
+            State(calls): State<Arc<AtomicUsize>>,
+            axum::Json(body): axum::Json<serde_json::Value>,
+        ) -> axum::response::Response {
+            let call = calls.fetch_add(1, Ordering::SeqCst);
+            let payload = if call == 0 {
+                "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"discarded partial\"}\n\n".to_string()
+            } else {
+                completed_sse(
+                    body["model"].as_str().unwrap_or("gpt-5.6-sol"),
+                    "terminal answer",
+                )
+            };
+            axum::response::Response::builder()
+                .header("content-type", "text/event-stream")
+                .body(axum::body::Body::from(payload))
+                .unwrap()
+        }
+
+        let router = axum::Router::new()
+            .route("/responses", axum::routing::post(partial_then_complete))
+            .with_state(calls.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+
+        let client =
+            OpenAiCodexChatClient::with_url("gpt-5.6-sol", format!("http://{address}/responses"));
+        let response = client
+            .stream_with_retries(
+                &("mock-oauth-secret".to_string(), "mock-account".to_string()),
+                test_request(),
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert_eq!(response.first_text(), Some("terminal answer"));
+        assert_eq!(response.response_id.as_deref(), Some("resp_retry"));
+        assert_eq!(
+            response
+                .stop_reason
+                .as_ref()
+                .map(genai::chat::StopReason::raw),
+            Some("completed")
+        );
+    }
+
+    #[tokio::test]
+    async fn pre_output_connection_failures_retry_three_times() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let accepted = Arc::new(AtomicUsize::new(0));
+        let server_accepted = accepted.clone();
+        let server = tokio::spawn(async move {
+            for _ in 0..RESPONSES_MAX_ATTEMPTS {
+                let (stream, _) = listener.accept().await.unwrap();
+                server_accepted.fetch_add(1, Ordering::SeqCst);
+                drop(stream);
+            }
+        });
+
+        let client =
+            OpenAiCodexChatClient::with_url("gpt-5.6-sol", format!("http://{address}/responses"));
+        let error = client
+            .stream_with_retries(
+                &("mock-oauth-secret".to_string(), "mock-account".to_string()),
+                test_request(),
+                None,
+                None,
+            )
+            .await
+            .unwrap_err();
+        tokio::time::timeout(Duration::from_secs(5), server)
+            .await
+            .expect("client should make exactly three local connection attempts")
+            .unwrap();
+
+        assert_eq!(accepted.load(Ordering::SeqCst), RESPONSES_MAX_ATTEMPTS);
+        assert!(matches!(
+            error,
+            StreamOnceError::Transport {
+                observable_output_delivered: false,
+                ..
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn clean_eof_after_a_delivered_delta_is_never_replayed() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        async fn close_after_delta(
+            State(calls): State<Arc<AtomicUsize>>,
+        ) -> axum::response::Response {
+            calls.fetch_add(1, Ordering::SeqCst);
+            let events = stream::iter([Ok::<_, std::io::Error>(
+                "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n".to_string(),
+            )]);
+            axum::response::Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "text/event-stream")
+                .body(axum::body::Body::from_stream(events))
+                .unwrap()
+        }
+
+        let router = axum::Router::new()
+            .route("/responses", axum::routing::post(close_after_delta))
+            .with_state(calls.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+
+        let client =
+            OpenAiCodexChatClient::with_url("gpt-5.6-sol", format!("http://{address}/responses"));
+        let (tx, mut rx) = mpsc::channel(8);
+        let error = client
+            .stream_with_retries(
+                &("mock-oauth-secret".to_string(), "mock-account".to_string()),
+                test_request(),
+                None,
+                Some(&tx),
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(matches!(rx.try_recv(), Ok(StreamDelta::Content(text)) if text == "partial"));
+        assert!(matches!(
+            error,
+            StreamOnceError::IncompleteStream {
+                observable_output_delivered: true,
+            }
+        ));
     }
 }

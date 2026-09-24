@@ -1,8 +1,6 @@
 //! Durable turn work records (host/worker bus).
 
 use std::collections::{HashMap, HashSet};
-use std::fs;
-use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
@@ -12,13 +10,10 @@ use tokio_util::sync::CancellationToken;
 
 use crate::agent_runtime::turn_context::WorkerHandoffCapsule;
 use crate::peer_execution_policy::TaskExecutionGrant;
-use crate::session;
 use crate::stage_routing::StageRoute;
 use crate::turn_continuation::StoredDeliveryTarget;
 use crate::workshop_contract::{ExecutionPlacementResolution, default_unknown_runtime_id};
 
-const TURN_WORKERS_FILE: &str = "workspace/turn_workers.json";
-const LEGACY_TURN_WORKERS_FILE: &str = "turn_workers.json";
 const MAX_ACTIVE_TURN_WORKERS: usize = 500;
 use crate::workspace::retention::WorkspaceRetentionConfig;
 
@@ -355,7 +350,16 @@ pub struct TurnWorkerStore {
     records: Mutex<HashMap<String, TurnWorkRecord>>,
     live_cancellations: Mutex<HashMap<String, Arc<CancellationToken>>>,
     parallel_intakes: Mutex<HashSet<ParallelCohortKey>>,
+    admit_mutations: MutationAdmitter,
 }
+
+type MutationAdmitter = Arc<
+    dyn Fn(
+            Vec<crate::workspace::persist::WorkspaceMutation>,
+        ) -> Result<(), crate::persistence::PersistenceError>
+        + Send
+        + Sync,
+>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct ParallelCohortKey {
@@ -460,12 +464,14 @@ impl Drop for WorkerExecutionLease {
 pub enum BoundWorkshopAdmissionError {
     SessionDeleting,
     ActiveGeneration { work_id: String },
+    Persistence(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DelegatedWorkAdmissionError {
     SessionDeleting,
     ConflictingIdentity,
+    Persistence(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -473,6 +479,7 @@ pub enum BoundWorkshopMutationError {
     SessionDeleting,
     MissingGeneration,
     StaleGeneration { active_work_id: Option<String> },
+    Persistence(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -480,6 +487,7 @@ pub enum TurnWorkerMutationError {
     SessionDeleting,
     MissingWork,
     ForeignSession,
+    Persistence(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -489,6 +497,7 @@ pub enum DelegatedWorkControlError {
     ForeignIdentity,
     WrongDisposition,
     NotActive,
+    Persistence(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -497,6 +506,7 @@ pub enum WorkerExecutionRegistrationError {
     NotActive,
     AlreadyRunning,
     AtCapacity { limit: usize },
+    Persistence(String),
 }
 
 impl Default for TurnWorkerStore {
@@ -507,95 +517,94 @@ impl Default for TurnWorkerStore {
 
 impl TurnWorkerStore {
     pub fn new() -> Self {
-        let store = Self {
-            records: Mutex::new(HashMap::new()),
-            live_cancellations: Mutex::new(HashMap::new()),
-            parallel_intakes: Mutex::new(HashSet::new()),
-        };
+        let store = Self::with_admitter(Arc::new(crate::workspace::persist::queue_mutations));
         store.reload_from_disk();
         store
     }
 
-    #[cfg(test)]
-    pub(crate) fn empty_for_tests() -> Self {
+    fn with_admitter(admit_mutations: MutationAdmitter) -> Self {
         Self {
             records: Mutex::new(HashMap::new()),
             live_cancellations: Mutex::new(HashMap::new()),
             parallel_intakes: Mutex::new(HashSet::new()),
+            admit_mutations,
         }
     }
 
-    fn path() -> PathBuf {
-        Self::path_in(&session::medousa_data_dir())
-    }
-
-    fn legacy_path() -> PathBuf {
-        Self::legacy_path_in(&session::medousa_data_dir())
-    }
-
-    fn path_in(data_dir: &Path) -> PathBuf {
-        data_dir.join(TURN_WORKERS_FILE)
-    }
-
-    fn legacy_path_in(data_dir: &Path) -> PathBuf {
-        data_dir.join(LEGACY_TURN_WORKERS_FILE)
+    #[cfg(test)]
+    pub(crate) fn empty_for_tests() -> Self {
+        Self::with_admitter(Arc::new(|_| Ok(())))
     }
 
     fn reload_from_disk(&self) {
-        let _ = fs::create_dir_all(session::medousa_data_dir().join("workspace"));
         if let Some(projection) = crate::workspace::persist::startup_projection() {
             *self.records.lock().expect("turn worker records") = projection.turn_workers;
-            return;
-        }
-        self.reload_from_paths(&Self::path(), &Self::legacy_path());
-    }
-
-    fn reload_from_paths(&self, canonical_path: &Path, legacy_path: &Path) {
-        let (raw, migrated_legacy) = match fs::read_to_string(canonical_path) {
-            Ok(raw) => (raw, false),
-            Err(_) => match fs::read_to_string(legacy_path) {
-                Ok(raw) => (raw, true),
-                Err(_) => return,
-            },
-        };
-        let Ok(map) = serde_json::from_str::<HashMap<String, TurnWorkRecord>>(&raw) else {
-            return;
-        };
-        *self.records.lock().expect("turn worker records") = map;
-        if migrated_legacy {
-            if let Some(parent) = canonical_path.parent() {
-                let _ = fs::create_dir_all(parent);
-            }
-            if let Err(err) = fs::write(canonical_path, raw) {
-                eprintln!(
-                    "turn_worker_store: legacy snapshot migration failed path={} error={err}",
-                    canonical_path.display()
-                );
-            }
+        } else {
+            tracing::error!(
+                "turn_worker_store: workspace persistence projection unavailable; refusing ambient snapshot fallback"
+            );
         }
     }
 
-    fn persist(&self, work_id: &str, stasis_job_id: Option<&str>) {
+    fn persist(
+        &self,
+        work_id: &str,
+        stasis_job_id: Option<&str>,
+    ) -> Result<(), crate::persistence::PersistenceError> {
         let mut guard = self.records.lock().expect("turn worker records");
         let mut changed = Self::prune_map(&mut guard);
         if let Some(record) = guard.get(work_id).cloned() {
             changed.push(record);
         }
         let retained = guard.keys().cloned().collect::<Vec<_>>();
-        drop(guard);
         changed.sort_by(|left, right| left.work_id.cmp(&right.work_id));
         changed.dedup_by(|left, right| left.work_id == right.work_id);
-        for record in changed {
-            let _ = crate::workspace::persist::queue_mutation(
-                crate::workspace::persist::WorkspaceMutation::UpsertTurnWorker {
+        let mutations = Self::mutations_for_records(changed, retained);
+        (self.admit_mutations)(mutations)?;
+        drop(guard);
+        Self::notify_turn_worker_changed(work_id, stasis_job_id);
+        Ok(())
+    }
+
+    fn persist_candidate(
+        &self,
+        candidate: &mut HashMap<String, TurnWorkRecord>,
+        work_id: &str,
+    ) -> Result<(), crate::persistence::PersistenceError> {
+        let mut changed = Self::prune_map(candidate);
+        if let Some(record) = candidate.get(work_id).cloned() {
+            changed.push(record);
+        }
+        let retained = candidate.keys().cloned().collect::<Vec<_>>();
+        changed.sort_by(|left, right| left.work_id.cmp(&right.work_id));
+        changed.dedup_by(|left, right| left.work_id == right.work_id);
+        (self.admit_mutations)(Self::mutations_for_records(changed, retained))
+    }
+
+    fn mutations_for_records(
+        changed: Vec<TurnWorkRecord>,
+        retained: Vec<String>,
+    ) -> Vec<crate::workspace::persist::WorkspaceMutation> {
+        let mut mutations = changed
+            .into_iter()
+            .map(
+                |record| crate::workspace::persist::WorkspaceMutation::UpsertTurnWorker {
                     record: Box::new(record),
                 },
-            );
-        }
-        let _ = crate::workspace::persist::queue_mutation(
+            )
+            .collect::<Vec<_>>();
+        mutations.push(
             crate::workspace::persist::WorkspaceMutation::RetainTurnWorkers { work_ids: retained },
         );
-        Self::notify_turn_worker_changed(work_id, stasis_job_id);
+        mutations
+    }
+
+    fn report_persistence_error(
+        action: &str,
+        work_id: &str,
+        error: &crate::persistence::PersistenceError,
+    ) {
+        tracing::error!(work_id, action, error = %error, "turn_worker_store persistence admission failed");
     }
 
     fn notify_turn_worker_changed(work_id: &str, stasis_job_id: Option<&str>) {
@@ -659,18 +668,33 @@ impl TurnWorkerStore {
     }
 
     pub fn insert(&self, record: TurnWorkRecord) {
+        if let Err(error) = self.try_insert(record) {
+            Self::report_persistence_error("insert", "unknown", &error);
+        }
+    }
+
+    pub fn try_insert(
+        &self,
+        record: TurnWorkRecord,
+    ) -> Result<(), crate::persistence::PersistenceError> {
         let Ok((_session, _mutation)) =
             crate::session_deletion::acquire_mutation_for_str(&record.session_id)
         else {
-            tracing::warn!(session_id = %record.session_id, "rejected turn-worker insert for deleting session");
-            return;
+            return Err(crate::persistence::PersistenceError::new(
+                crate::persistence::PersistenceErrorKind::Conflict,
+                "session is deleting",
+            ));
         };
         let work_id = record.work_id.clone();
         let stasis_job_id = record.stasis_job_id.clone();
         let mut guard = self.records.lock().expect("turn worker records");
-        guard.insert(work_id.clone(), record);
+        let mut candidate = guard.clone();
+        candidate.insert(work_id.clone(), record);
+        self.persist_candidate(&mut candidate, &work_id)?;
+        *guard = candidate;
         drop(guard);
-        self.persist(&work_id, stasis_job_id.as_deref());
+        Self::notify_turn_worker_changed(&work_id, stasis_job_id.as_deref());
+        Ok(())
     }
 
     pub fn try_insert_bound(
@@ -686,16 +710,20 @@ impl TurnWorkerStore {
         let work_id = record.work_id.clone();
         let stasis_job_id = record.stasis_job_id.clone();
         let mut records = self.records.lock().expect("turn worker records");
-        if let Some(active) = records.values().find(|candidate| {
+        let mut candidate_records = records.clone();
+        if let Some(active) = candidate_records.values().find(|candidate| {
             is_active_bound(candidate) && candidate.session_id == record.session_id
         }) {
             return Err(BoundWorkshopAdmissionError::ActiveGeneration {
                 work_id: active.work_id.clone(),
             });
         }
-        records.insert(work_id.clone(), record);
+        candidate_records.insert(work_id.clone(), record);
+        self.persist_candidate(&mut candidate_records, &work_id)
+            .map_err(|error| BoundWorkshopAdmissionError::Persistence(error.to_string()))?;
+        *records = candidate_records;
         drop(records);
-        self.persist(&work_id, stasis_job_id.as_deref());
+        Self::notify_turn_worker_changed(&work_id, stasis_job_id.as_deref());
         Ok(())
     }
 
@@ -730,9 +758,13 @@ impl TurnWorkerStore {
                 Err(DelegatedWorkAdmissionError::ConflictingIdentity)
             };
         }
-        records.insert(work_id.clone(), record);
+        let mut candidate_records = records.clone();
+        candidate_records.insert(work_id.clone(), record);
+        self.persist_candidate(&mut candidate_records, &work_id)
+            .map_err(|error| DelegatedWorkAdmissionError::Persistence(error.to_string()))?;
+        *records = candidate_records;
         drop(records);
-        self.persist(&work_id, stasis_job_id.as_deref());
+        Self::notify_turn_worker_changed(&work_id, stasis_job_id.as_deref());
         Ok(true)
     }
 
@@ -916,33 +948,56 @@ impl TurnWorkerStore {
         record.updated_at = Utc::now();
         let cloned = record.clone();
         drop(guard);
-        self.persist(&cloned.work_id, cloned.stasis_job_id.as_deref());
+        if let Err(error) = self.persist(&cloned.work_id, cloned.stasis_job_id.as_deref()) {
+            Self::report_persistence_error("update", &cloned.work_id, &error);
+        }
         Some(cloned)
     }
 
-    pub fn archive(&self, work_id: &str, purge_body: bool) -> Option<TurnWorkRecord> {
-        let session_id = self
-            .records
-            .lock()
-            .expect("turn worker records")
-            .get(work_id)?
-            .session_id
-            .clone();
-        let (_session, _mutation) =
-            crate::session_deletion::acquire_mutation_for_str(&session_id).ok()?;
-        let now = Utc::now();
+    pub fn try_archive(
+        &self,
+        work_id: &str,
+        purge_body: bool,
+    ) -> Result<Option<TurnWorkRecord>, crate::persistence::PersistenceError> {
+        let Some(current) = self.get(work_id) else {
+            return Ok(None);
+        };
+        let (_session, _mutation) = crate::session_deletion::acquire_mutation_for_str(
+            &current.session_id,
+        )
+        .map_err(|error| {
+            crate::persistence::PersistenceError::new(
+                crate::persistence::PersistenceErrorKind::Cancelled,
+                error,
+            )
+        })?;
         let mut guard = self.records.lock().expect("turn worker records");
-        let record = guard.get_mut(work_id)?;
+        let mut candidate = guard.clone();
+        let Some(record) = candidate.get_mut(work_id) else {
+            return Ok(None);
+        };
         record.archived = true;
-        record.updated_at = now;
+        record.updated_at = Utc::now();
         if purge_body {
             record.result_text = None;
             record.worker_scratch = None;
         }
         let snapshot = record.clone();
+        self.persist_candidate(&mut candidate, work_id)?;
+        *guard = candidate;
         drop(guard);
-        self.persist(&snapshot.work_id, snapshot.stasis_job_id.as_deref());
-        Some(snapshot)
+        Self::notify_turn_worker_changed(work_id, snapshot.stasis_job_id.as_deref());
+        Ok(Some(snapshot))
+    }
+
+    pub fn archive(&self, work_id: &str, purge_body: bool) -> Option<TurnWorkRecord> {
+        match self.try_archive(work_id, purge_body) {
+            Ok(record) => record,
+            Err(error) => {
+                Self::report_persistence_error("archive", work_id, &error);
+                None
+            }
+        }
     }
 
     pub fn delete_session(&self, session_id: &str) -> Result<(), String> {
@@ -952,7 +1007,15 @@ impl TurnWorkerStore {
             .filter(|record| record.session_id == session_id)
             .map(|record| record.work_id.clone())
             .collect();
-        guard.retain(|_, record| record.session_id != session_id);
+        let mut candidate = guard.clone();
+        candidate.retain(|_, record| record.session_id != session_id);
+        let retained = candidate.keys().cloned().collect::<Vec<_>>();
+        (self.admit_mutations)(vec![
+            crate::workspace::persist::WorkspaceMutation::RetainTurnWorkers { work_ids: retained },
+        ])
+        .map_err(|error| error.to_string())?;
+        *guard = candidate;
+        drop(guard);
         let mut live = self
             .live_cancellations
             .lock()
@@ -963,38 +1026,16 @@ impl TurnWorkerStore {
             }
         }
         drop(live);
-        let retained = guard.keys().cloned().collect::<Vec<_>>();
-        drop(guard);
-        crate::workspace::persist::queue_mutation(
-            crate::workspace::persist::WorkspaceMutation::RetainTurnWorkers { work_ids: retained },
-        )
-        .map_err(|error| error.to_string())?;
         Ok(())
     }
 
     pub fn session_absent_on_disk(session_id: &str) -> Result<bool, String> {
-        if let Ok(projection) = crate::workspace::persist::persisted_projection() {
-            return Ok(!projection
-                .turn_workers
-                .values()
-                .any(|record| record.session_id == session_id));
-        }
-        for path in [Self::path(), Self::legacy_path()] {
-            let raw = match fs::read_to_string(path) {
-                Ok(raw) => raw,
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(error) => return Err(error.to_string()),
-            };
-            let records = serde_json::from_str::<HashMap<String, TurnWorkRecord>>(&raw)
-                .map_err(|_| "turn-worker snapshot is corrupt".to_string())?;
-            if records
-                .values()
-                .any(|record| record.session_id == session_id)
-            {
-                return Ok(false);
-            }
-        }
-        Ok(true)
+        let projection =
+            crate::workspace::persist::persisted_projection().map_err(|error| error.to_string())?;
+        Ok(!projection
+            .turn_workers
+            .values()
+            .any(|record| record.session_id == session_id))
     }
 
     pub fn active_bound_workshop(&self, session_id: &str) -> Option<TurnWorkRecord> {
@@ -1027,7 +1068,8 @@ impl TurnWorkerStore {
         if active_work_id.as_deref() != Some(work_id) {
             return Err(BoundWorkshopMutationError::StaleGeneration { active_work_id });
         }
-        let record = records
+        let mut candidate = records.clone();
+        let record = candidate
             .get_mut(work_id)
             .ok_or(BoundWorkshopMutationError::MissingGeneration)?;
         record.steer_messages.push(WorkshopSteerMessage {
@@ -1038,8 +1080,11 @@ impl TurnWorkerStore {
         });
         record.updated_at = Utc::now();
         let updated = record.clone();
+        self.persist_candidate(&mut candidate, &updated.work_id)
+            .map_err(|error| BoundWorkshopMutationError::Persistence(error.to_string()))?;
+        *records = candidate;
         drop(records);
-        self.persist(&updated.work_id, updated.stasis_job_id.as_deref());
+        Self::notify_turn_worker_changed(&updated.work_id, updated.stasis_job_id.as_deref());
         Ok(updated)
     }
 
@@ -1061,7 +1106,8 @@ impl TurnWorkerStore {
             return Err(DelegatedWorkControlError::SessionDeleting);
         };
         let mut records = self.records.lock().expect("turn worker records");
-        let record = records
+        let mut candidate = records.clone();
+        let record = candidate
             .get_mut(work_id)
             .ok_or(DelegatedWorkControlError::MissingWork)?;
         if record.disposition != TurnWorkDisposition::Delegated {
@@ -1098,8 +1144,11 @@ impl TurnWorkerStore {
         }
         record.updated_at = Utc::now();
         let updated = record.clone();
+        self.persist_candidate(&mut candidate, &updated.work_id)
+            .map_err(|error| DelegatedWorkControlError::Persistence(error.to_string()))?;
+        *records = candidate;
         drop(records);
-        self.persist(&updated.work_id, updated.stasis_job_id.as_deref());
+        Self::notify_turn_worker_changed(&updated.work_id, updated.stasis_job_id.as_deref());
         Ok(updated)
     }
 
@@ -1126,6 +1175,9 @@ impl TurnWorkerStore {
                 TurnWorkerMutationError::ForeignSession => {
                     DelegatedWorkControlError::ForeignIdentity
                 }
+                TurnWorkerMutationError::Persistence(error) => {
+                    DelegatedWorkControlError::Persistence(error)
+                }
             })
     }
 
@@ -1140,7 +1192,8 @@ impl TurnWorkerStore {
             return Err(TurnWorkerMutationError::SessionDeleting);
         };
         let mut records = self.records.lock().expect("turn worker records");
-        let record = records
+        let mut candidate = records.clone();
+        let record = candidate
             .get_mut(work_id)
             .ok_or(TurnWorkerMutationError::MissingWork)?;
         if record.session_id != session_id {
@@ -1154,6 +1207,10 @@ impl TurnWorkerStore {
             record.updated_at = Utc::now();
         }
         let updated = record.clone();
+        self.persist_candidate(&mut candidate, &updated.work_id)
+            .map_err(|error| TurnWorkerMutationError::Persistence(error.to_string()))?;
+        *records = candidate;
+        drop(records);
         if let Some(cancellation) = self
             .live_cancellations
             .lock()
@@ -1163,8 +1220,7 @@ impl TurnWorkerStore {
         {
             cancellation.cancel();
         }
-        drop(records);
-        self.persist(&updated.work_id, updated.stasis_job_id.as_deref());
+        Self::notify_turn_worker_changed(&updated.work_id, updated.stasis_job_id.as_deref());
         Ok(updated)
     }
 
@@ -1365,22 +1421,16 @@ mod tests {
     }
 
     #[test]
-    fn reopened_snapshot_keeps_parent_route_across_worker_and_delivery_updates() {
-        let temp = tempfile::tempdir().expect("temporary worker store");
-        let canonical = TurnWorkerStore::path_in(temp.path());
-        let legacy = TurnWorkerStore::legacy_path_in(temp.path());
-        fs::create_dir_all(canonical.parent().expect("workspace directory"))
-            .expect("create workspace directory");
-
-        let mut original = test_record(
-            "work-reopen-route",
-            "session-reopen",
+    fn parent_continuation_route_round_trips_as_durable_record_data() {
+        let mut record = test_record(
+            "work-route-roundtrip",
+            "session-route-roundtrip",
             7,
-            TurnWorkStatus::Pending,
+            TurnWorkStatus::Completed,
         );
-        original.provider = "worker-provider".into();
-        original.model = "worker-model".into();
-        original.parent_continuation_route = Some(ParentContinuationRoute {
+        record.provider = "worker-provider".into();
+        record.model = "worker-model".into();
+        record.parent_continuation_route = Some(ParentContinuationRoute {
             schema_version: ParentContinuationRoute::SCHEMA_VERSION,
             stage_role: "final_response".into(),
             policy_profile: "host-careful".into(),
@@ -1388,117 +1438,17 @@ mod tests {
             model: "host-model".into(),
             fallback_chain: vec!["host-fallback".into()],
         });
-        let snapshot = HashMap::from([(original.work_id.clone(), original)]);
-        fs::write(
-            &canonical,
-            serde_json::to_vec(&snapshot).expect("serialize snapshot"),
-        )
-        .expect("persist initial route snapshot");
-
-        // Reopen through the store's supported snapshot loader, then preserve
-        // the route through execution and its separate delivery acknowledgment.
-        let mut reopened = TurnWorkerStore::empty_for_tests();
-        reopened.reload_from_paths(&canonical, &legacy);
+        let reopened: TurnWorkRecord =
+            serde_json::from_slice(&serde_json::to_vec(&record).unwrap()).unwrap();
         let fallback =
             crate::stage_routing::StageRoutingMatrix::default_for("changed", "changed-model")
                 .final_response;
-        for (status, delivered) in [
-            (TurnWorkStatus::Running, false),
-            (TurnWorkStatus::Completed, false),
-            (TurnWorkStatus::Completed, true),
-        ] {
-            let mut records = reopened.records.lock().expect("worker records");
-            let record = records
-                .get_mut("work-reopen-route")
-                .expect("reopened record");
-            record.status = status;
-            record.synthesis_delivered = delivered;
-            record.updated_at = Utc::now();
-            assert_eq!(record.provider, "worker-provider");
-            assert_eq!(record.model, "worker-model");
-            assert_eq!(
-                record
-                    .parent_continuation_route
-                    .as_ref()
-                    .map(|route| route.provider.as_str()),
-                Some("host-provider")
-            );
-            drop(records);
-
-            // Worker completion and its delivery acknowledgment can be
-            // separated by a daemon restart.
-            let snapshot = reopened.records.lock().expect("worker records").clone();
-            fs::write(
-                &canonical,
-                serde_json::to_vec(&snapshot).expect("serialize lifecycle snapshot"),
-            )
-            .expect("persist lifecycle snapshot");
-            let restarted = TurnWorkerStore::empty_for_tests();
-            restarted.reload_from_paths(&canonical, &legacy);
-            let durable = restarted
-                .get("work-reopen-route")
-                .expect("record after lifecycle restart");
-            assert_eq!(durable.status, status);
-            let route = continuation_route_for_record(&durable, &fallback)
-                .expect("parent route after lifecycle restart");
-            assert_eq!(route.provider, "host-provider");
-            assert_eq!(route.model, "host-model");
-            assert_eq!(route.policy_profile, "host-careful");
-            assert_eq!(route.fallback_chain, ["host-fallback"]);
-            reopened = restarted;
-        }
-        let persisted = reopened.records.lock().expect("worker records").clone();
-        fs::write(
-            &canonical,
-            serde_json::to_vec(&persisted).expect("serialize retry state"),
-        )
-        .expect("persist retry state");
-
-        let recovered = TurnWorkerStore::empty_for_tests();
-        recovered.reload_from_paths(&canonical, &legacy);
-        let record = recovered
-            .get("work-reopen-route")
-            .expect("recovered record");
-        assert_eq!(record.status, TurnWorkStatus::Completed);
-        assert_eq!(record.provider, "worker-provider");
-        assert_eq!(record.model, "worker-model");
-        let route = continuation_route_for_record(&record, &fallback).expect("parent route");
+        let route = continuation_route_for_record(&reopened, &fallback)
+            .expect("captured parent route survives serialization");
         assert_eq!(route.provider, "host-provider");
         assert_eq!(route.model, "host-model");
         assert_eq!(route.policy_profile, "host-careful");
         assert_eq!(route.fallback_chain, ["host-fallback"]);
-
-        let mut malformed = record;
-        malformed
-            .parent_continuation_route
-            .as_mut()
-            .expect("persisted parent route")
-            .schema_version = ParentContinuationRoute::SCHEMA_VERSION + 1;
-        fs::write(
-            &canonical,
-            serde_json::to_vec(&HashMap::from([(malformed.work_id.clone(), malformed)]))
-                .expect("serialize future route contract"),
-        )
-        .expect("persist future route contract");
-        let future_contract = TurnWorkerStore::empty_for_tests();
-        future_contract.reload_from_paths(&canonical, &legacy);
-        let recovered = future_contract
-            .get("work-reopen-route")
-            .expect("future contract record");
-        assert!(continuation_route_for_record(&recovered, &fallback).is_none());
-    }
-
-    #[test]
-    fn canonical_snapshot_lives_in_workspace_directory() {
-        let root = Path::new("/tmp/medousa-test-data");
-        assert_eq!(
-            TurnWorkerStore::path_in(root),
-            root.join("workspace/turn_workers.json")
-        );
-        assert_eq!(
-            TurnWorkerStore::legacy_path_in(root),
-            root.join("turn_workers.json")
-        );
     }
 
     #[test]
@@ -1535,21 +1485,24 @@ mod tests {
     }
 
     #[test]
-    fn legacy_snapshot_is_migrated_without_deleting_source() {
-        let temp = tempfile::tempdir().expect("temp data directory");
-        let canonical = TurnWorkerStore::path_in(temp.path());
-        let legacy = TurnWorkerStore::legacy_path_in(temp.path());
-        fs::write(&legacy, "{}").expect("write legacy snapshot");
-        let store = TurnWorkerStore {
-            records: Mutex::new(HashMap::new()),
-            live_cancellations: Mutex::new(HashMap::new()),
-            parallel_intakes: Mutex::new(HashSet::new()),
-        };
+    fn worker_admission_is_not_published_when_persistence_queue_rejects_it() {
+        let store = TurnWorkerStore::with_admitter(Arc::new(|_| {
+            Err(crate::persistence::PersistenceError::new(
+                crate::persistence::PersistenceErrorKind::Overloaded,
+                "test queue full",
+            ))
+        }));
+        let record = test_record(
+            "work-not-durable",
+            "session-admission-test",
+            1,
+            TurnWorkStatus::Pending,
+        );
 
-        store.reload_from_paths(&canonical, &legacy);
+        let error = store.try_insert(record).expect_err("admission must fail");
 
-        assert_eq!(fs::read_to_string(&canonical).unwrap(), "{}");
-        assert!(legacy.exists());
+        assert_eq!(error.to_string(), "test queue full");
+        assert!(store.get("work-not-durable").is_none());
     }
 
     fn test_record(

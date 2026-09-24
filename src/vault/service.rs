@@ -650,7 +650,9 @@ fn append_vault_feed_event(
             intent: None,
             tool_names,
         };
-        workspace_store().append_event(event);
+        if let Err(error) = workspace_store().append_event(event) {
+            tracing::warn!(%path, %error, "vault note persisted but workspace feed admission failed");
+        }
     }
 }
 

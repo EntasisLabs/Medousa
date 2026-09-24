@@ -671,7 +671,11 @@ fn deliver_to_work(title: &str, body: &str, session_id: &str) -> Result<Value, H
         intent: Some("grapheme_medousa_deliver".to_string()),
         tool_names: vec!["medousa.deliver".to_string()],
     };
-    workspace_store().append_event(event);
+    workspace_store().append_event(event).map_err(|error| {
+        HostCallError::Fatal(format!(
+            "workspace delivery persistence admission failed: {error}"
+        ))
+    })?;
     Ok(json!({
         "destination": "work",
         "delivered": true,

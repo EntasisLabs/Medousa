@@ -20,11 +20,44 @@ accepted background work. A pending response is not a failure or permission to
 repeat a mutation: retain its work handle and inspect the existing operation.
 Reconnecting the app resumes observation of that operation.
 
+The ChatGPT account transport retries transient connection failures, HTTP 429,
+and HTTP 500/502/503/504 up to twice with short asynchronous backoff. It retries
+the current model request only before any streaming output has been delivered;
+it does not restart a worker or replay completed tools. Invalid request schemas
+and permission errors require correction rather than an unchanged retry. The
+existing single credential refresh on HTTP 401 remains separate.
+
 Resource and authority checks remain in force, including filesystem and network
 permissions, output and image memory budgets, workflow source and step limits,
 and work-environment ownership. Repeated identical failed tool calls can produce
 a recoverable failure checkpoint; successful or pending work does not trigger
 that guard. See [agent tools](agent-tools.md).
+
+Workspace recovery streams legacy activity feeds and generation journals; total
+history size is not a read limit. Snapshots are parsed and atomically published
+through buffered streams. Migration preserves the original legacy files and
+retains the newest 4,096 activity events within the 8 MiB in-memory feed budget.
+Worker and ask-job retention belongs to their domain stores; persistence does
+not independently evict active work.
+
+The 8 MiB journal threshold triggers compaction, not rejection. Each atomic
+mutation record has an 8 MiB admission limit, shared with recovery, and the
+writer queue has a 16 MiB serialized-payload budget plus 256 command slots.
+Oversized mutations and full queues return errors before admission. Accepted
+mutations retain their byte permits through writing. Acceptance alone does not
+mean durable storage; a successful flush confirms a synced snapshot.
+
+Recovery rejects malformed complete records, generation gaps, and filesystem
+errors, while tolerating only an interrupted final journal record. Before new
+appends, recovered state is synced to a snapshot and the old journal is retired.
+A publication failure leaves the previous snapshot/journal recoverable. Startup
+fails visibly if recovery cannot complete. A later writer failure is sticky:
+new writes and every flush report failure, and the full daemon's health route
+returns HTTP 503 with the persistence error. Restart recovery resolves any
+uncertain append; the writer never blindly retries it. Existing execution is
+not replayed because of a storage failure. Cancellation still stops live work
+promptly after admission; if its subsequent flush fails, the caller receives an
+explicit persistence error and the cancellation is not rolled back.
 
 Grapheme workflows and native shell commands have no implicit total execution
 deadline. On the full daemon, an operator may set

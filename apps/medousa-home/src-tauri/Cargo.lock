@@ -5592,6 +5592,7 @@ dependencies = [
  "once_cell",
  "pdf-extract",
  "reqwest 0.12.28",
+ "reqwest 0.13.4",
  "schemars 0.8.22",
  "serde",
  "serde_json",
@@ -5931,6 +5932,7 @@ dependencies = [
  "chrono",
  "libc",
  "serde",
+ "serde_json",
  "uuid",
  "windows 0.61.3",
 ]

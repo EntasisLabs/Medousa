@@ -226,6 +226,7 @@ pub async fn link_workspace_card_vault(
     }
 
     link_vault_card(&card_id, &request.vault_path)
+        .await
         .map(Json)
         .map_err(map_card_action_error)
 }

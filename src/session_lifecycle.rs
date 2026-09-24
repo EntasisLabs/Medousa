@@ -142,7 +142,7 @@ pub async fn delete_session(
     {
         // Host workspaces own persistent turn workers. Embedded runtimes do not
         // create that surface, so there is nothing to clean up on mobile.
-        let writer_result = crate::workspace::persist::init_persist_writer();
+        let writer_result = crate::workspace::persist::init_persist_writer().await;
         let turn_workers = crate::agent_runtime::turn_worker::turn_worker_store();
         let mut turn_worker_result = writer_result
             .map_err(|error| error.to_string())

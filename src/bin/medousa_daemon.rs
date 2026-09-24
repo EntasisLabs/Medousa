@@ -420,6 +420,12 @@ async fn start_daemon() -> Result<()> {
         backend_label: backend_name.clone(),
     };
 
+    // Recover workspace state before constructing any lazy domain stores or
+    // admitting work. Corrupt/unreadable storage must not become an empty store.
+    medousa::workspace::init_persist_writer()
+        .await
+        .context("workspace persistence initialization failed")?;
+
     let platform = build_daemon_platform(backend.clone(), platform_config)
         .await
         .context("failed to build medousa platform runtime")?;
@@ -696,9 +702,6 @@ async fn start_daemon() -> Result<()> {
         state.backend.clone(),
     );
 
-    if let Err(error) = medousa::workspace::init_persist_writer() {
-        tracing::error!(%error, "workspace persistence initialization failed");
-    }
     medousa::engine_recovery::run_startup_turn_recovery().await;
     medousa::workspace::init_workspace_hub(Arc::new(state.composition().clone()));
     if let Some(hub) = medousa::workspace::workspace_hub() {
@@ -1253,7 +1256,9 @@ async fn start_daemon() -> Result<()> {
         {
             tracing::error!(%error, "session writer did not reach durable drain before shutdown deadline");
         }
-        let _ = medousa::workspace::flush_persist_writer().await;
+        if let Err(error) = medousa::workspace::flush_persist_writer().await {
+            tracing::error!(%error, "workspace persistence did not reach durable storage before shutdown");
+        }
         tracing::info!("stopping");
         remove_surrealkv_lock(&parse_backend(Some(&state.backend)));
     })

@@ -216,6 +216,25 @@ impl std::error::Error for StoreRootError {
     }
 }
 
+/// Observable stages of an atomically published replacement file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AtomicWriteStage {
+    AfterTempWrite,
+    BeforeFileSync,
+    AfterFileSync,
+    BeforeRename,
+    AfterRename,
+    BeforeParentSync,
+    AfterParentSync,
+}
+
+/// Distinguishes filesystem failures from injected/transaction-stage failures.
+#[derive(Debug)]
+pub enum AtomicWriteError<E> {
+    Store(StoreRootError),
+    Stage(E),
+}
+
 pub struct StoreRoot {
     dir: Dir,
     /// Windows capability operations are implemented with path-relative APIs.
@@ -541,6 +560,29 @@ impl StoreRoot {
         self.atomic_publish(path, bytes, false, "atomic_write")
     }
 
+    /// Stream a replacement into a confined temporary file, then sync and
+    /// atomically publish it. Failed writers never replace the destination.
+    pub fn atomic_write_with(
+        &self,
+        path: &impl StoreRootPath,
+        write: impl FnOnce(&mut dyn Write) -> std::io::Result<()>,
+    ) -> Result<(), StoreRootError> {
+        self.atomic_publish_with(path, write, false, "atomic_write")
+    }
+
+    /// Stream a replacement while exposing the real write, sync, rename, and
+    /// parent-sync boundaries to a caller that needs transaction fault hooks.
+    /// A stage error before rename removes the temporary file; a stage error
+    /// after rename leaves the new destination published.
+    pub fn atomic_write_with_stages<E>(
+        &self,
+        path: &impl StoreRootPath,
+        write: impl FnOnce(&mut dyn Write) -> std::io::Result<()>,
+        stage: impl FnMut(AtomicWriteStage) -> Result<(), E>,
+    ) -> Result<(), AtomicWriteError<E>> {
+        self.atomic_publish_with_stages(path, write, false, "atomic_write", stage)
+    }
+
     /// Create-only atomic publication. Fails if the destination leaf exists.
     pub fn atomic_create(
         &self,
@@ -566,16 +608,45 @@ impl StoreRoot {
         create_only: bool,
         operation: &'static str,
     ) -> Result<(), StoreRootError> {
-        let (parent, leaf) = self.open_parent(path, true, operation)?;
-        reject_symlink(&parent, leaf, operation)?;
+        self.atomic_publish_with(path, |file| file.write_all(bytes), create_only, operation)
+    }
+
+    fn atomic_publish_with(
+        &self,
+        path: &impl StoreRootPath,
+        write: impl FnOnce(&mut dyn Write) -> std::io::Result<()>,
+        create_only: bool,
+        operation: &'static str,
+    ) -> Result<(), StoreRootError> {
+        match self.atomic_publish_with_stages(path, write, create_only, operation, |_| {
+            Ok::<_, std::convert::Infallible>(())
+        }) {
+            Ok(()) => Ok(()),
+            Err(AtomicWriteError::Store(error)) => Err(error),
+            Err(AtomicWriteError::Stage(never)) => match never {},
+        }
+    }
+
+    fn atomic_publish_with_stages<E>(
+        &self,
+        path: &impl StoreRootPath,
+        write: impl FnOnce(&mut dyn Write) -> std::io::Result<()>,
+        create_only: bool,
+        operation: &'static str,
+        mut stage: impl FnMut(AtomicWriteStage) -> Result<(), E>,
+    ) -> Result<(), AtomicWriteError<E>> {
+        let (parent, leaf) = self
+            .open_parent(path, true, operation)
+            .map_err(AtomicWriteError::Store)?;
+        reject_symlink(&parent, leaf, operation).map_err(AtomicWriteError::Store)?;
         if create_only && parent.symlink_metadata(leaf).is_ok() {
-            return Err(StoreRootError::io(
+            return Err(AtomicWriteError::Store(StoreRootError::io(
                 operation,
                 std::io::Error::new(
                     std::io::ErrorKind::AlreadyExists,
                     "destination already exists",
                 ),
-            ));
+            )));
         }
 
         let temporary = format!(".medousa-tmp-{}", uuid::Uuid::new_v4().simple());
@@ -584,25 +655,48 @@ impl StoreRoot {
             .write(true)
             .create_new(true)
             .follow(FollowSymlinks::No);
-        let mut file = parent
-            .open_with(&temporary, &options)
-            .map_err(|error| StoreRootError::io("create_temporary", error))?;
-        if let Err(error) = file.write_all(bytes).and_then(|()| file.sync_data()) {
+        let mut file = parent.open_with(&temporary, &options).map_err(|error| {
+            AtomicWriteError::Store(StoreRootError::io("create_temporary", error))
+        })?;
+        let prepare = write(&mut file)
+            .map_err(|error| StoreRootError::io("write_temporary", error))
+            .map_err(AtomicWriteError::Store)
+            .and_then(|()| stage(AtomicWriteStage::AfterTempWrite).map_err(AtomicWriteError::Stage))
+            .and_then(|()| stage(AtomicWriteStage::BeforeFileSync).map_err(AtomicWriteError::Stage))
+            .and_then(|()| {
+                file.sync_data().map_err(|error| {
+                    AtomicWriteError::Store(StoreRootError::io("sync_temporary", error))
+                })
+            })
+            .and_then(|()| stage(AtomicWriteStage::AfterFileSync).map_err(AtomicWriteError::Stage))
+            .and_then(|()| stage(AtomicWriteStage::BeforeRename).map_err(AtomicWriteError::Stage));
+        if let Err(error) = prepare {
+            drop(file);
             let _ = parent.remove_file(&temporary);
-            return Err(StoreRootError::io("write_temporary", error));
+            return Err(error);
         }
         drop(file);
         if create_only {
             if let Err(error) = rename_noreplace(&parent, &temporary, &parent, leaf) {
                 let _ = parent.remove_file(&temporary);
-                return Err(StoreRootError::io("publish_atomic_noreplace", error));
+                return Err(AtomicWriteError::Store(StoreRootError::io(
+                    "publish_atomic_noreplace",
+                    error,
+                )));
             }
         } else if let Err(error) = parent.rename(&temporary, &parent, leaf) {
             let _ = parent.remove_file(&temporary);
-            return Err(StoreRootError::io("publish_atomic", error));
+            return Err(AtomicWriteError::Store(StoreRootError::io(
+                "publish_atomic",
+                error,
+            )));
         }
+        stage(AtomicWriteStage::AfterRename).map_err(AtomicWriteError::Stage)?;
+        stage(AtomicWriteStage::BeforeParentSync).map_err(AtomicWriteError::Stage)?;
         // Drop the pre-check existence branch for create_only — noreplace is the fence.
-        sync_directory(&parent).map_err(|error| StoreRootError::io("sync_parent", error))?;
+        sync_directory(&parent)
+            .map_err(|error| AtomicWriteError::Store(StoreRootError::io("sync_parent", error)))?;
+        stage(AtomicWriteStage::AfterParentSync).map_err(AtomicWriteError::Stage)?;
         Ok(())
     }
 

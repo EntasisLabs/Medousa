@@ -1469,6 +1469,10 @@ fn map_delegated_control_error(
             StatusCode::CONFLICT,
             "delegated worker session is being deleted".to_string(),
         ),
+        DelegatedWorkControlError::Persistence(error) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("delegated worker control could not be persisted: {error}"),
+        ),
     }
 }
 
