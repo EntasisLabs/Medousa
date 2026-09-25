@@ -1,11 +1,12 @@
 /**
  * Unlayered chromeless input resets.
  *
- * @tailwindcss/forms emits unlayered white input/textarea chrome. Destination
- * sheets live in the features cascade layer and always lose that fight. These selectors
- * stay unlayered so composer, Spotlight, rename, and dock search can keep
- * transparent / themed chrome. Layout (min-height, padding, font) stays in
- * the destination feature sheets.
+ * @tailwindcss/forms paints white input chrome in the base layer. These named
+ * selectors stay unlayered so composer, Spotlight, rename, and dock search keep
+ * transparent / themed chrome even when a feature sheet is not loaded yet.
+ * Layout (min-height, padding, font) stays in the destination feature sheets.
+ * Do not blanket-reset every text input here: that erases feature borders such
+ * as the new-note title underline.
  *
  * Loaded by app.postcss. Do not wrap this file in a cascade layer.
  */
@@ -77,16 +78,5 @@
   background-color: rgb(var(--color-surface-800) / 0.7);
   border: 1px solid rgb(var(--color-surface-500) / 0.4);
   border-radius: 0.375rem;
-  box-shadow: none;
-}
-
-textarea:not(.input):not(.textarea),
-input:not([type]):not(.input),
-input[type="search"]:not(.input),
-input[type="text"]:not(.input):not(.settings-metric-input) {
-  appearance: none;
-  -webkit-appearance: none;
-  background-color: transparent;
-  border-color: transparent;
   box-shadow: none;
 }
