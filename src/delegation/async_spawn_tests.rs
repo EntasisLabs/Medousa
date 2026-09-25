@@ -541,6 +541,7 @@ fn pending_worker() -> PendingRemoteWorker {
             supports_browser_host: false,
         },
         code_project: None,
+        code_project_setup: None,
         world_ids: Vec::new(),
         expected_world_runtime_id: None,
         max_tool_rounds: 4,

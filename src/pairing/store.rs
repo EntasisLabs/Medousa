@@ -12,46 +12,13 @@ use sha2::{Digest, Sha256};
 
 use medousa_types::authority_id::PairingDeviceId;
 
+pub use crate::pairing_role::PairingRole;
+
 use super::paths::pairings_dir;
 use crate::store_root::{StoreEntryKind, StorePath, StoreRoot};
 
 const MAX_PAIRING_RECORD_BYTES: u64 = 1024 * 1024;
 const REVOKED_PAIRINGS_FILE: &str = "revoked.json";
-
-/// How this surface relates to the workshop.
-/// - `portal`: full client of this brain (phone / workshop switcher)
-/// - `peer`: inbox + share only
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub enum PairingRole {
-    #[default]
-    Portal,
-    Peer,
-}
-
-impl PairingRole {
-    pub fn parse(raw: Option<&str>) -> Self {
-        match raw.map(str::trim).map(str::to_ascii_lowercase).as_deref() {
-            Some("peer") => Self::Peer,
-            _ => Self::Portal,
-        }
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Portal => "portal",
-            Self::Peer => "peer",
-        }
-    }
-
-    pub fn allows_peer_surface(self) -> bool {
-        matches!(self, Self::Peer | Self::Portal)
-    }
-
-    pub fn allows_full_portal(self) -> bool {
-        matches!(self, Self::Portal)
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

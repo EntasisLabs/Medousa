@@ -137,19 +137,47 @@ fn delegated_task_grant_error(
         return Some("task execution grant does not match the resolved runtime");
     }
     if record.intent == TurnWorkerIntent::Coder.as_str() {
-        let Some(project) = record
-            .worker_spawn_spec
-            .as_ref()
-            .and_then(|spec| spec.code_project.as_ref())
-        else {
-            return Some("remote Coder work is missing its project authority");
+        let Some(spec) = record.worker_spawn_spec.as_ref() else {
+            return Some("remote Coder work is missing its canonical worker specification");
         };
-        if grant.project_id.as_deref() != Some(project.repo_id.as_str())
-            || grant.destination_runtime_id != project.runtime_id
-            || !grant
-                .effective_tool_domains
-                .iter()
-                .any(|domain| domain == "code")
+        let binding = (spec.code_project.is_none() && spec.code_project_setup.is_some())
+            .then(|| crate::agent_mode_state::get_session_code_binding(&record.session_id).ok())
+            .flatten();
+        let (project_id, project_runtime_id, project_work_id) =
+            if let Some(project) = spec.code_project.as_ref() {
+                (
+                    Some(project.repo_id.as_str()),
+                    Some(project.runtime_id.as_str()),
+                    Some(project.work_id.as_str()),
+                )
+            } else if let Some(binding) = binding.as_ref() {
+                (
+                    binding.repo_id.as_deref(),
+                    binding.execution_runtime_id.as_deref(),
+                    binding.work_id.as_deref(),
+                )
+            } else {
+                (None, None, None)
+            };
+        let pending_portal_project_setup = spec.code_project.is_none()
+            && spec.code_project_setup.is_some()
+            && grant.authorization_role == Some(crate::pairing::PairingRole::Portal)
+            && grant.project_id.is_none();
+        if !grant
+            .effective_tool_domains
+            .iter()
+            .any(|domain| domain == "code")
+        {
+            return Some("remote Coder grant does not include code authority");
+        }
+        if !pending_portal_project_setup
+            && (project_id.is_none()
+                || project_runtime_id.is_none()
+                || project_work_id.is_none()
+                || grant.project_id.as_deref() != project_id
+                || grant.destination_runtime_id != project_runtime_id.unwrap_or_default()
+                || record.execution_placement.resolved_runtime_id
+                    != project_runtime_id.unwrap_or_default())
         {
             return Some("remote Coder grant does not match its project authority");
         }
@@ -203,11 +231,55 @@ async fn prepare_worker_coder(
             "Coder worker is missing its canonical spawn specification".to_string(),
         )
     })?;
-    let project = spec.code_project.as_ref().ok_or_else(|| {
-        stasis::prelude::StasisError::PortFailure(
-            "Coder worker is missing its destination-owned project".to_string(),
-        )
-    })?;
+    let setup_project = if spec.code_project.is_none() && spec.code_project_setup.is_some() {
+        let binding = crate::agent_mode_state::get_session_code_binding(&record.session_id)
+            .map_err(|error| {
+                stasis::prelude::StasisError::PortFailure(format!(
+                    "destination Coder project binding is unavailable: {error}"
+                ))
+            })?;
+        let work_id = binding
+            .work_id
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                stasis::prelude::StasisError::PortFailure(
+                    "destination Coder project setup did not bind a Forge undertaking".to_string(),
+                )
+            })?;
+        let repo_id = binding
+            .repo_id
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                stasis::prelude::StasisError::PortFailure(
+                    "destination Coder project setup did not bind a repository identity"
+                        .to_string(),
+                )
+            })?;
+        let runtime_id = binding
+            .execution_runtime_id
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                stasis::prelude::StasisError::PortFailure(
+                    "destination Coder project setup did not bind a runtime identity".to_string(),
+                )
+            })?;
+        Some(crate::delegated_task::WorkerCodeProjectRef {
+            runtime_id,
+            work_id,
+            repo_id,
+        })
+    } else {
+        None
+    };
+    let project = spec
+        .code_project
+        .as_ref()
+        .or(setup_project.as_ref())
+        .ok_or_else(|| {
+            stasis::prelude::StasisError::PortFailure(
+                "Coder worker is missing its destination-owned project".to_string(),
+            )
+        })?;
     let local_runtime_id = agent.worker_scheduler.execution_runtime_id();
     if project.runtime_id != local_runtime_id
         || record.execution_placement.resolved_runtime_id != local_runtime_id
@@ -920,6 +992,7 @@ impl TurnWorkerScheduler {
                 supports_browser_host: bus.supports_browser_host,
             },
             code_project,
+            code_project_setup: None,
             execution_placement: execution_placement.clone(),
             world_ids,
             max_tool_rounds,
@@ -1335,7 +1408,7 @@ pub async fn run_worker_turn(
     stream_turn_id: u64,
     agent: Arc<TuiRuntime>,
 ) {
-    let Some(record) = store.get(&work_id) else {
+    let Some(mut record) = store.get(&work_id) else {
         return;
     };
     let Some(identity_user_id) = record
@@ -1374,6 +1447,127 @@ pub async fn run_worker_turn(
         });
         sink.notice(format!(
             "◈ work_failed work_id={work_id} error=revoked_authority"
+        ))
+        .await;
+        return;
+    }
+    let pending_project_setup = record.disposition == TurnWorkDisposition::Delegated
+        && record.intent == TurnWorkerIntent::Coder.as_str()
+        && record.task_execution_grant.as_ref().is_some_and(|grant| {
+            grant.authorization_role == Some(crate::pairing::PairingRole::Portal)
+                && grant.project_id.is_none()
+        })
+        && record
+            .worker_spawn_spec
+            .as_ref()
+            .is_some_and(|spec| spec.code_project.is_none() && spec.code_project_setup.is_some());
+    if pending_project_setup {
+        match store.try_update(&work_id, |record| {
+            if record.status == TurnWorkStatus::Pending {
+                record.status = TurnWorkStatus::Running;
+            }
+        }) {
+            Ok(Some(updated)) if updated.status == TurnWorkStatus::Running => record = updated,
+            Ok(_) => return,
+            Err(error) => {
+                store.update(&work_id, |record| {
+                    record.status = TurnWorkStatus::Failed;
+                    record.error = Some(format!(
+                        "could not persist destination project setup start: {error}"
+                    ));
+                });
+                sink.notice(format!(
+                    "◈ work_failed work_id={work_id} error=project_setup_start_persist_failed"
+                ))
+                .await;
+                return;
+            }
+        }
+        let setup = record
+            .worker_spawn_spec
+            .as_ref()
+            .and_then(|spec| spec.code_project_setup.clone())
+            .expect("pending project setup was checked above");
+        let project = match agent
+            .ensure_worker_code_project(record.session_id.clone(), setup)
+            .await
+        {
+            Ok(project) => project,
+            Err(error) => {
+                store.update(&work_id, |record| {
+                    record.status = TurnWorkStatus::Failed;
+                    record.error = Some(format!("destination project setup failed: {error}"));
+                });
+                sink.notice(format!(
+                    "◈ work_failed work_id={work_id} error=destination_project_setup_failed"
+                ))
+                .await;
+                return;
+            }
+        };
+        let grant = record
+            .task_execution_grant
+            .as_ref()
+            .expect("pending project setup requires a task grant");
+        if project.runtime_id != grant.destination_runtime_id
+            || project.runtime_id != record.execution_placement.resolved_runtime_id
+        {
+            store.update(&work_id, |record| {
+                record.status = TurnWorkStatus::Failed;
+                record.error = Some("destination project runtime identity mismatch".to_string());
+            });
+            sink.notice(format!(
+                "◈ work_failed work_id={work_id} error=destination_project_identity_mismatch"
+            ))
+            .await;
+            return;
+        }
+        let project_repo_id = project.repo_id;
+        let project_work_id = project.work_id;
+        match store.try_update(&work_id, |record| {
+            if matches!(
+                record.status,
+                TurnWorkStatus::Pending | TurnWorkStatus::Running
+            ) && let Some(grant) = record.task_execution_grant.as_mut()
+                && grant.authorization_role == Some(crate::pairing::PairingRole::Portal)
+                && grant.project_id.is_none()
+            {
+                grant.project_id = Some(project_repo_id);
+                record.parent_code_work_id = Some(project_work_id);
+            }
+        }) {
+            Ok(Some(updated))
+                if matches!(
+                    updated.status,
+                    TurnWorkStatus::Pending | TurnWorkStatus::Running
+                ) =>
+            {
+                record = updated;
+            }
+            Ok(_) => return,
+            Err(error) => {
+                store.update(&work_id, |record| {
+                    record.status = TurnWorkStatus::Failed;
+                    record.error = Some(format!(
+                        "could not persist destination project authority: {error}"
+                    ));
+                });
+                sink.notice(format!(
+                    "◈ work_failed work_id={work_id} error=project_authority_persist_failed"
+                ))
+                .await;
+                return;
+            }
+        }
+    }
+    if let Some(error) = delegated_task_grant_error(&record, &identity_user_id) {
+        store.update(&work_id, |record| {
+            record.status = TurnWorkStatus::Cancelled;
+            record.error = Some(error.to_string());
+            record.termination_reason = Some("task_execution_grant_denied".to_string());
+        });
+        sink.notice(format!(
+            "◈ work_cancelled work_id={work_id} error=task_execution_grant_denied"
         ))
         .await;
         return;
@@ -1793,7 +1987,9 @@ async fn run_worker_turn_inner(
                 .collect();
             worker.worker_scratch = worker_scratch.clone();
         });
-        Err(stasis::domain::errors::StasisError::PortFailure(response.text))
+        Err(stasis::domain::errors::StasisError::PortFailure(
+            response.text,
+        ))
     });
 
     match result {

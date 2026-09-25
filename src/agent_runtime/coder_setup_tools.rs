@@ -29,7 +29,11 @@ const PROJECT_CREATE: &str = "cognition_project_create";
 const PROJECT_LIST_ID: ToolId = ToolId::new(PROJECT_LIST);
 const PROJECT_BIND_ID: ToolId = ToolId::new(PROJECT_BIND);
 const PROJECT_CREATE_ID: ToolId = ToolId::new(PROJECT_CREATE);
-const TURN_CONTROL_TOOLS: &[&str] = &[crate::public_api::COGNITION_TURN];
+const TURN_CONTROL_TOOLS: &[&str] = &[
+    crate::public_api::COGNITION_TURN,
+    crate::public_api::COGNITION_WORKSHOP_MUTATE,
+    crate::public_api::COGNITION_WORKSHOP_QUERY,
+];
 
 #[derive(Clone)]
 pub struct CoderSetupToolRegistry {

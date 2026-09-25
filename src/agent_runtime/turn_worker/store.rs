@@ -954,6 +954,44 @@ impl TurnWorkerStore {
         Some(cloned)
     }
 
+    /// Apply and durably persist a record mutation before exposing it in
+    /// memory. Use this for authority transitions that must be committed
+    /// before a worker crosses the corresponding execution boundary.
+    pub fn try_update<F>(
+        &self,
+        work_id: &str,
+        update: F,
+    ) -> Result<Option<TurnWorkRecord>, crate::persistence::PersistenceError>
+    where
+        F: FnOnce(&mut TurnWorkRecord),
+    {
+        let Some(current) = self.get(work_id) else {
+            return Ok(None);
+        };
+        let (_session, _mutation) = crate::session_deletion::acquire_mutation_for_str(
+            &current.session_id,
+        )
+        .map_err(|error| {
+            crate::persistence::PersistenceError::new(
+                crate::persistence::PersistenceErrorKind::Cancelled,
+                error,
+            )
+        })?;
+        let mut guard = self.records.lock().expect("turn worker records");
+        let mut candidate = guard.clone();
+        let Some(record) = candidate.get_mut(work_id) else {
+            return Ok(None);
+        };
+        update(record);
+        record.updated_at = Utc::now();
+        let snapshot = record.clone();
+        self.persist_candidate(&mut candidate, work_id)?;
+        *guard = candidate;
+        drop(guard);
+        Self::notify_turn_worker_changed(work_id, snapshot.stasis_job_id.as_deref());
+        Ok(Some(snapshot))
+    }
+
     pub fn try_archive(
         &self,
         work_id: &str,
@@ -1375,6 +1413,7 @@ mod tests {
                 supports_browser_host: false,
             },
             code_project: None,
+            code_project_setup: None,
             execution_placement: Default::default(),
             world_ids: Vec::new(),
             max_tool_rounds: 8,

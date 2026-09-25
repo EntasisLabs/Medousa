@@ -849,6 +849,7 @@ mod tests {
             model_hint: None,
             execution_target: target,
             world_ids: Vec::new(),
+            code_project_setup: None,
         }
     }
 

@@ -3960,6 +3960,67 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "HomeNotificationIntent": {
+        "description": "One logical alert shared by the local-notification and APNs transports.",
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "card_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "emitted_at_utc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/HomeNotificationKind"
+          },
+          "notification_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subject_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "body",
+          "emitted_at_utc",
+          "kind",
+          "notification_id",
+          "subject_id",
+          "title"
+        ],
+        "type": "object"
+      },
+      "HomeNotificationKind": {
+        "description": "User-visible notification categories emitted by the daemon. Delivery transports must not infer policy from workspace columns or raw tool events.",
+        "enum": [
+          "fatal_turn",
+          "turn_update",
+          "needs_input",
+          "scheduled_delivery"
+        ],
+        "type": "string"
+      },
       "HostContextDiagnostic": {
         "properties": {
           "end": {
@@ -9191,6 +9252,17 @@
                 "type": "null"
               }
             ]
+          },
+          "notification": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HomeNotificationIntent"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Canonical daemon-authored notification intent. Clients present this fact; they do not re-classify cards or turn events themselves."
           },
           "snapshot": {
             "anyOf": [

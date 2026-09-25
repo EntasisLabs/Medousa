@@ -1065,6 +1065,7 @@ mod tests {
             grant_id: "grant-a".to_string(),
             peer_device_id: "peer-a".to_string(),
             peer_pairing_id: "pair-a".to_string(),
+            authorization_role: None,
             origin_runtime_id: "peer-a".to_string(),
             destination_runtime_id: "runtime-b".to_string(),
             parent_session_id: task.parent_session_id.clone(),

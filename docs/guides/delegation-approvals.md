@@ -14,9 +14,14 @@ approval proposals described below. Medousa saves the request and its parent
 chat context on the phone, then returns a work id while the request is queued.
 The phone resolves and authorizes a destination from a fresh authenticated
 workshop inventory before dispatch, and records that exact route before the
-worker starts. Retries keep using that route; the destination applies its own
-execution policy. You can check queued work with the workshop status control,
-and cancel a request while it is still queued to prevent dispatch.
+worker starts. Retries keep using that route. Peer destinations apply their
+scoped execution policy; portal destinations use their direct workshop role.
+Coder work can use a project already bound to the target runtime. If you
+explicitly ask Medousa to create or clone a project on a portal, it can include
+that setup in the worker request; the portal creates and binds the Forge project
+on its own disk before starting the Coder worker. Peer destinations still need
+an already-approved project. You can check queued work with the workshop status
+control, and cancel a request while it is still queued to prevent dispatch.
 
 The phone must stay active long enough to deliver a queued request. If it sleeps
 or loses its connection first, delivery resumes when it wakes and reconnects.

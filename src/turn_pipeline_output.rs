@@ -122,6 +122,7 @@ impl TurnJournalOutput {
         .map_err(|error| TurnPipelineError::Output(format!("journal writer stopped: {error}")))?
         .map_err(|error| TurnPipelineError::Output(format!("journal append failed: {error}")))?;
         debug_assert_eq!(receipt.seq(), v3.seq);
+        #[cfg(feature = "full-daemon")]
         crate::home_notifications::publish_turn_envelope(&v3);
         self.stream_tx.publish_v3(v3, v2);
         Ok(())

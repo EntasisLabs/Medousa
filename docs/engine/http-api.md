@@ -989,13 +989,14 @@ Cookbook: [mobile-and-lan.md](../cookbook/mobile-and-lan.md)
 ### Peer execution policy administration
 
 These native-only routes require `admin.execute` on the workshop whose inbound
-authority is being edited. A paired portal or peer cannot use its ordinary
-pairing bearer to grant itself work:
+authority is being edited. Execution policies scope `peer` pairings; a `portal`
+uses its direct workshop role and does not have a peer execution policy to
+configure:
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/v1/peers/execution-policies` | List paired devices and this workshop's effective inbound policy for each |
-| GET | `/v1/peers/{device_id}/execution-policy` | Read one effective policy, including whether it is stored, a safe legacy mapping, or default-deny |
+| GET | `/v1/peers/execution-policies` | List peer pairings and this workshop's effective inbound policy for each |
+| GET | `/v1/peers/{device_id}/execution-policy` | Read one peer policy, including whether it is stored, a safe legacy mapping, or default-deny |
 | PUT | `/v1/peers/{device_id}/execution-policy` | Replace one peer's preset/scopes/expiry and increment its policy revision |
 | GET | `/v1/peers/execution-policy-audit?limit=100` | Read bounded policy-update and task-admission audit events |
 
@@ -1006,6 +1007,11 @@ least one execution scope is enabled; that bit still does not choose or grant a
 particular lane. Reducing or revoking a scope cancels active remote workers that
 require the removed authority; completed results retain the grant and policy
 revision under which they ran.
+
+The daemon rejects policy updates for portal pairings. Their role grants task
+transport and direct worker admission without per-tool, per-project, or
+agent-targeting allowlists. Peer pairings continue to use the configured
+destination policy.
 
 The `custom` policy keeps governed browser/computer tools in an explicit
 `world` tool domain. Ordinary web search remains in `web`; granting Assistant
@@ -1019,20 +1025,21 @@ The signed `POST /v1/mesh/execution-target` probe supplies the same sanitized
 target entry for a paired destination. In addition to worker capabilities,
 entries may advertise mechanical world-driver capability strings under
 `world.browser.*` and `world.computer.*`. Those values describe colocated
-drivers and never constitute authority. A destination includes them in a peer
-probe only when its current directional policy admits Assistant or Coder work
-and the explicit `world` tool domain; disabled, expired, legacy, and ordinary
-Assistant-work policies expose none.
+drivers and never constitute authority. A peer destination includes them only
+when its current directional policy admits Assistant or Coder work and the
+explicit `world` tool domain. A portal destination advertises its available
+worker and world capabilities from the direct portal role and local drivers.
 
-`POST /v1/mesh/tasks` is a native-only daemon-to-daemon route. It requires all
-of the following: an authenticated pairing bearer, an explicit `task.request`
-grant on that pairing, and a signed mesh envelope whose sender and recipient
-exactly match the paired identities. The destination also intersects that
-transport grant with its own directional peer-execution policy. For existing
-installations that have `task.request` but no stored execution policy, the
-compatibility mapping grants only the historical safe assistant domains
-(`turn`, utility, and web); it never implies shell, Coder, MCP, secrets,
-work-environment, or agent-targeting authority.
+`POST /v1/mesh/tasks` is a native-only daemon-to-daemon route. It requires an
+authenticated pairing bearer and a signed mesh envelope whose sender and
+recipient exactly match the paired identities. Peer pairings also require an
+explicit `task.request` grant and are intersected with the destination's
+directional peer-execution policy. A full portal receives task transport from
+its pairing role and receives a destination-issued grant for the exact tools
+and worlds in that worker request; peer allowlists do not apply. For legacy
+peer installations with `task.request` but no stored execution policy, the
+compatibility mapping still grants only the historical safe assistant domains
+(`turn`, utility, and web).
 
 The body carries a bounded Stasis `TurnGranted` request and versioned
 `worker` specification. That specification preserves the local worker's intent,
@@ -1041,10 +1048,16 @@ parent mode, Bot identity, route, placement, tool-round budget, and exact
 requested tool names. The operation is idempotent under that Stasis turn
 identity: the first exchange admits the canonical remote worker and later
 exchanges observe the same work. Admission compiles an immutable, expiring
-`taskExecutionGrant` that binds the peer, origin/destination runtimes, parent
-session, work/correlation identity, intent, exact effective tools, tool domains,
-and destination policy revision. That grant is stored with the worker and
-returned in the signed observation and terminal result.
+`taskExecutionGrant` that binds the pairing, origin/destination runtimes, parent
+session, work/correlation identity, intent, exact effective tools, and tool
+domains. Peer grants also carry the destination policy revision; portal grants
+carry portal-role provenance. That grant is stored with the worker and returned
+in the signed observation and terminal result. A Coder worker may carry either
+an existing destination-owned project reference or an explicit `codeProjectSetup`
+request with a title, brief, optional repository URL, and base ref. Only a portal
+may admit projectless Coder setup. The destination creates or clones the project
+on its own disk, binds it to the derived worker session, and adds the resulting
+project identity to the durable task grant before starting the Coder worker.
 Every response is an immediate signed `task.result` observation with `pending`,
 `running`, or terminal state plus the remote execution, requested/resolved
 runtime placement, parent runtime, task grant, and session-derivation

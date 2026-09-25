@@ -2811,6 +2811,21 @@ pub use crate::grapheme_source::extract_module_ops_from_source;
 // ── Registry builder ─────────────────────────────────────────────────────────
 
 #[cfg(feature = "full-daemon")]
+pub type WorkerCodeProjectSetupFuture = std::pin::Pin<
+    Box<
+        dyn std::future::Future<
+                Output = Result<crate::delegated_task::WorkerCodeProjectRef, String>,
+            > + Send
+            + 'static,
+    >,
+>;
+
+#[cfg(feature = "full-daemon")]
+pub type WorkerCodeProjectSetupService = dyn Fn(String, crate::workshop_contract::WorkerCodeProjectSetup) -> WorkerCodeProjectSetupFuture
+    + Send
+    + Sync;
+
+#[cfg(feature = "full-daemon")]
 pub struct TuiRuntime {
     pub runtime: Arc<RuntimeComposition>,
     pub tool_loop_pipeline: MedousaToolLoopPipeline,
@@ -2834,10 +2849,34 @@ pub struct TuiRuntime {
     /// assembled. Background workers read this slot at execution time so a
     /// remotely admitted Coder job cannot accidentally use client-local state.
     pub forge_authority: Arc<std::sync::RwLock<Option<Arc<medousa_forge::forge::Forge>>>>,
+    /// Destination-owned setup service for projectless remote Coder jobs.
+    pub(crate) worker_code_project_setup:
+        Arc<std::sync::RwLock<Option<Arc<WorkerCodeProjectSetupService>>>>,
 }
 
 #[cfg(feature = "full-daemon")]
 impl TuiRuntime {
+    pub fn attach_worker_code_project_setup(&self, service: Arc<WorkerCodeProjectSetupService>) {
+        *self
+            .worker_code_project_setup
+            .write()
+            .expect("worker project setup lock poisoned") = Some(service);
+    }
+
+    pub async fn ensure_worker_code_project(
+        &self,
+        session_id: String,
+        setup: crate::workshop_contract::WorkerCodeProjectSetup,
+    ) -> Result<crate::delegated_task::WorkerCodeProjectRef, String> {
+        let service = self
+            .worker_code_project_setup
+            .read()
+            .expect("worker project setup lock poisoned")
+            .clone()
+            .ok_or_else(|| "destination Coder project setup is unavailable".to_string())?;
+        service(session_id, setup).await
+    }
+
     pub fn attach_forge_authority(&self, forge: Arc<medousa_forge::forge::Forge>) {
         *self
             .forge_authority

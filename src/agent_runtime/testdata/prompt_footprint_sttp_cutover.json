@@ -16,12 +16,12 @@
     },
     {
       "id": "coder_setup_host_policy",
-      "chars": 4637,
-      "tokens_estimate": 1160,
+      "chars": 4786,
+      "tokens_estimate": 1197,
       "constituents": [
         { "id": "sttp_envelope", "chars": 915, "tokens_estimate": 229 },
         { "id": "p1_core", "chars": 755, "tokens_estimate": 189 },
-        { "id": "p2_mode_coder_setup", "chars": 298, "tokens_estimate": 75 },
+        { "id": "p2_mode_coder_setup", "chars": 447, "tokens_estimate": 112 },
         { "id": "p3_actor_host", "chars": 409, "tokens_estimate": 103 },
         { "id": "p4_turn_protocol", "chars": 1166, "tokens_estimate": 292 },
         { "id": "p5_presentation", "chars": 1094, "tokens_estimate": 274 }

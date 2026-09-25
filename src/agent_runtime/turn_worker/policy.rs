@@ -484,6 +484,7 @@ mod tests {
             grant_id: "grant-1".to_string(),
             peer_device_id: "peer-1".to_string(),
             peer_pairing_id: "pairing-1".to_string(),
+            authorization_role: None,
             origin_runtime_id: "runtime-origin".to_string(),
             destination_runtime_id: "runtime-destination".to_string(),
             parent_session_id: "session-1".to_string(),

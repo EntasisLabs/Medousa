@@ -461,7 +461,7 @@ fn deterministic_auto_index<'a>(
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct WorkshopSpawn {
-    /// Worker profile: memory.avec_calibrate | memory.context | research | general
+    /// Worker profile: memory.avec_calibrate | memory.context | research | general | coder
     #[serde(default)]
     pub(crate) intent: Option<String>,
     /// Bounded assignment owned by a separate concurrent peer, including the expected result
@@ -484,6 +484,27 @@ pub struct WorkshopSpawn {
     /// daemon resolves them against exact worker placement before spawning.
     #[serde(default)]
     pub(crate) world_ids: Vec<String>,
+    /// Create a destination-owned Forge project before a remote Coder starts.
+    /// Use only when the principal explicitly asked to create or clone a project.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) code_project_setup: Option<WorkerCodeProjectSetup>,
+}
+
+/// Destination-owned project bootstrap metadata. Repository URLs are resolved
+/// and cloned by the selected daemon; host filesystem paths never cross mesh.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkerCodeProjectSetup {
+    /// Concise project name inferred from the principal's request.
+    pub title: String,
+    /// Concrete outcome the project should achieve.
+    pub brief: String,
+    /// Optional GitHub or GitLab repository URL or owner/project name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repository: Option<String>,
+    /// Optional branch or revision to use as the project's starting point.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_ref: Option<String>,
 }
 
 pub fn workshop_spawn_type_schema() -> TypedActionSchema {

@@ -51,6 +51,7 @@ const CODER_SETUP_SYSTEM_OVERLAY: &str = r#"
         discover(.99): "Use cognition_project_list when the principal wants to continue existing work.",
         bind(.99): "Use cognition_project_bind only for the project the principal selected or named unambiguously.",
         create(.99): "Use cognition_project_create only when the principal explicitly asks to create a project; infer a concise title and concrete brief from their request.",
+        remote_create(.99): "When the principal explicitly asks to create or clone a project on a selected portal and no project is bound there, use cognition_workshop_mutate action=workshop.spawn with intent=coder and code_project_setup containing the project title, brief, and repository URL when present. The destination creates and binds its own Forge project before the Coder worker starts.",
         clarify(.98): "Ask one sharp question when project identity, repository path, or creation intent is materially ambiguous."
     },
     authority_model(.99): {

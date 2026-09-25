@@ -597,6 +597,7 @@ async fn list_peer_execution_policies(
         .list_paired_devices()
         .map_err(internal)?
         .into_iter()
+        .filter(|record| !record.role.allows_full_portal())
         .map(|record| peer_execution_entry(&state, &record))
         .collect::<Result<Vec<_>, _>>()?;
     peers.sort_by(|left, right| {
@@ -613,6 +614,13 @@ async fn get_peer_execution_policy(
     Path(device_id): Path<String>,
 ) -> Result<Json<PeerExecutionPolicyEntry>, (StatusCode, String)> {
     let record = paired_device(&state, &device_id)?;
+    if record.role.allows_full_portal() {
+        return Err((
+            StatusCode::CONFLICT,
+            "workshop portals use direct workshop authority and have no peer execution policy"
+                .to_string(),
+        ));
+    }
     Ok(Json(peer_execution_entry(&state, &record)?))
 }
 
@@ -623,6 +631,12 @@ async fn update_peer_execution_policy(
     Json(update): Json<PeerExecutionPolicyUpdate>,
 ) -> Result<Json<PeerExecutionPolicyUpdateResponse>, (StatusCode, String)> {
     let record = paired_device(&state, &device_id)?;
+    if record.role.allows_full_portal() {
+        return Err((
+            StatusCode::CONFLICT,
+            "workshop portals inherit direct workshop authority; execution policies apply to peer pairings".to_string(),
+        ));
+    }
     let policy = state
         .execution_policies
         .update_policy(

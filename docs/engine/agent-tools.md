@@ -174,11 +174,22 @@ first persisted locally with its parent context and returns immediately as
 response includes `work_id` and `requested_execution_target`; its
 `execution_placement` is `null` until an authenticated inventory pass resolves
 and authorizes one exact runtime. The source checkpoints that resolved route
-before dispatch, and retries stay pinned to it. The destination still applies
-its own execution policy. `workshop.status` can inspect the queued request, and
-canceling it before dispatch prevents the worker from starting. This keeps
-remote discovery and startup out of the foreground tool call; it does not
-grant authority or make an unavailable target eligible.
+before dispatch, and retries stay pinned to it. Peer destinations apply their
+scoped execution policy; a portal destination admits bounded worker requests
+under its direct workshop role. `workshop.status` can inspect the queued
+request, and canceling it before dispatch prevents the worker from starting.
+This keeps remote discovery and startup out of the foreground tool call. The
+destination still validates the portal role or peer policy, and unavailable
+targets remain ineligible.
+
+For a Coder task that should start from a new repository on a portal,
+`workshop.spawn` may include `code_project_setup` with a title, brief, optional
+GitHub or GitLab repository URL (or `owner/project`), and optional base ref.
+The destination clones or initializes the repository under its own project
+storage, creates and binds its Forge undertaking, then starts the Coder worker
+with a destination-issued project grant. Use this only when the principal
+explicitly asked to create or clone a project. Peer destinations still require
+an existing project admitted by their execution policy.
 
 ---
 

@@ -760,21 +760,44 @@ async fn describe_execution_target(
     )
     .map_err(|error| (StatusCode::UNAUTHORIZED, error.to_string()))?;
 
+    let portal_authority = sender.role.allows_full_portal();
     let legacy_task_request_granted = record_has_capability(&sender, CAP_TASK_REQUEST);
-    let policy = state
-        .execution_policies
-        .policy_for_peer(
-            &sender.phone_id,
-            &sender.pairing_id,
-            legacy_task_request_granted,
+    let policy = if portal_authority {
+        None
+    } else {
+        Some(
+            state
+                .execution_policies
+                .policy_for_peer(
+                    &sender.phone_id,
+                    &sender.pairing_id,
+                    legacy_task_request_granted,
+                )
+                .map_err(internal)?
+                .policy,
         )
-        .map_err(internal)?
-        .policy;
+    };
     let now = chrono::Utc::now();
-    let mut capabilities = policy.advertised_execution_capabilities(now);
+    let mut capabilities = if portal_authority {
+        let mut capabilities = std::collections::BTreeSet::new();
+        if state.delegated_task_executor.is_some() {
+            capabilities.insert("assistant.work".to_string());
+            capabilities.insert("coder.work".to_string());
+        }
+        capabilities
+    } else {
+        policy
+            .as_ref()
+            .map(|policy| policy.advertised_execution_capabilities(now))
+            .unwrap_or_default()
+    };
     let user_selectable =
         capabilities.contains("assistant.work") || capabilities.contains("coder.work");
-    if user_selectable && policy.allowed_tool_domains.contains("world") {
+    let world_tools_allowed = portal_authority
+        || policy
+            .as_ref()
+            .is_some_and(|policy| policy.allowed_tool_domains.contains("world"));
+    if user_selectable && world_tools_allowed {
         let computer_drivers = state.computer_drivers.registrations().await;
         capabilities.extend(
             crate::workshop_contract::world_driver_execution_capabilities(
@@ -797,9 +820,13 @@ async fn describe_execution_target(
             architecture: Some(std::env::consts::ARCH.to_string()),
             region: None,
             user_selectable,
-            agent_selectable: user_selectable && policy.allow_agent_targeting,
+            agent_selectable: user_selectable
+                && (portal_authority
+                    || policy
+                        .as_ref()
+                        .is_some_and(|policy| policy.allow_agent_targeting)),
         },
-        policy_revision: policy.revision,
+        policy_revision: policy.as_ref().map_or(0, |policy| policy.revision),
     };
 
     let pairing = state.pairing.as_ref().ok_or_else(|| {
@@ -875,22 +902,24 @@ async fn describe_active_work(
         true,
     )
     .map_err(|error| (StatusCode::UNAUTHORIZED, error.to_string()))?;
-    let legacy_task_request_granted = record_has_capability(&sender, CAP_TASK_REQUEST);
-    let policy = state
-        .execution_policies
-        .policy_for_peer(
-            &sender.phone_id,
-            &sender.pairing_id,
-            legacy_task_request_granted,
-        )
-        .map_err(internal)?
-        .policy;
-    let capabilities = policy.advertised_execution_capabilities(chrono::Utc::now());
-    if !capabilities.contains("assistant.work") && !capabilities.contains("coder.work") {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "paired device cannot inspect workshop work".to_string(),
-        ));
+    if !sender.role.allows_full_portal() {
+        let legacy_task_request_granted = record_has_capability(&sender, CAP_TASK_REQUEST);
+        let policy = state
+            .execution_policies
+            .policy_for_peer(
+                &sender.phone_id,
+                &sender.pairing_id,
+                legacy_task_request_granted,
+            )
+            .map_err(internal)?
+            .policy;
+        let capabilities = policy.advertised_execution_capabilities(chrono::Utc::now());
+        if !capabilities.contains("assistant.work") && !capabilities.contains("coder.work") {
+            return Err((
+                StatusCode::FORBIDDEN,
+                "paired device cannot inspect workshop work".to_string(),
+            ));
+        }
     }
     let host = crate::daemon::coordination::local_coordination_host().ok_or_else(|| {
         (
@@ -984,23 +1013,28 @@ async fn propose_remote_peer(
     )
     .map_err(|error| (StatusCode::UNAUTHORIZED, error.to_string()))?;
 
-    let legacy_task_request_granted = record_has_capability(&sender, CAP_TASK_REQUEST);
-    let policy = state
-        .execution_policies
-        .policy_for_peer(
-            &sender.phone_id,
-            &sender.pairing_id,
-            legacy_task_request_granted,
-        )
-        .map_err(internal)?
-        .policy;
-    let capabilities = policy.advertised_execution_capabilities(chrono::Utc::now());
-    if !capabilities.contains("assistant.work") || !policy.allow_agent_targeting {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "paired Assistant cannot target agents on this workshop".to_string(),
-        ));
-    }
+    let policy = if sender.role.allows_full_portal() {
+        None
+    } else {
+        let legacy_task_request_granted = record_has_capability(&sender, CAP_TASK_REQUEST);
+        let policy = state
+            .execution_policies
+            .policy_for_peer(
+                &sender.phone_id,
+                &sender.pairing_id,
+                legacy_task_request_granted,
+            )
+            .map_err(internal)?
+            .policy;
+        let capabilities = policy.advertised_execution_capabilities(chrono::Utc::now());
+        if !capabilities.contains("assistant.work") || !policy.allow_agent_targeting {
+            return Err((
+                StatusCode::FORBIDDEN,
+                "paired Assistant cannot target agents on this workshop".to_string(),
+            ));
+        }
+        Some(policy)
+    };
     let host = crate::daemon::coordination::local_coordination_host().ok_or_else(|| {
         (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -1081,7 +1115,11 @@ async fn propose_remote_peer(
     )
     .await
     .map_err(internal)?;
-    let binding = if policy.permits_unattended_agent_launch(chrono::Utc::now()) {
+    let binding = if sender.role.allows_full_portal()
+        || policy
+            .as_ref()
+            .is_some_and(|policy| policy.permits_unattended_agent_launch(chrono::Utc::now()))
+    {
         // The signed peer request has already been authenticated and admitted
         // by the destination-owned policy. Re-materialize operator authority
         // locally only after that policy proves the device already holds host
@@ -1165,7 +1203,7 @@ async fn query_remote_peer_completion(
 ) -> Result<Response, (StatusCode, String)> {
     require_pairing_principal(&principal)?;
     let sender = authorize_remote_peer(&state, &principal)?;
-    if !record_has_capability(&sender, CAP_TASK_REQUEST) {
+    if !sender.role.allows_full_portal() && !record_has_capability(&sender, CAP_TASK_REQUEST) {
         return Err((
             StatusCode::FORBIDDEN,
             "task.request grant required to retrieve a peer completion".to_string(),
@@ -1525,7 +1563,8 @@ fn resolve_task_execution_grant(
         }
     }
 
-    let legacy_task_request_granted = record_has_capability(sender, CAP_TASK_REQUEST);
+    let legacy_task_request_granted =
+        sender.role.allows_full_portal() || record_has_capability(sender, CAP_TASK_REQUEST);
     if !legacy_task_request_granted {
         return Err((
             StatusCode::FORBIDDEN,
@@ -1545,33 +1584,41 @@ fn resolve_task_execution_grant(
             )?,
         ),
     };
-    let (worker_intent, bot_id, project_id, requested_tool_names, requested_world_ids) =
-        request.worker.as_ref().map_or_else(
-            || {
-                (
-                    "research",
-                    None,
-                    None,
-                    crate::agent_runtime::turn_worker::REMOTE_DELEGATED_TOOL_CEILING
-                        .iter()
-                        .map(|name| (*name).to_string())
-                        .collect::<Vec<_>>(),
-                    Vec::new(),
-                )
-            },
-            |worker| {
-                (
-                    worker.intent.as_str(),
-                    worker.parent.bot.as_ref().map(|bot| bot.bot_id.as_str()),
-                    worker
-                        .code_project
-                        .as_ref()
-                        .map(|project| project.repo_id.as_str()),
-                    worker.tools.names.clone(),
-                    worker.world_ids.clone(),
-                )
-            },
-        );
+    let (
+        worker_intent,
+        bot_id,
+        project_id,
+        project_setup_requested,
+        requested_tool_names,
+        requested_world_ids,
+    ) = request.worker.as_ref().map_or_else(
+        || {
+            (
+                "research",
+                None,
+                None,
+                false,
+                crate::agent_runtime::turn_worker::REMOTE_DELEGATED_TOOL_CEILING
+                    .iter()
+                    .map(|name| (*name).to_string())
+                    .collect::<Vec<_>>(),
+                Vec::new(),
+            )
+        },
+        |worker| {
+            (
+                worker.intent.as_str(),
+                worker.parent.bot.as_ref().map(|bot| bot.bot_id.as_str()),
+                worker
+                    .code_project
+                    .as_ref()
+                    .map(|project| project.repo_id.as_str()),
+                worker.code_project_setup.is_some(),
+                worker.tools.names.clone(),
+                worker.world_ids.clone(),
+            )
+        },
+    );
     let mut requested_tool_domain_values = requested_tool_names
         .iter()
         .map(|name| execution_tool_domain(name).to_string())
@@ -1592,25 +1639,32 @@ fn resolve_task_execution_grant(
         .iter()
         .map(String::as_str)
         .collect::<Vec<_>>();
-    state
-        .execution_policies
-        .admit_assistant_work(AssistantWorkAdmission {
-            peer_device_id: &sender.phone_id,
-            peer_pairing_id: &sender.pairing_id,
-            origin_runtime_id: &request.parent_runtime_id,
-            destination_runtime_id: &state.local_device_id,
-            parent_session_id: &request.grant.session_id,
-            bot_id,
-            work_id,
-            correlation_id: &request.grant.correlation_id,
-            worker_intent,
-            project_id,
-            requested_tool_domains: &requested_tool_domains,
-            requested_tool_names: &requested_tool_name_refs,
-            requested_world_ids: &requested_world_id_refs,
-            task_expires_at,
-            legacy_task_request_granted,
-        })
+    let admission = AssistantWorkAdmission {
+        peer_device_id: &sender.phone_id,
+        peer_pairing_id: &sender.pairing_id,
+        origin_runtime_id: &request.parent_runtime_id,
+        destination_runtime_id: &state.local_device_id,
+        parent_session_id: &request.grant.session_id,
+        bot_id,
+        work_id,
+        correlation_id: &request.grant.correlation_id,
+        worker_intent,
+        project_id,
+        project_setup_requested,
+        requested_tool_domains: &requested_tool_domains,
+        requested_tool_names: &requested_tool_name_refs,
+        requested_world_ids: &requested_world_id_refs,
+        task_expires_at,
+        legacy_task_request_granted,
+    };
+    let admission = if sender.role.allows_full_portal() {
+        state
+            .execution_policies
+            .admit_portal_assistant_work(admission)
+    } else {
+        state.execution_policies.admit_assistant_work(admission)
+    };
+    admission
         .map_err(internal)?
         .map_err(|denial| (StatusCode::FORBIDDEN, denial.code().to_string()))
 }

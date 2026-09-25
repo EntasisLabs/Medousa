@@ -27,7 +27,7 @@ use crate::session_store::{
 };
 use crate::workshop_contract::{
     ExecutionPlacementResolution, ExecutionResolutionReason, UNKNOWN_EXECUTION_RUNTIME_ID,
-    default_unknown_runtime_id,
+    WorkerCodeProjectSetup, default_unknown_runtime_id,
 };
 
 pub const DELEGATED_TASK_SCHEMA_VERSION: u32 = 1;
@@ -220,6 +220,10 @@ pub struct WorkerSpawnSpec {
     pub parent: WorkerParentSpec,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code_project: Option<WorkerCodeProjectRef>,
+    /// Explicit request to create a project on the destination before Coder
+    /// work starts. The destination resolves repository names and local paths.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_project_setup: Option<WorkerCodeProjectSetup>,
     pub execution_placement: ExecutionPlacementResolution,
     /// Opaque world identities admitted for this worker. Placement and driver
     /// details are intentionally held outside this model-authored contract.
@@ -559,9 +563,33 @@ pub fn validate_worker_spawn_spec(spec: &WorkerSpawnSpec) -> Result<(), Delegate
                 "Coder project authority does not match worker placement",
             ));
         }
-    } else if intent == crate::agent_runtime::turn_worker::TurnWorkerIntent::Coder {
+    }
+    if let Some(setup) = spec.code_project_setup.as_ref() {
+        validate_worker_text("Coder project title", &setup.title, 256)?;
+        validate_worker_text("Coder project brief", &setup.brief, 4_096)?;
+        if let Some(repository) = setup.repository.as_deref() {
+            validate_worker_text("Coder repository", repository, 2_048)?;
+        }
+        if let Some(base_ref) = setup.base_ref.as_deref() {
+            validate_worker_text("Coder project base ref", base_ref, 256)?;
+        }
+        if intent != crate::agent_runtime::turn_worker::TurnWorkerIntent::Coder {
+            return Err(DelegatedTaskError::invalid(
+                "only a Coder worker may request project setup",
+            ));
+        }
+        if spec.code_project.is_some() {
+            return Err(DelegatedTaskError::invalid(
+                "Coder worker cannot request project setup and carry an existing project",
+            ));
+        }
+    }
+    if spec.code_project.is_none()
+        && spec.code_project_setup.is_none()
+        && intent == crate::agent_runtime::turn_worker::TurnWorkerIntent::Coder
+    {
         return Err(DelegatedTaskError::invalid(
-            "Coder worker requires a destination-owned code project",
+            "Coder worker requires a destination-owned code project or explicit project setup",
         ));
     }
     if !(1..=128).contains(&spec.max_tool_rounds) {
@@ -1437,6 +1465,7 @@ mod tests {
                 supports_browser_host: false,
             },
             code_project: None,
+            code_project_setup: None,
             execution_placement: request.execution_placement.clone(),
             world_ids: Vec::new(),
             max_tool_rounds: 10,

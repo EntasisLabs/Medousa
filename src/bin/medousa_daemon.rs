@@ -707,12 +707,6 @@ async fn start_daemon() -> Result<()> {
         state.backend.clone(),
     );
 
-    medousa::engine_recovery::run_startup_turn_recovery().await;
-    medousa::workspace::init_workspace_hub(Arc::new(state.composition().clone()));
-    if let Some(hub) = medousa::workspace::workspace_hub() {
-        hub.refresh_now().await;
-    }
-
     let mut mdns_advertiser: Option<medousa::pairing::mdns::MdnsAdvertiser> = None;
     #[cfg(feature = "iroh-transport")]
     let mut iroh_gateway_hold: Option<medousa::iroh_transport::WorkshopGateway> = None;
@@ -1044,6 +1038,7 @@ async fn start_daemon() -> Result<()> {
         delegated_task_executor: Some(std::sync::Arc::new(
             medousa::mesh::DaemonDelegatedTaskExecutor::new(
                 std::sync::Arc::new(state.composition().clone()),
+                state.clone(),
                 peer_message_state.local_device_id.clone(),
                 state.default_runtime_config.draft_provider.clone(),
                 state.default_runtime_config.draft_model.clone(),
@@ -1054,6 +1049,14 @@ async fn start_daemon() -> Result<()> {
         computer_drivers: state.computer_drivers.clone(),
         isolated_browser_available: true,
     };
+    // Project setup is attached by the delegated-task executor above before
+    // recovering durable worker jobs. A portal Coder job that was interrupted
+    // during destination setup can therefore resume on this daemon.
+    medousa::engine_recovery::run_startup_turn_recovery().await;
+    medousa::workspace::init_workspace_hub(Arc::new(state.composition().clone()));
+    if let Some(hub) = medousa::workspace::workspace_hub() {
+        hub.refresh_now().await;
+    }
     declared = declared
         .merge(medousa::workspace_handlers::workspace_surface().with_state(
             medousa::workspace_handlers::WorkspaceHandlerState {

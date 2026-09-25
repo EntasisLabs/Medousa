@@ -80,9 +80,10 @@ pub mod mcp_policy;
 pub mod mobile_tool_registry;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod openai_codex_chat_client;
-pub mod peer_coordination_mesh;
+pub mod pairing_role;
 #[cfg(any(feature = "full-daemon", feature = "embedded-daemon"))]
 pub mod peer_completion_delivery;
+pub mod peer_coordination_mesh;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod peer_execution_policy;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]

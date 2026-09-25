@@ -325,5 +325,6 @@ async fn assemble_tui_runtime_with_delegation(
         ),
         worker_scheduler,
         forge_authority: Arc::new(std::sync::RwLock::new(None)),
+        worker_code_project_setup: Arc::new(std::sync::RwLock::new(None)),
     })
 }

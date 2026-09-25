@@ -46,9 +46,15 @@ use crate::daemon::state::AppState;
 use crate::semantic_values::TrimmedText;
 
 fn publish_item(state: &AppState, item: &WorkItem, kind: &str) {
-    state
-        .forge_events
-        .publish(item.id.as_str(), &item.state.to_string(), kind);
+    publish_item_to_events(&state.forge_events, item, kind);
+}
+
+fn publish_item_to_events(
+    events: &crate::daemon::forge_events::ForgeEventBus,
+    item: &WorkItem,
+    kind: &str,
+) {
+    events.publish(item.id.as_str(), &item.state.to_string(), kind);
 }
 
 fn remember_worktree(state: &AppState, item: &WorkItem, worktree: &FsPath) {
@@ -634,6 +640,37 @@ fn actor_from_state(state: &AppState) -> ActorRef {
     ActorRef {
         kind: ActorKind::User,
         id: state.workshop_identity_user_id(),
+    }
+}
+
+/// The destination-owned services needed to create a Forge project without
+/// retaining AppState (which owns the TuiRuntime where the setup callback is
+/// installed).
+#[derive(Clone)]
+pub(crate) struct WorkerCodeProjectSetupContext {
+    forge: Arc<Forge>,
+    forge_execution: Arc<medousa_forge::execution::ForgeExecutionService>,
+    forge_events: crate::daemon::forge_events::ForgeEventBus,
+    detamu: Arc<crate::daemon::detamu_host::DetamuHandle>,
+    owner_id: String,
+}
+
+impl WorkerCodeProjectSetupContext {
+    pub(crate) fn from_app_state(state: &AppState) -> Self {
+        Self {
+            forge: state.forge.clone(),
+            forge_execution: state.forge_execution.clone(),
+            forge_events: state.forge_events.clone(),
+            detamu: state.detamu.clone(),
+            owner_id: state.workshop_identity_user_id(),
+        }
+    }
+
+    fn actor(&self) -> ActorRef {
+        ActorRef {
+            kind: ActorKind::User,
+            id: self.owner_id.clone(),
+        }
     }
 }
 
@@ -1665,13 +1702,19 @@ async fn start_item(
 }
 
 fn start_item_from_request(state: &AppState, body: RegisterRequest) -> ApiResult<WorkItem> {
+    let context = WorkerCodeProjectSetupContext::from_app_state(state);
+    start_item_from_setup_context(&context, body)
+}
+
+fn start_item_from_setup_context(
+    context: &WorkerCodeProjectSetupContext,
+    body: RegisterRequest,
+) -> ApiResult<WorkItem> {
     let repository_path = body.repo_path.clone();
-    let actor = actor_from_state(state);
-    let owner = body
-        .owner
-        .unwrap_or_else(|| state.workshop_identity_user_id());
-    let forge = forge(state);
-    let registered = forge
+    let actor = context.actor();
+    let owner = body.owner.unwrap_or_else(|| context.owner_id.clone());
+    let registered = context
+        .forge
         .register_with_policy_and_workspace_mode(
             body.title,
             body.brief,
@@ -1683,16 +1726,32 @@ fn start_item_from_request(state: &AppState, body: RegisterRequest) -> ApiResult
             &actor,
         )
         .map_err(map_err)?;
-    touch_repository(&repository_path, None)?;
-    publish_item(state, &registered, "registered");
-    let item = match forge.provision(&registered.id, &actor) {
+    if let Err(error) = touch_repository(&repository_path, None) {
+        match context.forge.discard(&registered.id, &actor) {
+            Ok(discarded) => {
+                publish_item_to_events(&context.forge_events, &discarded, "start_failed_released")
+            }
+            Err(discard_error) => tracing::warn!(
+                work_id = %registered.id,
+                error = %discard_error,
+                "failed to release project after repository touch failure"
+            ),
+        }
+        return Err(error);
+    }
+    publish_item_to_events(&context.forge_events, &registered, "registered");
+    let item = match context.forge.provision(&registered.id, &actor) {
         Ok(item) => item,
         Err(err) => {
             // `start` is one user action even though Forge records registration
             // and provisioning separately. If setup fails, release that failed
             // item so retries do not accumulate unusable projects in Home.
-            match forge.discard(&registered.id, &actor) {
-                Ok(discarded) => publish_item(state, &discarded, "start_failed_released"),
+            match context.forge.discard(&registered.id, &actor) {
+                Ok(discarded) => publish_item_to_events(
+                    &context.forge_events,
+                    &discarded,
+                    "start_failed_released",
+                ),
                 Err(discard_err) => tracing::warn!(
                     work_id = %registered.id,
                     error = %discard_err,
@@ -1704,7 +1763,7 @@ fn start_item_from_request(state: &AppState, body: RegisterRequest) -> ApiResult
     };
     if let Some(env) = item.workspace_environment() {
         crate::daemon::detamu_host::spawn_index_forge_item(
-            state.detamu.clone(),
+            context.detamu.clone(),
             item.id.as_str().to_owned(),
             env.worktree.clone(),
             env.baseline_oid.as_str().to_owned(),
@@ -1741,6 +1800,358 @@ pub(crate) fn start_code_project_for_session(
 ) -> Result<SessionCodeProjectResponse, String> {
     start_code_project_for_session_inner(state, session_id, body)
         .map_err(|(_, Json(error))| error.error)
+}
+
+/// Create a Forge project on this daemon for a remote Coder task. The setup
+/// contract contains only semantic project metadata and a supported provider
+/// repository name; all cloning and Forge authority stay destination-owned.
+pub(crate) async fn ensure_worker_code_project(
+    context: &WorkerCodeProjectSetupContext,
+    runtime_id: String,
+    session_id: String,
+    setup: crate::workshop_contract::WorkerCodeProjectSetup,
+) -> Result<(String, String), String> {
+    static SETUP_LOCKS: LazyLock<
+        tokio::sync::Mutex<std::collections::HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    > = LazyLock::new(|| tokio::sync::Mutex::new(std::collections::HashMap::new()));
+    let runtime_id = runtime_id.trim().to_string();
+    let session_id = session_id.trim().to_string();
+    if runtime_id.is_empty() || session_id.is_empty() {
+        return Err("destination runtime and session identities are required".to_string());
+    }
+    if setup
+        .base_ref
+        .as_deref()
+        .is_some_and(|base_ref| base_ref.starts_with('-') || base_ref.chars().any(char::is_control))
+    {
+        return Err("project base ref is invalid".to_string());
+    }
+    let setup_lock = {
+        let mut locks = SETUP_LOCKS.lock().await;
+        locks.retain(|_, lock| Arc::strong_count(lock) > 1);
+        Arc::clone(
+            locks
+                .entry(session_id.clone())
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))),
+        )
+    };
+    let _setup_guard = setup_lock.lock().await;
+
+    let context_for_lookup = context.clone();
+    let runtime_for_lookup = runtime_id.clone();
+    let session_for_lookup = session_id.clone();
+    let setup_for_lookup = setup.clone();
+    let existing = context
+        .forge_execution
+        .run(
+            medousa_forge::execution::ExecutionClass::LocalMutation,
+            64 * 1024,
+            move || {
+                Ok(existing_worker_project_binding(
+                    &context_for_lookup,
+                    &runtime_for_lookup,
+                    &session_for_lookup,
+                    &setup_for_lookup,
+                ))
+            },
+        )
+        .await
+        .map_err(|error| format!("could not inspect destination Coder project: {error}"))??;
+    if let Some(binding) = existing {
+        return Ok(binding);
+    }
+
+    let cloned_repository = if let Some(repository) = setup.repository.as_deref() {
+        let title = setup.title.clone();
+        let repository = repository.to_string();
+        let session_for_clone = session_id.clone();
+        let base_ref = setup.base_ref.clone();
+        Some(
+            context
+                .forge_execution
+                .run(
+                    medousa_forge::execution::ExecutionClass::NetworkGit,
+                    64 * 1024,
+                    move || {
+                        let clone: Result<(PathBuf, String), String> = (|| {
+                            let (provider, repository) = worker_repository_identity(&repository)?;
+                            let repo_path = clone_worker_repository(
+                                &title,
+                                &session_for_clone,
+                                provider,
+                                &repository,
+                                base_ref.as_deref(),
+                            )?;
+                            let branch =
+                                worker_repository_base_ref(&repo_path, base_ref.as_deref())?;
+                            Ok((repo_path, branch))
+                        })();
+                        Ok(clone)
+                    },
+                )
+                .await
+                .map_err(|error| {
+                    format!("could not admit destination repository clone: {error}")
+                })??,
+        )
+    } else {
+        None
+    };
+
+    let request = if let Some((repo_path, base_ref)) = cloned_repository.as_ref() {
+        StartSessionCodeProjectRequest {
+            title: setup.title.clone(),
+            brief: setup.brief.clone(),
+            source: CodeProjectSource::Repository,
+            repo_path: Some(repo_path.to_string_lossy().into_owned()),
+            base_ref: Some(base_ref.clone()),
+        }
+    } else {
+        StartSessionCodeProjectRequest {
+            title: setup.title.clone(),
+            brief: setup.brief.clone(),
+            source: CodeProjectSource::Blank,
+            repo_path: None,
+            base_ref: setup.base_ref.clone(),
+        }
+    };
+
+    let context_for_create = context.clone();
+    let runtime_for_create = runtime_id.clone();
+    let session_for_create = session_id.clone();
+    let create_result = context
+        .forge_execution
+        .run(
+            medousa_forge::execution::ExecutionClass::LocalMutation,
+            256 * 1024,
+            move || {
+                let create = (|| {
+                    let response = match start_code_project_for_session_with_context(
+                        &context_for_create,
+                        &session_for_create,
+                        request,
+                    ) {
+                        Ok(response) => response,
+                        Err((_, Json(error))) => {
+                            if let Some((repo_path, _)) = cloned_repository.as_ref() {
+                                let _ = std::fs::remove_dir_all(repo_path);
+                            }
+                            return Err(error.error);
+                        }
+                    };
+                    let item = context_for_create
+                        .forge
+                        .load(&WorkId::from(response.work_id.clone()))
+                        .map_err(|error| {
+                            format!("created Forge project is unavailable: {error}")
+                        })?;
+                    let repo_id = item
+                        .workspace_environment()
+                        .map(|environment| environment.repo.repo_id.to_string())
+                        .ok_or_else(|| {
+                            "created Forge project has no governed repository".to_string()
+                        })?;
+                    crate::agent_mode_state::set_session_code_binding_authority(
+                        &session_for_create,
+                        &response.work_id,
+                        Some(&runtime_for_create),
+                        Some(&repo_id),
+                    )
+                    .map_err(|error| {
+                        format!("could not bind destination Coder project: {error}")
+                    })?;
+                    Ok((response.work_id, repo_id))
+                })();
+                Ok(create)
+            },
+        )
+        .await
+        .map_err(|error| format!("could not admit destination Forge project setup: {error}"))?;
+
+    create_result
+}
+
+fn existing_worker_project_binding(
+    context: &WorkerCodeProjectSetupContext,
+    runtime_id: &str,
+    session_id: &str,
+    setup: &crate::workshop_contract::WorkerCodeProjectSetup,
+) -> Result<Option<(String, String)>, String> {
+    let binding = crate::agent_mode_state::get_session_code_binding(session_id)?;
+    let Some(work_id) = binding
+        .work_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(None);
+    };
+    let item = context
+        .forge
+        .load(&WorkId::from(work_id.to_string()))
+        .map_err(|error| format!("bound destination Forge project is unavailable: {error}"))?;
+    if item.title != setup.title || item.brief != setup.brief {
+        return Err(
+            "destination session is already bound to a different project setup".to_string(),
+        );
+    }
+    let WorkTarget::Git(target) = &item.target;
+    let actual_remote = repository_remote(&target.repo_path);
+    match setup.repository.as_deref() {
+        Some(requested) => {
+            let expected = worker_repository_identity(requested)?;
+            let actual = actual_remote
+                .as_deref()
+                .and_then(provider_repository)
+                .ok_or_else(|| {
+                    "bound destination project has no supported provider remote".to_string()
+                })?;
+            if actual.0 != expected.0 || actual.1 != expected.1 {
+                return Err(
+                    "destination session is already bound to a different repository".to_string(),
+                );
+            }
+        }
+        None if actual_remote.is_some() => {
+            return Err(
+                "destination session is already bound to a repository-backed project".to_string(),
+            );
+        }
+        None => {}
+    }
+    if let Some(base_ref) = setup.base_ref.as_deref()
+        && target.base_ref != base_ref
+    {
+        return Err("destination project base ref does not match the requested setup".to_string());
+    }
+    let repo_id = item
+        .workspace_environment()
+        .map(|environment| environment.repo.repo_id.to_string())
+        .ok_or_else(|| "bound destination Forge project has no governed repository".to_string())?;
+    crate::agent_mode_state::set_session_code_binding_authority(
+        session_id,
+        work_id,
+        Some(runtime_id),
+        Some(&repo_id),
+    )?;
+    Ok(Some((work_id.to_string(), repo_id)))
+}
+
+fn worker_repository_identity(value: &str) -> Result<(&'static str, String), String> {
+    let trimmed = value.trim();
+    if let Some((provider, repository)) = provider_repository(trimmed) {
+        return Ok((provider, repository));
+    }
+    if normalize_provider_repository_name(trimmed) {
+        return Ok(("github", trimmed.to_string()));
+    }
+    Err("repository must be a GitHub or GitLab URL or owner/project name".to_string())
+}
+
+fn clone_worker_repository(
+    title: &str,
+    session_id: &str,
+    provider: &str,
+    repository: &str,
+    base_ref: Option<&str>,
+) -> Result<PathBuf, String> {
+    let root = crate::paths::medousa_data_dir().join("projects");
+    std::fs::create_dir_all(&root)
+        .map_err(|error| format!("could not create destination project folder: {error}"))?;
+    let digest = Sha256::digest(session_id.as_bytes());
+    let suffix = digest[..6]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let destination = root.join(format!("{}-{suffix}", project_slug(title)));
+    let canonical_url = format!("https://{provider}.com/{repository}.git");
+    if destination.exists() {
+        let actual = repository_remote(&destination)
+            .as_deref()
+            .and_then(provider_repository);
+        if actual
+            .as_ref()
+            .is_none_or(|(actual_provider, actual_repository)| {
+                *actual_provider != provider || actual_repository != repository
+            })
+        {
+            return Err("destination project folder is occupied by another repository".to_string());
+        }
+    } else {
+        let provider_cli = if provider == "github" { "gh" } else { "glab" };
+        let mut output = if command_available(provider_cli) {
+            background_command(provider_cli)
+                .args(["repo", "clone", repository])
+                .arg(&destination)
+                .env("GH_PROMPT_DISABLED", "1")
+                .env("GIT_TERMINAL_PROMPT", "0")
+                .output()
+        } else {
+            background_command("git")
+                .env("GIT_TERMINAL_PROMPT", "0")
+                .args(["clone", "--", canonical_url.as_str()])
+                .arg(&destination)
+                .output()
+        }
+        .map_err(|error| format!("could not start repository clone: {error}"))?;
+        if !output.status.success() && command_available(provider_cli) {
+            let _ = std::fs::remove_dir_all(&destination);
+            output = background_command("git")
+                .env("GIT_TERMINAL_PROMPT", "0")
+                .args(["clone", "--", canonical_url.as_str()])
+                .arg(&destination)
+                .output()
+                .map_err(|error| format!("could not start repository clone: {error}"))?;
+        }
+        if !output.status.success() {
+            let _ = std::fs::remove_dir_all(&destination);
+            return Err(format!(
+                "repository clone failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+    }
+    if let Some(base_ref) = base_ref {
+        if base_ref.starts_with('-') || base_ref.chars().any(char::is_control) {
+            return Err("project base ref is invalid".to_string());
+        }
+        let output = background_command("git")
+            .args(["checkout", "--quiet", base_ref])
+            .current_dir(&destination)
+            .output()
+            .map_err(|error| format!("could not select project base ref: {error}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "could not select project base ref: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+    }
+    Ok(destination)
+}
+
+fn worker_repository_base_ref(
+    repo_path: &FsPath,
+    requested: Option<&str>,
+) -> Result<String, String> {
+    if let Some(base_ref) = requested {
+        return Ok(base_ref.to_string());
+    }
+    let output = background_command("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|error| {
+            format!("could not resolve the cloned repository's default branch: {error}")
+        })?;
+    if !output.status.success() {
+        return Err("could not resolve the cloned repository's default branch".to_string());
+    }
+    let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if branch.is_empty() || branch == "HEAD" {
+        return Err("cloned repository has no symbolic default branch".to_string());
+    }
+    Ok(branch)
 }
 
 #[derive(Debug)]
@@ -1793,6 +2204,15 @@ fn start_code_project_for_session_inner(
     session_id: &str,
     body: StartSessionCodeProjectRequest,
 ) -> ApiResult<SessionCodeProjectResponse> {
+    let context = WorkerCodeProjectSetupContext::from_app_state(state);
+    start_code_project_for_session_with_context(&context, session_id, body)
+}
+
+fn start_code_project_for_session_with_context(
+    context: &WorkerCodeProjectSetupContext,
+    session_id: &str,
+    body: StartSessionCodeProjectRequest,
+) -> ApiResult<SessionCodeProjectResponse> {
     let command = StartCodeProjectCommand::new(session_id, body)
         .map_err(|error| request_error(StatusCode::BAD_REQUEST, error))?;
     let session_id = command.session_id.as_str();
@@ -1810,8 +2230,8 @@ fn start_code_project_for_session_inner(
         }
     };
 
-    let item = match start_item_from_request(
-        state,
+    let item = match start_item_from_setup_context(
+        context,
         RegisterRequest {
             title: title.to_string(),
             brief: brief.to_string(),
@@ -1833,7 +2253,8 @@ fn start_code_project_for_session_inner(
     let worktree = match item.workspace_environment() {
         Some(environment) => environment.worktree.to_string_lossy().into_owned(),
         None => {
-            let _ = state.forge.discard(&item.id, &actor_from_state(state));
+            let _ = context.forge.discard(&item.id, &context.actor());
+            publish_item_to_events(&context.forge_events, &item, "start_failed_released");
             if created_repository {
                 let _ = std::fs::remove_dir_all(&repo_path);
             }
@@ -1846,7 +2267,8 @@ fn start_code_project_for_session_inner(
     if let Err(err) =
         crate::agent_mode_state::set_session_code_binding(session_id, item.id.as_str())
     {
-        let _ = state.forge.discard(&item.id, &actor_from_state(state));
+        let _ = context.forge.discard(&item.id, &context.actor());
+        publish_item_to_events(&context.forge_events, &item, "start_failed_released");
         if created_repository {
             let _ = std::fs::remove_dir_all(&repo_path);
         }

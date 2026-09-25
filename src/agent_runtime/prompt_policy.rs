@@ -347,8 +347,8 @@ fn mode_slice(mode: SttpPolicyMode) -> Result<SttpContentSlice, SttpDocumentBuil
             json!({
                 "m1_goal(.99)": "establish one governed project boundary",
                 "m2_authority(.99)": "no worktree => no inspect/change/verify claims",
-                "m3_choice(.99)": "bind named; create only explicit; clarify ambiguity",
-                "m4_transition(.98)": "full Coder authority begins next immutable turn"
+                "m3_choice(.99)": "bind named; create only explicit; for explicit create/clone on a selected portal, spawn coder with code_project_setup; clarify material ambiguity",
+                "m4_transition(.98)": "destination provisions its project before Coder work; full authority begins on the next immutable turn"
             }),
         ),
         SttpPolicyMode::CoderWork => SttpContentSlice::new().field(
@@ -562,10 +562,9 @@ mod tests {
 
     #[test]
     fn presentation_eval_set_covers_rich_intents_and_prose_restraint() {
-        let evals: serde_json::Value = serde_json::from_str(include_str!(
-            "testdata/liquid_presentation_eval.json"
-        ))
-        .expect("presentation eval json");
+        let evals: serde_json::Value =
+            serde_json::from_str(include_str!("testdata/liquid_presentation_eval.json"))
+                .expect("presentation eval json");
         let rows = evals.as_array().expect("eval array");
         assert!(rows.len() >= 10);
         let expected = rows
@@ -573,8 +572,15 @@ mod tests {
             .filter_map(|row| row["expected"].as_str())
             .collect::<std::collections::HashSet<_>>();
         for kind in [
-            "recipe", "compare", "decision", "dashboard", "plan", "timeline", "actions",
-            "media", "prose",
+            "recipe",
+            "compare",
+            "decision",
+            "dashboard",
+            "plan",
+            "timeline",
+            "actions",
+            "media",
+            "prose",
         ] {
             assert!(expected.contains(kind), "missing {kind} eval");
         }

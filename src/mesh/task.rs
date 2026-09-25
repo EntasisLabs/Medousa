@@ -49,15 +49,39 @@ pub struct DaemonDelegatedTaskExecutor {
 impl DaemonDelegatedTaskExecutor {
     pub fn new(
         runtime: Arc<RuntimeComposition>,
+        app_state: crate::daemon::state::AppState,
         local_device_id: impl Into<String>,
         provider: impl Into<String>,
         model: impl Into<String>,
         response_depth_mode: impl Into<String>,
         max_tool_rounds: usize,
     ) -> Self {
+        let local_device_id = local_device_id.into();
+        let setup_agent = app_state.platform.agent_handle();
+        let setup_context =
+            crate::daemon::forge_api::WorkerCodeProjectSetupContext::from_app_state(&app_state);
+        let setup_runtime_id = local_device_id.clone();
+        setup_agent.attach_worker_code_project_setup(Arc::new(move |session_id, setup| {
+            let context = setup_context.clone();
+            let runtime_id = setup_runtime_id.clone();
+            Box::pin(async move {
+                let (work_id, repo_id) = crate::daemon::forge_api::ensure_worker_code_project(
+                    &context,
+                    runtime_id.clone(),
+                    session_id,
+                    setup,
+                )
+                .await?;
+                Ok(crate::delegated_task::WorkerCodeProjectRef {
+                    runtime_id,
+                    work_id,
+                    repo_id,
+                })
+            })
+        }));
         Self {
             runtime,
-            local_device_id: local_device_id.into(),
+            local_device_id,
             provider: provider.into(),
             model: model.into(),
             response_depth_mode: response_depth_mode.into(),

@@ -1,8 +1,9 @@
 //! Directional, daemon-owned authority for work requested by paired peers.
 //!
-//! Pairing and mesh grants authenticate a caller and admit a protocol message.
-//! They do not grant shell, project, secret, or agent-routing authority. This
-//! store is owned and enforced by the destination workshop.
+//! This store is the destination-owned scope boundary for paired peers. A full
+//! portal pairing carries direct workshop task authority by role and bypasses
+//! peer allowlists; a peer remains limited to the policy attached to its exact
+//! pairing.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -13,6 +14,8 @@ use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+use crate::pairing_role::PairingRole;
 
 pub const PEER_EXECUTION_POLICY_SCHEMA_VERSION: u32 = 1;
 pub const TASK_EXECUTION_GRANT_SCHEMA_VERSION: u32 = 1;
@@ -304,6 +307,10 @@ pub struct TaskExecutionGrant {
     pub grant_id: String,
     pub peer_device_id: String,
     pub peer_pairing_id: String,
+    /// Pairing role captured at admission. Older grants omit this field and
+    /// retain their original policy-based interpretation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authorization_role: Option<PairingRole>,
     pub origin_runtime_id: String,
     pub destination_runtime_id: String,
     pub parent_session_id: String,
@@ -396,6 +403,9 @@ pub struct AssistantWorkAdmission<'a> {
     pub correlation_id: &'a str,
     pub worker_intent: &'a str,
     pub project_id: Option<&'a str>,
+    /// A projectless Coder request may proceed only when a full portal
+    /// explicitly asked the destination to create its own project first.
+    pub project_setup_requested: bool,
     pub requested_tool_domains: &'a [&'a str],
     pub requested_tool_names: &'a [&'a str],
     pub requested_world_ids: &'a [&'a str],
@@ -560,6 +570,25 @@ impl PeerExecutionPolicyStore {
         &self,
         admission: AssistantWorkAdmission<'_>,
     ) -> Result<Result<TaskExecutionGrant, PeerExecutionDenialReason>> {
+        self.admit_assistant_work_with_portal_authority(admission, false)
+    }
+
+    /// Admit assistant work from a full portal pairing. Portal authority is
+    /// role-derived and task-scoped: the destination records the exact tools
+    /// and worlds requested for this worker, without consulting peer project,
+    /// tool-domain, network, or agent-targeting allowlists.
+    pub fn admit_portal_assistant_work(
+        &self,
+        admission: AssistantWorkAdmission<'_>,
+    ) -> Result<Result<TaskExecutionGrant, PeerExecutionDenialReason>> {
+        self.admit_assistant_work_with_portal_authority(admission, true)
+    }
+
+    fn admit_assistant_work_with_portal_authority(
+        &self,
+        admission: AssistantWorkAdmission<'_>,
+        portal_authority: bool,
+    ) -> Result<Result<TaskExecutionGrant, PeerExecutionDenialReason>> {
         let peer_device_id = validate_identity("peer device id", admission.peer_device_id)?;
         let peer_pairing_id = validate_identity("peer pairing id", admission.peer_pairing_id)?;
         let work_id = validate_identity("work id", admission.work_id)?;
@@ -602,7 +631,12 @@ impl PeerExecutionPolicyStore {
             admission.legacy_task_request_granted,
             now,
         );
-        let decision = evaluate_assistant_work(&view.policy, &admission, now);
+        let decision = evaluate_assistant_work(&view.policy, &admission, now, portal_authority);
+        let audit_revision = if portal_authority {
+            0
+        } else {
+            view.policy.revision
+        };
         let (decision_label, reason) = match &decision {
             Ok(_) => ("allowed", "assistant_work_allowed".to_string()),
             Err(reason) => ("denied", reason.code().to_string()),
@@ -615,27 +649,58 @@ impl PeerExecutionPolicyStore {
                 action: "task.admission".to_string(),
                 peer_device_id: peer_device_id.to_string(),
                 scope: "assistant_work".to_string(),
-                policy_revision: view.policy.revision,
+                policy_revision: audit_revision,
                 decision: decision_label.to_string(),
                 work_id: Some(work_id.to_string()),
                 reason,
-                actor: format!("peer:{peer_device_id}"),
+                actor: if portal_authority {
+                    format!("portal:{peer_device_id}")
+                } else {
+                    format!("peer:{peer_device_id}")
+                },
             },
         );
         self.save(&file)?;
         Ok(decision.map(|mut grant| {
-            grant.policy_source = view.source;
+            if portal_authority {
+                grant.policy_revision = 0;
+                // No peer policy contributed authority; authorization_role
+                // records the portal basis without changing the wire enum.
+                grant.policy_source = PeerExecutionPolicySource::DefaultDeny;
+                grant.authorization_role = Some(PairingRole::Portal);
+            } else {
+                grant.policy_source = view.source;
+                grant.authorization_role = Some(PairingRole::Peer);
+            }
             grant
         }))
     }
 
-    /// Admit one portable, environment-backed Coder undertaking. Stored
-    /// policy is mandatory: the legacy `task.request` compatibility grant is
-    /// intentionally unable to acquire project, environment, root, network,
-    /// or secret authority.
+    /// Admit one portable, environment-backed Coder undertaking from a peer.
+    /// The compatibility `task.request` transport grant alone cannot acquire
+    /// project, environment, root, network, or secret authority.
     pub fn admit_portable_coder(
         &self,
         admission: PortableCoderAdmission<'_>,
+    ) -> Result<Result<TaskExecutionGrant, PeerExecutionDenialReason>> {
+        self.admit_portable_coder_with_portal_authority(admission, false)
+    }
+
+    /// Admit a portable Coder environment requested by a full portal. The
+    /// portal's direct role replaces peer allowlists, while the grant remains
+    /// bound to the exact project, root, secrets, tools, network mode, and
+    /// lifetime requested for this environment.
+    pub fn admit_portal_portable_coder(
+        &self,
+        admission: PortableCoderAdmission<'_>,
+    ) -> Result<Result<TaskExecutionGrant, PeerExecutionDenialReason>> {
+        self.admit_portable_coder_with_portal_authority(admission, true)
+    }
+
+    fn admit_portable_coder_with_portal_authority(
+        &self,
+        admission: PortableCoderAdmission<'_>,
+        portal_authority: bool,
     ) -> Result<Result<TaskExecutionGrant, PeerExecutionDenialReason>> {
         let peer_device_id = validate_identity("peer device id", admission.peer_device_id)?;
         let peer_pairing_id = validate_identity("peer pairing id", admission.peer_pairing_id)?;
@@ -670,7 +735,14 @@ impl PeerExecutionPolicyStore {
         let mut file = self.load()?;
         let view = resolve_policy(&file, peer_device_id, peer_pairing_id, false, now);
         let policy = &view.policy;
-        let decision = if !policy.enabled {
+        let decision = if portal_authority {
+            Ok(portable_coder_task_grant(
+                &admission,
+                0,
+                PairingRole::Portal,
+                Some(admission.request_expires_at),
+            ))
+        } else if !policy.enabled {
             Err(PeerExecutionDenialReason::PolicyDisabled)
         } else if policy.is_expired_at(now) {
             Err(PeerExecutionDenialReason::PolicyExpired)
@@ -702,47 +774,14 @@ impl PeerExecutionPolicyStore {
                     .map(|expiry| expiry.min(admission.request_expires_at))
                     .unwrap_or(admission.request_expires_at),
             );
-            Ok(TaskExecutionGrant {
-                schema_version: TASK_EXECUTION_GRANT_SCHEMA_VERSION,
-                grant_id: task_grant_id(peer_device_id, work_id, policy.revision),
-                peer_device_id: peer_device_id.to_string(),
-                peer_pairing_id: peer_pairing_id.to_string(),
-                origin_runtime_id: admission.origin_runtime_id.to_string(),
-                destination_runtime_id: admission.destination_runtime_id.to_string(),
-                parent_session_id: admission.parent_session_id.to_string(),
-                bot_id: None,
-                work_id: work_id.to_string(),
-                correlation_id: admission.correlation_id.to_string(),
-                worker_intent: "coder".to_string(),
-                project_id: Some(project_id.to_string()),
-                work_environment_materialization: true,
-                authorized_root_ref: Some(root_ref.to_string()),
-                authorized_secret_refs: admission
-                    .secret_refs
-                    .iter()
-                    .map(|value| (*value).to_string())
-                    .collect(),
-                policy_revision: policy.revision,
-                policy_source: PeerExecutionPolicySource::Stored,
-                requested_tool_domains: vec!["code".to_string(), "turn".to_string()],
-                effective_tool_domains: vec!["code".to_string(), "turn".to_string()],
-                requested_tool_names: admission
-                    .requested_tool_names
-                    .iter()
-                    .map(|value| (*value).to_string())
-                    .collect(),
-                effective_tool_names: admission
-                    .requested_tool_names
-                    .iter()
-                    .map(|value| (*value).to_string())
-                    .collect(),
-                requested_world_ids: Vec::new(),
-                effective_world_ids: Vec::new(),
-                network_policy: admission.requested_network_policy,
-                issued_at: admission.request_issued_at,
+            Ok(portable_coder_task_grant(
+                &admission,
+                policy.revision,
+                PairingRole::Peer,
                 expires_at,
-            })
+            ))
         };
+        let audit_revision = if portal_authority { 0 } else { policy.revision };
         let (decision_label, reason) = match &decision {
             Ok(_) => ("allowed", "portable_coder_allowed".to_string()),
             Err(reason) => ("denied", reason.code().to_string()),
@@ -755,11 +794,15 @@ impl PeerExecutionPolicyStore {
                 action: "task.admission".to_string(),
                 peer_device_id: peer_device_id.to_string(),
                 scope: "portable_coder".to_string(),
-                policy_revision: policy.revision,
+                policy_revision: audit_revision,
                 decision: decision_label.to_string(),
                 work_id: Some(work_id.to_string()),
                 reason,
-                actor: format!("peer:{peer_device_id}"),
+                actor: if portal_authority {
+                    format!("portal:{peer_device_id}")
+                } else {
+                    format!("peer:{peer_device_id}")
+                },
             },
         );
         self.save(&file)?;
@@ -767,12 +810,11 @@ impl PeerExecutionPolicyStore {
     }
 
     /// Revalidate a previously admitted remote Coder grant at a mutation
-    /// boundary. The immutable grant remains provenance, while the current
-    /// destination-owned policy may narrow or revoke future operations.
+    /// boundary. Peer grants are checked against current destination policy;
+    /// portal grants rely on their pairing role and task-scoped grant.
     pub fn coder_grant_is_active(&self, grant: &TaskExecutionGrant) -> Result<bool> {
         if grant.worker_intent != "coder"
             || grant.expires_at.is_some_and(|expiry| expiry <= Utc::now())
-            || grant.policy_source != PeerExecutionPolicySource::Stored
         {
             return Ok(false);
         }
@@ -784,6 +826,16 @@ impl PeerExecutionPolicyStore {
         else {
             return Ok(false);
         };
+        if grant.authorization_role == Some(PairingRole::Portal) {
+            return Ok(!grant.work_environment_materialization
+                || grant
+                    .authorized_root_ref
+                    .as_ref()
+                    .is_some_and(|root_ref| !root_ref.trim().is_empty()));
+        }
+        if grant.policy_source != PeerExecutionPolicySource::Stored {
+            return Ok(false);
+        }
         let view = self.policy_for_peer(&grant.peer_device_id, &grant.peer_pairing_id, false)?;
         let policy = view.policy;
         Ok(view.source == PeerExecutionPolicySource::Stored
@@ -812,7 +864,6 @@ impl PeerExecutionPolicyStore {
     pub fn world_grant_is_active(&self, grant: &TaskExecutionGrant) -> Result<bool> {
         if grant.schema_version != TASK_EXECUTION_GRANT_SCHEMA_VERSION
             || grant.expires_at.is_some_and(|expiry| expiry <= Utc::now())
-            || grant.policy_source != PeerExecutionPolicySource::Stored
             || grant.effective_world_ids.is_empty()
             || !grant
                 .effective_tool_domains
@@ -820,6 +871,12 @@ impl PeerExecutionPolicyStore {
                 .any(|domain| domain == "world")
             || crate::turn_scope::validate_world_ids(&grant.effective_world_ids).is_err()
         {
+            return Ok(false);
+        }
+        if grant.authorization_role == Some(PairingRole::Portal) {
+            return Ok(true);
+        }
+        if grant.policy_source != PeerExecutionPolicySource::Stored {
             return Ok(false);
         }
         let view = self.policy_for_peer(&grant.peer_device_id, &grant.peer_pairing_id, false)?;
@@ -1064,11 +1121,12 @@ fn evaluate_assistant_work(
     policy: &PeerExecutionPolicy,
     admission: &AssistantWorkAdmission<'_>,
     now: DateTime<Utc>,
+    portal_authority: bool,
 ) -> Result<TaskExecutionGrant, PeerExecutionDenialReason> {
-    if !policy.enabled {
+    if !portal_authority && !policy.enabled {
         return Err(PeerExecutionDenialReason::PolicyDisabled);
     }
-    if policy.is_expired_at(now) {
+    if !portal_authority && policy.is_expired_at(now) {
         return Err(PeerExecutionDenialReason::PolicyExpired);
     }
     if admission
@@ -1078,30 +1136,50 @@ fn evaluate_assistant_work(
         return Err(PeerExecutionDenialReason::RequestExpired);
     }
     let is_coder = admission.worker_intent.eq_ignore_ascii_case("coder");
+    if admission.project_setup_requested && !is_coder {
+        return Err(PeerExecutionDenialReason::ProjectDenied);
+    }
     if is_coder {
-        if !policy.coder_work {
+        if !portal_authority && !policy.coder_work {
             return Err(PeerExecutionDenialReason::CoderWorkDenied);
         }
         let Some(project_id) = admission.project_id else {
-            return Err(PeerExecutionDenialReason::ProjectDenied);
+            if !(portal_authority && admission.project_setup_requested) {
+                return Err(PeerExecutionDenialReason::ProjectDenied);
+            }
+            return finish_assistant_work_admission(policy, admission, now, portal_authority);
         };
-        if !policy.allowed_project_ids.contains(project_id) {
+        if !portal_authority && !policy.allowed_project_ids.contains(project_id) {
             return Err(PeerExecutionDenialReason::ProjectDenied);
         }
-    } else if !policy.assistant_work {
+    } else if !portal_authority && !policy.assistant_work {
         return Err(PeerExecutionDenialReason::AssistantWorkDenied);
     }
+    finish_assistant_work_admission(policy, admission, now, portal_authority)
+}
+
+fn finish_assistant_work_admission(
+    policy: &PeerExecutionPolicy,
+    admission: &AssistantWorkAdmission<'_>,
+    now: DateTime<Utc>,
+    portal_authority: bool,
+) -> Result<TaskExecutionGrant, PeerExecutionDenialReason> {
+    let is_coder = admission.worker_intent.eq_ignore_ascii_case("coder");
     let requested = admission
         .requested_tool_domains
         .iter()
         .map(|value| value.trim().to_ascii_lowercase())
         .filter(|value| !value.is_empty())
         .collect::<BTreeSet<_>>();
-    let mut effective = requested
-        .intersection(&policy.allowed_tool_domains)
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    if policy.network_policy == PeerNetworkPolicy::Deny {
+    let mut effective = if portal_authority {
+        requested.clone()
+    } else {
+        requested
+            .intersection(&policy.allowed_tool_domains)
+            .cloned()
+            .collect::<BTreeSet<_>>()
+    };
+    if !portal_authority && policy.network_policy == PeerNetworkPolicy::Deny {
         effective.remove("web");
     }
     if !effective.contains("turn") || (is_coder && !effective.contains("code")) {
@@ -1128,17 +1206,23 @@ fn evaluate_assistant_work(
         return Err(PeerExecutionDenialReason::ToolDomainDenied);
     }
     let effective_world_ids = requested_world_ids.clone();
-    let expires_at = match (policy.expires_at, admission.task_expires_at) {
-        (Some(policy_expiry), Some(task_expiry)) => Some(policy_expiry.min(task_expiry)),
-        (Some(policy_expiry), None) => Some(policy_expiry),
-        (None, task_expiry) => task_expiry,
+    let expires_at = if portal_authority {
+        admission.task_expires_at
+    } else {
+        match (policy.expires_at, admission.task_expires_at) {
+            (Some(policy_expiry), Some(task_expiry)) => Some(policy_expiry.min(task_expiry)),
+            (Some(policy_expiry), None) => Some(policy_expiry),
+            (None, task_expiry) => task_expiry,
+        }
     };
-    let grant_id = task_grant_id(admission.peer_device_id, admission.work_id, policy.revision);
+    let policy_revision = if portal_authority { 0 } else { policy.revision };
+    let grant_id = task_grant_id(admission.peer_device_id, admission.work_id, policy_revision);
     Ok(TaskExecutionGrant {
         schema_version: TASK_EXECUTION_GRANT_SCHEMA_VERSION,
         grant_id,
         peer_device_id: admission.peer_device_id.to_string(),
         peer_pairing_id: admission.peer_pairing_id.to_string(),
+        authorization_role: None,
         origin_runtime_id: admission.origin_runtime_id.to_string(),
         destination_runtime_id: admission.destination_runtime_id.to_string(),
         parent_session_id: admission.parent_session_id.to_string(),
@@ -1150,7 +1234,7 @@ fn evaluate_assistant_work(
         work_environment_materialization: false,
         authorized_root_ref: None,
         authorized_secret_refs: Vec::new(),
-        policy_revision: policy.revision,
+        policy_revision,
         policy_source: PeerExecutionPolicySource::Stored,
         requested_tool_domains: requested.into_iter().collect(),
         effective_tool_domains: effective.into_iter().collect(),
@@ -1158,10 +1242,70 @@ fn evaluate_assistant_work(
         effective_tool_names,
         requested_world_ids,
         effective_world_ids,
-        network_policy: policy.network_policy,
+        network_policy: if portal_authority {
+            PeerNetworkPolicy::Unrestricted
+        } else {
+            policy.network_policy
+        },
         issued_at: now,
         expires_at,
     })
+}
+
+fn portable_coder_task_grant(
+    admission: &PortableCoderAdmission<'_>,
+    policy_revision: u64,
+    authorization_role: PairingRole,
+    expires_at: Option<DateTime<Utc>>,
+) -> TaskExecutionGrant {
+    // Keep the existing policy-source wire enum compatible; the optional
+    // authorization_role field carries the portal grant's actual basis.
+    let policy_source = if authorization_role.allows_full_portal() {
+        PeerExecutionPolicySource::DefaultDeny
+    } else {
+        PeerExecutionPolicySource::Stored
+    };
+    TaskExecutionGrant {
+        schema_version: TASK_EXECUTION_GRANT_SCHEMA_VERSION,
+        grant_id: task_grant_id(admission.peer_device_id, admission.work_id, policy_revision),
+        peer_device_id: admission.peer_device_id.to_string(),
+        peer_pairing_id: admission.peer_pairing_id.to_string(),
+        authorization_role: Some(authorization_role),
+        origin_runtime_id: admission.origin_runtime_id.to_string(),
+        destination_runtime_id: admission.destination_runtime_id.to_string(),
+        parent_session_id: admission.parent_session_id.to_string(),
+        bot_id: None,
+        work_id: admission.work_id.to_string(),
+        correlation_id: admission.correlation_id.to_string(),
+        worker_intent: "coder".to_string(),
+        project_id: Some(admission.project_id.to_string()),
+        work_environment_materialization: true,
+        authorized_root_ref: Some(admission.root_ref.to_string()),
+        authorized_secret_refs: admission
+            .secret_refs
+            .iter()
+            .map(|value| (*value).to_string())
+            .collect(),
+        policy_revision,
+        policy_source,
+        requested_tool_domains: vec!["code".to_string(), "turn".to_string()],
+        effective_tool_domains: vec!["code".to_string(), "turn".to_string()],
+        requested_tool_names: admission
+            .requested_tool_names
+            .iter()
+            .map(|value| (*value).to_string())
+            .collect(),
+        effective_tool_names: admission
+            .requested_tool_names
+            .iter()
+            .map(|value| (*value).to_string())
+            .collect(),
+        requested_world_ids: Vec::new(),
+        effective_world_ids: Vec::new(),
+        network_policy: admission.requested_network_policy,
+        issued_at: admission.request_issued_at,
+        expires_at,
+    }
 }
 
 fn network_policy_permits(allowed: PeerNetworkPolicy, requested: PeerNetworkPolicy) -> bool {
@@ -1291,6 +1435,7 @@ mod tests {
             correlation_id: "correlation-1",
             worker_intent: "research",
             project_id: None,
+            project_setup_requested: false,
             requested_tool_domains: &SAFE_ASSISTANT_TOOL_DOMAINS,
             requested_tool_names: &TEST_ASSISTANT_TOOL_NAMES,
             requested_world_ids: &[],
@@ -1315,6 +1460,7 @@ mod tests {
             correlation_id: "correlation-1",
             worker_intent: "coder",
             project_id: Some(project),
+            project_setup_requested: false,
             requested_tool_domains: &TEST_CODER_TOOL_DOMAINS,
             requested_tool_names: &TEST_CODER_TOOL_NAMES,
             requested_world_ids: &[],
@@ -1742,6 +1888,7 @@ mod tests {
                 correlation_id: "correlation-world",
                 worker_intent: "research",
                 project_id: None,
+                project_setup_requested: false,
                 requested_tool_domains: &requested_domains,
                 requested_tool_names: &requested_tools,
                 requested_world_ids: &requested_world_ids,
