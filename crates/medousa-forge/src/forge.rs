@@ -16,28 +16,12 @@ use crate::catalog::{CatalogPage, ForgeCatalog, SlugReservationJournal};
 use crate::compaction;
 use crate::error::{ForgeError, Result};
 
-fn executor_session_id(executor: &ExecutorDescriptor) -> Option<&str> {
-    executor
-        .detail
-        .get("session_id")
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-}
-
 fn coder_collaboration_allowed(item: &WorkItem, incoming: &ExecutorDescriptor) -> bool {
-    if incoming.kind != "medousa-coder" {
-        return false;
-    }
-    let Some(session_id) = executor_session_id(incoming) else {
-        return false;
-    };
-    item.active_attempt_ids().into_iter().all(|attempt_id| {
-        item.attempt(attempt_id).is_some_and(|attempt| {
-            attempt.executor.kind == "medousa-coder"
-                && executor_session_id(&attempt.executor) == Some(session_id)
+    incoming.kind == "medousa-coder"
+        && item.active_attempt_ids().into_iter().all(|attempt_id| {
+            item.attempt(attempt_id)
+                .is_some_and(|attempt| attempt.executor.kind == "medousa-coder")
         })
-    })
 }
 use crate::events::{EventPayload, OperationKind, SideEffect, TransitionEvent};
 use crate::execution::ForgeExecutionService;
@@ -1161,7 +1145,7 @@ impl Forge {
         Ok(())
     }
 
-    /// Adopt an ordinary principal commit made between attached-checkout
+    /// Adopt an ordinary principal commit made during or between attached-checkout
     /// executions. A same-branch fast-forward is expected user activity, not
     /// environment drift. History rewrites and branch switches still require
     /// an explicit reattachment so stale authority cannot silently move.
@@ -1324,11 +1308,10 @@ impl Forge {
         self.begin_attempt(work_id, executor, pid, actor)
     }
 
-    /// Begin a Medousa Coder lease while another Coder from the same chat is
-    /// using the undertaking workspace. Forge fences each execution record;
-    /// the Coder shared-space claim layer arbitrates overlapping mutations in
-    /// the shared directory. Other executors and sessions retain exclusive
-    /// workspace custody.
+    /// Begin a Medousa Coder lease while other Coders are using the undertaking
+    /// workspace. Forge fences each execution record; the work-scoped Coder
+    /// shared-space claim layer arbitrates overlapping mutations across chats
+    /// and workers. Executors outside that protocol retain exclusive custody.
     pub fn begin_collaborative_workspace_attempt(
         &self,
         work_id: &WorkId,
@@ -1392,14 +1375,12 @@ impl Forge {
             ));
         }
         if !isolated {
-            if !item.has_active_attempts() {
-                item = self.refresh_attached_checkout_after_commit_locked(&item, actor)?;
-            }
+            item = self.refresh_attached_checkout_after_commit_locked(&item, actor)?;
             if item.has_active_attempts()
                 && !(allow_coder_collaboration && coder_collaboration_allowed(&item, &executor))
             {
-                return Err(ForgeError::EnvironmentDrift(
-                    "the undertaking workspace already has an active executor".into(),
+                return Err(ForgeError::WorkspaceBusy(
+                    "the undertaking workspace is held by an executor outside Coder shared-space coordination".into(),
                 ));
             }
             let environment = item.environment.as_ref().ok_or_else(|| {
@@ -2381,7 +2362,7 @@ impl Forge {
         // must acknowledge cancellation before Forge releases the boundary;
         // otherwise a live process could keep editing after the item closes.
         if item.uses_attached_checkout() && item.has_active_attempts() {
-            return Err(ForgeError::EnvironmentDrift(
+            return Err(ForgeError::WorkspaceBusy(
                 "current checkout still has an active executor; stop it before closing the project"
                     .into(),
             ));
@@ -3651,7 +3632,7 @@ mod tests {
     }
 
     #[test]
-    fn attached_checkout_allows_same_chat_coder_collaboration_only() {
+    fn attached_checkout_allows_cross_session_coder_collaboration_only() {
         let fx = fixture();
         let forge = Forge::open(&fx.forge_root).unwrap();
         let item = forge
@@ -3683,18 +3664,30 @@ mod tests {
             )
             .unwrap();
 
-        assert!(matches!(
-            forge.begin_collaborative_workspace_attempt(
+        fs::write(
+            fx.repo.join("owner-commit.txt"),
+            "committed while Coder is active\n",
+        )
+        .unwrap();
+        fx.git.run(&fx.repo, &["add", "-A"]).unwrap();
+        let committed_head = fx
+            .git
+            .commit_checkpoint(&fx.repo, "principal commit", &CheckpointAuthor::default())
+            .unwrap();
+
+        let (item, third) = forge
+            .begin_collaborative_workspace_attempt(
                 &item.id,
                 medousa_coder_executor("session-b", "turn-c"),
                 None,
                 &actor(),
-            ),
-            Err(ForgeError::EnvironmentDrift(message)) if message.contains("active executor")
-        ));
+            )
+            .unwrap();
+        assert_eq!(git_target(&item).unwrap().base_oid, committed_head);
         assert!(matches!(
             forge.begin_workspace_attempt(&item.id, script_executor(), None, &actor()),
-            Err(ForgeError::EnvironmentDrift(message)) if message.contains("active executor")
+            Err(ForgeError::WorkspaceBusy(message))
+                if message.contains("outside Coder shared-space coordination")
         ));
 
         forge
@@ -3703,6 +3696,10 @@ mod tests {
         assert!(forge.load(&item.id).unwrap().has_active_attempts());
         forge
             .interrupt_attempt(&second, RecoveryDisposition::RestartAllowed, &actor())
+            .unwrap();
+        assert!(forge.load(&item.id).unwrap().has_active_attempts());
+        forge
+            .interrupt_attempt(&third, RecoveryDisposition::RestartAllowed, &actor())
             .unwrap();
         assert!(!forge.load(&item.id).unwrap().has_active_attempts());
     }
@@ -3735,7 +3732,7 @@ mod tests {
 
         assert!(matches!(
             forge.discard(&item.id, &actor()),
-            Err(ForgeError::EnvironmentDrift(message)) if message.contains("active executor")
+            Err(ForgeError::WorkspaceBusy(message)) if message.contains("active executor")
         ));
         assert_eq!(
             fs::read_to_string(fx.repo.join("coder.txt")).unwrap(),
@@ -4091,8 +4088,8 @@ mod tests {
 
         assert!(matches!(
             forge.begin_workspace_attempt(&item.id, script_executor(), None, &actor()),
-            Err(ForgeError::EnvironmentDrift(message))
-                if message.contains("workspace already has an active executor")
+            Err(ForgeError::WorkspaceBusy(message))
+                if message.contains("outside Coder shared-space coordination")
         ));
         forge
             .interrupt_attempt(&first, RecoveryDisposition::RestartAllowed, &actor())

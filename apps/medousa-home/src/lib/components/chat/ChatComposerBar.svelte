@@ -442,7 +442,7 @@
             {mobile}
             disabled={blocked}
             showWorkshop={true}
-            showStashes={mobile}
+            showStashes
             mode={agentRuntime}
             model={`${chatModel.provider}:${chatModel.model}`}
             onProfile={() => {
@@ -580,7 +580,7 @@
         <ComposerPlusMenu
           {mobile}
           disabled={blocked}
-          showStashes={mobile}
+          showStashes
           mode={agentRuntime}
           model={`${chatModel.provider}:${chatModel.model}`}
           onProfile={() => {

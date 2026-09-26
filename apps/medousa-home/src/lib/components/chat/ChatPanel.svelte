@@ -22,7 +22,6 @@
   import ShellSidebarExpandButton from "$lib/components/layout/ShellSidebarExpandButton.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
   import ScriptChatContextChip from "$lib/components/grapheme/ScriptChatContextChip.svelte";
-  import UndertakingContextChip from "$lib/components/work/UndertakingContextChip.svelte";
   import { undertakings } from "$lib/stores/undertakings.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { activeCodeContext } from "$lib/utils/undertakingWorkspace";
@@ -820,7 +819,6 @@
         >
           <h1 class="truncate text-sm font-semibold text-surface-50">{sessionLabel}</h1>
         </button>
-        <UndertakingContextChip chatOnly header />
       {/if}
       {#if !mobile && !popout && isTauri()}
         <button
@@ -1171,7 +1169,6 @@
           configOptions={agentSession.agentConfigOptions}
           pending={agentSession.preparingAgent}
           disabled={connection.offline || chat.composerBlocked}
-          model={`${chatModel.provider}:${chatModel.model}`}
           onChange={agentSession.onRuntimeChange}
           onConfigChange={agentSession.updateAgentConfig}
         />

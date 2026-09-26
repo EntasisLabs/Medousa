@@ -143,8 +143,6 @@
   const deletions = $derived(
     receiptFiles.reduce((total, file) => total + (file.deletions ?? 0), 0),
   );
-  const visibleFiles = $derived(receiptFiles.slice(0, 3));
-  const moreFileCount = $derived(Math.max(0, expectedFileCount - visibleFiles.length));
   const isReady = $derived(Boolean(sealedReview));
   const verification = $derived(sealedReview?.synthesis.verification ?? null);
   const risk = $derived(sealedReview?.synthesis.risk ?? null);
@@ -346,8 +344,12 @@
         {/if}
       </span>
       <div class="chat-change-receipt-heading">
-        <p>{isReady ? "Ready for review" : "Working changes"}</p>
-        <span>{expectedFileCount} {expectedFileCount === 1 ? "file" : "files"}</span>
+        <p>
+          {expectedFileCount} {isReady
+            ? expectedFileCount === 1 ? "change ready to review" : "changes ready to review"
+            : expectedFileCount === 1 ? "working change" : "working changes"}
+        </p>
+        <span class="truncate">{projectTitle}</span>
       </div>
       {#if isReady}
         <div
@@ -370,49 +372,6 @@
       </button>
     </header>
 
-    {#if isReady && (verification || risk)}
-      <div class="chat-change-signals">
-        {#if verification}
-          <span class:chat-change-signal--success={verification.success}>
-            {#if verification.success}<Check size={11} />{:else}<CircleAlert size={11} />{/if}
-            {verification.success ? "Checks passed" : "Checks need attention"}
-          </span>
-        {/if}
-        {#if risk}
-          <span class:chat-change-signal--attention={risk !== "low"}>{risk} risk</span>
-        {/if}
-      </div>
-    {/if}
-
-    <ul class="chat-change-files">
-      {#each visibleFiles as file (file.path)}
-        <li>
-          <span class="chat-change-file-name">{basename(file.path)}</span>
-          {#if parentPath(file.path)}
-            <span class="chat-change-file-parent">{parentPath(file.path)}</span>
-          {/if}
-          {#if file.additions != null && file.deletions != null}
-            <span class="chat-change-file-stats">
-              <span class="chat-change-add">+{file.additions}</span>
-              <span class="chat-change-del">−{file.deletions}</span>
-            </span>
-          {:else if file.status}
-            <span class="chat-change-file-status">{statusLabel(file.status)}</span>
-          {/if}
-        </li>
-      {/each}
-    </ul>
-
-    {#if moreFileCount > 0 || loadError}
-      <footer class="chat-change-receipt-footer">
-        {#if moreFileCount > 0}
-          <button type="button" onclick={() => (sheetOpen = true)}>
-            Show {moreFileCount} more {moreFileCount === 1 ? "file" : "files"}
-          </button>
-        {/if}
-        {#if loadError}<span title={loadError}>Preview incomplete</span>{/if}
-      </footer>
-    {/if}
   </section>
 {:else if loading}
   <div class="chat-change-loading" aria-label="Loading working changes">

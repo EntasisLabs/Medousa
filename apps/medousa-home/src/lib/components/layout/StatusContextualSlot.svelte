@@ -3,6 +3,7 @@
   import { untrack } from "svelte";
   import { CircleAlert, CircleCheck } from "@lucide/svelte";
   import CodeStatusPopover from "$lib/components/layout/CodeStatusPopover.svelte";
+  import StatusChatControls from "$lib/components/layout/StatusChatControls.svelte";
   import { graphemeScriptEditor } from "$lib/stores/graphemeScriptEditor.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
@@ -133,7 +134,9 @@
   });
 </script>
 
-{#if codeReview}
+{#if layout.desktopSurface === "chat"}
+  <StatusChatControls />
+{:else if codeReview}
   <div class="status-contextual status-contextual--code" aria-label="Code review status">
     {#if codeReview.synthesis.verification}
       <span
