@@ -6,12 +6,13 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::str::FromStr;
 
 pub const SYSTEM_ONE_SCHEMA_VERSION: u8 = 1;
 pub const SYSTEM_ONE_MODE_ENV: &str = "MEDOUSA_SYSTEM_ONE_MODE";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TurnIntent {
     Conversational,
@@ -59,6 +60,9 @@ pub struct SystemOneDecision {
     pub confidence: f32,
     pub reason: String,
     pub engine: String,
+    /// Full typed distribution when the engine exposes calibrated probabilities.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub probabilities: BTreeMap<TurnIntent, f32>,
 }
 
 impl SystemOneDecision {
@@ -96,7 +100,19 @@ impl SystemOneDecision {
             confidence,
             reason,
             engine,
+            probabilities: BTreeMap::new(),
         })
+    }
+
+    pub fn with_probabilities(
+        mut self,
+        probabilities: BTreeMap<TurnIntent, f32>,
+    ) -> Result<Self, SystemOneError> {
+        if !probabilities_are_valid(&probabilities) {
+            return Err(SystemOneError::InvalidProbabilities);
+        }
+        self.probabilities = probabilities;
+        Ok(self)
     }
 
     pub fn is_valid(&self) -> bool {
@@ -104,7 +120,24 @@ impl SystemOneDecision {
             && self.confidence.is_finite()
             && (0.0..=1.0).contains(&self.confidence)
             && !self.engine.trim().is_empty()
+            && (self.probabilities.is_empty() || probabilities_are_valid(&self.probabilities))
     }
+}
+
+fn probabilities_are_valid(probabilities: &BTreeMap<TurnIntent, f32>) -> bool {
+    const INTENTS: [TurnIntent; 4] = [
+        TurnIntent::Conversational,
+        TurnIntent::ToolRequired,
+        TurnIntent::Clarify,
+        TurnIntent::Mixed,
+    ];
+    probabilities.len() == INTENTS.len()
+        && INTENTS.iter().all(|intent| {
+            probabilities
+                .get(intent)
+                .is_some_and(|value| value.is_finite() && (0.0..=1.0).contains(value))
+        })
+        && (probabilities.values().sum::<f32>() - 1.0).abs() <= 0.02
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -278,6 +311,8 @@ pub enum SystemOneError {
     InvalidConfidence,
     #[error("System 1 engine id is required")]
     MissingEngine,
+    #[error("System 1 probabilities must cover all intents and sum to one")]
+    InvalidProbabilities,
     #[error("System 1 engine failed: {0}")]
     Engine(String),
 }
@@ -348,10 +383,34 @@ mod tests {
             confidence: f32::NAN,
             reason: "bad".to_string(),
             engine: "test".to_string(),
+            probabilities: BTreeMap::new(),
         };
         assert_eq!(
             SystemOnePolicy::default().recommend(&malformed),
             SystemOneRecommendation::KeepHeuristic
+        );
+    }
+
+    #[test]
+    fn decision_accepts_only_complete_probability_distributions() {
+        let complete = BTreeMap::from([
+            (TurnIntent::Conversational, 0.1),
+            (TurnIntent::ToolRequired, 0.7),
+            (TurnIntent::Clarify, 0.1),
+            (TurnIntent::Mixed, 0.1),
+        ]);
+        let classified = decision(TurnIntent::ToolRequired, 0.8)
+            .with_probabilities(complete)
+            .unwrap();
+        assert!(classified.is_valid());
+
+        let incomplete = BTreeMap::from([
+            (TurnIntent::Conversational, 0.2),
+            (TurnIntent::ToolRequired, 0.8),
+        ]);
+        assert_eq!(
+            decision(TurnIntent::ToolRequired, 0.8).with_probabilities(incomplete),
+            Err(SystemOneError::InvalidProbabilities)
         );
     }
 

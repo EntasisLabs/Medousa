@@ -698,6 +698,21 @@ pub async fn classify_turn_intent_with_model(
     prompt: &str,
     recent_context: &str,
 ) -> Option<IntentClassification> {
+    match super::laya_system_one::LayaSystemOneEngine::from_env_if_selected() {
+        Ok(Some(engine)) => {
+            if let Some(decision) =
+                classify_turn_intent_with_engine(engine, prompt, recent_context).await
+            {
+                return Some(decision);
+            }
+            tracing::warn!("Laya System 1 decision failed validation; falling back to host model");
+        }
+        Ok(None) => {}
+        Err(error) => {
+            tracing::warn!(%error, "Laya System 1 configuration failed; falling back to host model");
+        }
+    }
+
     classify_turn_intent_with_engine(
         &HostModelSystemOneEngine { pipeline },
         prompt,
