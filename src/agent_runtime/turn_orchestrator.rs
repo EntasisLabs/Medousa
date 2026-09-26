@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use genai::chat::{ChatMessage, ChatRequest};
-use medousa_runtime::MedousaToolLoopPipeline;
+use medousa_runtime::{
+    MedousaToolLoopPipeline, SystemOneDecision, SystemOneMode, SystemOnePolicy,
+    SystemOneRecommendation, TurnIntent,
+};
 use serde_json::Value;
 use stasis::application::orchestration::prompt_pipeline::{
     PromptExecutionContext, PromptExecutionPipeline,
@@ -85,16 +88,7 @@ const INTENT_CLASSIFIER_MAX_PROMPT_CHARS: usize = 900;
 const INTENT_CLASSIFIER_MAX_CONTEXT_TURNS: usize = 4;
 const INTENT_CLASSIFIER_MAX_CONTEXT_CHARS: usize = 1400;
 const INTENT_CLASSIFIER_CONTEXT_LINE_CHARS: usize = 260;
-const INTENT_CLASSIFIER_CONFIDENCE_LOW: f32 = 0.45;
-const INTENT_CLASSIFIER_CONFIDENCE_CONVERSATIONAL: f32 = 0.55;
-const INTENT_CLASSIFIER_CONFIDENCE_TOOL_REQUIRED: f32 = 0.60;
-
-#[derive(Debug, Clone)]
-pub struct IntentClassification {
-    pub intent: String,
-    pub confidence: f32,
-    pub reason: String,
-}
+pub type IntentClassification = SystemOneDecision;
 
 #[derive(Debug, Clone)]
 pub struct PreparedTurnPrompt {
@@ -651,25 +645,17 @@ pub async fn classify_turn_intent_with_model(
     let parsed: Value = serde_json::from_str(&raw).ok()?;
     let intent = parsed
         .get("intent")
-        .and_then(|value| value.as_str())
-        .map(|value| value.trim().to_ascii_lowercase())?;
-    let confidence = parsed
-        .get("confidence")
-        .and_then(|value| value.as_f64())
-        .map(|value| value as f32)
-        .unwrap_or(0.0)
-        .clamp(0.0, 1.0);
+        .and_then(|value| value.as_str())?
+        .parse::<TurnIntent>()
+        .ok()?;
+    let confidence = parsed.get("confidence").and_then(|value| value.as_f64())? as f32;
     let reason = parsed
         .get("reason")
         .and_then(|value| value.as_str())
-        .map(|value| truncate_text_for_budget(value, 120))
+        .map(|value| truncate_text_for_budget(value, 160))
         .unwrap_or_else(|| "none".to_string());
 
-    Some(IntentClassification {
-        intent,
-        confidence,
-        reason,
-    })
+    SystemOneDecision::new(intent, confidence, reason, "host-model-classifier").ok()
 }
 
 pub fn apply_intent_classifier_override(
@@ -678,51 +664,29 @@ pub fn apply_intent_classifier_override(
     classifier_restricted_max_tool_rounds: usize,
 ) -> TurnActivationDecision {
     let restricted = classifier_restricted_max_tool_rounds.max(1);
-    if classification.confidence < INTENT_CLASSIFIER_CONFIDENCE_LOW {
-        return TurnActivationDecision {
+    match SystemOnePolicy::default().recommend(classification) {
+        SystemOneRecommendation::PreferNoTools => TurnActivationDecision {
             turn_class: "a",
             tool_call_mode: ToolCallMode::Strict,
             max_tool_rounds: restricted,
             enforce_no_tools: true,
-            reason: "classifier_low_confidence_bias_no_tools",
-        };
-    }
-
-    match classification.intent.as_str() {
-        "conversational"
-            if classification.confidence >= INTENT_CLASSIFIER_CONFIDENCE_CONVERSATIONAL =>
-        {
-            TurnActivationDecision {
-                turn_class: "a",
-                tool_call_mode: ToolCallMode::Strict,
-                max_tool_rounds: restricted,
-                enforce_no_tools: true,
-                reason: "classifier_conversational",
-            }
-        }
-        "clarify" => TurnActivationDecision {
+            reason: "system_one_conversational",
+        },
+        SystemOneRecommendation::AskClarification => TurnActivationDecision {
             turn_class: "a",
             tool_call_mode: ToolCallMode::Strict,
             max_tool_rounds: restricted,
             enforce_no_tools: true,
-            reason: "classifier_clarify",
+            reason: "system_one_clarify",
         },
-        "tool_required"
-            if classification.confidence >= INTENT_CLASSIFIER_CONFIDENCE_TOOL_REQUIRED =>
-        {
-            TurnActivationDecision {
-                turn_class: "c",
-                tool_call_mode: ToolCallMode::Auto,
-                max_tool_rounds: base.max_tool_rounds.max(2),
-                enforce_no_tools: false,
-                reason: "classifier_tool_required",
-            }
-        }
-        "mixed" => TurnActivationDecision {
-            reason: "classifier_mixed_keep_default",
-            ..base
+        SystemOneRecommendation::PreferTools => TurnActivationDecision {
+            turn_class: "c",
+            tool_call_mode: ToolCallMode::Auto,
+            max_tool_rounds: base.max_tool_rounds.max(2),
+            enforce_no_tools: false,
+            reason: "system_one_tool_required",
         },
-        _ => base,
+        SystemOneRecommendation::KeepHeuristic => base,
     }
 }
 
@@ -1056,7 +1020,11 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
         // decision must not divert restored state into the prompt-only lane.
         activation.enforce_no_tools = false;
     } else if should_invoke_intent_classifier(&activation) {
-        if try_consume_classifier_budget(&sink, &mut orchestration_state, &turn_budget).await {
+        let system_one_mode = SystemOneMode::from_env();
+        if system_one_mode == SystemOneMode::Disabled {
+            sink.notice("◈ system_one mode=disabled; using heuristic".to_string())
+                .await;
+        } else if try_consume_classifier_budget(&sink, &mut orchestration_state, &turn_budget).await {
             let classification = classify_turn_intent_with_model(
                 &no_tools_pipeline,
                 &original_prompt,
@@ -1064,17 +1032,33 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
             )
             .await;
             if let Some(classification) = classification {
+                let recommendation = SystemOnePolicy::default().recommend(&classification);
+                let agrees_with_heuristic = match recommendation {
+                    SystemOneRecommendation::PreferNoTools
+                    | SystemOneRecommendation::AskClarification => activation.enforce_no_tools,
+                    SystemOneRecommendation::PreferTools => !activation.enforce_no_tools,
+                    SystemOneRecommendation::KeepHeuristic => true,
+                };
                 sink.notice(format!(
-                    "◈ intent classifier intent={} confidence={:.2} reason={}",
-                    classification.intent, classification.confidence, classification.reason
+                    "◈ system_one schema={} mode={} engine={} intent={} confidence={:.2} recommendation={} heuristic_agreement={} reason={}",
+                    classification.schema_version,
+                    system_one_mode.as_str(),
+                    classification.engine,
+                    classification.intent.as_str(),
+                    classification.confidence,
+                    recommendation.as_str(),
+                    agrees_with_heuristic,
+                    classification.reason,
                 ))
                 .await;
 
-                activation = apply_intent_classifier_override(
-                    activation,
-                    &classification,
-                    turn_loop_settings.classifier_restricted_max_tool_rounds,
-                );
+                if system_one_mode.may_mutate_execution() {
+                    activation = apply_intent_classifier_override(
+                        activation,
+                        &classification,
+                        turn_loop_settings.classifier_restricted_max_tool_rounds,
+                    );
+                }
                 sink.notice(format!(
                     "◈ activation final class={} mode={} rounds={} no_tools={} reason={}",
                     activation.turn_class,
@@ -1089,7 +1073,7 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
                 .await;
             } else {
                 sink.notice(
-                    "◈ intent classifier skipped: no parseable result; using heuristic".to_string(),
+                    "◈ system_one skipped: no valid typed decision; using heuristic".to_string(),
                 )
                 .await;
             }

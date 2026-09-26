@@ -71,6 +71,7 @@ Medousa resolves LLM settings in order: **saved defaults → env → built-in de
 | `MEDOUSA_DEV_HOST` | Dev Vite host → daemon URL hint | unset |
 | `MEDOUSA_MEDOUSA_DAEMON_BIN` | Explicit path to `medousa_daemon` | Tauri sidecar or PATH |
 | `MEDOUSA_PROJECT_ROOT` | Vault / project root override | unset |
+| `MEDOUSA_SYSTEM_ONE_MODE` | Turn-perception rollout mode: `shadow`, `active`, or `disabled` | `shadow`; records typed recommendations without changing execution |
 
 There is no `no_auth` or loopback bypass setting. Except for constant liveness,
 an active pairing ceremony, and scoped preview URLs, daemon routes require a
