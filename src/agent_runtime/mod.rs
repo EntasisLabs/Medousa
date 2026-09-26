@@ -178,7 +178,8 @@ pub use turn_orchestrator::{
     HOT_WINDOW_CHAR_BUDGET, IntentClassification, LocalTurnExecutionParams, MAX_COLD_WINDOW_TURNS,
     MAX_HOT_WINDOW_TURNS, MAX_PRIOR_TOTAL_CHARS, MAX_SINGLE_PRIOR_MESSAGE_CHARS,
     MIN_COLD_WINDOW_TURNS, MIN_HOT_WINDOW_TURNS, PrepareTurnPromptParams, PreparedTurnPrompt,
-    apply_intent_classifier_override, assemble_local_turn, classify_turn_intent_with_model,
+    apply_intent_classifier_override, assemble_local_turn, classify_turn_intent_with_engine,
+    classify_turn_intent_with_model,
     execute_local_turn, prepare_turn_prompt, retryable_runtime_reason,
     should_invoke_intent_classifier,
 };

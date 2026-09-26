@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use chrono::Utc;
 use genai::chat::{ChatMessage, ChatRequest};
 use medousa_runtime::{
-    MedousaToolLoopPipeline, SystemOneDecision, SystemOneEvaluationRecord, SystemOneInput,
-    SystemOneMode, SystemOnePolicy, SystemOneRecommendation, TurnIntent,
+    MedousaToolLoopPipeline, SystemOneDecision, SystemOneEngine, SystemOneError,
+    SystemOneEvaluationRecord, SystemOneInput, SystemOneMode, SystemOnePolicy,
+    SystemOneRecommendation, TurnIntent,
 };
 use serde_json::Value;
 use stasis::application::orchestration::prompt_pipeline::{
@@ -616,55 +618,92 @@ fn system_one_input(prompt: &str, recent_context: &str) -> SystemOneInput {
     }
 }
 
+struct HostModelSystemOneEngine<'a> {
+    pipeline: &'a PromptExecutionPipeline,
+}
+
+#[async_trait]
+impl SystemOneEngine for HostModelSystemOneEngine<'_> {
+    fn id(&self) -> &str {
+        "host-model-classifier"
+    }
+
+    async fn decide(&self, input: &SystemOneInput) -> Result<SystemOneDecision, SystemOneError> {
+        let messages = vec![
+            ChatMessage::system(
+                "Intent routing for tool-loop turns. Classify CURRENT_USER_MESSAGE with RECENT_CONTEXT as local grounding only. Return strict JSON: intent, confidence, reason. intent ∈ conversational | tool_required | clarify | mixed. Use clarify when the principal should get one direct question instead of tools (vague goal, missing target, ambiguous scope).".to_string(),
+            ),
+            ChatMessage::user(format!(
+                "RECENT_CONTEXT:\n{}\n\nCURRENT_USER_MESSAGE:\n{}\n\nClassify whether this turn should use tools now.",
+                if input.recent_context.trim().is_empty() {
+                    "(none)"
+                } else {
+                    input.recent_context.as_str()
+                },
+                input.current_user_message,
+            )),
+        ];
+
+        let completion =
+            super::execution_context::await_turn_boundary(self.pipeline.complete_chat_stream(
+                ChatRequest::new(messages),
+                PromptExecutionContext::default(),
+                None,
+            ))
+            .await
+            .map_err(|error| SystemOneError::Engine(error.to_string()))?
+            .map_err(|error| SystemOneError::Engine(error.to_string()))?;
+
+        let raw = completion
+            .response
+            .into_first_text()
+            .map(|value| value.trim().to_string())
+            .ok_or_else(|| SystemOneError::Engine("classifier returned no text".to_string()))?;
+        let parsed: Value = serde_json::from_str(&raw)
+            .map_err(|error| SystemOneError::Engine(format!("invalid classifier JSON: {error}")))?;
+        let intent = parsed
+            .get("intent")
+            .and_then(Value::as_str)
+            .ok_or_else(|| SystemOneError::Engine("classifier omitted intent".to_string()))?
+            .parse::<TurnIntent>()?;
+        let confidence = parsed
+            .get("confidence")
+            .and_then(Value::as_f64)
+            .ok_or_else(|| SystemOneError::Engine("classifier omitted confidence".to_string()))?
+            as f32;
+        let reason = parsed
+            .get("reason")
+            .and_then(Value::as_str)
+            .map(|value| truncate_text_for_budget(value, 160))
+            .unwrap_or_else(|| "none".to_string());
+
+        SystemOneDecision::new(intent, confidence, reason, self.id())
+    }
+}
+
+pub async fn classify_turn_intent_with_engine(
+    engine: &dyn SystemOneEngine,
+    prompt: &str,
+    recent_context: &str,
+) -> Option<IntentClassification> {
+    let decision = engine
+        .decide(&system_one_input(prompt, recent_context))
+        .await
+        .ok()?;
+    (decision.is_valid() && decision.engine == engine.id()).then_some(decision)
+}
+
 pub async fn classify_turn_intent_with_model(
     pipeline: &PromptExecutionPipeline,
     prompt: &str,
     recent_context: &str,
 ) -> Option<IntentClassification> {
-    let input = system_one_input(prompt, recent_context);
-    let messages = vec![
-        ChatMessage::system(
-            "Intent routing for tool-loop turns. Classify CURRENT_USER_MESSAGE with RECENT_CONTEXT as local grounding only. Return strict JSON: intent, confidence, reason. intent ∈ conversational | tool_required | clarify | mixed. Use clarify when the principal should get one direct question instead of tools (vague goal, missing target, ambiguous scope).".to_string(),
-        ),
-        ChatMessage::user(format!(
-            "RECENT_CONTEXT:\n{}\n\nCURRENT_USER_MESSAGE:\n{}\n\nClassify whether this turn should use tools now.",
-            if input.recent_context.trim().is_empty() {
-                "(none)"
-            } else {
-                input.recent_context.as_str()
-            },
-            input.current_user_message,
-        )),
-    ];
-
-    let completion = super::execution_context::await_turn_boundary(pipeline.complete_chat_stream(
-        ChatRequest::new(messages),
-        PromptExecutionContext::default(),
-        None,
-    ))
+    classify_turn_intent_with_engine(
+        &HostModelSystemOneEngine { pipeline },
+        prompt,
+        recent_context,
+    )
     .await
-    .ok()?
-    .ok()?;
-
-    let raw = completion
-        .response
-        .into_first_text()
-        .map(|value| value.trim().to_string())?;
-
-    let parsed: Value = serde_json::from_str(&raw).ok()?;
-    let intent = parsed
-        .get("intent")
-        .and_then(|value| value.as_str())?
-        .parse::<TurnIntent>()
-        .ok()?;
-    let confidence = parsed.get("confidence").and_then(|value| value.as_f64())? as f32;
-    let reason = parsed
-        .get("reason")
-        .and_then(|value| value.as_str())
-        .map(|value| truncate_text_for_budget(value, 160))
-        .unwrap_or_else(|| "none".to_string());
-
-    SystemOneDecision::new(intent, confidence, reason, "host-model-classifier").ok()
 }
 
 pub fn apply_intent_classifier_override(
@@ -1929,6 +1968,79 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
     }
 
     stream_bridge.drain().await;
+}
+
+#[cfg(test)]
+mod system_one_engine_tests {
+    use std::sync::Mutex;
+
+    use super::*;
+
+    struct RecordingEngine {
+        decision_engine: &'static str,
+        input: Mutex<Option<SystemOneInput>>,
+    }
+
+    #[async_trait]
+    impl SystemOneEngine for RecordingEngine {
+        fn id(&self) -> &str {
+            "recording-engine"
+        }
+
+        async fn decide(
+            &self,
+            input: &SystemOneInput,
+        ) -> Result<SystemOneDecision, SystemOneError> {
+            *self.input.lock().expect("input lock") = Some(input.clone());
+            SystemOneDecision::new(
+                TurnIntent::ToolRequired,
+                0.9,
+                "test decision",
+                self.decision_engine,
+            )
+        }
+    }
+
+    #[tokio::test]
+    async fn engine_boundary_bounds_input_and_accepts_matching_engine_identity() {
+        let engine = RecordingEngine {
+            decision_engine: "recording-engine",
+            input: Mutex::new(None),
+        };
+
+        let decision = classify_turn_intent_with_engine(
+            &engine,
+            &"p".repeat(INTENT_CLASSIFIER_MAX_PROMPT_CHARS + 20),
+            &"c".repeat(INTENT_CLASSIFIER_MAX_CONTEXT_CHARS + 20),
+        )
+        .await
+        .expect("valid decision");
+
+        assert_eq!(decision.intent, TurnIntent::ToolRequired);
+        let input = engine.input.lock().expect("input lock").clone().unwrap();
+        assert_eq!(
+            input.current_user_message.chars().count(),
+            INTENT_CLASSIFIER_MAX_PROMPT_CHARS
+        );
+        assert_eq!(
+            input.recent_context.chars().count(),
+            INTENT_CLASSIFIER_MAX_CONTEXT_CHARS
+        );
+    }
+
+    #[tokio::test]
+    async fn engine_boundary_rejects_mismatched_engine_identity() {
+        let engine = RecordingEngine {
+            decision_engine: "spoofed-engine",
+            input: Mutex::new(None),
+        };
+
+        assert!(
+            classify_turn_intent_with_engine(&engine, "use a tool", "")
+                .await
+                .is_none()
+        );
+    }
 }
 
 #[cfg(test)]
