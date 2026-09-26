@@ -1096,10 +1096,46 @@ impl Forge {
     ) -> Result<()> {
         let _lock = self.store.lock_item(work_id)?;
         let item = self.load(work_id)?;
-        let target = git_target(&item)?;
+        self.record_review_commit_locked(&item, expected, head, branch, actor)
+    }
+
+    fn record_review_commit_locked(
+        &self,
+        item: &WorkItem,
+        expected: &GitOid,
+        head: &GitOid,
+        branch: &str,
+        actor: &ActorRef,
+    ) -> Result<()> {
+        let target = git_target(item)?;
         let env = item
             .workspace_environment()
             .ok_or_else(|| ForgeError::EnvironmentDrift("missing workspace".into()))?;
+        let root = std::fs::canonicalize(self.git.worktree_root(&env.worktree)?)?;
+        let expected_root = std::fs::canonicalize(&env.worktree)?;
+        if root != expected_root {
+            return Err(ForgeError::EnvironmentDrift(format!(
+                "attached checkout root changed: expected {}, found {}",
+                expected_root.display(),
+                root.display()
+            )));
+        }
+        if self.git.repo_identity(&root)?.common_dir != env.repo.common_dir {
+            return Err(ForgeError::EnvironmentDrift(
+                "attached checkout now belongs to a different repository".into(),
+            ));
+        }
+        if self.git.merge_in_progress(&root)
+            || self
+                .git
+                .status_porcelain(&root)?
+                .iter()
+                .any(|entry| entry.kind == crate::git::PorcelainKind::Unmerged)
+        {
+            return Err(ForgeError::EnvironmentDrift(
+                "attached checkout entered a merge, rebase, or conflicted state".into(),
+            ));
+        }
         if !item.uses_attached_checkout()
             || &target.base_oid != expected
             || &self.git.head_oid(&env.worktree)? != head
@@ -1111,10 +1147,10 @@ impl Forge {
         }
         let index = self.git.index_tree_oid_via_temporary_index(
             &env.worktree,
-            &self.attached_index_path(work_id),
+            &self.attached_index_path(&item.id),
         )?;
         self.commit_event(
-            work_id,
+            &item.id,
             actor,
             EventPayload::ReviewCommitRecorded {
                 head: head.clone(),
@@ -1123,6 +1159,53 @@ impl Forge {
             },
         )?;
         Ok(())
+    }
+
+    /// Adopt an ordinary principal commit made between attached-checkout
+    /// executions. A same-branch fast-forward is expected user activity, not
+    /// environment drift. History rewrites and branch switches still require
+    /// an explicit reattachment so stale authority cannot silently move.
+    fn refresh_attached_checkout_after_commit_locked(
+        &self,
+        item: &WorkItem,
+        actor: &ActorRef,
+    ) -> Result<WorkItem> {
+        if !item.uses_attached_checkout() {
+            return Ok(item.clone());
+        }
+        let target = git_target(item)?;
+        let env = item
+            .workspace_environment()
+            .ok_or_else(|| ForgeError::EnvironmentDrift("missing workspace".into()))?;
+        let head = self.git.head_oid(&env.worktree)?;
+        if head == target.base_oid {
+            return Ok(item.clone());
+        }
+        let branch = self.git.current_branch(&env.worktree)?.ok_or_else(|| {
+            ForgeError::EnvironmentDrift("attached checkout is now detached".into())
+        })?;
+        if branch != env.branch {
+            return Err(ForgeError::EnvironmentDrift(format!(
+                "attached checkout switched branches: expected {}, found {branch}",
+                env.branch
+            )));
+        }
+        if !self
+            .git
+            .is_ancestor(&env.worktree, &target.base_oid, &head)?
+        {
+            return Err(ForgeError::EnvironmentDrift(format!(
+                "attached checkout HEAD changed non-fast-forward: expected descendant of {}, found {}",
+                target.base_oid, head
+            )));
+        }
+        self.record_review_commit_locked(item, &target.base_oid, &head, &branch, actor)?;
+        let refreshed = self.load(&item.id)?;
+        let environment = refreshed
+            .workspace_environment()
+            .ok_or_else(|| ForgeError::EnvironmentDrift("missing workspace".into()))?;
+        self.verify_attached_checkout(&refreshed, environment)?;
+        Ok(refreshed)
     }
 
     /// Revalidate the durable workspace boundary before a lease-backed tool
@@ -1309,6 +1392,9 @@ impl Forge {
             ));
         }
         if !isolated {
+            if !item.has_active_attempts() {
+                item = self.refresh_attached_checkout_after_commit_locked(&item, actor)?;
+            }
             if item.has_active_attempts()
                 && !(allow_coder_collaboration && coder_collaboration_allowed(&item, &executor))
             {
@@ -3321,6 +3407,89 @@ mod tests {
                 .record_review_commit(&item.id, &before, &head, "review-branch", &actor())
                 .is_err()
         );
+    }
+
+    #[test]
+    fn attached_checkout_follow_up_adopts_principal_fast_forward_commit() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let item = forge
+            .register_with_workspace_mode(
+                "Keep helping after a commit",
+                "continue in the current checkout",
+                &fx.repo,
+                "main",
+                "user-1",
+                WorkspaceMode::AttachedCheckout,
+                &actor(),
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &actor()).unwrap();
+        let original_baseline = item.environment.as_ref().unwrap().baseline_oid.clone();
+        let (_, lease) = forge
+            .begin_workspace_attempt(&item.id, script_executor(), None, &actor())
+            .unwrap();
+        fs::write(fx.repo.join("app.txt"), "first pass\n").unwrap();
+        let reviewed = forge
+            .complete_attempt(&lease, &SealOptions::default(), &actor())
+            .unwrap();
+        forge
+            .reopen_for_changes(&reviewed.id, "follow up", &actor())
+            .unwrap();
+
+        fx.git.run(&fx.repo, &["add", "app.txt"]).unwrap();
+        fx.git
+            .commit_checkpoint(&fx.repo, "save first pass", &CheckpointAuthor::default())
+            .unwrap();
+        let committed_head = fx.git.head_oid(&fx.repo).unwrap();
+
+        let (continued, next_lease) = forge
+            .begin_workspace_attempt(&item.id, script_executor(), None, &actor())
+            .expect("a normal same-branch commit must not invalidate the next turn");
+        assert_eq!(git_target(&continued).unwrap().base_oid, committed_head);
+        assert_eq!(
+            continued.environment.as_ref().unwrap().baseline_oid,
+            original_baseline,
+            "refreshing checkout custody must not rewrite the evidence baseline"
+        );
+        assert!(reviewed.attempts.last().unwrap().evidence_id.is_some());
+        forge
+            .interrupt_attempt(&next_lease, RecoveryDisposition::RestartAllowed, &actor())
+            .unwrap();
+    }
+
+    #[test]
+    fn attached_checkout_follow_up_rejects_rewritten_history() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let item = forge
+            .register_with_workspace_mode(
+                "Do not follow rewritten history",
+                "keep checkout authority fenced",
+                &fx.repo,
+                "main",
+                "user-1",
+                WorkspaceMode::AttachedCheckout,
+                &actor(),
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &actor()).unwrap();
+        let tree = fx.git.run(&fx.repo, &["write-tree"]).unwrap();
+        let tree = tree.trim().to_owned();
+        let rewritten = fx
+            .git
+            .run(&fx.repo, &["commit-tree", &tree, "-m", "rewritten root"])
+            .unwrap();
+        let rewritten = rewritten.trim().to_owned();
+        fx.git
+            .run(&fx.repo, &["reset", "--hard", &rewritten])
+            .unwrap();
+
+        assert!(matches!(
+            forge.begin_workspace_attempt(&item.id, script_executor(), None, &actor()),
+            Err(ForgeError::EnvironmentDrift(message))
+                if message.contains("non-fast-forward")
+        ));
     }
 
     #[test]

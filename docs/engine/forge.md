@@ -586,7 +586,11 @@ workspace and snapshot under Forge execution admission. A temporary index
 commits selected files, runs ordinary hooks/signing, and preserves unrelated
 staging. The response contains `head` and optional `warning` if a successful
 commit could not refresh staging. Attached custody advances through a durable
-`ReviewCommitRecorded` event; evidence baselines remain unchanged.
+`ReviewCommitRecorded` event; evidence baselines remain unchanged. When no
+executor is active, starting the next turn also adopts an ordinary same-branch
+fast-forward commit made directly in the current checkout. Branch switches,
+detached HEADs, conflicts, and rewritten history still require explicit
+reattachment rather than silently moving existing authority.
 
 `POST /v1/forge/items/{work_id}/changes/pull-request` accepts the same lease and
 snapshot plus `title`, `body`, `base`, `draft`, and optional `branch`. It requires
