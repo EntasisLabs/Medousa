@@ -65,9 +65,9 @@ pub use ports::{
     TurnLedgerSink, TurnPresentationPort, TurnSteerMessage,
 };
 pub use system_one::{
-    SYSTEM_ONE_MODE_ENV, SYSTEM_ONE_SCHEMA_VERSION, SystemOneDecision, SystemOneEngine,
-    SystemOneError, SystemOneInput, SystemOneMode, SystemOnePolicy, SystemOneRecommendation,
-    TurnIntent,
+    SYSTEM_ONE_EVALUATION_SCHEMA_VERSION, SYSTEM_ONE_MODE_ENV, SYSTEM_ONE_SCHEMA_VERSION,
+    SystemOneDecision, SystemOneEngine, SystemOneError, SystemOneEvaluationRecord, SystemOneInput,
+    SystemOneMode, SystemOnePolicy, SystemOneRecommendation, TurnIntent,
 };
 pub use tool_loop::MedousaToolLoopPipeline;
 pub use turn_context::{HostTurnContext, ToolLaneState, ToolRoundContextProvider};

@@ -4,6 +4,7 @@
 //! Admission, policy, tool allowlists, and runtime limits remain authoritative.
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
@@ -106,7 +107,8 @@ impl SystemOneDecision {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SystemOneRecommendation {
     KeepHeuristic,
     PreferNoTools,
@@ -121,6 +123,60 @@ impl SystemOneRecommendation {
             Self::PreferNoTools => "prefer_no_tools",
             Self::PreferTools => "prefer_tools",
             Self::AskClarification => "ask_clarification",
+        }
+    }
+}
+
+pub const SYSTEM_ONE_EVALUATION_SCHEMA_VERSION: u8 = 1;
+
+/// A bounded, locally persisted comparison row for calibrating System 1.
+///
+/// `reference_intent` is a weak label from the pre-existing activation heuristic,
+/// not human-adjudicated ground truth. Keeping the source explicit prevents
+/// calibration tooling from silently treating it as such.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SystemOneEvaluationRecord {
+    pub schema_version: u8,
+    pub recorded_at: DateTime<Utc>,
+    pub session_id: String,
+    pub turn_id: u64,
+    pub mode: SystemOneMode,
+    pub input: SystemOneInput,
+    pub decision: SystemOneDecision,
+    pub recommendation: SystemOneRecommendation,
+    pub reference_intent: TurnIntent,
+    pub reference_source: String,
+    pub reference_reason: String,
+    pub agrees_with_reference: bool,
+}
+
+impl SystemOneEvaluationRecord {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        recorded_at: DateTime<Utc>,
+        session_id: impl Into<String>,
+        turn_id: u64,
+        mode: SystemOneMode,
+        input: SystemOneInput,
+        decision: SystemOneDecision,
+        recommendation: SystemOneRecommendation,
+        reference_intent: TurnIntent,
+        reference_reason: impl Into<String>,
+    ) -> Self {
+        let agrees_with_reference = decision.intent == reference_intent;
+        Self {
+            schema_version: SYSTEM_ONE_EVALUATION_SCHEMA_VERSION,
+            recorded_at,
+            session_id: session_id.into(),
+            turn_id,
+            mode,
+            input,
+            decision,
+            recommendation,
+            reference_intent,
+            reference_source: "activation_heuristic".to_string(),
+            reference_reason: reference_reason.into(),
+            agrees_with_reference,
         }
     }
 }
@@ -162,7 +218,8 @@ impl SystemOnePolicy {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SystemOneMode {
     #[default]
     Shadow,

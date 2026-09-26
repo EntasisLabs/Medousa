@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
+use chrono::Utc;
 use genai::chat::{ChatMessage, ChatRequest};
 use medousa_runtime::{
-    MedousaToolLoopPipeline, SystemOneDecision, SystemOneMode, SystemOnePolicy,
-    SystemOneRecommendation, TurnIntent,
+    MedousaToolLoopPipeline, SystemOneDecision, SystemOneEvaluationRecord, SystemOneInput,
+    SystemOneMode, SystemOnePolicy, SystemOneRecommendation, TurnIntent,
 };
 use serde_json::Value;
 use stasis::application::orchestration::prompt_pipeline::{
@@ -605,26 +606,34 @@ pub fn should_invoke_intent_classifier(activation: &TurnActivationDecision) -> b
     activation.reason == "configured_default"
 }
 
+fn system_one_input(prompt: &str, recent_context: &str) -> SystemOneInput {
+    SystemOneInput {
+        current_user_message: truncate_text_for_budget(prompt, INTENT_CLASSIFIER_MAX_PROMPT_CHARS),
+        recent_context: truncate_text_for_budget(
+            recent_context,
+            INTENT_CLASSIFIER_MAX_CONTEXT_CHARS,
+        ),
+    }
+}
+
 pub async fn classify_turn_intent_with_model(
     pipeline: &PromptExecutionPipeline,
     prompt: &str,
     recent_context: &str,
 ) -> Option<IntentClassification> {
-    let bounded_prompt = truncate_text_for_budget(prompt, INTENT_CLASSIFIER_MAX_PROMPT_CHARS);
-    let bounded_context =
-        truncate_text_for_budget(recent_context, INTENT_CLASSIFIER_MAX_CONTEXT_CHARS);
+    let input = system_one_input(prompt, recent_context);
     let messages = vec![
         ChatMessage::system(
             "Intent routing for tool-loop turns. Classify CURRENT_USER_MESSAGE with RECENT_CONTEXT as local grounding only. Return strict JSON: intent, confidence, reason. intent ∈ conversational | tool_required | clarify | mixed. Use clarify when the principal should get one direct question instead of tools (vague goal, missing target, ambiguous scope).".to_string(),
         ),
         ChatMessage::user(format!(
             "RECENT_CONTEXT:\n{}\n\nCURRENT_USER_MESSAGE:\n{}\n\nClassify whether this turn should use tools now.",
-            if bounded_context.trim().is_empty() {
+            if input.recent_context.trim().is_empty() {
                 "(none)"
             } else {
-                bounded_context.as_str()
+                input.recent_context.as_str()
             },
-            bounded_prompt,
+            input.current_user_message,
         )),
     ];
 
@@ -1039,6 +1048,39 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
                     SystemOneRecommendation::PreferTools => !activation.enforce_no_tools,
                     SystemOneRecommendation::KeepHeuristic => true,
                 };
+                if super::system_one_evaluation::evaluation_enabled() {
+                    let reference_intent = if activation.enforce_no_tools {
+                        TurnIntent::Conversational
+                    } else {
+                        TurnIntent::ToolRequired
+                    };
+                    let evaluation = SystemOneEvaluationRecord::new(
+                        Utc::now(),
+                        session_id.clone(),
+                        turn_id,
+                        system_one_mode,
+                        system_one_input(&original_prompt, &intent_classifier_recent_context),
+                        classification.clone(),
+                        recommendation,
+                        reference_intent,
+                        activation.reason,
+                    );
+                    match super::system_one_evaluation::persist_evaluation(&evaluation).await {
+                        Ok(path) => {
+                            sink.notice(format!(
+                                "◈ system_one_evaluation persisted path={}",
+                                path.display()
+                            ))
+                            .await;
+                        }
+                        Err(error) => {
+                            sink.notice(format!(
+                                "◈ system_one_evaluation failed error={error}; continuing without record"
+                            ))
+                            .await;
+                        }
+                    }
+                }
                 sink.notice(format!(
                     "◈ system_one schema={} mode={} engine={} intent={} confidence={:.2} recommendation={} heuristic_agreement={} reason={}",
                     classification.schema_version,
