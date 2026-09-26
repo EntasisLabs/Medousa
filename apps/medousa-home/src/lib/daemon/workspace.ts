@@ -376,6 +376,7 @@ export async function registerRecurringPrompt(request: {
   max_attempts?: number;
   queue?: string;
   delivery?: Record<string, unknown> | null;
+  notify_on_delivery?: boolean;
 }): Promise<RegisterRecurringResponse> {
   return invoke<RegisterRecurringResponse>("recurring_register_prompt", {
     request: {
@@ -396,6 +397,7 @@ export async function registerRecurringPrompt(request: {
       execution_mode: request.execution_mode ?? "agent_turn",
       manuscript_id: request.manuscript_id ?? null,
       display_name: request.display_name ?? null,
+      notify_on_delivery: request.notify_on_delivery ?? null,
     },
   });
 }
@@ -514,6 +516,7 @@ export async function getGraphemeLspWorkspace(): Promise<GraphemeLspWorkspaceRes
 
 export type CodingEngineInfoResponse = {
   available: boolean;
+  starting?: boolean;
   url: string;
   health_url: string;
   lsp_url: string;

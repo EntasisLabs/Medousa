@@ -98,6 +98,13 @@ Delegation is separate from pairing and portal selection:
    **Settings → Runtime Controls → Computer** when it advertises the matching
    driver. An open browser world or computer view remains bound to that exact
    workshop; changing the default does not move it.
+
+   A custom policy that grants **Assistant work**, **Agent targeting**, and
+   **Host shell** is treated as owner-level machine trust. External Codex,
+   Cursor, and Hermes assignments are then launched directly from their exact,
+   immutable handoff snapshot; Medousa does not require another approval card
+   for every assignment. Policies without host shell continue to create an
+   approval card before an external agent starts.
 2. On the phone, keep Personal selected. Open the paired workshop's edit
    actions under **Settings → Connection**, then choose **Use for delegated
    work**.
@@ -109,6 +116,29 @@ identity; the signed result returns with provenance while both stores and
 session catalogs stay independent. Pairing by itself grants no execution, and
 removing the pair prevents an old per-device policy from applying if that
 device is paired again later.
+
+### Grant access on a headless workshop
+
+The same directional permissions are available without the desktop app. Run
+these commands on the workshop host:
+
+```bash
+medousa pair permissions list
+medousa pair permissions set <device-id> --preset assistant-work
+```
+
+Use the full device id printed by `permissions list`. Changes apply
+immediately; the daemon does not need to restart. To revoke delegated work
+while keeping the device paired:
+
+```bash
+medousa pair permissions set <device-id> --preset connected-only
+```
+
+The CLI also accepts `sandboxed-work`, `approved-projects`, and `custom`.
+Approved-project access requires one or more `--project <project-id>` values.
+Custom policies expose explicit scope flags in
+`medousa pair permissions set --help`; omitted custom scopes remain denied.
 
 You do **not** install offline brain packages on the phone — do that on the host
 via [Packages](packages.md).

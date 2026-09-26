@@ -832,7 +832,8 @@ async fn handle_turn_stream_v3(
             ensure_chronological_turn(state);
             let answer_state = match outcome {
                 TurnCompletionOutcomeV3::NeedsInput => Some("needs_input".to_string()),
-                TurnCompletionOutcomeV3::Failed
+                TurnCompletionOutcomeV3::Fatal
+                | TurnCompletionOutcomeV3::Failed
                 | TurnCompletionOutcomeV3::Cancelled
                 | TurnCompletionOutcomeV3::FuseExhausted => Some("provisional".to_string()),
                 _ => state

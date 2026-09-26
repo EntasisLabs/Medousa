@@ -1,12 +1,25 @@
-//! Minimal MCP JSON-RPC client over stdio (initialize, tools/list, tools/call).
+//! MCP client over a child process using the official Rust SDK transport.
 
+use std::collections::BTreeMap;
 use std::process::Stdio;
 
 use anyhow::{Context, Result, bail};
-use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, Command};
+use rmcp::handler::client::ClientHandler;
+use rmcp::model::{CallToolRequestParams, ClientInfo, Implementation, Tool};
+use rmcp::service::{NotificationContext, RunningService};
+use rmcp::transport::{ConfigureCommandExt, TokioChildProcess};
+use rmcp::{RoleClient, ServiceExt};
+use serde_json::{Map, Value};
+use tokio::sync::mpsc;
 use tokio::time::{Duration, timeout};
+
+#[derive(Debug, Clone, Default)]
+pub struct McpToolAnnotations {
+    pub read_only_hint: Option<bool>,
+    pub destructive_hint: Option<bool>,
+    pub idempotent_hint: Option<bool>,
+    pub open_world_hint: Option<bool>,
+}
 
 #[derive(Debug, Clone)]
 pub struct McpToolDefinition {
@@ -14,157 +27,147 @@ pub struct McpToolDefinition {
     pub title: String,
     pub description: Option<String>,
     pub input_schema: Option<Value>,
+    pub output_schema: Option<Value>,
+    pub annotations: Option<McpToolAnnotations>,
+    pub icons: Option<Value>,
+    pub meta: Option<BTreeMap<String, Value>>,
 }
 
 pub struct StdioMcpSession {
-    child: Child,
-    stdin: ChildStdin,
-    lines: BufReader<tokio::process::ChildStdout>,
-    next_id: u64,
+    client: RunningService<RoleClient, MedousaClientHandler>,
     request_timeout: Duration,
 }
 
 impl StdioMcpSession {
-    pub async fn spawn(command: &str, args: &[String], request_timeout: Duration) -> Result<Self> {
-        let mut child = Command::new(command)
-            .args(args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .kill_on_drop(true)
-            .spawn()
+    pub async fn spawn_with_events(
+        command: &str,
+        args: &[String],
+        request_timeout: Duration,
+        tool_list_changed: Option<mpsc::UnboundedSender<()>>,
+    ) -> Result<Self> {
+        let transport =
+            TokioChildProcess::new(tokio::process::Command::new(command).configure(|child| {
+                child.args(args).stderr(Stdio::null()).kill_on_drop(true);
+            }))
             .with_context(|| format!("failed to spawn MCP server command '{command}'"))?;
 
-        let stdin = child.stdin.take().context("MCP server stdin unavailable")?;
-        let stdout = child
-            .stdout
-            .take()
-            .context("MCP server stdout unavailable")?;
-
-        let mut session = Self {
-            child,
-            stdin,
-            lines: BufReader::new(stdout),
-            next_id: 1,
+        let client = timeout(
             request_timeout,
-        };
-        session.initialize().await?;
-        Ok(session)
-    }
-
-    async fn initialize(&mut self) -> Result<()> {
-        let id = self.next_id();
-        let request = json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {
-                    "name": "medousa-mcp-gateway",
-                    "version": env!("CARGO_PKG_VERSION")
-                }
-            }
-        });
-        self.send_request(&request).await?;
-        let _ = self.read_response_for_id(id).await?;
-
-        let initialized = json!({
-            "jsonrpc": "2.0",
-            "method": "notifications/initialized"
-        });
-        self.send_request(&initialized).await?;
-        Ok(())
+            MedousaClientHandler::new(tool_list_changed).serve(transport),
+        )
+        .await
+        .context("MCP initialize timed out")?
+        .context("MCP initialize failed")?;
+        Ok(Self {
+            client,
+            request_timeout,
+        })
     }
 
     pub async fn list_tools(&mut self) -> Result<Vec<McpToolDefinition>> {
-        let id = self.next_id();
-        let request = json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "method": "tools/list",
-            "params": {}
-        });
-        self.send_request(&request).await?;
-        let response = self.read_response_for_id(id).await?;
-        parse_tool_list(&response)
+        let tools = timeout(self.request_timeout, self.client.list_all_tools())
+            .await
+            .context("MCP tools/list timed out")?
+            .context("MCP tools/list failed")?;
+        tools.into_iter().map(tool_definition_from_sdk).collect()
     }
 
     pub async fn call_tool(&mut self, name: &str, arguments: Value) -> Result<Value> {
-        let id = self.next_id();
-        let request = json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "method": "tools/call",
-            "params": {
-                "name": name,
-                "arguments": arguments
-            }
-        });
-        self.send_request(&request).await?;
-        let response = self.read_response_for_id(id).await?;
-        if let Some(error) = response.get("error") {
-            bail!("MCP tools/call error: {error}");
-        }
-        Ok(response.get("result").cloned().unwrap_or_else(|| json!({})))
-    }
-
-    fn next_id(&mut self) -> u64 {
-        let id = self.next_id;
-        self.next_id += 1;
-        id
-    }
-
-    async fn send_request(&mut self, payload: &Value) -> Result<()> {
-        let line = serde_json::to_string(payload)?;
-        timeout(self.request_timeout, async {
-            self.stdin.write_all(line.as_bytes()).await?;
-            self.stdin.write_all(b"\n").await?;
-            self.stdin.flush().await?;
-            Ok::<(), std::io::Error>(())
-        })
+        let arguments = match arguments {
+            Value::Object(arguments) => arguments,
+            Value::Null => Map::new(),
+            _ => bail!("MCP tool arguments must be a JSON object"),
+        };
+        let result = timeout(
+            self.request_timeout,
+            self.client
+                .call_tool(CallToolRequestParams::new(name.to_string()).with_arguments(arguments)),
+        )
         .await
-        .context("MCP request timed out")??;
-        Ok(())
+        .context("MCP tools/call timed out")?
+        .context("MCP tools/call failed")?;
+        serde_json::to_value(result).context("failed to encode MCP tool result")
     }
 
-    async fn read_response_for_id(&mut self, id: u64) -> Result<Value> {
-        timeout(self.request_timeout, self.read_response_for_id_inner(id))
-            .await
-            .context("MCP response timed out")?
+    pub async fn close(&mut self) {
+        let _ = self.client.close_with_timeout(Duration::from_secs(1)).await;
+    }
+}
+
+#[derive(Clone)]
+pub(super) struct MedousaClientHandler {
+    tool_list_changed: Option<mpsc::UnboundedSender<()>>,
+}
+
+impl MedousaClientHandler {
+    pub(super) fn new(tool_list_changed: Option<mpsc::UnboundedSender<()>>) -> Self {
+        Self { tool_list_changed }
     }
 
-    async fn read_response_for_id_inner(&mut self, id: u64) -> Result<Value> {
-        loop {
-            let mut line = String::new();
-            let read = self.lines.read_line(&mut line).await?;
-            if read == 0 {
-                bail!("MCP server closed stdout before response");
-            }
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-            let message: Value =
-                serde_json::from_str(trimmed).context("invalid JSON line from MCP server")?;
-            if message.get("method").is_some() {
-                continue;
-            }
-            if message.get("id").and_then(Value::as_u64) == Some(id) {
-                if let Some(error) = message.get("error") {
-                    bail!("MCP error: {error}");
-                }
-                return Ok(message);
-            }
+    fn signal_tool_list_changed(&self) {
+        if let Some(sender) = &self.tool_list_changed {
+            let _ = sender.send(());
         }
     }
 }
 
-impl Drop for StdioMcpSession {
-    fn drop(&mut self) {
-        let _ = self.child.start_kill();
+impl ClientHandler for MedousaClientHandler {
+    fn get_info(&self) -> ClientInfo {
+        medousa_client_info()
     }
+
+    fn on_tool_list_changed(
+        &self,
+        _context: NotificationContext<RoleClient>,
+    ) -> impl Future<Output = ()> + Send + '_ {
+        let handler = self.clone();
+        async move {
+            handler.signal_tool_list_changed();
+        }
+    }
+}
+
+pub(super) fn medousa_client_info() -> ClientInfo {
+    let mut info = ClientInfo::default();
+    info.client_info =
+        Implementation::new("medousa-mcp-gateway", env!("CARGO_PKG_VERSION")).with_title("Medousa");
+    info
+}
+
+pub(super) fn tool_definition_from_sdk(tool: Tool) -> Result<McpToolDefinition> {
+    let title = tool
+        .title
+        .clone()
+        .or_else(|| {
+            tool.annotations
+                .as_ref()
+                .and_then(|annotations| annotations.title.clone())
+        })
+        .unwrap_or_else(|| tool.name.to_string());
+    let icons = tool
+        .icons
+        .map(serde_json::to_value)
+        .transpose()
+        .context("failed to encode MCP tool icons")?;
+    let meta = tool.meta.map(|meta| meta.0.into_iter().collect());
+    let annotations = tool.annotations.map(|annotations| McpToolAnnotations {
+        read_only_hint: annotations.read_only_hint,
+        destructive_hint: annotations.destructive_hint,
+        idempotent_hint: annotations.idempotent_hint,
+        open_world_hint: annotations.open_world_hint,
+    });
+    Ok(McpToolDefinition {
+        title,
+        name: tool.name.to_string(),
+        description: tool.description.map(|description| description.to_string()),
+        input_schema: Some(Value::Object((*tool.input_schema).clone())),
+        output_schema: tool
+            .output_schema
+            .map(|schema| Value::Object((*schema).clone())),
+        annotations,
+        icons,
+        meta,
+    })
 }
 
 pub(crate) fn parse_tool_list(response: &Value) -> Result<Vec<McpToolDefinition>> {
@@ -179,10 +182,12 @@ pub(crate) fn parse_tool_list(response: &Value) -> Result<Vec<McpToolDefinition>
         .into_iter()
         .filter_map(|tool| {
             let name = tool.get("name")?.as_str()?.to_string();
+            let annotations = tool.get("annotations").and_then(Value::as_object);
             let title = tool
                 .get("title")
+                .or_else(|| annotations.and_then(|value| value.get("title")))
                 .or_else(|| tool.get("name"))
-                .and_then(|value| value.as_str())
+                .and_then(Value::as_str)
                 .unwrap_or(name.as_str())
                 .to_string();
             Some(McpToolDefinition {
@@ -190,10 +195,76 @@ pub(crate) fn parse_tool_list(response: &Value) -> Result<Vec<McpToolDefinition>
                 title,
                 description: tool
                     .get("description")
-                    .and_then(|value| value.as_str())
+                    .and_then(Value::as_str)
                     .map(str::to_string),
                 input_schema: tool.get("inputSchema").cloned(),
+                output_schema: tool.get("outputSchema").cloned(),
+                annotations: annotations.map(|annotations| McpToolAnnotations {
+                    read_only_hint: annotations.get("readOnlyHint").and_then(Value::as_bool),
+                    destructive_hint: annotations.get("destructiveHint").and_then(Value::as_bool),
+                    idempotent_hint: annotations.get("idempotentHint").and_then(Value::as_bool),
+                    open_world_hint: annotations.get("openWorldHint").and_then(Value::as_bool),
+                }),
+                icons: tool.get("icons").cloned(),
+                meta: tool
+                    .get("_meta")
+                    .and_then(Value::as_object)
+                    .map(|meta| meta.clone().into_iter().collect()),
             })
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use rmcp::model::{MetaObject, Tool, ToolAnnotations};
+    use serde_json::{Map, Value, json};
+
+    use super::{MedousaClientHandler, tool_definition_from_sdk};
+
+    #[tokio::test]
+    async fn client_handler_forwards_tool_list_changes() {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        MedousaClientHandler::new(Some(sender)).signal_tool_list_changed();
+        receiver.recv().await.expect("tool-list change event");
+    }
+
+    #[test]
+    fn sdk_tool_conversion_preserves_annotations_schemas_and_app_metadata() {
+        let mut meta = Map::new();
+        meta.insert(
+            "ui".to_string(),
+            json!({ "resourceUri": "ui://weather/dashboard" }),
+        );
+        let tool = Tool::new("weather", "Shows a forecast", Arc::new(Map::new()))
+            .with_title("Weather dashboard")
+            .with_raw_output_schema(Arc::new(Map::from_iter([(
+                "type".to_string(),
+                Value::String("object".to_string()),
+            )])))
+            .with_annotations(ToolAnnotations::new().read_only(true).open_world(true))
+            .with_meta(MetaObject(meta));
+
+        let converted = tool_definition_from_sdk(tool).expect("convert tool");
+        assert_eq!(converted.title, "Weather dashboard");
+        assert_eq!(
+            converted
+                .meta
+                .as_ref()
+                .and_then(|meta| meta.get("ui"))
+                .and_then(|ui| ui.get("resourceUri"))
+                .and_then(Value::as_str),
+            Some("ui://weather/dashboard")
+        );
+        assert_eq!(
+            converted
+                .annotations
+                .as_ref()
+                .and_then(|annotations| annotations.read_only_hint),
+            Some(true)
+        );
+        assert_eq!(converted.output_schema, Some(json!({ "type": "object" })));
+    }
 }

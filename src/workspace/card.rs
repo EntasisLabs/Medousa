@@ -31,7 +31,7 @@ pub async fn list_jobs_by_states(
 ) -> anyhow::Result<Vec<Job>> {
     let mut jobs = Vec::new();
     for state in states {
-        let mut batch = runtime.list_jobs_by_state(state.clone()).await?;
+        let mut batch = runtime.list_jobs_by_state(*state).await?;
         jobs.append(&mut batch);
     }
     Ok(jobs)
@@ -760,6 +760,7 @@ mod tests {
             parent_turn_correlation_id: None,
             parent_stream_turn_id: 0,
             parent_runtime_id: "runtime-test".to_string(),
+            parent_continuation_route: None,
             execution_placement: Default::default(),
             task_execution_grant: None,
             worker_spawn_spec: None,
@@ -769,6 +770,7 @@ mod tests {
             result_text: Some("ok".to_string()),
             tool_names: vec![],
             termination_reason: None,
+            needs_synthesis: None,
             error: None,
             user_ack: "Running skill".to_string(),
             provider: "openai".to_string(),
@@ -821,6 +823,7 @@ mod tests {
             parent_turn_correlation_id: None,
             parent_stream_turn_id: 0,
             parent_runtime_id: "runtime-test".to_string(),
+            parent_continuation_route: None,
             execution_placement: Default::default(),
             task_execution_grant: None,
             worker_spawn_spec: None,
@@ -830,6 +833,7 @@ mod tests {
             result_text: Some("ok".to_string()),
             tool_names: vec![],
             termination_reason: None,
+            needs_synthesis: None,
             error: None,
             user_ack: "Running skill".to_string(),
             provider: "openai".to_string(),
@@ -908,6 +912,7 @@ mod tests {
             parent_turn_correlation_id: None,
             parent_stream_turn_id: 0,
             parent_runtime_id: "runtime-test".to_string(),
+            parent_continuation_route: None,
             execution_placement: Default::default(),
             task_execution_grant: None,
             worker_spawn_spec: None,
@@ -917,6 +922,7 @@ mod tests {
             result_text: None,
             tool_names: vec![],
             termination_reason: None,
+            needs_synthesis: None,
             error: None,
             user_ack: "Looking it up".to_string(),
             provider: "openai".to_string(),

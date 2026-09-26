@@ -30,6 +30,9 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Packages](guides/packages.md) | Optional computer, coding, model, channel, and MCP capabilities |
 | [Workshop & Automations](guides/workshop-and-automations.md) | Flows, schedules, specialists |
 | [Phone pairing](guides/phone-pairing.md) | Add another computer as an optional mobile portal |
+| [Siri and Shortcuts](guides/siri-and-shortcuts.md) | Continue the selected chat by voice or from an iPhone shortcut |
+| [Medousa Live on iPhone](guides/medousa-live-ios.md) | Continuous in-app voice, controls, requirements, and preview limits |
+| [Medousa Live in CarPlay](guides/medousa-carplay.md) | Development companion controls, setup, and qualification limits |
 | [Peers & Nearby](guides/peers-and-nearby.md) | LAN / tunnel workshops |
 | [Memory & identity](guides/memory-and-identity.md) | Teach who you are |
 | [Channels](guides/channels.md) | Telegram, Discord, Slack, WhatsApp |
@@ -41,9 +44,10 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Secure credential handoff](guides/secure-credential-handoff.md) | Give OpenShell or Grapheme an API key without putting it in chat |
 | [Desktop companion](guides/desktop-companion.md) | Floating pet for chat, approvals, notes, Web, and views |
 | [Drawing](guides/drawing.md) | Sketch inside notes or use a full drawing note |
-| [Chat drawings and generated images](guides/chat-media-and-images.md) | Draw in chat, generate images, refine them, and save or share the result |
+| [Chat drawings and generated images](guides/chat-media-and-images.md) | Draw, generate, refine, and revisit images in chat |
 | [Interactive recipes](guides/interactive-recipes.md) | Follow guided recipes/procedures with durable step timers |
 | [Undertakings & ForgeLens](guides/undertakings.md) | Governed work, chat review, comments, commits, pull requests |
+| [Delegation approvals](guides/delegation-approvals.md) | Review agent-work proposals and queue remote background workers |
 | Full index | [guides/README.md](guides/README.md) |
 
 ---
@@ -60,6 +64,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Channels & chat commands](cookbook/channels-and-chat.md) | Discord, Telegram, Slack, WhatsApp, slash commands |
 | [Skills & specialties](cookbook/skills-and-specialties.md) | Manuscripts, Hermes/Cursor/OpenClaw import |
 | [Build from source](cookbook/build-from-source.md) | Cargo, Tauri dev, release builds, iPhone dev |
+| [Benchmark Coder](guides/terminal-bench.md) | Normal daemon Coder mode through the Terminal-Bench 4.0 Harbor shim |
 | [Integrate without the app](cookbook/integrate-without-the-app.md) | HTTP-only, jobs, ingest, MCP, corp patterns |
 | [Mobile & LAN](cookbook/mobile-and-lan.md) | Phone pairing, iOS dev, workshop transport |
 | [Peers, portals, and LAN sharing](cookbook/lan-discovery-and-sharing.md) | Portal vs peer, Iroh, Nearby toggle |
@@ -86,6 +91,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Calendar](engine/calendar.md) | Personal `.ics` API + cognition calendar tools |
 | [Workspace](engine/workspace.md) | Work board, feed, SSE |
 | [Forge](engine/forge.md) | Undertaking custody (`/v1/forge`), leases, review |
+| [Coordination](engine/coordination.md) | Owner-scoped native delegation approval and dispatch |
 | [Coding engine](engine/coding-engine.md) | Language servers, project intelligence, safe edits |
 | [Agent tools](engine/agent-tools.md) | Host/worker lanes, discover domains |
 | [Runtime config](engine/runtime-config.md) | Inference profiles, stage routing |

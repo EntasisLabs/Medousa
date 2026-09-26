@@ -55,6 +55,50 @@ pub(crate) async fn build_tui_runtime_services(
     workshop_operator_identity: bool,
     event_tx: mpsc::Sender<TuiEvent>,
 ) -> anyhow::Result<TuiRuntime> {
+    build_tui_runtime_services_inner(
+        backend,
+        provider,
+        model,
+        base_url,
+        allowed_grapheme_modules,
+        session_id,
+        workshop_operator_identity,
+        event_tx,
+        false,
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(crate) async fn build_tui_runtime_services_for_contract_baseline(
+    event_tx: mpsc::Sender<TuiEvent>,
+) -> anyhow::Result<TuiRuntime> {
+    build_tui_runtime_services_inner(
+        RuntimeBackend::InMemory,
+        None,
+        None,
+        None,
+        Vec::new(),
+        "contract-baseline",
+        true,
+        event_tx,
+        true,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn build_tui_runtime_services_inner(
+    backend: RuntimeBackend,
+    provider: Option<&str>,
+    model: Option<&str>,
+    base_url: Option<&str>,
+    allowed_grapheme_modules: Vec<String>,
+    session_id: &str,
+    workshop_operator_identity: bool,
+    event_tx: mpsc::Sender<TuiEvent>,
+    include_contract_peer_tool: bool,
+) -> anyhow::Result<TuiRuntime> {
     let wire_config = LocalStasisWireConfig {
         backend,
         provider,
@@ -70,8 +114,17 @@ pub(crate) async fn build_tui_runtime_services(
     crate::verification_store::init_verification_store_with_runtime(&composition).await;
     crate::turn_continuation::init_turn_continuation_store_with_runtime(&composition).await;
 
-    assemble_tui_runtime(
-        Arc::new(composition),
+    let runtime = Arc::new(composition);
+    #[cfg(test)]
+    let delegation_service = include_contract_peer_tool
+        .then(|| crate::delegation::contract_fixture_delegation_service(runtime.clone()));
+    #[cfg(not(test))]
+    let delegation_service = {
+        let _ = include_contract_peer_tool;
+        None
+    };
+    assemble_tui_runtime_with_delegation(
+        runtime,
         memory.identity_store.clone(),
         memory.memory_reader.clone(),
         memory.memory_writer.clone(),
@@ -85,6 +138,7 @@ pub(crate) async fn build_tui_runtime_services(
         session_id,
         workshop_operator_identity,
         ClientRegistry::new(),
+        delegation_service,
         event_tx,
     )
     .await
@@ -109,6 +163,48 @@ pub(crate) async fn assemble_tui_runtime(
     session_id: &str,
     workshop_operator_identity: bool,
     client_registry: ClientRegistry,
+    event_tx: mpsc::Sender<TuiEvent>,
+) -> anyhow::Result<TuiRuntime> {
+    assemble_tui_runtime_with_delegation(
+        runtime,
+        identity_memory_store,
+        memory_reader,
+        memory_writer,
+        locus_store,
+        semantic_index,
+        memory_operations,
+        provider,
+        model,
+        base_url,
+        allowed_grapheme_modules,
+        session_id,
+        workshop_operator_identity,
+        client_registry,
+        None,
+        event_tx,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn assemble_tui_runtime_with_delegation(
+    runtime: Arc<stasis::prelude::RuntimeComposition>,
+    identity_memory_store: Arc<MedousaIdentityMemoryStore>,
+    memory_reader: Arc<dyn MemoryContextReader>,
+    memory_writer: Arc<dyn MemoryContextWriter>,
+    locus_store: Arc<dyn NodeStore>,
+    semantic_index: Arc<dyn locus_core_rs::SemanticIndexStore>,
+    memory_operations: Arc<
+        dyn stasis::ports::outbound::memory::memory_operations::MemoryOperations,
+    >,
+    provider: Option<&str>,
+    model: Option<&str>,
+    base_url: Option<&str>,
+    allowed_grapheme_modules: Vec<String>,
+    session_id: &str,
+    workshop_operator_identity: bool,
+    client_registry: ClientRegistry,
+    delegation_service: Option<Arc<crate::delegation::DelegationService>>,
     event_tx: mpsc::Sender<TuiEvent>,
 ) -> anyhow::Result<TuiRuntime> {
     let resolved_provider = crate::resolve_llm_provider(provider);
@@ -181,6 +277,9 @@ pub(crate) async fn assemble_tui_runtime(
         &mut tool_registry,
         &shared_tools,
     )?;
+    if let Some(service) = delegation_service {
+        crate::remote_peer_tools::register_remote_peer_tools(&mut tool_registry, service)?;
+    }
 
     crate::tool_registration_groups::register_desktop_coder_catalog_adapters(&mut tool_registry)?;
     let (tool_registry, tool_catalog) = tool_registry.finish();
@@ -226,5 +325,6 @@ pub(crate) async fn assemble_tui_runtime(
         ),
         worker_scheduler,
         forge_authority: Arc::new(std::sync::RwLock::new(None)),
+        worker_code_project_setup: Arc::new(std::sync::RwLock::new(None)),
     })
 }

@@ -124,6 +124,7 @@ export interface ChatMessage {
   /** Shared-room speaker profile id (`user:alice`) for human turns. */
   speakerProfileId?: string | null;
   /** Durable coordinate for a committed transcript entry. Absent for optimistic/streaming UI. */
+  liveTranscripts?: Array<{ id: string; rows: Array<{ role: "user" | "assistant"; text: string }> }>;
   transcript?: {
     authorityId: string;
     sessionId: string;

@@ -828,6 +828,15 @@ struct FileSessionStore {
     derivations: Arc<crate::session_storage::SessionFileStore>,
     commit_locks: Arc<SessionCommitLocks>,
     derivation_lock: Arc<tokio::sync::Mutex<()>>,
+    #[cfg(test)]
+    record_catalog: bool,
+}
+
+#[cfg(test)]
+pub(crate) fn test_file_session_store_at(root: std::path::PathBuf) -> Arc<dyn SessionStore> {
+    let mut store = FileSessionStore::at(root);
+    store.record_catalog = false;
+    Arc::new(store)
 }
 
 impl FileSessionStore {
@@ -844,6 +853,8 @@ impl FileSessionStore {
             files: Arc::new(crate::session_storage::SessionFileStore::new(root, "jsonl")),
             commit_locks: Arc::new(SessionCommitLocks::default()),
             derivation_lock: Arc::new(tokio::sync::Mutex::new(())),
+            #[cfg(test)]
+            record_catalog: true,
         }
     }
 
@@ -999,6 +1010,8 @@ impl SessionStore for FileSessionStore {
         let commit_lock = self.commit_locks.for_session(session_id);
         let _commit = commit_lock.lock().await;
         let files = Arc::clone(&self.files);
+        #[cfg(test)]
+        let record_catalog = self.record_catalog;
         let session_id = session_id.clone();
         let appends = appends.to_vec();
         tokio::task::spawn_blocking(move || {
@@ -1021,7 +1034,12 @@ impl SessionStore for FileSessionStore {
                     .map_err(|error| StoreError::Backend(error.to_string()))?;
             }
             for append in &appends {
+                #[cfg(not(test))]
                 record_catalog_append(&session_id, &append.turn);
+                #[cfg(test)]
+                if record_catalog {
+                    record_catalog_append(&session_id, &append.turn);
+                }
             }
             Ok(CommitReceipt {
                 turns: appends.len(),

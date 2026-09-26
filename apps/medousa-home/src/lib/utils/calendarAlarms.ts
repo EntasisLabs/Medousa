@@ -10,7 +10,7 @@ type FiredMap = Record<string, number>;
 
 function notificationsEnabled(): boolean {
   if (typeof localStorage === "undefined") return true;
-  return localStorage.getItem("medousa-home-notifications") !== "0";
+  return localStorage.getItem("medousa-home-notify-reminders") !== "0";
 }
 
 function loadFired(): FiredMap {

@@ -211,6 +211,11 @@ impl SchedulerTickSideEffects for DaemonSchedulerSideEffects {
         );
         medousa::feed_sink::maybe_publish_recurring_job_feed(self.state.composition(), job_id)
             .await;
+        medousa::home_notifications::maybe_publish_processed_recurring_job(
+            self.state.composition(),
+            job_id,
+        )
+        .await;
         if job_succeeded(self.state.composition(), job_id).await {
             let _ = maybe_resume_agent_turn_from_child_job(&self.state, job_id).await;
         }
@@ -292,6 +297,9 @@ fn run_daemon_runtime() -> Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("medousa-daemon-worker")
+        // Turn execution needs the same stack allowance as daemon bootstrap,
+        // particularly with unoptimized async state in development builds.
+        .thread_stack_size(DAEMON_BOOTSTRAP_STACK_SIZE)
         .build()
         .context("failed to build daemon Tokio runtime")?;
     runtime.block_on(start_daemon())
@@ -416,6 +424,12 @@ async fn start_daemon() -> Result<()> {
         session_id: medousa::runtime_session::runtime_bootstrap_session_id().to_string(),
         backend_label: backend_name.clone(),
     };
+
+    // Recover workspace state before constructing any lazy domain stores or
+    // admitting work. Corrupt/unreadable storage must not become an empty store.
+    medousa::workspace::init_persist_writer()
+        .await
+        .context("workspace persistence initialization failed")?;
 
     let platform = build_daemon_platform(backend.clone(), platform_config)
         .await
@@ -692,15 +706,6 @@ async fn start_daemon() -> Result<()> {
         state.clone(),
         state.backend.clone(),
     );
-
-    if let Err(error) = medousa::workspace::init_persist_writer() {
-        tracing::error!(%error, "workspace persistence initialization failed");
-    }
-    medousa::engine_recovery::run_startup_turn_recovery().await;
-    medousa::workspace::init_workspace_hub(Arc::new(state.composition().clone()));
-    if let Some(hub) = medousa::workspace::workspace_hub() {
-        hub.refresh_now().await;
-    }
 
     let mut mdns_advertiser: Option<medousa::pairing::mdns::MdnsAdvertiser> = None;
     #[cfg(feature = "iroh-transport")]
@@ -993,6 +998,7 @@ async fn start_daemon() -> Result<()> {
         .merge(medousa::computer_handlers::computer_surface())
         .merge(medousa::world_handlers::world_timeline_surface())
         .with_state(state.clone());
+    declared = declared.merge(medousa::daemon::coordination::http::surface());
     declared = declared.merge(medousa::local_credential_handlers::surface().with_state(
         medousa::local_credential_handlers::LocalCredentialApiState {
             data_dir: medousa::paths::medousa_data_dir(),
@@ -1032,6 +1038,7 @@ async fn start_daemon() -> Result<()> {
         delegated_task_executor: Some(std::sync::Arc::new(
             medousa::mesh::DaemonDelegatedTaskExecutor::new(
                 std::sync::Arc::new(state.composition().clone()),
+                state.clone(),
                 peer_message_state.local_device_id.clone(),
                 state.default_runtime_config.draft_provider.clone(),
                 state.default_runtime_config.draft_model.clone(),
@@ -1042,6 +1049,14 @@ async fn start_daemon() -> Result<()> {
         computer_drivers: state.computer_drivers.clone(),
         isolated_browser_available: true,
     };
+    // Project setup is attached by the delegated-task executor above before
+    // recovering durable worker jobs. A portal Coder job that was interrupted
+    // during destination setup can therefore resume on this daemon.
+    medousa::engine_recovery::run_startup_turn_recovery().await;
+    medousa::workspace::init_workspace_hub(Arc::new(state.composition().clone()));
+    if let Some(hub) = medousa::workspace::workspace_hub() {
+        hub.refresh_now().await;
+    }
     declared = declared
         .merge(medousa::workspace_handlers::workspace_surface().with_state(
             medousa::workspace_handlers::WorkspaceHandlerState {
@@ -1090,6 +1105,19 @@ async fn start_daemon() -> Result<()> {
     let _mdns_advertiser = mdns_advertiser;
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let _coordination_host = match medousa::daemon::coordination::start_local_coordination_host(
+        state.clone(),
+        local_runtime_node_id.clone(),
+        shutdown_rx.clone(),
+    )
+    .await
+    {
+        Ok(host) => Some(host),
+        Err(error) => {
+            tracing::warn!(%error, "coordination recovery unavailable; chat remains active");
+            None
+        }
+    };
     let scheduler_ctx = SchedulerHeartbeatContext {
         platform: state.platform.clone(),
         heartbeat_policy: state.heartbeat_policy,
@@ -1228,12 +1256,17 @@ async fn start_daemon() -> Result<()> {
     .with_graceful_shutdown(async move {
         let _ = tokio::signal::ctrl_c().await;
         let _ = shutdown_tx.send(true);
+        if let Some(host) = _coordination_host {
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), host).await;
+        }
         if let Err(error) =
             medousa::session_writer::drain(std::time::Duration::from_secs(5)).await
         {
             tracing::error!(%error, "session writer did not reach durable drain before shutdown deadline");
         }
-        let _ = medousa::workspace::flush_persist_writer().await;
+        if let Err(error) = medousa::workspace::flush_persist_writer().await {
+            tracing::error!(%error, "workspace persistence did not reach durable storage before shutdown");
+        }
         tracing::info!("stopping");
         remove_surrealkv_lock(&parse_backend(Some(&state.backend)));
     })

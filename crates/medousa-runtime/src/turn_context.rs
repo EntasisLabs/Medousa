@@ -125,8 +125,20 @@ pub fn push_turn_scratch_message_with_budget(
     scratchpad: &TurnScratchpad,
     tool_rounds_remaining: usize,
 ) {
+    push_turn_scratch_message_with_optional_budget(
+        messages,
+        scratchpad,
+        Some(tool_rounds_remaining),
+    );
+}
+
+pub fn push_turn_scratch_message_with_optional_budget(
+    messages: &mut Vec<ChatMessage>,
+    scratchpad: &TurnScratchpad,
+    tool_rounds_remaining: Option<usize>,
+) {
     strip_prior_scratch_messages(messages);
-    let body = scratchpad.format_control_body(tool_rounds_remaining);
+    let body = scratchpad.format_control_body_with_budget(tool_rounds_remaining);
     push_scratch_body(messages, &body);
 }
 

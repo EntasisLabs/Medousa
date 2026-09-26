@@ -167,6 +167,7 @@ in **Settings → Runtime Controls → Worker capacity**; restart the engine aft
 |----------|---------|---------|
 | `MEDOUSA_TURN_HOST_BUS` | Host bus tool profile | runtime default |
 | `MEDOUSA_HOST_BUS_MAX_TOOL_ROUNDS` | Host round ceiling | policy default |
+| `MEDOUSA_TOOL_ROUND_LIMIT_ENABLED` | Enforce configured tool-round ceilings (`1`, `true`, `yes`, or `on`); disabled by default. Cancellation, deadlines, stuck-text detection, and the repeated-tool-error lock remain active. | `false` |
 | `MEDOUSA_TURN_BUDGET_OPERATOR_GATE` | Require operator approve for budget extend | `0` / off |
 | `MEDOUSA_PARALLEL_TOOL_CALLS_ENABLED` | Parallel tool invocations | policy default |
 | `MEDOUSA_ALLOW_MUTATING_PARALLEL` | Parallel mutating tools | policy default |

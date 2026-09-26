@@ -195,10 +195,9 @@ pub(super) fn encode_redacted_png(
     Ok(png)
 }
 
-fn finish(
-    sender: &Arc<Mutex<Option<mpsc::SyncSender<Result<CapturedFrame, String>>>>>,
-    result: Result<CapturedFrame, String>,
-) {
+type CaptureSender = Arc<Mutex<Option<mpsc::SyncSender<Result<CapturedFrame, String>>>>>;
+
+fn finish(sender: &CaptureSender, result: Result<CapturedFrame, String>) {
     if let Ok(mut sender) = sender.lock()
         && let Some(sender) = sender.take()
     {
@@ -280,8 +279,10 @@ unsafe fn copy_bgra_frame(image: &CGImage) -> Result<CapturedFrame, String> {
         let source_row = &source[row * bytes_per_row..row * bytes_per_row + width * 4];
         let output_row = &mut rgba[row * width * 4..(row + 1) * width * 4];
         for (bgra, rgba) in source_row
-            .chunks_exact(4)
-            .zip(output_row.chunks_exact_mut(4))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(output_row.as_chunks_mut::<4>().0.iter_mut())
         {
             rgba.copy_from_slice(&[bgra[2], bgra[1], bgra[0], bgra[3]]);
         }

@@ -29,6 +29,7 @@
   import { isTauri } from "$lib/window";
   import { onThisHostPhrase } from "$lib/platformCopy";
   import McpServerToolsPanel from "$lib/components/skills/McpServerToolsPanel.svelte";
+  import McpBearerTokenField from "$lib/components/skills/McpBearerTokenField.svelte";
 
   interface Props {
     embedded?: boolean;
@@ -70,6 +71,8 @@
   let formArgs = $state("");
   let formUrl = $state("");
   let formBearerToken = $state("");
+  let formBearerTokenConfigured = $state(false);
+  let formClearBearerToken = $state(false);
   let formToolTags = $state<Record<string, string[]>>({});
   let formDisabledTools = $state<string[]>([]);
   let expandedToolsServerId = $state<string | null>(null);
@@ -79,7 +82,9 @@
     (s) => s.serverId.toLowerCase() === formId.trim().toLowerCase(),
   ));
   const canSignIn = $derived(
-    (formTransport === "http" || formTransport === "sse") && !formBearerToken.trim(),
+    (formTransport === "http" || formTransport === "sse") &&
+      !formBearerToken.trim() &&
+      !formBearerTokenConfigured,
   );
 
   function defaultTransport(): FormTransport {
@@ -127,6 +132,8 @@
     formArgs = "";
     formUrl = "";
     formBearerToken = "";
+    formBearerTokenConfigured = false;
+    formClearBearerToken = false;
     formToolTags = {};
     formDisabledTools = [];
     showForm = false;
@@ -141,6 +148,8 @@
     formArgs = "";
     formUrl = "";
     formBearerToken = "";
+    formBearerTokenConfigured = false;
+    formClearBearerToken = false;
     formToolTags = {};
     formDisabledTools = [];
     showForm = true;
@@ -171,6 +180,8 @@
     formArgs = "";
     formUrl = "";
     formBearerToken = "";
+    formBearerTokenConfigured = false;
+    formClearBearerToken = false;
     formToolTags = {};
     formDisabledTools = [];
     formTransport = "stdio";
@@ -188,7 +199,8 @@
       formCommand = config.command ?? "";
       formArgs = config.args.join(" ");
       formUrl = config.url ?? "";
-      formBearerToken = config.bearerToken ?? "";
+      formBearerToken = "";
+      formBearerTokenConfigured = config.bearerTokenConfigured;
       formToolTags = config.toolTags;
       formDisabledTools = config.disabledTools;
     } catch {
@@ -217,6 +229,7 @@
         transport: formTransport,
         url: formUrl.trim() || null,
         bearerToken: formBearerToken.trim() || null,
+        clearBearerToken: formClearBearerToken,
         useMock: false,
         toolTags: formToolTags,
         disabledTools: formDisabledTools,
@@ -446,17 +459,12 @@
             placeholder="https://mcp.example.com/mcp"
           />
         </label>
-        <label class="block">
-          <span class="workshop-label">Bearer token (optional)</span>
-          <input
-            class="input mt-1 w-full font-mono text-sm"
-            type="password"
-            bind:value={formBearerToken}
-            disabled={busy}
-            placeholder="sk-…"
-            autocomplete="off"
-          />
-        </label>
+        <McpBearerTokenField
+          bind:value={formBearerToken}
+          bind:configured={formBearerTokenConfigured}
+          bind:clearRequested={formClearBearerToken}
+          {busy}
+        />
       {:else if formTransport === "stdio"}
         <label class="block">
           <span class="workshop-label">Command</span>
@@ -516,7 +524,8 @@
       </div>
       {#if !canSignIn}
         <p class="workshop-faint text-xs">
-          {#if (formTransport === "http" || formTransport === "sse") && formBearerToken.trim()}
+          {#if (formTransport === "http" || formTransport === "sse") &&
+            (formBearerToken.trim() || formBearerTokenConfigured)}
             Remove the bearer token to sign in with OAuth.
           {:else}
             Sign in is available for hosted HTTP and SSE servers.
@@ -647,6 +656,9 @@
                       {server.toolCount} tool{server.toolCount === 1 ? "" : "s"}
                     </span>
                   </span>
+                  {#if server.lastError}
+                    <span class="mt-1 block text-xs text-content-warning">{server.lastError}</span>
+                  {/if}
                 </span>
                 <label class="mcp-server-switch" title={server.enabled ? "Disable server" : "Enable server"}>
                   <span class="sr-only">{server.enabled ? "Disable" : "Enable"} {server.title}</span>

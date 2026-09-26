@@ -14,9 +14,9 @@ use crate::daemon::route_policy::{
     BrowserPolicy, DeclaredRouter, RateLimitClass, RouteGroup, RoutePolicy,
 };
 use crate::pairing::{
-    PairHeartbeatRequest, PairInitRequest, PairSessionChallengeRequest,
-    PairSessionRefreshRequest, PairTrustPolicyUpdateRequest, PairVerifyRequest, PairingService,
-    RevokePairingAuthority, RevokePairingResult,
+    PairHeartbeatRequest, PairInitRequest, PairSessionChallengeRequest, PairSessionRefreshRequest,
+    PairTrustPolicyUpdateRequest, PairVerifyRequest, PairingService, RevokePairingAuthority,
+    RevokePairingResult,
 };
 use crate::peer_execution_policy::{
     PeerExecutionAuditEvent, PeerExecutionPolicy, PeerExecutionPolicyStore,
@@ -597,6 +597,7 @@ async fn list_peer_execution_policies(
         .list_paired_devices()
         .map_err(internal)?
         .into_iter()
+        .filter(|record| !record.role.allows_full_portal())
         .map(|record| peer_execution_entry(&state, &record))
         .collect::<Result<Vec<_>, _>>()?;
     peers.sort_by(|left, right| {
@@ -613,6 +614,13 @@ async fn get_peer_execution_policy(
     Path(device_id): Path<String>,
 ) -> Result<Json<PeerExecutionPolicyEntry>, (StatusCode, String)> {
     let record = paired_device(&state, &device_id)?;
+    if record.role.allows_full_portal() {
+        return Err((
+            StatusCode::CONFLICT,
+            "workshop portals use direct workshop authority and have no peer execution policy"
+                .to_string(),
+        ));
+    }
     Ok(Json(peer_execution_entry(&state, &record)?))
 }
 
@@ -623,6 +631,12 @@ async fn update_peer_execution_policy(
     Json(update): Json<PeerExecutionPolicyUpdate>,
 ) -> Result<Json<PeerExecutionPolicyUpdateResponse>, (StatusCode, String)> {
     let record = paired_device(&state, &device_id)?;
+    if record.role.allows_full_portal() {
+        return Err((
+            StatusCode::CONFLICT,
+            "workshop portals inherit direct workshop authority; execution policies apply to peer pairings".to_string(),
+        ));
+    }
     let policy = state
         .execution_policies
         .update_policy(
@@ -657,7 +671,10 @@ fn paired_device(
 ) -> Result<crate::pairing::PairedDeviceRecord, (StatusCode, String)> {
     let device_id = device_id.trim();
     if device_id.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "peer device id is required".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "peer device id is required".to_string(),
+        ));
     }
     state
         .service
@@ -746,7 +763,10 @@ fn cancel_workers_outside_policy(peer_device_id: &str, policy: &PeerExecutionPol
         {
             continue;
         }
-        if store.cancel_exact(&worker.session_id, &worker.work_id).is_ok() {
+        if store
+            .cancel_exact(&worker.session_id, &worker.work_id)
+            .is_ok()
+        {
             store.update(&worker.work_id, |record| {
                 record.error = Some("peer execution policy was reduced or revoked".to_string());
                 record.termination_reason = Some("peer_execution_policy_revoked".to_string());
@@ -761,9 +781,11 @@ fn policy_allows_grant(policy: &PeerExecutionPolicy, grant: &TaskExecutionGrant)
     if !policy.enabled
         || !policy.assistant_work
         || policy.is_expired_at(chrono::Utc::now())
-        || policy
-            .expires_at
-            .is_some_and(|policy_expiry| policy_expiry < grant.expires_at)
+        || policy.expires_at.is_some_and(|policy_expiry| {
+            grant
+                .expires_at
+                .is_none_or(|grant_expiry| policy_expiry < grant_expiry)
+        })
         || policy.peer_pairing_id != grant.peer_pairing_id
     {
         return false;
@@ -771,8 +793,7 @@ fn policy_allows_grant(policy: &PeerExecutionPolicy, grant: &TaskExecutionGrant)
     grant.effective_tool_domains.iter().all(|domain| {
         policy.allowed_tool_domains.contains(domain)
             && (domain != "web"
-                || policy.network_policy
-                    != crate::peer_execution_policy::PeerNetworkPolicy::Deny)
+                || policy.network_policy != crate::peer_execution_policy::PeerNetworkPolicy::Deny)
     })
 }
 
@@ -796,7 +817,10 @@ fn cancel_workers_for_pairing(peer_device_id: &str, peer_pairing_id: &str) -> us
         {
             continue;
         }
-        if store.cancel_exact(&worker.session_id, &worker.work_id).is_ok() {
+        if store
+            .cancel_exact(&worker.session_id, &worker.work_id)
+            .is_ok()
+        {
             store.update(&worker.work_id, |record| {
                 record.error = Some("peer pairing was removed".to_string());
                 record.termination_reason = Some("peer_pairing_revoked".to_string());
@@ -876,8 +900,7 @@ mod tests {
             4
         );
         assert!(entries.iter().any(|entry| {
-            entry.method == "PUT"
-                && entry.path == "/v1/peers/{device_id}/execution-policy"
+            entry.method == "PUT" && entry.path == "/v1/peers/{device_id}/execution-policy"
         }));
         assert!(entries.iter().all(|entry| !entry.bootstrap_public));
     }

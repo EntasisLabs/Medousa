@@ -50,6 +50,7 @@ pub struct AfterToolsRoundContext {
     pub draft_text: String,
     pub rounds_executed: usize,
     pub max_tool_rounds: usize,
+    pub enforce_tool_round_limit: bool,
     pub completion_profile: TurnCompletionProfile,
 }
 
@@ -65,7 +66,7 @@ pub fn decide_no_tool_debt_text_round(ctx: &NoToolDebtRoundContext) -> TurnRound
 /// implicitly close the turn.
 pub fn decide_after_tools_text_round(ctx: &AfterToolsRoundContext) -> TurnRoundAction {
     let _profile = ctx.completion_profile;
-    if ctx.rounds_executed >= ctx.max_tool_rounds.max(1) {
+    if ctx.enforce_tool_round_limit && ctx.rounds_executed >= ctx.max_tool_rounds.max(1) {
         return TurnRoundAction::EndTurn {
             termination_reason: "max_rounds_fuse",
         };
@@ -98,6 +99,7 @@ mod event_driven_tests {
             draft_text: draft.to_string(),
             rounds_executed: round,
             max_tool_rounds: max,
+            enforce_tool_round_limit: true,
             completion_profile: TurnCompletionProfile::HostScheduler,
         }
     }
@@ -146,5 +148,15 @@ mod event_driven_tests {
                 termination_reason: "max_rounds_fuse"
             }
         );
+    }
+
+    #[test]
+    fn active_work_ignores_round_fuse_when_limit_is_disabled() {
+        let mut context = active("still making progress", 10, 10);
+        context.enforce_tool_round_limit = false;
+        assert!(matches!(
+            decide_after_tools_text_round(&context),
+            TurnRoundAction::ContinueLoop { .. }
+        ));
     }
 }

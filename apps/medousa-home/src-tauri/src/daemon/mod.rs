@@ -308,7 +308,31 @@ pub async fn workspace_stream_start(
     since_revision: Option<u64>,
 ) -> Result<(), String> {
     #[cfg(any(target_os = "ios", target_os = "android"))]
-    if _embedded_state.client_if_active().await?.is_some() {
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        let mut source = client
+            .subscribe_workspace(medousa_types::WorkspaceStreamQuery {
+                since_revision,
+                session_id: None,
+                feed_tail_limit: None,
+            })
+            .map_err(|error| error.to_string())?;
+        let mut cancel_rx = replace_cancel_slot(&state.workspace_cancel);
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    changed = cancel_rx.changed() => {
+                        if changed.is_err() || *cancel_rx.borrow() { break; }
+                    }
+                    event = source.recv() => {
+                        let Some(event) = event else { break; };
+                        if let Err(error) = app.emit("workspace://event", event) {
+                            let _ = app.emit("workspace://error", serde_json::json!({ "message": error.to_string() }));
+                            break;
+                        }
+                    }
+                }
+            }
+        });
         return Ok(());
     }
 

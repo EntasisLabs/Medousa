@@ -1,29 +1,29 @@
 //! MCP server registry, live catalog refresh, and invoke orchestration.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::{Context, Result};
 use chrono::Utc;
 use serde_json::{Value, json};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::time::Duration;
 use uuid::Uuid;
 
 use crate::mcp_gateway::catalog::{
     auto_tag_capabilities, discover_from_entries, mock_tool_catalog,
 };
+use crate::mcp_gateway::connection_actor::ConnectionActorHandle;
 use crate::mcp_gateway::oauth::{McpOAuthBroker, McpOAuthError};
 use crate::mcp_gateway::policy_client::{DaemonPolicyClient, McpPolicyEvaluator};
-use crate::mcp_gateway::remote_client::{RemoteMcpSession, RemoteTransport};
+use crate::mcp_gateway::remote_client::RemoteTransport;
 use crate::mcp_gateway::server_config::{McpGatewayFullConfig, McpServerConfig};
-use crate::mcp_gateway::stdio_client::StdioMcpSession;
 use medousa_types::mcp_gateway_api::{
     BeginMcpOAuthRequest, BeginMcpOAuthResponse, CompleteMcpOAuthResponse,
     DisconnectMcpOAuthResponse, McpEffectClass, McpInvokeError, McpInvokeRequest,
     McpInvokeResponse, McpOAuthStatusResponse, McpPolicyEvaluateRequest, McpServerSummary,
-    McpServersResponse, McpToolCatalogEntry, McpTurnLane,
+    McpServersResponse, McpToolAnnotations, McpToolCatalogEntry, McpTurnLane,
 };
 use medousa_types::mcp_gateway_api::{McpCatalogSyncEntry, McpCatalogSyncResponse};
 use medousa_types::mcp_turn_token::verify_mcp_turn_token;
@@ -52,6 +52,9 @@ pub struct ServerRegistry {
     policy: Arc<dyn McpPolicyEvaluator>,
     oauth: Option<Arc<McpOAuthBroker>>,
     snapshot: Arc<RwLock<CatalogSnapshot>>,
+    connections: Arc<Mutex<HashMap<String, ConnectionActorHandle>>>,
+    catalog_changes: mpsc::UnboundedSender<String>,
+    catalog_change_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<String>>>>,
 }
 
 impl ServerRegistry {
@@ -68,6 +71,7 @@ impl ServerRegistry {
         config: Arc<McpGatewayFullConfig>,
         policy: Arc<dyn McpPolicyEvaluator>,
     ) -> Self {
+        let (catalog_changes, catalog_change_rx) = mpsc::unbounded_channel();
         Self {
             config,
             policy,
@@ -77,6 +81,9 @@ impl ServerRegistry {
                 servers: Vec::new(),
                 updated_at: Utc::now(),
             })),
+            connections: Arc::new(Mutex::new(HashMap::new())),
+            catalog_changes,
+            catalog_change_rx: Arc::new(Mutex::new(Some(catalog_change_rx))),
         }
     }
 
@@ -91,11 +98,32 @@ impl ServerRegistry {
 
     pub fn spawn_refresh_loop(self: Arc<Self>) {
         let interval_secs = self.config.catalog_refresh_interval_secs.max(30);
+        let registry = Arc::downgrade(&self);
+        let change_rx = self.catalog_change_rx.clone();
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(Duration::from_secs(interval_secs));
+            let mut catalog_changes = change_rx.lock().await.take();
             loop {
-                ticker.tick().await;
-                if let Err(error) = self.refresh_catalog().await {
+                if let Some(changes) = catalog_changes.as_mut() {
+                    tokio::select! {
+                        _ = ticker.tick() => {}
+                        change = changes.recv() => {
+                            if change.is_none() {
+                                catalog_changes = None;
+                            } else {
+                                // Coalesce bursts from servers that update several tools at once.
+                                tokio::time::sleep(Duration::from_millis(100)).await;
+                                while changes.try_recv().is_ok() {}
+                            }
+                        }
+                    }
+                } else {
+                    ticker.tick().await;
+                }
+                let Some(registry) = registry.upgrade() else {
+                    break;
+                };
+                if let Err(error) = registry.refresh_catalog().await {
                     eprintln!("medousa-mcp-gateway catalog refresh failed: {error:#}");
                 }
             }
@@ -141,7 +169,10 @@ impl ServerRegistry {
             }
 
             let live_tools = match self.remote_bearer_token(server).await {
-                Ok(bearer_token) => list_tools_for_server(server, bearer_token, timeout).await,
+                Ok(bearer_token) => {
+                    self.list_tools_for_server(server, bearer_token, timeout)
+                        .await
+                }
                 Err(error) => Err(error),
             };
             match live_tools {
@@ -151,7 +182,7 @@ impl ServerRegistry {
                     servers.push(status_from_config(server, true, count, None));
                 }
                 Err(error) => {
-                    let message = error.to_string();
+                    let message = classify_runtime_error(server, "discover tools", &error).message;
                     if self.config.use_mock_fallback {
                         let mock_tools: Vec<_> = mock_tool_catalog()
                             .into_iter()
@@ -254,6 +285,7 @@ impl ServerRegistry {
                     connected: server.connected,
                     tool_count: server.tool_count,
                     allowed_lanes: server.allowed_lanes.clone(),
+                    last_error: server.last_error.clone(),
                 })
                 .collect(),
         }
@@ -272,6 +304,9 @@ impl ServerRegistry {
         request: BeginMcpOAuthRequest,
     ) -> Result<BeginMcpOAuthResponse, McpOAuthError> {
         let server_url = self.server_url(&request.server_id)?.to_string();
+        crate::mcp_gateway::server_config::validate_remote_server_url(&server_url, true).map_err(
+            |error| McpOAuthError::OAuth(rmcp::transport::AuthError::AuthorizationFailed(error)),
+        )?;
         self.oauth_broker()?
             .begin(crate::mcp_gateway::oauth::McpOAuthBeginRequest {
                 server_id: request.server_id,
@@ -295,6 +330,8 @@ impl ServerRegistry {
             .oauth_broker()?
             .complete(login_id, callback_url)
             .await?;
+        self.invalidate_server_connection(&response.connection.server_id)
+            .await;
         let _ = self.refresh_catalog().await;
         Ok(response)
     }
@@ -305,6 +342,7 @@ impl ServerRegistry {
     ) -> Result<McpOAuthStatusResponse, McpOAuthError> {
         let server_url = self.server_url(server_id)?.to_string();
         let response = self.oauth_broker()?.refresh(server_id, &server_url).await?;
+        self.invalidate_server_connection(server_id).await;
         let _ = self.refresh_catalog().await;
         Ok(response)
     }
@@ -315,6 +353,7 @@ impl ServerRegistry {
     ) -> Result<DisconnectMcpOAuthResponse, McpOAuthError> {
         self.server_url(server_id)?;
         let response = self.oauth_broker()?.disconnect(server_id).await?;
+        self.invalidate_server_connection(server_id).await;
         let _ = self.refresh_catalog().await;
         Ok(response)
     }
@@ -399,11 +438,18 @@ impl ServerRegistry {
             );
         }
 
-        let snapshot = self.snapshot.read().await;
-        let Some(tool) = snapshot.tools.iter().find(|tool| {
-            tool.server_id.eq_ignore_ascii_case(&request.server_id)
-                && tool.tool_name.eq_ignore_ascii_case(&request.tool_name)
-        }) else {
+        let tool = self
+            .snapshot
+            .read()
+            .await
+            .tools
+            .iter()
+            .find(|tool| {
+                tool.server_id.eq_ignore_ascii_case(&request.server_id)
+                    && tool.tool_name.eq_ignore_ascii_case(&request.tool_name)
+            })
+            .cloned();
+        let Some(tool) = tool else {
             return fail(
                 "unknown_tool",
                 format!(
@@ -413,14 +459,22 @@ impl ServerRegistry {
                 false,
             );
         };
+        let fail_for_tool = |code: &str, message: String, retryable: bool| {
+            let mut response = fail(code, message, retryable);
+            response.effect_class = tool.effect_class;
+            response
+        };
 
         if !effect_allowed(server, tool.effect_class) {
-            return fail(
+            return fail_for_tool(
                 "effect_denied",
                 format!(
-                    "effect '{}' not allowed for server '{}'",
+                    "Effect '{}' is not allowed for server '{}'. {}",
                     tool.effect_class.as_str(),
-                    server.id
+                    server.id,
+                    tool.approval_summary
+                        .as_deref()
+                        .unwrap_or("Review the server's allowed effects in Settings.")
                 ),
                 false,
             );
@@ -438,19 +492,22 @@ impl ServerRegistry {
         match self.policy.evaluate(&policy_request).await {
             Ok(policy) if policy.allowed => {}
             Ok(policy) => {
-                return fail(
+                return fail_for_tool(
                     if policy.approval_required {
                         "approval_required"
                     } else {
                         "policy_denied"
                     },
-                    policy.reason,
+                    match tool.approval_summary.as_deref() {
+                        Some(summary) => format!("{}. {}", policy.reason, summary),
+                        None => policy.reason,
+                    },
                     false,
                 );
             }
             Err(error) => {
                 let auth_failed = error.is::<super::policy_client::PolicyAuthenticationError>();
-                return fail(
+                return fail_for_tool(
                     if auth_failed {
                         "policy_authentication_failed"
                     } else {
@@ -465,16 +522,20 @@ impl ServerRegistry {
         let timeout = Duration::from_millis(self.config.max_invoke_duration_ms.max(1_000));
         let bearer_token = match self.remote_bearer_token(server).await {
             Ok(bearer_token) => bearer_token,
-            Err(error) => return fail("invoke_failed", error.to_string(), true),
+            Err(error) => {
+                let failure = classify_runtime_error(server, "authenticate", &error);
+                return fail_for_tool(failure.code, failure.message, failure.retryable);
+            }
         };
-        match execute_invoke(
-            server,
-            &request.tool_name,
-            request.input.clone(),
-            bearer_token,
-            timeout,
-        )
-        .await
+        match self
+            .execute_invoke(
+                server,
+                &request.tool_name,
+                request.input.clone(),
+                bearer_token,
+                timeout,
+            )
+            .await
         {
             Ok(output) => McpInvokeResponse {
                 invoke_id,
@@ -486,7 +547,10 @@ impl ServerRegistry {
                 duration_ms: started.elapsed().as_millis() as u64,
                 effect_class: tool.effect_class,
             },
-            Err(error) => fail("invoke_failed", error.to_string(), true),
+            Err(error) => {
+                let failure = classify_runtime_error(server, "invoke the tool", &error);
+                fail_for_tool(failure.code, failure.message, failure.retryable)
+            }
         }
     }
 
@@ -522,6 +586,18 @@ impl ServerRegistry {
             .filter(|value| !value.is_empty())
         {
             return Ok(Some(token.to_string()));
+        }
+
+        if server.bearer_token_configured {
+            let oauth = self
+                .oauth
+                .as_ref()
+                .context("MCP credential store unavailable")?;
+            return oauth
+                .bearer_token(&server.id)
+                .map_err(anyhow::Error::from)
+                .and_then(|token| token.context("configured MCP bearer token is missing"))
+                .map(Some);
         }
 
         let Some(oauth) = self.oauth.as_ref() else {
@@ -563,57 +639,104 @@ impl ServerRegistry {
             .filter(|value| !value.is_empty())
             .ok_or_else(|| McpOAuthError::ServerUrlMissing(server.id.clone()))
     }
-}
 
-async fn list_tools_for_server(
-    server: &McpServerConfig,
-    bearer_token: Option<String>,
-    timeout: Duration,
-) -> Result<Vec<McpToolCatalogEntry>> {
-    let tools = match remote_transport(server) {
-        Some(transport) => list_tools_from_remote(server, transport, bearer_token, timeout).await?,
-        None => list_tools_from_stdio(server, timeout).await?,
-    };
-    Ok(tools
-        .into_iter()
-        .map(|tool| tool_entry_from_definition(server, tool))
-        .collect())
-}
+    async fn connection_for(
+        &self,
+        server: &McpServerConfig,
+        timeout: Duration,
+    ) -> ConnectionActorHandle {
+        let mut connections = self.connections.lock().await;
+        connections
+            .entry(server.id.to_ascii_lowercase())
+            .or_insert_with(|| {
+                ConnectionActorHandle::spawn(server.clone(), timeout, self.catalog_changes.clone())
+            })
+            .clone()
+    }
 
-async fn list_tools_from_stdio(
-    server: &McpServerConfig,
-    timeout: Duration,
-) -> Result<Vec<crate::mcp_gateway::stdio_client::McpToolDefinition>> {
-    let command = server
-        .command
-        .as_deref()
-        .context("stdio server missing command")?;
-    let mut session = StdioMcpSession::spawn(command, &server.args, timeout).await?;
-    session.list_tools().await
-}
+    async fn invalidate_server_connection(&self, server_id: &str) {
+        if let Some(connection) = self
+            .connections
+            .lock()
+            .await
+            .get(&server_id.to_ascii_lowercase())
+            .cloned()
+        {
+            connection.invalidate().await;
+        }
+    }
 
-async fn list_tools_from_remote(
-    server: &McpServerConfig,
-    transport: RemoteTransport,
-    bearer_token: Option<String>,
-    timeout: Duration,
-) -> Result<Vec<crate::mcp_gateway::stdio_client::McpToolDefinition>> {
-    let url = server
-        .url
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .context("remote MCP server missing url")?;
-    let mut session = RemoteMcpSession::connect(url, transport, bearer_token, timeout).await?;
-    session.list_tools().await
+    async fn list_tools_for_server(
+        &self,
+        server: &McpServerConfig,
+        bearer_token: Option<String>,
+        timeout: Duration,
+    ) -> Result<Vec<McpToolCatalogEntry>> {
+        let tools = self
+            .connection_for(server, timeout)
+            .await
+            .list_tools(bearer_token)
+            .await?;
+        Ok(tools
+            .into_iter()
+            .map(|tool| tool_entry_from_definition(server, tool))
+            .collect())
+    }
+
+    async fn execute_invoke(
+        &self,
+        server: &McpServerConfig,
+        tool_name: &str,
+        input: Value,
+        bearer_token: Option<String>,
+        timeout: Duration,
+    ) -> Result<Value> {
+        if server_unconfigured(server) {
+            return Ok(json!({
+                "mock": true,
+                "server_id": server.id,
+                "tool_name": tool_name,
+                "input": input,
+                "message": "mock MCP invoke (configure server command or url for live MCP)"
+            }));
+        }
+
+        self.connection_for(server, timeout)
+            .await
+            .call_tool(bearer_token, tool_name.to_string(), input)
+            .await
+    }
 }
 
 fn tool_entry_from_definition(
     server: &McpServerConfig,
     tool: crate::mcp_gateway::stdio_client::McpToolDefinition,
 ) -> McpToolCatalogEntry {
-    let effect_class = infer_effect_class(&tool.name, tool.description.as_deref());
+    let effect_class = infer_effect_class_with_annotations(
+        &tool.name,
+        tool.description.as_deref(),
+        tool.annotations.as_ref(),
+    );
     let capability_ids = auto_tag_capabilities(&tool.name, tool.description.as_deref());
+    let ui_resource_uri = tool
+        .meta
+        .as_ref()
+        .and_then(|meta| meta.get("ui"))
+        .and_then(|ui| ui.get("resourceUri"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let annotations = tool.annotations.map(|annotations| McpToolAnnotations {
+        read_only_hint: annotations.read_only_hint,
+        destructive_hint: annotations.destructive_hint,
+        idempotent_hint: annotations.idempotent_hint,
+        open_world_hint: annotations.open_world_hint,
+    });
+    let meta = tool
+        .meta
+        .map(|meta| Value::Object(meta.into_iter().collect()));
+    let planning_hints = planning_hints(effect_class, annotations.as_ref());
+    let approval_summary =
+        approval_summary(server, &tool.title, effect_class, annotations.as_ref());
     configure_tool_entry(
         server,
         McpToolCatalogEntry {
@@ -623,11 +746,88 @@ fn tool_entry_from_definition(
             title: tool.title,
             description: tool.description,
             input_schema_summary: tool.input_schema.as_ref().map(|schema| schema.to_string()),
+            output_schema_summary: tool.output_schema.as_ref().map(|schema| schema.to_string()),
+            input_schema: tool.input_schema,
+            output_schema: tool.output_schema,
+            annotations,
+            icons: tool.icons,
+            meta,
+            ui_resource_uri,
             effect_class,
+            planning_hints,
+            approval_summary: Some(approval_summary),
             capability_ids,
             stability: "live".to_string(),
         },
     )
+}
+
+fn planning_hints(
+    effect_class: McpEffectClass,
+    annotations: Option<&McpToolAnnotations>,
+) -> Vec<String> {
+    let mut hints = vec![match effect_class {
+        McpEffectClass::ExternalRead => {
+            "Reads external data without intentionally changing it.".to_string()
+        }
+        McpEffectClass::ExternalWrite => {
+            "Changes external data; confirm the target and payload before invoking.".to_string()
+        }
+        McpEffectClass::ExternalSideEffect => {
+            "May cause a consequential external action and can require operator approval."
+                .to_string()
+        }
+    }];
+    if let Some(annotations) = annotations {
+        match annotations.idempotent_hint {
+            Some(true) => hints.push(
+                "The server declares this operation idempotent. Treat that as untrusted guidance and verify before retrying."
+                    .to_string(),
+            ),
+            Some(false) => hints.push(
+                "The server declares this operation non-idempotent; never replay it automatically."
+                    .to_string(),
+            ),
+            None => hints.push(
+                "Idempotence is unknown; do not replay an ambiguous failed invocation automatically."
+                    .to_string(),
+            ),
+        }
+        match annotations.open_world_hint {
+            Some(true) => hints.push(
+                "The server says this tool may reach beyond its connected service into the open world."
+                    .to_string(),
+            ),
+            Some(false) => hints.push(
+                "The server says this tool stays within its connected service.".to_string(),
+            ),
+            None => {}
+        }
+    } else {
+        hints.push(
+            "Idempotence is unknown; do not replay an ambiguous failed invocation automatically."
+                .to_string(),
+        );
+    }
+    hints
+}
+
+fn approval_summary(
+    server: &McpServerConfig,
+    tool_title: &str,
+    effect_class: McpEffectClass,
+    annotations: Option<&McpToolAnnotations>,
+) -> String {
+    let impact = if annotations.is_some_and(|value| value.destructive_hint == Some(true)) {
+        "a potentially destructive external action"
+    } else {
+        match effect_class {
+            McpEffectClass::ExternalRead => "an external read",
+            McpEffectClass::ExternalWrite => "an external change",
+            McpEffectClass::ExternalSideEffect => "an external side effect",
+        }
+    };
+    format!("Allow {} to run ‘{}’ ({impact})", server.title, tool_title)
 }
 
 fn configure_tool_entry(
@@ -665,42 +865,6 @@ fn enabled_tool_count(server: &McpServerConfig, tools: &[McpToolCatalogEntry]) -
         .iter()
         .filter(|tool| server.tool_enabled(&tool.tool_name))
         .count()
-}
-
-async fn execute_invoke(
-    server: &McpServerConfig,
-    tool_name: &str,
-    input: Value,
-    bearer_token: Option<String>,
-    timeout: Duration,
-) -> Result<Value> {
-    if server_unconfigured(server) {
-        return Ok(json!({
-            "mock": true,
-            "server_id": server.id,
-            "tool_name": tool_name,
-            "input": input,
-            "message": "mock MCP invoke (configure server command or url for live MCP)"
-        }));
-    }
-
-    if let Some(transport) = remote_transport(server) {
-        let url = server
-            .url
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .context("remote MCP server missing url")?;
-        let mut session = RemoteMcpSession::connect(url, transport, bearer_token, timeout).await?;
-        return session.call_tool(tool_name, input).await;
-    }
-
-    let command = server
-        .command
-        .as_deref()
-        .context("stdio server missing command")?;
-    let mut session = StdioMcpSession::spawn(command, &server.args, timeout).await?;
-    session.call_tool(tool_name, input).await
 }
 
 fn remote_transport(server: &McpServerConfig) -> Option<RemoteTransport> {
@@ -777,9 +941,111 @@ pub fn infer_effect_class(tool_name: &str, description: Option<&str>) -> McpEffe
     McpEffectClass::ExternalRead
 }
 
+fn infer_effect_class_with_annotations(
+    tool_name: &str,
+    description: Option<&str>,
+    annotations: Option<&crate::mcp_gateway::stdio_client::McpToolAnnotations>,
+) -> McpEffectClass {
+    let inferred = infer_effect_class(tool_name, description);
+    let Some(annotations) = annotations else {
+        return inferred;
+    };
+
+    // Server annotations are untrusted hints. They may promote Medousa's
+    // conservative classification, but never lower it.
+    if annotations.destructive_hint == Some(true) {
+        return McpEffectClass::ExternalSideEffect;
+    }
+    if annotations.read_only_hint == Some(false) && inferred == McpEffectClass::ExternalRead {
+        return McpEffectClass::ExternalWrite;
+    }
+    inferred
+}
+
 fn dedupe_tools(tools: &mut Vec<McpToolCatalogEntry>) {
     let mut seen = HashSet::new();
     tools.retain(|tool| seen.insert(format!("{}.{}", tool.server_id, tool.tool_name)));
+}
+
+struct UserFacingMcpFailure {
+    code: &'static str,
+    message: String,
+    retryable: bool,
+}
+
+fn classify_runtime_error(
+    server: &McpServerConfig,
+    operation: &str,
+    error: &anyhow::Error,
+) -> UserFacingMcpFailure {
+    let diagnostic = format!("{error:#}").to_ascii_lowercase();
+    let (code, guidance, retryable) = if diagnostic.contains("403")
+        || diagnostic.contains("forbidden")
+        || diagnostic.contains("insufficient_scope")
+        || diagnostic.contains("insufficient scope")
+    {
+        (
+            "mcp_scope_denied",
+            "Reconnect the account with the scopes required by this tool.",
+            false,
+        )
+    } else if diagnostic.contains("401")
+        || diagnostic.contains("unauthorized")
+        || diagnostic.contains("not connected")
+        || diagnostic.contains("bearer token is missing")
+    {
+        (
+            "mcp_authentication_required",
+            "Reconnect the account or replace its bearer token in Settings → MCP servers.",
+            false,
+        )
+    } else if diagnostic.contains("timed out") || diagnostic.contains("timeout") {
+        (
+            "mcp_timeout",
+            "The server did not respond in time. Check the network and try again.",
+            true,
+        )
+    } else if diagnostic.contains("protocol")
+        || diagnostic.contains("initialize failed")
+        || diagnostic.contains("method not found")
+        || diagnostic.contains("unexpected response")
+    {
+        (
+            "mcp_protocol_incompatible",
+            "The endpoint did not complete a compatible MCP handshake. Verify its URL and transport.",
+            false,
+        )
+    } else if diagnostic.contains("invalid remote mcp url")
+        || diagnostic.contains("missing url")
+        || diagnostic.contains("missing command")
+        || diagnostic.contains("unsupported mcp transport")
+    {
+        (
+            "mcp_configuration_invalid",
+            "Review this server's URL, transport, and command settings.",
+            false,
+        )
+    } else if operation == "invoke the tool"
+        && (diagnostic.contains("tools/call") || diagnostic.contains("mcp error"))
+    {
+        (
+            "mcp_tool_failed",
+            "The server rejected or failed the tool call. Review its input and do not automatically replay an ambiguous write.",
+            false,
+        )
+    } else {
+        (
+            "mcp_transport_unavailable",
+            "Medousa will reconnect with bounded backoff. Check the server and network if this continues.",
+            true,
+        )
+    };
+
+    UserFacingMcpFailure {
+        code,
+        message: format!("Could not {operation} with '{}'. {guidance}", server.title),
+        retryable,
+    }
 }
 
 #[cfg(test)]
@@ -833,6 +1099,7 @@ mod tests {
                 args: Vec::new(),
                 url: None,
                 bearer_token: None,
+                bearer_token_configured: false,
                 allowed_lanes: vec!["interactive".to_string()],
                 allowed_effect_classes: vec!["external_read".to_string()],
                 tool_tags: Default::default(),
@@ -990,5 +1257,119 @@ mod tests {
         };
 
         assert_eq!(registry.remote_bearer_token(&server).await.unwrap(), None);
+    }
+
+    #[test]
+    fn untrusted_annotations_only_promote_effect_risk() {
+        use crate::mcp_gateway::stdio_client::McpToolAnnotations;
+
+        let claims_read_only = McpToolAnnotations {
+            read_only_hint: Some(true),
+            ..Default::default()
+        };
+        assert_eq!(
+            infer_effect_class_with_annotations(
+                "delete_message",
+                Some("Deletes a message"),
+                Some(&claims_read_only),
+            ),
+            McpEffectClass::ExternalSideEffect,
+        );
+
+        let claims_write = McpToolAnnotations {
+            read_only_hint: Some(false),
+            ..Default::default()
+        };
+        assert_eq!(
+            infer_effect_class_with_annotations("lookup", None, Some(&claims_write)),
+            McpEffectClass::ExternalWrite,
+        );
+
+        let claims_destructive = McpToolAnnotations {
+            destructive_hint: Some(true),
+            ..Default::default()
+        };
+        assert_eq!(
+            infer_effect_class_with_annotations("lookup", None, Some(&claims_destructive)),
+            McpEffectClass::ExternalSideEffect,
+        );
+    }
+
+    #[test]
+    fn planning_guidance_exposes_retry_and_open_world_claims_conservatively() {
+        let annotations = McpToolAnnotations {
+            idempotent_hint: Some(true),
+            open_world_hint: Some(true),
+            ..Default::default()
+        };
+        let hints = planning_hints(McpEffectClass::ExternalWrite, Some(&annotations));
+        assert!(hints.iter().any(|hint| hint.contains("untrusted guidance")));
+        assert!(hints.iter().any(|hint| hint.contains("open world")));
+    }
+
+    #[test]
+    fn catalog_entry_keeps_lossless_schemas_and_approval_copy() {
+        let registry = test_registry();
+        let server = &registry.config.servers[0];
+        let entry = tool_entry_from_definition(
+            server,
+            crate::mcp_gateway::stdio_client::McpToolDefinition {
+                name: "publish".into(),
+                title: "Publish page".into(),
+                description: Some("Publish a page to the web".into()),
+                input_schema: Some(json!({
+                    "type": "object",
+                    "required": ["page_id"],
+                    "properties": { "page_id": { "type": "string" } }
+                })),
+                output_schema: Some(json!({
+                    "type": "object",
+                    "properties": { "url": { "type": "string", "format": "uri" } }
+                })),
+                annotations: Some(crate::mcp_gateway::stdio_client::McpToolAnnotations {
+                    destructive_hint: Some(true),
+                    idempotent_hint: Some(false),
+                    open_world_hint: Some(true),
+                    ..Default::default()
+                }),
+                icons: Some(json!([{ "src": "https://example.com/icon.png" }])),
+                meta: Some(Default::default()),
+            },
+        );
+
+        assert_eq!(
+            entry
+                .input_schema
+                .as_ref()
+                .and_then(|schema| schema.get("required"))
+                .and_then(Value::as_array)
+                .map(Vec::len),
+            Some(1)
+        );
+        assert_eq!(entry.effect_class, McpEffectClass::ExternalSideEffect);
+        assert!(
+            entry
+                .approval_summary
+                .as_deref()
+                .is_some_and(|summary| summary.contains("potentially destructive"))
+        );
+        assert!(
+            entry
+                .planning_hints
+                .iter()
+                .any(|hint| hint.contains("never replay"))
+        );
+    }
+
+    #[test]
+    fn runtime_errors_are_actionable_and_secret_free() {
+        let registry = test_registry();
+        let server = &registry.config.servers[0];
+        let error = anyhow::anyhow!("request returned 401 for bearer super-secret-token");
+        let classified = classify_runtime_error(server, "invoke the tool", &error);
+        assert_eq!(classified.code, "mcp_authentication_required");
+        assert!(!classified.retryable);
+        assert!(!classified.message.contains("super-secret-token"));
+        assert!(classified.message.contains("Reconnect"));
     }
 }

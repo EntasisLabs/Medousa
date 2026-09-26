@@ -397,7 +397,9 @@ fn lan_stream_client() -> Result<&'static Client, String> {
     }
     let client = Client::builder()
         .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(600))
+        // Keep long-lived SSE streams alive indefinitely, but recover a stalled
+        // connection when no body bytes arrive for this interval.
+        .read_timeout(Duration::from_secs(90))
         .pool_max_idle_per_host(4)
         .build()
         .map_err(|err| err.to_string())?;

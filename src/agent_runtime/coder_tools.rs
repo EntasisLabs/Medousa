@@ -27,6 +27,7 @@ use tokio::sync::Mutex;
 use super::coder_activity::{CoderActivityStore, CoderAgentIdentity, CoderToolActivityAdmission};
 use super::coder_claims::CoderClaimScope;
 use super::coder_mode::CoderEntryContext;
+use crate::coding_tools::CoderShellState;
 use crate::typed_tools::{
     CompatOption, ModeToolAdapter, ToolCatalog, ToolDomainId, ToolExposureRef, ToolId,
     ToolPlacementIndex, ToolRegistrar,
@@ -1248,13 +1249,6 @@ pub struct CoderBoundToolRegistry {
     shell_state: Arc<Mutex<CoderShellState>>,
 }
 
-#[derive(Default)]
-struct CoderShellState {
-    owned_sessions: HashSet<String>,
-    preferred_session: Option<String>,
-    cursors: HashMap<String, u64>,
-}
-
 impl CoderBoundToolRegistry {
     pub fn new(
         inner: Arc<dyn ToolRegistry>,
@@ -1949,6 +1943,31 @@ impl CoderBoundToolRegistry {
             super::coder_memory::COGNITION_CODER_MEMORY_RECALL => {
                 let query = super::coder_memory::parse_recall_query(input)?;
                 let semantic_tags = super::coder_memory::recall_semantic_tags(&query);
+                if query.scope == super::coder_memory::CoderMemoryRecallScope::AllAccepted {
+                    let mut accepted_tags =
+                        vec!["coder-memory".to_string(), "knowledge:accepted".to_string()];
+                    accepted_tags.extend(semantic_tags);
+                    let result = self
+                        .invoke_locus_tool(
+                            crate::public_api::COGNITION_MEMORY_QUERY,
+                            json!({
+                                "action": "memory.recall",
+                                "session_id": null,
+                                "query": query.query,
+                                "semantic_tags": accepted_tags,
+                                "limit": query.limit.saturating_mul(2).clamp(1, 24),
+                            }),
+                        )
+                        .await?;
+                    let mut recalled = super::coder_memory::project_cross_repository_recall(
+                        &self.memory_scope,
+                        &result,
+                        true,
+                        query.limit,
+                    );
+                    recalled["memory_status"] = Value::String("available".into());
+                    return Ok(recalled);
+                }
                 let parent_scope = self.memory_scope.parent_environment_scope();
                 let undertaking_scope = self.memory_scope.accepted_undertaking_scope();
                 let repository_scope = self.memory_scope.accepted_repository_scope();
@@ -2292,6 +2311,7 @@ impl CoderBoundToolRegistry {
             let mut state = self.shell_state.lock().await;
             state.preferred_session = None;
             state.cursors.clear();
+            state.busy_sessions.clear();
             state.owned_sessions.drain().collect::<Vec<_>>()
         };
         for session_id in session_ids {
@@ -2449,7 +2469,15 @@ impl CoderBoundToolRegistry {
         {
             let mut state = self.shell_state.lock().await;
             state.owned_sessions.insert(session_id.to_string());
-            state.preferred_session = Some(session_id.to_string());
+            if tool_name == crate::coding_tools::COGNITION_SHELL_SESSION_RUN
+                || output.get("status").and_then(Value::as_str) == Some("exited")
+            {
+                if state.preferred_session.as_deref() == Some(session_id) {
+                    state.preferred_session = None;
+                }
+            } else {
+                state.preferred_session = Some(session_id.to_string());
+            }
             if let Some(sequence) = output.get("next_sequence").and_then(Value::as_u64) {
                 state.cursors.insert(session_id.to_string(), sequence);
             }
@@ -2471,7 +2499,14 @@ impl CoderBoundToolRegistry {
             .map(str::to_string);
         let state = self.shell_state.lock().await;
         if session_id.is_none() && tool_name == crate::coding_tools::COGNITION_CODER_SHELL_RUN {
-            session_id.clone_from(&state.preferred_session);
+            session_id = state
+                .preferred_session
+                .as_ref()
+                .filter(|id| {
+                    input.get("poll").and_then(Value::as_bool) == Some(true)
+                        || !state.busy_sessions.contains(*id)
+                })
+                .cloned();
         }
         let cursor = session_id
             .as_deref()
@@ -2491,49 +2526,54 @@ impl CoderBoundToolRegistry {
 }
 
 fn attached_shell_command_mutates_git_authority(command: &str) -> bool {
+    // This is a UX guard for obvious command forms, not a shell sandbox. Keep
+    // matching local to command segments so unrelated search/heredoc text does
+    // not turn ordinary inspection into a refusal.
+    command
+        .split([';', '\n', '|', '&'])
+        .any(attached_shell_segment_mutates_git_authority)
+}
+
+fn attached_shell_segment_mutates_git_authority(command: &str) -> bool {
     let lowercase = command.to_ascii_lowercase();
     let tokens = lowercase
         .split(|character: char| {
-            character.is_whitespace()
-                || matches!(character, '\'' | '"' | ';' | '&' | '|' | '(' | ')')
+            character.is_whitespace() || matches!(character, '\'' | '"' | '(' | ')')
         })
         .filter(|token| !token.is_empty())
         .map(|token| token.trim_matches(|character| matches!(character, ',' | ':' | '=')))
         .collect::<Vec<_>>();
-    if tokens.iter().any(|token| {
+    if tokens.first().is_some_and(|token| {
+        *token == "rm" || token.ends_with("/rm") || token.ends_with("\\rm.exe")
+    }) && tokens.iter().skip(1).any(|token| {
         *token == ".git"
             || token.starts_with(".git/")
-            || token.starts_with(".git\\")
             || token.contains("/.git/")
-            || token.contains("\\.git\\")
             || token.ends_with("/.git")
-            || token.ends_with("\\.git")
-            || matches!(
-                *token,
-                "git_dir" | "git_index_file" | "--git-dir" | "--git-dir=" | "--work-tree"
-            )
-            || token.starts_with("git_dir=")
-            || token.starts_with("git_index_file=")
-            || token.starts_with("--git-dir=")
     }) {
         return true;
     }
-
     let mut cursor = 0;
     while cursor < tokens.len() {
         let token = tokens[cursor];
+        if matches!(token, "env" | "sudo" | "command" | "exec")
+            || token.ends_with('=')
+            || token.contains('=') && !token.starts_with('-')
+        {
+            cursor += 1;
+            continue;
+        }
         if !matches!(token, "git" | "git.exe" | "git.cmd")
             && !token.ends_with("/git")
             && !token.ends_with("/git.exe")
             && !token.ends_with("\\git.exe")
         {
-            cursor += 1;
-            continue;
+            return false;
         }
         cursor += 1;
         while cursor < tokens.len() {
             match tokens[cursor] {
-                "-c" => cursor = cursor.saturating_add(2),
+                "-c" | "--git-dir" | "--work-tree" => cursor = cursor.saturating_add(2),
                 option if option.starts_with('-') => cursor += 1,
                 _ => break,
             }
@@ -2546,13 +2586,11 @@ fn attached_shell_command_mutates_git_authority(command: &str) -> bool {
             "add"
                 | "am"
                 | "bisect"
-                | "branch"
                 | "checkout"
                 | "cherry-pick"
                 | "clean"
                 | "clone"
                 | "commit"
-                | "config"
                 | "gc"
                 | "init"
                 | "maintenance"
@@ -2584,12 +2622,69 @@ fn attached_shell_command_mutates_git_authority(command: &str) -> bool {
         ) {
             return true;
         }
+        let args = &tokens[cursor + 1..];
         if subcommand == "apply"
-            && tokens[cursor + 1..]
+            && args
                 .iter()
                 .any(|option| matches!(*option, "--index" | "--cached" | "--3way"))
         {
             return true;
+        }
+        if subcommand == "branch" {
+            let mutating = args
+                .iter()
+                .any(|arg| matches!(*arg, "-d" | "--delete" | "-m" | "--move" | "-c" | "--copy"));
+            let read_only = !mutating
+                && (args.is_empty()
+                    || args.iter().any(|arg| {
+                        matches!(
+                            *arg,
+                            "--list"
+                                | "-l"
+                                | "--show-current"
+                                | "--contains"
+                                | "--merged"
+                                | "--no-merged"
+                                | "--all"
+                                | "-a"
+                                | "--remotes"
+                                | "-r"
+                        )
+                    }));
+            if !read_only {
+                return true;
+            }
+        }
+        if subcommand == "config" {
+            let mutating = args.iter().any(|arg| {
+                matches!(
+                    *arg,
+                    "set"
+                        | "--add"
+                        | "--unset"
+                        | "--unset-all"
+                        | "--replace-all"
+                        | "--rename-section"
+                        | "--remove-section"
+                )
+            });
+            let read_only = !mutating
+                && args.iter().any(|arg| {
+                    matches!(
+                        *arg,
+                        "get"
+                            | "list"
+                            | "--get"
+                            | "-get"
+                            | "--get-all"
+                            | "--get-regexp"
+                            | "--list"
+                            | "-l"
+                    )
+                });
+            if !read_only {
+                return true;
+            }
         }
     }
     false
@@ -2791,7 +2886,8 @@ impl ToolRegistry for CoderBoundToolRegistry {
             ));
             return Err(err);
         }
-        let result =
+        let result = crate::coding_tools::with_coder_shell_state(
+            self.shell_state.clone(),
             crate::coding_tools::with_coder_tool_root(self.entry.worktree.clone(), async {
                 if super::coder_memory::CODER_MEMORY_TOOL_NAMES.contains(&tool_name) {
                     self.invoke_coder_memory_tool(&authority, tool_name, &input)
@@ -2883,8 +2979,9 @@ impl ToolRegistry for CoderBoundToolRegistry {
                 } else {
                     self.inner.invoke_tool(tool_name, input.clone()).await
                 }
-            })
-            .await;
+            }),
+        )
+        .await;
         if let Ok(output) = &result {
             self.record_shell_session(tool_name, output).await;
         }
@@ -5381,10 +5478,15 @@ mod tests {
     fn attached_shell_blocks_git_authority_mutations_but_keeps_inspection_and_tests() {
         for command in [
             "git commit -am done",
+            "git branch new-name",
+            "git config remote.origin.url https://example.invalid/repo",
+            "git config set remote.origin.url https://example.invalid/repo",
+            "git config --show-origin remote.origin.url https://example.invalid/repo",
             "git -C . reset --hard HEAD",
             "git checkout other",
             "git apply --index fix.patch",
             "rm -rf .git",
+            "/bin/rm -rf /repo/.git/config",
             "GIT_INDEX_FILE=/tmp/index git add .",
         ] {
             assert!(
@@ -5396,8 +5498,17 @@ mod tests {
             "git status --short",
             "git diff -- src/lib.rs",
             "git fetch origin",
+            "git branch --show-current",
+            "git config --get remote.origin.url",
+            "git config get remote.origin.url",
+            "git branch --list 'feature/*'",
+            "git branch --contains HEAD",
             "git apply fix.patch",
             "cargo test -p medousa-forge",
+            "find . -maxdepth 2 -not -path './.git/*'",
+            "python - <<'PY'\nprint('.git')\nPY",
+            "rm temp; find . -path .git",
+            "printf 'git commit'",
             "printf 'target' >> .gitignore",
         ] {
             assert!(
@@ -5685,6 +5796,44 @@ mod tests {
 
         assert_eq!(input["session_id"], "shell-fresh");
         assert_eq!(input["after_sequence"], 9);
+    }
+
+    #[tokio::test]
+    async fn coder_shell_only_reuses_a_busy_session_for_polling() {
+        let fixture = fixture();
+        let authority = authority(&fixture);
+        let registry = CoderBoundToolRegistry::new(
+            Arc::new(RecordingRegistry::default()),
+            &authority,
+            fixture.entry.clone(),
+            fixture.policy.clone(),
+        );
+        registry
+            .record_shell_session(
+                crate::coding_tools::COGNITION_CODER_SHELL_RUN,
+                &json!({"session_id": "busy", "next_sequence": 5}),
+            )
+            .await;
+        registry
+            .shell_state
+            .lock()
+            .await
+            .busy_sessions
+            .insert("busy".into());
+        let mut new_command = json!({"command": "echo independent"});
+        registry
+            .prepare_turn_shell_session(
+                crate::coding_tools::COGNITION_CODER_SHELL_RUN,
+                &mut new_command,
+            )
+            .await;
+        assert!(new_command.get("session_id").is_none());
+        let mut poll = json!({"poll": true});
+        registry
+            .prepare_turn_shell_session(crate::coding_tools::COGNITION_CODER_SHELL_RUN, &mut poll)
+            .await;
+        assert_eq!(poll["session_id"], "busy");
+        assert_eq!(poll["after_sequence"], 5);
     }
 
     #[tokio::test]

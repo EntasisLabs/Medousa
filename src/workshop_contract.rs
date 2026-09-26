@@ -23,6 +23,20 @@ pub use crate::daemon_api::{ExecutionTargetRequirements, ExecutionTargetSelectio
 
 pub const UNKNOWN_EXECUTION_RUNTIME_ID: &str = "unknown";
 pub const EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION: u32 = 1;
+pub const ACTIVE_WORK_INVENTORY_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActiveWorkInventoryProbeRequest {
+    pub schema_version: u32,
+    #[serde(default)]
+    pub include_terminal: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ActiveWorkInventoryProbeResponse {
+    pub schema_version: u32,
+    pub inventory: serde_json::Value,
+}
 
 /// Mechanical world-driver capabilities carried by the existing authorized
 /// execution-target inventory. These strings describe what is colocated with
@@ -224,12 +238,7 @@ impl ExecutionTargetCandidate {
         ExecutionTargetInventoryEntry {
             runtime_id: self.runtime_id.clone(),
             label: self.label.clone(),
-            capabilities: self
-                .capabilities
-                .capabilities
-                .iter()
-                .cloned()
-                .collect(),
+            capabilities: self.capabilities.capabilities.iter().cloned().collect(),
             platform: self.capabilities.platform.clone(),
             architecture: self.capabilities.architecture.clone(),
             region: self.capabilities.region.clone(),
@@ -263,10 +272,7 @@ impl ExecutionTargetCandidate {
 pub struct ExecutionTargetInventoryEntry {
     pub runtime_id: String,
     pub label: String,
-    #[serde(
-        default,
-        skip_serializing_if = "std::collections::BTreeSet::is_empty"
-    )]
+    #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
     pub capabilities: std::collections::BTreeSet<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub platform: Option<String>,
@@ -376,9 +382,7 @@ pub fn resolve_execution_target(
             let runtime_id = runtime_id.trim();
             if runtime_id.is_empty()
                 || runtime_id.len() > 256
-                || !runtime_id
-                    .bytes()
-                    .all(|byte| matches!(byte, 0x21..=0x7e))
+                || !runtime_id.bytes().all(|byte| matches!(byte, 0x21..=0x7e))
             {
                 return Err(ExecutionTargetResolutionError::InvalidRuntimeId);
             }
@@ -411,7 +415,9 @@ pub fn resolve_execution_target(
             eligible.sort_by(|left, right| left.runtime_id.cmp(&right.runtime_id));
             let index = deterministic_auto_index(
                 requirements.selection_key.as_deref(),
-                eligible.iter().map(|candidate| candidate.runtime_id.as_str()),
+                eligible
+                    .iter()
+                    .map(|candidate| candidate.runtime_id.as_str()),
                 eligible.len(),
             );
             let candidate = eligible
@@ -455,7 +461,7 @@ fn deterministic_auto_index<'a>(
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct WorkshopSpawn {
-    /// Worker profile: memory.avec_calibrate | memory.context | research | general
+    /// Worker profile: memory.avec_calibrate | memory.context | research | general | coder
     #[serde(default)]
     pub(crate) intent: Option<String>,
     /// Bounded assignment owned by a separate concurrent peer, including the expected result
@@ -478,6 +484,27 @@ pub struct WorkshopSpawn {
     /// daemon resolves them against exact worker placement before spawning.
     #[serde(default)]
     pub(crate) world_ids: Vec<String>,
+    /// Create a destination-owned Forge project before a remote Coder starts.
+    /// Use only when the principal explicitly asked to create or clone a project.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) code_project_setup: Option<WorkerCodeProjectSetup>,
+}
+
+/// Destination-owned project bootstrap metadata. Repository URLs are resolved
+/// and cloned by the selected daemon; host filesystem paths never cross mesh.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkerCodeProjectSetup {
+    /// Concise project name inferred from the principal's request.
+    pub title: String,
+    /// Concrete outcome the project should achieve.
+    pub brief: String,
+    /// Optional GitHub or GitLab repository URL or owner/project name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repository: Option<String>,
+    /// Optional branch or revision to use as the project's starting point.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_ref: Option<String>,
 }
 
 pub fn workshop_spawn_type_schema() -> TypedActionSchema {
@@ -624,8 +651,8 @@ mod tests {
         ];
         let first = resolve_execution_target(requested.clone(), "runtime-parent", &forward)
             .expect("forward auto");
-        let second = resolve_execution_target(requested, "runtime-parent", &reverse)
-            .expect("reverse auto");
+        let second =
+            resolve_execution_target(requested, "runtime-parent", &reverse).expect("reverse auto");
         assert_eq!(first.resolved_runtime_id, second.resolved_runtime_id);
     }
 }

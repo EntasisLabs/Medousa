@@ -5,6 +5,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use medousa_engine::{ToolSinkEvent, ToolSinkPort};
 
+pub use medousa_engine::{active_tool_sink, with_active_tool_sink};
+
 #[cfg(feature = "full-daemon")]
 use crate::daemon::turn_stream_registry::{TurnStreamRegistry, TurnStreamRegistryPortAdapter};
 
@@ -107,27 +109,6 @@ impl ToolSinkPort for AgentStreamToolSinkAdapter {
             }
         }
     }
-}
-
-tokio::task_local! {
-    /// Compatibility boundary for upstream tool traits that cannot yet accept
-    /// an explicit invocation context. The sink is scoped to the owning turn
-    /// future, so concurrent turns cannot replace or clear each other's sink.
-    static ACTIVE_TOOL_SINK: Arc<dyn ToolSinkPort + Send + Sync>;
-}
-
-pub async fn with_active_tool_sink<F>(
-    sink: Arc<dyn ToolSinkPort + Send + Sync>,
-    future: F,
-) -> F::Output
-where
-    F: std::future::Future,
-{
-    ACTIVE_TOOL_SINK.scope(sink, future).await
-}
-
-pub async fn active_tool_sink() -> Option<Arc<dyn ToolSinkPort + Send + Sync>> {
-    ACTIVE_TOOL_SINK.try_with(Arc::clone).ok()
 }
 
 #[cfg(all(test, feature = "full-daemon"))]

@@ -1175,6 +1175,29 @@ class McpGatewayServerRuntime(MedousaModel):
     toolCount: int = Field(..., ge=0)
 
 
+class CoordinationChannelRef(MedousaModel):
+    authority_id: AuthorityId
+    channel_id: str
+
+
+class ExternalPeerRuntime(Enum):
+    codex = 'codex'
+    cursor = 'cursor'
+    hermes = 'hermes'
+
+
+class ExternalPeerTarget(MedousaModel):
+    authority_id: AuthorityId
+    execution_runtime_id: str
+    runtime: ExternalPeerRuntime
+
+
+class PeerProposalDecision(MedousaModel):
+    approved: bool
+    owner_principal_id: str
+    proposal_id: str
+
+
 class PromptStash(MedousaModel):
     context_manifest_id: ContextManifestId | None = Field(
         None, description='Optional durable context selection resolved by an earlier derivation.'
@@ -3300,6 +3323,12 @@ class PatchIntegrationConnectionRequest(MedousaModel):
     label: str | None = None
 
 
+class PeerProposalActionRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+
+
 class PromptStashListResponse(MedousaModel):
     stashes: list[PromptStash]
 
@@ -3988,6 +4017,53 @@ class LocalDeviceTelemetrySnapshot(MedousaModel):
     utilizationPercent: float | None = None
 
 
+class ExternalPeerAssignmentBinding(MedousaModel):
+    agent_session_id: str
+    assignment_id: str
+    channel: CoordinationChannelRef
+    execution_session: SessionRef
+    owner_principal_id: str
+    target: ExternalPeerTarget
+
+
+class ExternalPeerAssignmentRequest(MedousaModel):
+    assignment_id: str
+    channel: CoordinationChannelRef
+    context: ContextManifest
+    execution_grant_id: str
+    execution_session: SessionRef = Field(
+        ..., description="Separate executor session: never reuse the owner's interactive session."
+    )
+    existing_agent_session_id: (
+        str | None
+    ) = (
+        Field(None, description='Exact live ACP custody to adopt instead of creating a new provider session. Absence means this assignment creates new work.')
+    )
+    forge_work_id: str = Field(
+        ..., description='Initial local bridge is restricted to a governed Forge work item.'
+    )
+    idempotency_key: str
+    instructions: str
+    owner_principal_id: str
+    owner_session: SessionRef
+    target: ExternalPeerTarget
+
+
+class PeerAssignmentProposal(MedousaModel):
+    continue_owner: bool
+    expires_at: AwareDatetime
+    proposal_id: str
+    request: ExternalPeerAssignmentRequest
+
+
+class PeerProposalReviewRecord(MedousaModel):
+    binding: ExternalPeerAssignmentBinding | None = Field(
+        None, description='Recorded custody remains visible until its terminal receipt arrives.'
+    )
+    decision: PeerProposalDecision | None = None
+    proposal: PeerAssignmentProposal
+
+
 class RuntimeConfigCommandSpec4(MedousaModel):
     args: list[str]
     command: Command16
@@ -4379,6 +4455,16 @@ class InteractiveTurnRequest(MedousaModel):
         None,
         description='User-selected default workshop for workers created during this turn. This does not grant the model permission to select the same target.',
     )
+
+
+class PeerProposalActionResponse(MedousaModel):
+    binding: ExternalPeerAssignmentBinding | None = None
+    proposal_id: str
+
+
+class PeerProposalInboxResponse(MedousaModel):
+    next_cursor: str | None = None
+    proposals: list[PeerProposalReviewRecord]
 
 
 class RuntimeConfigCommandRequest(MedousaModel):

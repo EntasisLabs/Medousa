@@ -18,6 +18,7 @@
 
   function modeLabel(mode: import("$lib/types/session").AgentModeId): string {
     if (mode === "coder") return "Coder";
+    if (mode === "assistant") return "Assistant";
     if (mode === "teacher") return "Teacher";
     if (mode === "instant") return "Instant";
     return "General";

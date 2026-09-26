@@ -60,10 +60,10 @@ Each server is one MCP connection the gateway manages.
 | `id` | Stable id used in `cognition.mcp.invoke` (`server_id`) |
 | `title` | Human label |
 | `enabled` | `false` skips registration |
-| `transport` | `stdio` (local command), `http` / `streamable` (POST JSON-RPC), or `sse` (legacy SSE + POST endpoint) |
+| `transport` | `stdio` (local command), `http` / `streamable` (Streamable HTTP), or `sse` (legacy SSE + POST endpoint) |
 | `command` / `args` | Stdio MCP server launch line |
-| `url` | Remote MCP endpoint (`http://` or `https://`) |
-| `bearer_token` | Optional bearer token for remote MCP auth |
+| `url` | Remote MCP endpoint. Internet endpoints require HTTPS; HTTP is limited to local/private development. |
+| `bearer_token_configured` | Secret-free presence flag managed by Medousa. Do not edit it to configure a token. |
 | `use_mock` | `true` = mock tools only (no subprocess) |
 | `allowed_lanes` | `interactive`, `scheduled`, … |
 | `allowed_effect_classes` | Policy hints: `external_read`, `external_write`, `external_side_effect` |
@@ -134,10 +134,19 @@ title = "Hosted MCP"
 enabled = true
 transport = "http"
 url = "https://mcp.example.com/mcp"
-bearer_token = "your-token-if-required"
 allowed_lanes = ["interactive", "scheduled"]
 allowed_effect_classes = ["external_read", "external_write"]
 ```
+
+Add bearer credentials from **Settings → MCP → Add server**. Medousa stores the
+token in its typed secret store and writes only `bearer_token_configured = true`
+to the config. Existing plaintext `bearer_token` values are migrated and removed
+when Medousa next loads the MCP configuration. OAuth-enabled servers can instead
+use **Sign in**.
+
+Bearer and OAuth credentials require HTTPS, except for loopback development
+servers such as `http://127.0.0.1:8000/mcp`. Unauthenticated private-network
+endpoints may use HTTP for development.
 
 Use `transport = "sse"` for legacy MCP servers that expose an SSE stream plus a separate message POST endpoint (common in older reference servers).
 
@@ -151,6 +160,18 @@ url = "https://mcp.example.com/sse"
 allowed_lanes = ["interactive"]
 allowed_effect_classes = ["external_read"]
 ```
+
+Medousa keeps one live connection per enabled server and shares it between tool
+discovery and invocation. This preserves server-side session state and avoids a
+new handshake for every tool call. Connections are discarded when credentials
+change and reconnect with bounded backoff after transport failures. Catalog
+refresh still runs periodically, and servers that advertise
+`notifications/tools/list_changed` can request an earlier refresh.
+
+Tool-call failures are not automatically replayed because a write may have
+reached the server before the connection failed. Discovery results include the
+server's idempotence and open-world annotations as explicitly untrusted planning
+guidance, along with Medousa's conservative effect classification.
 
 After editing config, restart the gateway:
 
@@ -213,6 +234,10 @@ Processes detach into a new session (no `nohup` required) and append logs under 
 | Wizard says started but not reachable | `tail -f ~/.local/share/medousa/logs/mcp-gateway.log` |
 | Spawn uses `cargo run` and dies | Install release binaries next to `medousa`, or set `MEDOUSA_MCP_GATEWAY_BIN` |
 | No servers in catalog | `enabled = true` in TOML; mock servers need `use_mock = true` |
+| `mcp_authentication_required` | Sign in again or replace the saved bearer token in **Settings → MCP servers**. |
+| `mcp_scope_denied` | Reconnect and grant the scopes required by the selected tool. |
+| `mcp_protocol_incompatible` | Verify the endpoint is an MCP endpoint and that its selected transport matches. |
+| `mcp_timeout` / `mcp_transport_unavailable` | Check server/network availability; Medousa reconnects with bounded backoff. |
 | Discovery works, invocation returns policy 401 | Upgrade and restart the daemon and gateway together; verify they use the same data directory. Check explicit policy-token overrides if configured. |
 | Editing MCP tools or servers exits Medousa | Upgrade Medousa. Gateway restart now targets only the verified listener, excluding connected client processes. |
 

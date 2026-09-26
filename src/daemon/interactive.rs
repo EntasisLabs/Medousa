@@ -15,8 +15,8 @@ use uuid::Uuid;
 
 use crate::channel_delivery;
 use crate::daemon::ingest::{
-    publish_interactive_turn_event, record_job_delivery_pending, resolve_api_model_routing,
-    resolve_session_runtime_config, stream_events_from_registry,
+    record_job_delivery_pending, resolve_api_model_routing, resolve_session_runtime_config,
+    stream_events_from_registry,
 };
 use crate::daemon_api::{
     CreateTurnTicketRequest, InteractiveTurnRequest, InteractiveTurnResponse,
@@ -158,22 +158,19 @@ pub async fn spawn_turn_ticket(
             )?;
         }
         interactive_request.manuscript_id = Some(bot.primary_manuscript_id.clone());
-        interactive_request.additional_manuscript_ids =
-            (!bot.additional_manuscript_ids.is_empty())
-                .then(|| bot.additional_manuscript_ids.clone());
-        apply_bot_world_continuity(
-            &mut interactive_request.surface,
-            bot.world_binding.as_ref(),
-        )
-        .map_err(|error| {
-            (
-                StatusCode::CONFLICT,
-                format!("Bot '{}' has invalid world continuity: {error}", bot.display_name),
-            )
-        })?;
-        Some(
-            crate::agent_runtime::execution_context::BotTurnIdentity::from_profile(bot),
-        )
+        interactive_request.additional_manuscript_ids = (!bot.additional_manuscript_ids.is_empty())
+            .then(|| bot.additional_manuscript_ids.clone());
+        apply_bot_world_continuity(&mut interactive_request.surface, bot.world_binding.as_ref())
+            .map_err(|error| {
+                (
+                    StatusCode::CONFLICT,
+                    format!(
+                        "Bot '{}' has invalid world continuity: {error}",
+                        bot.display_name
+                    ),
+                )
+            })?;
+        Some(crate::agent_runtime::execution_context::BotTurnIdentity::from_profile(bot))
     } else {
         None
     };
@@ -235,7 +232,7 @@ pub async fn spawn_turn_ticket(
             browser_host: continuation_scope.supports_browser_host,
         },
         tokio_util::sync::CancellationToken::new(),
-        std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60),
+        None,
         continuation_scope.clone(),
     );
     if let Some(bot_identity) = bot_identity {
@@ -300,8 +297,9 @@ pub async fn spawn_turn_ticket(
     if mode == crate::turn_ticket::TurnTicketMode::Background
         && let Some(job_id) = workspace_card_id.as_deref()
     {
-        crate::workspace::ask_job_store::ask_job_store().register_pending(
-            crate::workspace::ask_job_store::AskJobRecord {
+        let store = crate::workspace::ask_job_store::ask_job_store();
+        let persisted = async {
+            store.try_register_pending(crate::workspace::ask_job_store::AskJobRecord {
                 job_id: job_id.to_string(),
                 prompt: interactive_request.prompt.clone(),
                 status: crate::workspace::ask_job_store::AskJobStatus::Pending,
@@ -319,9 +317,19 @@ pub async fn spawn_turn_ticket(
                 archived: false,
                 journal_path: None,
                 notified_channel: None,
-            },
-        );
-        crate::workspace::ask_job_store::ask_job_store().mark_running(job_id);
+            })?;
+            store.try_mark_running(job_id)?;
+            crate::workspace::persist::flush_persist_writer().await?;
+            Ok::<(), crate::persistence::PersistenceError>(())
+        }
+        .await;
+        if let Err(error) = persisted {
+            let message = format!("background work could not be durably accepted: {error}");
+            store.mark_failed(job_id, message.clone());
+            stream_port.drop_stream(&turn_id).await;
+            crate::turn_ticket::clear_turn(&state.turn_tickets, &turn_id).await;
+            return Err((StatusCode::SERVICE_UNAVAILABLE, message));
+        }
     }
 
     state
@@ -681,21 +689,9 @@ pub async fn cancel_active_session_turn_for_session(
         .cancel_matching_turn(&typed_session_id, &active.turn_id);
     crate::turn_ticket::mark_cancelled(&state.turn_tickets, &active.turn_id).await;
 
-    if let Some(entry) = state
-        .interactive_turn_streams
-        .read()
-        .await
-        .get(&active.turn_id)
-        .cloned()
-    {
-        publish_interactive_turn_event(
-            &entry,
-            crate::interactive_turn_runtime::error_stream_event(
-                &active.turn_id,
-                "interactive turn cancelled",
-            ),
-        );
-    }
+    // The running turn observes cancellation and publishes its terminal event
+    // through the existing pipeline. Appending a second legacy event here races
+    // that pipeline's journal sequence and cannot be replayed by v3 clients.
 
     state
         .channel_deliveries

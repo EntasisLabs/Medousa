@@ -301,6 +301,10 @@ pub enum DaemonSecretPath {
         installation_id: InstallationId,
         server_id: McpServerId,
     },
+    McpBearer {
+        installation_id: InstallationId,
+        server_id: McpServerId,
+    },
     LocalAuth {
         installation_id: InstallationId,
         client_kind: LocalClientKind,
@@ -332,6 +336,14 @@ impl DaemonSecretPath {
                 server_id,
             } => format!(
                 "v1/{}/mcp/{}/oauth",
+                installation_id.as_str(),
+                server_id.as_str()
+            ),
+            Self::McpBearer {
+                installation_id,
+                server_id,
+            } => format!(
+                "v1/{}/mcp/{}/bearer",
                 installation_id.as_str(),
                 server_id.as_str()
             ),
@@ -374,6 +386,10 @@ impl DaemonSecretPath {
                 slot: IntegrationSecretSlot::parse(slot)?,
             }),
             ["v1", installation, "mcp", server_id, "oauth"] => Ok(Self::McpOAuth {
+                installation_id: InstallationId::parse(installation)?,
+                server_id: McpServerId::parse(server_id)?,
+            }),
+            ["v1", installation, "mcp", server_id, "bearer"] => Ok(Self::McpBearer {
                 installation_id: InstallationId::parse(installation)?,
                 server_id: McpServerId::parse(server_id)?,
             }),
@@ -522,6 +538,20 @@ mod tests {
         assert_eq!(
             account,
             "v1/550e8400-e29b-41d4-a716-446655440000/mcp/notion/oauth"
+        );
+        assert_eq!(DaemonSecretPath::parse(&account).unwrap(), path);
+    }
+
+    #[test]
+    fn mcp_bearer_path_round_trips() {
+        let path = DaemonSecretPath::McpBearer {
+            installation_id: InstallationId::parse("550e8400-e29b-41d4-a716-446655440000").unwrap(),
+            server_id: McpServerId::parse("notion").unwrap(),
+        };
+        let account = path.account();
+        assert_eq!(
+            account,
+            "v1/550e8400-e29b-41d4-a716-446655440000/mcp/notion/bearer"
         );
         assert_eq!(DaemonSecretPath::parse(&account).unwrap(), path);
     }

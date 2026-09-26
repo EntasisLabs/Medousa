@@ -1,17 +1,12 @@
 //! Persistent daemon ask jobs — workspace cards + durable results.
 
 use std::collections::HashMap;
-use std::fs;
-use std::path::PathBuf;
 use std::sync::Mutex;
 
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
-use crate::session;
-
-const ASK_JOBS_FILE: &str = "workspace/ask_jobs.json";
 const MAX_ACTIVE_ASK_JOBS: usize = 200;
 use crate::workspace::retention::WorkspaceRetentionConfig;
 
@@ -71,83 +66,103 @@ pub struct AskJobRecord {
 
 pub struct AskJobStore {
     records: Mutex<HashMap<String, AskJobRecord>>,
+    admit_mutations: MutationAdmitter,
 }
+
+type MutationAdmitter = std::sync::Arc<
+    dyn Fn(
+            Vec<crate::workspace::persist::WorkspaceMutation>,
+        ) -> Result<(), crate::persistence::PersistenceError>
+        + Send
+        + Sync,
+>;
 
 impl AskJobStore {
     fn new() -> Self {
-        let store = Self {
-            records: Mutex::new(HashMap::new()),
-        };
+        let store = Self::with_admitter(std::sync::Arc::new(
+            crate::workspace::persist::queue_mutations,
+        ));
         store.reload_from_disk();
         store
     }
 
-    fn path() -> PathBuf {
-        session::medousa_data_dir().join(
-            ASK_JOBS_FILE
-                .strip_prefix("workspace/")
-                .unwrap_or(ASK_JOBS_FILE),
-        )
+    fn with_admitter(admit_mutations: MutationAdmitter) -> Self {
+        Self {
+            records: Mutex::new(HashMap::new()),
+            admit_mutations,
+        }
     }
 
     fn reload_from_disk(&self) {
-        let _ = fs::create_dir_all(session::medousa_data_dir().join("workspace"));
         if let Some(projection) = crate::workspace::persist::startup_projection() {
             *self.records.lock().expect("ask job records") = projection.ask_jobs;
-            return;
-        }
-        let Ok(raw) = fs::read_to_string(Self::path()) else {
-            return;
-        };
-        let Ok(mut map) = serde_json::from_str::<HashMap<String, AskJobRecord>>(&raw) else {
-            return;
-        };
-        let mut changed = false;
-        for record in map.values_mut() {
-            if record.status == AskJobStatus::Running {
-                record.status = AskJobStatus::Failed;
-                record.error = Some("interrupted by daemon restart".to_string());
-                record.updated_at_utc = Utc::now();
-                record.finished_at_utc = Some(Utc::now());
-                changed = true;
-            }
-        }
-        if changed {
-            let _ = Self::write_map(&map);
-        }
-        *self.records.lock().expect("ask job records") = map;
-    }
-
-    fn write_map(map: &HashMap<String, AskJobRecord>) -> std::io::Result<()> {
-        let path = Self::path();
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let body = serde_json::to_string_pretty(map)?;
-        fs::write(path, body)
-    }
-
-    fn persist(&self, job_id: &str) {
-        let mut guard = self.records.lock().expect("ask job records");
-        let mut changed = Self::prune_map(&mut guard);
-        if let Some(record) = guard.get(job_id).cloned() {
-            changed.push(record);
-        }
-        let retained = guard.keys().cloned().collect::<Vec<_>>();
-        drop(guard);
-        changed.sort_by(|left, right| left.job_id.cmp(&right.job_id));
-        changed.dedup_by(|left, right| left.job_id == right.job_id);
-        for record in changed {
-            let _ = crate::workspace::persist::queue_mutation(
-                crate::workspace::persist::WorkspaceMutation::UpsertAskJob {
-                    record: Box::new(record),
-                },
+        } else {
+            tracing::error!(
+                "ask_job_store: workspace persistence projection unavailable; refusing ambient snapshot fallback"
             );
         }
-        let _ = crate::workspace::persist::queue_mutation(
+    }
+
+    fn transition<R>(
+        &self,
+        job_id: &str,
+        update: impl FnOnce(&mut HashMap<String, AskJobRecord>) -> Option<R>,
+        publish_after_admission_error: bool,
+    ) -> Result<Option<R>, crate::persistence::PersistenceError> {
+        let mut guard = self.records.lock().expect("ask job records");
+        // Observed output/terminal state remains authoritative in memory even
+        // when storage is unavailable. Move that map under its lock instead of
+        // copying every unrelated result on each streamed update.
+        let mut candidate = if publish_after_admission_error {
+            std::mem::take(&mut *guard)
+        } else {
+            guard.clone()
+        };
+        let Some(result) = update(&mut candidate) else {
+            if publish_after_admission_error {
+                *guard = candidate;
+            }
+            return Ok(None);
+        };
+        let mut changed = Self::prune_map(&mut candidate);
+        if let Some(record) = candidate.get(job_id).cloned() {
+            changed.push(record);
+        }
+        let retained = candidate.keys().cloned().collect::<Vec<_>>();
+        changed.sort_by(|left, right| left.job_id.cmp(&right.job_id));
+        changed.dedup_by(|left, right| left.job_id == right.job_id);
+        let mut mutations = changed
+            .into_iter()
+            .map(
+                |record| crate::workspace::persist::WorkspaceMutation::UpsertAskJob {
+                    record: Box::new(record),
+                },
+            )
+            .collect::<Vec<_>>();
+        mutations.push(
             crate::workspace::persist::WorkspaceMutation::RetainAskJobs { job_ids: retained },
         );
+        let admission = (self.admit_mutations)(mutations);
+        if let Err(error) = admission {
+            if publish_after_admission_error {
+                *guard = candidate;
+                drop(guard);
+                Self::notify_ask_job_changed(job_id);
+            }
+            return Err(error);
+        }
+        *guard = candidate;
+        drop(guard);
         Self::notify_ask_job_changed(job_id);
+        Ok(Some(result))
+    }
+
+    fn report_persistence_error(
+        action: &str,
+        job_id: &str,
+        error: &crate::persistence::PersistenceError,
+    ) {
+        tracing::error!(job_id, action, error = %error, "ask_job_store persistence admission failed");
     }
 
     fn notify_ask_job_changed(job_id: &str) {
@@ -195,145 +210,287 @@ impl AskJobStore {
         changed
     }
 
-    pub fn register_pending(&self, record: AskJobRecord) {
+    pub fn try_register_pending(
+        &self,
+        record: AskJobRecord,
+    ) -> Result<(), crate::persistence::PersistenceError> {
         let job_id = record.job_id.clone();
-        let mut guard = self.records.lock().expect("ask job records");
-        guard.insert(job_id.clone(), record);
-        drop(guard);
-        self.persist(&job_id);
+        let key = job_id.clone();
+        self.transition(
+            &job_id,
+            move |records| {
+                records.insert(key, record);
+                Some(())
+            },
+            false,
+        )?;
+        Ok(())
+    }
+
+    pub fn register_pending(&self, record: AskJobRecord) {
+        if let Err(error) = self.try_register_pending(record) {
+            Self::report_persistence_error("register_pending", "unknown", &error);
+        }
+    }
+
+    pub fn try_set_interim_text(
+        &self,
+        job_id: &str,
+        interim_text: String,
+    ) -> Result<bool, crate::persistence::PersistenceError> {
+        let now = Utc::now();
+        let updated = self.transition(
+            job_id,
+            move |records| {
+                let record = records.get_mut(job_id)?;
+                if matches!(
+                    record.status,
+                    AskJobStatus::Succeeded | AskJobStatus::Failed | AskJobStatus::Canceled
+                ) {
+                    return None;
+                }
+                record.interim_text = Some(interim_text);
+                if record.status == AskJobStatus::Pending {
+                    record.status = AskJobStatus::Running;
+                }
+                record.updated_at_utc = now;
+                Some(())
+            },
+            true,
+        )?;
+        Ok(updated.is_some())
     }
 
     pub fn set_interim_text(&self, job_id: &str, interim_text: String) {
-        let mut guard = self.records.lock().expect("ask job records");
-        let Some(record) = guard.get_mut(job_id) else {
-            return;
-        };
-        if matches!(
-            record.status,
-            AskJobStatus::Succeeded | AskJobStatus::Failed | AskJobStatus::Canceled
-        ) {
-            return;
+        if let Err(error) = self.try_set_interim_text(job_id, interim_text) {
+            Self::report_persistence_error("set_interim_text", job_id, &error);
         }
-        record.interim_text = Some(interim_text);
-        if record.status == AskJobStatus::Pending {
-            record.status = AskJobStatus::Running;
-        }
-        record.updated_at_utc = Utc::now();
-        drop(guard);
-        self.persist(job_id);
+    }
+
+    pub fn try_mark_running(
+        &self,
+        job_id: &str,
+    ) -> Result<bool, crate::persistence::PersistenceError> {
+        let now = Utc::now();
+        let updated = self.transition(
+            job_id,
+            move |records| {
+                let record = records.get_mut(job_id)?;
+                record.status = AskJobStatus::Running;
+                record.updated_at_utc = now;
+                Some(())
+            },
+            false,
+        )?;
+        Ok(updated.is_some())
     }
 
     pub fn mark_running(&self, job_id: &str) {
-        let mut guard = self.records.lock().expect("ask job records");
-        let Some(record) = guard.get_mut(job_id) else {
-            return;
-        };
-        record.status = AskJobStatus::Running;
-        record.updated_at_utc = Utc::now();
-        drop(guard);
-        self.persist(job_id);
+        if let Err(error) = self.try_mark_running(job_id) {
+            Self::report_persistence_error("mark_running", job_id, &error);
+        }
+    }
+
+    pub fn try_mark_succeeded(
+        &self,
+        job_id: &str,
+        output_text: String,
+    ) -> Result<bool, crate::persistence::PersistenceError> {
+        let now = Utc::now();
+        let updated = self.transition(
+            job_id,
+            move |records| {
+                let record = records.get_mut(job_id)?;
+                record.status = AskJobStatus::Succeeded;
+                record.output_text = Some(output_text);
+                record.error = None;
+                record.updated_at_utc = now;
+                record.finished_at_utc = Some(now);
+                Some(())
+            },
+            true,
+        )?;
+        Ok(updated.is_some())
     }
 
     pub fn mark_succeeded(&self, job_id: &str, output_text: String) {
-        let now = Utc::now();
-        let mut guard = self.records.lock().expect("ask job records");
-        let Some(record) = guard.get_mut(job_id) else {
-            return;
-        };
-        record.status = AskJobStatus::Succeeded;
-        record.output_text = Some(output_text);
-        record.error = None;
-        record.updated_at_utc = now;
-        record.finished_at_utc = Some(now);
-        drop(guard);
-        self.persist(job_id);
+        if let Err(error) = self.try_mark_succeeded(job_id, output_text) {
+            Self::report_persistence_error("mark_succeeded", job_id, &error);
+        }
     }
 
-    pub fn mark_failed(&self, job_id: &str, error: String) {
+    pub fn try_mark_failed(
+        &self,
+        job_id: &str,
+        failure: String,
+    ) -> Result<bool, crate::persistence::PersistenceError> {
         let now = Utc::now();
-        let mut guard = self.records.lock().expect("ask job records");
-        let Some(record) = guard.get_mut(job_id) else {
-            return;
-        };
-        record.status = AskJobStatus::Failed;
-        record.error = Some(error);
-        record.updated_at_utc = now;
-        record.finished_at_utc = Some(now);
-        drop(guard);
-        self.persist(job_id);
+        let updated = self.transition(
+            job_id,
+            move |records| {
+                let record = records.get_mut(job_id)?;
+                record.status = AskJobStatus::Failed;
+                record.error = Some(failure);
+                record.updated_at_utc = now;
+                record.finished_at_utc = Some(now);
+                Some(())
+            },
+            true,
+        )?;
+        Ok(updated.is_some())
+    }
+
+    pub fn mark_failed(&self, job_id: &str, failure: String) {
+        if let Err(error) = self.try_mark_failed(job_id, failure) {
+            Self::report_persistence_error("mark_failed", job_id, &error);
+        }
+    }
+
+    pub fn try_reset_for_retry(
+        &self,
+        job_id: &str,
+    ) -> Result<Option<AskJobRecord>, crate::persistence::PersistenceError> {
+        let now = Utc::now();
+        self.transition(
+            job_id,
+            move |records| {
+                let record = records.get_mut(job_id)?;
+                if !matches!(record.status, AskJobStatus::Failed | AskJobStatus::Canceled) {
+                    return None;
+                }
+                record.status = AskJobStatus::Pending;
+                record.error = None;
+                record.output_text = None;
+                record.interim_text = None;
+                record.finished_at_utc = None;
+                record.updated_at_utc = now;
+                Some(record.clone())
+            },
+            false,
+        )
     }
 
     pub fn reset_for_retry(&self, job_id: &str) -> Option<AskJobRecord> {
-        let now = Utc::now();
-        let mut guard = self.records.lock().expect("ask job records");
-        let record = guard.get_mut(job_id)?;
-        if !matches!(record.status, AskJobStatus::Failed | AskJobStatus::Canceled) {
-            return None;
+        match self.try_reset_for_retry(job_id) {
+            Ok(record) => record,
+            Err(error) => {
+                Self::report_persistence_error("reset_for_retry", job_id, &error);
+                None
+            }
         }
-        record.status = AskJobStatus::Pending;
-        record.error = None;
-        record.output_text = None;
-        record.interim_text = None;
-        record.finished_at_utc = None;
-        record.updated_at_utc = now;
-        let snapshot = record.clone();
-        drop(guard);
-        self.persist(job_id);
-        Some(snapshot)
+    }
+
+    pub fn try_mark_canceled(
+        &self,
+        job_id: &str,
+    ) -> Result<bool, crate::persistence::PersistenceError> {
+        let now = Utc::now();
+        let updated = self.transition(
+            job_id,
+            move |records| {
+                let record = records.get_mut(job_id)?;
+                if matches!(
+                    record.status,
+                    AskJobStatus::Succeeded | AskJobStatus::Failed
+                ) {
+                    return None;
+                }
+                record.status = AskJobStatus::Canceled;
+                record.updated_at_utc = now;
+                record.finished_at_utc = Some(now);
+                Some(())
+            },
+            true,
+        )?;
+        Ok(updated.is_some())
     }
 
     pub fn mark_canceled(&self, job_id: &str) {
-        let now = Utc::now();
-        let mut guard = self.records.lock().expect("ask job records");
-        let Some(record) = guard.get_mut(job_id) else {
-            return;
-        };
-        if record.status == AskJobStatus::Succeeded || record.status == AskJobStatus::Failed {
-            return;
+        if let Err(error) = self.try_mark_canceled(job_id) {
+            Self::report_persistence_error("mark_canceled", job_id, &error);
         }
-        record.status = AskJobStatus::Canceled;
-        record.updated_at_utc = now;
-        record.finished_at_utc = Some(now);
-        drop(guard);
-        self.persist(job_id);
+    }
+
+    pub fn try_archive(
+        &self,
+        job_id: &str,
+        purge_body: bool,
+    ) -> Result<Option<AskJobRecord>, crate::persistence::PersistenceError> {
+        let now = Utc::now();
+        self.transition(
+            job_id,
+            move |records| {
+                let record = records.get_mut(job_id)?;
+                record.archived = true;
+                record.updated_at_utc = now;
+                if purge_body {
+                    record.output_text = None;
+                    record.interim_text = None;
+                }
+                Some(record.clone())
+            },
+            true,
+        )
     }
 
     pub fn archive(&self, job_id: &str, purge_body: bool) -> Option<AskJobRecord> {
-        let now = Utc::now();
-        let mut guard = self.records.lock().expect("ask job records");
-        let record = guard.get_mut(job_id)?;
-        record.archived = true;
-        record.updated_at_utc = now;
-        if purge_body {
-            record.output_text = None;
-            record.interim_text = None;
+        match self.try_archive(job_id, purge_body) {
+            Ok(record) => record,
+            Err(error) => {
+                Self::report_persistence_error("archive", job_id, &error);
+                None
+            }
         }
-        let snapshot = record.clone();
-        drop(guard);
-        self.persist(job_id);
-        Some(snapshot)
+    }
+
+    pub fn try_set_journal_path(
+        &self,
+        job_id: &str,
+        path: String,
+    ) -> Result<bool, crate::persistence::PersistenceError> {
+        let now = Utc::now();
+        let updated = self.transition(
+            job_id,
+            move |records| {
+                let record = records.get_mut(job_id)?;
+                record.journal_path = Some(path);
+                record.updated_at_utc = now;
+                Some(())
+            },
+            true,
+        )?;
+        Ok(updated.is_some())
     }
 
     pub fn set_journal_path(&self, job_id: &str, path: String) {
-        let mut guard = self.records.lock().expect("ask job records");
-        let Some(record) = guard.get_mut(job_id) else {
-            return;
-        };
-        record.journal_path = Some(path);
-        record.updated_at_utc = Utc::now();
-        drop(guard);
-        self.persist(job_id);
+        if let Err(error) = self.try_set_journal_path(job_id, path) {
+            Self::report_persistence_error("set_journal_path", job_id, &error);
+        }
+    }
+
+    pub fn try_set_notified_channel(
+        &self,
+        job_id: &str,
+        channel: String,
+    ) -> Result<bool, crate::persistence::PersistenceError> {
+        let now = Utc::now();
+        let updated = self.transition(
+            job_id,
+            move |records| {
+                let record = records.get_mut(job_id)?;
+                record.notified_channel = Some(channel);
+                record.updated_at_utc = now;
+                Some(())
+            },
+            true,
+        )?;
+        Ok(updated.is_some())
     }
 
     pub fn set_notified_channel(&self, job_id: &str, channel: String) {
-        let mut guard = self.records.lock().expect("ask job records");
-        let Some(record) = guard.get_mut(job_id) else {
-            return;
-        };
-        record.notified_channel = Some(channel);
-        record.updated_at_utc = Utc::now();
-        drop(guard);
-        self.persist(job_id);
+        if let Err(error) = self.try_set_notified_channel(job_id, channel) {
+            Self::report_persistence_error("set_notified_channel", job_id, &error);
+        }
     }
 
     pub fn get(&self, job_id: &str) -> Option<AskJobRecord> {
@@ -362,6 +519,33 @@ impl AskJobStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    fn test_record(job_id: &str, status: AskJobStatus) -> AskJobRecord {
+        AskJobRecord {
+            job_id: job_id.to_string(),
+            prompt: "research openclaw".to_string(),
+            status,
+            output_text: None,
+            interim_text: None,
+            error: None,
+            session_id: "daemon-api:test".to_string(),
+            manuscript_id: None,
+            additional_manuscript_ids: None,
+            suggested_capability_ids: Some(vec!["websearch.search".to_string()]),
+            model_hint: Some("ollama:qwen".to_string()),
+            created_at_utc: Utc::now(),
+            updated_at_utc: Utc::now(),
+            finished_at_utc: None,
+            archived: false,
+            journal_path: None,
+            notified_channel: None,
+        }
+    }
+
+    fn memory_store() -> AskJobStore {
+        AskJobStore::with_admitter(std::sync::Arc::new(|_| Ok(())))
+    }
 
     #[test]
     fn ask_job_session_id_is_isolated_per_job() {
@@ -373,29 +557,12 @@ mod tests {
 
     #[test]
     fn reset_for_retry_only_failed_or_canceled() {
-        let store = AskJobStore {
-            records: Mutex::new(HashMap::new()),
-        };
+        let store = memory_store();
         let job_id = "medousa-daemon-ask-test-1".to_string();
-        store.register_pending(AskJobRecord {
-            job_id: job_id.clone(),
-            prompt: "research openclaw".to_string(),
-            status: AskJobStatus::Failed,
-            output_text: None,
-            interim_text: None,
-            error: Some("tool denied".to_string()),
-            session_id: "daemon-api:test".to_string(),
-            manuscript_id: None,
-            additional_manuscript_ids: None,
-            suggested_capability_ids: Some(vec!["websearch.search".to_string()]),
-            model_hint: Some("ollama:qwen".to_string()),
-            created_at_utc: Utc::now(),
-            updated_at_utc: Utc::now(),
-            finished_at_utc: Some(Utc::now()),
-            archived: false,
-            journal_path: None,
-            notified_channel: None,
-        });
+        let mut failed = test_record(&job_id, AskJobStatus::Failed);
+        failed.error = Some("tool denied".to_string());
+        failed.finished_at_utc = Some(Utc::now());
+        store.register_pending(failed);
 
         let retried = store.reset_for_retry(&job_id).expect("reset");
         assert_eq!(retried.status, AskJobStatus::Pending);
@@ -408,5 +575,80 @@ mod tests {
 
         store.mark_running(&job_id);
         assert!(store.reset_for_retry(&job_id).is_none());
+    }
+
+    #[test]
+    fn registration_admits_record_and_retention_as_one_batch_before_publication() {
+        let batches = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let captured = batches.clone();
+        let store = AskJobStore::with_admitter(std::sync::Arc::new(move |batch| {
+            captured.lock().unwrap().push(batch);
+            Ok(())
+        }));
+        let job_id = "medousa-daemon-ask-atomic";
+
+        store
+            .try_register_pending(test_record(job_id, AskJobStatus::Pending))
+            .unwrap();
+
+        let batches = batches.lock().unwrap();
+        assert_eq!(batches.len(), 1);
+        assert!(batches[0].iter().any(|mutation| matches!(
+            mutation,
+            crate::workspace::persist::WorkspaceMutation::UpsertAskJob { record }
+                if record.job_id == job_id
+        )));
+        assert!(batches[0].iter().any(|mutation| matches!(
+            mutation,
+            crate::workspace::persist::WorkspaceMutation::RetainAskJobs { job_ids }
+                if job_ids.iter().any(|candidate| candidate == job_id)
+        )));
+        assert_eq!(store.get(job_id).unwrap().status, AskJobStatus::Pending);
+    }
+
+    #[test]
+    fn failed_new_admission_is_not_published_but_observed_terminal_result_is_kept() {
+        let reject = std::sync::Arc::new(AtomicBool::new(false));
+        let reject_admission = reject.clone();
+        let store = AskJobStore::with_admitter(std::sync::Arc::new(move |_| {
+            if reject_admission.load(Ordering::SeqCst) {
+                Err(crate::persistence::PersistenceError::new(
+                    crate::persistence::PersistenceErrorKind::Overloaded,
+                    "test queue full",
+                ))
+            } else {
+                Ok(())
+            }
+        }));
+
+        assert!(
+            store
+                .try_register_pending(test_record(
+                    "medousa-daemon-ask-rejected",
+                    AskJobStatus::Pending,
+                ))
+                .is_ok()
+        );
+        reject.store(true, Ordering::SeqCst);
+        assert!(
+            store
+                .try_register_pending(test_record(
+                    "medousa-daemon-ask-not-admitted",
+                    AskJobStatus::Pending,
+                ))
+                .is_err()
+        );
+        assert!(store.get("medousa-daemon-ask-not-admitted").is_none());
+
+        let error = store
+            .try_mark_succeeded(
+                "medousa-daemon-ask-rejected",
+                "completed answer".to_string(),
+            )
+            .unwrap_err();
+        assert_eq!(error.to_string(), "test queue full");
+        let observed = store.get("medousa-daemon-ask-rejected").unwrap();
+        assert_eq!(observed.status, AskJobStatus::Succeeded);
+        assert_eq!(observed.output_text.as_deref(), Some("completed answer"));
     }
 }

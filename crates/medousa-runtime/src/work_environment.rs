@@ -505,7 +505,10 @@ pub struct WorkEnvironmentExecRequest {
     pub environment: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stdin: Option<String>,
-    pub timeout_seconds: u64,
+    /// Optional execution limit. `None` runs until completion or cancellation;
+    /// it is independent of how long the caller waits for the result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_seconds: Option<u64>,
     pub max_output_bytes: u64,
 }
 
@@ -1078,9 +1081,9 @@ impl WorkEnvironmentPort for InMemoryWorkEnvironmentPort {
             }
             validate_identifier("exec idempotency_key", &request.idempotency_key)?;
             validate_reference("exec program", &request.program)?;
-            if request.timeout_seconds == 0 || request.max_output_bytes == 0 {
+            if request.timeout_seconds == Some(0) || request.max_output_bytes == 0 {
                 return Err(WorkEnvironmentError::InvalidSpec(
-                    "exec timeout and output bound must be greater than zero".to_string(),
+                    "specified exec timeout and output bound must be greater than zero".to_string(),
                 ));
             }
             if request
@@ -1386,7 +1389,7 @@ mod tests {
             working_directory: Some("/workspace".to_string()),
             environment: BTreeMap::new(),
             stdin: None,
-            timeout_seconds: 300,
+            timeout_seconds: Some(300),
             max_output_bytes: 1024 * 1024,
         }
     }

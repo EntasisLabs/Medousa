@@ -9,7 +9,9 @@
 
 use std::future::IntoFuture;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -90,6 +92,11 @@ pub fn configure_grapheme_engine_builder(builder: GraphemeEngineBuilder) -> Grap
 fn medousa_and_shell_capability_interceptor()
 -> impl Fn(&CapabilityCall) -> Option<Result<Value, HostCallError>> + Send + Sync + 'static {
     move |call: &CapabilityCall| {
+        if crate::shell_grapheme::workflow_cancellation_requested() {
+            return Some(Err(HostCallError::Fatal(
+                "Grapheme execution was cancelled".to_string(),
+            )));
+        }
         if let Some(result) = crate::grapheme_secret_bridge::try_secret_capability_call(call) {
             return Some(result);
         }
@@ -205,6 +212,48 @@ impl Default for MedousaWorkflowEngine {
     }
 }
 
+fn configured_execution_timeout() -> Result<Option<Duration>, StasisError> {
+    let raw = [
+        "MEDOUSA_GRAPHEME_EXECUTION_TIMEOUT_MS",
+        "STASIS_GRAPHEME_EXECUTION_TIMEOUT_MS",
+        "GRAPHEME_EXECUTION_TIMEOUT_MS",
+    ]
+    .into_iter()
+    .find_map(|name| std::env::var(name).ok());
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    let timeout_ms = raw.trim().parse::<u64>().map_err(|error| {
+        StasisError::PortFailure(format!(
+            "invalid Grapheme execution timeout configuration: {error}"
+        ))
+    })?;
+    if timeout_ms == 0 {
+        return Err(StasisError::PortFailure(
+            "Grapheme execution timeout must be greater than 0ms when explicitly configured"
+                .to_string(),
+        ));
+    }
+    Ok(Some(Duration::from_millis(timeout_ms)))
+}
+
+struct ExecutionTimeoutGuard {
+    timer: Option<tokio::task::JoinHandle<()>>,
+    cancellation: Arc<AtomicBool>,
+    cancel_on_drop: bool,
+}
+
+impl Drop for ExecutionTimeoutGuard {
+    fn drop(&mut self) {
+        if self.cancel_on_drop {
+            self.cancellation.store(true, Ordering::Release);
+        }
+        if let Some(handle) = self.timer.take() {
+            handle.abort();
+        }
+    }
+}
+
 #[async_trait]
 impl WorkflowEngine for MedousaWorkflowEngine {
     async fn execute_grapheme_source(
@@ -214,13 +263,7 @@ impl WorkflowEngine for MedousaWorkflowEngine {
     ) -> StasisResult<WorkflowExecutionOutput> {
         self.validate_source(source)?;
         let guardrails = self.guardrails.clone();
-        let timeout = guardrails.execution_timeout;
-        if timeout.is_zero() {
-            return Err(StasisError::PortFailure(
-                "grapheme policy violation: execution timeout must be greater than 0ms".to_string(),
-            ));
-        }
-
+        let execution_timeout = configured_execution_timeout()?;
         let source_owned = source.to_string();
         let (secret_run_token, state_current_owned) =
             crate::grapheme_secret_bridge::split_execution_state(state_current)
@@ -234,29 +277,56 @@ impl WorkflowEngine for MedousaWorkflowEngine {
             ));
         }
         let guardrails_clone = guardrails.clone();
+        let cancellation = crate::shell_grapheme::current_workflow_cancellation_token()
+            .unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
+        let timed_out = Arc::new(AtomicBool::new(false));
+        if cancellation.load(Ordering::Acquire) {
+            return Err(StasisError::PortFailure(
+                "Grapheme execution cancelled before interpreter start".to_string(),
+            ));
+        }
+        let mut timeout_guard = ExecutionTimeoutGuard {
+            cancellation: Arc::clone(&cancellation),
+            cancel_on_drop: true,
+            timer: execution_timeout.map(|timeout| {
+                let cancellation = Arc::clone(&cancellation);
+                let timed_out = Arc::clone(&timed_out);
+                tokio::spawn(async move {
+                    tokio::time::sleep(timeout).await;
+                    timed_out.store(true, Ordering::Release);
+                    cancellation.store(true, Ordering::Release);
+                })
+            }),
+        };
         let handle = tokio::task::spawn_blocking(move || {
             let engine = Self::shared_engine(&guardrails_clone);
             let execute =
                 || engine.execute_source_with_initial_state(&source_owned, state_current_owned);
-            match secret_run_token {
-                Some(token) => crate::grapheme_secret_bridge::with_run_scope(&token, execute)
-                    .map_err(GraphemeSdkError::Contract)?,
-                None => execute(),
-            }
+            crate::shell_grapheme::with_blocking_cancellation_scope(Some(cancellation), || {
+                match secret_run_token {
+                    Some(token) => crate::grapheme_secret_bridge::with_run_scope(&token, execute)
+                        .map_err(GraphemeSdkError::Contract)?,
+                    None => execute(),
+                }
+            })
         });
 
-        let result = tokio::time::timeout(timeout, handle)
-            .await
-            .map_err(|_| {
-                StasisError::PortFailure(format!(
-                    "grapheme policy violation: execution timed out after {} ms",
-                    timeout.as_millis()
-                ))
-            })?
-            .map_err(|err| {
-                StasisError::PortFailure(format!("grapheme sdk worker join error: {err}"))
-            })?
-            .map_err(Self::map_error)?;
+        // Do not return at a timer boundary while an unabortable blocking
+        // interpreter may still run. An explicitly configured legacy workflow
+        // timeout signals the shell host; then we join the worker before
+        // reporting timeout. The default is no total workflow deadline.
+        let worker_result = handle.await.map_err(|err| {
+            StasisError::PortFailure(format!("grapheme sdk worker join error: {err}"))
+        })?;
+        timeout_guard.cancel_on_drop = false;
+        drop(timeout_guard);
+        if timed_out.load(Ordering::Acquire) {
+            return Err(StasisError::PortFailure(
+                "Grapheme execution reached its explicitly configured timeout; cancellation was requested and the interpreter has returned"
+                    .to_string(),
+            ));
+        }
+        let result = worker_result.map_err(Self::map_error)?;
 
         Ok(WorkflowExecutionOutput {
             run_id: format!("grapheme:{}", result.artifact_id),
@@ -601,7 +671,11 @@ fn deliver_to_work(title: &str, body: &str, session_id: &str) -> Result<Value, H
         intent: Some("grapheme_medousa_deliver".to_string()),
         tool_names: vec!["medousa.deliver".to_string()],
     };
-    workspace_store().append_event(event);
+    workspace_store().append_event(event).map_err(|error| {
+        HostCallError::Fatal(format!(
+            "workspace delivery persistence admission failed: {error}"
+        ))
+    })?;
     Ok(json!({
         "destination": "work",
         "delivered": true,
@@ -912,6 +986,40 @@ fn block_on<F: IntoFuture>(future: F) -> F::Output {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn workflow_shell_can_run_past_the_former_two_second_default() {
+        let source = crate::shell_grapheme::synthesize_shell_run_source(
+            &json!({"command": "sleep 2.1; printf completed"}),
+        )
+        .unwrap();
+        let started = std::time::Instant::now();
+        let output = MedousaWorkflowEngine::new()
+            .execute_grapheme_source(&source, None)
+            .await
+            .expect("a useful shell call must outlive the old workflow timeout");
+        assert!(started.elapsed() >= Duration::from_secs(2));
+        assert_eq!(output.final_state["current"]["exit_code"], 0);
+        assert_eq!(output.final_state["current"]["stdout"], "completed");
+    }
+
+    #[test]
+    fn dropped_engine_future_cancels_its_blocking_worker_but_completion_does_not() {
+        let cancellation = Arc::new(AtomicBool::new(false));
+        drop(ExecutionTimeoutGuard {
+            timer: None,
+            cancellation: Arc::clone(&cancellation),
+            cancel_on_drop: false,
+        });
+        assert!(!cancellation.load(Ordering::Acquire));
+        drop(ExecutionTimeoutGuard {
+            timer: None,
+            cancellation: Arc::clone(&cancellation),
+            cancel_on_drop: true,
+        });
+        assert!(cancellation.load(Ordering::Acquire));
+    }
 
     #[test]
     fn medousa_call_detection_uses_module_or_capability_prefix() {

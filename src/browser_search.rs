@@ -185,19 +185,32 @@ pub async fn run_browser_backed_search(
         .is_some_and(|label| label.starts_with("home-ios") || label.starts_with("home-android"));
 
     if client_executed {
+        // Client-executed search pauses for results or a CAPTCHA. Only start
+        // that UI-dependent path when the owning turn has a delivery sink;
+        // background workers must fall back instead of waiting without a way
+        // to ask the operator for help.
+        let Some(delivery) = delivery.as_ref() else {
+            return search_ddg_html_cached_async(query, max_results).await;
+        };
         return run_client_executed_search(
             query,
             max_results,
             turn_correlation_id,
             chat_session_id,
             world_driver_id,
-            sink,
+            delivery,
         )
         .await;
     }
 
     let response = browser_host_search(query, max_results).await?;
     if response.challenge.is_some() {
+        // A challenge wait is useful only if this turn can tell its owner to
+        // complete it. Otherwise return the challenge to the tool caller
+        // instead of creating an operator session that can never be resumed.
+        let Some(delivery) = delivery.as_ref() else {
+            return Ok(response);
+        };
         return wait_for_challenge_resolution(
             query,
             max_results,
@@ -205,7 +218,7 @@ pub async fn run_browser_backed_search(
             chat_session_id,
             world_driver_id,
             &response,
-            delivery.as_ref(),
+            delivery,
         )
         .await;
     }
@@ -228,7 +241,7 @@ async fn wait_for_challenge_resolution(
     chat_session_id: &str,
     world_driver_id: Option<String>,
     initial: &SearchResponse,
-    delivery: Option<&BrowserToolDelivery>,
+    delivery: &BrowserToolDelivery,
 ) -> Result<SearchResponse, String> {
     let challenge_url = format!("https://html.duckduckgo.com/html/?q={}", urlencoding(query));
     let reason = initial
@@ -247,7 +260,7 @@ async fn wait_for_challenge_resolution(
     let _ = mark_browser_challenge(&session.session_id, challenge_url.clone(), reason.clone());
 
     emit_browser_challenge(
-        delivery,
+        Some(delivery),
         turn_correlation_id,
         session.session_id.clone(),
         challenge_url.clone(),
@@ -255,7 +268,7 @@ async fn wait_for_challenge_resolution(
     )
     .await;
     emit_browser_navigated(
-        delivery,
+        Some(delivery),
         turn_correlation_id,
         challenge_url.clone(),
         Some(format!("Search: {query}")),
@@ -292,7 +305,7 @@ async fn run_client_executed_search(
     turn_correlation_id: &str,
     chat_session_id: &str,
     world_driver_id: Option<String>,
-    sink: Option<SharedAgentStreamSink>,
+    delivery: &BrowserToolDelivery,
 ) -> Result<SearchResponse, String> {
     let session = create_browser_session(BrowserSessionCreateRequest {
         turn_id: turn_correlation_id.to_string(),
@@ -303,12 +316,10 @@ async fn run_client_executed_search(
         client_executed: true,
     });
 
-    let delivery = resolve_browser_tool_delivery(&sink).await;
-
     let navigate_url = format!("https://html.duckduckgo.com/html/?q={}", urlencoding(query));
 
     emit_browser_challenge(
-        delivery.as_ref(),
+        Some(delivery),
         turn_correlation_id,
         session.session_id.clone(),
         navigate_url.clone(),
@@ -316,7 +327,7 @@ async fn run_client_executed_search(
     )
     .await;
     emit_browser_navigated(
-        delivery.as_ref(),
+        Some(delivery),
         turn_correlation_id,
         navigate_url.clone(),
         Some(format!("Search: {query}")),

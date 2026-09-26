@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{Duration as ChronoDuration, Utc};
+use chrono::Utc;
 use once_cell::sync::OnceCell;
 use stasis::application::runtime::runtime_factory::RuntimeComposition;
 use tokio::sync::{mpsc, oneshot, watch};
@@ -298,7 +298,9 @@ async fn apply_incremental_batch(
         if let Some(projected) = map.get(&card_id) {
             apply_item_column_transition(projected);
         } else {
-            workspace_store().prune_card_state(&card_id);
+            if let Err(error) = workspace_store().prune_card_state(&card_id) {
+                tracing::warn!(%card_id, %error, "workspace card-state persistence admission failed");
+            }
         }
     }
 
@@ -374,12 +376,13 @@ fn apply_item_column_transition(item: &ProjectedWorkItem) {
     let store = workspace_store();
     let card_id = &item.card.id.0;
     let previous = store.previous_column(card_id);
-    if previous != Some(item.card.column) {
-        if let Some(event) = event_for_column_transition(&item.detail, previous, item.card.column) {
-            store.append_event(event);
-        }
-        crate::home_push::notify_column_transition(&item.detail, previous, item.card.column);
-        store.remember_column(card_id, item.card.column);
+    let changed = previous != Some(item.card.column);
+    if !changed {
+        return;
+    }
+    let event = event_for_column_transition(&item.detail, previous, item.card.column);
+    if let Err(error) = store.record_column_transition(card_id, item.card.column, event) {
+        tracing::warn!(%card_id, %error, "workspace column projection persistence admission failed");
     }
 }
 
@@ -400,9 +403,13 @@ pub(crate) fn apply_projection_to_store(items: &[ProjectedWorkItem]) {
         .filter(|card_id| !active_ids.contains(card_id))
         .collect();
     for card_id in stale_states {
-        store.prune_card_state(&card_id);
+        if let Err(error) = store.prune_card_state(&card_id) {
+            tracing::warn!(%card_id, %error, "workspace stale card-state persistence admission failed");
+        }
     }
 
-    let cutoff = Utc::now() - ChronoDuration::days(7);
-    store.prune_feed_older_than(cutoff);
+    let cutoff = Utc::now() - chrono::Duration::days(7);
+    if let Err(error) = store.prune_feed_older_than(cutoff) {
+        tracing::warn!(%error, "workspace feed retention persistence admission failed");
+    }
 }

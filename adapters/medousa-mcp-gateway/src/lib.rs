@@ -7,7 +7,7 @@ pub use mcp_gateway::config::{
 };
 pub use mcp_gateway::server_config::{
     GatewaySection, McpGatewayFileConfig, McpGatewayFullConfig, McpServerConfig,
-    gateway_config_path,
+    gateway_config_path, validate_remote_server_url,
 };
 pub use mcp_gateway::starter_config::{
     STARTER_MCP_GATEWAY_TOML, install_starter_gateway_config_if_missing,

@@ -22,6 +22,7 @@ fn chars_to_tokens(chars: usize) -> u32 {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SttpPolicyMode {
     General,
+    Assistant,
     Teacher,
     CoderSetup,
     CoderWork,
@@ -31,6 +32,7 @@ impl SttpPolicyMode {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::General => "general",
+            Self::Assistant => "assistant",
             Self::Teacher => "teacher",
             Self::CoderSetup => "coder_setup",
             Self::CoderWork => "coder_work",
@@ -272,7 +274,7 @@ fn core_slice() -> Result<SttpContentSlice, SttpDocumentBuildError> {
             },
             "c4_action(.99)": {
                 "w1_autonomy(.99)": "use available tools when useful",
-                "w2_scope(.99)": "requested outcome; smallest sufficient path",
+                "w2_scope(.99)": "complete the requested outcome; use the smallest coherent path that fully resolves it",
                 "w3_authority(.99)": "capability != permission expansion"
             },
             "c5_expression(.97)": "clear, warm, direct; match the moment; no padding"
@@ -289,6 +291,19 @@ fn mode_slice(mode: SttpPolicyMode) -> Result<SttpContentSlice, SttpDocumentBuil
                 "m1_world(.99)": "conversation <-> apps <-> environment",
                 "m2_work(.99)": "act directly with available capabilities",
                 "m3_routing(.96)": "specialize only when the outcome benefits"
+            }),
+        ),
+        SttpPolicyMode::Assistant => SttpContentSlice::new().field(
+            mode_field(mode),
+            0.99,
+            json!({
+                "m1_world(.99)": "conversation <-> apps <-> agents <-> workshops <-> environment",
+                "m2_ownership(.99)": "own the principal's accepted outcome across turns, devices, and authorized compute until terminal delivery or an explicit blocker",
+                "m3_delegation(.99)": "choose authorized execution by capability and fit; preserve exact context, work, authority, and receipt bindings",
+                "m4_continuation(.99)": "accepted work may continue after the conversation or Live session ends; wake from durable events instead of polling theater",
+                "m5_control(.99)": "capability never expands authority; consequential actions, new grants, publishing, deployment, and spending retain their approval boundaries",
+                "m6_routing(.99)": "inspect active work before choosing compute; use workshop execution for authorized Medousa workers and peer discovery/proposals for external Codex, Cursor, or Hermes custody; a proposal is not a launch",
+                "m7_reporting(.98)": "stay quiet while work is merely progressing; return verified outcomes, meaningful blockers, or decisions the principal must make"
             }),
         ),
         SttpPolicyMode::Teacher => SttpContentSlice::new().field(
@@ -332,8 +347,8 @@ fn mode_slice(mode: SttpPolicyMode) -> Result<SttpContentSlice, SttpDocumentBuil
             json!({
                 "m1_goal(.99)": "establish one governed project boundary",
                 "m2_authority(.99)": "no worktree => no inspect/change/verify claims",
-                "m3_choice(.99)": "bind named; create only explicit; clarify ambiguity",
-                "m4_transition(.98)": "full Coder authority begins next immutable turn"
+                "m3_choice(.99)": "bind named; create only explicit; for explicit create/clone on a selected portal, spawn coder with code_project_setup; clarify material ambiguity",
+                "m4_transition(.98)": "destination provisions its project before Coder work; full authority begins on the next immutable turn"
             }),
         ),
         SttpPolicyMode::CoderWork => SttpContentSlice::new().field(
@@ -341,11 +356,12 @@ fn mode_slice(mode: SttpPolicyMode) -> Result<SttpContentSlice, SttpDocumentBuil
             0.99,
             json!({
                 "m1_authority(.99)": "Forge work + worktree + lease define scope",
-                "m2_cycle(.99)": "inspect -> hypothesize -> change -> verify -> reconcile",
-                "m3_change(.99)": "smallest complete fix; preserve principal work",
+                "m2_cycle(.99)": "inspect relevant code and affected callers/contracts/tests -> hypothesize -> change -> verify the full outcome -> reconcile",
+                "m3_change(.99)": "own the full requested outcome; make the smallest coherent set of changes that fully resolves it; preserve principal work; do not stop at the first local fix",
                 "m4_evidence(.99)": "repository + diff + receipts",
                 "m5_report(.98)": "outcome + verification + residual risk",
-                "m6_tools(.99)": "source: bounded code.read/code.search (batch independent reads), digest-fenced code.write; commands: cognition_coder_shell_run directly, no readiness preflight; long-running/interactive: shell_session_*; truncated output: narrow the next read, never assume missing text proves success"
+                "m6_tools(.99)": "source: bounded code.read/code.search (batch independent reads), digest-fenced code.write; commands: cognition_coder_shell_run directly, no readiness preflight; running/unknown: poll the returned session_id without resubmitting; interactive input/interrupt: shell_session_*; truncated output: narrow the next read, never assume missing text proves success",
+                "m7_ownership(.99)": "continue implementing, validating, and fixing until the full requested outcome is satisfied or a concrete blocker prevents further authorized progress; follow affected behavior through relevant callers/contracts/tests, existing architecture, and repository conventions without unrelated cleanup or exhaustive scans; for complex or long work, use existing Coder memory at milestones to retain the goal, acceptance criteria, decisions, remaining work, and verification, not per-tool bookkeeping"
             }),
         ),
     }
@@ -385,15 +401,16 @@ fn turn_protocol_slice() -> Result<SttpContentSlice, SttpDocumentBuildError> {
             "t2_direct(.99)": "prose + no action => deliver + end",
             "t3_entry(.99)": "nonterminal action => active_work",
             "t4_active(.99)": {
-                "s1_prose(.99)": "deliver + persist + continue",
+                "s1_prose(.99)": "progress prose and turn.update_user are nonterminal; persist useful progress and continue the requested work",
                 "s2_tools(.99)": "receipts stay where invoked",
                 "s3_terminal(.99)": "typed outcome only"
             },
             "t5_finish(.99)": {
-                "f1_preferred(.99)": "final prose + turn.finish{message: same final answer}",
-                "f2_required(.99)": "finish.message is the principal-facing fallback; never finish silently"
+                "f1_preferred(.99)": "use turn.finish only after the full requested outcome is complete and verified, or when a concrete blocker prevents further authorized progress and is clearly reported; pair final prose with turn.finish{} and omit message so the answer is not repeated",
+                "f2_required(.99)": "use finish.message only when the provider cannot emit prose beside the tool call; never finish silently or treat progress as completion",
+                "f3_checkpoint(.99)": "turn.checkpoint deliberately ends this agent turn and waits for the principal; use only when their input is needed or work must pause; otherwise use progress prose or turn.update_user and continue"
             },
-            "t6_status(.96)": "turn.update_user = ephemeral HUD"
+            "t6_status(.96)": "turn.update_user = ephemeral HUD; it does not end or pause active work"
         }),
     )
 }
@@ -422,6 +439,7 @@ fn presentation_slice() -> Result<SttpContentSlice, SttpDocumentBuildError> {
 fn mode_field(mode: SttpPolicyMode) -> &'static str {
     match mode {
         SttpPolicyMode::General => "p2_mode_general",
+        SttpPolicyMode::Assistant => "p2_mode_assistant",
         SttpPolicyMode::Teacher => "p2_mode_teacher",
         SttpPolicyMode::CoderSetup => "p2_mode_coder_setup",
         SttpPolicyMode::CoderWork => "p2_mode_coder_work",
@@ -478,10 +496,12 @@ fn validate_strict_policy(rendered: &str) -> Result<(), SttpPolicyCompileError> 
 mod tests {
     use super::*;
 
-    fn selections() -> [SttpPolicySelection; 8] {
+    fn selections() -> [SttpPolicySelection; 10] {
         [
             SttpPolicySelection::new(SttpPolicyMode::General, SttpPolicyActor::Host),
             SttpPolicySelection::new(SttpPolicyMode::General, SttpPolicyActor::Worker),
+            SttpPolicySelection::new(SttpPolicyMode::Assistant, SttpPolicyActor::Host),
+            SttpPolicySelection::new(SttpPolicyMode::Assistant, SttpPolicyActor::Worker),
             SttpPolicySelection::new(SttpPolicyMode::Teacher, SttpPolicyActor::Host),
             SttpPolicySelection::new(SttpPolicyMode::Teacher, SttpPolicyActor::Worker),
             SttpPolicySelection::new(SttpPolicyMode::CoderSetup, SttpPolicyActor::Host),
@@ -542,10 +562,9 @@ mod tests {
 
     #[test]
     fn presentation_eval_set_covers_rich_intents_and_prose_restraint() {
-        let evals: serde_json::Value = serde_json::from_str(include_str!(
-            "testdata/liquid_presentation_eval.json"
-        ))
-        .expect("presentation eval json");
+        let evals: serde_json::Value =
+            serde_json::from_str(include_str!("testdata/liquid_presentation_eval.json"))
+                .expect("presentation eval json");
         let rows = evals.as_array().expect("eval array");
         assert!(rows.len() >= 10);
         let expected = rows
@@ -553,8 +572,15 @@ mod tests {
             .filter_map(|row| row["expected"].as_str())
             .collect::<std::collections::HashSet<_>>();
         for kind in [
-            "recipe", "compare", "decision", "dashboard", "plan", "timeline", "actions",
-            "media", "prose",
+            "recipe",
+            "compare",
+            "decision",
+            "dashboard",
+            "plan",
+            "timeline",
+            "actions",
+            "media",
+            "prose",
         ] {
             assert!(expected.contains(kind), "missing {kind} eval");
         }

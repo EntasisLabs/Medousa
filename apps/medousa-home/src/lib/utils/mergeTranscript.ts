@@ -32,6 +32,8 @@ export function mergeTranscript(
   const merged = [...local];
   for (const message of daemon) {
     if (message.turnId && localTurnIds.has(message.turnId)) {
+      const index = merged.findIndex((item) => item.role === message.role && item.turnId === message.turnId);
+      if (index >= 0) merged[index] = hydrateAssistantMetadata(merged[index], message);
       continue;
     }
     // Daemon history rows carry no turnId, so fall back to a whitespace-normalized
@@ -55,19 +57,7 @@ export function mergeTranscript(
       );
       if (duplicateIndex >= 0) {
         const existing = merged[duplicateIndex];
-        merged[duplicateIndex] = {
-          ...existing,
-          mediaAttachments: message.mediaAttachments ?? existing.mediaAttachments,
-          transcript: message.transcript ?? existing.transcript,
-          answerState: message.answerState ?? existing.answerState,
-          tools: message.tools ?? existing.tools,
-          toolRuns: message.toolRuns ?? existing.toolRuns,
-          segments: message.segments ?? existing.segments,
-          uiArtifacts: message.uiArtifacts ?? existing.uiArtifacts,
-          reasoning: message.reasoning ?? existing.reasoning,
-          responseProvider: message.responseProvider ?? existing.responseProvider,
-          responseModel: message.responseModel ?? existing.responseModel,
-        };
+        merged[duplicateIndex] = hydrateAssistantMetadata(existing, message);
         continue;
       }
     }
@@ -75,6 +65,23 @@ export function mergeTranscript(
   }
 
   return dedupeMessagesById(dedupeAssistantTurns(merged));
+}
+
+function hydrateAssistantMetadata(existing: ChatMessage, message: ChatMessage): ChatMessage {
+  return {
+    ...existing,
+    mediaAttachments: message.mediaAttachments ?? existing.mediaAttachments,
+    transcript: message.transcript ?? existing.transcript,
+    liveTranscripts: message.liveTranscripts ?? existing.liveTranscripts,
+    answerState: message.answerState ?? existing.answerState,
+    tools: message.tools ?? existing.tools,
+    toolRuns: message.toolRuns ?? existing.toolRuns,
+    segments: message.segments ?? existing.segments,
+    uiArtifacts: message.uiArtifacts ?? existing.uiArtifacts,
+    reasoning: message.reasoning ?? existing.reasoning,
+    responseProvider: message.responseProvider ?? existing.responseProvider,
+    responseModel: message.responseModel ?? existing.responseModel,
+  };
 }
 
 function dedupeAssistantTurns(messages: ChatMessage[]): ChatMessage[] {

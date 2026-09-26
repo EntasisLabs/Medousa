@@ -7,6 +7,7 @@ export interface McpServerConfig {
   args: string[];
   url?: string | null;
   bearerToken?: string | null;
+  bearerTokenConfigured: boolean;
   allowedLanes: string[];
   allowedEffectClasses: string[];
   toolTags: Record<string, string[]>;
@@ -46,6 +47,7 @@ export interface McpServerRuntime {
   connected: boolean;
   toolCount: number;
   allowedLanes: string[];
+  lastError?: string | null;
 }
 
 export interface McpGatewayStatusResult {
@@ -73,6 +75,7 @@ export interface McpServerUpsertRequest {
   args?: string[];
   url?: string | null;
   bearerToken?: string | null;
+  clearBearerToken?: boolean;
   toolTags?: Record<string, string[]>;
   disabledTools?: string[];
   useMock?: boolean;

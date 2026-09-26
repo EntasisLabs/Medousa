@@ -113,15 +113,16 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 axum = { version = "0.8", features = ["multipart", "ws"], optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "stream", "blocking"], optional = true }
+genai-reqwest = { package = "reqwest", version = "0.13", default-features = false, optional = true }
 zeroize = { version = "1", optional = true }
 uuid = { version = "1", features = ["v4"] }
 dirs = { version = "5", optional = true }
 ratatui = { version = "0.30.0", optional = true }
 ratatui-image = { version = "11.0.2", default-features = false, features = ["crossterm"], optional = true }
-image = { version = "0.25.6", default-features = false, features = ["jpeg", "png"], optional = true }
+image = { version = "0.25.6", default-features = false, features = ["jpeg", "png", "webp", "gif"], optional = true }
 crossterm = { version = "0.28", features = ["event-stream"], optional = true }
 futures-util = { version = "0.3", optional = true }
-stasis-rs = { version = "0.10.0", default-features = false }
+stasis-rs = { version = "0.12.0", default-features = false, features = ["llm-genai"] }
 grapheme-sdk = { version = "0.7.1", default-features = false, features = ["host"], optional = true }
 grapheme-compiler = { version = "0.7.1", default-features = false, optional = true }
 grapheme-runtime = { version = "0.7.1", default-features = false, optional = true }
@@ -188,6 +189,8 @@ rappct = { version = "0.13.3", optional = true }
 default = ["full-daemon"]
 full-daemon = [
     "medousa-types/json-schema",
+    "stasis-rs/dashboard",
+    "stasis-rs/locus-persist",
     "stasis-rs/otel",
     "stasis-rs/grapheme-full",
     "surrealdb/kv-mem",
@@ -216,6 +219,7 @@ full-daemon = [
     "dep:icalendar",
     "dep:axum",
     "dep:reqwest",
+    "dep:genai-reqwest",
     "dep:zeroize",
     "dep:dirs",
     "dep:ratatui",
@@ -260,6 +264,9 @@ full-daemon = [
 ]
 embedded-daemon = [
     "medousa-types/json-schema",
+    "stasis-rs/grapheme-host",
+    "stasis-rs/locus-persist",
+    "stasis-rs/surreal-native",
     "dep:axum",
     "dep:base64",
     "dep:calamine",
@@ -270,14 +277,17 @@ embedded-daemon = [
     "dep:grapheme-sdk",
     "dep:hmac",
     "dep:icalendar",
+    "dep:image",
     "dep:futures-util",
     "dep:medousa-browser-lite",
     "dep:medousa-browser-bridge",
+    "dep:medousa-forge",
     "dep:medousa-mcp-gateway",
     "dep:medousa-secrets",
     "dep:medousa-tool-macros",
     "dep:pdf-extract",
     "dep:reqwest",
+    "dep:genai-reqwest",
     "dep:schemars",
     "dep:serde_yaml",
     "dep:toml",

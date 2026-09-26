@@ -56,6 +56,13 @@ struct LiveAgentSession {
     /// Forge undertaking this session is bound to (governed cwd + leases).
     forge_work_id: Option<WorkId>,
     forge_lease: Option<medousa_forge::model::ExecutionLease>,
+    /// Shared across the registry and the running prompt-pump clone so an
+    /// explicitly authorized owner can adopt already-running custody.
+    peer_receipt: Arc<Mutex<Option<super::coordination::PeerReceiptSink>>>,
+    /// Retain one terminal observation so adoption racing completion can
+    /// publish the exact result instead of losing it or restarting work.
+    peer_terminal: Arc<Mutex<Option<(medousa_types::coordination::PeerAssignmentOutcome, String)>>>,
+    peer_prompt_started: Arc<std::sync::atomic::AtomicBool>,
 }
 
 #[derive(Default)]
@@ -70,6 +77,158 @@ static AGENT_SESSIONS: once_cell::sync::Lazy<RwLock<AgentSessionRegistry>> =
 
 static ACP_CLIENT: once_cell::sync::Lazy<ExternalAcpClient> =
     once_cell::sync::Lazy::new(ExternalAcpClient::new);
+
+#[derive(Clone, serde::Serialize)]
+pub(crate) struct AdoptableAgentSession {
+    pub agent_session_id: String,
+    pub session_id: String,
+    pub runtime: String,
+    pub forge_work_id: String,
+    pub terminal: bool,
+}
+
+#[derive(Clone, serde::Serialize)]
+pub(crate) struct VisibleAgentSession {
+    pub agent_session_id: String,
+    pub session_id: String,
+    pub runtime: String,
+    pub forge_work_id: Option<String>,
+    pub cancelled: bool,
+    pub terminal: bool,
+    pub medousa_owned: bool,
+    pub adoptable: bool,
+}
+
+pub(crate) async fn discover_visible_agent_sessions(
+    owner_principal_id: &str,
+) -> Vec<VisibleAgentSession> {
+    let sessions: Vec<_> = AGENT_SESSIONS
+        .read()
+        .await
+        .by_agent_session
+        .values()
+        .cloned()
+        .collect();
+    let mut rows = Vec::new();
+    for live in sessions {
+        if !crate::session_catalog::session_visible_to_profile(&live.session_id, owner_principal_id)
+        {
+            continue;
+        }
+        let cancelled = *live.cancelled.lock().await;
+        let terminal = live.peer_terminal.lock().await.is_some();
+        let medousa_owned = live.peer_receipt.lock().await.is_some();
+        rows.push(VisibleAgentSession {
+            agent_session_id: live.agent_session_id,
+            session_id: live.session_id,
+            runtime: live.runtime,
+            forge_work_id: live.forge_work_id.map(|id| id.to_string()),
+            cancelled,
+            terminal,
+            medousa_owned,
+            adoptable: !cancelled && !medousa_owned,
+        });
+    }
+    rows.sort_by(|left, right| left.agent_session_id.cmp(&right.agent_session_id));
+    rows
+}
+
+pub(crate) async fn discover_adoptable_agent_sessions(
+    owner_principal_id: &str,
+    forge_work_id: &str,
+) -> Vec<AdoptableAgentSession> {
+    let sessions: Vec<_> = AGENT_SESSIONS
+        .read()
+        .await
+        .by_agent_session
+        .values()
+        .cloned()
+        .collect();
+    let mut rows = Vec::new();
+    for live in sessions {
+        if *live.cancelled.lock().await
+            || live.peer_receipt.lock().await.is_some()
+            || live
+                .forge_work_id
+                .as_ref()
+                .map(ToString::to_string)
+                .as_deref()
+                != Some(forge_work_id)
+            || !crate::session_catalog::session_visible_to_profile(
+                &live.session_id,
+                owner_principal_id,
+            )
+        {
+            continue;
+        }
+        rows.push(AdoptableAgentSession {
+            agent_session_id: live.agent_session_id,
+            session_id: live.session_id,
+            runtime: live.runtime,
+            forge_work_id: forge_work_id.to_string(),
+            terminal: live.peer_terminal.lock().await.is_some(),
+        });
+    }
+    rows.sort_by(|left, right| left.agent_session_id.cmp(&right.agent_session_id));
+    rows
+}
+
+pub(crate) async fn require_adoptable_agent_session(
+    owner_principal_id: &str,
+    forge_work_id: &str,
+    runtime: &str,
+    agent_session_id: &str,
+) -> anyhow::Result<AdoptableAgentSession> {
+    discover_adoptable_agent_sessions(owner_principal_id, forge_work_id)
+        .await
+        .into_iter()
+        .find(|candidate| {
+            candidate.agent_session_id == agent_session_id && candidate.runtime == runtime
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "agent session is unavailable, already owned, outside this project, or not visible"
+            )
+        })
+}
+
+async fn admit_agent_blocking<T, F>(state: &AppState, work: F) -> anyhow::Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    Ok(state
+        .forge_execution
+        .run(
+            medousa_forge::execution::ExecutionClass::LocalMutation,
+            64 * 1024,
+            move || Ok(work()),
+        )
+        .await?)
+}
+
+fn agent_admission_error(error: anyhow::Error) -> (StatusCode, String) {
+    (StatusCode::SERVICE_UNAVAILABLE, error.to_string())
+}
+
+async fn admit_agent_lease<T, F>(
+    state: &AppState,
+    lease: &medousa_forge::model::ExecutionLease,
+    work: F,
+) -> anyhow::Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce(
+            &medousa_forge::forge::Forge,
+            &medousa_forge::model::ExecutionLease,
+        ) -> Result<T, medousa_forge::error::ForgeError>
+        + Send
+        + 'static,
+{
+    let forge = state.forge.clone();
+    let lease = lease.clone();
+    Ok(admit_agent_blocking(state, move || work(&forge, &lease)).await??)
+}
 
 pub fn permission_surface() -> DeclaredRouter {
     DeclaredRouter::default()
@@ -234,6 +393,15 @@ pub async fn create_agent_session(
     State(state): State<AppState>,
     Json(body): Json<CreateAgentSessionRequest>,
 ) -> Result<Json<CreateAgentSessionResponse>, (StatusCode, String)> {
+    create_agent_session_service(state, body).await.map(Json)
+}
+
+/// Shared daemon service for HTTP and admitted coordination callers. The caller
+/// owns identity/context authorization; this retains ACP, Forge and stream custody.
+pub(crate) async fn create_agent_session_service(
+    state: AppState,
+    body: CreateAgentSessionRequest,
+) -> Result<CreateAgentSessionResponse, (StatusCode, String)> {
     let command = CreateAgentSessionCommand::try_from(body)
         .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
     let session_id = command.session_id.into_string();
@@ -245,8 +413,13 @@ pub async fn create_agent_session(
         ));
     }
 
-    let session_mode = crate::agent_mode_state::get_session_mode(&session_id)
-        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?;
+    let mode_session = session_id.clone();
+    let session_mode = admit_agent_blocking(&state, move || {
+        crate::agent_mode_state::get_session_mode(&mode_session)
+    })
+    .await
+    .map_err(agent_admission_error)?
+    .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?;
     if coder_session_missing_project(session_mode.effective_mode, command.work_id.is_some()) {
         return Err((
             StatusCode::CONFLICT,
@@ -264,6 +437,15 @@ pub async fn create_agent_session(
         }
     }
 
+    let agent_session_id = format!("agent-{}", Uuid::new_v4());
+    let prepare_state = state.clone();
+    let prepare_session_id = session_id.clone();
+    let prepare_agent_id = agent_session_id.clone();
+    let (config, forge_work_id, forge_lease, resume_token, initial_prompt, code_context) =
+        admit_agent_blocking(&state, move || -> Result<_, (StatusCode, String)> {
+    let state = prepare_state;
+    let session_id = prepare_session_id;
+    let agent_session_id = prepare_agent_id;
     let mut config =
         external_runtime_config(kind).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     if let Some(cwd) = command.cwd.as_ref().map(TrimmedText::as_str) {
@@ -288,7 +470,6 @@ pub async fn create_agent_session(
         ));
     }
 
-    let agent_session_id = format!("agent-{}", Uuid::new_v4());
     let mut forge_lease = None;
 
     // Forge undertaking binding: acquire the selected workspace lease before
@@ -383,16 +564,25 @@ pub async fn create_agent_session(
         }
     };
 
-    let (acp_session, acp_wire_session_id, resumed) = ACP_CLIENT
+    Ok((config, forge_work_id, forge_lease, resume_token, command.prompt, command.code_context))
+    }).await.map_err(agent_admission_error)??;
+
+    let provider_start = ACP_CLIENT
         .create_or_resume_session(&config, resume_token.as_deref())
-        .await
-        .map_err(|e| {
-            if let Some(lease) = forge_lease.as_ref() {
-                let _ = state.forge.fail_attempt(
-                    lease,
-                    "ACP provider session could not start",
-                    &medousa_forge::forge::Forge::system_actor(),
-                );
+        .await;
+    let (acp_session, acp_wire_session_id, resumed) = match provider_start {
+        Ok(started) => started,
+        Err(e) => {
+            if let Some(lease) = forge_lease.clone() {
+                let forge = state.forge.clone();
+                let _ = admit_agent_blocking(&state, move || {
+                    forge.fail_attempt(
+                        &lease,
+                        "ACP provider session could not start",
+                        &medousa_forge::forge::Forge::system_actor(),
+                    )
+                })
+                .await;
             }
             let message = e.to_string();
             let lower = message.to_lowercase();
@@ -401,30 +591,36 @@ pub async fn create_agent_session(
                 || lower.contains("unauthorized")
                 || lower.contains("401")
             {
-                return (
+                return Err((
                     StatusCode::UNAUTHORIZED,
                     format!(
                         "{} sign-in expired or missing — sign in from Settings → Connections",
                         kind.as_str()
                     ),
-                );
+                ));
             }
-            (
+            return Err((
                 StatusCode::BAD_GATEWAY,
                 format!("ACP create_or_resume_session failed: {e}"),
-            )
-        })?;
+            ));
+        }
+    };
     let config_options =
         parse_config_options(ACP_CLIENT.session_config_options(&acp_session).await);
 
     let adapter = TurnStreamRegistryPortAdapter::new(state.interactive_turn_streams.clone());
     if !adapter.register_stream(&agent_session_id).await {
-        if let Some(lease) = forge_lease.as_ref() {
-            let _ = state.forge.interrupt_attempt(
-                lease,
-                medousa_forge::model::RecoveryDisposition::RestartAllowed,
-                &medousa_forge::forge::Forge::system_actor(),
-            );
+        let _ = ACP_CLIENT.cancel(&acp_session).await;
+        if let Some(lease) = forge_lease.clone() {
+            let forge = state.forge.clone();
+            let _ = admit_agent_blocking(&state, move || {
+                forge.interrupt_attempt(
+                    &lease,
+                    medousa_forge::model::RecoveryDisposition::RestartAllowed,
+                    &medousa_forge::forge::Forge::system_actor(),
+                )
+            })
+            .await;
         }
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -441,6 +637,9 @@ pub async fn create_agent_session(
         cancelled: Arc::new(Mutex::new(false)),
         forge_work_id: forge_work_id.clone(),
         forge_lease,
+        peer_receipt: Arc::new(Mutex::new(None)),
+        peer_terminal: Arc::new(Mutex::new(None)),
+        peer_prompt_started: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     };
 
     {
@@ -457,9 +656,14 @@ pub async fn create_agent_session(
     // attached-checkout close either sees this live provider and cancels it,
     // or wins first and makes the fence fail here; no provider can escape the
     // daemon registry with a released checkout.
-    if let Some(lease) = live.forge_lease.as_ref() {
-        let forge_adapter = acp_forge_adapter::AcpForgeAdapter::new(&state.forge);
-        if let Err(error) = forge_adapter.heartbeat(lease) {
+    if let Some(lease) = live.forge_lease.clone() {
+        let forge = state.forge.clone();
+        let heartbeat = admit_agent_blocking(&state, move || {
+            acp_forge_adapter::AcpForgeAdapter::new(&forge).heartbeat(&lease)
+        })
+        .await
+        .and_then(|result| result.map_err(Into::into));
+        if let Err(error) = heartbeat {
             let _ = cancel_live_agent_session(&state, &agent_session_id).await;
             return Err((
                 StatusCode::CONFLICT,
@@ -492,15 +696,15 @@ pub async fn create_agent_session(
         );
     }
 
-    if let Some(prompt) = command.prompt.map(RequiredContent::into_string) {
+    if let Some(prompt) = initial_prompt.map(RequiredContent::into_string) {
         spawn_prompt_pump(
             state.clone(),
             live.clone(),
-            prompt_with_code_context(prompt, command.code_context.as_ref()),
+            prompt_with_code_context(prompt, code_context.as_ref()),
         );
     }
 
-    Ok(Json(CreateAgentSessionResponse {
+    Ok(CreateAgentSessionResponse {
         agent_session_id,
         session_id,
         runtime: kind.as_str().to_string(),
@@ -511,7 +715,7 @@ pub async fn create_agent_session(
         work_id: forge_work_id.map(|id| id.to_string()),
         resumed: Some(resumed),
         config_options,
-    }))
+    })
 }
 
 fn parse_config_options(values: Vec<serde_json::Value>) -> Vec<AgentSessionConfigOption> {
@@ -561,6 +765,16 @@ pub async fn prompt_agent_session(
     AxumPath(agent_session_id): AxumPath<String>,
     Json(body): Json<AgentSessionPromptRequest>,
 ) -> Result<Json<AgentSessionPromptResponse>, (StatusCode, String)> {
+    prompt_agent_session_service(state, agent_session_id, body)
+        .await
+        .map(Json)
+}
+
+pub(crate) async fn prompt_agent_session_service(
+    state: AppState,
+    agent_session_id: String,
+    body: AgentSessionPromptRequest,
+) -> Result<AgentSessionPromptResponse, (StatusCode, String)> {
     let command = AgentSessionPromptCommand::try_from(body)
         .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
     let prompt = command.prompt.into_string();
@@ -580,15 +794,73 @@ pub async fn prompt_agent_session(
     if *live.cancelled.lock().await {
         return Err((StatusCode::CONFLICT, "agent session cancelled".into()));
     }
+    if live.peer_receipt.lock().await.is_some()
+        && live
+            .peer_prompt_started
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+    {
+        return Err((
+            StatusCode::CONFLICT,
+            "delegated peer prompt has already started; reconcile before retry".into(),
+        ));
+    }
     spawn_prompt_pump(
         state,
         live.clone(),
         prompt_with_code_context(prompt, command.code_context.as_ref()),
     );
-    Ok(Json(AgentSessionPromptResponse {
+    Ok(AgentSessionPromptResponse {
         accepted: true,
         agent_session_id: live.agent_session_id,
-    }))
+    })
+}
+
+pub(crate) async fn attach_peer_receipt_sink(
+    agent_session_id: &str,
+    sink: super::coordination::PeerReceiptSink,
+) -> anyhow::Result<()> {
+    let live = AGENT_SESSIONS
+        .read()
+        .await
+        .by_agent_session
+        .get(agent_session_id)
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("peer custody disappeared before observer attachment"))?;
+    if *live.cancelled.lock().await {
+        anyhow::bail!("peer custody cancelled before observer attachment");
+    }
+    let mut sink_slot = live.peer_receipt.lock().await;
+    if sink_slot.is_some() {
+        anyhow::bail!("peer observer already bound");
+    }
+    *sink_slot = Some(sink.clone());
+    drop(sink_slot);
+    if let Some((outcome, result)) = live.peer_terminal.lock().await.clone() {
+        sink.terminal(outcome, result).await?;
+    }
+    Ok(())
+}
+
+async fn persist_peer_terminal(
+    live: &LiveAgentSession,
+    outcome: medousa_types::coordination::PeerAssignmentOutcome,
+    result: String,
+) -> anyhow::Result<()> {
+    let terminal = (outcome, result);
+    let mut saved = live.peer_terminal.lock().await;
+    if let Some(existing) = saved.as_ref() {
+        if existing != &terminal {
+            anyhow::bail!("agent session produced conflicting terminal observations");
+        }
+    } else {
+        *saved = Some(terminal.clone());
+    }
+    drop(saved);
+    if let Some(sink) = live.peer_receipt.lock().await.clone() {
+        let (outcome, result) = terminal;
+        sink.terminal(outcome, result).await?;
+    }
+    Ok(())
 }
 
 pub async fn cancel_agent_session(
@@ -600,7 +872,7 @@ pub async fn cancel_agent_session(
         .map(Json)
 }
 
-async fn cancel_live_agent_session(
+pub(crate) async fn cancel_live_agent_session(
     state: &AppState,
     agent_session_id: &str,
 ) -> Result<CancelAgentSessionResponse, (StatusCode, String)> {
@@ -625,12 +897,21 @@ async fn cancel_live_agent_session(
     // Interrupt the Forge attempt (if bound) — stash the ACP *wire* session id
     // so a future session/resume can reattach instead of restarting.
     if let Some(lease) = live.forge_lease.clone() {
-        let adapter = acp_forge_adapter::AcpForgeAdapter::new(&state.forge);
+        let forge = state.forge.clone();
         let wire = live
             .acp_wire_session_id
-            .as_deref()
-            .or(Some(live.acp_session_id.0.as_str()));
-        match adapter.interrupt_attempt(&lease, "agent session cancelled", wire) {
+            .clone()
+            .unwrap_or_else(|| live.acp_session_id.0.clone());
+        let interrupted = admit_agent_blocking(state, move || {
+            acp_forge_adapter::AcpForgeAdapter::new(&forge).interrupt_attempt(
+                &lease,
+                "agent session cancelled",
+                Some(&wire),
+            )
+        })
+        .await
+        .map_err(agent_admission_error)?;
+        match interrupted {
             Ok(_) => {
                 update_registry_forge(&agent_session_id, live.forge_work_id.clone(), None).await;
             }
@@ -661,6 +942,13 @@ async fn cancel_live_agent_session(
         entry.channel.mark_closed();
     }
 
+    persist_peer_terminal(
+        &live,
+        medousa_types::coordination::PeerAssignmentOutcome::Cancelled,
+        "agent session cancelled".into(),
+    )
+    .await
+    .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
     publish_acp_terminal(
         AcpTerminalKind::Cancelled,
         &live.session_id,
@@ -684,6 +972,22 @@ async fn cancel_live_agent_session(
 /// This is used before an attached checkout is released. The daemon registry,
 /// rather than one Home window's local tab state, is the authority for which
 /// provider processes still have access to that checkout.
+pub(crate) async fn cancel_agent_session_for_chat(
+    state: &AppState,
+    session_id: &str,
+) -> Result<(), (StatusCode, String)> {
+    let agent = AGENT_SESSIONS
+        .read()
+        .await
+        .by_chat_session
+        .get(session_id)
+        .cloned();
+    if let Some(agent) = agent {
+        cancel_live_agent_session(state, &agent).await?;
+    }
+    Ok(())
+}
+
 pub async fn cancel_agent_sessions_for_work(
     state: &AppState,
     work_id: &WorkId,
@@ -812,13 +1116,18 @@ fn spawn_prompt_pump(state: AppState, live: LiveAgentSession, prompt: String) {
                 .and_then(|session| session.forge_lease.clone())
                 .or(fail_lease);
             if let (Some(work_id), Some(lease)) = (live.forge_work_id.clone(), fail_lease) {
-                let adapter = acp_forge_adapter::AcpForgeAdapter::new(&state.forge);
-                match adapter.fail_attempt(&lease, &err.to_string()) {
-                    Ok(_) => {
+                let forge = state.forge.clone();
+                let message = err.to_string();
+                let failed = admit_agent_blocking(&state, move || {
+                    acp_forge_adapter::AcpForgeAdapter::new(&forge).fail_attempt(&lease, &message)
+                })
+                .await;
+                match failed {
+                    Ok(Ok(_)) => {
                         update_registry_forge(&live.agent_session_id, Some(work_id), None).await;
                     }
-                    Err(ferr) => {
-                        tracing::warn!(error = %ferr, "forge fail_attempt after pump error");
+                    other => {
+                        tracing::warn!(error = ?other, "forge fail_attempt after pump error");
                     }
                 }
             }
@@ -943,6 +1252,15 @@ async fn update_registry_forge(
 }
 
 async fn publish_agent_pump_error(state: &AppState, live: &LiveAgentSession, message: &str) {
+    if let Err(error) = persist_peer_terminal(
+        live,
+        medousa_types::coordination::PeerAssignmentOutcome::Failed,
+        message.to_string(),
+    )
+    .await
+    {
+        tracing::warn!(error = %error, "peer terminal receipt not acknowledged");
+    }
     let entry = {
         state
             .interactive_turn_streams
@@ -1007,19 +1325,25 @@ async fn run_prompt_pump(
     // Forge lease begins on the first prompt of a bound session.
     let mut live = live;
     if let (Some(work_id), None) = (live.forge_work_id.clone(), live.forge_lease.clone()) {
-        let adapter = acp_forge_adapter::AcpForgeAdapter::new(&state.forge);
-        let wire = live
-            .acp_wire_session_id
-            .clone()
-            .unwrap_or_else(|| live.acp_session_id.0.clone());
-        let ctx = acp_forge_adapter::AcpForgeContext {
-            agent_session_id: &live.agent_session_id,
-            acp_session_id: &wire,
-            chat_session_id: &live.session_id,
-            runtime: &live.runtime,
-            pid: None,
-        };
-        match adapter.begin_attempt(&work_id, &ctx) {
+        let forge = state.forge.clone();
+        let start_live = live.clone();
+        let start_work = work_id.clone();
+        let begun = admit_agent_blocking(&state, move || {
+            let wire = start_live
+                .acp_wire_session_id
+                .clone()
+                .unwrap_or_else(|| start_live.acp_session_id.0.clone());
+            let ctx = acp_forge_adapter::AcpForgeContext {
+                agent_session_id: &start_live.agent_session_id,
+                acp_session_id: &wire,
+                chat_session_id: &start_live.session_id,
+                runtime: &start_live.runtime,
+                pid: None,
+            };
+            acp_forge_adapter::AcpForgeAdapter::new(&forge).begin_attempt(&start_work, &ctx)
+        })
+        .await?;
+        match begun {
             Ok((_item, lease)) => {
                 live.forge_lease = Some(lease.clone());
                 update_registry_forge(&live.agent_session_id, Some(work_id), Some(lease)).await;
@@ -1043,21 +1367,30 @@ async fn run_prompt_pump(
             }
         }
     }
-    let forge_adapter = live
-        .forge_work_id
-        .as_ref()
-        .map(|_| acp_forge_adapter::AcpForgeAdapter::new(&state.forge));
     let mut last_heartbeat = std::time::Instant::now();
     let provider_prompt = match live.forge_work_id.as_ref() {
         Some(work_id) => {
-            let item = state.forge.load(work_id)?;
-            prompt_with_forge_workspace_policy(prompt.clone(), item.uses_attached_checkout())
+            let forge = state.forge.clone();
+            let work_id = work_id.clone();
+            let prompt = prompt.clone();
+            admit_agent_blocking(&state, move || {
+                let item = forge.load(&work_id)?;
+                Ok::<_, medousa_forge::error::ForgeError>(prompt_with_forge_workspace_policy(
+                    prompt,
+                    item.uses_attached_checkout(),
+                ))
+            })
+            .await??
         }
         None => prompt.clone(),
     };
 
-    if let (Some(adapter), Some(lease)) = (forge_adapter.as_ref(), live.forge_lease.as_ref()) {
-        adapter.record_prompt(lease, provider_prompt.len())?;
+    if let Some(lease) = live.forge_lease.as_ref() {
+        let length = provider_prompt.len();
+        admit_agent_lease(&state, lease, move |forge, lease| {
+            acp_forge_adapter::AcpForgeAdapter::new(forge).record_prompt(lease, length)
+        })
+        .await?;
     }
 
     // Durable transcript (Synara/T3 reopen gap). SSE path unchanged.
@@ -1074,10 +1407,14 @@ async fn run_prompt_pump(
         if *live.cancelled.lock().await {
             break;
         }
-        if let (Some(adapter), Some(lease)) = (forge_adapter.as_ref(), live.forge_lease.as_ref())
+        if let Some(lease) = live.forge_lease.as_ref()
             && last_heartbeat.elapsed() >= std::time::Duration::from_secs(15)
         {
-            if let Err(err) = adapter.heartbeat(lease) {
+            if let Err(err) = admit_agent_lease(&state, lease, |forge, lease| {
+                acp_forge_adapter::AcpForgeAdapter::new(forge).heartbeat(lease)
+            })
+            .await
+            {
                 return Err(anyhow::anyhow!("Forge workspace authority changed: {err}"));
             } else {
                 last_heartbeat = std::time::Instant::now();
@@ -1092,6 +1429,14 @@ async fn run_prompt_pump(
                     &live.session_id,
                     &mut persist,
                     None,
+                )
+                .await?;
+                // Idle is not proof that a delegated prompt completed. Preserve
+                // the legacy stream behavior, but never tell the owner it succeeded.
+                persist_peer_terminal(
+                    &live,
+                    medousa_types::coordination::PeerAssignmentOutcome::Interrupted,
+                    persist.result_text(),
                 )
                 .await?;
                 publish_agent_event(
@@ -1156,10 +1501,14 @@ async fn run_prompt_pump(
                 );
             }
             AcpEvent::ToolCall { id, name, input } => {
-                if let (Some(adapter), Some(lease)) =
-                    (forge_adapter.as_ref(), live.forge_lease.as_ref())
-                {
-                    adapter.record_tool(lease, &name, &id)?;
+                if let Some(lease) = live.forge_lease.as_ref() {
+                    let tool_name = name.clone();
+                    let tool_id = id.clone();
+                    admit_agent_lease(&state, lease, move |forge, lease| {
+                        acp_forge_adapter::AcpForgeAdapter::new(forge)
+                            .record_tool(lease, &tool_name, &tool_id)
+                    })
+                    .await?;
                 }
                 publish_agent_event(
                     &entry,
@@ -1224,10 +1573,19 @@ async fn run_prompt_pump(
                     Some("error"),
                 )
                 .await?;
-                if let (Some(adapter), Some(lease)) =
-                    (forge_adapter.as_ref(), live.forge_lease.as_ref())
-                {
-                    match adapter.fail_attempt(lease, &message) {
+                persist_peer_terminal(
+                    &live,
+                    medousa_types::coordination::PeerAssignmentOutcome::Failed,
+                    message.clone(),
+                )
+                .await?;
+                if let Some(lease) = live.forge_lease.as_ref() {
+                    let failure = message.clone();
+                    match admit_agent_lease(&state, lease, move |forge, lease| {
+                        acp_forge_adapter::AcpForgeAdapter::new(forge).fail_attempt(lease, &failure)
+                    })
+                    .await
+                    {
                         Ok(_) => {
                             update_registry_forge(
                                 &live.agent_session_id,
@@ -1264,6 +1622,9 @@ async fn run_prompt_pump(
                     json!({ "error": message }),
                 )
                 .await;
+                if live.peer_receipt.lock().await.is_some() {
+                    break;
+                }
             }
             AcpEvent::Done => {
                 // Done is *not* a seal — lease stays live; heartbeat only.
@@ -1273,12 +1634,20 @@ async fn run_prompt_pump(
                     None,
                 )
                 .await?;
-                if let (Some(adapter), Some(lease)) =
-                    (forge_adapter.as_ref(), live.forge_lease.as_ref())
-                    && let Err(err) = adapter.heartbeat(lease)
+                if let Some(lease) = live.forge_lease.as_ref()
+                    && let Err(err) = admit_agent_lease(&state, lease, |forge, lease| {
+                        acp_forge_adapter::AcpForgeAdapter::new(forge).heartbeat(lease)
+                    })
+                    .await
                 {
                     return Err(anyhow::anyhow!("Forge workspace authority changed: {err}"));
                 }
+                persist_peer_terminal(
+                    &live,
+                    medousa_types::coordination::PeerAssignmentOutcome::Completed,
+                    persist.result_text(),
+                )
+                .await?;
                 publish_agent_event(
                     &entry,
                     &live.agent_session_id,

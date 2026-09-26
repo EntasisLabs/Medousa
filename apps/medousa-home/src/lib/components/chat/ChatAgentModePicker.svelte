@@ -2,7 +2,7 @@
   import MobileActionSheet from "$lib/components/mobile/MobileActionSheet.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { tick } from "svelte";
-  import { Check, ChevronDown, Code2, GraduationCap, Sparkles, Zap } from "@lucide/svelte";
+  import { Check, ChevronDown, Code2, GraduationCap, Sparkles, WandSparkles, Zap } from "@lucide/svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import {
     getSessionAgentMode,
@@ -30,6 +30,12 @@
       label: "General",
       available: true,
       contract_revision: "general-v1",
+    },
+    {
+      mode: "assistant",
+      label: "Assistant",
+      available: true,
+      contract_revision: "assistant-v1",
     },
     {
       mode: "teacher",
@@ -68,6 +74,7 @@
   }
 
   function modeDescription(mode: AgentModeId): string {
+    if (mode === "assistant") return "Owns work across agents, workshops, and time";
     if (mode === "teacher") return "Build understanding through connected concepts";
     if (mode === "instant") return "Faster chat with focused recent context";
     if (mode === "coder") return "Repository-aware engineering";
@@ -167,6 +174,8 @@
     <GraduationCap {size} strokeWidth={1.9} class="shrink-0 opacity-75" />
   {:else if mode === "instant"}
     <Zap {size} strokeWidth={1.9} class="shrink-0 opacity-75" />
+  {:else if mode === "assistant"}
+    <WandSparkles {size} strokeWidth={1.9} class="shrink-0 opacity-75" />
   {:else}
     <Sparkles {size} strokeWidth={1.9} class="shrink-0 opacity-75" />
   {/if}

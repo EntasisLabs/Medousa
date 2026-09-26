@@ -4,11 +4,20 @@ use anyhow::{Context, Result, bail};
 use futures_util::StreamExt;
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use reqwest::{Client, Response, Url};
+use rmcp::model::CallToolRequestParams;
+use rmcp::service::RunningService;
+use rmcp::transport::{
+    StreamableHttpClientTransport, streamable_http_client::StreamableHttpClientTransportConfig,
+};
+use rmcp::{RoleClient, ServiceExt};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, timeout};
 
-use super::stdio_client::{McpToolDefinition, parse_tool_list};
+use super::server_config::validate_remote_server_url;
+use super::stdio_client::{
+    McpToolDefinition, MedousaClientHandler, parse_tool_list, tool_definition_from_sdk,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RemoteTransport {
@@ -29,24 +38,126 @@ impl RemoteTransport {
 }
 
 pub struct RemoteMcpSession {
+    inner: RemoteMcpSessionInner,
+}
+
+enum RemoteMcpSessionInner {
+    StreamableHttp {
+        client: RunningService<RoleClient, MedousaClientHandler>,
+        request_timeout: Duration,
+    },
+    LegacySse(LegacySseMcpSession),
+}
+
+impl RemoteMcpSession {
+    pub async fn connect_with_events(
+        url: &str,
+        transport: RemoteTransport,
+        bearer_token: Option<String>,
+        request_timeout: Duration,
+        tool_list_changed: Option<mpsc::UnboundedSender<()>>,
+    ) -> Result<Self> {
+        let _ =
+            validate_remote_server_url(url, bearer_token.is_some()).map_err(anyhow::Error::msg)?;
+
+        let inner = match transport {
+            RemoteTransport::Http => {
+                let mut config = StreamableHttpClientTransportConfig::with_uri(url.trim())
+                    .reinit_on_expired_session(true);
+                if let Some(token) = bearer_token {
+                    config = config.auth_header(token);
+                }
+                let transport = StreamableHttpClientTransport::from_config(config);
+                let client = timeout(
+                    request_timeout,
+                    MedousaClientHandler::new(tool_list_changed.clone()).serve(transport),
+                )
+                .await
+                .context("MCP initialize timed out")?
+                .context("MCP initialize failed")?;
+                RemoteMcpSessionInner::StreamableHttp {
+                    client,
+                    request_timeout,
+                }
+            }
+            RemoteTransport::Sse => RemoteMcpSessionInner::LegacySse(
+                LegacySseMcpSession::connect(url, bearer_token, request_timeout, tool_list_changed)
+                    .await?,
+            ),
+        };
+        Ok(Self { inner })
+    }
+
+    pub async fn list_tools(&mut self) -> Result<Vec<McpToolDefinition>> {
+        match &mut self.inner {
+            RemoteMcpSessionInner::StreamableHttp {
+                client,
+                request_timeout,
+            } => {
+                let tools = timeout(*request_timeout, client.list_all_tools())
+                    .await
+                    .context("MCP tools/list timed out")?
+                    .context("MCP tools/list failed")?;
+                tools.into_iter().map(tool_definition_from_sdk).collect()
+            }
+            RemoteMcpSessionInner::LegacySse(session) => session.list_tools().await,
+        }
+    }
+
+    pub async fn call_tool(&mut self, name: &str, arguments: Value) -> Result<Value> {
+        match &mut self.inner {
+            RemoteMcpSessionInner::StreamableHttp {
+                client,
+                request_timeout,
+            } => {
+                let arguments = match arguments {
+                    Value::Object(arguments) => arguments,
+                    Value::Null => Default::default(),
+                    _ => bail!("MCP tool arguments must be a JSON object"),
+                };
+                let result = timeout(
+                    *request_timeout,
+                    client.call_tool(
+                        CallToolRequestParams::new(name.to_string()).with_arguments(arguments),
+                    ),
+                )
+                .await
+                .context("MCP tools/call timed out")?
+                .context("MCP tools/call failed")?;
+                serde_json::to_value(result).context("failed to encode MCP tool result")
+            }
+            RemoteMcpSessionInner::LegacySse(session) => session.call_tool(name, arguments).await,
+        }
+    }
+
+    pub async fn close(&mut self) {
+        match &mut self.inner {
+            RemoteMcpSessionInner::StreamableHttp { client, .. } => {
+                let _ = client.close_with_timeout(Duration::from_secs(1)).await;
+            }
+            RemoteMcpSessionInner::LegacySse(session) => session.close(),
+        }
+    }
+}
+
+struct LegacySseMcpSession {
     client: Client,
     post_url: Url,
     bearer_token: Option<String>,
     session_id: Option<String>,
     next_id: u64,
     request_timeout: Duration,
-    transport: RemoteTransport,
-    inbound_tx: mpsc::UnboundedSender<Value>,
     inbound: mpsc::UnboundedReceiver<Value>,
+    tool_list_changed: Option<mpsc::UnboundedSender<()>>,
     _sse_task: tokio::task::JoinHandle<()>,
 }
 
-impl RemoteMcpSession {
-    pub async fn connect(
+impl LegacySseMcpSession {
+    async fn connect(
         url: &str,
-        transport: RemoteTransport,
         bearer_token: Option<String>,
         request_timeout: Duration,
+        tool_list_changed: Option<mpsc::UnboundedSender<()>>,
     ) -> Result<Self> {
         let base_url = Url::parse(url.trim()).context("invalid MCP server URL")?;
         let client = Client::builder()
@@ -56,21 +167,16 @@ impl RemoteMcpSession {
             .context("failed to build HTTP client for MCP server")?;
 
         let (inbound_tx, inbound_rx) = mpsc::unbounded_channel();
-        let post_url = match transport {
-            RemoteTransport::Http => base_url.clone(),
-            RemoteTransport::Sse => {
-                discover_sse_post_url(
-                    &client,
-                    &base_url,
-                    bearer_token.as_deref(),
-                    request_timeout,
-                    inbound_tx.clone(),
-                )
-                .await?
-            }
-        };
+        let post_url = discover_sse_post_url(
+            &client,
+            &base_url,
+            bearer_token.as_deref(),
+            request_timeout,
+            inbound_tx.clone(),
+        )
+        .await?;
 
-        let sse_task = if transport == RemoteTransport::Sse {
+        let sse_task = {
             let client = client.clone();
             let sse_url = base_url.clone();
             let bearer_token = bearer_token.clone();
@@ -81,8 +187,6 @@ impl RemoteMcpSession {
                     eprintln!("medousa-mcp-gateway: legacy SSE stream ended: {error:#}");
                 }
             })
-        } else {
-            tokio::spawn(async {})
         };
 
         let mut session = Self {
@@ -92,16 +196,15 @@ impl RemoteMcpSession {
             session_id: None,
             next_id: 1,
             request_timeout,
-            transport,
-            inbound_tx,
             inbound: inbound_rx,
+            tool_list_changed,
             _sse_task: sse_task,
         };
         session.initialize().await?;
         Ok(session)
     }
 
-    pub async fn list_tools(&mut self) -> Result<Vec<McpToolDefinition>> {
+    async fn list_tools(&mut self) -> Result<Vec<McpToolDefinition>> {
         let id = self.next_id();
         let request = json!({
             "jsonrpc": "2.0",
@@ -113,7 +216,7 @@ impl RemoteMcpSession {
         parse_tool_list(&response)
     }
 
-    pub async fn call_tool(&mut self, name: &str, arguments: Value) -> Result<Value> {
+    async fn call_tool(&mut self, name: &str, arguments: Value) -> Result<Value> {
         let id = self.next_id();
         let request = json!({
             "jsonrpc": "2.0",
@@ -163,13 +266,7 @@ impl RemoteMcpSession {
     }
 
     async fn send_request(&mut self, id: u64, request: Value) -> Result<Value> {
-        if self.transport == RemoteTransport::Http {
-            if let Some(response) = self.post_and_collect_json(id, &request).await? {
-                return Ok(response);
-            }
-        } else {
-            self.post_notification(&request).await?;
-        }
+        self.post_notification(&request).await?;
         self.wait_for_response(id).await
     }
 
@@ -185,41 +282,6 @@ impl RemoteMcpSession {
         }
         let _ = response.text().await;
         Ok(())
-    }
-
-    async fn post_and_collect_json(&mut self, id: u64, payload: &Value) -> Result<Option<Value>> {
-        let response = self.post_payload(payload).await?;
-        if response.status() == reqwest::StatusCode::ACCEPTED {
-            return Ok(None);
-        }
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            bail!("MCP server returned HTTP {status}: {body}");
-        }
-
-        let content_type = response
-            .headers()
-            .get(CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .unwrap_or("")
-            .to_ascii_lowercase();
-
-        if content_type.contains("text/event-stream") {
-            self.drain_sse_response(response, Some(id)).await?;
-            return Ok(None);
-        }
-
-        if content_type.contains("application/json") {
-            let body = response
-                .json::<Value>()
-                .await
-                .context("invalid JSON from MCP server")?;
-            return Ok(Some(extract_response_for_id(body, id)?));
-        }
-
-        let body = response.text().await.unwrap_or_default();
-        bail!("unexpected MCP response content-type '{content_type}': {body}");
     }
 
     async fn post_payload(&mut self, payload: &Value) -> Result<Response> {
@@ -255,6 +317,14 @@ impl RemoteMcpSession {
                 .recv()
                 .await
                 .context("MCP response channel closed before reply")?;
+            if message.get("method").and_then(Value::as_str)
+                == Some("notifications/tools/list_changed")
+            {
+                if let Some(sender) = &self.tool_list_changed {
+                    let _ = sender.send(());
+                }
+                continue;
+            }
             if message.get("method").is_some() {
                 continue;
             }
@@ -289,33 +359,14 @@ impl RemoteMcpSession {
         headers
     }
 
-    async fn drain_sse_response(
-        &mut self,
-        response: Response,
-        expected_id: Option<u64>,
-    ) -> Result<()> {
-        let mut stream = response.bytes_stream();
-        let mut buffer = String::new();
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.context("SSE stream read failed")?;
-            buffer.push_str(&String::from_utf8_lossy(&chunk));
-            while let Some((event, rest)) = take_sse_event(&buffer) {
-                buffer = rest.to_string();
-                if let Some(message) = parse_sse_event_message(&event) {
-                    if message.get("method").is_some() && message.get("id").is_none() {
-                        continue;
-                    }
-                    if let Some(id) = expected_id
-                        && message.get("id").and_then(Value::as_u64) == Some(id)
-                    {
-                        let _ = self.inbound_tx.send(message);
-                        return Ok(());
-                    }
-                    let _ = self.inbound_tx.send(message);
-                }
-            }
-        }
-        Ok(())
+    fn close(&mut self) {
+        self._sse_task.abort();
+    }
+}
+
+impl Drop for LegacySseMcpSession {
+    fn drop(&mut self) {
+        self.close();
     }
 }
 
@@ -422,29 +473,6 @@ fn resolve_endpoint_url(base: &Url, endpoint: &str) -> Result<Url> {
         .with_context(|| format!("invalid MCP SSE endpoint '{endpoint}'"))
 }
 
-fn extract_response_for_id(body: Value, id: u64) -> Result<Value> {
-    match body {
-        Value::Array(messages) => {
-            for message in messages {
-                if message.get("id").and_then(Value::as_u64) == Some(id) {
-                    if let Some(error) = message.get("error") {
-                        bail!("MCP error: {error}");
-                    }
-                    return Ok(message);
-                }
-            }
-            bail!("MCP JSON array response missing id {id}");
-        }
-        message if message.get("id").and_then(Value::as_u64) == Some(id) => {
-            if let Some(error) = message.get("error") {
-                bail!("MCP error: {error}");
-            }
-            Ok(message)
-        }
-        other => bail!("unexpected MCP JSON response: {other}"),
-    }
-}
-
 #[derive(Debug, Clone)]
 struct SseEvent {
     event: Option<String>,
@@ -452,11 +480,16 @@ struct SseEvent {
 }
 
 fn take_sse_event(buffer: &str) -> Option<(SseEvent, &str)> {
-    let normalized = buffer.replace("\r\n", "\n");
-    let delimiter = "\n\n";
-    let end = normalized.find(delimiter)?;
-    let block = &normalized[..end];
-    let rest = &buffer[end + delimiter.len()..];
+    let (end, delimiter_len) = match (buffer.find("\n\n"), buffer.find("\r\n\r\n")) {
+        (Some(lf), Some(crlf)) if lf <= crlf => (lf, 2),
+        (Some(_), Some(crlf)) => (crlf, 4),
+        (Some(lf), None) => (lf, 2),
+        (None, Some(crlf)) => (crlf, 4),
+        (None, None) => return None,
+    };
+    let normalized = buffer[..end].replace("\r\n", "\n");
+    let block = normalized.as_str();
+    let rest = &buffer[end + delimiter_len..];
 
     let mut event = None;
     let mut data_lines = Vec::new();
@@ -489,11 +522,87 @@ fn parse_sse_event_message(event: &SseEvent) -> Option<Value> {
 
 #[cfg(test)]
 mod tests {
+    use axum::Json;
+    use axum::http::StatusCode;
+    use axum::response::{IntoResponse, Response as AxumResponse};
+    use axum::routing::post;
+    use serde_json::json;
+
     use super::*;
+
+    async fn streamable_fixture(Json(request): Json<Value>) -> AxumResponse {
+        let id = request.get("id").cloned().unwrap_or(Value::Null);
+        match request.get("method").and_then(Value::as_str) {
+            Some("initialize") => Json(json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": { "tools": { "listChanged": true } },
+                    "serverInfo": { "name": "medousa-test", "version": "1.0.0" }
+                }
+            }))
+            .into_response(),
+            Some("notifications/initialized") => StatusCode::ACCEPTED.into_response(),
+            Some("tools/list") => {
+                let cursor = request
+                    .get("params")
+                    .and_then(|params| params.get("cursor"))
+                    .and_then(Value::as_str);
+                let (tools, next_cursor) = if cursor == Some("page-2") {
+                    (
+                        json!([{
+                            "name": "second",
+                            "description": "Second page",
+                            "inputSchema": { "type": "object" }
+                        }]),
+                        Value::Null,
+                    )
+                } else {
+                    (
+                        json!([{
+                            "name": "first",
+                            "title": "First tool",
+                            "description": "First page",
+                            "inputSchema": { "type": "object" },
+                            "annotations": { "readOnlyHint": true }
+                        }]),
+                        Value::String("page-2".to_string()),
+                    )
+                };
+                Json(json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": { "tools": tools, "nextCursor": next_cursor }
+                }))
+                .into_response()
+            }
+            Some("tools/call") => Json(json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "content": [{ "type": "text", "text": "fixture complete" }],
+                    "structuredContent": { "ok": true },
+                    "isError": false
+                }
+            }))
+            .into_response(),
+            _ => StatusCode::NOT_FOUND.into_response(),
+        }
+    }
 
     #[test]
     fn parses_sse_event_block() {
         let input = "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1}\n\nmore";
+        let (event, rest) = take_sse_event(input).expect("event");
+        assert_eq!(event.event.as_deref(), Some("message"));
+        assert_eq!(event.data, "{\"jsonrpc\":\"2.0\",\"id\":1}");
+        assert_eq!(rest, "more");
+    }
+
+    #[test]
+    fn parses_crlf_sse_event_without_corrupting_remainder() {
+        let input = "event: message\r\ndata: {\"jsonrpc\":\"2.0\",\"id\":1}\r\n\r\nmore";
         let (event, rest) = take_sse_event(input).expect("event");
         assert_eq!(event.event.as_deref(), Some("message"));
         assert_eq!(event.data, "{\"jsonrpc\":\"2.0\",\"id\":1}");
@@ -509,5 +618,52 @@ mod tests {
         );
         assert_eq!(RemoteTransport::parse("sse"), Some(RemoteTransport::Sse));
         assert!(RemoteTransport::parse("stdio").is_none());
+    }
+
+    #[tokio::test]
+    async fn official_streamable_transport_negotiates_paginates_and_calls_tools() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind fixture");
+        let address = listener.local_addr().expect("fixture address");
+        let server = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                axum::Router::new().route("/mcp", post(streamable_fixture)),
+            )
+            .await
+        });
+
+        let mut session = RemoteMcpSession::connect_with_events(
+            &format!("http://{address}/mcp"),
+            RemoteTransport::Http,
+            None,
+            Duration::from_secs(5),
+            None,
+        )
+        .await
+        .expect("connect fixture");
+        let tools = session.list_tools().await.expect("list fixture tools");
+        assert_eq!(
+            tools
+                .iter()
+                .map(|tool| tool.name.as_str())
+                .collect::<Vec<_>>(),
+            ["first", "second"]
+        );
+        let output = session
+            .call_tool("first", json!({ "value": 1 }))
+            .await
+            .expect("call fixture tool");
+        assert_eq!(
+            output
+                .get("structuredContent")
+                .and_then(|value| value.get("ok"))
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+
+        drop(session);
+        server.abort();
     }
 }

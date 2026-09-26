@@ -17,9 +17,9 @@ use crate::mcp_gateway_client::McpGatewayClient;
 use crate::tools::{
     CognitionUtilityDayOfWeekTool, CognitionUtilityTimeNowTool, CognitionUtilityUuidTool,
 };
-use crate::typed_tools::ToolRegistration;
 #[cfg(feature = "full-daemon")]
 use crate::typed_tools::ToolRegistrar;
+use crate::typed_tools::ToolRegistration;
 use crate::web_search_tool::CognitionWebSearchTool;
 use crate::workflow::WorkflowRegistry;
 
@@ -110,6 +110,7 @@ pub fn register_shared_interactive_tools(
         bindings.turn_scope.clone(),
     )?;
     crate::workshop_api::register_workshop_tools(registry, bindings.worker_scheduler.clone())?;
+    crate::coordination_tools::register_coordination_tools(registry)?;
     Ok(())
 }
 
@@ -118,8 +119,13 @@ pub fn register_portable_interactive_tools(
     registry: &mut impl ToolRegistration,
     bindings: &SharedToolRegistrationBindings,
 ) -> stasis::prelude::Result<()> {
+    crate::active_work_tools::register_active_work_tools(
+        registry,
+        bindings.delegation_service.clone(),
+    )?;
     if let Some(service) = &bindings.delegation_service {
         crate::delegation_tools::register_remote_workshop_tools(registry, service.clone())?;
+        crate::remote_peer_tools::register_remote_peer_tools(registry, service.clone())?;
     }
     crate::ui_present_tools::register_ui_present_tools(registry, bindings.turn_scope.clone())?;
     crate::skill_tools::register_portable_skill_tools(registry)?;

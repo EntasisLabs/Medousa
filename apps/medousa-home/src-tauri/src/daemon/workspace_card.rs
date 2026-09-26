@@ -4,6 +4,7 @@ use tauri::State;
 
 use super::DaemonState;
 use super::sdk::{client, sdk_error};
+use crate::embedded_daemon::EmbeddedDaemonState;
 
 #[tauri::command]
 pub async fn workspace_get_card(
@@ -60,8 +61,19 @@ pub async fn workspace_retry_card(
 #[tauri::command]
 pub async fn workspace_fetch_snapshot(
     state: State<'_, DaemonState>,
+    _embedded_state: State<'_, EmbeddedDaemonState>,
     since_revision: Option<u64>,
 ) -> Result<crate::daemon::types::WorkspaceSnapshot, String> {
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    if let Some(client) = _embedded_state.client_if_active().await? {
+        return client
+            .workspace_snapshot(&WorkspaceSnapshotQuery {
+                since_revision,
+                feed_tail_limit: None,
+            })
+            .await
+            .map_err(|error| error.to_string());
+    }
     client(&state)?
         .workspace()
         .snapshot(&WorkspaceSnapshotQuery {

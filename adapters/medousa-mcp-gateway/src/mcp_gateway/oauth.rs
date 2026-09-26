@@ -26,6 +26,9 @@ use tokio::sync::Mutex;
 pub trait McpOAuthBundleStore: Send + Sync {
     fn load_bundle(&self, server_id: &str) -> Result<Option<String>, String>;
     fn save_bundle(&self, server_id: &str, bundle: Option<&str>) -> Result<(), String>;
+    fn load_bearer_token(&self, _server_id: &str) -> Result<Option<String>, String> {
+        Ok(None)
+    }
 }
 
 /// Platform-backed daemon secret store shared by sidecar and embedded MCP.
@@ -51,6 +54,31 @@ impl SecureMcpOAuthBundleStore {
             server_id: McpServerId::parse(server_id).map_err(|error| error.to_string())?,
         })
     }
+
+    fn bearer_path(&self, server_id: &str) -> Result<DaemonSecretPath, String> {
+        Ok(DaemonSecretPath::McpBearer {
+            installation_id: self.installation_id.clone(),
+            server_id: McpServerId::parse(server_id).map_err(|error| error.to_string())?,
+        })
+    }
+
+    pub fn load_bearer_token(&self, server_id: &str) -> Result<Option<String>, String> {
+        medousa_secrets::load_daemon_secret(&self.data_dir, &self.bearer_path(server_id)?)
+            .map(|value| value.map(|value| value.value))
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn save_bearer_token(&self, server_id: &str, token: Option<&str>) -> Result<(), String> {
+        let path = self.bearer_path(server_id)?;
+        if let Some(token) = token.map(str::trim).filter(|value| !value.is_empty()) {
+            medousa_secrets::save_daemon_secret(&self.data_dir, &path, token)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        } else {
+            medousa_secrets::delete_daemon_secret(&self.data_dir, &path)
+                .map_err(|error| error.to_string())
+        }
+    }
 }
 
 impl McpOAuthBundleStore for SecureMcpOAuthBundleStore {
@@ -70,6 +98,10 @@ impl McpOAuthBundleStore for SecureMcpOAuthBundleStore {
             medousa_secrets::delete_daemon_secret(&self.data_dir, &path)
                 .map_err(|error| error.to_string())
         }
+    }
+
+    fn load_bearer_token(&self, server_id: &str) -> Result<Option<String>, String> {
+        Self::load_bearer_token(self, server_id)
     }
 }
 
@@ -121,6 +153,12 @@ impl McpOAuthBroker {
             store,
             pending: Mutex::new(HashMap::new()),
         }
+    }
+
+    pub fn bearer_token(&self, server_id: &str) -> Result<Option<String>, McpOAuthError> {
+        self.store
+            .load_bearer_token(server_id)
+            .map_err(|error| McpOAuthError::OAuth(AuthError::InternalError(error)))
     }
 
     pub async fn status(&self, server_id: &str) -> Result<McpOAuthStatusResponse, McpOAuthError> {

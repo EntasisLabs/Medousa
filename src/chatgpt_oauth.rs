@@ -1141,6 +1141,8 @@ mod tests {
             Json(serde_json::json!({
                 "models": [
                     { "slug": "gpt-6-astra", "visibility": "list", "priority": 30 },
+                    { "slug": "gpt-6-sol", "visibility": "list", "priority": 25 },
+                    { "slug": "gpt-6-luna", "visibility": "list", "priority": 24 },
                     { "slug": "gpt-visible-slow", "visibility": "list", "priority": 10 },
                     { "slug": "gpt-hidden", "visibility": "hide", "priority": 100 },
                     { "slug": "gpt-visible-fast", "visibility": "list", "priority": 20,
@@ -1170,7 +1172,13 @@ mod tests {
             .unwrap();
         assert_eq!(
             result.models,
-            vec!["gpt-6-astra", "gpt-visible-fast", "gpt-visible-slow"]
+            vec![
+                "gpt-6-astra",
+                "gpt-6-sol",
+                "gpt-6-luna",
+                "gpt-visible-fast",
+                "gpt-visible-slow"
+            ]
         );
         let reasoning = crate::model_capability_registry::registry()
             .reasoning("openai-codex", "gpt-visible-fast");

@@ -185,7 +185,16 @@ labeled as context, not carried forward as active tool obligations. Exact in-tur
 resume still restores its checkpoint. A peer receives the host handoff but starts
 its own goal, step counter, and tool obligations.
 
-In Coder, use your own tools directly to work and `turn.update_user` for progress.
+In Coder, own the full requested outcome. The smallest coherent change means
+controlled scope, not stopping after one local fix: trace affected callers,
+contracts, and tests, then keep implementing and validating until the outcome
+is satisfied or a concrete blocker prevents further authorized progress. Follow
+existing architecture as well as repository conventions. Use existing Coder
+memory at milestones for complex or long work; do not record every tool call.
+
+Use your own tools directly to work and `turn.update_user` for nonterminal
+progress. `turn.checkpoint` deliberately ends the current agent turn and waits
+for the principal, so use it only when their input is needed or work must pause.
 `workshop.spawn` explicitly creates a separate concurrent peer. Assign a bounded
 task and expected result, perform complementary work, and integrate its findings.
 The ambiguous `turn.begin_work` action is hidden from Coder advertisements and
@@ -328,9 +337,27 @@ use the configured login shell.
 
 One-shot commands execute in a child shell with explicit start/completion
 boundaries, so multiline scripts, quoted text, syntax errors, and `exit` cannot
-corrupt the persistent command shell. Coder can call the one-shot tool directly;
-a readiness tool call is not required. Its existing 15-second wait/interrupt
-bound remains; use session tools for sustained processes.
+corrupt the persistent command shell. Coder can call the command tool directly;
+a readiness tool call is not required. Startup observes retained output from
+sequence zero and waits for the shell's readiness marker. Slow login initialization
+does not kill the session; cancellation remains owned by the turn.
+
+`cognition_coder_shell_run.wait_ms` is an observation window (default and maximum
+15 seconds), not a command lifetime. When it expires, the command keeps running
+and returns `ok: true`, `status: "running"`, `completed: false`, and `session_id`.
+Call the same tool with that `session_id`, `poll: true`, and no `command` to observe
+more output and the eventual exit code. Output cursors and the completion parser
+stay in the existing turn-owned shell state, including across connection loss.
+Polling never resubmits the command. An uncertain transport result reports
+`status: "unknown"`; reconnect by polling before deciding whether to retry work.
+
+An independent command uses another session while the preferred one is busy.
+Explicitly targeting a busy session with another command is rejected. Session
+tools can send raw `input` or poll an existing command; use
+`cognition_shell_session_interrupt` for an explicit interrupt. Turn cancellation
+and turn cleanup still interrupt owned sessions before releasing Forge authority.
+Nonzero exit codes and recoverable tool failures remain observations for the
+agent to act on; three failed batches do not automatically terminate its turn.
 
 The model receives plain text with terminal styling, titles and other control
 sequences removed. PTY responses retain at most 32 KiB of text (head and tail,

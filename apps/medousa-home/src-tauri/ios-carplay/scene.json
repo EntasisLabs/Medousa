@@ -1,0 +1,5 @@
+{
+  "UISceneClassName": "CPTemplateApplicationScene",
+  "UISceneConfigurationName": "Medousa Live",
+  "UISceneDelegateClassName": "MedousaCarPlaySceneDelegate"
+}

@@ -69,6 +69,9 @@ export class WorkshopsStore {
     this.error = null;
     try {
       this.registry = await loadWorkshopRegistry();
+      void import("$lib/siriWorkshopSnapshot").then(({ syncSiriWorkshopSnapshot }) =>
+        syncSiriWorkshopSnapshot(),
+      );
       workshopSwitchPorts().activateWorkshopScope(this.activeWorkshopId);
       const url = (await getDaemonUrl()).trim();
       if (url) workshopSwitchPorts().setDaemonUrl(url);
@@ -194,6 +197,9 @@ export class WorkshopsStore {
       shellTabs.checkpoint();
       await ports.prepareForWorkshopSwitch();
       this.registry = await setActiveWorkshop(workshopId);
+      void import("$lib/siriWorkshopSnapshot").then(({ syncSiriWorkshopSnapshot }) =>
+        syncSiriWorkshopSnapshot(),
+      );
       selectionCommitted = true;
       ports.activateWorkshopScope(this.activeWorkshopId);
       await shellTabs.switchWorkspaceScope(this.activeWorkshopId);
@@ -288,6 +294,9 @@ export class WorkshopsStore {
     this.error = null;
     try {
       this.registry = await renameWorkshop(workshopId, label);
+      void import("$lib/siriWorkshopSnapshot").then(({ syncSiriWorkshopSnapshot }) =>
+        syncSiriWorkshopSnapshot(),
+      );
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
       throw err;
@@ -315,6 +324,9 @@ export class WorkshopsStore {
         await ports.prepareForWorkshopSwitch();
       }
       this.registry = await removeWorkshop(workshopId);
+      void import("$lib/siriWorkshopSnapshot").then(({ syncSiriWorkshopSnapshot }) =>
+        syncSiriWorkshopSnapshot(),
+      );
       if (wasActive) {
         workshopSwitchPorts().activateWorkshopScope(this.activeWorkshopId);
         await shellTabs?.switchWorkspaceScope(this.activeWorkshopId);

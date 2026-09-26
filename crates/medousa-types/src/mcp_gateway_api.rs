@@ -67,6 +67,18 @@ impl McpEffectClass {
     }
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct McpToolAnnotations {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_only_hint: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub destructive_hint: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idempotent_hint: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub open_world_hint: Option<bool>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpToolCatalogEntry {
     pub server_id: String,
@@ -77,7 +89,28 @@ pub struct McpToolCatalogEntry {
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_schema_summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_schema_summary: Option<String>,
+    /// Lossless schemas used by the agent to construct and interpret calls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_schema: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_schema: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<McpToolAnnotations>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icons: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ui_resource_uri: Option<String>,
     pub effect_class: McpEffectClass,
+    /// Direct, conservative guidance intended for model planning.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub planning_hints: Vec<String>,
+    /// Human-facing action summary suitable for approval surfaces.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval_summary: Option<String>,
     #[serde(default)]
     pub capability_ids: Vec<String>,
     #[serde(default = "default_stability")]
@@ -151,6 +184,8 @@ pub struct McpServerSummary {
     pub connected: bool,
     pub tool_count: usize,
     pub allowed_lanes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

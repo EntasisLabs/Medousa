@@ -14,11 +14,18 @@ fi
 
 ENT_SRC="$ROOT/src-tauri/ios-entitlements/medousa-home_iOS.entitlements"
 ENT_DST="$GEN/medousa-home_iOS/medousa-home_iOS.entitlements"
+CARPLAY_ENTITLEMENT="com.apple.developer.carplay-voice-based-conversation"
 
-apply_push_entitlements() {
+apply_app_entitlements() {
   if [[ -f "$ENT_SRC" && -d "$(dirname "$ENT_DST")" ]]; then
     cp "$ENT_SRC" "$ENT_DST"
-    echo "[ios-prepare] applied push entitlements"
+    if [[ "${MEDOUSA_CARPLAY:-0}" == "1" ]]; then
+      /usr/libexec/PlistBuddy -c "Add :${CARPLAY_ENTITLEMENT} bool true" "$ENT_DST" 2>/dev/null \
+        || /usr/libexec/PlistBuddy -c "Set :${CARPLAY_ENTITLEMENT} true" "$ENT_DST"
+      echo "[ios-prepare] applied app + CarPlay voice conversation entitlements"
+    else
+      echo "[ios-prepare] applied app entitlements"
+    fi
   fi
 }
 
@@ -72,6 +79,15 @@ text = re.sub(
 if mobile_info_plist.is_file() and "  medousa-home_iOS:" in text:
     with mobile_info_plist.open("rb") as handle:
         mobile_info = plistlib.load(handle)
+    # CarPlay scene registration is opt-in until the conversational entitlement
+    # and provisioning profile are approved. Never add a restricted entitlement
+    # to the normal signed phone build merely to enable simulator development.
+    if os.environ.get("MEDOUSA_CARPLAY") == "1":
+        scene_path = mobile_info_plist.parent / "ios-carplay" / "scene.json"
+        scene = json.loads(scene_path.read_text())
+        mobile_info["UIApplicationSceneManifest"]["UISceneConfigurations"][
+            "CPTemplateApplicationSceneSessionRoleApplication"
+        ] = [scene]
 
     target_start = text.index("  medousa-home_iOS:")
     target_body_start = target_start + len("  medousa-home_iOS:")
@@ -82,6 +98,33 @@ if mobile_info_plist.is_file() and "  medousa-home_iOS:" in text:
         else len(text)
     )
     target = text[target_start:target_end]
+
+    # UIApplicationSceneManifest is a nested YAML mapping, so the generic
+    # inline-property merger below cannot replace it. Register the opt-in
+    # CarPlay role in project.yml *before* xcodegen; patching only the generated
+    # plist is lost when Tauri archives and regenerates the project.
+    carplay_role = "CPTemplateApplicationSceneSessionRoleApplication"
+    if os.environ.get("MEDOUSA_CARPLAY") == "1" and carplay_role not in target:
+        scene_marker = "          UISceneConfigurations:\n"
+        scene_yaml = (
+            f"            {carplay_role}:\n"
+            "              - UISceneClassName: CPTemplateApplicationScene\n"
+            "                UISceneConfigurationName: Medousa Live\n"
+            "                UISceneDelegateClassName: MedousaCarPlaySceneDelegate\n"
+        )
+        if scene_marker not in target:
+            raise SystemExit("[ios-prepare] error: generated project has no scene configuration")
+        target = target.replace(scene_marker, scene_marker + scene_yaml, 1)
+    elif os.environ.get("MEDOUSA_CARPLAY") != "1" and carplay_role in target:
+        target = re.sub(
+            rf"^            {carplay_role}:\n"
+            r"(?:^              - [^\n]+\n)"
+            r"(?:^                [^\n]+\n)*",
+            "",
+            target,
+            count=1,
+            flags=re.M,
+        )
 
     additions = []
     for key, value in mobile_info.items():
@@ -108,6 +151,16 @@ for stale in (
     "      - path: Externals\n",
 ):
     text = text.replace(stale, "")
+
+# App Intent declarations must be visible to Xcode's metadata processor. Keep them
+# in the application target rather than the Rust-linked static Swift archive.
+app_intents_source = "      - path: ../../ios-app-intents\n"
+if app_intents_source not in text and "      - path: medousa-home_iOS\n" in text:
+    text = text.replace(
+        "      - path: medousa-home_iOS\n",
+        "      - path: medousa-home_iOS\n" + app_intents_source,
+        1,
+    )
 
 text = re.sub(r"iOS: 16\.1", "iOS: 16.2", text)
 text = re.sub(r"iOS: 15\.0", "iOS: 16.2", text)
@@ -181,6 +234,24 @@ if "Bundle MLX Metal Library" not in text:
     if anchor in text:
         text = text.replace(anchor, anchor + mlx_bundle_entry, 1)
 
+# Tauri rewrites the generated source Info.plist after ios-prepare runs. Patch
+# the built plist after ProcessInfoPlistFile (and before code signing) so an
+# opted-in CarPlay scene survives both `ios dev` and archive/export.
+carplay_info_name = "Register opt-in CarPlay scene"
+carplay_info_entry = """      - script: |
+          app_plist="${TARGET_BUILD_DIR}/${INFOPLIST_PATH}"
+          /usr/bin/plutil -replace UIApplicationSceneManifest.UISceneConfigurations.CPTemplateApplicationSceneSessionRoleApplication -json '[{"UISceneClassName":"CPTemplateApplicationScene","UISceneConfigurationName":"Medousa Live","UISceneDelegateClassName":"MedousaCarPlaySceneDelegate"}]' "$app_plist"
+          echo "[ios-prepare] registered opt-in CarPlay scene in built app"
+        name: Register opt-in CarPlay scene
+        basedOnDependencyAnalysis: false
+"""
+if os.environ.get("MEDOUSA_CARPLAY") == "1" and carplay_info_name not in text:
+    anchor = "    postBuildScripts:\n"
+    if anchor in text:
+        text = text.replace(anchor, anchor + carplay_info_entry, 1)
+elif os.environ.get("MEDOUSA_CARPLAY") != "1" and carplay_info_name in text:
+    text = text.replace(carplay_info_entry, "", 1)
+
 # Live Activity: enable Rust/Swift bridge during Xcode Rust build.
 if "MEDOUSA_LIVE_ACTIVITY" not in text:
     text = text.replace(
@@ -199,6 +270,7 @@ if "UIBackgroundModes" not in text:
                 version_anchor
                 + "        NSSupportsLiveActivities: true\n"
                 + "        UIBackgroundModes:\n"
+                + "          - audio\n"
                 + "          - remote-notification\n",
                 1,
             )
@@ -213,15 +285,24 @@ if "UIBackgroundModes" not in text:
                 + f'        CFBundleVersion: "{app_version}"\n'
                 + "        NSSupportsLiveActivities: true\n"
                 + "        UIBackgroundModes:\n"
+                + "          - audio\n"
                 + "          - remote-notification\n",
                 1,
             )
     else:
         text = text.replace(
             "        NSSupportsLiveActivities: true\n",
-            "        NSSupportsLiveActivities: true\n        UIBackgroundModes:\n          - remote-notification\n",
+            "        NSSupportsLiveActivities: true\n        UIBackgroundModes:\n          - audio\n          - remote-notification\n",
             1,
         )
+
+# Medousa Live: an explicitly started two-way voice session owns background audio.
+if "UIBackgroundModes:" in text and "          - audio\n" not in text:
+    text = text.replace(
+        "        UIBackgroundModes:\n",
+        "        UIBackgroundModes:\n          - audio\n",
+        1,
+    )
 
 # Widget Extension target for Lock Screen / Dynamic Island Live Activity UI.
 if "MedousaWorkWidget:" not in text:
@@ -235,6 +316,9 @@ if "MedousaWorkWidget:" not in text:
           - Info.plist
           - MedousaWorkWidget.entitlements
       - path: ../../ios-live-activity/Shared
+      - path: ../../ios-live-activity/Controls
+      - path: ../../../static/brand/app-icons/png/medousa-icon-192.png
+        buildPhase: resources
     info:
       path: ../../ios-live-activity/Widget/Info.plist
       properties:
@@ -279,6 +363,15 @@ if "MedousaWorkWidget:" in text and "../../ios-live-activity/Shared" not in text
         1,
     )
 
+# Bundle the canonical detailed app mark for widgets and Live Activity chrome.
+widget_resource = "      - path: ../../ios-live-activity/Controls\n      - path: ../../../static/brand/app-icons/png/medousa-icon-192.png\n        buildPhase: resources\n"
+if "MedousaWorkWidget:" in text and widget_resource not in text:
+    text = text.replace(
+        "      - path: ../../ios-live-activity/Controls\n",
+        widget_resource,
+        1,
+    )
+
 widget_entitlements_block = """    entitlements:
       path: ../../ios-live-activity/Widget/MedousaWorkWidget.entitlements
       properties:
@@ -307,6 +400,23 @@ if "aps-environment" not in text:
         entitlements_block,
         1,
     )
+
+# A CarPlay scene without its approved managed entitlement never appears on a
+# physical head unit. Keep both changes behind one build switch so a CarPlay
+# build cannot accidentally contain only half of the required configuration.
+carplay_entitlement = "        com.apple.developer.carplay-voice-based-conversation: true\n"
+if os.environ.get("MEDOUSA_CARPLAY") == "1":
+    if carplay_entitlement not in text:
+        entitlement_anchor = "        aps-environment: development\n"
+        if entitlement_anchor not in text:
+            raise SystemExit("[ios-prepare] error: generated project has no app entitlement properties")
+        text = text.replace(
+            entitlement_anchor,
+            entitlement_anchor + carplay_entitlement,
+            1,
+        )
+else:
+    text = text.replace(carplay_entitlement, "")
 
 if "com.apple.Push" not in text and "medousa-home_iOS:" in text:
     text = text.replace(
@@ -352,6 +462,8 @@ sync_ios_versions() {
   APP_VERSION="$(node -p "require('$ROOT/src-tauri/tauri.conf.json').version")"
   python3 - <<PY
 from pathlib import Path
+import json
+import os
 import plistlib
 import re
 app_version = "${APP_VERSION}"
@@ -386,6 +498,11 @@ generated_info_path = Path("${GEN}/medousa-home_iOS/Info.plist")
 if mobile_info_path.is_file() and generated_info_path.is_file():
     with mobile_info_path.open("rb") as handle:
         mobile_info = plistlib.load(handle)
+    if os.environ.get("MEDOUSA_CARPLAY") == "1":
+        scene = json.loads((mobile_info_path.parent / "ios-carplay" / "scene.json").read_text())
+        mobile_info["UIApplicationSceneManifest"]["UISceneConfigurations"][
+            "CPTemplateApplicationSceneSessionRoleApplication"
+        ] = [scene]
     with generated_info_path.open("rb") as handle:
         generated_info = plistlib.load(handle)
     changed = False
@@ -403,14 +520,22 @@ PY
 if command -v xcodegen >/dev/null 2>&1; then
   (cd "$GEN" && xcodegen >/dev/null)
   echo "[ios-prepare] xcode project synced"
-  apply_push_entitlements
+  apply_app_entitlements
 else
   echo "[ios-prepare] warn: install xcodegen (brew install xcodegen) to sync Xcode after patches"
-  apply_push_entitlements
+  apply_app_entitlements
 fi
 
 # xcodegen rewrites widget Info.plist defaults (1.0) — re-stamp after sync.
 sync_ios_versions
+
+if [[ "${MEDOUSA_CARPLAY:-0}" == "1" ]]; then
+  /usr/libexec/PlistBuddy -c \
+    "Print :UIApplicationSceneManifest:UISceneConfigurations:CPTemplateApplicationSceneSessionRoleApplication" \
+    "$GEN/medousa-home_iOS/Info.plist" >/dev/null
+  /usr/libexec/PlistBuddy -c "Print :${CARPLAY_ENTITLEMENT}" "$ENT_DST" | grep -q true
+  echo "[ios-prepare] verified CarPlay scene + voice conversation entitlement"
+fi
 
 # App Store rejects any alpha channel on iOS app icons (ITMS-90717). `tauri icon` composites
 # over --ios-color but still writes RGBA, so flatten the asset catalog to opaque RGB.

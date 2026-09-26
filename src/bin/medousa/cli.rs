@@ -322,6 +322,11 @@ pub enum PairCommand {
         #[command(subcommand)]
         action: PairLanAction,
     },
+    /// Inspect or change what a paired device may do on this workshop.
+    Permissions {
+        #[command(subcommand)]
+        action: PairPermissionsAction,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -329,6 +334,61 @@ pub enum PairLanAction {
     Status,
     On,
     Off,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PairPermissionsAction {
+    /// List the effective inbound policy for every paired device.
+    List,
+    /// Replace one paired device's inbound execution policy.
+    Set {
+        device_id: String,
+        #[arg(long, value_enum)]
+        preset: PairPermissionPreset,
+        #[arg(long = "project")]
+        projects: Vec<String>,
+        #[arg(long = "root-ref")]
+        root_refs: Vec<String>,
+        #[arg(long = "tool-domain")]
+        tool_domains: Vec<String>,
+        #[arg(long = "mcp-server")]
+        mcp_servers: Vec<String>,
+        #[arg(long = "secret-ref")]
+        secret_refs: Vec<String>,
+        #[arg(long)]
+        assistant_work: bool,
+        #[arg(long)]
+        sandbox_execution: bool,
+        #[arg(long)]
+        host_shell: bool,
+        #[arg(long)]
+        coder_work: bool,
+        #[arg(long)]
+        work_environment_materialization: bool,
+        #[arg(long)]
+        allow_agent_targeting: bool,
+        #[arg(long, value_enum, default_value = "deny")]
+        network: PairNetworkPolicy,
+        /// RFC 3339 timestamp after which the permission expires.
+        #[arg(long)]
+        expires_at: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum PairPermissionPreset {
+    ConnectedOnly,
+    AssistantWork,
+    SandboxedWork,
+    ApprovedProjects,
+    Custom,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum PairNetworkPolicy {
+    Deny,
+    WebOnly,
+    Unrestricted,
 }
 
 #[derive(Debug, Args)]
@@ -420,6 +480,12 @@ fn push_opt(out: &mut Vec<String>, flag: &str, value: Option<&str>) {
     if let Some(v) = value {
         out.push(flag.to_string());
         out.push(v.to_string());
+    }
+}
+
+fn push_many(out: &mut Vec<String>, flag: &str, values: &[String]) {
+    for value in values {
+        push_opt(out, flag, Some(value));
     }
 }
 
@@ -624,8 +690,74 @@ impl PairArgs {
                     PairLanAction::Off => "off".into(),
                 });
             }
+            Some(PairCommand::Permissions { action }) => {
+                out.insert(0, "permissions".into());
+                match action {
+                    PairPermissionsAction::List => out.push("list".into()),
+                    PairPermissionsAction::Set {
+                        device_id,
+                        preset,
+                        projects,
+                        root_refs,
+                        tool_domains,
+                        mcp_servers,
+                        secret_refs,
+                        assistant_work,
+                        sandbox_execution,
+                        host_shell,
+                        coder_work,
+                        work_environment_materialization,
+                        allow_agent_targeting,
+                        network,
+                        expires_at,
+                    } => {
+                        out.push("set".into());
+                        out.push(device_id.clone());
+                        push_opt(&mut out, "--preset", Some(preset.as_str()));
+                        push_many(&mut out, "--project", projects);
+                        push_many(&mut out, "--root-ref", root_refs);
+                        push_many(&mut out, "--tool-domain", tool_domains);
+                        push_many(&mut out, "--mcp-server", mcp_servers);
+                        push_many(&mut out, "--secret-ref", secret_refs);
+                        push_flag(&mut out, "--assistant-work", *assistant_work);
+                        push_flag(&mut out, "--sandbox-execution", *sandbox_execution);
+                        push_flag(&mut out, "--host-shell", *host_shell);
+                        push_flag(&mut out, "--coder-work", *coder_work);
+                        push_flag(
+                            &mut out,
+                            "--work-environment-materialization",
+                            *work_environment_materialization,
+                        );
+                        push_flag(&mut out, "--allow-agent-targeting", *allow_agent_targeting);
+                        push_opt(&mut out, "--network", Some(network.as_str()));
+                        push_opt(&mut out, "--expires-at", expires_at.as_deref());
+                    }
+                }
+            }
         }
         out
+    }
+}
+
+impl PairPermissionPreset {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::ConnectedOnly => "connected_only",
+            Self::AssistantWork => "assistant_work",
+            Self::SandboxedWork => "sandboxed_work",
+            Self::ApprovedProjects => "approved_projects",
+            Self::Custom => "custom",
+        }
+    }
+}
+
+impl PairNetworkPolicy {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Deny => "deny",
+            Self::WebOnly => "web_only",
+            Self::Unrestricted => "unrestricted",
+        }
     }
 }
 
@@ -747,6 +879,37 @@ mod tests {
                 let legacy = args.to_legacy();
                 assert_eq!(legacy.first().map(String::as_str), Some("status"));
                 assert!(legacy.iter().any(|a| a == "--daemon-url"));
+            }
+            other => panic!("expected Pair, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pair_permissions_supports_headless_assistant_grant() {
+        let cli = Cli::try_parse_from([
+            "medousa",
+            "pair",
+            "permissions",
+            "set",
+            "phone-device-id",
+            "--preset",
+            "assistant-work",
+        ])
+        .expect("parse");
+        match cli.command {
+            Some(Commands::Pair(args)) => {
+                assert_eq!(
+                    args.to_legacy(),
+                    [
+                        "permissions",
+                        "set",
+                        "phone-device-id",
+                        "--preset",
+                        "assistant_work",
+                        "--network",
+                        "deny",
+                    ]
+                );
             }
             other => panic!("expected Pair, got {other:?}"),
         }

@@ -415,9 +415,14 @@
     {
       "registry": "coder_bound",
       "name": "cognition_chat_history_read",
-      "description": "Read a bounded window from one prior Medousa chat. Returns user and assistant messages plus compact tool names.",
+      "description": "Read messages and attachment IDs from a Medousa chat. Use before_turn to page backward, or media_id to reopen an attached image for visual inspection.",
       "input_schema": {
         "properties": {
+          "before_turn": {
+            "description": "Return turns before this exclusive, one-based transcript turn index. Use the oldest returned message's turn_index to continue paging backward.",
+            "minimum": 0,
+            "type": "integer"
+          },
           "intent": {
             "description": "Purpose, usually 4-8 words.",
             "maxLength": 320,
@@ -434,6 +439,10 @@
             "maximum": 24000,
             "minimum": 512,
             "type": "integer"
+          },
+          "media_id": {
+            "description": "Reopen an attached image by its returned media_id so a vision-capable model can inspect its pixels.",
+            "type": "string"
           },
           "session_id": {
             "description": "Session returned by cognition_chat_history_search.",
@@ -1019,7 +1028,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_coder_memory_recall",
-      "description": "Recall bounded STTP working-memory nodes from project and repository knowledge.",
+      "description": "Ask a natural-language question over bounded Coder memory. Defaults to the current environment lineage; use all_accepted to discover review-promoted knowledge across repositories.",
       "input_schema": {
         "properties": {
           "intent": {
@@ -1055,6 +1064,14 @@
           },
           "query": {
             "maxLength": 2000,
+            "type": "string"
+          },
+          "scope": {
+            "description": "lineage searches current/parent/undertaking/repository memory; all_accepted searches only accepted Coder knowledge across repositories",
+            "enum": [
+              "all_accepted",
+              "lineage"
+            ],
             "type": "string"
           }
         },
@@ -1185,14 +1202,14 @@
     {
       "registry": "coder_bound",
       "name": "cognition_coder_shell_run",
-      "description": "Run a bounded POSIX command in the Coder workspace; no preflight needed. Plain-text head/tail and exit status; session tools handle sustained commands.",
+      "description": "Start a POSIX command, or poll its session_id with poll=true and no command. `wait_ms` bounds PTY observation only; a one-shot work-environment command waits for completion and currently has no per-call timeout. For OCI work environments, interrupting the request does not guarantee the container command stopped, and an unknown outcome is not replayed. Use shell_session_interrupt to cancel PTY sessions.",
       "input_schema": {
         "properties": {
           "attempt_id": {
             "type": "string"
           },
           "command": {
-            "description": "POSIX shell script; quoting and completion are handled by the runtime.",
+            "description": "POSIX shell script to start. Omit when polling an existing command.",
             "type": "string"
           },
           "intent": {
@@ -1206,12 +1223,16 @@
           "lease_id": {
             "type": "string"
           },
+          "poll": {
+            "description": "Observe the existing command without submitting it again. Supply its session_id.",
+            "type": "boolean"
+          },
           "session_id": {
             "description": "Reuse a turn-owned session when provided by the runtime",
             "type": "string"
           },
           "wait_ms": {
-            "description": "How long to wait for command completion (default 15000, max 15000)",
+            "description": "Observation window in milliseconds (default 15000, max 15000). Expiry leaves the command running; poll its session_id.",
             "type": "integer"
           },
           "work_id": {
@@ -1219,7 +1240,6 @@
           }
         },
         "required": [
-          "command",
           "intent"
         ],
         "type": "object"
@@ -1736,7 +1756,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_memory_query",
-      "description": "Read Locus memory: schema, AVEC context, list, recall, tags, or mood presets. action is a typed name (memory.context, memory.recall, …). Fetch fields with cognition_schema types=[...].",
+      "description": "Read Locus memory: schema, AVEC context, list, natural-language recall, tags, or mood presets. memory.recall accepts a question; omit session_id for the current turn or pass null for cross-session retrieval. Fetch action fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
@@ -1810,15 +1830,19 @@
     {
       "registry": "coder_bound",
       "name": "cognition_runtime_query",
-      "description": "Inspect jobs, recurring, workflows, or delivery. action is a typed name (job.list, workflow.status, …). Fetch fields with cognition_schema types=[...].",
+      "description": "Inspect owned assignments, jobs, recurring, workflows, or delivery. action is a typed name (job.list, workflow.status, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
           "action": {
             "enum": [
+              "assignment.events",
+              "assignment.get",
+              "assignment.list",
               "delivery.status",
               "job.list",
               "job.status",
+              "owner.events",
               "recurring.doctor",
               "recurring.list",
               "recurring.preview",
@@ -1876,6 +1900,9 @@
                 "artifacts.read",
                 "artifacts.search",
                 "artifacts.write",
+                "assignment.events",
+                "assignment.get",
+                "assignment.list",
                 "calendar.create",
                 "calendar.delete",
                 "calendar.export",
@@ -1910,6 +1937,7 @@
                 "memory.schema",
                 "memory.store",
                 "memory.tags",
+                "owner.events",
                 "recurring.cancel",
                 "recurring.doctor",
                 "recurring.list",
@@ -2394,6 +2422,230 @@
     },
     {
       "registry": "general_runtime",
+      "name": "cognition_active_work_discover",
+      "description": "List projects and agent sessions visible to the user across the local and authorized connected workshops. Use this for “what are we working on?” before asking the user to identify a project. The response is read-only and preserves unavailable workshops explicitly; never describe partial coverage as complete.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "include_terminal": {
+            "default": false,
+            "description": "Include accepted, discarded, and failed Forge work.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "assistant:authorized",
+        "assistant:domain:peers",
+        "general:authorized",
+        "general:domain:peers"
+      ]
+    },
+    {
+      "registry": "general_runtime",
+      "name": "cognition_assistant_placement",
+      "description": "Rank currently observed workshop and local ACP candidates against explicit task needs, requested or forbidden runtime/workshop constraints, governed work, and context locality. The result is read-only placement guidance; it never grants authority, adopts work, approves, or dispatches an executor.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "include_terminal": {
+            "default": false,
+            "description": "Include accepted, discarded, and failed Forge work as candidate bindings.",
+            "type": "boolean"
+          },
+          "requirements": {
+            "description": "Explicit placement constraints. This query cannot authorize or launch work.",
+            "properties": {
+              "context_locality": {
+                "default": "any_authorized",
+                "oneOf": [
+                  {
+                    "description": "Any currently authorized location may be considered.",
+                    "enum": [
+                      "any_authorized"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "description": "Prefer work colocated with the source context, but allow other eligible targets.",
+                    "enum": [
+                      "prefer_source_workshop"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "description": "Require the exact authority that owns the source context.",
+                    "enum": [
+                      "require_source_workshop"
+                    ],
+                    "type": "string"
+                  }
+                ]
+              },
+              "forbidden_adapters": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              "forbidden_executors": {
+                "default": [],
+                "items": {
+                  "enum": [
+                    "inline",
+                    "internal_worker",
+                    "local_acp",
+                    "workflow",
+                    "workshop"
+                  ],
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              "forbidden_runtime_ids": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              "forbidden_workshop_authority_ids": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              "forbidden_workshop_ids": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              "governed_work": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "forge_work_id": {
+                        "type": "string"
+                      },
+                      "workshop_authority_id": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "forge_work_id",
+                      "workshop_authority_id"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "requested_adapter": {
+                "default": null,
+                "description": "Exact external adapter name, e.g. `cursor`; meaningful for local ACP.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "requested_adoptable_agent_session_id": {
+                "default": null,
+                "description": "Exact ACP session requested for adoption. This must match inventory evidence.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "requested_executor": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "inline",
+                      "internal_worker",
+                      "local_acp",
+                      "workflow",
+                      "workshop"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "requested_runtime_id": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "requested_workshop_authority_id": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "requested_workshop_id": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "required_capabilities": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              "schema_version": {
+                "default": 1,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "source_workshop_authority_id": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "requirements"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "assistant:authorized",
+        "assistant:domain:peers"
+      ]
+    },
+    {
+      "registry": "general_runtime",
       "name": "cognition_browser_act",
       "description": "Act on the shared Web tab using opaque refs from cognition_browser_snapshot. A guarded actions batch executes locally in order and stops at the first failure.",
       "input_schema": {
@@ -2607,6 +2859,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:browser",
         "general:authorized",
         "general:domain:browser",
         "workshop:authorized:general",
@@ -2637,6 +2891,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:browser",
         "general:authorized",
         "general:domain:browser",
         "workshop:authorized:general",
@@ -2688,6 +2944,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:browser",
         "general:authorized",
         "general:domain:browser",
         "workshop:authorized:general",
@@ -2719,6 +2977,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:calendar",
         "general:authorized",
         "general:bootstrap",
         "general:domain:calendar",
@@ -2752,6 +3013,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:calendar",
         "general:authorized",
         "general:bootstrap",
         "general:domain:calendar",
@@ -2789,6 +3053,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:catalog",
         "general:authorized",
         "general:bootstrap",
         "general:domain:catalog",
@@ -2804,9 +3071,14 @@
     {
       "registry": "general_runtime",
       "name": "cognition_chat_history_read",
-      "description": "Read a bounded window from one prior Medousa chat. Returns user and assistant messages plus compact tool names.",
+      "description": "Read messages and attachment IDs from a Medousa chat. Use before_turn to page backward, or media_id to reopen an attached image for visual inspection.",
       "input_schema": {
         "properties": {
+          "before_turn": {
+            "description": "Return turns before this exclusive, one-based transcript turn index. Use the oldest returned message's turn_index to continue paging backward.",
+            "minimum": 0,
+            "type": "integer"
+          },
           "last_k": {
             "description": "Number of most recent visible turns (default 12, maximum 40).",
             "maximum": 40,
@@ -2818,6 +3090,10 @@
             "maximum": 24000,
             "minimum": 512,
             "type": "integer"
+          },
+          "media_id": {
+            "description": "Reopen an attached image by its returned media_id so a vision-capable model can inspect its pixels.",
+            "type": "string"
           },
           "session_id": {
             "description": "Session returned by cognition_chat_history_search.",
@@ -2831,6 +3107,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:history",
         "general:authorized",
         "general:domain:history"
       ]
@@ -2862,6 +3140,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:history",
         "general:authorized",
         "general:domain:history"
       ]
@@ -2993,14 +3273,14 @@
     {
       "registry": "general_runtime",
       "name": "cognition_coder_shell_run",
-      "description": "Run a bounded POSIX command in the Coder workspace; no preflight needed. Plain-text head/tail and exit status; session tools handle sustained commands.",
+      "description": "Start a POSIX command, or poll its session_id with poll=true and no command. `wait_ms` bounds PTY observation only; a one-shot work-environment command waits for completion and currently has no per-call timeout. For OCI work environments, interrupting the request does not guarantee the container command stopped, and an unknown outcome is not replayed. Use shell_session_interrupt to cancel PTY sessions.",
       "input_schema": {
         "properties": {
           "attempt_id": {
             "type": "string"
           },
           "command": {
-            "description": "POSIX shell script; quoting and completion are handled by the runtime.",
+            "description": "POSIX shell script to start. Omit when polling an existing command.",
             "type": "string"
           },
           "lease_generation": {
@@ -3009,21 +3289,22 @@
           "lease_id": {
             "type": "string"
           },
+          "poll": {
+            "description": "Observe the existing command without submitting it again. Supply its session_id.",
+            "type": "boolean"
+          },
           "session_id": {
             "description": "Reuse a turn-owned session when provided by the runtime",
             "type": "string"
           },
           "wait_ms": {
-            "description": "How long to wait for command completion (default 15000, max 15000)",
+            "description": "Observation window in milliseconds (default 15000, max 15000). Expiry leaves the command running; poll its session_id.",
             "type": "integer"
           },
           "work_id": {
             "type": "string"
           }
         },
-        "required": [
-          "command"
-        ],
         "type": "object"
       },
       "output_schema_present": true,
@@ -3149,6 +3430,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3175,6 +3457,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3201,6 +3484,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3221,6 +3505,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3276,6 +3561,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3349,6 +3635,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:computer",
         "general:authorized",
         "general:domain:computer",
         "workshop:authorized:general",
@@ -3407,6 +3695,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:computer",
         "general:authorized",
         "general:domain:computer",
         "workshop:authorized:general",
@@ -3434,6 +3724,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3450,6 +3741,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3545,6 +3837,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3589,6 +3882,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3764,6 +4058,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3788,6 +4083,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3808,6 +4104,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3846,6 +4143,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -3962,6 +4260,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -4004,6 +4303,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -4056,6 +4356,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -4090,6 +4391,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -4132,6 +4434,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:skill",
         "general:authorized",
         "general:bootstrap",
         "general:domain:skill"
@@ -4160,6 +4465,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:identity",
         "general:authorized",
         "general:bootstrap",
         "general:domain:identity",
@@ -4193,6 +4501,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:identity",
         "general:authorized",
         "general:bootstrap",
         "general:domain:identity",
@@ -4294,6 +4605,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:media",
         "general:authorized",
         "general:bootstrap",
         "general:domain:media"
@@ -4318,6 +4632,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -4369,6 +4684,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -4395,6 +4711,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -4421,6 +4738,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:environment",
         "general:domain:environment",
         "workshop:authorized:general",
         "workshop:authorized:research",
@@ -4446,6 +4764,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:catalog",
         "general:authorized",
         "general:domain:catalog"
       ]
@@ -4466,6 +4786,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:overlay",
         "general:domain:overlay"
       ]
     },
@@ -4500,6 +4821,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:domain:overlay",
         "general:domain:overlay"
       ]
     },
@@ -4525,6 +4847,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:catalog",
         "general:authorized",
         "general:domain:catalog"
       ]
@@ -4552,6 +4876,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:memory",
         "general:authorized",
         "general:bootstrap",
         "general:domain:memory",
@@ -4566,7 +4893,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_memory_query",
-      "description": "Read Locus memory: schema, AVEC context, list, recall, tags, or mood presets. action is a typed name (memory.context, memory.recall, …). Fetch fields with cognition_schema types=[...].",
+      "description": "Read Locus memory: schema, AVEC context, list, natural-language recall, tags, or mood presets. memory.recall accepts a question; omit session_id for the current turn or pass null for cross-session retrieval. Fetch action fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
@@ -4589,6 +4916,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:memory",
         "general:authorized",
         "general:bootstrap",
         "general:domain:memory",
@@ -4633,6 +4963,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:skill",
         "general:authorized",
         "general:bootstrap",
         "general:domain:skill"
@@ -4714,10 +5047,145 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:skill",
         "general:authorized",
         "general:domain:skill",
         "workshop:authorized:research",
         "workshop:domain:openshell"
+      ]
+    },
+    {
+      "registry": "general_runtime",
+      "name": "cognition_peer_delegate",
+      "description": "Delegate an immutable Codex/Cursor/Hermes assignment to the exact remote workshop that owns a discovered Forge work item. This transfers a bounded, digest-checked slice of this chat. A trusted owner-level Assistant policy launches it immediately; narrower policies return a human approval proposal. Use only exact ids returned by cognition_active_work_discover. Reuse request_key only for an exact retry.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "continue_owner": {
+            "description": "Ask for a separately approved result-only continuation in this chat.",
+            "type": "boolean"
+          },
+          "execution_runtime_id": {
+            "description": "Exact agent-selectable execution_runtime_id from active-work discovery.",
+            "type": "string"
+          },
+          "existing_agent_session_id": {
+            "description": "Exact adoptable ACP session id from inventory; omission starts new work.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "forge_work_id": {
+            "description": "Exact forge_work_id from that same workshop inventory row.",
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "request_key": {
+            "description": "Stable retry key for this exact assignment intent.",
+            "type": "string"
+          },
+          "runtime": {
+            "enum": [
+              "codex",
+              "cursor",
+              "hermes"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "continue_owner",
+          "execution_runtime_id",
+          "forge_work_id",
+          "instructions",
+          "request_key",
+          "runtime"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "assistant:authorized",
+        "assistant:domain:remote_peers"
+      ]
+    },
+    {
+      "registry": "general_runtime",
+      "name": "cognition_peer_discover",
+      "description": "Discover local Codex/Cursor/Hermes peers, exact adoptable agent sessions, and this chat's bound project/context range. Unavailable peers must not be substituted. Use peer_propose to prepare new or adopted work, not to execute it.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "assistant:authorized",
+        "assistant:domain:peers"
+      ]
+    },
+    {
+      "registry": "general_runtime",
+      "name": "cognition_peer_propose",
+      "description": "Prepare an immutable peer assignment for this chat's bound local Forge project. Discover first and select an explicit committed context range. To adopt existing work, copy only an exact existing_agent_session_id returned by discovery; omission starts new work. Reuse request_key for exact retries only. This requests human review; it does NOT approve, launch, adopt, or complete work. Tell the user to review the approval card and explicitly start approved work. A conversational yes is not execution authority.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "after_entry_seq": {
+            "description": "Exclusive lower bound from coordination discovery.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "continue_owner": {
+            "description": "Request a separately approved result-only reply in this chat.",
+            "type": "boolean"
+          },
+          "existing_agent_session_id": {
+            "description": "Exact active ACP session returned by discovery. Omit to start new work.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "request_key": {
+            "description": "Stable request key; reuse for retries, never for different work.",
+            "type": "string"
+          },
+          "runtime": {
+            "enum": [
+              "codex",
+              "cursor",
+              "hermes"
+            ],
+            "type": "string"
+          },
+          "through_entry_seq": {
+            "description": "Inclusive committed upper bound from coordination discovery.",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "after_entry_seq",
+          "continue_owner",
+          "instructions",
+          "request_key",
+          "runtime",
+          "through_entry_seq"
+        ],
+        "type": "object"
+      },
+      "output_schema_present": true,
+      "placements": [
+        "assistant:authorized",
+        "assistant:domain:peers"
       ]
     },
     {
@@ -4749,6 +5217,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:runtime",
         "general:authorized",
         "general:bootstrap",
         "general:domain:runtime",
@@ -4763,15 +5234,19 @@
     {
       "registry": "general_runtime",
       "name": "cognition_runtime_query",
-      "description": "Inspect jobs, recurring, workflows, or delivery. action is a typed name (job.list, workflow.status, …). Fetch fields with cognition_schema types=[...].",
+      "description": "Inspect owned assignments, jobs, recurring, workflows, or delivery. action is a typed name (job.list, workflow.status, …). Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
           "action": {
             "enum": [
+              "assignment.events",
+              "assignment.get",
+              "assignment.list",
               "delivery.status",
               "job.list",
               "job.status",
+              "owner.events",
               "recurring.doctor",
               "recurring.list",
               "recurring.preview",
@@ -4787,6 +5262,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:runtime",
         "general:authorized",
         "general:bootstrap",
         "general:domain:runtime",
@@ -4826,6 +5304,9 @@
                 "artifacts.read",
                 "artifacts.search",
                 "artifacts.write",
+                "assignment.events",
+                "assignment.get",
+                "assignment.list",
                 "calendar.create",
                 "calendar.delete",
                 "calendar.export",
@@ -4860,6 +5341,7 @@
                 "memory.schema",
                 "memory.store",
                 "memory.tags",
+                "owner.events",
                 "recurring.cancel",
                 "recurring.doctor",
                 "recurring.list",
@@ -4903,6 +5385,10 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:catalog",
+        "assistant:domain:runtime",
         "general:authorized",
         "general:bootstrap",
         "general:domain:catalog",
@@ -4948,6 +5434,7 @@
             "type": "boolean"
           },
           "timeout_ms": {
+            "description": "Optional command execution deadline. Omitting it waits for command completion; it does not bound how long the workflow caller waits.",
             "type": "integer"
           },
           "writable_roots": {
@@ -4961,6 +5448,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:execute",
         "general:authorized",
         "general:domain:execute",
         "workshop:authorized:general",
@@ -5082,6 +5571,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:execute",
         "general:authorized",
         "general:domain:execute",
         "workshop:authorized:general",
@@ -5108,6 +5599,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:skill",
         "general:authorized",
         "general:domain:skill",
         "workshop:authorized:research",
@@ -5180,6 +5673,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:skill",
         "general:authorized",
         "general:domain:skill",
         "workshop:authorized:research",
@@ -5217,6 +5712,12 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:catalog",
+        "assistant:domain:documents",
+        "assistant:domain:presentation",
+        "assistant:domain:vault",
         "general:authorized",
         "general:bootstrap",
         "general:domain:catalog",
@@ -5260,6 +5761,12 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
+        "assistant:domain:catalog",
+        "assistant:domain:documents",
+        "assistant:domain:presentation",
+        "assistant:domain:vault",
         "general:authorized",
         "general:bootstrap",
         "general:domain:catalog",
@@ -5307,6 +5814,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:domain:history",
         "general:authorized",
         "general:domain:history"
       ]
@@ -5340,6 +5849,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
         "general:authorized",
         "general:bootstrap"
       ]
@@ -5355,7 +5866,7 @@
             "type": "string"
           },
           "lane": {
-            "description": "Surface lane (default auto from active turn scope)",
+            "description": "Deprecated hint; the returned lane is inferred from the admitted principal.",
             "enum": [
               "auto",
               "host",
@@ -5375,6 +5886,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
         "general:authorized",
         "general:bootstrap",
         "workshop:authorized:general",
@@ -5387,7 +5900,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_turn",
-      "description": "Record turn progress or set its outcome. action is a typed name (turn.finish, turn.checkpoint, …). Fetch fields with cognition_schema types=[...].",
+      "description": "Record nonterminal progress with turn.update_user and continue, deliberately hand back with turn.checkpoint only when principal input is needed or work must pause, or end with turn.finish after the full requested outcome is complete and verified or a concrete blocker prevents further authorized progress. Fetch fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
@@ -5411,6 +5924,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
         "general:authorized",
         "general:bootstrap",
         "workshop:authorized:general",
@@ -5906,6 +6421,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:bootstrap",
+        "assistant:domain:presentation",
         "general:bootstrap",
         "general:domain:presentation",
         "workshop:authorized:general",
@@ -5967,6 +6484,9 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:bootstrap",
+        "assistant:domain:documents",
+        "assistant:domain:presentation",
         "general:bootstrap",
         "general:domain:documents",
         "general:domain:presentation",
@@ -6007,6 +6527,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:bootstrap",
+        "assistant:domain:presentation",
         "general:bootstrap",
         "general:domain:presentation",
         "workshop:authorized:general",
@@ -6030,6 +6552,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
         "general:authorized",
         "workshop:authorized:general",
         "workshop:authorized:memory_avec_calibrate",
@@ -6047,6 +6570,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
         "general:authorized",
         "workshop:authorized:general",
         "workshop:authorized:memory_avec_calibrate",
@@ -6069,6 +6593,7 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
         "general:authorized",
         "workshop:authorized:general",
         "workshop:authorized:memory_avec_calibrate",
@@ -6123,6 +6648,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
         "general:authorized",
         "general:bootstrap",
         "workshop:authorized:general",
@@ -6154,6 +6681,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
         "general:authorized",
         "general:bootstrap",
         "workshop:authorized:general",
@@ -6185,6 +6714,8 @@
       },
       "output_schema_present": true,
       "placements": [
+        "assistant:authorized",
+        "assistant:bootstrap",
         "general:authorized",
         "general:bootstrap",
         "workshop:authorized:general",

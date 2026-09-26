@@ -12,8 +12,9 @@ use std::time::Duration;
 use async_trait::async_trait;
 use chrono::Utc;
 use medousa_forge::execution::{
-    ExecutionClass, ForgeExecutionService, MAX_CAPTURE_BYTES, supervise_command,
-    supervise_command_with_input, supervise_git,
+    ExecutionClass, ForgeExecutionService, MAX_CAPTURE_BYTES,
+    supervise_command_with_input_optional_timeout,
+    supervise_command_with_optional_timeout, supervise_git,
 };
 use medousa_forge::git::{CheckpointAuthor, GitEngine};
 use medousa_runtime::{
@@ -45,7 +46,6 @@ const CONTROL_OUTPUT_BYTES: usize = 256 * 1024;
 const CONTROL_TIMEOUT: Duration = Duration::from_secs(30);
 const RUNTIME_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 const GIT_TIMEOUT: Duration = Duration::from_secs(10 * 60);
-const MAX_EXEC_TIMEOUT_SECONDS: u64 = 60 * 60;
 const MAX_EXEC_OUTPUT_BYTES: usize = 1024 * 1024;
 const MAX_EXECUTION_RECORD_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_MANIFEST_BYTES: u64 = 256 * 1024;
@@ -413,6 +413,24 @@ impl OciCliWorkEnvironmentPort {
         timeout: Duration,
         max_output: usize,
     ) -> Result<CommandOutput, WorkEnvironmentError> {
+        self.run_runtime_with_optional_timeout(
+            args,
+            environment,
+            stdin,
+            Some(timeout),
+            max_output,
+        )
+        .await
+    }
+
+    async fn run_runtime_with_optional_timeout(
+        &self,
+        args: Vec<String>,
+        environment: Vec<(String, String)>,
+        stdin: Option<Vec<u8>>,
+        timeout: Option<Duration>,
+        max_output: usize,
+    ) -> Result<CommandOutput, WorkEnvironmentError> {
         let runtime = self.runtime.executable.clone();
         let result = self
             .execution
@@ -423,7 +441,7 @@ impl OciCliWorkEnvironmentPort {
                 async move {
                     match stdin {
                         Some(stdin) => {
-                            supervise_command_with_input(
+                            supervise_command_with_input_optional_timeout(
                                 runtime,
                                 None,
                                 args,
@@ -435,8 +453,15 @@ impl OciCliWorkEnvironmentPort {
                             .await
                         }
                         None => {
-                            supervise_command(runtime, None, args, environment, timeout, max_output)
-                                .await
+                            supervise_command_with_optional_timeout(
+                                runtime,
+                                None,
+                                args,
+                                environment,
+                                timeout,
+                                max_output,
+                            )
+                            .await
                         }
                     }
                 },
@@ -1431,11 +1456,11 @@ impl WorkEnvironmentPort for OciCliWorkEnvironmentPort {
         args.extend(request.args.clone());
         let environment = request.environment.clone().into_iter().collect();
         let output = self
-            .run_runtime_with_environment(
+            .run_runtime_with_optional_timeout(
                 args,
                 environment,
                 stdin,
-                Duration::from_secs(request.timeout_seconds),
+                request.timeout_seconds.map(Duration::from_secs),
                 request.max_output_bytes as usize,
             )
             .await?;
@@ -1901,9 +1926,9 @@ fn validate_exec_request(request: &WorkEnvironmentExecRequest) -> Result<(), Wor
             "exec program is invalid".into(),
         ));
     }
-    if request.timeout_seconds == 0 || request.timeout_seconds > MAX_EXEC_TIMEOUT_SECONDS {
+    if request.timeout_seconds == Some(0) {
         return Err(WorkEnvironmentError::InvalidSpec(
-            "exec timeout must be between one second and one hour".into(),
+            "exec timeout must be greater than zero when specified".into(),
         ));
     }
     if request.max_output_bytes == 0 || request.max_output_bytes as usize > MAX_EXEC_OUTPUT_BYTES {
@@ -1995,6 +2020,25 @@ mod tests {
     use stasis::domain::runtime::provenance::ContentDigest;
     use stasis::domain::runtime::resource_lease::FencingToken;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn exec_deadlines_are_optional_without_an_implicit_maximum() {
+        let mut request = WorkEnvironmentExecRequest {
+            idempotency_key: "long-build".to_string(),
+            program: "cargo".to_string(),
+            args: vec!["build".to_string()],
+            working_directory: Some("/workspace".to_string()),
+            environment: BTreeMap::new(),
+            stdin: None,
+            timeout_seconds: None,
+            max_output_bytes: 1024,
+        };
+        validate_exec_request(&request).unwrap();
+        request.timeout_seconds = Some(7_200);
+        validate_exec_request(&request).unwrap();
+        request.timeout_seconds = Some(0);
+        assert!(validate_exec_request(&request).is_err());
+    }
 
     #[test]
     fn container_names_are_safe_stable_and_collision_resistant() {
@@ -2294,7 +2338,7 @@ mod tests {
                     working_directory: Some(WORKSPACE_TARGET.into()),
                     environment: BTreeMap::from([("MEDOUSA_TEST_VALUE".into(), "scoped".into())]),
                     stdin: None,
-                    timeout_seconds: 30,
+                    timeout_seconds: Some(30),
                     max_output_bytes: 64 * 1024,
                 },
                 &fence,
@@ -2317,7 +2361,7 @@ mod tests {
                     working_directory: Some(WORKSPACE_TARGET.into()),
                     environment: BTreeMap::new(),
                     stdin: Some("written through fenced stdin\n".into()),
-                    timeout_seconds: 30,
+                    timeout_seconds: Some(30),
                     max_output_bytes: 64 * 1024,
                 },
                 &fence,
@@ -2377,7 +2421,7 @@ mod tests {
             ],
             None,
             None,
-            30_000,
+            Some(30_000),
             64 * 1024,
         )
         .await
@@ -2398,7 +2442,7 @@ mod tests {
                     working_directory: Some(WORKSPACE_TARGET.into()),
                     environment: BTreeMap::new(),
                     stdin: None,
-                    timeout_seconds: 30,
+                    timeout_seconds: Some(30),
                     max_output_bytes: 64 * 1024,
                 },
                 &fence,
@@ -2456,7 +2500,7 @@ mod tests {
                     working_directory: Some(WORKSPACE_TARGET.into()),
                     environment: BTreeMap::new(),
                     stdin: None,
-                    timeout_seconds: 30,
+                    timeout_seconds: Some(30),
                     max_output_bytes: 64 * 1024,
                 },
                 &fence,
@@ -2576,7 +2620,7 @@ mod tests {
                     working_directory: Some(WORKSPACE_TARGET.into()),
                     environment: BTreeMap::new(),
                     stdin: None,
-                    timeout_seconds: 30,
+                    timeout_seconds: Some(30),
                     max_output_bytes: 64 * 1024,
                 },
                 &fence,

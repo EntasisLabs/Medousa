@@ -65,7 +65,8 @@ pub fn worker_system_prompt_for_parent_mode(
          worker_intent={}\n\
          ui_artifacts={}\n\
          liquid_markdown={}\n\
-         parent_agent_mode={}",
+         parent_agent_mode={}\n\
+         handback_contract=End with turn.finish needs_synthesis=false when your prose is a complete principal-facing answer. Use needs_synthesis=true only when the host must combine your partial evidence with other work before replying.",
         intent.as_str(),
         supports_ui_artifacts,
         supports_liquid_markdown,
@@ -76,6 +77,7 @@ pub fn worker_system_prompt_for_parent_mode(
 pub fn host_system_prompt_for_parent_mode(parent_agent_mode: Option<&str>) -> String {
     let policy_mode = match parent_agent_mode {
         Some("coder") => crate::agent_runtime::prompt_policy::SttpPolicyMode::CoderWork,
+        Some("assistant") => crate::agent_runtime::prompt_policy::SttpPolicyMode::Assistant,
         Some("teacher") => crate::agent_runtime::prompt_policy::SttpPolicyMode::Teacher,
         _ => crate::agent_runtime::prompt_policy::SttpPolicyMode::General,
     };

@@ -1,17 +1,93 @@
-//! Vision routing for current-turn user media (P5b — images only, no history replay).
+//! Vision routing for current-turn media and bounded replay of recent images.
 
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::{Arc, OnceLock};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use genai::chat::{ChatMessage, ContentPart, MessageContent};
+use image::ImageDecoder as _;
+use medousa_types::{ConversationTurn, TurnPart};
+use tokio::sync::Semaphore;
 
 use crate::daemon_api::MediaRef;
 use crate::media_store::{self, MediaPromptMergeOptions};
 
 pub const MAX_MEDIA_REFS_PER_TURN: usize = 5;
 pub const MAX_VISION_IMAGES_PER_TURN: usize = 5;
-const MAX_VISION_IMAGE_BYTES: u64 = 10 * 1024 * 1024;
+pub(crate) const MAX_MODEL_IMAGE_BYTES: u64 = 8 * 1024 * 1024;
+const MAX_RECENT_HISTORY_TURNS: usize = 20;
+const MAX_RECENT_HISTORY_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
+const MAX_RECENT_HISTORY_IMAGE_BYTES_PER_READ: u64 = MAX_MODEL_IMAGE_BYTES;
+const MAX_RECENT_HISTORY_SCAN_IMAGES: usize = MAX_RECENT_HISTORY_TURNS * MAX_MEDIA_REFS_PER_TURN;
+const RECENT_HISTORY_CAPTION_CHARS: usize = 160;
+const RECENT_HISTORY_MARKER: &str = "[MEDOUSA_RECENT_HISTORY_IMAGES]";
+const MAX_IMAGE_DECODE_ALLOCATION_BYTES: u64 = 256 * 1024 * 1024;
+
+type HistoryImageLoad =
+    Pin<Box<dyn Future<Output = Option<(media_store::MediaRecord, Vec<u8>)>> + Send>>;
+
+static MEDIA_EXECUTION: OnceLock<Arc<medousa_forge::execution::ForgeExecutionService>> =
+    OnceLock::new();
+static IMAGE_WORKING_SET: OnceLock<Arc<Semaphore>> = OnceLock::new();
+
+pub fn media_execution_service() -> Arc<medousa_forge::execution::ForgeExecutionService> {
+    Arc::clone(
+        MEDIA_EXECUTION
+            .get_or_init(|| Arc::new(medousa_forge::execution::ForgeExecutionService::new())),
+    )
+}
+
+fn image_working_set() -> Arc<Semaphore> {
+    // A single admitted decode bounds this process to one source payload
+    // (25 MiB max), decoder allocation (256 MiB max), and rendition at a time.
+    Arc::clone(IMAGE_WORKING_SET.get_or_init(|| Arc::new(Semaphore::new(1))))
+}
+
+pub(crate) async fn run_image_operation<T, F>(
+    estimated_retained_bytes: usize,
+    work: F,
+) -> medousa_forge::error::Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> medousa_forge::error::Result<T> + Send + 'static,
+{
+    run_image_operation_with(
+        media_execution_service(),
+        image_working_set(),
+        estimated_retained_bytes,
+        work,
+    )
+    .await
+}
+
+async fn run_image_operation_with<T, F>(
+    service: Arc<medousa_forge::execution::ForgeExecutionService>,
+    working_set: Arc<Semaphore>,
+    estimated_retained_bytes: usize,
+    work: F,
+) -> medousa_forge::error::Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> medousa_forge::error::Result<T> + Send + 'static,
+{
+    let permit = working_set
+        .acquire_owned()
+        .await
+        .map_err(|_| medousa_forge::error::ForgeError::Store("image working set closed".into()))?;
+    service
+        .run(
+            medousa_forge::execution::ExecutionClass::Observation,
+            estimated_retained_bytes,
+            move || {
+                // Forge owns this closure even if the async caller is cancelled.
+                let _working_set = permit;
+                work()
+            },
+        )
+        .await
+}
 
 #[derive(Debug, Clone)]
 pub struct TurnMediaVisionPlan {
@@ -66,7 +142,68 @@ pub fn supports_vision(provider: &str, model: &str) -> bool {
     crate::model_capability_registry::registry().supports_vision(provider, model)
 }
 
-pub fn plan_turn_media(
+/// Keep original pixels when they already fit. Larger accepted uploads get the
+/// same bounded rendition on first use and every reopen; the original is retained.
+/// Call from an admitted blocking media operation when used by async callers.
+pub(crate) fn prepare_model_image(
+    record: &media_store::MediaRecord,
+    bytes: Vec<u8>,
+) -> Result<(String, Vec<u8>), String> {
+    if !supported_replay_image_mime(&record.mime)
+        || record.byte_size == 0
+        || record.byte_size > media_store::MAX_UPLOAD_BYTES
+        || bytes.len() as u64 != record.byte_size
+    {
+        return Err("stored image metadata or payload size is invalid".to_string());
+    }
+    if bytes.len() as u64 <= MAX_MODEL_IMAGE_BYTES {
+        return Ok((record.mime.clone(), bytes));
+    }
+    let format = image::ImageFormat::from_mime_type(&record.mime)
+        .ok_or_else(|| "unsupported image format".to_string())?;
+    let mut reader = image::ImageReader::with_format(std::io::Cursor::new(bytes), format);
+    let mut limits = image::Limits::default();
+    limits.max_alloc = Some(MAX_IMAGE_DECODE_ALLOCATION_BYTES);
+    limits.max_image_width = Some(32_768);
+    limits.max_image_height = Some(32_768);
+    reader.limits(limits.clone());
+    let mut decoder = reader
+        .into_decoder()
+        .map_err(|error| format!("image decode failed: {error}"))?;
+    limits
+        .reserve(decoder.total_bytes())
+        .map_err(|error| format!("image decoding exceeds memory budget: {error}"))?;
+    decoder
+        .set_limits(limits)
+        .map_err(|error| format!("image decode limits failed: {error}"))?;
+    let orientation = decoder
+        .orientation()
+        .unwrap_or(image::metadata::Orientation::NoTransforms);
+    let mut decoded = image::DynamicImage::from_decoder(decoder)
+        .map_err(|error| format!("image decode failed: {error}"))?;
+    decoded.apply_orientation(orientation);
+    let mut rendition = if decoded.width() > 4096 || decoded.height() > 4096 {
+        decoded.thumbnail(4096, 4096)
+    } else {
+        decoded
+    };
+    loop {
+        let mut output = std::io::Cursor::new(Vec::new());
+        rendition
+            .write_to(&mut output, image::ImageFormat::Png)
+            .map_err(|error| format!("image rendition failed: {error}"))?;
+        let bytes = output.into_inner();
+        if bytes.len() as u64 <= MAX_MODEL_IMAGE_BYTES {
+            return Ok(("image/png".to_string(), bytes));
+        }
+        rendition = rendition.thumbnail(
+            (rendition.width() / 2).max(1),
+            (rendition.height() / 2).max(1),
+        );
+    }
+}
+
+pub async fn plan_turn_media(
     session_id: &str,
     media_refs: &[MediaRef],
     provider: &str,
@@ -96,20 +233,31 @@ pub fn plan_turn_media(
         if !vision_capable {
             continue;
         }
-        let Some(record) = media_store::get_media_record(session_id, &media_ref.media_id) else {
+        let read_session_id = session_id.to_string();
+        let read_media_id = media_ref.media_id.clone();
+        let prepared = run_image_operation(MAX_MODEL_IMAGE_BYTES as usize, move || {
+            let Some(record) = media_store::get_media_record(&read_session_id, &read_media_id)
+            else {
+                return Ok(None);
+            };
+            let bytes = media_store::open_media_payload(&record)
+                .map_err(medousa_forge::error::ForgeError::Store)?;
+            let (mime, bytes) = prepare_model_image(&record, bytes)
+                .map_err(medousa_forge::error::ForgeError::Store)?;
+            Ok(Some((record, mime, bytes)))
+        })
+        .await
+        .map_err(|error| error.to_string())?;
+        let Some((record, mime, bytes)) = prepared else {
             continue;
         };
-        if record.byte_size > MAX_VISION_IMAGE_BYTES {
-            continue;
-        }
-        let bytes = media_store::open_media_payload(&record).map_err(|err| err.to_string())?;
         let encoded = Arc::<str>::from(STANDARD.encode(bytes));
         let label = media_ref
             .label
             .clone()
             .or(record.label.clone())
             .filter(|value| !value.trim().is_empty());
-        image_parts.push(ContentPart::from_binary_base64(record.mime, encoded, label));
+        image_parts.push(ContentPart::from_binary_base64(mime, encoded, label));
         vision_image_ids.insert(media_ref.media_id.clone());
     }
 
@@ -125,6 +273,293 @@ pub fn plan_turn_media(
             vision_image_ids,
         },
     })
+}
+
+/// Return media references recorded in a transcript turn. The transcript is
+/// metadata only; callers must resolve each reference against the session
+/// media store before exposing any bytes to a model.
+pub fn media_refs_from_turn(turn: &ConversationTurn) -> Vec<MediaRef> {
+    let mut refs = Vec::new();
+    for part in turn.parts.as_deref().unwrap_or_default() {
+        let media_ref = match part {
+            TurnPart::UserMedia {
+                media_id,
+                mime,
+                label,
+                ..
+            } => Some(MediaRef {
+                media_id: media_id.clone(),
+                kind: media_store::media_kind_from_mime(mime).to_string(),
+                mime: mime.clone(),
+                label: label.clone(),
+                source_media_id: None,
+                generation_id: None,
+                parent_generation_id: None,
+            }),
+            TurnPart::UserDrawing {
+                preview_media_id,
+                label,
+                ..
+            } => Some(MediaRef {
+                media_id: preview_media_id.clone(),
+                kind: "image".to_string(),
+                mime: "image/png".to_string(),
+                label: label.clone(),
+                source_media_id: None,
+                generation_id: None,
+                parent_generation_id: None,
+            }),
+            TurnPart::GeneratedMedia {
+                media_id,
+                mime,
+                label,
+                generation_id,
+                parent_generation_id,
+                ..
+            } => Some(MediaRef {
+                media_id: media_id.clone(),
+                kind: media_store::media_kind_from_mime(mime).to_string(),
+                mime: mime.clone(),
+                label: Some(label.clone()),
+                source_media_id: None,
+                generation_id: Some(generation_id.clone()),
+                parent_generation_id: parent_generation_id.clone(),
+            }),
+            _ => None,
+        };
+        if let Some(media_ref) = media_ref {
+            refs.push(media_ref);
+        }
+    }
+    refs
+}
+
+/// Append one user message carrying a bounded set of recent transcript images.
+/// Images are looked up by session-scoped durable IDs and the media store's
+/// MIME/size metadata is authoritative. Missing or deleted media is skipped.
+pub async fn append_recent_history_images(
+    prior_messages: &mut Vec<ChatMessage>,
+    session_id: &str,
+    history: &[ConversationTurn],
+    current_media_refs: &[MediaRef],
+    provider: &str,
+    model: &str,
+) {
+    if !supports_vision(provider, model) {
+        return;
+    }
+
+    let service = media_execution_service();
+    append_recent_history_images_with_loader(
+        prior_messages,
+        session_id,
+        history,
+        current_media_refs,
+        move |read_session_id, read_media_id| {
+            let service = Arc::clone(&service);
+            Box::pin(async move {
+                let result = run_image_operation_with(
+                    service,
+                    image_working_set(),
+                    MAX_RECENT_HISTORY_IMAGE_BYTES_PER_READ as usize,
+                    move || {
+                        Ok((|| -> anyhow::Result<_> {
+                            let Some(mut record) =
+                                media_store::get_media_record(&read_session_id, &read_media_id)
+                            else {
+                                return Ok(None);
+                            };
+                            if record.session_id != read_session_id
+                                || record.media_id != read_media_id
+                                || !supported_replay_image_mime(&record.mime)
+                                || record.byte_size == 0
+                                || record.byte_size > media_store::MAX_UPLOAD_BYTES
+                            {
+                                return Ok(None);
+                            }
+                            let bytes = media_store::open_media_payload(&record)
+                                .map_err(anyhow::Error::msg)?;
+                            let (mime, bytes) =
+                                prepare_model_image(&record, bytes).map_err(anyhow::Error::msg)?;
+                            // This local descriptor describes the model rendition;
+                            // the durable source record and payload stay unchanged.
+                            record.mime = mime;
+                            record.byte_size = bytes.len() as u64;
+                            Ok(Some((record, bytes)))
+                        })())
+                    },
+                )
+                .await;
+                match result {
+                    Ok(Ok(Some(value))) => Some(value),
+                    _ => None,
+                }
+            }) as HistoryImageLoad
+        },
+    )
+    .await;
+}
+
+async fn append_recent_history_images_with_loader<F>(
+    prior_messages: &mut Vec<ChatMessage>,
+    session_id: &str,
+    history: &[ConversationTurn],
+    current_media_refs: &[MediaRef],
+    mut load: F,
+) where
+    F: FnMut(String, String) -> HistoryImageLoad + Send,
+{
+    let current_image_count = current_media_refs
+        .iter()
+        .filter(|media_ref| is_image_media_ref(media_ref))
+        .count();
+    let current_ids: HashSet<String> = current_media_refs
+        .iter()
+        .filter(|media_ref| is_image_media_ref(media_ref))
+        .map(|media_ref| media_ref.media_id.clone())
+        .collect();
+    let image_slots = MAX_VISION_IMAGES_PER_TURN
+        .saturating_sub(current_image_count.min(MAX_VISION_IMAGES_PER_TURN));
+    if image_slots == 0 {
+        return;
+    }
+
+    let mut seen = current_ids;
+    let mut candidates = Vec::new();
+    'turns: for turn in history.iter().rev().take(MAX_RECENT_HISTORY_TURNS) {
+        let caption = short_caption(&turn.content);
+        for media_ref in media_refs_from_turn(turn)
+            .into_iter()
+            .rev()
+            .filter(is_image_media_ref)
+        {
+            if candidates.len() >= MAX_RECENT_HISTORY_SCAN_IMAGES {
+                break 'turns;
+            }
+            if !seen.insert(media_ref.media_id.clone()) {
+                continue;
+            }
+            candidates.push((
+                media_ref.media_id,
+                media_ref.label,
+                turn.timestamp.to_rfc3339(),
+                caption.clone(),
+            ));
+        }
+    }
+
+    let mut used_bytes = 0u64;
+    let mut entries = Vec::new();
+    for (media_id, reference_label, attached_at, caption) in candidates {
+        if entries.len() >= image_slots {
+            break;
+        }
+        let Some((record, bytes)) = load(session_id.to_string(), media_id.clone()).await else {
+            continue;
+        };
+        if record.session_id != session_id
+            || record.media_id != media_id
+            || !supported_replay_image_mime(&record.mime)
+            || record.byte_size == 0
+            || record.byte_size > MAX_RECENT_HISTORY_IMAGE_BYTES_PER_READ
+        {
+            continue;
+        }
+        let byte_count = bytes.len() as u64;
+        if byte_count == 0
+            || byte_count > MAX_RECENT_HISTORY_IMAGE_BYTES_PER_READ
+            || byte_count != record.byte_size
+            || used_bytes.saturating_add(byte_count) > MAX_RECENT_HISTORY_IMAGE_BYTES
+        {
+            continue;
+        }
+        used_bytes = used_bytes.saturating_add(byte_count);
+        let label = reference_label
+            .or(record.label.clone())
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| value.chars().take(160).collect::<String>());
+        let caption_text = if caption.is_empty() {
+            String::new()
+        } else {
+            format!("\ncaption={caption}")
+        };
+        let metadata = format!(
+            "media_id={} attached_at={} label={}{}",
+            record.media_id,
+            attached_at,
+            label.as_deref().unwrap_or("(none)"),
+            caption_text,
+        );
+        let part = ContentPart::from_binary_base64(
+            record.mime,
+            Arc::<str>::from(STANDARD.encode(bytes)),
+            label,
+        );
+        entries.push((metadata, part));
+    }
+    append_replayed_images(prior_messages, entries);
+}
+
+fn append_replayed_images(
+    prior_messages: &mut Vec<ChatMessage>,
+    entries: Vec<(String, ContentPart)>,
+) {
+    if entries.is_empty() {
+        return;
+    }
+    let mut parts = vec![ContentPart::from_text(format!(
+        "{RECENT_HISTORY_MARKER}\nRecent images from this conversation (newest first). These are prior attachments, not current-turn uploads:\n{}",
+        entries
+            .iter()
+            .map(|(metadata, _)| metadata.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    ))];
+    parts.extend(entries.into_iter().map(|(_, part)| part));
+    prior_messages.push(ChatMessage::user(MessageContent::from_parts(parts)));
+}
+
+/// Drop only the synthetic recent-image replay message for a target without
+/// vision support. Ordinary transcript messages remain untouched.
+pub fn prior_messages_for_target(
+    prior_messages: Vec<ChatMessage>,
+    provider: &str,
+    model: &str,
+) -> Vec<ChatMessage> {
+    if supports_vision(provider, model) {
+        return prior_messages;
+    }
+    prior_messages
+        .into_iter()
+        .filter(|message| {
+            !(message
+                .content
+                .parts()
+                .first()
+                .and_then(ContentPart::as_text)
+                .is_some_and(|text| text.starts_with(RECENT_HISTORY_MARKER))
+                && message
+                    .content
+                    .parts()
+                    .iter()
+                    .any(|part| matches!(part, ContentPart::Binary(_))))
+        })
+        .collect()
+}
+
+fn short_caption(content: &str) -> String {
+    let normalized = content.split_whitespace().collect::<Vec<_>>().join(" ");
+    normalized
+        .chars()
+        .take(RECENT_HISTORY_CAPTION_CHARS)
+        .collect()
+}
+
+fn supported_replay_image_mime(mime: &str) -> bool {
+    matches!(
+        mime.trim().to_ascii_lowercase().as_str(),
+        "image/png" | "image/jpeg" | "image/webp" | "image/gif"
+    )
 }
 
 pub fn is_image_media_ref(media_ref: &MediaRef) -> bool {
@@ -167,6 +602,30 @@ fn is_extractable_document_mime(mime: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::{TimeZone, Utc};
+    use medousa_types::{ConversationTurn, TurnPart};
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    #[test]
+    fn text_only_fallback_drops_replay_pixels_but_keeps_real_history() {
+        let real_text = format!("{RECENT_HISTORY_MARKER} explain this marker");
+        let mut messages = vec![ChatMessage::user(real_text.clone())];
+        append_replayed_images(
+            &mut messages,
+            vec![(
+                "media_id=usr:session:photo".into(),
+                ContentPart::from_binary_base64("image/png", "cGl4ZWxz", None),
+            )],
+        );
+        assert_eq!(
+            prior_messages_for_target(messages.clone(), "openai", "gpt-4o-mini").len(),
+            2
+        );
+        let messages = prior_messages_for_target(messages, "openai", "gpt-3.5-turbo");
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].content.first_text(), Some(real_text.as_str()));
+    }
 
     #[test]
     fn openai_vision_models_detected() {
@@ -209,8 +668,8 @@ mod tests {
         assert!(has_document_media(&refs));
     }
 
-    #[test]
-    fn mixed_image_and_pdf_requires_vision_for_image_only() {
+    #[tokio::test]
+    async fn mixed_image_and_pdf_requires_vision_for_image_only() {
         let refs = vec![
             MediaRef {
                 media_id: "usr:s1:img".to_string(),
@@ -233,13 +692,15 @@ mod tests {
         ];
         assert!(has_vision_media(&refs));
         assert!(has_document_media(&refs));
-        let plan = plan_turn_media("session-1", &refs, "openai", "gpt-3.5-turbo").expect("plan");
+        let plan = plan_turn_media("session-1", &refs, "openai", "gpt-3.5-turbo")
+            .await
+            .expect("plan");
         assert_eq!(plan.vision_image_count, 1);
         assert!(!plan.supports_vision);
     }
 
-    #[test]
-    fn document_only_plan_has_no_vision_images() {
+    #[tokio::test]
+    async fn document_only_plan_has_no_vision_images() {
         let refs = vec![MediaRef {
             media_id: "usr:s1:csv".to_string(),
             kind: "spreadsheet".to_string(),
@@ -249,8 +710,302 @@ mod tests {
             generation_id: None,
             parent_generation_id: None,
         }];
-        let plan = plan_turn_media("session-1", &refs, "openai", "gpt-4o-mini").expect("plan");
+        let plan = plan_turn_media("session-1", &refs, "openai", "gpt-4o-mini")
+            .await
+            .expect("plan");
         assert_eq!(plan.vision_image_count, 0);
         assert!(!plan.merge_options.vision_active);
+    }
+
+    fn history_turn(
+        media_id: &str,
+        mime: &str,
+        label: Option<&str>,
+        content: &str,
+    ) -> ConversationTurn {
+        ConversationTurn {
+            role: "user".to_string(),
+            content: content.to_string(),
+            timestamp: Utc.with_ymd_and_hms(2026, 9, 23, 10, 0, 0).unwrap(),
+            tool_names: Vec::new(),
+            answer_state: None,
+            parts: Some(vec![TurnPart::UserMedia {
+                media_id: media_id.to_string(),
+                mime: mime.to_string(),
+                label: label.map(str::to_string),
+                byte_size: Some(3),
+            }]),
+            slice_summary: None,
+            speaker_profile_id: None,
+        }
+    }
+
+    fn stored_image(media_id: &str, session_id: &str, byte_size: u64) -> media_store::MediaRecord {
+        media_store::MediaRecord {
+            media_id: media_id.to_string(),
+            session_id: session_id.to_string(),
+            mime: "image/png".to_string(),
+            kind: "image".to_string(),
+            byte_size,
+            stored_at_utc: Utc::now(),
+            payload_path: "unused.png".to_string(),
+            label: Some("stored.png".to_string()),
+            extract_path: None,
+            extract_chars: None,
+            extract_truncated: false,
+        }
+    }
+
+    #[test]
+    fn accepted_large_image_has_a_consistent_bounded_rendition() {
+        let source = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+            3,
+            2,
+            image::Rgba([12, 34, 56, 255]),
+        ));
+        let mut encoded = std::io::Cursor::new(Vec::new());
+        source
+            .write_to(&mut encoded, image::ImageFormat::Png)
+            .unwrap();
+        let mut bytes = encoded.into_inner();
+        // Legal PNG trailing data makes an accepted upload exceed the model
+        // payload budget without making the test allocate a huge decoded image.
+        bytes.resize(9 * 1024 * 1024, 0);
+        let record = stored_image("usr:session-a:large", "session-a", bytes.len() as u64);
+        let first = prepare_model_image(&record, bytes.clone()).unwrap();
+        let reopened = prepare_model_image(&record, bytes).unwrap();
+        assert_eq!(first, reopened);
+        assert_eq!(first.0, "image/png");
+        assert!(first.1.len() as u64 <= MAX_MODEL_IMAGE_BYTES);
+        let decoded = image::load_from_memory(&first.1).unwrap().to_rgba8();
+        assert_eq!(decoded.dimensions(), (3, 2));
+        assert_eq!(*decoded.get_pixel(0, 0), image::Rgba([12, 34, 56, 255]));
+        assert_eq!(record.byte_size, 9 * 1024 * 1024);
+    }
+
+    #[test]
+    fn image_rendition_rejects_mismatched_or_corrupt_large_payloads() {
+        let bytes = vec![0; 9 * 1024 * 1024];
+        let record = stored_image("usr:session-a:bad", "session-a", bytes.len() as u64);
+        assert!(prepare_model_image(&record, bytes).is_err());
+        assert!(prepare_model_image(&record, vec![0; 3]).is_err());
+    }
+
+    #[tokio::test]
+    async fn cancelled_image_caller_keeps_decode_admission_until_blocking_work_finishes() {
+        let service = Arc::new(medousa_forge::execution::ForgeExecutionService::new());
+        let working_set = Arc::new(Semaphore::new(1));
+        let (first_started_tx, mut first_started_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (second_started_tx, mut second_started_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (release_first_tx, release_first_rx) = mpsc::channel();
+
+        let first = {
+            let service = Arc::clone(&service);
+            let working_set = Arc::clone(&working_set);
+            tokio::spawn(async move {
+                run_image_operation_with(service, working_set, 1, move || {
+                    first_started_tx.send(()).unwrap();
+                    release_first_rx.recv().unwrap();
+                    Ok(())
+                })
+                .await
+            })
+        };
+        tokio::time::timeout(Duration::from_secs(2), first_started_rx.recv())
+            .await
+            .expect("first decode should start")
+            .expect("first decode start signal");
+        first.abort();
+        let _ = first.await;
+
+        let second = {
+            let service = Arc::clone(&service);
+            let working_set = Arc::clone(&working_set);
+            tokio::spawn(async move {
+                run_image_operation_with(service, working_set, 1, move || {
+                    second_started_tx.send(()).unwrap();
+                    Ok(())
+                })
+                .await
+            })
+        };
+        let second_started_early =
+            tokio::time::timeout(Duration::from_millis(50), second_started_rx.recv()).await;
+        release_first_tx.send(()).unwrap();
+        assert!(second_started_early.is_err());
+        tokio::time::timeout(Duration::from_secs(2), second_started_rx.recv())
+            .await
+            .expect("second decode should start after first exits")
+            .expect("second decode start signal");
+        second.await.unwrap().unwrap();
+    }
+
+    #[test]
+    fn media_refs_from_turn_uses_drawing_preview_and_generated_media_ids() {
+        let mut turn = history_turn("user-image", "image/png", None, "caption");
+        turn.parts = Some(vec![
+            TurnPart::UserDrawing {
+                media_id: "drawing-source".into(),
+                preview_media_id: "drawing-preview".into(),
+                mime: "image/webp".into(),
+                label: Some("sketch".into()),
+                byte_size: None,
+            },
+            TurnPart::GeneratedMedia {
+                media_id: "generated-image".into(),
+                mime: "image/png".into(),
+                label: "render".into(),
+                generation_id: "gen-1".into(),
+                parent_generation_id: None,
+                width_px: None,
+                height_px: None,
+                byte_size: None,
+                provider: None,
+                model: None,
+            },
+        ]);
+        let refs = media_refs_from_turn(&turn);
+        assert_eq!(
+            refs.iter()
+                .map(|item| item.media_id.as_str())
+                .collect::<Vec<_>>(),
+            ["drawing-preview", "generated-image"]
+        );
+        assert_eq!(refs[1].generation_id.as_deref(), Some("gen-1"));
+    }
+
+    #[tokio::test]
+    async fn recent_history_replay_adds_session_scoped_image_pixels_and_skips_missing_foreign_and_nonvision()
+     {
+        let history = vec![
+            history_turn("old", "image/png", Some("older"), "old caption"),
+            history_turn("foreign", "image/png", None, "foreign caption"),
+            history_turn("deleted", "image/png", None, "deleted caption"),
+            history_turn("current", "image/png", None, "current caption"),
+            history_turn(
+                "newest",
+                "image/png",
+                Some("latest"),
+                "please compare these",
+            ),
+        ];
+        let current = vec![MediaRef {
+            media_id: "current".into(),
+            kind: "image".into(),
+            mime: "image/png".into(),
+            label: None,
+            source_media_id: None,
+            generation_id: None,
+            parent_generation_id: None,
+        }];
+        let mut messages = Vec::new();
+        append_recent_history_images_with_loader(
+            &mut messages,
+            "session-a",
+            &history,
+            &current,
+            |session_id, media_id| {
+                Box::pin(async move {
+                    let record = match media_id.as_str() {
+                        "foreign" => stored_image(&media_id, "session-b", 3),
+                        "deleted" => return None,
+                        _ => stored_image(&media_id, &session_id, 3),
+                    };
+                    Some((record, vec![1u8, 2, 3]))
+                }) as HistoryImageLoad
+            },
+        )
+        .await;
+        assert_eq!(messages.len(), 1);
+        let parts = messages[0].content.parts();
+        assert_eq!(
+            parts
+                .iter()
+                .filter(|part| matches!(part, ContentPart::Binary(_)))
+                .count(),
+            2
+        );
+        let metadata = parts.iter().find_map(ContentPart::as_text).unwrap();
+        assert!(metadata.contains("media_id=newest "));
+        assert!(metadata.contains("media_id=old "));
+        assert!(!metadata.contains("media_id=foreign "));
+        assert!(!metadata.contains("media_id=deleted "));
+        assert!(!metadata.contains("media_id=current "));
+        assert!(
+            parts
+                .iter()
+                .any(|part| matches!(part, ContentPart::Binary(_)))
+        );
+
+        let mut nonvision = Vec::new();
+        append_recent_history_images(
+            &mut nonvision,
+            "session-a",
+            &history,
+            &[],
+            "openai",
+            "gpt-3.5-turbo",
+        )
+        .await;
+        assert!(nonvision.is_empty());
+    }
+
+    #[tokio::test]
+    async fn recent_history_replay_caps_images_to_five_and_twenty_megabytes() {
+        let history = (0..8)
+            .map(|index| history_turn(&format!("image-{index}"), "image/png", None, "caption"))
+            .collect::<Vec<_>>();
+        let mut messages = Vec::new();
+        append_recent_history_images_with_loader(
+            &mut messages,
+            "session-a",
+            &history,
+            &[],
+            |session_id, media_id| {
+                Box::pin(
+                    async move { Some((stored_image(&media_id, &session_id, 3), vec![1u8, 2, 3])) },
+                ) as HistoryImageLoad
+            },
+        )
+        .await;
+        assert_eq!(
+            messages[0]
+                .content
+                .parts()
+                .iter()
+                .filter(|part| matches!(part, ContentPart::Binary(_)))
+                .count(),
+            5
+        );
+
+        let mut aggregate_bounded = Vec::new();
+        append_recent_history_images_with_loader(
+            &mut aggregate_bounded,
+            "session-a",
+            &history[..3],
+            &[],
+            |session_id, media_id| {
+                Box::pin(async move {
+                    Some((
+                        stored_image(
+                            &media_id,
+                            &session_id,
+                            MAX_RECENT_HISTORY_IMAGE_BYTES_PER_READ,
+                        ),
+                        vec![1u8; MAX_RECENT_HISTORY_IMAGE_BYTES_PER_READ as usize],
+                    ))
+                }) as HistoryImageLoad
+            },
+        )
+        .await;
+        assert_eq!(
+            aggregate_bounded[0]
+                .content
+                .parts()
+                .iter()
+                .filter(|part| matches!(part, ContentPart::Binary(_)))
+                .count(),
+            2
+        );
     }
 }

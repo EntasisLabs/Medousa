@@ -2,10 +2,10 @@ import type { InteractiveTurnStreamEvent } from "$lib/types/chat";
 import type { TurnStreamEnvelopeV3 } from "$lib/types/generated/daemon_api";
 import type { OpenWorkHandler } from "$lib/mobileNative";
 import { isTauriMobilePlatform } from "$lib/platform";
+import type { HomeNotificationIntent } from "$lib/types/workspace";
+import { shouldPresentHomeNotification } from "$lib/homeNotificationPolicy";
 
 let permissionReady: boolean | null = null;
-const budgetNotified = new Set<string>();
-const workNotified = new Set<string>();
 
 /** macOS notification APIs are not safe under concurrent tokio worker calls — serialize. */
 const NOTIFICATION_MIN_GAP_MS = 300;
@@ -33,9 +33,68 @@ export async function ensureNotificationPermission(): Promise<boolean> {
   }
 }
 
-function notificationsEnabled(): boolean {
+const NOTIFICATION_LEDGER_KEY = "medousa-home-notification-ledger-v1";
+const NOTIFICATION_LEDGER_LIMIT = 512;
+
+function categoryEnabled(intent: HomeNotificationIntent): boolean {
+  return shouldPresentHomeNotification(intent.kind, {
+    turnUpdates:
+      typeof localStorage !== "undefined" &&
+      localStorage.getItem("medousa-home-notify-turn-updates") === "1",
+    needsInput:
+      typeof localStorage === "undefined" ||
+      localStorage.getItem("medousa-home-notify-needs-input") !== "0",
+  });
+}
+
+function loadNotificationLedger(): string[] {
+  if (typeof localStorage === "undefined") return [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem(NOTIFICATION_LEDGER_KEY) ?? "[]");
+    return Array.isArray(parsed)
+      ? parsed.filter((value): value is string => typeof value === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberNotificationId(notificationId: string): boolean {
   if (typeof localStorage === "undefined") return true;
-  return localStorage.getItem("medousa-home-notifications") !== "0";
+  const ledger = loadNotificationLedger();
+  if (ledger.includes(notificationId)) return false;
+  ledger.push(notificationId);
+  localStorage.setItem(
+    NOTIFICATION_LEDGER_KEY,
+    JSON.stringify(ledger.slice(-NOTIFICATION_LEDGER_LIMIT)),
+  );
+  return true;
+}
+
+/** Present a daemon-authored notification intent without reinterpreting cards or turns. */
+export async function presentHomeNotification(intent: HomeNotificationIntent): Promise<void> {
+  if (!intent.notification_id.trim() || !categoryEnabled(intent)) return;
+  // On iOS, Remote push is the delivery route when enabled. Avoid presenting
+  // the same daemon intent again from the live workspace stream.
+  if (
+    isTauriMobilePlatform() &&
+    typeof localStorage !== "undefined" &&
+    localStorage.getItem("medousa-home-remote-push") === "1"
+  ) return;
+  if (!(await ensureNotificationPermission())) return;
+  if (!rememberNotificationId(intent.notification_id)) return;
+
+  enqueueNotification(async () => {
+    const { sendNotification } = await notificationApi();
+    const cardId = intent.card_id?.trim() || intent.subject_id.trim();
+    sendNotification({
+      id: notificationId(intent.notification_id),
+      title: intent.title,
+      body: intent.body,
+      actionTypeId: "medousa-work",
+      extra: { cardId, kind: "work" } satisfies WorkNotificationExtra,
+    });
+  });
 }
 
 type WorkNotificationExtra = {
@@ -70,10 +129,6 @@ function rememberOnce(set: Set<string>, key: string, limit = 256): boolean {
   return true;
 }
 
-function rememberBudgetNotification(requestId: string): boolean {
-  return rememberOnce(budgetNotified, requestId, 128);
-}
-
 function rememberPeerNotification(seed: string): boolean {
   return rememberOnce(peerNotified, seed, 256);
 }
@@ -84,7 +139,10 @@ async function sendPeerNotification(
   body: string,
   extra: PeerNotificationExtra,
 ) {
-  if (!notificationsEnabled()) return;
+  if (
+    typeof localStorage !== "undefined" &&
+    localStorage.getItem("medousa-home-notify-peer-messages") === "0"
+  ) return;
   if (!rememberPeerNotification(seed)) return;
   if (!(await ensureNotificationPermission())) return;
 
@@ -145,87 +203,9 @@ function enqueueNotification(task: () => Promise<void>): void {
     });
 }
 
-async function sendWorkNotification(
-  seed: string,
-  title: string,
-  body: string,
-  cardId: string,
-) {
-  if (!notificationsEnabled()) return;
-  if (!rememberWorkNotification(seed)) return;
-  if (!(await ensureNotificationPermission())) return;
-
-  enqueueNotification(async () => {
-    const { sendNotification } = await notificationApi();
-    sendNotification({
-      id: notificationId(seed),
-      title,
-      body,
-      actionTypeId: "medousa-work",
-      extra: { cardId, kind: "work" } satisfies WorkNotificationExtra,
-    });
-  });
-}
-
-export async function notifyCardDone(
-  title: string,
-  statusLabel: string,
-  cardId: string,
-) {
-  try {
-    await sendWorkNotification(
-      `work-done-${cardId}`,
-      "Medousa — work finished",
-      `${title} · ${statusLabel}`,
-      cardId,
-    );
-  } catch {
-    // Vite-only dev or plugin unavailable — ignore.
-  }
-}
-
-export async function notifyAskComplete(title: string, cardId: string) {
-  try {
-    await sendWorkNotification(
-      `work-ask-${cardId}`,
-      "Medousa — ask ready",
-      `${title} · tap to read the result`,
-      cardId,
-    );
-  } catch {
-    // Vite-only dev or plugin unavailable — ignore.
-  }
-}
-
 /** Workspace card id for a turn budget request (notification tap + work board). */
 export function budgetWorkCardId(requestId: string): string {
   return requestId.trim();
-}
-
-/** Local push on iOS/Android when a turn pauses for tool-round budget approval. */
-export async function notifyBudgetApprovalRequired(
-  title: string,
-  requestId: string,
-  detail?: string,
-) {
-  if (!isTauriMobilePlatform()) return;
-  const trimmedId = budgetWorkCardId(requestId);
-  if (!trimmedId || !rememberBudgetNotification(trimmedId)) return;
-
-  const summary = detail?.trim() || title.trim() || "Turn needs more tool rounds";
-  const body =
-    summary.length > 160 ? `${summary.slice(0, 157)}…` : summary;
-
-  try {
-    await sendWorkNotification(
-      `budget-${trimmedId}`,
-      "Medousa — approve more rounds?",
-      `${body} · tap to review`,
-      trimmedId,
-    );
-  } catch {
-    // Vite-only dev or plugin unavailable — ignore.
-  }
 }
 
 export function budgetRequestIdFromStreamEvent(
@@ -241,92 +221,6 @@ export function budgetRequestIdFromStreamEvent(
   const match = event.message.match(/\(request ([^)]+)\)/);
   const parsed = match?.[1]?.trim();
   return parsed ? budgetWorkCardId(parsed) : null;
-}
-
-const turnTerminalNotified = new Set<string>();
-
-export async function notifyTurnTicketTerminal(
-  event: TurnStreamEnvelopeV3,
-  workspaceCardId?: string | null,
-) {
-  if (!isTauriMobilePlatform() || event.event.type !== "turn_completed") return;
-  const turnId = event.turn_id.trim();
-  if (!turnId || turnTerminalNotified.has(turnId)) return;
-  turnTerminalNotified.add(turnId);
-  if (turnTerminalNotified.size > 128) {
-    const oldest = turnTerminalNotified.values().next().value;
-    if (oldest) turnTerminalNotified.delete(oldest);
-  }
-
-  const cardId = workspaceCardId?.trim() || turnId;
-  const preview = streamNotificationPreview(event);
-
-  if (
-    event.event.outcome === "failed" ||
-    event.event.outcome === "fuse_exhausted"
-  ) {
-    try {
-      await sendWorkNotification(
-        `turn-error-${turnId}`,
-        "Medousa — turn failed",
-        preview.length > 120 ? `${preview.slice(0, 117)}…` : preview,
-        cardId,
-      );
-    } catch {
-      // ignore
-    }
-    return;
-  }
-
-  try {
-    await sendWorkNotification(
-      `turn-done-${turnId}`,
-      "Medousa — turn ready",
-      preview.length > 120 ? `${preview.slice(0, 117)}…` : preview,
-      cardId,
-    );
-  } catch {
-    // ignore
-  }
-}
-
-export async function notifyWorkerHandoff(
-  event: TurnStreamEnvelopeV3,
-  workspaceCardId?: string | null,
-) {
-  if (
-    !isTauriMobilePlatform() ||
-    event.event.type !== "worker_ack" ||
-    event.event.ack_kind !== "worker"
-  ) return;
-  const cardId = workspaceCardId?.trim() || event.turn_id.trim();
-  if (!cardId) return;
-  const message = event.event.text;
-  try {
-    await sendWorkNotification(
-      `worker-${event.turn_id}`,
-      "Medousa — worker started",
-      message.trim() || "Background worker is on it",
-      cardId,
-    );
-  } catch {
-    // ignore
-  }
-}
-
-function streamNotificationPreview(
-  event: TurnStreamEnvelopeV3,
-): string {
-  if (event.event.type !== "turn_completed") return "Turn finished";
-  return (
-    event.event.operator_message?.trim() ||
-    event.event.aggregate_text.trim().split("\n")[0]?.trim() ||
-    "Turn finished"
-  );
-}
-
-function rememberWorkNotification(seed: string): boolean {
-  return rememberOnce(workNotified, seed, 256);
 }
 
 function cardIdFromNotification(extra: unknown): string | null {

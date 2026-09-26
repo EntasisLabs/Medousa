@@ -6,6 +6,11 @@ Shared client libraries for talking to **medousa_daemon** without duplicating HT
 
 Coder tool contracts and local diagnostics: [Usage attribution and batch edits](../engine/coder-efficiency.md).
 
+Assistant ownership queries and signed paired-workshop completion retrieval:
+[Coordination contracts](../engine/coordination.md). The peer-only completion
+query requires the exact saved proposal association and signed mesh envelopes;
+an ordinary bearer-only SDK request does not supply that authority.
+
 ## Packages
 
 | Package | Role |

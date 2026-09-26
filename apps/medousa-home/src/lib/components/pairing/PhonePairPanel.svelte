@@ -534,7 +534,7 @@
                 <ChevronDown size={14} strokeWidth={2} class="pair-more-chevron" aria-hidden="true" />
               </span>
             </summary>
-            {#if executionEntry}
+            {#if device.role === "peer" && executionEntry}
               <PairedDeviceExecutionControls
                 entry={executionEntry}
                 onupdated={(updated) => {
@@ -544,6 +544,10 @@
                 }}
                 onerror={(message) => (error = message)}
               />
+            {:else if device.role !== "peer"}
+              <p class="pair-tile-meta px-4 pb-3">
+                Portals use this workshop’s direct authority. Execution allowlists apply to peers.
+              </p>
             {/if}
             <PairedDeviceTrustControls
               {device}

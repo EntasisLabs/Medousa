@@ -29,7 +29,7 @@ use crate::grapheme_script::store::GraphemeScriptStore;
 use crate::paths::medousa_data_dir;
 
 const DEFAULT_BIND: &str = "127.0.0.1:7861";
-const EXPECTED_API_REVISION: u32 = 1;
+const EXPECTED_API_REVISION: u32 = 2;
 /// Windows Defender / cold start often exceeds the old 1s probe window.
 const HEALTH_WAIT_ATTEMPTS: u32 = 100;
 const HEALTH_WAIT_INTERVAL_MS: u64 = 50;
@@ -48,6 +48,7 @@ impl CodingEngineHost {
 #[derive(Debug, Clone, Serialize)]
 pub struct CodingEngineInfo {
     pub available: bool,
+    pub starting: bool,
     pub url: String,
     pub health_url: String,
     /// Direct orchestrator WS (local workshop only). Prefer `daemon_lsp_path`.
@@ -129,6 +130,10 @@ fn forge_worktree_roots() -> Vec<PathBuf> {
     vec![forge_root]
 }
 
+fn forge_root() -> PathBuf {
+    medousa_data_dir().join("forge")
+}
+
 /// Resolve the worktree Home and coding tools should use for a work id.
 ///
 /// Must match forge projections (`workspace_environment`), not the durable
@@ -171,6 +176,8 @@ struct EngineHealth {
     name: String,
     api_revision: Option<u32>,
     allowed_roots: Vec<PathBuf>,
+    #[serde(default)]
+    forge_root: Option<PathBuf>,
 }
 
 enum HealthProbe {
@@ -179,7 +186,11 @@ enum HealthProbe {
     Incompatible(String),
 }
 
-async fn probe_health(health_url: &str, required_roots: &[PathBuf]) -> HealthProbe {
+async fn probe_health(
+    health_url: &str,
+    required_roots: &[PathBuf],
+    forge_root: &Path,
+) -> HealthProbe {
     let Ok(client) = reqwest::Client::builder()
         .timeout(std::time::Duration::from_millis(400))
         .build()
@@ -203,6 +214,11 @@ async fn probe_health(health_url: &str, required_roots: &[PathBuf]) -> HealthPro
             "API revision {:?}; expected {EXPECTED_API_REVISION}",
             health.api_revision
         ));
+    }
+    if health.forge_root.as_deref() != Some(forge_root) {
+        return HealthProbe::Incompatible(
+            "attached-checkout authority uses a different or missing Forge store".into(),
+        );
     }
     if let Some(missing) = required_roots.iter().find(|required| {
         !health
@@ -228,9 +244,13 @@ pub async fn ensure_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
     let workspace_str = workspace_root.to_string_lossy().into_owned();
     let workspace_root_uri = path_to_file_uri(&workspace_root);
     let required_roots = forge_worktree_roots();
+    let forge_root = tokio::fs::canonicalize(forge_root())
+        .await
+        .unwrap_or_else(|_| forge_root());
 
     let info = |available: bool, message: String| CodingEngineInfo {
         available,
+        starting: false,
         url: base.clone(),
         health_url: health_url.clone(),
         lsp_url: lsp_url.clone(),
@@ -241,7 +261,7 @@ pub async fn ensure_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
         message,
     };
 
-    match probe_health(&health_url, &required_roots).await {
+    match probe_health(&health_url, &required_roots, &forge_root).await {
         HealthProbe::Compatible => return info(true, "coding engine reachable".into()),
         HealthProbe::Incompatible(reason) => {
             return info(
@@ -271,8 +291,10 @@ pub async fn ensure_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
                 }
                 Ok(None) => {}
                 Err(err) => {
-                    tracing::warn!(error = %err, "failed to inspect medousa-code process");
-                    *guard = None;
+                    return info(
+                        false,
+                        format!("failed to inspect medousa-code process: {err}"),
+                    );
                 }
             }
         }
@@ -282,9 +304,11 @@ pub async fn ensure_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
                 .arg(&bind)
                 .arg("--workspace")
                 .arg(&workspace_root)
+                .arg("--forge-root")
+                .arg(&forge_root)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
-                .stderr(Stdio::null())
+                .stderr(Stdio::inherit())
                 .kill_on_drop(true);
             medousa_host::hide_tokio_subprocess_window(&mut cmd);
             for root in &required_roots {
@@ -303,8 +327,28 @@ pub async fn ensure_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
     }
 
     for _ in 0..HEALTH_WAIT_ATTEMPTS {
+        {
+            let mut guard = host.child.lock().await;
+            if let Some(child) = guard.as_mut() {
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        *guard = None;
+                        return info(
+                            false,
+                            format!(
+                                "medousa-code exited during startup: {status}; see daemon logs"
+                            ),
+                        );
+                    }
+                    Err(error) => {
+                        return info(false, format!("cannot inspect medousa-code: {error}"));
+                    }
+                    Ok(None) => {}
+                }
+            }
+        }
         tokio::time::sleep(std::time::Duration::from_millis(HEALTH_WAIT_INTERVAL_MS)).await;
-        match probe_health(&health_url, &required_roots).await {
+        match probe_health(&health_url, &required_roots, &forge_root).await {
             HealthProbe::Compatible => return info(true, "coding engine started".into()),
             HealthProbe::Incompatible(reason) => {
                 return info(
@@ -316,20 +360,21 @@ pub async fn ensure_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
         }
     }
 
-    {
-        let mut guard = host.child.lock().await;
-        if let Some(mut child) = guard.take() {
-            let _ = child.start_kill();
-            tracing::warn!(
-                "killed medousa-code after health timeout so the next request can respawn"
-            );
+    let mut pending = info(
+        false,
+        "medousa-code is starting; its process is still alive".into(),
+    );
+    pending.starting = true;
+    pending
+}
+
+async fn wait_for_coding_engine(host: &CodingEngineHost) -> CodingEngineInfo {
+    loop {
+        let info = ensure_coding_engine(host).await;
+        if !info.starting {
+            return info;
         }
     }
-
-    info(
-        false,
-        "medousa-code spawned but health check timed out".into(),
-    )
 }
 
 pub fn coding_engine_surface() -> DeclaredRouter<AppState> {
@@ -438,6 +483,8 @@ pub struct CodeLspQuery {
     #[serde(default)]
     pub work_id: Option<String>,
     #[serde(default)]
+    pub attempt_id: Option<String>,
+    #[serde(default)]
     pub document_uri: Option<String>,
 }
 
@@ -452,7 +499,7 @@ pub async fn code_lsp_ws(
     lease: Option<Extension<CredentialLease>>,
 ) -> axum::response::Response {
     let host = state.coding_engine.clone().unwrap_or_default();
-    let info = ensure_coding_engine(&host).await;
+    let info = wait_for_coding_engine(&host).await;
     if !info.available {
         return (axum::http::StatusCode::SERVICE_UNAVAILABLE, info.message).into_response();
     }
@@ -462,6 +509,7 @@ pub async fn code_lsp_ws(
             state,
             q.language,
             q.work_id,
+            q.attempt_id,
             q.document_uri,
             lease.map(|Extension(lease)| lease),
         )
@@ -474,18 +522,19 @@ async fn proxy_lsp_socket(
     state: AppState,
     language: String,
     work_id: Option<String>,
+    attempt_id: Option<String>,
     document_uri: Option<String>,
     lease: Option<CredentialLease>,
 ) {
     let host = state.coding_engine.clone().unwrap_or_default();
-    let info = ensure_coding_engine(&host).await;
+    let info = wait_for_coding_engine(&host).await;
     if !info.available {
         tracing::warn!(message = %info.message, "coding engine unavailable for LSP proxy");
         return;
     }
     let workspace_root = work_id
         .as_deref()
-        .and_then(|raw| worktree_for_work(state.forge.as_ref(), raw));
+        .and_then(|raw| worktree_for_request(state.forge.as_ref(), raw, attempt_id.as_deref()));
     if work_id.is_some() && workspace_root.is_none() {
         tracing::warn!(
             work_id,
@@ -498,6 +547,8 @@ async fn proxy_lsp_socket(
         &language,
         workspace_root.as_deref(),
         document_uri.as_deref(),
+        work_id.as_deref(),
+        attempt_id.as_deref(),
     );
 
     let Ok((upstream_ws, _)) = connect_async(&upstream).await else {
@@ -565,6 +616,8 @@ fn lsp_upstream_url(
     language: &str,
     workspace_root: Option<&Path>,
     document_uri: Option<&str>,
+    work_id: Option<&str>,
+    attempt_id: Option<&str>,
 ) -> String {
     let base = if lsp_url.contains("/v1/lsp") {
         lsp_url.trim_end_matches('/').to_string()
@@ -579,6 +632,14 @@ fn lsp_upstream_url(
     if let Some(uri) = document_uri.filter(|uri| !uri.trim().is_empty()) {
         query.push_str("&document_uri=");
         query.push_str(&urlencoding::encode(uri));
+    }
+    if let Some(work_id) = work_id {
+        query.push_str("&work_id=");
+        query.push_str(&urlencoding::encode(work_id));
+    }
+    if let Some(attempt_id) = attempt_id {
+        query.push_str("&attempt_id=");
+        query.push_str(&urlencoding::encode(attempt_id));
     }
     format!("{base}?{query}")
 }
@@ -673,7 +734,7 @@ async fn proxy_agent_get(
     q: &std::collections::HashMap<String, String>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
     let host = state.coding_engine.clone().unwrap_or_default();
-    let info = ensure_coding_engine(&host).await;
+    let info = wait_for_coding_engine(&host).await;
     if !info.available {
         return Err((axum::http::StatusCode::SERVICE_UNAVAILABLE, info.message));
     }
@@ -703,6 +764,12 @@ async fn proxy_agent_get(
                 "unknown undertaking, attempt, or governed worktree".to_string(),
             ))?;
         forwarded.insert("workspace_root".into(), root.to_string_lossy().into_owned());
+        // The sidecar independently checks this exact governed root against the
+        // daemon-owned Forge store before admitting a path outside static roots.
+        forwarded.insert("work_id".into(), work_id);
+        if let Some(attempt_id) = attempt_id {
+            forwarded.insert("attempt_id".into(), attempt_id);
+        }
     } else if attempt_id.is_some() {
         return Err((
             axum::http::StatusCode::BAD_REQUEST,
@@ -745,7 +812,7 @@ async fn proxy_agent_post(
     mut body: serde_json::Value,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
     let host = state.coding_engine.clone().unwrap_or_default();
-    let info = ensure_coding_engine(&host).await;
+    let info = wait_for_coding_engine(&host).await;
     if !info.available {
         return Err((axum::http::StatusCode::SERVICE_UNAVAILABLE, info.message));
     }
@@ -787,6 +854,13 @@ async fn proxy_agent_post(
                 "workspace_root".into(),
                 serde_json::Value::String(root.to_string_lossy().into_owned()),
             );
+            object.insert("work_id".into(), serde_json::Value::String(work_id.clone()));
+            if let Some(attempt_id) = &attempt_id {
+                object.insert(
+                    "attempt_id".into(),
+                    serde_json::Value::String(attempt_id.clone()),
+                );
+            }
         }
     } else if attempt_id.is_some() {
         return Err((
@@ -886,6 +960,8 @@ mod tests {
             "typescript",
             Some(Path::new("/work trees/project")),
             Some("file:///work%20trees/project/packages/app/src/main.ts"),
+            Some("work-1"),
+            Some("attempt-1"),
         );
         let parsed = reqwest::Url::parse(&upstream).unwrap();
         let query = parsed
@@ -894,6 +970,8 @@ mod tests {
         assert_eq!(parsed.path(), "/v1/lsp");
         assert_eq!(query.get("language").unwrap(), "typescript");
         assert_eq!(query.get("workspace_root").unwrap(), "/work trees/project");
+        assert_eq!(query.get("work_id").unwrap(), "work-1");
+        assert_eq!(query.get("attempt_id").unwrap(), "attempt-1");
         assert_eq!(
             query.get("document_uri").unwrap(),
             "file:///work%20trees/project/packages/app/src/main.ts"

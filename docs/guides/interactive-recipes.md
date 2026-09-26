@@ -20,6 +20,11 @@ If allowed, the device schedules one local notification for that step. Denying
 permission does not disable the timer; it continues to reconcile from its saved
 deadline when the app is open again.
 
+Timer reminders are their own notification category. Their setting is separate
+from turn updates, needs-input alerts, and Remote push. On a paired phone,
+Remote push controls APNs delivery; it does not replace the device's local
+notification permission.
+
 Timer state belongs to the workshop daemon and is stored separately for each
 conversation message and step. This keeps two timers with the same label from
 colliding, including when Home is connected to a remote workshop.

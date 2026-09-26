@@ -4,8 +4,8 @@
 //! job, retry, wait, and correlation lifecycle; Medousa binds exact workshop
 //! identity, bounded transcript context, and signed transport provenance.
 
-use std::collections::HashSet;
-use std::sync::{Arc, Mutex, RwLock};
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex, RwLock, Weak};
 use std::time::Duration;
 
 use anyhow::{Result, anyhow, bail};
@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
 use stasis::application::runtime::in_memory_runtime::{JobExecutionOutcome, JobHandler};
+use stasis::application::runtime::job_context::JobContext;
 use stasis::domain::agent::envelope::{
     AGENT_ENVELOPE_SCHEMA_VERSION_V1, AgentEnvelope, AgentEnvelopeKind,
 };
@@ -35,21 +36,23 @@ use stasis::prelude::{RuntimeComposition, RuntimeFactory};
 use crate::daemon_runtime_handlers::DaemonRuntimeRegistrar;
 use crate::delegated_task::{
     DELEGATED_TASK_SCHEMA_VERSION, DelegatedTaskControlAction, DelegatedTaskControlRequest,
-    DelegatedTaskObservation, DelegatedTaskRequest, DelegatedTaskStatus, DelegatedTaskTransport,
-    build_bounded_context_grant, source_execution_from_grant, validate_task_control_observation,
-    validate_task_control_request, validate_task_observation,
+    DelegatedTaskError, DelegatedTaskObservation, DelegatedTaskRequest, DelegatedTaskStatus,
+    DelegatedTaskTransport, build_bounded_context_grant, source_execution_from_grant,
+    validate_task_control_observation, validate_task_control_request, validate_task_observation,
 };
+use crate::delegation_tools::PendingRemoteWorker;
 use crate::execution_context::active_turn_execution_context;
 use crate::runtime_composition_ext::{RuntimeCompositionExt, process_once};
 use crate::session_store::{SessionStore, TranscriptAppend};
+use crate::workshop_api::WorkshopPlacementRequest;
 use crate::workshop_contract::{ExecutionPlacementResolution, ExecutionTargetResolutionError};
 
 pub const DELEGATION_ENDPOINT_ID: &str = "stasisd:endpoint:medousa-delegation";
-const DELEGATION_TIMEOUT_SECONDS: u64 = 120;
 const DELEGATION_JOB_PREFIX: &str = "delegation-job-";
 const DELEGATION_TURN_PREFIX: &str = "delegation-turn-";
 const DELEGATION_WAIT_SIGNAL_TYPE: &str = "medousa.delegated_turn";
 const DELEGATION_JOB_TYPE: &str = "workflow.medousa.delegation";
+const DELEGATION_TRANSPORT_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Maps Stasis' agent-turn wait contract onto its existing runtime-owned
 /// durable wait store. Medousa owns only the record shape and identity mapping.
@@ -101,6 +104,9 @@ impl RuntimeDelegationWaitStore {
                 "delegation wait identity does not match its durable record".to_string(),
             ));
         }
+        // TurnWaitRecord predates optional durable wait deadlines. Its timestamp
+        // is a compatibility projection only; the durable wait has no expiry.
+        record.deadline_at = DateTime::<Utc>::MAX_UTC;
         match durable.status {
             DurableWaitStatus::Pending if record.status != TurnWaitStatus::Pending => {
                 return Err(StasisError::PortFailure(
@@ -137,7 +143,7 @@ impl TurnWaitStore for RuntimeDelegationWaitStore {
                 signal_type: DELEGATION_WAIT_SIGNAL_TYPE.to_string(),
                 correlation_key: record.turn_id,
                 status: DurableWaitStatus::Pending,
-                deadline_at: Some(record.deadline_at),
+                deadline_at: None,
                 created_at: record.created_at,
                 updated_at: record.updated_at,
                 signal_payload: Some(payload),
@@ -278,8 +284,176 @@ struct DelegationJobPayload {
     intent: String,
     #[serde(default)]
     user_ack: String,
-    deadline_at: DateTime<Utc>,
+    #[serde(default)]
+    deadline_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    lifetime_policy_version: u32,
     poll_interval_seconds: u64,
+}
+
+/// Admission is local. No destination is claimed until the background driver
+/// has discovered its current policy and durably pinned the exact route.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PendingDelegationSpawn {
+    work_id: String,
+    spawn: PendingRemoteWorker,
+    placement: WorkshopPlacementRequest,
+    grant: AgentEnvelope,
+    source_execution: medousa_types::session::ExecutionRef,
+    context: crate::delegated_task::DelegatedContextGrant,
+    #[serde(default)]
+    deadline_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    lifetime_policy_version: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+enum StoredDelegationPayload {
+    Pending(Box<PendingDelegationSpawn>),
+    Resolved(Box<DelegationJobPayload>),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DelegationDispatchCheckpoint {
+    target: DelegationTarget,
+    execution_placement: ExecutionPlacementResolution,
+}
+
+impl PendingDelegationSpawn {
+    fn resolve(
+        &self,
+        checkpoint: DelegationDispatchCheckpoint,
+    ) -> StasisResult<DelegationJobPayload> {
+        checkpoint.target.validate().map_err(port_failure)?;
+        if checkpoint.execution_placement.requested != self.placement.requested
+            || checkpoint.execution_placement.resolved_runtime_id
+                != checkpoint.target.peer_device_id
+        {
+            return Err(port_failure(
+                "delegation dispatch checkpoint does not match its request",
+            ));
+        }
+        let worker = self.spawn.resolve(&checkpoint.execution_placement)?;
+        let mut grant = self.grant.clone();
+        if let Some(deadline) = self.deadline_at {
+            grant.payload["task_deadline_at"] = json!(deadline);
+        } else if let Some(payload) = grant.payload.as_object_mut() {
+            payload.remove("task_deadline_at");
+            payload.remove("deadline_at");
+        }
+        let request = DelegatedTaskRequest {
+            schema_version: DELEGATED_TASK_SCHEMA_VERSION,
+            grant,
+            source_execution: self.source_execution.clone(),
+            parent_runtime_id: self.placement.parent_runtime_id.clone(),
+            execution_placement: checkpoint.execution_placement,
+            worker: Some(worker),
+            context: self.context.clone(),
+        };
+        crate::delegated_task::validate_task_request(&request).map_err(port_failure)?;
+        Ok(DelegationJobPayload {
+            work_id: self.work_id.clone(),
+            target: checkpoint.target,
+            request,
+            intent: self.spawn.intent.clone(),
+            user_ack: self.spawn.user_ack.clone(),
+            deadline_at: self.deadline_at,
+            lifetime_policy_version: self.lifetime_policy_version,
+            poll_interval_seconds: 1,
+        })
+    }
+}
+
+impl StoredDelegationPayload {
+    fn parse(job: &Job) -> StasisResult<Self> {
+        let mut stored: Self = serde_json::from_str(&job.payload_ref).map_err(port_failure)?;
+        match &mut stored {
+            Self::Resolved(payload) if payload.lifetime_policy_version == 0 => {
+                // The old deadline was the daemon's implicit 120-second task
+                // cap, not an operator-selected lifetime.
+                payload.deadline_at = None;
+                payload.lifetime_policy_version = 1;
+                if let Some(grant_payload) = payload.request.grant.payload.as_object_mut() {
+                    grant_payload.remove("deadline_at");
+                    grant_payload.remove("task_deadline_at");
+                }
+            }
+            Self::Pending(pending) if pending.lifetime_policy_version == 0 => {
+                pending.deadline_at = None;
+                pending.lifetime_policy_version = 1;
+                if let Some(grant_payload) = pending.grant.payload.as_object_mut() {
+                    grant_payload.remove("deadline_at");
+                    grant_payload.remove("task_deadline_at");
+                }
+            }
+            Self::Resolved(_) | Self::Pending(_) => {}
+        }
+        match stored {
+            Self::Resolved(_) => {
+                DelegationJobHandler::parse(job).map(|payload| Self::Resolved(Box::new(payload)))
+            }
+            Self::Pending(pending) => {
+                if pending.grant.job_id.as_deref() != Some(job.id.as_str())
+                    || pending.grant.correlation_id != job.correlation_id
+                    || pending.grant.causation_id != job.causation_id
+                    || pending.work_id.trim().is_empty()
+                {
+                    return Err(port_failure("queued spawn does not match its Stasis grant"));
+                }
+                match job.progress_json.as_deref() {
+                    Some(checkpoint) => pending
+                        .resolve(serde_json::from_str(checkpoint).map_err(port_failure)?)
+                        .map(|payload| Self::Resolved(Box::new(payload))),
+                    None => Ok(Self::Pending(pending)),
+                }
+            }
+        }
+    }
+
+    fn grant(&self) -> &AgentEnvelope {
+        match self {
+            Self::Pending(pending) => &pending.grant,
+            Self::Resolved(payload) => &payload.request.grant,
+        }
+    }
+}
+
+fn port_failure(error: impl std::fmt::Display) -> StasisError {
+    StasisError::PortFailure(error.to_string())
+}
+
+fn delegation_job_store(
+    runtime: &RuntimeComposition,
+) -> Arc<dyn stasis::ports::outbound::runtime::job_store::JobStore> {
+    match runtime {
+        RuntimeComposition::InMemory(runtime) => Arc::new(runtime.job_store.clone()),
+        RuntimeComposition::Surreal(runtime) => Arc::new(runtime.job_store.clone()),
+    }
+}
+
+/// Serialize dispatch with cancellation for one request, without holding up
+/// unrelated jobs. Weak entries are removed after their operations finish.
+#[derive(Default)]
+struct DelegationDispatchGates {
+    jobs: Mutex<HashMap<String, Weak<tokio::sync::Mutex<()>>>>,
+}
+
+impl DelegationDispatchGates {
+    async fn lock(&self, job_id: &str) -> tokio::sync::OwnedMutexGuard<()> {
+        let gate = {
+            let mut jobs = self.jobs.lock().expect("delegation dispatch gates");
+            jobs.retain(|_, gate| gate.strong_count() > 0);
+            jobs.get(job_id).and_then(Weak::upgrade).unwrap_or_else(|| {
+                let gate = Arc::new(tokio::sync::Mutex::new(()));
+                jobs.insert(job_id.to_string(), Arc::downgrade(&gate));
+                gate
+            })
+        };
+        gate.lock_owned().await
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -312,6 +486,32 @@ struct DelegationResultDelivery {
     live_sink: RwLock<Option<Arc<dyn DelegationCompletionSink>>>,
 }
 
+struct DelegationReturnRoute<'a> {
+    work_id: &'a str,
+    grant: &'a AgentEnvelope,
+    source: &'a medousa_types::session::ExecutionRef,
+}
+
+impl DelegationJobPayload {
+    fn return_route(&self) -> DelegationReturnRoute<'_> {
+        DelegationReturnRoute {
+            work_id: &self.work_id,
+            grant: &self.request.grant,
+            source: &self.request.source_execution,
+        }
+    }
+}
+
+impl PendingDelegationSpawn {
+    fn return_route(&self) -> DelegationReturnRoute<'_> {
+        DelegationReturnRoute {
+            work_id: &self.work_id,
+            grant: &self.grant,
+            source: &self.source_execution,
+        }
+    }
+}
+
 #[async_trait::async_trait]
 trait DelegationTerminalDelivery: Send + Sync {
     async fn deliver_terminal(
@@ -323,6 +523,13 @@ trait DelegationTerminalDelivery: Send + Sync {
     async fn deliver_local_terminal(
         &self,
         payload: &DelegationJobPayload,
+        status: TurnWaitStatus,
+        message: String,
+    ) -> StasisResult<bool>;
+
+    async fn deliver_spawn_failure(
+        &self,
+        pending: &PendingDelegationSpawn,
         status: TurnWaitStatus,
         message: String,
     ) -> StasisResult<bool>;
@@ -342,7 +549,7 @@ impl DelegationResultDelivery {
 
     async fn deliver_cancelled(&self, payload: &DelegationJobPayload) -> StasisResult<bool> {
         self.commit_presentation(
-            payload,
+            payload.return_route(),
             payload.request.source_execution.clone(),
             TurnWaitStatus::Cancelled,
             "Remote delegation was cancelled on this workshop.".to_string(),
@@ -353,13 +560,17 @@ impl DelegationResultDelivery {
 
     async fn commit_presentation(
         &self,
-        payload: &DelegationJobPayload,
+        route: DelegationReturnRoute<'_>,
         caused_by: medousa_types::session::ExecutionRef,
         status: TurnWaitStatus,
         text: String,
         tool_names: Vec<String>,
     ) -> StasisResult<bool> {
-        let source = &payload.request.source_execution;
+        let DelegationReturnRoute {
+            work_id,
+            grant,
+            source,
+        } = route;
         let entries = self
             .session_store
             .load_transcript_entries(&source.session_id);
@@ -374,13 +585,7 @@ impl DelegationResultDelivery {
             "ent_",
             &[
                 b"delegated-result",
-                payload
-                    .request
-                    .grant
-                    .turn_id
-                    .as_deref()
-                    .unwrap_or_default()
-                    .as_bytes(),
+                grant.turn_id.as_deref().unwrap_or_default().as_bytes(),
             ],
         ))
         .map_err(|error| StasisError::PortFailure(error.to_string()))?;
@@ -413,7 +618,7 @@ impl DelegationResultDelivery {
         if let Some(sink) = sink {
             let event = DelegationCompletionEvent {
                 source_turn_id: source.execution_id.to_string(),
-                work_id: payload.work_id.clone(),
+                work_id: work_id.to_string(),
                 status,
                 text,
                 tool_names,
@@ -434,8 +639,14 @@ impl DelegationTerminalDelivery for DelegationResultDelivery {
         result: &crate::delegated_task::DelegatedTaskResult,
     ) -> StasisResult<bool> {
         let (status, text, tool_names) = terminal_presentation(result);
-        self.commit_presentation(payload, result.execution.clone(), status, text, tool_names)
-            .await
+        self.commit_presentation(
+            payload.return_route(),
+            result.execution.clone(),
+            status,
+            text,
+            tool_names,
+        )
+        .await
     }
 
     async fn deliver_local_terminal(
@@ -445,8 +656,24 @@ impl DelegationTerminalDelivery for DelegationResultDelivery {
         message: String,
     ) -> StasisResult<bool> {
         self.commit_presentation(
-            payload,
+            payload.return_route(),
             payload.request.source_execution.clone(),
+            status,
+            message,
+            Vec::new(),
+        )
+        .await
+    }
+
+    async fn deliver_spawn_failure(
+        &self,
+        pending: &PendingDelegationSpawn,
+        status: TurnWaitStatus,
+        message: String,
+    ) -> StasisResult<bool> {
+        self.commit_presentation(
+            pending.return_route(),
+            pending.source_execution.clone(),
             status,
             message,
             Vec::new(),
@@ -503,12 +730,208 @@ struct DelegationJobHandler {
     ingress: Arc<dyn AgentEventIngress>,
     waits: Arc<dyn TurnWaitStore>,
     delivery: Arc<dyn DelegationTerminalDelivery>,
+    jobs: Arc<dyn stasis::ports::outbound::runtime::job_store::JobStore>,
+    dispatch_gates: Arc<DelegationDispatchGates>,
 }
 
 impl DelegationJobHandler {
+    fn pending_outcome(
+        pending: &PendingDelegationSpawn,
+        message: impl Into<String>,
+    ) -> JobExecutionOutcome {
+        JobExecutionOutcome::Deferred {
+            scheduled_at: Utc::now() + chrono::Duration::seconds(1),
+            message: message.into(),
+            execution_id: pending.grant.turn_id.clone(),
+            diagnostics: Some(
+                json!({"provider":"medousa-delegation", "status":"queued", "stage":"discovery"})
+                    .to_string(),
+            ),
+        }
+    }
+
+    async fn fail_pending(
+        &self,
+        pending: &PendingDelegationSpawn,
+        status: TurnWaitStatus,
+        message: String,
+    ) -> StasisResult<JobExecutionOutcome> {
+        let message = message.chars().take(2_048).collect::<String>();
+        if !self
+            .delivery
+            .deliver_spawn_failure(pending, status.clone(), message.clone())
+            .await?
+        {
+            return Ok(Self::pending_outcome(
+                pending,
+                "source turn handoff receipt is not committed yet",
+            ));
+        }
+        let turn_id = pending.grant.turn_id.as_deref().expect("validated turn id");
+        self.waits
+            .complete(turn_id, status, None, Some(message), Utc::now())
+            .await?;
+        let wait = self
+            .waits
+            .get(turn_id)
+            .await?
+            .ok_or_else(|| port_failure("spawn wait disappeared"))?;
+        Ok(Self::terminal_outcome(wait))
+    }
+
+    async fn execute_pending(
+        &self,
+        job: &Job,
+        pending: PendingDelegationSpawn,
+        ctx: &JobContext,
+    ) -> StasisResult<JobExecutionOutcome> {
+        let turn_id = pending
+            .grant
+            .turn_id
+            .as_deref()
+            .ok_or_else(|| port_failure("queued spawn has no turn id"))?;
+        match self.waits.get(turn_id).await? {
+            Some(wait) if wait.status != TurnWaitStatus::Pending => {
+                return Ok(Self::terminal_outcome(wait));
+            }
+            Some(_) => {}
+            None => {
+                self.waits
+                    .insert(TurnWaitRecord {
+                        turn_id: turn_id.to_string(),
+                        job_id: job.id.clone(),
+                        session_id: pending.grant.session_id.clone(),
+                        correlation_id: job.correlation_id.clone(),
+                        participant_id: "paired-medousa-daemon".to_string(),
+                        status: TurnWaitStatus::Pending,
+                        deadline_at: pending.deadline_at.unwrap_or(DateTime::<Utc>::MAX_UTC),
+                        created_at: pending.grant.occurred_at,
+                        updated_at: Utc::now(),
+                        result_payload: None,
+                        error_message: None,
+                    })
+                    .await?
+            }
+        }
+        let remaining = pending
+            .deadline_at
+            .map(|deadline| (deadline - Utc::now()).to_std().unwrap_or_default());
+        if remaining.is_some_and(|remaining| remaining.is_zero()) {
+            let last_attempt = job
+                .last_error
+                .as_deref()
+                .unwrap_or("workshop discovery was still pending");
+            return self
+                .fail_pending(
+                    &pending,
+                    TurnWaitStatus::TimedOut,
+                    format!(
+                        "Remote worker could not be started before its deadline: {last_attempt}"
+                    ),
+                )
+                .await;
+        }
+        let candidates = match tokio::time::timeout(
+            remaining
+                .unwrap_or(DELEGATION_TRANSPORT_ATTEMPT_TIMEOUT)
+                .min(DELEGATION_TRANSPORT_ATTEMPT_TIMEOUT),
+            self.host.authorized_targets(),
+        )
+        .await
+        {
+            Ok(Ok(candidates)) => candidates,
+            Ok(Err(error)) => {
+                return Ok(Self::pending_outcome(
+                    &pending,
+                    format!("workshop discovery unavailable: {error}"),
+                ));
+            }
+            Err(_) => {
+                return Ok(Self::pending_outcome(
+                    &pending,
+                    "workshop discovery timed out; retrying in the background",
+                ));
+            }
+        };
+        let candidate_values = candidates
+            .iter()
+            .map(|target| target.candidate.clone())
+            .collect::<Vec<_>>();
+        let resolution = match pending.placement.resolve(&candidate_values) {
+            Ok(resolution) => resolution,
+            // Offline targets are not authority. Keep the request queued so a
+            // transient disconnect can recover, then deliver a terminal timeout.
+            Err(error) => {
+                return Ok(Self::pending_outcome(
+                    &pending,
+                    format!("waiting for an authorized workshop: {error}"),
+                ));
+            }
+        };
+        let target = candidates
+            .into_iter()
+            .find(|target| target.target.peer_device_id == resolution.resolved_runtime_id)
+            .ok_or_else(|| port_failure("resolved workshop has no authenticated route"))?
+            .target;
+        let checkpoint = DelegationDispatchCheckpoint {
+            target,
+            execution_placement: resolution,
+        };
+        let payload = match pending.resolve(checkpoint.clone()) {
+            Ok(payload) => payload,
+            Err(error) => {
+                return self
+                    .fail_pending(
+                        &pending,
+                        TurnWaitStatus::Failed,
+                        format!("Remote worker request was rejected: {error}"),
+                    )
+                    .await;
+            }
+        };
+        let _dispatch = self.dispatch_gates.lock(&job.id).await;
+        if self
+            .jobs
+            .get(&job.id)
+            .await?
+            .is_none_or(|current| current.state == JobState::Canceled)
+        {
+            return Ok(Self::pending_outcome(
+                &pending,
+                "queued spawn was cancelled",
+            ));
+        }
+        // Stasis preserves progress_json across handler outcomes. The immutable
+        // job payload must not be rewritten from inside its leased handler.
+        ctx.heartbeat().await?;
+        ctx.progress(&checkpoint).await?;
+        if self
+            .jobs
+            .get(&job.id)
+            .await?
+            .is_none_or(|current| current.state == JobState::Canceled)
+        {
+            return Ok(Self::pending_outcome(
+                &pending,
+                "queued spawn was cancelled",
+            ));
+        }
+        self.execute_resolved(job, payload).await
+    }
+
     fn parse(job: &Job) -> StasisResult<DelegationJobPayload> {
         let mut payload: DelegationJobPayload = serde_json::from_str(&job.payload_ref)
             .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+        if payload.lifetime_policy_version == 0 {
+            // The legacy value represented the implicit daemon-side 120s
+            // timeout, never an operator-selected task expiry.
+            payload.deadline_at = None;
+            payload.lifetime_policy_version = 1;
+            if let Some(grant_payload) = payload.request.grant.payload.as_object_mut() {
+                grant_payload.remove("deadline_at");
+                grant_payload.remove("task_deadline_at");
+            }
+        }
         if payload.work_id.trim().is_empty() {
             let identity = job
                 .id
@@ -642,7 +1065,40 @@ impl JobHandler for DelegationJobHandler {
     }
 
     async fn execute(&self, job: &Job) -> StasisResult<JobExecutionOutcome> {
-        let payload = Self::parse(job)?;
+        match StoredDelegationPayload::parse(job)? {
+            StoredDelegationPayload::Resolved(payload) => {
+                let _dispatch = self.dispatch_gates.lock(&job.id).await;
+                self.execute_resolved(job, *payload).await
+            }
+            StoredDelegationPayload::Pending(_) => {
+                Err(port_failure("queued spawn requires Stasis JobContext"))
+            }
+        }
+    }
+
+    async fn execute_with_context(
+        &self,
+        job: &Job,
+        ctx: JobContext,
+    ) -> StasisResult<JobExecutionOutcome> {
+        match StoredDelegationPayload::parse(job)? {
+            StoredDelegationPayload::Pending(pending) => {
+                self.execute_pending(job, *pending, &ctx).await
+            }
+            StoredDelegationPayload::Resolved(payload) => {
+                let _dispatch = self.dispatch_gates.lock(&job.id).await;
+                self.execute_resolved(job, *payload).await
+            }
+        }
+    }
+}
+
+impl DelegationJobHandler {
+    async fn execute_resolved(
+        &self,
+        job: &Job,
+        payload: DelegationJobPayload,
+    ) -> StasisResult<JobExecutionOutcome> {
         let turn_id = payload
             .request
             .grant
@@ -670,7 +1126,7 @@ impl JobHandler for DelegationJobHandler {
                         .clone()
                         .unwrap_or_else(|| "paired-medousa-daemon".to_string()),
                     status: TurnWaitStatus::Pending,
-                    deadline_at: payload.deadline_at,
+                    deadline_at: payload.deadline_at.unwrap_or(DateTime::<Utc>::MAX_UTC),
                     created_at: payload.request.grant.occurred_at,
                     updated_at: now,
                     result_payload: None,
@@ -678,7 +1134,7 @@ impl JobHandler for DelegationJobHandler {
                 })
                 .await?;
         }
-        if now >= payload.deadline_at {
+        if payload.deadline_at.is_some_and(|deadline| now >= deadline) {
             return self
                 .complete_failure(
                     &payload,
@@ -689,16 +1145,30 @@ impl JobHandler for DelegationJobHandler {
                 .await;
         }
 
-        let observation = match self
-            .host
-            .submit_or_observe(&payload.target, payload.request.clone())
-            .await
+        let remaining = payload
+            .deadline_at
+            .map(|deadline| (deadline - Utc::now()).to_std().unwrap_or_default());
+        let observation = match tokio::time::timeout(
+            remaining
+                .unwrap_or(DELEGATION_TRANSPORT_ATTEMPT_TIMEOUT)
+                .min(DELEGATION_TRANSPORT_ATTEMPT_TIMEOUT),
+            self.host
+                .submit_or_observe(&payload.target, payload.request.clone()),
+        )
+        .await
         {
-            Ok(observation) => observation,
-            Err(error) => {
+            Ok(Ok(observation)) => observation,
+            Ok(Err(error)) => {
                 return Ok(Self::deferred(
                     &payload,
                     format!("delegation transport unavailable: {error}"),
+                    None,
+                ));
+            }
+            Err(_) => {
+                return Ok(Self::deferred(
+                    &payload,
+                    "delegation transport timed out; retrying in the background",
                     None,
                 ));
             }
@@ -757,13 +1227,197 @@ pub struct DelegationService {
     delivery: Arc<DelegationResultDelivery>,
     host: Arc<dyn DelegatedTaskTransport>,
     active_drivers: Mutex<HashSet<String>>,
+    dispatch_gates: Arc<DelegationDispatchGates>,
 }
 
 impl DelegationService {
+    /// Commit the immutable request and its parent context before any transport
+    /// work. Discovery and dispatch belong to the Stasis job, never this turn.
+    pub(crate) async fn enqueue_spawn(
+        self: &Arc<Self>,
+        spawn: PendingRemoteWorker,
+        mut placement: WorkshopPlacementRequest,
+    ) -> StasisResult<Value> {
+        let execution = active_turn_execution_context()
+            .ok_or_else(|| port_failure("delegation requires an admitted daemon turn"))?;
+        if spawn.task.trim().is_empty() || spawn.user_ack.trim().is_empty() {
+            return Err(port_failure(
+                "delegated task and user acknowledgement are required",
+            ));
+        }
+        if placement.parent_runtime_id.trim().is_empty() {
+            return Err(port_failure(
+                "delegation parent runtime identity is required",
+            ));
+        }
+        if let crate::workshop_contract::ExecutionTargetSelection::Exact { runtime_id } =
+            &mut placement.requested
+        {
+            *runtime_id = runtime_id.trim().to_string();
+            if runtime_id.is_empty()
+                || runtime_id.len() > 256
+                || !runtime_id.bytes().all(|byte| matches!(byte, 0x21..=0x7e))
+            {
+                return Err(port_failure(
+                    ExecutionTargetResolutionError::InvalidRuntimeId,
+                ));
+            }
+        }
+        let immutable_request = serde_json::to_vec(&(&spawn, &placement)).map_err(port_failure)?;
+        let identity = deterministic_identity(
+            "",
+            &[
+                b"queued-spawn",
+                execution.session_id().as_str().as_bytes(),
+                execution.turn_id().as_bytes(),
+                &immutable_request,
+            ],
+        );
+        let job_id = format!("{DELEGATION_JOB_PREFIX}{identity}");
+        let turn_id = format!("{DELEGATION_TURN_PREFIX}{identity}");
+        let work_id = format!("work-delegation-{identity}");
+        if self.runtime.get_job(&job_id).await?.is_none() {
+            let now = Utc::now();
+            let grant = AgentEnvelope {
+                schema_version: AGENT_ENVELOPE_SCHEMA_VERSION_V1,
+                kind: AgentEnvelopeKind::TurnGranted,
+                envelope_id: format!("grant-{turn_id}"),
+                session_id: execution.session_id().to_string(),
+                thread_id: Some(execution.correlation_id().to_string()),
+                turn_id: Some(turn_id.clone()),
+                job_id: Some(job_id.clone()),
+                correlation_id: execution.correlation_id().to_string(),
+                causation_id: execution.turn_id().to_string(),
+                participant_id: Some("paired-medousa-daemon".to_string()),
+                occurred_at: now,
+                payload: json!({"user_prompt":spawn.task, "system_prompt":null}),
+            };
+            let source_execution =
+                source_execution_from_grant(&self.authority_id, &grant).map_err(port_failure)?;
+            let context = build_bounded_context_grant(
+                self.session_store.as_ref(),
+                &self.authority_id,
+                execution.session_id(),
+                &format!("daemon:{}", self.authority_id),
+                &turn_id,
+                now,
+            )
+            .map_err(port_failure)?;
+            let payload = PendingDelegationSpawn {
+                work_id: work_id.clone(),
+                spawn: spawn.clone(),
+                placement: placement.clone(),
+                grant,
+                source_execution,
+                context,
+                deadline_at: None,
+                lifetime_policy_version: 1,
+            };
+            self.runtime
+                .enqueue_job(NewJob {
+                    id: job_id.clone(),
+                    queue: "default".to_string(),
+                    job_type: DELEGATION_JOB_TYPE.to_string(),
+                    payload_ref: serde_json::to_string(&payload).map_err(port_failure)?,
+                    priority: 100,
+                    max_attempts: 3,
+                    idempotency_key: format!("delegation:{identity}"),
+                    correlation_id: execution.correlation_id().to_string(),
+                    causation_id: execution.turn_id().to_string(),
+                    trace_id: execution.correlation_id().to_string(),
+                    input_provenance: None,
+                    placement:
+                        stasis::domain::runtime::placement::PlacementConstraints::unrestricted(),
+                    scheduled_at: now,
+                    backoff_policy: BackoffPolicy::default(),
+                })
+                .await?;
+        }
+        self.start_driver(job_id.clone(), turn_id);
+        Ok(json!({
+            "ok":true, "worker_queued":true, "worker_spawned":false,
+            "work_id":work_id, "stasis_job_id":job_id, "status":"queued",
+            "execution_target":"bound_remote", "parent_runtime_id":placement.parent_runtime_id,
+            "requested_execution_target":placement.requested, "execution_placement":null,
+            "intent":spawn.intent, "user_ack":spawn.user_ack,
+            "message":"Remote worker request saved. Workshop discovery and startup continue in the background; report this as queued, not started.",
+        }))
+    }
+
+    pub async fn active_work_inventories(
+        &self,
+        include_terminal: bool,
+    ) -> Result<Vec<Value>, crate::delegated_task::DelegatedTaskError> {
+        self.host.active_work_inventories(include_terminal).await
+    }
+
     pub async fn authorized_targets(
         &self,
     ) -> Result<Vec<AuthorizedDelegationTarget>, crate::delegated_task::DelegatedTaskError> {
         self.host.authorized_targets().await
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "exact peer proposal scope is explicit at the service boundary"
+    )]
+    pub async fn propose_remote_peer(
+        &self,
+        target_runtime_id: &str,
+        forge_work_id: &str,
+        request_key: &str,
+        runtime: medousa_types::coordination::ExternalPeerRuntime,
+        instructions: &str,
+        continue_owner: bool,
+        existing_agent_session_id: Option<String>,
+    ) -> Result<crate::peer_coordination_mesh::RemotePeerProposalResponse, DelegatedTaskError> {
+        let execution = active_turn_execution_context().ok_or_else(|| {
+            DelegatedTaskError::invalid("remote peer proposal requires an admitted owner turn")
+        })?;
+        let target = self
+            .host
+            .authorized_targets()
+            .await?
+            .into_iter()
+            .find(|candidate| {
+                candidate.target.peer_device_id == target_runtime_id
+                    && candidate.candidate.agent_selectable
+            })
+            .map(|candidate| candidate.target)
+            .ok_or_else(|| {
+                DelegatedTaskError::conflict(
+                    "exact workshop is unavailable for agent-targeted Assistant work",
+                )
+            })?;
+        let context = build_bounded_context_grant(
+            self.session_store.as_ref(),
+            &self.authority_id,
+            execution.session_id(),
+            &format!("daemon:{}", self.authority_id),
+            request_key,
+            Utc::now(),
+        )?;
+        let source_execution = medousa_types::ExecutionRef {
+            authority_id: self.authority_id.clone(),
+            session_id: execution.session_id().clone(),
+            execution_id: medousa_types::ExecutionId::parse(execution.turn_id())
+                .map_err(|error| DelegatedTaskError::invalid(error.to_string()))?,
+        };
+        let request = crate::peer_coordination_mesh::RemotePeerProposalRequest {
+            schema_version: crate::peer_coordination_mesh::REMOTE_PEER_PROPOSAL_SCHEMA_VERSION,
+            source_execution,
+            owner_session_id: execution.session_id().clone(),
+            target_runtime_id: target_runtime_id.to_string(),
+            forge_work_id: forge_work_id.to_string(),
+            request_key: request_key.to_string(),
+            runtime,
+            instructions: instructions.to_string(),
+            continue_owner,
+            existing_agent_session_id,
+            context,
+        };
+        crate::peer_coordination_mesh::validate_remote_peer_proposal_request(&request)?;
+        self.host.propose_peer(&target, request).await
     }
 
     pub async fn binding(&self) -> Result<Option<DelegationBinding>> {
@@ -881,7 +1535,6 @@ impl DelegationService {
         let work_id = format!("work-delegation-{identity}");
         if self.runtime.get_job(&job_id).await?.is_none() {
             let now = Utc::now();
-            let deadline_at = now + chrono::Duration::seconds(DELEGATION_TIMEOUT_SECONDS as i64);
             let grant = AgentEnvelope {
                 schema_version: AGENT_ENVELOPE_SCHEMA_VERSION_V1,
                 kind: AgentEnvelopeKind::TurnGranted,
@@ -897,7 +1550,6 @@ impl DelegationService {
                 payload: json!({
                     "user_prompt": task,
                     "system_prompt": null,
-                    "deadline_at": deadline_at,
                 }),
             };
             let context = build_bounded_context_grant(
@@ -925,7 +1577,8 @@ impl DelegationService {
                 },
                 intent: worker.intent.clone(),
                 user_ack: user_ack.to_string(),
-                deadline_at,
+                deadline_at: None,
+                lifetime_policy_version: 1,
                 poll_interval_seconds: 1,
             };
             self.runtime
@@ -969,8 +1622,8 @@ impl DelegationService {
                 JobState::Enqueued | JobState::Leased | JobState::Running
             )
         }) {
-            let payload = DelegationJobHandler::parse(&job)?;
-            let Some(turn_id) = payload.request.grant.turn_id.clone() else {
+            let payload = StoredDelegationPayload::parse(&job)?;
+            let Some(turn_id) = payload.grant().turn_id.clone() else {
                 continue;
             };
             if self.start_driver(job.id, turn_id) {
@@ -1002,7 +1655,32 @@ impl DelegationService {
         let requested_work = work_id.map(str::trim).filter(|value| !value.is_empty());
         let mut workers = Vec::new();
         for job in self.all_delegation_jobs().await? {
-            let payload = DelegationJobHandler::parse(&job)?;
+            let payload = match StoredDelegationPayload::parse(&job)? {
+                StoredDelegationPayload::Resolved(payload) => payload,
+                StoredDelegationPayload::Pending(pending) => {
+                    if pending.source_execution.session_id.as_str() != active_session
+                        || requested_work.is_some_and(|requested| requested != pending.work_id)
+                    {
+                        continue;
+                    }
+                    let wait = self
+                        .waits
+                        .get(pending.grant.turn_id.as_deref().unwrap_or_default())
+                        .await?;
+                    workers.push(json!({
+                        "work_id":pending.work_id, "stasis_job_id":job.id,
+                        "status":wait.as_ref().filter(|record| record.status != TurnWaitStatus::Pending)
+                            .map(|record| wait_status_name(record.status.clone()))
+                            .unwrap_or_else(|| if matches!(job.state, JobState::Enqueued | JobState::Leased | JobState::Running) {"queued"} else {job_status_name(&job.state)}),
+                        "stage":"discovery", "intent":pending.spawn.intent, "task":pending.spawn.task,
+                        "parent_runtime_id":pending.placement.parent_runtime_id,
+                        "requested_execution_target":pending.placement.requested, "execution_placement":null,
+                        "error":wait.as_ref().and_then(|record| record.error_message.clone()),
+                        "last_attempt":job.last_error,
+                    }));
+                    continue;
+                }
+            };
             if payload.request.source_execution.session_id.as_str() != active_session
                 || requested_work.is_some_and(|requested| requested != payload.work_id)
             {
@@ -1055,8 +1733,56 @@ impl DelegationService {
                 "workshop cancellation requires an admitted daemon turn".to_string(),
             )
         })?;
-        for mut job in self.all_delegation_jobs().await? {
-            let payload = DelegationJobHandler::parse(&job)?;
+        for listed in self.all_delegation_jobs().await? {
+            let owns_request = match StoredDelegationPayload::parse(&listed)? {
+                StoredDelegationPayload::Pending(pending) => {
+                    pending.work_id == work_id
+                        && pending.source_execution.session_id == *execution.session_id()
+                }
+                StoredDelegationPayload::Resolved(payload) => {
+                    payload.work_id == work_id
+                        && payload.request.source_execution.session_id == *execution.session_id()
+                }
+            };
+            if !owns_request {
+                continue;
+            }
+            let _dispatch = self.dispatch_gates.lock(&listed.id).await;
+            // Discovery may have finished since the list was loaded. Inspect
+            // the checkpoint under the same gate as the first remote dispatch.
+            let Some(mut job) = self.runtime.get_job(&listed.id).await? else {
+                continue;
+            };
+            let payload = match StoredDelegationPayload::parse(&job)? {
+                StoredDelegationPayload::Resolved(payload) => payload,
+                StoredDelegationPayload::Pending(pending) => {
+                    if pending.work_id != work_id
+                        || pending.source_execution.session_id != *execution.session_id()
+                    {
+                        continue;
+                    }
+                    job.state = JobState::Canceled;
+                    job.finished_at = Some(Utc::now());
+                    job.last_error = Some("queued spawn cancelled by host".to_string());
+                    self.runtime.save_job(job).await?;
+                    if let Some(turn_id) = pending.grant.turn_id.as_deref() {
+                        self.waits
+                            .complete(
+                                turn_id,
+                                TurnWaitStatus::Cancelled,
+                                None,
+                                Some("queued spawn cancelled by host".to_string()),
+                                Utc::now(),
+                            )
+                            .await?;
+                    }
+                    // The cancellation tool's response is the acknowledgement;
+                    // no worker was dispatched and no separate result is due.
+                    return Ok(
+                        json!({"ok":true, "work_id":work_id, "status":"cancelled", "execution_placement":null}),
+                    );
+                }
+            };
             if payload.work_id != work_id
                 || payload.request.source_execution.session_id != *execution.session_id()
             {
@@ -1123,7 +1849,19 @@ impl DelegationService {
             )
         })?;
         for job in self.all_delegation_jobs().await? {
-            let payload = DelegationJobHandler::parse(&job)?;
+            let payload = match StoredDelegationPayload::parse(&job)? {
+                StoredDelegationPayload::Resolved(payload) => payload,
+                StoredDelegationPayload::Pending(pending) => {
+                    if pending.work_id == work_id
+                        && pending.source_execution.session_id == *execution.session_id()
+                    {
+                        return Err(port_failure(
+                            "worker request is still queued for discovery; cancel it to replace the assignment",
+                        ));
+                    }
+                    continue;
+                }
+            };
             if payload.work_id != work_id
                 || payload.request.source_execution.session_id != *execution.session_id()
             {
@@ -1170,11 +1908,15 @@ impl DelegationService {
         };
         validate_task_control_request(&request)
             .map_err(|error| StasisError::PortFailure(error.to_string()))?;
-        let observation = self
-            .host
-            .control(&payload.target, request.clone())
-            .await
-            .map_err(|error| StasisError::PortFailure(error.to_string()))?;
+        let observation = tokio::time::timeout(
+            DELEGATION_TRANSPORT_ATTEMPT_TIMEOUT,
+            self.host.control(&payload.target, request.clone()),
+        )
+        .await
+        .map_err(|_| {
+            port_failure("remote worker control timed out; inspect its status before retrying")
+        })?
+        .map_err(|error| StasisError::PortFailure(error.to_string()))?;
         validate_task_control_observation(&request, &observation)
             .map_err(|error| StasisError::PortFailure(error.to_string()))?;
         Ok(observation)
@@ -1297,11 +2039,14 @@ pub fn install_delegation_runtime(
         waits.clone(),
     ));
     let endpoints = RuntimeFactory::resolve_delivery_endpoint_store(runtime.as_ref(), None);
+    let dispatch_gates = Arc::new(DelegationDispatchGates::default());
     let handler = DelegationJobHandler {
         host: host.clone(),
         ingress,
         waits: waits.clone(),
         delivery: delivery.clone(),
+        jobs: delegation_job_store(runtime.as_ref()),
+        dispatch_gates: dispatch_gates.clone(),
     };
     match runtime.as_ref() {
         RuntimeComposition::InMemory(inner) => inner.register_daemon_handler(handler)?,
@@ -1316,8 +2061,49 @@ pub fn install_delegation_runtime(
         delivery,
         host,
         active_drivers: Mutex::new(HashSet::new()),
+        dispatch_gates,
     }))
 }
+
+#[cfg(test)]
+pub(crate) fn contract_fixture_delegation_service(
+    runtime: Arc<RuntimeComposition>,
+) -> Arc<DelegationService> {
+    struct NoEffectPeerTransport;
+
+    #[async_trait::async_trait]
+    impl DelegatedTaskTransport for NoEffectPeerTransport {
+        async fn submit_or_observe(
+            &self,
+            _target: &crate::delegation::DelegationTarget,
+            _request: DelegatedTaskRequest,
+        ) -> Result<DelegatedTaskObservation, DelegatedTaskError> {
+            Err(DelegatedTaskError::transport(
+                "contract fixture does not execute remote work",
+            ))
+        }
+    }
+
+    let session_store = crate::session_store::get_session_store();
+    let waits: Arc<dyn TurnWaitStore> = Arc::new(RuntimeDelegationWaitStore::new(runtime.as_ref()));
+    let delivery = Arc::new(DelegationResultDelivery::new(session_store.clone()));
+    let endpoints = RuntimeFactory::resolve_delivery_endpoint_store(runtime.as_ref(), None);
+    Arc::new(DelegationService {
+        runtime,
+        authority_id: AuthorityId::parse(format!("auth_{}", "f".repeat(64)))
+            .expect("static contract fixture authority"),
+        session_store,
+        endpoints,
+        waits,
+        delivery,
+        host: Arc::new(NoEffectPeerTransport),
+        active_drivers: Mutex::new(HashSet::new()),
+        dispatch_gates: Arc::new(DelegationDispatchGates::default()),
+    })
+}
+
+#[cfg(test)]
+mod async_spawn_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1343,12 +2129,12 @@ mod tests {
     };
 
     #[derive(Default)]
-    struct MemorySessionStore {
+    pub(super) struct MemorySessionStore {
         entries: Mutex<std::collections::HashMap<SessionId, Vec<TranscriptEntry>>>,
     }
 
     impl MemorySessionStore {
-        fn seed_parent_receipt(&self, request: &DelegatedTaskRequest) {
+        pub(super) fn seed_parent_receipt(&self, request: &DelegatedTaskRequest) {
             let turn = ConversationTurn::plain(
                 "assistant",
                 "Working on it.".to_string(),
@@ -1456,7 +2242,7 @@ mod tests {
         }
     }
 
-    fn request_for(job_id: &str, turn_id: &str) -> DelegatedTaskRequest {
+    pub(super) fn request_for(job_id: &str, turn_id: &str) -> DelegatedTaskRequest {
         let source_authority =
             AuthorityId::parse(format!("auth_{}", "a".repeat(64))).expect("source authority");
         let source_session = SessionId::parse("ses_source").expect("source session");
@@ -1543,7 +2329,7 @@ mod tests {
         }
     }
 
-    fn terminal_observation(request: &DelegatedTaskRequest) -> DelegatedTaskObservation {
+    pub(super) fn terminal_observation(request: &DelegatedTaskRequest) -> DelegatedTaskObservation {
         let authority =
             AuthorityId::parse(format!("auth_{}", "b".repeat(64))).expect("remote authority");
         let session_id = SessionId::parse("ses_remote").expect("remote session");
@@ -1626,7 +2412,8 @@ mod tests {
             request: request.clone(),
             intent: "research".to_string(),
             user_ack: "Working on it.".to_string(),
-            deadline_at: Utc::now() + chrono::Duration::seconds(30),
+            deadline_at: None,
+            lifetime_policy_version: 1,
             poll_interval_seconds: 1,
         };
 
@@ -1649,6 +2436,15 @@ mod tests {
 
     #[async_trait::async_trait]
     impl DelegationTerminalDelivery for AcceptingDelivery {
+        async fn deliver_spawn_failure(
+            &self,
+            _pending: &PendingDelegationSpawn,
+            _status: TurnWaitStatus,
+            _message: String,
+        ) -> StasisResult<bool> {
+            Ok(true)
+        }
+
         async fn deliver_terminal(
             &self,
             _payload: &DelegationJobPayload,
@@ -1681,7 +2477,7 @@ mod tests {
         }
     }
 
-    fn delegation_handler(
+    pub(super) fn delegation_handler(
         runtime: &RuntimeComposition,
         host: Arc<dyn DelegatedTaskTransport>,
     ) -> (DelegationJobHandler, Arc<dyn TurnWaitStore>) {
@@ -1696,6 +2492,8 @@ mod tests {
                 ingress,
                 waits: waits.clone(),
                 delivery: Arc::new(AcceptingDelivery),
+                jobs: delegation_job_store(runtime),
+                dispatch_gates: Arc::new(DelegationDispatchGates::default()),
             },
             waits,
         )
@@ -1731,7 +2529,8 @@ mod tests {
             target,
             intent: "research".to_string(),
             user_ack: "Working on it.".to_string(),
-            deadline_at: Utc::now() + chrono::Duration::seconds(30),
+            deadline_at: None,
+            lifetime_policy_version: 1,
             poll_interval_seconds: 1,
             request,
         };

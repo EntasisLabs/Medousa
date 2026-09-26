@@ -228,6 +228,18 @@
       {/if}
     </div>
   {/if}
+  {#if assistant.liveTranscripts?.length}
+    <details class="mt-2 rounded-xl border border-surface-700/40 px-3 py-2 text-sm">
+      <summary class="cursor-pointer text-surface-400">🎙 Live transcript</summary>
+      <div class="mt-3 flex flex-col gap-3">
+        {#each assistant.liveTranscripts as attachment (attachment.id)}
+          {#each attachment.rows as row}
+            <p class="whitespace-pre-wrap"><span class="text-surface-400">{row.role === "user" ? "You" : "Medousa"}:</span> {row.text}</p>
+          {/each}
+        {/each}
+      </div>
+    </details>
+  {/if}
 {/snippet}
 
 {#snippet subagentBeat(row: SubagentRow)}

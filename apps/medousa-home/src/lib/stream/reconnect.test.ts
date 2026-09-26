@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   applyStreamSeq,
@@ -6,10 +6,13 @@ import {
   DEFAULT_INTERACTIVE_BACKOFF,
   OverlapGuard,
   reconnectDelayMs,
+  ReconnectScheduler,
   streamPathWithSince,
 } from "$lib/stream/reconnect";
 
 describe("stream reconnect helpers", () => {
+  afterEach(() => vi.useRealTimers());
+
   it("appends since query param", () => {
     expect(streamPathWithSince("/v1/interactive/turn/t1/stream", 0)).toBe(
       "/v1/interactive/turn/t1/stream",
@@ -99,5 +102,99 @@ describe("stream reconnect helpers", () => {
     breaker.reset();
     expect(breaker.open).toBe(false);
     expect(breaker.allow()).toBe(true);
+  });
+
+  it("retries a failed live reattach after the current attempt releases its guard", async () => {
+    vi.useFakeTimers();
+    const scheduler = new ReconnectScheduler({
+      policy: { baseMs: 1, factor: 1, maxMs: 1, maxAttempts: null },
+    });
+    let attempts = 0;
+    const reattach = async () => {
+      attempts += 1;
+      if (attempts === 1) scheduler.schedule(reattach);
+      else scheduler.teardown();
+    };
+
+    scheduler.schedule(reattach);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(attempts).toBe(1);
+    expect(scheduler.pending).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(attempts).toBe(2);
+  });
+
+  it("coalesces overlapping retry requests and never starts concurrent attempts", async () => {
+    vi.useFakeTimers();
+    const scheduler = new ReconnectScheduler({
+      policy: { baseMs: 1, factor: 1, maxMs: 1, maxAttempts: null },
+    });
+    let concurrent = 0;
+    let maximumConcurrent = 0;
+    let attempts = 0;
+    let finishFirst: (() => void) | undefined;
+    const attempt = async () => {
+      attempts += 1;
+      concurrent += 1;
+      maximumConcurrent = Math.max(maximumConcurrent, concurrent);
+      if (attempts === 1) {
+        scheduler.schedule(attempt);
+        scheduler.schedule(attempt);
+        await new Promise<void>((resolve) => { finishFirst = resolve; });
+      }
+      concurrent -= 1;
+      if (attempts === 2) scheduler.teardown();
+    };
+
+    scheduler.schedule(attempt);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(attempts).toBe(1);
+    finishFirst?.();
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(attempts).toBe(2);
+    expect(maximumConcurrent).toBe(1);
+  });
+
+  it("cancelling an in-flight recovery prevents it from rearming in the next scope", async () => {
+    vi.useFakeTimers();
+    const scheduler = new ReconnectScheduler({
+      policy: { baseMs: 1, factor: 1, maxMs: 1, maxAttempts: null },
+    });
+    let attempts = 0;
+    let finish: (() => void) | undefined;
+    const attempt = async () => {
+      attempts += 1;
+      scheduler.schedule(attempt);
+      await new Promise<void>((resolve) => { finish = resolve; });
+    };
+
+    scheduler.schedule(attempt);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(attempts).toBe(1);
+    scheduler.cancel();
+    finish?.();
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(attempts).toBe(1);
+  });
+
+  it("keeps a fresh recovery requested after cancel until the old attempt settles", async () => {
+    vi.useFakeTimers();
+    const scheduler = new ReconnectScheduler({
+      policy: { baseMs: 1, factor: 1, maxMs: 1, maxAttempts: null },
+    });
+    let finish: (() => void) | undefined;
+    const fresh = vi.fn();
+    scheduler.schedule(() => new Promise<void>((resolve) => { finish = resolve; }));
+    await vi.advanceTimersByTimeAsync(1);
+    scheduler.cancel();
+    scheduler.schedule(fresh);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(fresh).not.toHaveBeenCalled();
+    finish?.();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fresh).toHaveBeenCalledTimes(1);
+    scheduler.teardown();
   });
 });

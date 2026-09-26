@@ -54,6 +54,11 @@ export async function sendPairingHeartbeat(options?: {
   apnsDeviceToken?: string;
   pushPlatform?: string;
   liveActivityPushToken?: string;
+  remotePushEnabled?: boolean;
+  turnUpdatesEnabled?: boolean;
+  needsInputEnabled?: boolean;
+  peerMessagesEnabled?: boolean;
+  remindersEnabled?: boolean;
 }): Promise<void> {
   if (!isTauri()) return;
   await invoke("pairing_send_heartbeat", { request: options ?? null });

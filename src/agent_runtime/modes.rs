@@ -30,7 +30,7 @@ const CODER_SYSTEM_OVERLAY: &str = r#"
     execution_policy(.99): {
         foreground_default(.99): "Stay on the Forge lease as the foreground engineer; perform the coding loop directly in this workspace.",
         peer_subagents(.99): "cognition_turn action=turn.begin_work and cognition_workshop_mutate action=workshop.spawn spawn peer sub-agents for parallel research or side tasks; they do not leave Coder or enter the Chat workshop lane.",
-        shell_surface(.99): "Prefer cognition_coder_shell_run for one-shot commands; use cognition_shell_session_* for sustained Terminal work. Never use OS cognition_shell_run in Coder — it is unbound from the undertaking lease.",
+        shell_surface(.99): "Use cognition_coder_shell_run to start commands; when status is running or unknown, poll its session_id with poll=true and no command. wait_ms never interrupts native commands. Use cognition_shell_session_* for interactive input and explicit interruption. Never use OS cognition_shell_run in Coder — it is unbound from the undertaking lease.",
         operational_intent(.99): "For each tool call, provide a concise outcome-oriented intent, usually 4-8 words (e.g. Find affected callers); do not provide private chain-of-thought. Related independent workspace reads/searches may share one intent through cognition_coder_read_batch. Use a new call when arguments depend on a prior result; edits, commands, delegation, and completion retain their own intent.",
         engineering_pointers(.99): "Use ranked engineering pointers as present-tense attention cues; follow a pointer for causal detail and inspect bounded history when the ranked view is insufficient.",
         tool_catalog(.99): "Forge policy fixes tool authority for the turn. cognition_coder_tools_discover describes intelligence, world_model, and history domains without changing visibility or authority.",
@@ -51,6 +51,7 @@ const CODER_SETUP_SYSTEM_OVERLAY: &str = r#"
         discover(.99): "Use cognition_project_list when the principal wants to continue existing work.",
         bind(.99): "Use cognition_project_bind only for the project the principal selected or named unambiguously.",
         create(.99): "Use cognition_project_create only when the principal explicitly asks to create a project; infer a concise title and concrete brief from their request.",
+        remote_create(.99): "When the principal explicitly asks to create or clone a project on a selected portal and no project is bound there, use cognition_workshop_mutate action=workshop.spawn with intent=coder and code_project_setup containing the project title, brief, and repository URL when present. The destination creates and binds its own Forge project before the Coder worker starts.",
         clarify(.98): "Ask one sharp question when project identity, repository path, or creation intent is materially ambiguous."
     },
     authority_model(.99): {
@@ -121,6 +122,13 @@ pub fn resolve_agent_mode(
             completion_profile: TurnCompletionProfile::HostScheduler,
             coder_phase: None,
         }),
+        AgentModeId::Assistant => Ok(ResolvedAgentMode {
+            id: AgentModeId::Assistant,
+            contract_revision: "assistant-v1",
+            execution_lane: ModeExecutionLane::HostOrchestrated,
+            completion_profile: TurnCompletionProfile::HostScheduler,
+            coder_phase: None,
+        }),
         AgentModeId::Teacher => Ok(ResolvedAgentMode {
             id: AgentModeId::Teacher,
             contract_revision: "teacher-v1",
@@ -156,6 +164,13 @@ pub fn list_agent_modes() -> AgentModeListResponse {
                 unavailable_reason: None,
             },
             AgentModeAvailability {
+                mode: AgentModeId::Assistant,
+                label: "Assistant".to_string(),
+                available: true,
+                contract_revision: Some("assistant-v1".to_string()),
+                unavailable_reason: None,
+            },
+            AgentModeAvailability {
                 mode: AgentModeId::Teacher,
                 label: "Teacher".to_string(),
                 available: true,
@@ -186,6 +201,7 @@ pub fn list_agent_modes() -> AgentModeListResponse {
 pub fn compiled_system_policy_for_mode(mode: &ResolvedAgentMode) -> CompiledSttpPolicy {
     let policy_mode = match (mode.id, mode.coder_phase) {
         (AgentModeId::General | AgentModeId::Instant, _) => SttpPolicyMode::General,
+        (AgentModeId::Assistant, _) => SttpPolicyMode::Assistant,
         (AgentModeId::Teacher, _) => SttpPolicyMode::Teacher,
         (AgentModeId::Coder, Some(CoderRuntimePhase::Work)) => SttpPolicyMode::CoderWork,
         (AgentModeId::Coder, _) => SttpPolicyMode::CoderSetup,
@@ -232,6 +248,24 @@ mod tests {
     }
 
     #[test]
+    fn assistant_is_a_host_orchestrated_general_superset_contract() {
+        let mode = resolve_agent_mode(AgentModeId::Assistant).expect("assistant mode");
+        assert_eq!(mode.contract_revision, "assistant-v1");
+        assert_eq!(mode.execution_lane, ModeExecutionLane::HostOrchestrated);
+        assert_eq!(
+            mode.completion_profile,
+            TurnCompletionProfile::HostScheduler
+        );
+        assert_eq!(mode.coder_phase, None);
+
+        let prompt = system_prompt_for_mode(&mode);
+        assert!(prompt.contains("p1_core(.99)"));
+        assert!(prompt.contains("p2_mode_assistant(.99)"));
+        assert!(prompt.contains("own the principal's accepted outcome"));
+        assert!(prompt.contains("capability never expands authority"));
+    }
+
+    #[test]
     fn instant_reuses_general_runtime_contract() {
         let mode = resolve_agent_mode(AgentModeId::Instant).expect("instant mode");
         assert_eq!(mode.id, AgentModeId::Instant);
@@ -273,14 +307,12 @@ mod tests {
     #[test]
     fn registry_reports_all_modes_available() {
         let registry = list_agent_modes();
-        assert_eq!(registry.modes.len(), 4);
-        assert!(registry.modes[0].available);
-        assert!(registry.modes[1].available);
-        assert!(registry.modes[2].available);
-        assert!(registry.modes[3].available);
-        assert_eq!(registry.modes[1].mode, AgentModeId::Teacher);
-        assert_eq!(registry.modes[2].mode, AgentModeId::Instant);
-        assert_eq!(registry.modes[3].mode, AgentModeId::Coder);
+        assert_eq!(registry.modes.len(), 5);
+        assert!(registry.modes.iter().all(|mode| mode.available));
+        assert_eq!(registry.modes[1].mode, AgentModeId::Assistant);
+        assert_eq!(registry.modes[2].mode, AgentModeId::Teacher);
+        assert_eq!(registry.modes[3].mode, AgentModeId::Instant);
+        assert_eq!(registry.modes[4].mode, AgentModeId::Coder);
     }
 
     #[test]
@@ -315,7 +347,9 @@ mod tests {
         };
         let prompt = system_prompt_for_mode(&mode);
         assert!(prompt.contains("p2_mode_coder_work(.99)"));
-        assert!(prompt.contains("inspect -> hypothesize -> change -> verify -> reconcile"));
+        assert!(prompt.contains(
+            "inspect relevant code and affected callers/contracts/tests -> hypothesize -> change -> verify the full outcome -> reconcile"
+        ));
         assert!(prompt.contains("p3_actor_host(.99)"));
         assert!(!prompt.contains("p2_mode_general(.99)"));
     }

@@ -46,6 +46,15 @@ browser when you explicitly want them.
 
 ## What the agent can inspect and change
 
+### Search and web verification on mobile
+
+When Medousa requests a device-executed web search, the app opens **Web** and
+reads the search results automatically. If the search provider shows a CAPTCHA,
+finish the verification in that tab, then tap **Continue agent** in the
+verification banner. Medousa reads the verified page and returns the results to
+the waiting chat turn. Keep the app open while completing verification. If the
+turn has already timed out, retry the search after solving the challenge.
+
 When a turn needs the current page, Medousa may request a bounded snapshot of
 the active tab. A snapshot can include visible or rendered page text and normal
 DOM attributes, so treat it like context you deliberately shared with the

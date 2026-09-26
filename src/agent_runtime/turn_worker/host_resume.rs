@@ -12,12 +12,15 @@ use serde_json::Value;
 use crate::agent_runtime::execution_context::TurnExecutionRegistry;
 use crate::agent_runtime::prompt_prep::truncate_text_for_budget;
 use crate::agent_runtime::stream_sink::{AgentStreamSink, SharedAgentStreamSink};
-use crate::agent_runtime::turn_worker::store::{TurnWorkDisposition, TurnWorkStatus};
+use crate::agent_runtime::turn_worker::store::{
+    TurnWorkDisposition, TurnWorkStatus, continuation_route_for_record,
+};
 use crate::agent_runtime::turn_worker::{TurnWorkRecord, WorkerRuntimeContext, turn_worker_store};
 use crate::agent_runtime::{MAX_REQUEST_PROMPT_CHARS, run_agent_turn};
 use crate::daemon_api::{AgentModeId, CodeIntentContext};
 use crate::payload_receipt::ArtifactReceiptMeta;
 use crate::session_mapping::build_interactive_turn_request_for_ingest;
+use crate::stage_routing::StageRoute;
 use crate::stage_routing::StageRoutingMatrix;
 use crate::tools::TuiRuntime;
 use crate::turn_continuation::TurnContinuationScope;
@@ -140,6 +143,7 @@ fn parent_agent_mode(records: &[TurnWorkRecord]) -> Option<AgentModeId> {
         .find_map(|record| record.parent_agent_mode.as_deref())
     {
         Some("coder") => Some(AgentModeId::Coder),
+        Some("assistant") => Some(AgentModeId::Assistant),
         Some("teacher") => Some(AgentModeId::Teacher),
         Some("instant") => Some(AgentModeId::Instant),
         Some("general") => Some(AgentModeId::General),
@@ -197,6 +201,24 @@ pub async fn maybe_resume_host_after_parallel_worker(
         cohort.len()
     ))
     .await;
+    if cohort.len() == 1
+        && let Some(worker) = cohort.first()
+        && super::run::worker_synthesis_pass_through(worker)
+    {
+        let text = worker
+            .result_text
+            .clone()
+            .unwrap_or_else(|| "(worker produced no text)".to_string());
+        sink.notice(format!(
+            "◈ host_resume work_id={} pass-through (worker declared complete response)",
+            worker.work_id
+        ))
+        .await;
+        super::run::deliver_synthesis_response(worker, &sink, worker.parent_stream_turn_id, text)
+            .await;
+        cohort.acknowledge();
+        return;
+    }
     if run_host_resume_turn(ctx, execution_registry, agent, &cohort, sink.clone()).await {
         cohort.acknowledge();
     } else {
@@ -239,11 +261,18 @@ async fn run_host_resume_turn(
     }
 
     let prompt = truncate_text_for_budget(&host_resume_prompt(cohort), MAX_REQUEST_PROMPT_CHARS);
+    let legacy_route = StageRoutingMatrix::default_for(&ctx.provider, &ctx.model).final_response;
+    let Some(parent_route) = continuation_route_for_record(primary, &legacy_route) else {
+        tracing::warn!(work_id = %primary.work_id, "host resume has no usable parent continuation route");
+        return false;
+    };
+    let resume_provider = parent_route.provider.clone();
+    let resume_model = parent_route.model.clone();
     let mut request = build_interactive_turn_request_for_ingest(
         &primary.session_id,
         prompt,
-        &ctx.provider,
-        &ctx.model,
+        &resume_provider,
+        &resume_model,
         &primary.response_depth_mode,
         crate::reasoning_effort::REASONING_EFFORT_DEFAULT,
         None,
@@ -255,17 +284,23 @@ async fn run_host_resume_turn(
     request.agent_mode = parent_agent_mode(cohort);
     request.code_context = parent_code_context(cohort);
     request.identity_user_id = Some(identity_user_id.clone());
-    request.provider = ctx.provider.clone();
-    request.model = ctx.model.clone();
-    request.stage_routing = StageRoutingMatrix::default_for(&ctx.provider, &ctx.model);
+    apply_parent_route_to_resume_request(&mut request, &parent_route);
     request.max_tool_rounds = Some(primary.max_tool_rounds.max(1));
+    tracing::info!(
+        work_id = %primary.work_id,
+        provider = %parent_route.provider,
+        model = %parent_route.model,
+        policy_profile = %parent_route.policy_profile,
+        fallback_chain = %parent_route.fallback_chain.join(","),
+        "resuming host with parent continuation route"
+    );
 
     let ports = HOST_RESUME_PORTS.get();
     let backend = ports
         .map(|ports| ports.backend.as_str())
         .unwrap_or("daemon");
     let project_state = ports.map(|ports| ports.project_state.clone());
-    let turn_id = format!("{}-host-resume", primary.work_id);
+    let turn_id = host_resume_correlation_id(primary);
     let scope = TurnContinuationScope {
         turn_correlation_id: turn_id.clone(),
         session_id: primary.session_id.clone(),
@@ -289,7 +324,7 @@ async fn run_host_resume_turn(
         turn_id.clone(),
         crate::request_principal::RequestPrincipal::continuation(identity_user_id),
         tokio_util::sync::CancellationToken::new(),
-        std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60),
+        None::<std::time::Instant>,
         scope.clone(),
     ) {
         Ok(execution) => execution,
@@ -326,17 +361,105 @@ async fn run_host_resume_turn(
     .await;
     drop(execution_lease);
 
-    captured
-        .lock()
-        .expect("host resume capture")
-        .as_ref()
-        .is_some_and(|text| !text.trim().is_empty())
+    let outcome = captured.lock().expect("host resume capture").clone();
+    match outcome {
+        Some(outcome) => host_resume_outcome_completes_intake(&outcome, primary).await,
+        None => false,
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum HostResumeOutcome {
+    Final(String),
+    NeedsInput(String),
+    Checkpoint,
+    Handoff(Option<String>),
+    Failed,
+}
+
+fn host_resume_correlation_id(primary: &TurnWorkRecord) -> String {
+    format!("{}-host-resume", primary.work_id)
+}
+
+fn terminal_host_resume_outcome_is_complete(outcome: &HostResumeOutcome) -> bool {
+    match outcome {
+        HostResumeOutcome::Final(text) | HostResumeOutcome::NeedsInput(text) => {
+            !text.trim().is_empty()
+        }
+        HostResumeOutcome::Checkpoint
+        | HostResumeOutcome::Handoff(_)
+        | HostResumeOutcome::Failed => false,
+    }
+}
+
+async fn host_resume_outcome_completes_intake(
+    outcome: &HostResumeOutcome,
+    primary: &TurnWorkRecord,
+) -> bool {
+    match outcome {
+        HostResumeOutcome::Final(_) | HostResumeOutcome::NeedsInput(_) => {
+            terminal_host_resume_outcome_is_complete(outcome)
+        }
+        HostResumeOutcome::Handoff(Some(work_id)) => {
+            let Some(ports) = HOST_RESUME_PORTS.get() else {
+                return false;
+            };
+            if crate::workspace::persist::flush_persist_writer()
+                .await
+                .is_err()
+            {
+                return false;
+            }
+            let project_state = ports.project_state.clone();
+            let persisted = project_state
+                .forge_execution
+                .run(
+                    medousa_forge::execution::ExecutionClass::StoreIo,
+                    64 * 1024,
+                    || Ok(crate::workspace::persist::persisted_projection()),
+                )
+                .await;
+            let Ok(Ok(projection)) = persisted else {
+                return false;
+            };
+            let Some(child) = projection.turn_workers.get(work_id) else {
+                return false;
+            };
+            handoff_child_matches_intake(primary, work_id, child)
+        }
+        HostResumeOutcome::Checkpoint
+        | HostResumeOutcome::Handoff(None)
+        | HostResumeOutcome::Failed => false,
+    }
+}
+
+fn handoff_child_matches_intake(
+    primary: &TurnWorkRecord,
+    work_id: &str,
+    child: &TurnWorkRecord,
+) -> bool {
+    let correlation_id = host_resume_correlation_id(primary);
+    !work_id.trim().is_empty()
+        && child.work_id == work_id
+        && child.session_id == primary.session_id
+        && child.identity_user_id == primary.identity_user_id
+        && child.parent_turn_correlation_id.as_deref() == Some(correlation_id.as_str())
+}
+
+fn apply_parent_route_to_resume_request(
+    request: &mut crate::daemon_api::InteractiveTurnRequest,
+    route: &StageRoute,
+) {
+    request.provider = route.provider.clone();
+    request.model = route.model.clone();
+    request.stage_routing = StageRoutingMatrix::default_for(&route.provider, &route.model);
+    request.stage_routing.final_response = route.clone();
 }
 
 struct HostResumeSink {
     inner: SharedAgentStreamSink,
     primary: TurnWorkRecord,
-    captured: Arc<Mutex<Option<String>>>,
+    captured: Arc<Mutex<Option<HostResumeOutcome>>>,
 }
 
 #[async_trait]
@@ -361,10 +484,10 @@ impl AgentStreamSink for HostResumeSink {
     }
 
     async fn agent_response(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
-        self.capture_delivery(&text);
         self.inner
             .agent_response(turn_id, text.clone(), tool_names.clone())
             .await;
+        self.capture_outcome(HostResumeOutcome::Final(text.clone()));
         crate::turn_worker_notify::publish_worker_synthesis_to_parent_turn(
             &self.primary,
             &text,
@@ -374,10 +497,10 @@ impl AgentStreamSink for HostResumeSink {
     }
 
     async fn agent_needs_input(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
-        self.capture_delivery(&text);
         self.inner
             .agent_needs_input(turn_id, text.clone(), tool_names.clone())
             .await;
+        self.capture_outcome(HostResumeOutcome::NeedsInput(text.clone()));
         crate::turn_worker_notify::publish_worker_synthesis_to_parent_turn(
             &self.primary,
             &text,
@@ -393,16 +516,10 @@ impl AgentStreamSink for HostResumeSink {
     }
 
     async fn agent_turn_checkpoint(&self, turn_id: u64, message: String, tool_names: Vec<String>) {
-        self.capture_delivery(&message);
         self.inner
-            .agent_turn_checkpoint(turn_id, message.clone(), tool_names.clone())
+            .agent_turn_checkpoint(turn_id, message, tool_names)
             .await;
-        crate::turn_worker_notify::publish_worker_synthesis_to_parent_turn(
-            &self.primary,
-            &message,
-            &tool_names,
-        )
-        .await;
+        self.capture_outcome(HostResumeOutcome::Checkpoint);
     }
 
     async fn agent_worker_ack(
@@ -412,10 +529,10 @@ impl AgentStreamSink for HostResumeSink {
         tool_names: Vec<String>,
         work_id: Option<String>,
     ) {
-        self.capture_delivery(&text);
         self.inner
-            .agent_worker_ack(turn_id, text, tool_names, work_id)
+            .agent_worker_ack(turn_id, text, tool_names, work_id.clone())
             .await;
+        self.capture_outcome(HostResumeOutcome::Handoff(work_id));
     }
 
     async fn agent_workshop_ack(
@@ -425,15 +542,15 @@ impl AgentStreamSink for HostResumeSink {
         tool_names: Vec<String>,
         work_id: Option<String>,
     ) {
-        self.capture_delivery(&text);
         self.inner
-            .agent_workshop_ack(turn_id, text, tool_names, work_id)
+            .agent_workshop_ack(turn_id, text, tool_names, work_id.clone())
             .await;
+        self.capture_outcome(HostResumeOutcome::Handoff(work_id));
     }
 
     async fn agent_error(&self, turn_id: u64, message: String) {
-        *self.captured.lock().expect("host resume capture") = None;
         self.inner.agent_error(turn_id, message).await;
+        self.capture_outcome(HostResumeOutcome::Failed);
     }
 
     async fn model_receipt(&self, turn_id: u64, provider: String, model: String) {
@@ -525,9 +642,15 @@ impl AgentStreamSink for HostResumeSink {
 }
 
 impl HostResumeSink {
-    fn capture_delivery(&self, text: &str) {
+    fn capture_outcome(&self, outcome: HostResumeOutcome) {
         let mut captured = self.captured.lock().expect("host resume capture");
-        *captured = Some(text.to_string());
+        if captured
+            .as_ref()
+            .is_some_and(terminal_host_resume_outcome_is_complete)
+        {
+            return;
+        }
+        *captured = Some(outcome);
     }
 }
 
@@ -559,8 +682,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn host_intake_requires_a_terminal_delivery_and_errors_clear_it() {
-        let captured = Arc::new(Mutex::new(None));
+    async fn host_resume_callbacks_capture_structural_outcomes() {
+        let captured = Arc::new(Mutex::new(None::<HostResumeOutcome>));
         let sink = HostResumeSink {
             inner: Arc::new(NoopSink),
             primary: record(
@@ -576,7 +699,16 @@ mod tests {
             .await;
         assert!(captured.lock().unwrap().is_none());
 
-        // A host can consume this cohort and delegate a distinct follow-up.
+        sink.agent_turn_checkpoint(1, "Still checking".into(), vec![])
+            .await;
+        assert_eq!(
+            *captured.lock().unwrap(),
+            Some(HostResumeOutcome::Checkpoint)
+        );
+        assert!(!terminal_host_resume_outcome_is_complete(
+            &HostResumeOutcome::Checkpoint
+        ));
+
         sink.agent_worker_ack(
             1,
             "Verify the changes".into(),
@@ -585,11 +717,14 @@ mod tests {
         )
         .await;
         assert_eq!(
-            captured.lock().unwrap().as_deref(),
-            Some("Verify the changes")
+            *captured.lock().unwrap(),
+            Some(HostResumeOutcome::Handoff(Some("work-b".into())))
         );
         sink.agent_error(1, "authority unavailable".into()).await;
-        assert!(captured.lock().unwrap().is_none());
+        assert_eq!(*captured.lock().unwrap(), Some(HostResumeOutcome::Failed));
+        assert!(!terminal_host_resume_outcome_is_complete(
+            &HostResumeOutcome::Failed
+        ));
 
         sink.agent_workshop_ack(
             1,
@@ -599,9 +734,102 @@ mod tests {
         )
         .await;
         assert_eq!(
-            captured.lock().unwrap().as_deref(),
-            Some("Continue verification")
+            *captured.lock().unwrap(),
+            Some(HostResumeOutcome::Handoff(Some("work-c".into())))
         );
+        sink.agent_workshop_ack(1, "No linked work".into(), vec![], None)
+            .await;
+        assert_eq!(
+            *captured.lock().unwrap(),
+            Some(HostResumeOutcome::Handoff(None))
+        );
+        assert!(!terminal_host_resume_outcome_is_complete(
+            &HostResumeOutcome::Handoff(None)
+        ));
+
+        sink.agent_needs_input(1, "Which option?".into(), vec![])
+            .await;
+        assert_eq!(
+            *captured.lock().unwrap(),
+            Some(HostResumeOutcome::NeedsInput("Which option?".into()))
+        );
+        assert!(terminal_host_resume_outcome_is_complete(
+            &HostResumeOutcome::NeedsInput("Which option?".into())
+        ));
+        sink.agent_error(1, "late needs-input event".into()).await;
+        assert_eq!(
+            *captured.lock().unwrap(),
+            Some(HostResumeOutcome::NeedsInput("Which option?".into()))
+        );
+        // A separate continuation has a fresh capture. Within one continuation
+        // the first nonempty terminal decision remains authoritative.
+        *captured.lock().unwrap() = None;
+        sink.agent_response(1, "Completed answer".into(), vec![])
+            .await;
+        assert_eq!(
+            *captured.lock().unwrap(),
+            Some(HostResumeOutcome::Final("Completed answer".into()))
+        );
+        assert!(terminal_host_resume_outcome_is_complete(
+            &HostResumeOutcome::Final("Completed answer".into())
+        ));
+        sink.agent_error(1, "late sink event".into()).await;
+        assert_eq!(
+            *captured.lock().unwrap(),
+            Some(HostResumeOutcome::Final("Completed answer".into()))
+        );
+
+        assert!(!terminal_host_resume_outcome_is_complete(
+            &HostResumeOutcome::Final("  ".into())
+        ));
+        assert!(!terminal_host_resume_outcome_is_complete(
+            &HostResumeOutcome::NeedsInput("\n".into())
+        ));
+    }
+
+    #[test]
+    fn handoff_match_requires_exact_child_correlation_and_owner() {
+        let mut primary = record(
+            "work-a",
+            TurnWorkStatus::Completed,
+            Some("peer result"),
+            None,
+        );
+        primary.identity_user_id = Some("profile-a".into());
+        let mut child = record("work-b", TurnWorkStatus::Pending, None, None);
+        child.identity_user_id = Some("profile-a".into());
+        child.parent_turn_correlation_id = Some(host_resume_correlation_id(&primary));
+
+        assert!(handoff_child_matches_intake(&primary, "work-b", &child));
+        assert!(!handoff_child_matches_intake(
+            &primary,
+            "missing-work",
+            &child
+        ));
+
+        let mut wrong_session = child.clone();
+        wrong_session.session_id = "other-session".into();
+        assert!(!handoff_child_matches_intake(
+            &primary,
+            "work-b",
+            &wrong_session
+        ));
+
+        let mut wrong_profile = child.clone();
+        wrong_profile.identity_user_id = Some("profile-b".into());
+        assert!(!handoff_child_matches_intake(
+            &primary,
+            "work-b",
+            &wrong_profile
+        ));
+
+        let mut wrong_correlation = child;
+        wrong_correlation.parent_turn_correlation_id = Some("another-intake".into());
+        assert!(!handoff_child_matches_intake(
+            &primary,
+            "work-b",
+            &wrong_correlation
+        ));
     }
 
     fn record(
@@ -617,6 +845,7 @@ mod tests {
             parent_turn_correlation_id: None,
             parent_stream_turn_id: 4,
             parent_runtime_id: "runtime-test".to_string(),
+            parent_continuation_route: None,
             execution_placement: Default::default(),
             task_execution_grant: None,
             worker_spawn_spec: None,
@@ -626,6 +855,7 @@ mod tests {
             result_text: result.map(str::to_string),
             tool_names: vec!["cognition_web_search".to_string()],
             termination_reason: None,
+            needs_synthesis: None,
             error: error.map(str::to_string),
             user_ack: "On it".to_string(),
             provider: "openai".to_string(),
@@ -686,6 +916,59 @@ mod tests {
         assert!(prompt.contains("fetch timeout"));
         assert!(prompt.contains("source=parallel_workers"));
         assert!(!prompt.contains("Prose is delivered immediately"));
+    }
+
+    #[test]
+    fn resumed_request_uses_parent_route_when_worker_target_differs() {
+        let mut completed = record(
+            "work-resume-route",
+            TurnWorkStatus::Completed,
+            Some("verified worker result"),
+            None,
+        );
+        completed.provider = "worker-provider".into();
+        completed.model = "worker-model".into();
+        completed.parent_continuation_route = Some(
+            crate::agent_runtime::turn_worker::store::ParentContinuationRoute {
+                schema_version:
+                    crate::agent_runtime::turn_worker::store::ParentContinuationRoute::SCHEMA_VERSION,
+                stage_role: "final_response".into(),
+                policy_profile: "host-careful".into(),
+                provider: "host-provider".into(),
+                model: "host-model".into(),
+                fallback_chain: vec!["host-fallback".into()],
+            },
+        );
+        let restored: TurnWorkRecord = serde_json::from_slice(
+            &serde_json::to_vec(&completed).expect("serialize durable worker result"),
+        )
+        .expect("restore durable worker result");
+        let fallback = crate::stage_routing::StageRoutingMatrix::default_for(
+            "changed-provider",
+            "changed-model",
+        )
+        .final_response;
+        let route = continuation_route_for_record(&restored, &fallback)
+            .expect("durable parent continuation route");
+
+        let mut request = build_interactive_turn_request_for_ingest(
+            "session-route-test",
+            "continue".to_string(),
+            "worker-provider",
+            "worker-model",
+            "normal",
+            crate::reasoning_effort::REASONING_EFFORT_DEFAULT,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        apply_parent_route_to_resume_request(&mut request, &route);
+
+        assert_eq!(request.provider, "host-provider");
+        assert_eq!(request.model, "host-model");
+        assert_eq!(request.stage_routing.final_response, route);
     }
 
     #[test]

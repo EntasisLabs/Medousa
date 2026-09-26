@@ -456,6 +456,9 @@ impl CognitionTurnWorkerCancelTool {
                 TurnWorkerMutationError::SessionDeleting => {
                     format!("session is being deleted: {session_id}")
                 }
+                TurnWorkerMutationError::Persistence(message) => {
+                    format!("worker cancellation could not be persisted: {message}")
+                }
             };
             StasisError::PortFailure(message)
         })?;

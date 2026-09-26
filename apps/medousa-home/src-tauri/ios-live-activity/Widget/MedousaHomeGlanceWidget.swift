@@ -1,7 +1,7 @@
 import SwiftUI
 import WidgetKit
 
-private extension View {
+extension View {
     @ViewBuilder
     func medousaWidgetBackground() -> some View {
         if #available(iOS 17.0, *) {
@@ -22,9 +22,9 @@ struct MedousaHomeGlanceWidget: Widget {
             MedousaGlanceWidgetView(entry: entry)
                 .medousaWidgetBackground()
         }
-        .configurationDisplayName("Pulse")
-        .description("Glance at what's running in your workshop.")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .configurationDisplayName("Continuity")
+        .description("See what Medousa is handling and what needs you.")
+        .supportedFamilies([.systemMedium, .systemLarge])
     }
 }
 
@@ -63,10 +63,10 @@ private struct MedousaGlanceWidgetView: View {
     var body: some View {
         Group {
             switch family {
-            case .systemMedium:
-                MedousaGlanceMediumView(snapshot: entry.snapshot)
+            case .systemLarge:
+                MedousaContinuityLargeView(snapshot: entry.snapshot)
             default:
-                MedousaGlanceSmallView(snapshot: entry.snapshot)
+                MedousaGlanceMediumView(snapshot: entry.snapshot)
             }
         }
         .widgetURL(deepLink(for: entry.snapshot.primaryCardId))
@@ -75,43 +75,6 @@ private struct MedousaGlanceWidgetView: View {
     private func deepLink(for cardId: String?) -> URL? {
         guard let cardId, !cardId.isEmpty else { return URL(string: "medousa://work") }
         return URL(string: "medousa://work/\(cardId)")
-    }
-}
-
-private struct MedousaGlanceSmallView: View {
-    let snapshot: MedousaWidgetSnapshot
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 6) {
-                MedousaMark(size: 18)
-                Text("Medousa")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .tracking(0.6)
-                    .foregroundStyle(MedousaPalette.muted)
-                Spacer(minLength: 0)
-                if snapshot.blockedCount > 0 {
-                    Text("\(snapshot.blockedCount)")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .foregroundStyle(MedousaPalette.warning)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(MedousaPalette.warning.opacity(0.14))
-                        .clipShape(Capsule())
-                }
-            }
-
-            MedousaStatusPill(label: snapshot.eyebrow, mood: snapshot.mood)
-
-            Text(snapshot.headline)
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                .foregroundStyle(MedousaPalette.ink)
-                .lineLimit(3)
-                .minimumScaleFactor(0.85)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(14)
     }
 }
 
@@ -139,19 +102,64 @@ private struct MedousaGlanceMediumView: View {
                 .minimumScaleFactor(0.9)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            if let footer = MedousaLiveActivityCopy.footerLine(
-                workshopName: snapshot.workshopName,
-                motionSummary: snapshot.motionSummary,
-                subline: snapshot.subline
-            ) {
-                Text(footer)
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(MedousaPalette.subtle)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+            Spacer(minLength: 0)
+
+            HStack(spacing: 8) {
+                if let summary = MedousaLiveActivityCopy.footerLine(
+                    workshopName: snapshot.workshopName,
+                    motionSummary: snapshot.motionSummary,
+                    subline: snapshot.subline
+                ) {
+                    Text(summary)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(MedousaPalette.muted)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(MedousaPalette.primarySoft)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(16)
+    }
+}
+
+private struct MedousaContinuityLargeView: View {
+    let snapshot: MedousaWidgetSnapshot
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 9) {
+                MedousaMark(size: 24)
+                Text("Medousa")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                Spacer()
+                MedousaStatusPill(label: snapshot.eyebrow, mood: snapshot.mood)
+            }
+            MedousaLivePulseBar(mood: snapshot.mood)
+            Text(snapshot.headline)
+                .font(.system(size: 22, weight: .semibold, design: .rounded))
+                .foregroundStyle(MedousaPalette.ink)
+                .lineLimit(3)
+            if let subline = snapshot.subline, !subline.isEmpty {
+                Text(subline)
+                    .font(.system(size: 14, weight: .regular, design: .rounded))
+                    .foregroundStyle(MedousaPalette.muted)
+                    .lineLimit(3)
+            }
+            Spacer()
+            HStack {
+                Text(snapshot.workshopName)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(MedousaPalette.muted)
+                Spacer()
+                Label("Open", systemImage: "arrow.up.right")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(MedousaPalette.primarySoft)
+            }
+        }
+        .padding(18)
     }
 }

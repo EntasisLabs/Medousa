@@ -80,9 +80,10 @@ pub fn load_secret_value(secret_id: &str) -> Result<Option<String>, String> {
             integration_secrets::load_kind_secret("slack", IntegrationSecretSlot::AppToken)
         }
         "api_key" => integration_secrets::load_provider_secret("openai"),
-        "stt_api_key" => {
-            integration_secrets::load_kind_secret(&format!("stt.{}", stt_kind()), IntegrationSecretSlot::ApiKey)
-        }
+        "stt_api_key" => integration_secrets::load_kind_secret(
+            &format!("stt.{}", stt_kind()),
+            IntegrationSecretSlot::ApiKey,
+        ),
         other if other.starts_with("api_key_") => {
             let provider = other.trim_start_matches("api_key_");
             let provider = ProviderId::parse(provider).map_err(|err| err.to_string())?;
@@ -101,26 +102,21 @@ pub fn load_secret_value(secret_id: &str) -> Result<Option<String>, String> {
 pub fn secret_is_set(secret_id: &str) -> Result<bool, String> {
     let _ = integration_secrets::ensure_secrets_bootstrapped();
     Ok(match secret_id {
-        "telegram_bot_token" => integration_secrets::kind_secret_configured(
-            "telegram",
-            IntegrationSecretSlot::BotToken,
-        ),
-        "discord_bot_token" => integration_secrets::kind_secret_configured(
-            "discord",
-            IntegrationSecretSlot::BotToken,
-        ),
-        "slack_bot_token" => integration_secrets::kind_secret_configured(
-            "slack",
-            IntegrationSecretSlot::BotToken,
-        ),
-        "slack_app_token" => integration_secrets::kind_secret_configured(
-            "slack",
-            IntegrationSecretSlot::AppToken,
-        ),
-        "api_key" => integration_secrets::kind_secret_configured(
-            "openai",
-            IntegrationSecretSlot::ApiKey,
-        ),
+        "telegram_bot_token" => {
+            integration_secrets::kind_secret_configured("telegram", IntegrationSecretSlot::BotToken)
+        }
+        "discord_bot_token" => {
+            integration_secrets::kind_secret_configured("discord", IntegrationSecretSlot::BotToken)
+        }
+        "slack_bot_token" => {
+            integration_secrets::kind_secret_configured("slack", IntegrationSecretSlot::BotToken)
+        }
+        "slack_app_token" => {
+            integration_secrets::kind_secret_configured("slack", IntegrationSecretSlot::AppToken)
+        }
+        "api_key" => {
+            integration_secrets::kind_secret_configured("openai", IntegrationSecretSlot::ApiKey)
+        }
         "stt_api_key" => integration_secrets::kind_secret_configured(
             &format!("stt.{}", stt_kind()),
             IntegrationSecretSlot::ApiKey,
@@ -150,62 +146,42 @@ pub fn secret_is_set(secret_id: &str) -> Result<bool, String> {
 pub fn save_secret(secret_id: &str, value: Option<String>) -> Result<(), String> {
     let _ = integration_secrets::ensure_secrets_bootstrapped();
     match secret_id {
-        "telegram_bot_token" => {
-            integration_secrets::save_kind_secret(
-                "telegram",
-                IntegrationSecretSlot::BotToken,
-                value.as_deref(),
-            );
-            Ok(())
-        }
-        "discord_bot_token" => {
-            integration_secrets::save_kind_secret(
-                "discord",
-                IntegrationSecretSlot::BotToken,
-                value.as_deref(),
-            );
-            Ok(())
-        }
-        "slack_bot_token" => {
-            integration_secrets::save_kind_secret(
-                "slack",
-                IntegrationSecretSlot::BotToken,
-                value.as_deref(),
-            );
-            Ok(())
-        }
-        "slack_app_token" => {
-            integration_secrets::save_kind_secret(
-                "slack",
-                IntegrationSecretSlot::AppToken,
-                value.as_deref(),
-            );
-            Ok(())
-        }
-        "api_key" => {
-            integration_secrets::save_provider_secret("openai", value.as_deref());
-            Ok(())
-        }
-        "stt_api_key" => {
-            integration_secrets::save_kind_secret(
-                &format!("stt.{}", stt_kind()),
-                IntegrationSecretSlot::ApiKey,
-                value.as_deref(),
-            );
-            Ok(())
-        }
+        "telegram_bot_token" => integration_secrets::save_kind_secret(
+            "telegram",
+            IntegrationSecretSlot::BotToken,
+            value.as_deref(),
+        ),
+        "discord_bot_token" => integration_secrets::save_kind_secret(
+            "discord",
+            IntegrationSecretSlot::BotToken,
+            value.as_deref(),
+        ),
+        "slack_bot_token" => integration_secrets::save_kind_secret(
+            "slack",
+            IntegrationSecretSlot::BotToken,
+            value.as_deref(),
+        ),
+        "slack_app_token" => integration_secrets::save_kind_secret(
+            "slack",
+            IntegrationSecretSlot::AppToken,
+            value.as_deref(),
+        ),
+        "api_key" => integration_secrets::save_provider_secret("openai", value.as_deref()),
+        "stt_api_key" => integration_secrets::save_kind_secret(
+            &format!("stt.{}", stt_kind()),
+            IntegrationSecretSlot::ApiKey,
+            value.as_deref(),
+        ),
         other if other.starts_with("api_key_") => {
             let provider = other.trim_start_matches("api_key_");
             let provider = ProviderId::parse(provider).map_err(|err| err.to_string())?;
-            integration_secrets::save_provider_secret(provider.as_str(), value.as_deref());
-            Ok(())
+            integration_secrets::save_provider_secret(provider.as_str(), value.as_deref())
         }
         "custom_provider_id" => save_custom_provider_id(value.as_deref()),
         other if other.starts_with("base_url_") => {
             let provider = other.trim_start_matches("base_url_");
             let provider = ProviderId::parse(provider).map_err(|err| err.to_string())?;
-            integration_secrets::save_connection_base_url(provider.as_str(), value.as_deref());
-            Ok(())
+            integration_secrets::save_connection_base_url(provider.as_str(), value.as_deref())
         }
         other => Err(format!("unknown secret_id '{other}'")),
     }

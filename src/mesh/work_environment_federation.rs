@@ -276,26 +276,30 @@ async fn accept_remote_job(
             .iter()
             .map(String::as_str)
             .collect::<Vec<_>>();
-        match state
-            .execution_policies
-            .admit_portable_coder(PortableCoderAdmission {
-                peer_device_id: &record.phone_id,
-                peer_pairing_id: &record.pairing_id,
-                origin_runtime_id: &wrapped.payload.origin_authority.runtime_id,
-                destination_runtime_id: state.pairing.device_id(),
-                parent_session_id: &task.parent_session_id,
-                work_id: &task.work_id,
-                correlation_id: &task.correlation_id,
-                project_id: &task.project_id,
-                root_ref: &task.root_ref,
-                secret_refs: &secret_refs,
-                requested_tool_names: &requested_tool_names,
-                requested_network_policy: requested_network_policy(&decoded.spec.network_policy),
-                request_issued_at: task.requested_at,
-                request_expires_at: task.deadline_at.min(wrapped.payload.deadline),
-            })
-            .map_err(internal)?
-        {
+        let admission = PortableCoderAdmission {
+            peer_device_id: &record.phone_id,
+            peer_pairing_id: &record.pairing_id,
+            origin_runtime_id: &wrapped.payload.origin_authority.runtime_id,
+            destination_runtime_id: state.pairing.device_id(),
+            parent_session_id: &task.parent_session_id,
+            work_id: &task.work_id,
+            correlation_id: &task.correlation_id,
+            project_id: &task.project_id,
+            root_ref: &task.root_ref,
+            secret_refs: &secret_refs,
+            requested_tool_names: &requested_tool_names,
+            requested_network_policy: requested_network_policy(&decoded.spec.network_policy),
+            request_issued_at: task.requested_at,
+            request_expires_at: task.deadline_at.min(wrapped.payload.deadline),
+        };
+        let admission = if record.role.allows_full_portal() {
+            state
+                .execution_policies
+                .admit_portal_portable_coder(admission)
+        } else {
+            state.execution_policies.admit_portable_coder(admission)
+        };
+        match admission.map_err(internal)? {
             Ok(grant) => Some(grant),
             Err(reason) => {
                 return Err((

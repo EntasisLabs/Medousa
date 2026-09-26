@@ -10,7 +10,6 @@ use genai::chat::Tool;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use stasis::application::orchestration::tool_registry::{InMemoryToolRegistry, ToolRegistry};
-use stasis::prelude::RuntimeBackend;
 
 use crate::agent_runtime::turn_worker::{
     TurnWorkerIntent, allowed_tool_names_for_intent, host_bus_tool_names, tool_allowed,
@@ -297,14 +296,7 @@ fn worker_intents() -> [(TurnWorkerIntent, &'static str); 4] {
 
 async fn assembled_contract_baseline() -> (ContractBaseline, ToolFootprintBaseline) {
     let (event_tx, _event_rx) = tokio::sync::mpsc::channel(8);
-    let runtime = crate::tools::build_tui_runtime(
-        RuntimeBackend::InMemory,
-        None,
-        None,
-        None,
-        Vec::new(),
-        "contract-baseline",
-        true,
+    let runtime = crate::tui::runtime_services::build_tui_runtime_services_for_contract_baseline(
         event_tx,
     )
     .await

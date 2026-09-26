@@ -28,8 +28,7 @@ static SESSION_SURFACE_FILES: Lazy<crate::session_storage::SessionFileStore> = L
 });
 
 /// Host console domains unlocked at session start (no `cognition_tools_discover` step).
-pub const DEFAULT_HOST_AUTO_UNLOCK_DOMAINS: &[&str] =
-    &["memory", "vault", "calendar", "computer"];
+pub const DEFAULT_HOST_AUTO_UNLOCK_DOMAINS: &[&str] = &["memory", "vault", "calendar", "computer"];
 
 pub const CALENDAR_DOMAIN_TOOLS: &[&str] =
     &["cognition_calendar_query", "cognition_calendar_mutate"];
@@ -231,6 +230,22 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
                     "cognition_chat_history_search",
                     "cognition_chat_history_read",
                     "cognition_tool_history_detail",
+                ],
+            },
+            ToolDomainCatalogEntry {
+                domain: "remote_peers",
+                summary: "Prepare Codex/Cursor/Hermes work on an exact authorized remote workshop for human approval",
+                tools: &["cognition_peer_delegate"],
+            },
+            #[cfg(feature = "full-daemon")]
+            ToolDomainCatalogEntry {
+                domain: "peers",
+                summary: "Inspect active work, rank Assistant placement candidates, discover local Codex/Cursor/Hermes, and propose project work for human approval; never grants or launches work",
+                tools: &[
+                    "cognition_active_work_discover",
+                    "cognition_assistant_placement",
+                    "cognition_peer_discover",
+                    "cognition_peer_propose",
                 ],
             },
             ToolDomainCatalogEntry {

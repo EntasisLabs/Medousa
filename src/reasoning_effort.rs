@@ -160,6 +160,11 @@ pub fn reasoning_capability(provider: &str, model: &str) -> ReasoningCapability 
             if is(&["gpt-6-astra"]) {
                 return ReasoningCapability::effort(&["low", "medium", "high", "xhigh", "max"]);
             }
+            if is(&["gpt-6-sol", "gpt-6-luna"]) {
+                return ReasoningCapability::effort(&[
+                    "none", "low", "medium", "high", "xhigh", "max",
+                ]);
+            }
             if is(&["gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6"]) {
                 return ReasoningCapability::effort(if provider == "openai-codex" {
                     &["low", "medium", "high", "xhigh", "max"]
@@ -290,6 +295,8 @@ mod capability_tests {
     #[test]
     fn profiles_respect_model_and_adapter_boundaries() {
         assert!(!reasoning_capability("openai-codex", "gpt-6-astra").accepts("minimal"));
+        assert!(reasoning_capability("openai", "gpt-6-sol").accepts("none"));
+        assert!(reasoning_capability("openai-codex", "gpt-6-luna").accepts("none"));
         assert!(reasoning_capability("openai", "gpt-5.6-sol").accepts("none"));
         assert!(!reasoning_capability("anthropic", "claude-sonnet-4-6").accepts("max"));
         assert!(reasoning_capability("anthropic", "claude-opus-4-6").accepts("max"));

@@ -1246,7 +1246,7 @@ impl CognitionMemoryListTool {
     }
 }
 
-// ── cognition_memory_recall (legacy query → AVEC recall) ──────────────────────
+// ── cognition_memory_recall (natural-language query → AVEC recall) ───────────
 
 pub struct CognitionMemoryRecallTool {
     context_tool: CognitionMemoryContextTool,
@@ -1370,7 +1370,7 @@ impl TryFrom<MemoryRecallInput> for MemoryRecallCommand {
 
 #[medousa_tool(id = COGNITION_MEMORY_RECALL_ID)]
 impl CognitionMemoryRecallTool {
-    /// Retrieve memory by natural-language keywords (legacy). Prefer cognition_memory_context with explicit AVEC when possible. Optional semantic_tags or tag_prefix for indexed filtering. Pass session_id to scope to one session, or null to search across all sessions.
+    /// Retrieve memory with a natural-language question or phrase. Multi-word questions use Locus content-term ranking over summaries, tags, and raw nodes. Optional semantic_tags or tag_prefix provide indexed filtering. Pass session_id to scope one session, omit it for the current turn, or pass null to search across sessions.
     pub(crate) async fn invoke_typed(
         &self,
         input: MemoryRecallInput,

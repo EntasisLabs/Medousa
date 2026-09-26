@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Visual tokens aligned with `medousa-theme.ts` (Medousa Home).
 enum MedousaPalette {
@@ -115,22 +116,23 @@ struct MedousaMark: View {
     var size: CGFloat = 22
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [MedousaPalette.primarySoft, MedousaPalette.primary],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-            Text("M")
-                .font(.system(size: size * 0.5, weight: .bold, design: .rounded))
-                .foregroundStyle(MedousaPalette.ink)
-                .offset(y: -0.5)
+        Group {
+            if let url = Bundle.main.url(forResource: "medousa-icon-192", withExtension: "png"),
+               let image = UIImage(contentsOfFile: url.path)
+            {
+                Image(uiImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .antialiased(true)
+                    .aspectRatio(contentMode: .fit)
+            } else {
+                // Never leave anonymous whitespace if packaging regresses.
+                Image(systemName: "waveform.circle.fill")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            }
         }
         .frame(width: size, height: size)
-        .shadow(color: MedousaPalette.primary.opacity(0.35), radius: size * 0.15, y: 1)
     }
 }
 

@@ -21,6 +21,7 @@ pub(crate) fn print_help() {
     );
     println!("  --tool-call-mode <m>  Tool call mode: auto | strict");
     println!("  --max-tool-rounds <n> Max model tool-call rounds (1-50, default 10)");
+    println!("                        Enforce with MEDOUSA_TOOL_ROUND_LIMIT_ENABLED=1");
     println!(
         "                        Host orchestrator cap: MEDOUSA_HOST_BUS_MAX_TOOL_ROUNDS (default 8)"
     );

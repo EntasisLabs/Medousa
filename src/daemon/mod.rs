@@ -10,6 +10,7 @@ pub mod continuations;
 pub mod contract;
 mod contract_bindings;
 pub mod core;
+pub mod coordination;
 pub mod detamu_host;
 pub mod forge_api;
 pub mod forge_events;

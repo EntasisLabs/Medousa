@@ -217,7 +217,27 @@ fn entry(
         title: title.to_string(),
         description: description.map(str::to_string),
         input_schema_summary: None,
+        output_schema_summary: None,
+        input_schema: None,
+        output_schema: None,
+        annotations: None,
+        icons: None,
+        meta: None,
+        ui_resource_uri: None,
         effect_class,
+        planning_hints: vec![match effect_class {
+            McpEffectClass::ExternalRead => {
+                "Reads data from an external service without intentionally changing it."
+            }
+            McpEffectClass::ExternalWrite => {
+                "Changes data in an external service; confirm the target and payload before invoking."
+            }
+            McpEffectClass::ExternalSideEffect => {
+                "May cause a consequential external action and can require operator approval."
+            }
+        }
+        .to_string()],
+        approval_summary: Some(format!("Use {server_title} to {title}")),
         capability_ids,
         stability: "stable".to_string(),
     }

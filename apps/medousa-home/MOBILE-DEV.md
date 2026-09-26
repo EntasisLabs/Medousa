@@ -175,7 +175,13 @@ When the app launches on device:
 npm run tauri:ios:dev -- --open          # open Xcode project
 npm run tauri:ios:dev -- "iPhone 16"     # specific simulator
 npm run tauri:ios:build                  # release IPA for TestFlight-style install
+npm run tauri:ios:dev:carplay:sim        # CarPlay scene in iOS Simulator
+npm run tauri:ios:dev:carplay            # approved CarPlay profile + connected iPhone
 ```
+
+CarPlay device builds require Apple to approve **CarPlay Voice Based
+Conversation** for `com.entasislabs.medousa-home` and require regenerated
+provisioning profiles. See [Medousa Live in CarPlay](../../docs/guides/medousa-carplay.md).
 
 ---
 

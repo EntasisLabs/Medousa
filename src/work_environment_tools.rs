@@ -175,6 +175,32 @@ async fn exec(
     timeout_seconds: u64,
     max_output_bytes: u64,
 ) -> StasisResult<WorkEnvironmentExecResult> {
+    exec_with_optional_timeout(
+        invocation,
+        boundary,
+        program,
+        args,
+        working_directory,
+        environment,
+        stdin,
+        Some(timeout_seconds),
+        max_output_bytes,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn exec_with_optional_timeout(
+    invocation: &EnvironmentToolInvocation,
+    boundary: &str,
+    program: impl Into<String>,
+    args: Vec<String>,
+    working_directory: String,
+    environment: BTreeMap<String, String>,
+    stdin: Option<String>,
+    timeout_seconds: Option<u64>,
+    max_output_bytes: u64,
+) -> StasisResult<WorkEnvironmentExecResult> {
     invocation
         .binding
         .port
@@ -187,7 +213,7 @@ async fn exec(
                 working_directory: Some(working_directory),
                 environment,
                 stdin,
-                timeout_seconds: timeout_seconds.clamp(1, 60 * 60),
+                timeout_seconds,
                 max_output_bytes: max_output_bytes.clamp(1, MAX_TOOL_OUTPUT_BYTES),
             },
             &invocation.binding.fence,
@@ -214,7 +240,7 @@ pub(crate) async fn shell_exec(
     args: Vec<String>,
     cwd: Option<&str>,
     stdin: Option<String>,
-    timeout_ms: u64,
+    timeout_ms: Option<u64>,
     max_output_bytes: u64,
 ) -> StasisResult<WorkEnvironmentExecResult> {
     ensure_governed_mutation(invocation)?;
@@ -230,7 +256,7 @@ pub(crate) async fn shell_exec(
         ("CLICOLOR".to_string(), "0".to_string()),
         ("FORCE_COLOR".to_string(), "0".to_string()),
     ]);
-    exec(
+    exec_with_optional_timeout(
         invocation,
         "shell",
         program,
@@ -238,7 +264,7 @@ pub(crate) async fn shell_exec(
         cwd,
         environment,
         stdin,
-        timeout_ms.saturating_add(999) / 1_000,
+        timeout_ms.map(|timeout_ms| timeout_ms.saturating_add(999) / 1_000),
         max_output_bytes,
     )
     .await
@@ -871,6 +897,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn shell_lifetime_is_optional_and_explicit_long_deadlines_are_preserved() {
+        for (timeout_ms, timeout_seconds) in [(None, None), (Some(7_200_000), Some(7_200))] {
+            let port = RecordingPort::with_responses(vec![result("done", 0)]);
+            let invocation = invocation(port.clone(), true);
+            shell_exec(
+                &invocation,
+                "/bin/sh".to_string(),
+                vec!["-lc".to_string(), "cargo build".to_string()],
+                None,
+                None,
+                timeout_ms,
+                1024,
+            ).await.unwrap();
+            assert_eq!(port.requests.lock().unwrap()[0].0.timeout_seconds, timeout_seconds);
+        }
+    }
+
+    #[tokio::test]
     async fn environment_mutations_fail_closed_without_forge_fences() {
         let port = RecordingPort::with_responses(Vec::new());
         let invocation = invocation(port.clone(), false);
@@ -880,7 +924,7 @@ mod tests {
             vec!["-lc".to_string(), "touch nope".to_string()],
             None,
             None,
-            1_000,
+            Some(1_000),
             1024,
         )
         .await

@@ -29,6 +29,10 @@ struct Args {
     /// Extra allowed roots (repeatable), e.g. Forge worktree paths.
     #[arg(long = "allow-root")]
     allow_roots: Vec<PathBuf>,
+
+    /// Daemon-owned Forge store for exact attached-checkout admission.
+    #[arg(long)]
+    forge_root: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -57,6 +61,9 @@ async fn main() -> anyhow::Result<()> {
         bind: args.bind,
         workspace_root: workspace,
         allowed_roots: allowed,
+        forge_root: args
+            .forge_root
+            .map(|root| root.canonicalize().unwrap_or(root)),
     };
     let state = OrchestratorState::new(config, ServerRegistry::with_defaults());
     serve(state).await

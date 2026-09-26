@@ -363,7 +363,7 @@ pub struct AssembledLocalTurn {
     pub prior_build: PriorMessageBuild,
 }
 
-pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLocalTurn {
+pub async fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLocalTurn {
     let configured_tool_call_mode =
         turn_services::parse_tool_call_mode(&params.settings.tool_call_mode);
     let mut turn_loop_settings = TurnLoopSettings::from_runtime_settings(params.settings);
@@ -452,7 +452,7 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
             )
         };
 
-    let prior_build = turn_services::build_prior_messages(
+    let mut prior_build = turn_services::build_prior_messages(
         params.tui_rt.tool_catalog.as_ref(),
         params.session_id,
         params.conversation,
@@ -491,6 +491,23 @@ pub fn assemble_local_turn(params: AssembleLocalTurnParams<'_>) -> AssembledLoca
     let execution_model = primary_inference_target
         .map(|target| target.model.clone())
         .unwrap_or_else(|| params.settings.model.clone());
+    let replay_provider = primary_inference_target
+        .map(|target| target.provider.as_str())
+        .or_else(|| params.final_route.map(|route| route.provider.as_str()))
+        .unwrap_or(&execution_provider);
+    let replay_model = primary_inference_target
+        .map(|target| target.model.as_str())
+        .or_else(|| params.final_route.map(|route| route.model.as_str()))
+        .unwrap_or(&execution_model);
+    crate::media_vision::append_recent_history_images(
+        &mut prior_build.messages,
+        params.session_id,
+        params.conversation,
+        &params.media_refs,
+        replay_provider,
+        replay_model,
+    )
+    .await;
     let execution_base_url = primary_inference_target
         .and_then(|target| target.base_url.clone())
         .or_else(|| {
@@ -975,6 +992,9 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
             .as_ref()
             .map(|scope| scope.turn_correlation_id.clone()),
         parent_runtime_id: worker_scheduler.execution_runtime_id(),
+        parent_continuation_route: continuation_stage_route
+            .as_ref()
+            .map(crate::agent_runtime::turn_worker::ParentContinuationRoute::from_stage_route),
         delivery_target: scope_snapshot
             .as_ref()
             .and_then(|scope| scope.delivery_target.as_ref())
@@ -1088,7 +1108,11 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
         messages.push(ChatMessage::system(super::modes::system_prompt_for_mode(
             &agent_mode,
         )));
-        messages.extend(prior_messages);
+        messages.extend(crate::media_vision::prior_messages_for_target(
+            prior_messages,
+            &provider,
+            &model,
+        ));
         messages.push(current_turn_user_message.clone());
 
         if !try_consume_prompt_only_budget(&sink, &mut orchestration_state, &turn_budget).await {
@@ -1285,14 +1309,14 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
             ),
         );
     let runtime_ports = runtime_ports.with_optional_tool_observation_hydration(
-        (supports_browser_host
-            && crate::model_capability_registry::registry().supports_vision(&provider, &model))
+        crate::model_capability_registry::registry().supports_vision(&provider, &model)
         .then(|| tool_observation_hydration_port.clone()),
     );
     let completion_gate_config = ToolLoopCompletionGateConfig {
         stream_turn_id: turn_id,
         runtime_ports,
         max_text_only_stuck_continues: turn_loop_settings.max_text_only_stuck_continues,
+        enforce_tool_round_limit: medousa_runtime::tool_round_limit_enabled(),
         parent_turn_correlation_id: parent_turn_correlation_id.clone(),
         skip_avec_ritual_check: false,
         hard_tool_round_ceiling,
@@ -1369,9 +1393,8 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
             .runtime_ports
             .clone()
             .with_optional_tool_observation_hydration(
-                (supports_browser_host
-                    && crate::model_capability_registry::registry()
-                        .supports_vision(&target.provider, &target.model))
+                crate::model_capability_registry::registry()
+                    .supports_vision(&target.provider, &target.model)
                 .then(|| tool_observation_hydration_port.clone()),
             );
 
@@ -1391,10 +1414,15 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
             );
 
             let attempt_stream = stream_bridge.attempt();
+            let target_prior_messages = crate::media_vision::prior_messages_for_target(
+                prior_messages.clone(),
+                &target.provider,
+                &target.model,
+            );
             let attempt_result = attempt_pipeline
                 .execute_with_stream_prior_messages_max_rounds(
                     request.clone(),
-                    prior_messages.clone(),
+                    target_prior_messages,
                     Some(attempt_stream.sender()),
                     loop_max_rounds,
                     Some(&mut completion_gate),
@@ -1552,6 +1580,7 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
                 response.termination_reason.as_str(),
                 "max_rounds_fuse"
                     | "stuck_text_only_continue"
+                    | "repeated_tool_failure"
                     | super::coder_turn_checkpoint::TOOL_ROUND_BUDGET_EXHAUSTED_REASON
                     | "workshop_cancelled"
             ) {
@@ -1766,7 +1795,11 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
                         pipeline
                             .execute_with_stream_prior_messages_max_rounds(
                                 request.clone(),
-                                prior_messages.clone(),
+                                crate::media_vision::prior_messages_for_target(
+                                    prior_messages.clone(),
+                                    &provider,
+                                    &model,
+                                ),
                                 Some(retry_stream.sender()),
                                 retry_rounds,
                                 Some(&mut retry_gate),

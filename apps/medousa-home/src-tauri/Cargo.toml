@@ -93,7 +93,7 @@ objc2-ui-kit = { version = "0.3", features = [
   "UIApplication",
   "block2",
 ] }
-tauri-plugin-ios-webview-insets = "0.1"
+tauri-plugin-ios-webview-insets = { path = "../../../vendor/tauri-plugin-ios-webview-insets" }
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.38"
@@ -160,5 +160,12 @@ split-debuginfo = "unpacked"
 debug = false
 
 [patch.crates-io]
+# Backport tao #1245 to 0.35.3: UIKit must receive an autoreleased scene
+# configuration, not a pointer whose Retained owner is dropped on return.
+# https://github.com/tauri-apps/tao/commit/f2163508104413ef0609178dcebdd5803b496211
+tao = { path = "../../../vendor/tao" }
 # Upstream Package.swift declares iOS 13 but uses UNNotificationPresentationOptions.banner/.list (iOS 14+).
 tauri-plugin-mobile-push = { path = "../../../vendor/tauri-plugin-mobile-push" }
+# Xcode 27: do not leak the iOS clang target into SwiftPM's host macro tools.
+# Drop this patch after swift-rs ships the post-1.0.8 host-tool fix.
+swift-rs = { path = "../../../vendor/swift-rs" }

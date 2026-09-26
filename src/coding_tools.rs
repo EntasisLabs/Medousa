@@ -7,8 +7,11 @@
 //! the workshop-owned PTY sessions on the daemon.
 
 mod shell_output;
+mod shell_state;
 
 use shell_output::ShellOutput;
+use shell_state::{CODER_SHELL_STATE, ShellCommand};
+pub(crate) use shell_state::{CoderShellState, with_coder_shell_state};
 
 use std::io::{BufRead, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -190,13 +193,21 @@ fn accept_shell_ready_watermark(next_sequence: &mut u64, sequence: u64) {
 }
 
 fn verify_expected_digest(path: &Path, expected: &str) -> StasisResult<Option<Vec<u8>>> {
+    let expected = expected.trim();
+    let expected = expected.strip_prefix("sha256:").unwrap_or(expected);
+    let expected = if expected.len() == 64 && expected.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        format!("sha256:{}", expected.to_ascii_lowercase())
+    } else {
+        expected.to_owned()
+    };
     match std::fs::read(path) {
         Ok(bytes) => {
             let actual = content_digest(&bytes);
             if expected != actual {
                 return Err(StasisError::PortFailure(format!(
-                    "stale file digest for {}: expected {expected}, found {actual}",
-                    path.display()
+                    "file {} changed since it was read: expected digest {expected}, current digest is {actual}; read it again before retrying",
+                    path.display(),
                 )));
             }
             Ok(Some(bytes))
@@ -204,8 +215,8 @@ fn verify_expected_digest(path: &Path, expected: &str) -> StasisResult<Option<Ve
         Err(err) if err.kind() == std::io::ErrorKind::NotFound && expected == "missing" => Ok(None),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             Err(StasisError::PortFailure(format!(
-                "stale file digest for {}: expected {expected}, found missing",
-                path.display()
+                "file {} no longer exists: expected digest {expected}; for an intended creation, retry with expected_sha256: 'missing'",
+                path.display(),
             )))
         }
         Err(err) => Err(StasisError::PortFailure(format!(
@@ -288,27 +299,26 @@ async fn create_bound_shell_session(
         }),
     )
     .await?;
+    let session_id = daemon_session_id(&created)?;
+    // Register ownership before awaiting startup so cancellation can unwind it.
+    if let Ok(state) = CODER_SHELL_STATE.try_with(Clone::clone) {
+        state.lock().await.owned_sessions.insert(session_id.clone());
+    }
     if !cfg!(windows) {
-        // Transport readiness does not imply that stty has run. Wait inside
-        // this tool so the first large submission cannot hit the TTY line cap.
-        let session_id = daemon_session_id(&created)?;
-        let ready =
-            stream_session_input(&session_id, None, 5_000, None, Some(AGENT_SHELL_READY)).await;
-        match ready {
-            Ok(ready) if ready.completion_exit_code == Some(0) => {
-                created["next_sequence"] = Value::from(ready.next_sequence);
+        let mut readiness = ShellCommand::new(String::new(), Some(AGENT_SHELL_READY), 0);
+        // Read from creation, including a marker emitted before WS attachment.
+        // A wait window only yields the transport; the turn owns cancellation.
+        loop {
+            let cursor = readiness.next_sequence;
+            observe_session_input(&session_id, None, 1_000, Some(cursor), &mut readiness).await?;
+            if readiness.output.exit_code() == Some(0) {
+                created["next_sequence"] = Value::from(readiness.next_sequence);
+                break;
             }
-            result => {
-                let _ = daemon_post(
-                    &format!("/v1/sessions/shell/{session_id}/signal"),
-                    json!({ "signal": "kill" }),
-                )
-                .await;
-                let detail = match result {
-                    Ok(_) => "quiet shell startup did not complete within 5 seconds".to_string(),
-                    Err(error) => error.to_string(),
-                };
-                return Err(StasisError::PortFailure(detail));
+            if readiness.completed() {
+                return Err(StasisError::PortFailure(
+                    "shell exited before startup completed".into(),
+                ));
             }
         }
     }
@@ -1275,8 +1285,14 @@ pub(crate) struct CodeApplyPatchInput {
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
     pub(crate) replace: CompatOption<String>,
-    /// Required current digest from code_read, or `missing` for a new file
-    pub(crate) expected_sha256: String,
+    /// Digest returned by code_read, or `missing` for a new file. Null/missing
+    /// values receive a recoverable tool error rather than a schema failure.
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    pub(crate) expected_sha256: CompatOption<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
@@ -1373,10 +1389,11 @@ impl CognitionCodeApplyPatchTool {
         )
         .map_err(StasisError::PortFailure)?;
         let (root, path) = root_and_path(&input.path, requested_root.as_deref())?;
-        let expected_digest = input.expected_sha256.trim();
+        let expected_digest = input.expected_sha256.into_option().unwrap_or_default();
+        let expected_digest = expected_digest.trim();
         if expected_digest.is_empty() {
             return Err(StasisError::PortFailure(
-                "expected_sha256 is required".into(),
+                "expected_sha256 must be the digest returned by code_read, or 'missing' for a new file; read the file and retry".into(),
             ));
         }
         let existing = verify_expected_digest(&path, expected_digest)?;
@@ -1615,6 +1632,8 @@ struct ShellSessionRunOutput {
     next_sequence: u64,
     replay_truncated: bool,
     output_truncated: bool,
+    completed: Option<bool>,
+    exit_code: Option<i32>,
 }
 
 #[medousa_tool(id = COGNITION_SHELL_SESSION_RUN_ID)]
@@ -1662,6 +1681,56 @@ impl CognitionShellSessionRunTool {
                 daemon_session_id(&created)?
             }
         };
+        if let Ok(state) = CODER_SHELL_STATE.try_with(Clone::clone) {
+            let slot = state.lock().await.commands.get(&session_id).cloned();
+            if let Some(slot) = slot {
+                let mut slot = slot.try_lock().map_err(|_| {
+                    StasisError::PortFailure(
+                        "this shell is already being observed; wait for that call to return".into(),
+                    )
+                })?;
+                if let Some(tracked) = slot.as_mut() {
+                    if command.is_some() && tracked.active() {
+                        return Err(StasisError::PortFailure(
+                            "session has a running command; use poll to observe it or input to send stdin".into(),
+                        ));
+                    }
+                    if poll || raw_input.is_some() {
+                        let input_written = if !tracked.completed() {
+                            let cursor = tracked.next_sequence;
+                            observe_session_input(
+                                &session_id,
+                                raw_input.as_deref().map(str::as_bytes),
+                                wait_ms,
+                                Some(cursor),
+                                tracked,
+                            )
+                            .await?
+                        } else {
+                            false
+                        };
+                        if !tracked.active() {
+                            state.lock().await.busy_sessions.remove(&session_id);
+                        }
+                        let (output, output_truncated) = tracked.output.take_output();
+                        return Ok(ShellSessionRunOutput {
+                            ok: true,
+                            session_id,
+                            output,
+                            output_truncated,
+                            input_written,
+                            next_sequence: tracked.next_sequence,
+                            replay_truncated: tracked.replay_truncated,
+                            completed: Some(tracked.completed()),
+                            exit_code: tracked.output.exit_code(),
+                        });
+                    }
+                }
+                if command.is_some() {
+                    *slot = None;
+                }
+            }
+        }
         let payload = if let Some(command) = command {
             Some(format!("{command}\n"))
         } else if let Some(raw_input) = raw_input {
@@ -1673,6 +1742,17 @@ impl CognitionShellSessionRunTool {
                 "provide `command` or `input`, or set `poll` to true".into(),
             ));
         };
+        if payload.is_some()
+            && let Ok(state) = CODER_SHELL_STATE.try_with(Clone::clone)
+        {
+            // Raw interactive input has no command boundary. Never auto-reuse
+            // that session for a managed command while its program may be alive.
+            let mut state = state.lock().await;
+            state.busy_sessions.insert(session_id.clone());
+            if state.preferred_session.as_deref() == Some(&session_id) {
+                state.preferred_session = None;
+            }
+        }
         let polling = payload.is_none();
         let stream = stream_session_input(
             &session_id,
@@ -1690,6 +1770,8 @@ impl CognitionShellSessionRunTool {
             next_sequence: stream.next_sequence,
             replay_truncated: stream.replay_truncated,
             output_truncated: stream.output_truncated,
+            completed: None,
+            exit_code: None,
         })
     }
 }
@@ -1700,7 +1782,6 @@ struct SessionStreamOutput {
     next_sequence: u64,
     replay_truncated: bool,
     output_truncated: bool,
-    completion_exit_code: Option<i32>,
 }
 
 fn shell_websocket_request(
@@ -1726,9 +1807,29 @@ async fn stream_session_input(
     after_sequence: Option<u64>,
     completion_marker: Option<&str>,
 ) -> StasisResult<SessionStreamOutput> {
-    use futures_util::{SinkExt, StreamExt};
-    use tokio_tungstenite::tungstenite::Message;
+    let mut state = ShellCommand::new(
+        String::new(),
+        completion_marker,
+        after_sequence.unwrap_or(0),
+    );
+    observe_session_input(session_id, input, wait_ms, after_sequence, &mut state).await?;
+    let (output, output_truncated) = state.output.finish();
+    Ok(SessionStreamOutput {
+        output,
+        output_truncated,
+        input_written: state.input_written,
+        next_sequence: state.next_sequence,
+        replay_truncated: state.replay_truncated,
+    })
+}
 
+async fn observe_session_input(
+    session_id: &str,
+    input: Option<&[u8]>,
+    wait_ms: u64,
+    after_sequence: Option<u64>,
+    state: &mut ShellCommand,
+) -> StasisResult<bool> {
     let base = daemon_base().replacen("http", "ws", 1);
     let attach_query = after_sequence.map_or_else(
         || "?replay=tail".to_string(),
@@ -1742,6 +1843,18 @@ async fn stream_session_input(
     let authorization = crate::daemon_self_url::self_authorization_header()
         .map_err(|error| StasisError::PortFailure(format!("session ws authorization: {error}")))?;
     let request = shell_websocket_request(&url, authorization)?;
+    observe_session_request(request, input, wait_ms, state).await
+}
+
+async fn observe_session_request(
+    request: tokio_tungstenite::tungstenite::http::Request<()>,
+    input: Option<&[u8]>,
+    wait_ms: u64,
+    state: &mut ShellCommand,
+) -> StasisResult<bool> {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+
     let (mut ws, _) = tokio_tungstenite::connect_async(request)
         .await
         .map_err(|e| StasisError::PortFailure(format!("session ws connect: {e}")))?;
@@ -1756,10 +1869,7 @@ async fn stream_session_input(
         .to_string()
     });
 
-    let mut output = ShellOutput::new(completion_marker);
     let mut input_written = false;
-    let mut next_sequence = after_sequence.unwrap_or(0);
-    let mut replay_truncated = false;
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(wait_ms);
     while std::time::Instant::now() < deadline {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
@@ -1774,58 +1884,72 @@ async fn stream_session_input(
                                     data,
                                 )
                             {
-                                output.push(&bytes);
+                                state.output.push(&bytes);
                                 if let Some(sequence) = v.get("sequence").and_then(Value::as_u64) {
-                                    next_sequence = next_sequence.max(sequence);
+                                    state.next_sequence = state.next_sequence.max(sequence);
                                 }
-                                if output.exit_code().is_some() {
+                                if state.output.exit_code().is_some() {
                                     break;
                                 }
                             }
                         }
                         Some("ready") => {
                             if let Some(sequence) = v.get("sequence").and_then(Value::as_u64) {
-                                accept_shell_ready_watermark(&mut next_sequence, sequence);
+                                accept_shell_ready_watermark(&mut state.next_sequence, sequence);
                             }
-                            replay_truncated |= v
+                            state.replay_truncated |= v
                                 .get("replay_truncated")
                                 .and_then(Value::as_bool)
                                 .unwrap_or(false);
                             if let Some(frame) = pending_input.take() {
+                                state.input_attempted = true;
                                 ws.send(Message::Text(frame.into())).await.map_err(|e| {
                                     StasisError::PortFailure(format!("session ws send: {e}"))
                                 })?;
+                                state.input_written = true;
                                 input_written = true;
                             }
                         }
-                        Some("output_gap") => replay_truncated = true,
+                        Some("output_gap") => state.replay_truncated = true,
+                        Some("exit") => {
+                            state.exited = true;
+                            break;
+                        }
+                        Some("error") => {
+                            if v.get("code").and_then(Value::as_str) == Some("session_not_found") {
+                                state.exited = true;
+                            }
+                            return Err(StasisError::PortFailure(format!(
+                                "session stream: {}",
+                                v.get("message").unwrap_or(&Value::Null)
+                            )));
+                        }
                         _ => {}
                     }
                 }
             }
             Ok(Some(Ok(Message::Binary(bytes)))) => {
-                output.push(&bytes);
-                if output.exit_code().is_some() {
+                state.output.push(&bytes);
+                if state.output.exit_code().is_some() {
                     break;
                 }
             }
-            Ok(Some(Ok(Message::Close(_)))) | Ok(None) => break,
-            Ok(Some(Err(_))) => break,
+            Ok(Some(Ok(Message::Close(_)))) | Ok(None) => {
+                return Err(StasisError::PortFailure(
+                    "session stream disconnected; poll to reconnect without resubmitting".into(),
+                ));
+            }
+            Ok(Some(Err(error))) => {
+                return Err(StasisError::PortFailure(format!(
+                    "session stream: {error}; poll to reconnect"
+                )));
+            }
             Ok(Some(Ok(_))) => {}
             Err(_) => break,
         }
     }
     let _ = ws.close(None).await;
-    let completion_exit_code = output.exit_code();
-    let (output, output_truncated) = output.finish();
-    Ok(SessionStreamOutput {
-        output,
-        input_written,
-        next_sequence,
-        replay_truncated,
-        output_truncated,
-        completion_exit_code,
-    })
+    Ok(input_written)
 }
 
 fn one_shot_completion_marker() -> String {
@@ -1870,6 +1994,14 @@ impl CognitionShellSessionInterruptTool {
             json!({ "signal": "interrupt" }),
         )
         .await?;
+        if let Ok(state) = CODER_SHELL_STATE.try_with(Clone::clone) {
+            let slot = state.lock().await.commands.get(session_id).cloned();
+            if let Some(slot) = slot
+                && let Some(command) = slot.lock().await.as_mut()
+            {
+                command.interrupted = true;
+            }
+        }
         Ok(ExternalJson::new(response))
     }
 }
@@ -1959,8 +2091,20 @@ impl CognitionCoderShellStatusTool {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct CoderShellRunInput {
-    /// POSIX shell script; quoting and completion are handled by the runtime.
-    command: String,
+    /// POSIX shell script to start. Omit when polling an existing command.
+    #[serde(default)]
+    #[schemars(
+        with = "String",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    command: CompatOption<String>,
+    /// Observe the existing command without submitting it again. Supply its session_id.
+    #[serde(default)]
+    #[schemars(
+        with = "bool",
+        skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
+    )]
+    poll: CompatOption<bool>,
     /// Reuse a turn-owned session when provided by the runtime
     #[serde(default)]
     #[schemars(
@@ -1992,7 +2136,7 @@ struct CoderShellRunInput {
         skip_serializing_if = "crate::typed_tools::CompatOption::is_none"
     )]
     attempt_id: CompatOption<String>,
-    /// How long to wait for command completion (default 15000, max 15000)
+    /// Observation window in milliseconds (default 15000, max 15000). Expiry leaves the command running; poll its session_id.
     #[serde(default)]
     #[schemars(
         with = "i64",
@@ -2019,35 +2163,39 @@ struct CoderShellRunOutput {
     completed: bool,
     exit_code: Option<i32>,
     interrupted: bool,
+    status: String,
+    error: Option<String>,
 }
 
 #[medousa_tool(id = COGNITION_CODER_SHELL_RUN_ID)]
 impl CognitionCoderShellRunTool {
-    /// Run a bounded POSIX command in the Coder workspace; no preflight needed. Plain-text head/tail and exit status; session tools handle sustained commands.
+    /// Start a POSIX command, or poll its session_id with poll=true and no command. `wait_ms` bounds PTY observation only; a one-shot work-environment command waits for completion and currently has no per-call timeout. For OCI work environments, interrupting the request does not guarantee the container command stopped, and an unknown outcome is not replayed. Use shell_session_interrupt to cancel PTY sessions.
     async fn invoke_typed(
         &self,
         input: CoderShellRunInput,
     ) -> stasis::prelude::Result<CoderShellRunOutput> {
-        let command = input.command.trim().to_string();
-        if command.is_empty() {
-            return Err(StasisError::PortFailure("command is required".into()));
+        let poll = input.poll.into_option().unwrap_or(false);
+        let command = input.command.as_ref().map(|value| value.trim().to_string());
+        if poll == command.as_ref().is_some_and(|command| !command.is_empty()) {
+            return Err(StasisError::PortFailure(
+                "provide command, or poll=true without command".into(),
+            ));
         }
         if let Some(invocation) = crate::work_environment_tools::EnvironmentToolInvocation::active(
             COGNITION_CODER_SHELL_RUN,
         ) {
-            let wait_ms = input
-                .wait_ms
-                .as_ref()
-                .copied()
-                .unwrap_or(15_000)
-                .clamp(100, 15_000);
+            let command = command.ok_or_else(|| {
+                StasisError::PortFailure(
+                    "this work environment does not support PTY command polling".into(),
+                )
+            })?;
             let result = crate::work_environment_tools::shell_exec(
                 &invocation,
                 "/bin/sh".to_string(),
                 vec!["-lc".to_string(), command.clone()],
                 None,
                 None,
-                wait_ms,
+                None,
                 MAX_SHELL_OUTPUT_BYTES as u64,
             )
             .await?;
@@ -2074,67 +2222,133 @@ impl CognitionCoderShellRunTool {
                 completed: result.exit_code.is_some(),
                 exit_code: result.exit_code,
                 interrupted: false,
+                status: if result.exit_code.is_some() {
+                    "completed"
+                } else {
+                    "unknown"
+                }
+                .into(),
+                error: None,
             });
         }
+        let state = CODER_SHELL_STATE.try_with(Clone::clone).map_err(|_| {
+            StasisError::PortFailure("Coder shell requires a turn-owned session context".into())
+        })?;
         let session_id_input = input.session_id.into_option();
-        let work_id = input.work_id.into_option();
-        let lease_id = input.lease_id.into_option();
-        let lease_generation = input.lease_generation.into_option();
-        let attempt_id = input.attempt_id.into_option();
-        let mut after_sequence = input.after_sequence.into_option();
         let wait_ms = input
             .wait_ms
             .into_option()
             .unwrap_or(15_000)
             .clamp(100, 15_000);
-        let session_id = match session_id_input
-            .as_deref()
-            .filter(|session_id| !session_id.trim().is_empty())
-        {
-            Some(session_id) => session_id.to_string(),
+        let mut after_sequence = input.after_sequence.into_option();
+        let session_id = match session_id_input.filter(|id| !id.trim().is_empty()) {
+            Some(id) => id,
+            None if poll => {
+                return Err(StasisError::PortFailure(
+                    "poll requires a command session_id".into(),
+                ));
+            }
             None => {
                 let created = create_bound_shell_session(
-                    work_id.as_deref(),
-                    lease_id.as_deref(),
-                    lease_generation,
-                    attempt_id.as_deref(),
+                    input.work_id.as_ref().map(String::as_str),
+                    input.lease_id.as_ref().map(String::as_str),
+                    input.lease_generation.into_option(),
+                    input.attempt_id.as_ref().map(String::as_str),
                 )
                 .await?;
                 after_sequence = created.get("next_sequence").and_then(Value::as_u64);
                 daemon_session_id(&created)?
             }
         };
-        let completion_marker = one_shot_completion_marker();
-        let payload = wrap_one_shot_command(&command, &completion_marker);
-        let stream = stream_session_input(
-            &session_id,
-            Some(payload.as_bytes()),
-            wait_ms,
-            after_sequence,
-            Some(&completion_marker),
-        )
-        .await?;
-        let completed = stream.completion_exit_code.is_some();
-        let interrupted = !completed
-            && daemon_post(
-                &format!("/v1/sessions/shell/{session_id}/signal"),
-                json!({ "signal": "interrupt" }),
+        let command_slot = {
+            let mut state = state.lock().await;
+            state
+                .commands
+                .entry(session_id.clone())
+                .or_default()
+                .clone()
+        };
+        let mut slot = command_slot.try_lock().map_err(|_| {
+            StasisError::PortFailure(
+                "this shell is already being observed; poll again after that call returns".into(),
+            )
+        })?;
+        if !poll && slot.is_none() && state.lock().await.busy_sessions.contains(&session_id) {
+            return Err(StasisError::PortFailure(
+                "this interactive session may be busy; start a command without session_id".into(),
+            ));
+        }
+        let payload = if poll {
+            None
+        } else {
+            if slot.as_ref().is_some_and(ShellCommand::active) {
+                return Err(StasisError::PortFailure(
+                    "this session has a running command; poll it or start a command without session_id".into(),
+                ));
+            }
+            let command = command.unwrap_or_default();
+            let marker = one_shot_completion_marker();
+            let payload = wrap_one_shot_command(&command, &marker);
+            *slot = Some(ShellCommand::new(
+                command,
+                Some(&marker),
+                after_sequence.unwrap_or(0),
+            ));
+            Some(payload)
+        };
+        let command = slot.as_mut().ok_or_else(|| StasisError::PortFailure(
+            "no tracked command in this session; use shell_session_run for an interactive session".into(),
+        ))?;
+        // Reserve the session before the first suspension. Another tool call must
+        // never write its script into the stdin of this command.
+        state.lock().await.busy_sessions.insert(session_id.clone());
+        let error = if !command.completed() && (payload.is_some() || command.input_attempted) {
+            let cursor = command.next_sequence;
+            observe_session_input(
+                &session_id,
+                payload.as_deref().map(str::as_bytes),
+                wait_ms,
+                Some(cursor),
+                command,
             )
             .await
-            .is_ok();
+            .err()
+            .map(|error| error.to_string())
+        } else {
+            None
+        };
+        if !command.active() {
+            state.lock().await.busy_sessions.remove(&session_id);
+        }
+        let completed = command.completed();
+        let exit_code = command.output.exit_code();
+        let status = if completed && exit_code.is_some() {
+            "completed"
+        } else if command.exited {
+            "exited"
+        } else if error.is_some() && command.input_attempted {
+            "unknown"
+        } else if !command.input_attempted {
+            "not_started"
+        } else {
+            "running"
+        };
+        let (output, output_truncated) = command.output.take_output();
         Ok(CoderShellRunOutput {
-            ok: stream.input_written && stream.completion_exit_code == Some(0),
-            surface: "coder_pty".to_string(),
+            ok: error.is_none() && command.input_written && (!completed || exit_code == Some(0)),
+            surface: "coder_pty".into(),
             session_id,
-            command,
-            output: stream.output,
-            input_written: stream.input_written,
-            next_sequence: stream.next_sequence,
-            replay_truncated: stream.replay_truncated,
-            output_truncated: stream.output_truncated,
+            command: command.command.clone(),
+            output,
+            input_written: command.input_written,
+            next_sequence: command.next_sequence,
+            replay_truncated: command.replay_truncated,
+            output_truncated,
             completed,
-            exit_code: stream.completion_exit_code,
-            interrupted,
+            exit_code,
+            interrupted: command.interrupted,
+            status: status.into(),
+            error,
         })
     }
 }
@@ -2369,6 +2583,83 @@ mod tests {
             .expect("shell session run schema");
         assert!(schema["properties"].get("poll").is_some());
         assert!(schema["properties"].get("after_sequence").is_none());
+        let schema = crate::typed_tools::normalize_input_schema::<CoderShellRunInput>()
+            .expect("coder shell run schema");
+        assert!(schema["properties"].get("poll").is_some());
+        assert!(schema["properties"].get("after_sequence").is_none());
+        let poll: CoderShellRunInput = serde_json::from_value(json!({
+            "session_id": "running-command", "poll": true
+        }))
+        .unwrap();
+        assert!(poll.command.is_none());
+    }
+
+    #[tokio::test]
+    async fn shell_observation_reconnects_without_resubmitting_and_retains_partial_completion() {
+        use futures_util::{SinkExt, StreamExt};
+        use tokio_tungstenite::tungstenite::Message;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(socket).await.unwrap();
+            ws.send(Message::Text(
+                json!({"type": "ready", "sequence": 0}).to_string().into(),
+            ))
+            .await
+            .unwrap();
+            let input = ws.next().await.unwrap().unwrap();
+            assert!(input.to_text().unwrap().contains("stdin"));
+            let stdout = |sequence, bytes: &[u8]| {
+                Message::Text(json!({
+                "type": "stdout", "sequence": sequence,
+                "data": base64::engine::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes)
+            }).to_string().into())
+            };
+            ws.send(stdout(1, b"__DONE__:begin\nworking\n__DONE__:"))
+                .await
+                .unwrap();
+            ws.close(None).await.unwrap();
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(socket).await.unwrap();
+            ws.send(Message::Text(
+                json!({"type": "ready", "sequence": 1}).to_string().into(),
+            ))
+            .await
+            .unwrap();
+            ws.send(stdout(2, b"0\n")).await.unwrap();
+            // A reconnect must only observe, never write the command again.
+            while let Some(Ok(message)) = ws.next().await {
+                assert!(!matches!(message, Message::Text(_)));
+                if matches!(message, Message::Close(_)) {
+                    break;
+                }
+            }
+        });
+        let mut command = ShellCommand::new("echo working".into(), Some("__DONE__"), 0);
+        let first = observe_session_request(
+            shell_websocket_request(&url, None).unwrap(),
+            Some(b"wrapped command"),
+            1_000,
+            &mut command,
+        )
+        .await;
+        assert!(first.is_err());
+        assert!(command.active());
+        assert_eq!(command.next_sequence, 1);
+        assert_eq!(command.output.take_output().0, "working\n");
+        observe_session_request(
+            shell_websocket_request(&url, None).unwrap(),
+            None,
+            1_000,
+            &mut command,
+        )
+        .await
+        .unwrap();
+        assert_eq!(command.output.exit_code(), Some(0));
+        assert!(!command.active());
+        assert!(!command.interrupted);
+        server.await.unwrap();
     }
 
     fn code_read_observation(root: &Path, path: &Path, input: &Value) -> StasisResult<Value> {
@@ -2398,12 +2689,22 @@ mod tests {
             verify_expected_digest(&path, &digest).expect("matching digest"),
             Some(b"current".to_vec())
         );
+        assert_eq!(
+            verify_expected_digest(&path, digest.trim_start_matches("sha256:"))
+                .expect("bare SHA-256 hex is accepted"),
+            Some(b"current".to_vec())
+        );
         assert!(verify_expected_digest(&path, "sha256:stale").is_err());
         assert_eq!(
             verify_expected_digest(&temp.path().join("new.txt"), "missing")
                 .expect("missing sentinel"),
             None
         );
+        let null_digest = serde_json::from_value::<CodeApplyPatchInput>(json!({
+            "path": "new.txt", "content": "text", "expected_sha256": null
+        }))
+        .expect("null digest reaches recoverable tool validation");
+        assert!(null_digest.expected_sha256.into_option().is_none());
     }
 
     #[test]

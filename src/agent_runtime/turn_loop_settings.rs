@@ -109,8 +109,9 @@ impl TurnLoopSettings {
 
     pub fn operator_summary(&self) -> String {
         format!(
-            "configured_max={} host_bus_cap={} host_bus_mode={:?} tool_intent_cap={} \
+            "round_limit_enabled={} configured_max={} host_bus_cap={} host_bus_mode={:?} tool_intent_cap={} \
              short_turn_cap={} continuation_cap={} text_only_stuck_cap={} classifier_restricted={}",
+            medousa_runtime::tool_round_limit_enabled(),
             self.configured_max_tool_rounds,
             self.effective_host_bus_max_tool_rounds(),
             self.effective_host_bus_env_mode(),

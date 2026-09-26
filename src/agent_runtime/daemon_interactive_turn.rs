@@ -315,7 +315,7 @@ impl InteractiveTurnStreamSink {
     ) -> bool {
         if let Err(error) = self.persist_via_spine(assistant_turn, event).await {
             let message = format!("turn persistence failed: {error}");
-            self.publish_failure(TurnCompletionOutcomeV3::Failed, message.clone(), None)
+            self.publish_failure(TurnCompletionOutcomeV3::Fatal, message.clone(), None)
                 .await;
             self.sync_ask_job_failed(message).await;
             return false;
@@ -480,7 +480,8 @@ fn stream_tracking(event: &TurnStreamEventV3) -> (&str, &str, bool) {
             TurnCompletionOutcomeV3::Completed => ("turn_completed", "complete", true),
             TurnCompletionOutcomeV3::NeedsInput => ("turn_completed", "awaiting_operator", true),
             TurnCompletionOutcomeV3::Checkpointed => ("turn_completed", "handoff", true),
-            TurnCompletionOutcomeV3::Failed
+            TurnCompletionOutcomeV3::Fatal
+            | TurnCompletionOutcomeV3::Failed
             | TurnCompletionOutcomeV3::Cancelled
             | TurnCompletionOutcomeV3::FuseExhausted => ("turn_completed", "failed", true),
         },
@@ -793,6 +794,9 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
     }
 
     async fn agent_error(&self, _turn_id: u64, message: String) {
+        if self.emit_cancelled_if_needed().await {
+            return;
+        }
         let failure = crate::turn_failure::TurnFailure::from_debug(&message);
 
         // Do not persist raw provider/runtime errors as assistant transcript turns.
@@ -1268,7 +1272,7 @@ pub async fn run_agent_turn(
         ),
     );
     let cancellation = execution_context.cancellation().clone();
-    let deadline = tokio::time::Instant::from_std(execution_context.deadline());
+    let deadline = execution_context.deadline();
     let scoped_turn =
         super::execution_context::with_turn_execution_context(execution_context, turn_future);
     tokio::pin!(scoped_turn);
@@ -1282,7 +1286,7 @@ pub async fn run_agent_turn(
             // to a principal-owned attached checkout.
             scoped_turn.await;
         }
-        () = tokio::time::sleep_until(deadline) => {
+        () = medousa_runtime::wait_for_turn_deadline(deadline) => {
             cancellation.cancel();
             tracking_sink
                 .agent_error(0, "turn execution deadline exceeded".to_string())
@@ -1553,7 +1557,7 @@ async fn run_agent_turn_inner(
                                     ),
                                 };
                         }
-                        forge.begin_workspace_attempt(
+                        forge.begin_collaborative_workspace_attempt(
                             &work_id,
                             executor,
                             Some(std::process::id()),
@@ -1562,7 +1566,7 @@ async fn run_agent_turn_inner(
                     }
                 }
             } else {
-                forge.begin_workspace_attempt(
+                forge.begin_collaborative_workspace_attempt(
                     &work_id,
                     executor,
                     Some(std::process::id()),
@@ -1703,6 +1707,38 @@ async fn run_agent_turn_inner(
             Some(crate::agent_mode_context::INSTANT_CAPABILITY_CONTEXT.to_string()),
             Some(registry_override),
         )
+    } else if agent_mode.id == crate::daemon_api::AgentModeId::Assistant
+        && request.scheduled_tool_allowlist.is_some()
+    {
+        // Internal Assistant continuations use an explicit deployment ceiling.
+        // Wrap exactly here so the later scheduled selector cannot implicitly
+        // add the public API surface.
+        let allowlist = request
+            .scheduled_tool_allowlist
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(|tool| tool.trim().to_string())
+            .filter(|tool| !tool.is_empty())
+            .collect();
+        let registry_override: Arc<
+            dyn stasis::application::orchestration::tool_registry::ToolRegistry,
+        > = Arc::new(super::turn_worker::AllowlistToolRegistry::new_exact(
+            agent_rt.tool_registry.clone(),
+            allowlist,
+        ));
+        (None, None, None, None, None, Some(registry_override))
+    } else if matches!(
+        agent_mode.id,
+        crate::daemon_api::AgentModeId::General | crate::daemon_api::AgentModeId::Teacher
+    ) {
+        let registry_override: Arc<
+            dyn stasis::application::orchestration::tool_registry::ToolRegistry,
+        > = Arc::new(super::turn_worker::BlocklistToolRegistry::new(
+            agent_rt.tool_registry.clone(),
+            crate::agent_mode_context::assistant_elevated_tool_names(),
+        ));
+        (None, None, None, None, None, Some(registry_override))
     } else {
         (None, None, None, None, None, None)
     };
@@ -1783,7 +1819,9 @@ async fn run_agent_turn_inner(
             &request.media_refs,
             &active_inference_target.provider,
             &active_inference_target.model,
-        ) {
+        )
+        .await
+        {
             Ok(plan) => plan,
             Err(err) => {
                 sink.agent_error(1, err).await;
@@ -2003,17 +2041,9 @@ async fn run_agent_turn_inner(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let scheduled_tool_allowlist = request
-        .scheduled_tool_allowlist
-        .as_ref()
-        .map(|tools| {
-            tools
-                .iter()
-                .map(|tool| tool.trim().to_string())
-                .filter(|tool| !tool.is_empty())
-                .collect::<std::collections::HashSet<_>>()
-        })
-        .filter(|tools| !tools.is_empty())
+    let scheduled_tool_allowlist = super::turn_services::requested_tool_allowlist(
+        request.scheduled_tool_allowlist.as_deref(),
+    )
         .or_else(|| {
             manuscript_id.and_then(|id| {
                 crate::identity_manuscript::build_manuscript_context(id)
@@ -2147,7 +2177,8 @@ async fn run_agent_turn_inner(
             .map(|registry| registry as Arc<dyn super::coder_evidence::CompactEvidenceReceiptSink>),
         active_turn_checkpoint_sink,
         active_turn_resume,
-    });
+    })
+    .await;
 
     if let Some(route_notice) = assembled.pipeline_selection.route_dispatch_notice {
         sink.notice(route_notice).await;

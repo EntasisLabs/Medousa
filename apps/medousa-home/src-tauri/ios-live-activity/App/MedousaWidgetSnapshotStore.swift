@@ -38,6 +38,7 @@ enum MedousaWidgetSnapshotStore {
         )
         MedousaWidgetSnapshot.save(snapshot)
         WidgetCenter.shared.reloadTimelines(ofKind: MedousaWidgetSnapshot.widgetKind)
+        WidgetCenter.shared.reloadTimelines(ofKind: "MedousaQuickActions")
         return nil
     }
 
@@ -65,6 +66,7 @@ enum MedousaWidgetSnapshotStore {
         )
         MedousaWidgetSnapshot.save(snapshot)
         WidgetCenter.shared.reloadTimelines(ofKind: MedousaWidgetSnapshot.widgetKind)
+        WidgetCenter.shared.reloadTimelines(ofKind: "MedousaQuickActions")
         return true
     }
 

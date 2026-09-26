@@ -13,12 +13,6 @@ import { userProfiles } from "$lib/stores/userProfiles.svelte";
 import { identity } from "$lib/stores/identity.svelte";
 import { workshops } from "$lib/stores/workshops.svelte";
 import { ensureMobileDaemonUrl } from "$lib/daemonConnection";
-import {
-  budgetRequestIdFromStreamEvent,
-  notifyBudgetApprovalRequired,
-  notifyTurnTicketTerminal,
-  notifyWorkerHandoff,
-} from "$lib/notifications";
 import { isRecoverableStreamError } from "$lib/utils/streamEvents";
 import {
   DEFAULT_INTERACTIVE_BACKOFF,
@@ -53,6 +47,7 @@ import {
 } from "$lib/stores/environment.svelte";
 import type { EnvironmentStreamEvent } from "$lib/types/environment";
 import { homeChannelSurface } from "$lib/platform";
+import { layout } from "$lib/runtime/layout.svelte";
 import type { TurnStreamEnvelopeV3 } from "$lib/types/generated/daemon_api";
 import type { WorkspaceStreamEvent } from "$lib/types/workspace";
 
@@ -73,6 +68,7 @@ async function registerBrowserHostClient(health: DaemonHealth): Promise<void> {
   }
 }
 
+let workshopRecoveryGeneration = 0;
 let workshopTeardown = false;
 let workshopTransitioning = false;
 let workshopConnectMode: WorkshopConnectMode = "full";
@@ -89,42 +85,55 @@ const TRUST_HEARTBEAT_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 const BROWSER_CLIENT_HEARTBEAT_INTERVAL_MS = 45_000;
 
 function cancelScheduledStreamRecovery() {
+  workshopRecoveryGeneration += 1;
   workspaceReconnect.cancel();
   interactiveReconnect.cancel();
 }
 
+function recoveryIsCurrent(generation: number): boolean {
+  return generation === workshopRecoveryGeneration && !workshopTeardown && !workshopTransitioning;
+}
+
 function scheduleEnvironmentStreamReconnect() {
-  if (workshopTeardown || workshopConnectMode === "observer") return;
+  if (workshopTeardown || workshopTransitioning || workshopConnectMode === "observer") return;
   workspaceReconnect.schedule(() => recoverEnvironmentStream());
 }
 
 async function recoverEnvironmentStream(): Promise<void> {
-  if (workshopTeardown) return;
+  const generation = workshopRecoveryGeneration;
+  if (!recoveryIsCurrent(generation)) return;
   try {
     const health = await checkDaemonHealth();
+    if (!recoveryIsCurrent(generation)) return;
     connection.setHealth(health);
     if (!health.ok) {
       scheduleEnvironmentStreamReconnect();
       return;
     }
     await stopEnvironmentSync();
+    if (!recoveryIsCurrent(generation)) return;
     await environment.load();
+    if (!recoveryIsCurrent(generation)) return;
     await startEnvironmentSync();
+    if (!recoveryIsCurrent(generation)) return;
   } catch {
+    if (!recoveryIsCurrent(generation)) return;
     scheduleEnvironmentStreamReconnect();
   }
 }
 
 function scheduleWorkspaceStreamReconnect() {
-  if (workshopTeardown || workshopConnectMode === "observer") return;
+  if (workshopTeardown || workshopTransitioning || workshopConnectMode === "observer") return;
   workspaceReconnect.schedule(() => recoverWorkspaceStream());
 }
 
 async function recoverWorkspaceStream(): Promise<void> {
-  if (workshopTeardown) return;
+  const generation = workshopRecoveryGeneration;
+  if (!recoveryIsCurrent(generation)) return;
 
   try {
     const health = await checkDaemonHealth();
+    if (!recoveryIsCurrent(generation)) return;
     connection.setHealth(health);
     if (!health.ok) {
       scheduleWorkspaceStreamReconnect();
@@ -132,21 +141,34 @@ async function recoverWorkspaceStream(): Promise<void> {
     }
 
     await stopWorkspaceStream();
+    if (!recoveryIsCurrent(generation)) return;
     await startWorkspaceStream(workspace.revision || undefined);
+    if (!recoveryIsCurrent(generation)) return;
     workspaceReconnect.noteSuccess();
     await workspace.recoverPendingWorkerResults();
     void chat.tryReattachActiveTurn(workspace.cards);
   } catch {
+    if (!recoveryIsCurrent(generation)) return;
     scheduleWorkspaceStreamReconnect();
   }
 }
 
 function scheduleInteractiveStreamRecover() {
-  if (workshopTeardown || workshopConnectMode === "observer") return;
-  interactiveReconnect.schedule(() => recoverInteractiveStreams());
+  if (workshopTeardown || workshopTransitioning || workshopConnectMode === "observer") return;
+  const generation = workshopRecoveryGeneration;
+  interactiveReconnect.schedule(async () => {
+    if (!recoveryIsCurrent(generation)) return;
+    try {
+      await recoverInteractiveStreams();
+    } catch {
+      if (recoveryIsCurrent(generation)) scheduleInteractiveStreamRecover();
+    }
+  });
 }
 
 async function recoverInteractiveStreams(): Promise<void> {
+  const generation = workshopRecoveryGeneration;
+  if (!recoveryIsCurrent(generation)) return;
   const needsStream = [...chat.turns.values()].some(
     (turn) =>
       !turn.terminal &&
@@ -156,6 +178,7 @@ async function recoverInteractiveStreams(): Promise<void> {
       turn.phase !== "budget_blocked",
   );
   const attached = await chat.tryReattachActiveTurn(workspace.cards);
+  if (!recoveryIsCurrent(generation)) return;
   if (attached) {
     interactiveReconnect.noteSuccess();
     chat.streamError = null;
@@ -164,6 +187,7 @@ async function recoverInteractiveStreams(): Promise<void> {
   // Daemon idle clears orphans inside tryReattach; only alarm when still live.
   if (needsStream && chat.hasLiveInteractiveTurn()) {
     chat.noteStreamFailure("Could not reattach to live turn", { recoverable: true });
+    scheduleInteractiveStreamRecover();
     return;
   }
   chat.streamError = null;
@@ -216,34 +240,18 @@ function registerStreamListeners(unlisteners: Promise<() => void>[]) {
   unlisteners.push(
     onInteractiveEvent<TurnStreamEnvelopeV3>((envelope) => {
       if (workshopTransitioning) return;
-      const turnBefore = chat.turns.get(envelope.turn_id);
       chat.applyStreamEvent(envelope);
       if (!isTauriMobilePlatform()) return;
 
       if (envelope.event.type === "budget_approval_required") {
-        const requestId = budgetRequestIdFromStreamEvent(envelope);
-        if (requestId) {
-          void notifyBudgetApprovalRequired(
-            envelope.event.reason.split(".")[0]?.trim() || "Turn paused",
-            requestId,
-            envelope.event.reason,
-          );
-          haptic("warning");
-        }
+        haptic("warning");
         return;
       }
 
       if (
-        envelope.event.type === "worker_ack" &&
-        envelope.event.ack_kind === "worker"
+        envelope.event.type === "turn_completed" &&
+        envelope.event.outcome === "completed"
       ) {
-        void notifyWorkerHandoff(envelope, turnBefore?.workspaceCardId);
-        haptic("light");
-        return;
-      }
-
-      if (envelope.event.type === "turn_completed") {
-        void notifyTurnTicketTerminal(envelope, turnBefore?.workspaceCardId);
         haptic("success");
       }
     }),

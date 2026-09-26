@@ -3,6 +3,112 @@
 
 export type AuthorityId = string;
 
+export interface CoordinationChannelRef {
+  authority_id: AuthorityId;
+  channel_id: string;
+}
+
+export type ExternalPeerRuntime = "codex" | "cursor" | "hermes";
+
+export interface ExternalPeerTarget {
+  authority_id: AuthorityId;
+  execution_runtime_id: string;
+  runtime: ExternalPeerRuntime;
+}
+
+export type SessionId = string;
+
+export interface SessionRef {
+  authority_id: AuthorityId;
+  session_id: SessionId;
+}
+
+export interface ExternalPeerAssignmentBinding {
+  agent_session_id: string;
+  assignment_id: string;
+  channel: CoordinationChannelRef;
+  execution_session: SessionRef;
+  owner_principal_id: string;
+  target: ExternalPeerTarget;
+}
+
+export type PeerAssignmentOutcome = "completed" | "failed" | "cancelled" | "interrupted";
+
+export interface ExternalPeerAssignmentReceipt {
+  binding: ExternalPeerAssignmentBinding;
+  outcome: PeerAssignmentOutcome;
+  receipt_id: string;
+  result: string;
+}
+
+export type ContextManifestId = string;
+
+export interface ConversationRangeSelection {
+  after_entry_seq?: number | null;
+  session: SessionRef;
+  through_entry_seq: number;
+}
+
+export interface ResolvedConversationRange {
+  selection: ConversationRangeSelection;
+  selection_digest: string;
+}
+
+export interface ContextManifest {
+  created_at: string;
+  created_by: string;
+  manifest_id: ContextManifestId;
+  sources: ResolvedConversationRange[];
+}
+
+export interface ExternalPeerAssignmentRequest {
+  assignment_id: string;
+  channel: CoordinationChannelRef;
+  context: ContextManifest;
+  execution_grant_id: string;
+  execution_session: SessionRef;
+  existing_agent_session_id?: string | null;
+  forge_work_id: string;
+  idempotency_key: string;
+  instructions: string;
+  owner_principal_id: string;
+  owner_session: SessionRef;
+  target: ExternalPeerTarget;
+}
+
+export interface PeerAssignmentProposal {
+  continue_owner: boolean;
+  expires_at: string;
+  proposal_id: string;
+  request: ExternalPeerAssignmentRequest;
+}
+
+export interface PeerProposalDecision {
+  approved: boolean;
+  owner_principal_id: string;
+  proposal_id: string;
+}
+
+export interface PeerProposalReviewRecord {
+  binding?: ExternalPeerAssignmentBinding | null;
+  decision?: PeerProposalDecision | null;
+  proposal: PeerAssignmentProposal;
+  receipt?: ExternalPeerAssignmentReceipt | null;
+}
+
+export interface PeerProposalInboxResponse {
+  next_cursor?: string | null;
+  proposals: PeerProposalReviewRecord[];
+}
+
+export interface PeerProposalActionResponse {
+  binding?: ExternalPeerAssignmentBinding | null;
+  proposal_id: string;
+}
+
+export interface PeerProposalActionRequest {
+}
+
 export interface DaemonRuntimeDescriptor {
   advertised_capabilities: string[];
   authority_id: AuthorityId;
@@ -47,8 +153,6 @@ export interface CreateSessionResponse {
 
 export type ExecutionId = string;
 
-export type SessionId = string;
-
 export interface ExecutionRef {
   authority_id: AuthorityId;
   execution_id: ExecutionId;
@@ -56,11 +160,6 @@ export interface ExecutionRef {
 }
 
 export type TranscriptEntryId = string;
-
-export interface SessionRef {
-  authority_id: AuthorityId;
-  session_id: SessionId;
-}
 
 export interface TranscriptEntryRef {
   entry_id: TranscriptEntryId;
@@ -254,7 +353,7 @@ export interface TurnStreamEnvelopeV2 {
   turn_id: string;
 }
 
-export type TurnCompletionOutcomeV3 = "completed" | "needs_input" | "checkpointed" | "failed" | "cancelled" | "fuse_exhausted";
+export type TurnCompletionOutcomeV3 = "completed" | "needs_input" | "checkpointed" | "failed" | "cancelled" | "fuse_exhausted" | "fatal";
 
 export type TurnStreamEventV3 = { model_round: number; segment_id: string; type: "assistant_text_started" } | { segment_id: string; text: string; type: "content_append" } | { segment_id: string; type: "assistant_text_committed" } | { text: string; type: "reasoning_append" } | { debug_message?: string | null; operator_message?: string | null; phase: string; type: "status" } | { message: string; tool_names?: string[]; type: "progress" } | { model: string; provider: string; type: "model_receipt" } | { ack_kind: WorkerAckKind; text: string; tool_names?: string[]; type: "worker_ack"; work_id?: string | null } | { text: string; tool_names?: string[]; type: "worker_synthesis"; work_id?: string | null } | { debug_message?: string | null; operator_message: string; type: "error" } | { input_params?: ToolInputParam[]; input_summary: string; tool_name: string; tool_round: number; tool_run_id: string; type: "tool_started" } | { artifact_refs?: StreamToolArtifactRef[]; input_params?: ToolInputParam[]; input_summary: string; output_summary?: string | null; status: string; tool_name: string; tool_round: number; tool_run_id: string; type: "tool_finished" } | { artifact: StreamUiArtifact; type: "artifact_presented" } | { artifact: StreamUiArtifact; previous_artifact_id: string; root_artifact_id?: string | null; type: "artifact_updated" } | { scene: StreamUiScene; type: "ui_scene" } | { max_tool_rounds: number; progress_summary?: string | null; reason: string; request_id: string; requested_rounds: number; rounds_executed: number; type: "budget_approval_required" } | { challenge_url: string; reason: string; session_id: string; type: "browser_challenge" } | { opened_by_agent?: boolean; title?: string | null; type: "browser_navigated"; url: string } | { operator_summary?: string | null; report: ContextUsageReport; type: "context_usage" } | { agent_runtime?: string | null; agent_session_id?: string | null; message: string; request_id: string; type: "permission_request" } | { allowed_hosts?: string[]; backend: string; credential_key: string; label: string; provider_type: string; reason: string; request_id: string; type: "secret_request" } | { aggregate_text: string; debug_message?: string | null; operator_message?: string | null; outcome: TurnCompletionOutcomeV3; tool_names?: string[]; type: "turn_completed" };
 
@@ -276,7 +375,7 @@ export interface InteractiveTurnResponse {
   turn_id: string;
 }
 
-export type AgentModeId = "general" | "teacher" | "instant" | "coder";
+export type AgentModeId = "general" | "assistant" | "teacher" | "instant" | "coder";
 
 export interface CodeIntentContext {
   active_path?: string | null;
@@ -302,6 +401,21 @@ export interface ExecutionTargetRequirements {
 }
 
 export type ExecutionTargetSelection = { kind: "same_as_parent" } | { kind: "exact"; runtime_id: string } | { kind: "auto"; requirements?: ExecutionTargetRequirements };
+
+export type LiquidEventDisposition = "local_state" | "context_only" | "submit_turn" | "navigation" | "privileged_action";
+
+export interface LiquidInteractionEnvelope {
+  disposition: LiquidEventDisposition;
+  event_type: string;
+  expected_state_revision?: number | null;
+  instance_id: string;
+  message_id: string;
+  node_id: string;
+  occurred_at_utc: string;
+  payload?: unknown;
+  session_id: string;
+  version: number;
+}
 
 export interface MediaRef {
   generation_id?: string | null;
@@ -354,6 +468,7 @@ export interface InteractiveTurnRequest {
   code_project_setup_authorized?: boolean;
   host_context?: HostTurnContext | null;
   identity_user_id?: string | null;
+  liquid_interactions?: LiquidInteractionEnvelope[];
   manuscript_id?: string | null;
   max_tool_rounds?: number | null;
   media_refs?: MediaRef[];
@@ -466,12 +581,6 @@ export interface SessionTranscriptSearchResponse {
   query: string;
 }
 
-export interface ConversationRangeSelection {
-  after_entry_seq?: number | null;
-  session: SessionRef;
-  through_entry_seq: number;
-}
-
 export interface DeriveSessionTarget {
   catalog?: string | null;
   display_name?: string | null;
@@ -481,20 +590,6 @@ export interface DeriveSessionRequest {
   intent: string;
   sources: ConversationRangeSelection[];
   target: DeriveSessionTarget;
-}
-
-export type ContextManifestId = string;
-
-export interface ResolvedConversationRange {
-  selection: ConversationRangeSelection;
-  selection_digest: string;
-}
-
-export interface ContextManifest {
-  created_at: string;
-  created_by: string;
-  manifest_id: ContextManifestId;
-  sources: ResolvedConversationRange[];
 }
 
 export type DerivationId = string;

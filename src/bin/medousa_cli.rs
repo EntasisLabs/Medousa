@@ -581,6 +581,7 @@ async fn run_daemon_watch_add(
         execution_mode: None,
         manuscript_id: None,
         display_name: None,
+        notify_on_delivery: None,
     };
 
     let response = client

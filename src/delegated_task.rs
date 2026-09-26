@@ -27,7 +27,7 @@ use crate::session_store::{
 };
 use crate::workshop_contract::{
     ExecutionPlacementResolution, ExecutionResolutionReason, UNKNOWN_EXECUTION_RUNTIME_ID,
-    default_unknown_runtime_id,
+    WorkerCodeProjectSetup, default_unknown_runtime_id,
 };
 
 pub const DELEGATED_TASK_SCHEMA_VERSION: u32 = 1;
@@ -220,6 +220,10 @@ pub struct WorkerSpawnSpec {
     pub parent: WorkerParentSpec,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code_project: Option<WorkerCodeProjectRef>,
+    /// Explicit request to create a project on the destination before Coder
+    /// work starts. The destination resolves repository names and local paths.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_project_setup: Option<WorkerCodeProjectSetup>,
     pub execution_placement: ExecutionPlacementResolution,
     /// Opaque world identities admitted for this worker. Placement and driver
     /// details are intentionally held outside this model-authored contract.
@@ -377,6 +381,26 @@ pub trait DelegatedTaskTransport: Send + Sync {
         &self,
     ) -> Result<Vec<crate::delegation::AuthorizedDelegationTarget>, DelegatedTaskError> {
         Ok(Vec::new())
+    }
+
+    /// Read-only inventory from every configured workshop. Implementations
+    /// preserve unavailable targets as explicit error rows rather than
+    /// silently treating them as empty workshops.
+    async fn active_work_inventories(
+        &self,
+        _include_terminal: bool,
+    ) -> Result<Vec<serde_json::Value>, DelegatedTaskError> {
+        Ok(Vec::new())
+    }
+
+    async fn propose_peer(
+        &self,
+        _target: &crate::delegation::DelegationTarget,
+        _request: crate::peer_coordination_mesh::RemotePeerProposalRequest,
+    ) -> Result<crate::peer_coordination_mesh::RemotePeerProposalResponse, DelegatedTaskError> {
+        Err(DelegatedTaskError::transport(
+            "remote peer proposal transport is unavailable",
+        ))
     }
 
     async fn submit_or_observe(
@@ -539,9 +563,33 @@ pub fn validate_worker_spawn_spec(spec: &WorkerSpawnSpec) -> Result<(), Delegate
                 "Coder project authority does not match worker placement",
             ));
         }
-    } else if intent == crate::agent_runtime::turn_worker::TurnWorkerIntent::Coder {
+    }
+    if let Some(setup) = spec.code_project_setup.as_ref() {
+        validate_worker_text("Coder project title", &setup.title, 256)?;
+        validate_worker_text("Coder project brief", &setup.brief, 4_096)?;
+        if let Some(repository) = setup.repository.as_deref() {
+            validate_worker_text("Coder repository", repository, 2_048)?;
+        }
+        if let Some(base_ref) = setup.base_ref.as_deref() {
+            validate_worker_text("Coder project base ref", base_ref, 256)?;
+        }
+        if intent != crate::agent_runtime::turn_worker::TurnWorkerIntent::Coder {
+            return Err(DelegatedTaskError::invalid(
+                "only a Coder worker may request project setup",
+            ));
+        }
+        if spec.code_project.is_some() {
+            return Err(DelegatedTaskError::invalid(
+                "Coder worker cannot request project setup and carry an existing project",
+            ));
+        }
+    }
+    if spec.code_project.is_none()
+        && spec.code_project_setup.is_none()
+        && intent == crate::agent_runtime::turn_worker::TurnWorkerIntent::Coder
+    {
         return Err(DelegatedTaskError::invalid(
-            "Coder worker requires a destination-owned code project",
+            "Coder worker requires a destination-owned code project or explicit project setup",
         ));
     }
     if !(1..=128).contains(&spec.max_tool_rounds) {
@@ -1158,7 +1206,9 @@ fn validate_task_execution_grant(
         || grant.parent_session_id != request.grant.session_id
         || grant.origin_runtime_id != request.parent_runtime_id
         || grant.correlation_id != request.grant.correlation_id
-        || grant.expires_at <= grant.issued_at
+        || grant
+            .expires_at
+            .is_some_and(|expiry| expiry <= grant.issued_at)
         || !grant
             .effective_tool_domains
             .iter()
@@ -1415,6 +1465,7 @@ mod tests {
                 supports_browser_host: false,
             },
             code_project: None,
+            code_project_setup: None,
             execution_placement: request.execution_placement.clone(),
             world_ids: Vec::new(),
             max_tool_rounds: 10,

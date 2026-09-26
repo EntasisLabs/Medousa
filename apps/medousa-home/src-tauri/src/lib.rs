@@ -40,6 +40,8 @@ mod ios_push_setup;
 mod lan_share;
 #[cfg(target_os = "ios")]
 mod live_activity;
+#[cfg(target_os = "ios")]
+mod live_voice;
 mod mcp_gateway;
 mod medousa_paths;
 mod mesh_envelope;
@@ -58,6 +60,7 @@ mod power_events;
 mod provider_catalog;
 mod providers;
 mod push;
+mod siri_intents;
 mod terminal;
 mod tray;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -283,10 +286,13 @@ fn run_home() {
         #[cfg(target_os = "ios")]
         {
             let keychain_probe_ran = run_ios_phase0_keychain_probe_if_requested()?;
+            siri_intents::init_app_handle(app.handle().clone());
+            siri_intents::reconcile_pending_completions(app.handle().clone());
             human_browser_ios::init_app_handle(app.handle().clone());
             ios_push_setup::install_ios_push_background_handler();
             embedded_daemon::install_lifecycle(app.handle());
             embedded_daemon::prewarm(app.handle());
+            live_voice::install_background_coordinator(app.handle().clone());
             // Match medousa-theme surface-950 so the status-bar / Dynamic Island
             // backdrop is not pure black against the charcoal shell.
             if let Some(main) = app.get_webview_window("main") {
@@ -480,6 +486,13 @@ fn run_home() {
             pairing::pairing_send_heartbeat,
             push::push_register_apns_token,
             push::push_clear_apns_token,
+            siri_intents::siri_consume_pending_ask,
+            siri_intents::siri_recent_pending_ask_id,
+            siri_intents::siri_consume_pending_live_url,
+            siri_intents::siri_publish_ask_result,
+            siri_intents::siri_sync_execution_context,
+            siri_intents::siri_sync_preferences,
+            siri_intents::siri_sync_workshop_snapshot,
             pairing::bonjour_status,
             lan_share::lan_pairing_status,
             lan_share::set_lan_pairing_enabled,
@@ -512,6 +525,8 @@ fn run_home() {
             embedded_daemon::embedded_set_delegation_binding,
             #[cfg(any(target_os = "ios", target_os = "android"))]
             embedded_daemon::embedded_clear_delegation_binding,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            embedded_daemon::coordination_sync_remote_peer_completions,
             workshop_registry::workshops_load,
             workshop_registry::workshops_set_active,
             workshop_registry::workshops_add_local,
@@ -971,6 +986,30 @@ fn run_home() {
             live_activity::live_activity_push_token,
             #[cfg(target_os = "ios")]
             live_activity::live_activity_sync,
+            #[cfg(target_os = "ios")]
+            live_voice::live_voice_create_session,
+            #[cfg(target_os = "ios")]
+            live_voice::live_voice_carplay_exchange,
+            #[cfg(target_os = "ios")]
+            live_voice::live_voice_append_transcript,
+            #[cfg(target_os = "ios")]
+            live_voice::live_voice_start,
+            #[cfg(target_os = "ios")]
+            live_voice::live_voice_start_native,
+            #[cfg(target_os = "ios")]
+            live_voice::live_voice_prepare_native,
+            #[cfg(target_os = "ios")]
+            live_voice::live_voice_drain_native_events,
+            #[cfg(target_os = "ios")]
+            live_voice::live_voice_ack_native_events,
+            #[cfg(target_os = "ios")]
+            live_voice::live_voice_send_native_event,
+            #[cfg(target_os = "ios")]
+            live_voice::live_voice_set_muted,
+            #[cfg(target_os = "ios")]
+            live_voice::live_voice_stop,
+            #[cfg(target_os = "ios")]
+            live_voice::live_voice_status,
             #[cfg(target_os = "ios")]
             home_widget::home_widget_sync,
             medousa_paths::medousa_config_paths,

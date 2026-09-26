@@ -20,6 +20,20 @@ use crate::turn_slice::{
     format_cold_history_line, prior_turn_content,
 };
 
+pub(crate) fn requested_tool_allowlist(
+    tools: Option<&[String]>,
+) -> Option<std::collections::HashSet<String>> {
+    // Preserve explicit emptiness: None inherits normal selection; Some(empty)
+    // is a result-only ceiling, including after whitespace normalization.
+    tools.map(|tools| {
+        tools
+            .iter()
+            .map(|tool| tool.trim().to_string())
+            .filter(|tool| !tool.is_empty())
+            .collect()
+    })
+}
+
 #[derive(Debug, Clone)]
 pub struct TurnActivationDecision {
     pub turn_class: &'static str,
@@ -98,6 +112,11 @@ pub fn select_pipeline_for_turn_with_registry_and_allowlist(
     use crate::tui::runtime_services::build_tool_loop_pipeline_for_target;
 
     let registry: Arc<dyn ToolRegistry> = match tool_allowlist {
+        // Explicitly empty means result-only, not an implicit public API grant.
+        Some(allowlist) if allowlist.is_empty() => Arc::new(AllowlistToolRegistry::new_exact(
+            tool_registry.clone(),
+            allowlist,
+        )),
         Some(allowlist) => Arc::new(AllowlistToolRegistry::new(tool_registry.clone(), allowlist)),
         None => tool_registry,
     };
@@ -566,6 +585,24 @@ fn truncate_text_for_budget(text: &str, max_chars: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn explicit_empty_tool_ceiling_is_not_dropped() {
+        assert!(super::requested_tool_allowlist(None).is_none());
+        assert_eq!(
+            super::requested_tool_allowlist(Some(&[])),
+            Some(std::collections::HashSet::new())
+        );
+        assert_eq!(
+            super::requested_tool_allowlist(Some(&["   ".into()])),
+            Some(std::collections::HashSet::new())
+        );
+        assert_eq!(
+            super::requested_tool_allowlist(Some(&[" cognition_web_search ".into()])),
+            Some(std::collections::HashSet::from([
+                "cognition_web_search".into()
+            ]))
+        );
+    }
     use chrono::Utc;
     use stasis::application::orchestration::tool_loop_pipeline::ToolCallMode;
 

@@ -46,6 +46,21 @@ fn main() {
     export_type!(schemas, ArchiveAskJobResponse, "ArchiveAskJobResponse");
 
     // Sessions
+    export_type!(
+        schemas,
+        medousa_types::coordination::PeerProposalInboxResponse,
+        "PeerProposalInboxResponse"
+    );
+    export_type!(
+        schemas,
+        medousa_types::coordination::PeerProposalActionRequest,
+        "PeerProposalActionRequest"
+    );
+    export_type!(
+        schemas,
+        medousa_types::coordination::PeerProposalActionResponse,
+        "PeerProposalActionResponse"
+    );
     export_type!(schemas, AuthorityId, "AuthorityId");
     export_type!(schemas, CreateSessionRequest, "CreateSessionRequest");
     export_type!(schemas, CreateSessionResponse, "CreateSessionResponse");
@@ -227,7 +242,11 @@ fn main() {
     export_type!(schemas, CreateTurnTicketRequest, "CreateTurnTicketRequest");
     export_type!(schemas, TurnTicketResponse, "TurnTicketResponse");
     export_type!(schemas, LiquidEventDisposition, "LiquidEventDisposition");
-    export_type!(schemas, LiquidInteractionEnvelope, "LiquidInteractionEnvelope");
+    export_type!(
+        schemas,
+        LiquidInteractionEnvelope,
+        "LiquidInteractionEnvelope"
+    );
     export_type!(
         schemas,
         LiquidComponentStateRecord,

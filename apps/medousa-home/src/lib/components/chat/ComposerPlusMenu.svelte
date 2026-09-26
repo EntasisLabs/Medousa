@@ -106,6 +106,15 @@
   });
 
   $effect(() => {
+    const openAttachment = (event: Event) => {
+      const action = (event as CustomEvent<{ action?: string }>).detail?.action;
+      if (action === "camera" || action === "photos") attach(action);
+    };
+    window.addEventListener("medousa-compose-action", openAttachment);
+    return () => window.removeEventListener("medousa-compose-action", openAttachment);
+  });
+
+  $effect(() => {
     if (!open || !showStashes) return;
     void refreshStashes();
   });

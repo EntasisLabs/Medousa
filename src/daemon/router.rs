@@ -166,6 +166,9 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::daemon::detamu_host::world_surface().inventory())
         .expect("duplicate world model route policy");
     inventory
+        .extend(crate::daemon::coordination::http::surface().inventory())
+        .expect("duplicate coordination route policy");
+    inventory
         .extend(crate::daemon::forge_api::forge_surface().inventory())
         .expect("duplicate Forge route policy");
     inventory
@@ -586,6 +589,7 @@ pub fn build_workshop_surface() -> DeclaredRouter<AppState> {
     use crate::request_principal::Capability;
 
     DeclaredRouter::default()
+        .merge(crate::live_handlers::surface())
         .route(workshop_read_policy("/v1/health"), get(health))
         .route(workshop_read_policy("/v1/stats"), get(stats))
         .route(
@@ -1377,12 +1381,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 430);
-        assert_eq!(with_pairing.entries().len(), 449);
+        assert_eq!(without_pairing.entries().len(), 438);
+        assert_eq!(with_pairing.entries().len(), 457);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 449);
+        assert_eq!(rows.len(), 457);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
@@ -1449,7 +1453,7 @@ mod tests {
             .inventory()
             .entries()
             .collect::<Vec<_>>();
-        assert_eq!(entries.len(), 54);
+        assert_eq!(entries.len(), 55);
         assert_eq!(
             entries
                 .iter()
@@ -1462,7 +1466,7 @@ mod tests {
                 .iter()
                 .filter(|entry| entry.required_capability == Some("workshop.interact"))
                 .count(),
-            27
+            28
         );
         assert_eq!(
             entries

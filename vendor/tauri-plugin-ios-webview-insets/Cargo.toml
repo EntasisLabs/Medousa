@@ -1,0 +1,21 @@
+[package]
+name = "tauri-plugin-ios-webview-insets"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+license = "MIT"
+links = "tauri-plugin-ios-webview-insets"
+
+[lib]
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+tauri = { version = "2", default-features = false }
+
+[target.'cfg(target_os = "ios")'.dependencies.tauri]
+version = "2"
+features = ["wry"]
+default-features = false
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

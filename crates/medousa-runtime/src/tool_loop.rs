@@ -41,10 +41,11 @@ use crate::loop_gate::{
     DEFAULT_FOREGROUND_MAX_TOOL_ROUNDS, ToolLoopCompletionGate, collect_tool_names,
 };
 use crate::loop_state::{
+    REPEATED_TOOL_FAILURE_STOP_AT, REPEATED_TOOL_FAILURE_WARNING_AT, RepeatedToolFailureGuard,
     TURN_CONTROL_PREFIX, TurnLedgerEventKind, TurnLedgerRecord, TurnLoopAwareness,
     TurnLoopDiscipline, ledger_tool_names, push_turn_control_message, record_finalized,
-    record_fsm_continue, record_stuck, record_tool_round, resolve_max_text_only_stuck_continues,
-    stuck_turn_user_message,
+    record_fsm_continue, record_repeated_tool_failure, record_stuck, record_tool_round,
+    resolve_max_text_only_stuck_continues, stuck_turn_user_message,
 };
 use crate::perception::ToolPerceptionGovernor;
 use crate::ports::{
@@ -52,16 +53,16 @@ use crate::ports::{
     ToolRunFinish, ToolRunStart, TurnBudgetApprovalRequest, TurnBudgetApprovalResolution,
 };
 use crate::turn_context::{
-    HostTurnContext, push_round_context, push_turn_scratch_message_with_budget,
+    HostTurnContext, push_round_context, push_turn_scratch_message_with_optional_budget,
     record_round_digest_from_invocations,
 };
 use crate::turn_control::{
-    ABSOLUTE_MAX_TOOL_ROUNDS, COGNITION_TURN, COGNITION_WORKSHOP_MUTATE,
+    ABSOLUTE_MAX_TOOL_ROUNDS, COGNITION_TURN, WorkerSpawnDisposition,
     begin_work_note_from_invocations, checkpoint_turn_from_invocations,
     finish_turn_from_invocations, is_begin_work_tool_name, is_terminal_turn_tool_name,
     is_workshop_spawn_call, request_input_from_invocations, request_more_rounds_from_invocations,
     terminal_text_for_fsm_end, turn_progress_message_from_invocations,
-    worker_spawn_from_invocations, workshop_entered_from_invocations,
+    worker_spawn_control_from_invocations, workshop_entered_from_invocations,
 };
 
 const DEFAULT_MAX_TOOL_ROUNDS: usize = DEFAULT_FOREGROUND_MAX_TOOL_ROUNDS;
@@ -232,6 +233,10 @@ impl MedousaToolLoopPipeline {
         } = request;
 
         let mut effective_max_tool_rounds = max_tool_rounds.max(1);
+        let enforce_tool_round_limit = completion_gate
+            .as_ref()
+            .map(|gate| gate.enforce_tool_round_limit)
+            .unwrap_or(false);
         let shared_inputs = ToolLoopSharedInputs {
             user_prompt: Arc::<str>::from(user_prompt),
             system_prompt: system_prompt.map(Arc::<str>::from),
@@ -377,8 +382,9 @@ impl MedousaToolLoopPipeline {
         );
 
         let mut previous_request = None;
+        let mut repeated_tool_failures = RepeatedToolFailureGuard::default();
         if !tools.is_empty() {
-            while rounds_executed < effective_max_tool_rounds {
+            while !enforce_tool_round_limit || rounds_executed < effective_max_tool_rounds {
                 rounds_executed += 1;
                 if let Some(gate) = completion_gate.as_ref() {
                     if let Some(work_id) = gate.cancel_poll_work_id.as_deref() {
@@ -426,14 +432,16 @@ impl MedousaToolLoopPipeline {
                         }
                     }
                 }
-                let tool_rounds_remaining =
-                    effective_max_tool_rounds.saturating_sub(rounds_executed);
+                let tool_rounds_remaining = enforce_tool_round_limit
+                    .then(|| effective_max_tool_rounds.saturating_sub(rounds_executed));
                 turn_ctx.scratchpad.on_tool_round_start(rounds_executed);
-                push_turn_control_message(
-                    &mut turn_ctx.tool_lane.messages,
-                    &loop_awareness.loop_budget_message(tool_rounds_remaining),
-                );
-                push_turn_scratch_message_with_budget(
+                if let Some(remaining) = tool_rounds_remaining {
+                    push_turn_control_message(
+                        &mut turn_ctx.tool_lane.messages,
+                        &loop_awareness.loop_budget_message(remaining),
+                    );
+                }
+                push_turn_scratch_message_with_optional_budget(
                     &mut turn_ctx.tool_lane.messages,
                     &turn_ctx.scratchpad,
                     tool_rounds_remaining,
@@ -591,6 +599,7 @@ impl MedousaToolLoopPipeline {
                                 draft_text: text.clone(),
                                 rounds_executed,
                                 max_tool_rounds: effective_max_tool_rounds,
+                                enforce_tool_round_limit,
                                 completion_profile,
                             })
                         };
@@ -737,14 +746,26 @@ impl MedousaToolLoopPipeline {
                                     TurnExecutionBoundaryError::MissingContext,
                                 )
                             })?;
+                        // Tokio task locals do not cross JoinSet::spawn. Capture
+                        // the owning turn's event sink here and restore it in
+                        // the child so UI-dependent tools can deliver handoffs.
+                        let tool_sink = medousa_engine::active_tool_sink().await;
                         join_set.spawn(async move {
-                            let output = with_turn_execution_boundary(execution_boundary, async {
-                                await_turn_boundary(
-                                    registry.invoke_tool(&call.fn_name, call.fn_arguments.clone()),
-                                )
-                                .await
-                            })
-                            .await;
+                            let invocation =
+                                with_turn_execution_boundary(execution_boundary, async {
+                                    await_turn_boundary(
+                                        registry
+                                            .invoke_tool(&call.fn_name, call.fn_arguments.clone()),
+                                    )
+                                    .await
+                                });
+                            let output = match tool_sink {
+                                Some(tool_sink) => {
+                                    medousa_engine::with_active_tool_sink(tool_sink, invocation)
+                                        .await
+                                }
+                                None => invocation.await,
+                            };
                             (call, output, tool_run_id)
                         });
                     }
@@ -980,6 +1001,78 @@ impl MedousaToolLoopPipeline {
                     );
                 }
 
+                let repeated_failure_count =
+                    repeated_tool_failures.observe_batch(round_invocations);
+                if repeated_failure_count == REPEATED_TOOL_FAILURE_WARNING_AT {
+                    push_turn_control_message(
+                        &mut turn_ctx.tool_lane.messages,
+                        "The last tool batch failed with exactly the same calls, arguments, and errors as the previous batch. Change the approach, correct the cause, or ask for input. Do not repeat that failed batch unchanged.",
+                    );
+                    if let Some(gate) = completion_gate.as_ref()
+                        && let Some(presentation) = gate.runtime_ports.turn_presentation()
+                    {
+                        presentation
+                            .notice("Repeated identical tool failure; the next retry must change the approach.".to_string())
+                            .await;
+                    }
+                }
+                if repeated_failure_count >= REPEATED_TOOL_FAILURE_STOP_AT {
+                    let termination_reason = "repeated_tool_failure";
+                    if let Some(gate) = completion_gate.as_ref() {
+                        persist_gate_ledger(
+                            gate,
+                            &record_repeated_tool_failure(
+                                gate.stream_turn_id,
+                                rounds_executed,
+                                &round_tool_names,
+                                repeated_failure_count,
+                                &turn_ctx.scratchpad,
+                            ),
+                        );
+                    }
+                    let checkpoint_persisted = persist_checkpoint!(
+                        SafeCheckpointBoundary::RecoverableFailure,
+                        ActiveTurnCheckpointStatus::RecoverableFailure,
+                        Some(termination_reason),
+                        None,
+                        &round_tool_names,
+                        &round_provider_call_ids,
+                    );
+                    let text = if checkpoint_persisted {
+                        format!(
+                            "I stopped after the same tool calls with the same arguments returned the same failure {repeated_failure_count} times. This action is blocked; completed results and the failure are saved in a recoverable checkpoint. Change the approach or tell me how you want to proceed."
+                        )
+                    } else {
+                        format!(
+                            "I stopped after the same tool calls with the same arguments returned the same failure {repeated_failure_count} times. This action is blocked. I could not confirm a recoverable checkpoint, so verify current state before retrying. Change the approach or tell me how you want to proceed."
+                        )
+                    };
+                    if let Some(gate) = completion_gate.as_ref()
+                        && let Some(presentation) = gate.runtime_ports.turn_presentation()
+                    {
+                        let notice = if checkpoint_persisted {
+                            "Stopped after repeated identical failures; recoverable turn checkpoint saved."
+                        } else {
+                            "Stopped after repeated identical failures; checkpoint persistence was not confirmed."
+                        };
+                        presentation.notice(notice.to_string()).await;
+                    }
+                    let last = invocations.last().cloned().unwrap_or(ToolInvocation {
+                        tool_name: String::new(),
+                        tool_input: Value::Null,
+                        tool_output: Value::Null,
+                    });
+                    return Ok(ToolLoopExecutionResponse {
+                        text,
+                        metadata: shared_inputs.context_clone(),
+                        tool_name: last.tool_name,
+                        tool_output: last.tool_output,
+                        tool_invocations: invocations,
+                        rounds_executed,
+                        termination_reason: termination_reason.to_string(),
+                    });
+                }
+
                 persist_checkpoint!(
                     SafeCheckpointBoundary::ToolBatchCompleted,
                     ActiveTurnCheckpointStatus::Active,
@@ -990,6 +1083,13 @@ impl MedousaToolLoopPipeline {
                 );
 
                 if let Some(payload) = request_more_rounds_from_invocations(round_invocations) {
+                    if !enforce_tool_round_limit {
+                        push_turn_control_message(
+                            &mut turn_ctx.tool_lane.messages,
+                            "Tool rounds are unlimited for this turn; continue the task without requesting an extension.",
+                        );
+                        continue;
+                    }
                     if let Some(gate) = completion_gate.as_ref()
                         && !gate.require_operator_budget_gate
                     {
@@ -1299,7 +1399,11 @@ impl MedousaToolLoopPipeline {
                     });
                 }
 
-                if let Some((work_id, ack)) = worker_spawn_from_invocations(round_invocations) {
+                if let Some(spawn_control) =
+                    worker_spawn_control_from_invocations(round_invocations)
+                {
+                    let work_id = spawn_control.work_id;
+                    let ack = spawn_control.ack;
                     let intent = invocations
                         .iter()
                         .find(|i| is_workshop_spawn_call(&i.tool_name, &i.tool_input))
@@ -1311,6 +1415,12 @@ impl MedousaToolLoopPipeline {
                     if let Some(gate) = completion_gate.as_ref() {
                         let parent_corr = gate.parent_turn_correlation_id.as_deref().unwrap_or("-");
                         let digest = turn_ctx.scratchpad.digest_hash();
+                        let delegation_phase = match spawn_control.disposition {
+                            WorkerSpawnDisposition::Started => "peer_spawned",
+                            WorkerSpawnDisposition::Queued => {
+                                "peer_queued_for_background_discovery"
+                            }
+                        };
                         persist_gate_ledger(
                             gate,
                             &TurnLedgerRecord {
@@ -1321,7 +1431,7 @@ impl MedousaToolLoopPipeline {
                                 stream_turn_id: gate.stream_turn_id,
                                 kind: TurnLedgerEventKind::WorkDelegated,
                                 detail: format!(
-                                    "host_turn_ended work_id={work_id} intent={intent} parent_turn_correlation_id={parent_corr} scratch_digest={digest}"
+                                    "{delegation_phase} host_turn_continues work_id={work_id} intent={intent} parent_turn_correlation_id={parent_corr} scratch_digest={digest}"
                                 ),
                                 tools_invoked: ledger_tool_names(&invocations),
                                 missing_tools: Vec::new(),
@@ -1333,28 +1443,27 @@ impl MedousaToolLoopPipeline {
                             },
                         );
                     }
-                    let last = invocations.last().cloned().unwrap_or(ToolInvocation {
-                        tool_name: COGNITION_WORKSHOP_MUTATE.to_string(),
-                        tool_input: Value::Null,
-                        tool_output: Value::Null,
-                    });
                     persist_checkpoint!(
-                        SafeCheckpointBoundary::Terminal,
-                        ActiveTurnCheckpointStatus::Completed,
-                        Some("worker_spawned"),
+                        SafeCheckpointBoundary::ToolBatchCompleted,
+                        ActiveTurnCheckpointStatus::Active,
+                        None,
                         None,
                         &round_tool_names,
                         &round_provider_call_ids,
                     );
-                    return Ok(ToolLoopExecutionResponse {
-                        text: ack,
-                        metadata: shared_inputs.context_clone(),
-                        tool_name: last.tool_name,
-                        tool_output: last.tool_output,
-                        tool_invocations: invocations,
-                        rounds_executed,
-                        termination_reason: "worker_spawned".to_string(),
-                    });
+                    let continuation = match spawn_control.disposition {
+                        WorkerSpawnDisposition::Started => {
+                            "The peer now runs concurrently. Continue any complementary work in this host turn without polling or duplicating the delegated task, then emit the appropriate typed terminal outcome."
+                        }
+                        WorkerSpawnDisposition::Queued => {
+                            "The workshop durably queued this request. Target discovery and authorization are still pending in the background. Continue any complementary work in this host turn without polling or duplicating the queued task, then emit the appropriate typed terminal outcome."
+                        }
+                    };
+                    push_turn_control_message(
+                        &mut turn_ctx.tool_lane.messages,
+                        &format!("{TURN_CONTROL_PREFIX}\n{ack}\n{continuation}"),
+                    );
+                    continue;
                 }
             }
 
@@ -1468,7 +1577,7 @@ async fn apply_fsm_continue_loop(
     turn_ctx: &mut HostTurnContext,
     loop_awareness: &mut TurnLoopAwareness,
     discipline: &mut TurnLoopDiscipline,
-    tool_rounds_remaining: usize,
+    tool_rounds_remaining: Option<usize>,
     mut completion_gate: Option<&mut ToolLoopCompletionGate<'_>>,
     shared_inputs: &ToolLoopSharedInputs,
     rounds_executed: usize,
@@ -1511,9 +1620,11 @@ async fn apply_fsm_continue_loop(
     }
     push_turn_control_message(
         &mut turn_ctx.tool_lane.messages,
-        &loop_awareness.wrap_control_body(tool_rounds_remaining, control_message),
+        &tool_rounds_remaining
+            .map(|remaining| loop_awareness.wrap_control_body(remaining, control_message))
+            .unwrap_or_else(|| control_message.to_string()),
     );
-    push_turn_scratch_message_with_budget(
+    push_turn_scratch_message_with_optional_budget(
         &mut turn_ctx.tool_lane.messages,
         &turn_ctx.scratchpad,
         tool_rounds_remaining,
@@ -1705,10 +1816,16 @@ async fn hydrate_tool_observation_batch(
         )));
         let encoded =
             Arc::<str>::from(base64::engine::general_purpose::STANDARD.encode(&observation.bytes));
+        let extension = match observation.content_type.as_str() {
+            "image/jpeg" => "jpg",
+            "image/webp" => "webp",
+            "image/gif" => "gif",
+            _ => "png",
+        };
         parts.push(ContentPart::from_binary_base64(
             observation.content_type,
             encoded,
-            Some(format!("tool-observation-{}.png", index + 1)),
+            Some(format!("tool-observation-{}.{extension}", index + 1)),
         ));
     }
     for source_call_id in unavailable_calls {
@@ -1739,8 +1856,13 @@ fn validate_hydrated_tool_observation(
         || observation.source_call_id != requested_call_id
         || observation.artifact_id.trim().is_empty()
         || observation.artifact_id.len() > 256
-        || !observation.artifact_id.starts_with("art:")
-        || observation.content_type != "image/png"
+        || !["art:", "usr:", "gen:"]
+            .iter()
+            .any(|prefix| observation.artifact_id.starts_with(prefix))
+        || !matches!(
+            observation.content_type.as_str(),
+            "image/png" | "image/jpeg" | "image/webp" | "image/gif"
+        )
         || observation.bytes.is_empty()
         || observation.bytes.len() > MAX_HYDRATED_TOOL_OBSERVATION_BYTES
         || logical_bytes_before.saturating_add(observation.bytes.len())
@@ -2158,6 +2280,8 @@ mod tests {
 
     struct StaticHydrationPort {
         bytes: Vec<u8>,
+        artifact_id: &'static str,
+        content_type: &'static str,
     }
 
     impl ToolObservationHydrationPort for StaticHydrationPort {
@@ -2170,12 +2294,14 @@ mod tests {
             request: ToolObservationHydrationRequest,
         ) -> RuntimePortFuture<Result<Option<HydratedToolObservation>, String>> {
             let bytes = self.bytes.clone();
+            let artifact_id = self.artifact_id.to_string();
+            let content_type = self.content_type.to_string();
             Box::pin(async move {
                 Ok(Some(HydratedToolObservation {
                     tool_name: request.tool_name,
                     source_call_id: request.source_call_id,
-                    artifact_id: "art:session:screenshot:abc".to_string(),
-                    content_type: "image/png".to_string(),
+                    artifact_id,
+                    content_type,
                     sha256: format!("{:x}", Sha256::digest(&bytes)),
                     bytes,
                     untrusted_content: true,
@@ -2190,6 +2316,8 @@ mod tests {
         let batch = hydrate_tool_observation_batch(
             Some(Arc::new(StaticHydrationPort {
                 bytes: bytes.clone(),
+                artifact_id: "art:session:screenshot:abc",
+                content_type: "image/png",
             })),
             vec![ToolObservationHydrationRequest {
                 tool_name: "screenshot".to_string(),
@@ -2211,6 +2339,65 @@ mod tests {
         }));
         assert!(
             message
+                .content
+                .parts()
+                .iter()
+                .any(|part| matches!(part, ContentPart::Binary(_)))
+        );
+    }
+
+    #[tokio::test]
+    async fn reopened_jpeg_media_reaches_the_model_as_pixels() {
+        let bytes = b"\xff\xd8\xffstored-photo".to_vec();
+        let batch = hydrate_tool_observation_batch(
+            Some(Arc::new(StaticHydrationPort {
+                bytes,
+                artifact_id: "usr:session:photo",
+                content_type: "image/jpeg",
+            })),
+            vec![ToolObservationHydrationRequest {
+                tool_name: "cognition_chat_history_read".into(),
+                source_call_id: "reopen-photo".into(),
+                tool_output: json!({ "image": { "media_id": "usr:session:photo" } }),
+            }],
+        )
+        .await;
+
+        assert_eq!(batch.attached, 1);
+        assert_eq!(batch.unavailable, 0);
+        let message = batch.message.expect("image-bearing model message");
+        assert!(message.content.parts().iter().any(|part| matches!(
+            part,
+            ContentPart::Binary(binary)
+                if binary.content_type == "image/jpeg"
+                    && binary.name.as_deref() == Some("tool-observation-1.jpg")
+        )));
+        assert!(message.content.parts().iter().any(|part| {
+            part.as_text()
+                .is_some_and(|text| text.contains("artifact_id=usr:session:photo"))
+        }));
+    }
+
+    #[tokio::test]
+    async fn media_hydration_rejects_nonimage_payloads() {
+        let batch = hydrate_tool_observation_batch(
+            Some(Arc::new(StaticHydrationPort {
+                bytes: b"<script>untrusted</script>".to_vec(),
+                artifact_id: "usr:session:document",
+                content_type: "text/html",
+            })),
+            vec![ToolObservationHydrationRequest {
+                tool_name: "cognition_chat_history_read".into(),
+                source_call_id: "reopen-document".into(),
+                tool_output: json!(null),
+            }],
+        )
+        .await;
+        assert_eq!(batch.attached, 0);
+        assert_eq!(batch.unavailable, 1);
+        let message = batch.message.unwrap();
+        assert!(
+            !message
                 .content
                 .parts()
                 .iter()
@@ -2380,6 +2567,7 @@ mod tests {
             draft_text: preamble.to_string(),
             rounds_executed: 3,
             max_tool_rounds: 10,
+            enforce_tool_round_limit: true,
             completion_profile: TurnCompletionProfile::ForegroundPrincipal,
         });
         assert!(matches!(

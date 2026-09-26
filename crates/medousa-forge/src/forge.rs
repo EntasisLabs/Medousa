@@ -15,6 +15,30 @@ use sha2::{Digest as _, Sha256};
 use crate::catalog::{CatalogPage, ForgeCatalog, SlugReservationJournal};
 use crate::compaction;
 use crate::error::{ForgeError, Result};
+
+fn executor_session_id(executor: &ExecutorDescriptor) -> Option<&str> {
+    executor
+        .detail
+        .get("session_id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+fn attached_coder_collaboration_allowed(item: &WorkItem, incoming: &ExecutorDescriptor) -> bool {
+    if incoming.kind != "medousa-coder" {
+        return false;
+    }
+    let Some(session_id) = executor_session_id(incoming) else {
+        return false;
+    };
+    item.active_attempt_ids().into_iter().all(|attempt_id| {
+        item.attempt(attempt_id).is_some_and(|attempt| {
+            attempt.executor.kind == "medousa-coder"
+                && executor_session_id(&attempt.executor) == Some(session_id)
+        })
+    })
+}
 use crate::events::{EventPayload, OperationKind, SideEffect, TransitionEvent};
 use crate::execution::ForgeExecutionService;
 use crate::git::{CheckpointAuthor, GitEngine};
@@ -1135,7 +1159,7 @@ impl Forge {
         pid: Option<u32>,
         actor: &ActorRef,
     ) -> Result<(WorkItem, ExecutionLease)> {
-        self.begin_attempt_inner(work_id, executor, pid, actor, false, None)
+        self.begin_attempt_inner(work_id, executor, pid, actor, false, None, false)
     }
 
     /// Begin an attempt with a private worktree that preserves the staging
@@ -1148,7 +1172,7 @@ impl Forge {
         pid: Option<u32>,
         actor: &ActorRef,
     ) -> Result<(WorkItem, ExecutionLease)> {
-        self.begin_attempt_inner(work_id, executor, pid, actor, true, None)
+        self.begin_attempt_inner(work_id, executor, pid, actor, true, None, false)
     }
 
     /// Resume work from one exact preserved attempt environment. Used when a
@@ -1161,7 +1185,15 @@ impl Forge {
         pid: Option<u32>,
         actor: &ActorRef,
     ) -> Result<(WorkItem, ExecutionLease)> {
-        self.begin_attempt_inner(work_id, executor, pid, actor, true, Some(source_attempt_id))
+        self.begin_attempt_inner(
+            work_id,
+            executor,
+            pid,
+            actor,
+            true,
+            Some(source_attempt_id),
+            false,
+        )
     }
 
     /// Begin an attempt using the placement selected when the item was
@@ -1177,6 +1209,25 @@ impl Forge {
         let item = self.load(work_id)?;
         if item.uses_attached_checkout() {
             self.begin_attempt(work_id, executor, pid, actor)
+        } else {
+            self.begin_isolated_attempt(work_id, executor, pid, actor)
+        }
+    }
+
+    /// Begin a Medousa Coder attempt while another Coder from the same chat is
+    /// still using an attached checkout. Forge continues to fence each attempt;
+    /// the Coder shared-space claim layer arbitrates overlapping mutations.
+    /// Other executors and other sessions retain exclusive attached custody.
+    pub fn begin_collaborative_workspace_attempt(
+        &self,
+        work_id: &WorkId,
+        executor: ExecutorDescriptor,
+        pid: Option<u32>,
+        actor: &ActorRef,
+    ) -> Result<(WorkItem, ExecutionLease)> {
+        let item = self.load(work_id)?;
+        if item.uses_attached_checkout() {
+            self.begin_attempt_inner(work_id, executor, pid, actor, false, None, true)
         } else {
             self.begin_isolated_attempt(work_id, executor, pid, actor)
         }
@@ -1201,6 +1252,7 @@ impl Forge {
         }
     }
 
+    #[expect(clippy::too_many_arguments, reason = "shared admission boundary keeps the caller's exact executor, revision, and collaboration policy together")]
     fn begin_attempt_inner(
         &self,
         work_id: &WorkId,
@@ -1209,6 +1261,7 @@ impl Forge {
         actor: &ActorRef,
         isolated: bool,
         source_attempt_id: Option<&crate::model::AttemptId>,
+        allow_coder_collaboration: bool,
     ) -> Result<(WorkItem, ExecutionLease)> {
         let probe = self.load(work_id)?;
         let target = git_target(&probe)?;
@@ -1230,7 +1283,10 @@ impl Forge {
                     "attached checkouts cannot be forked into an isolated attempt".into(),
                 ));
             }
-            if item.has_active_attempts() {
+            if item.has_active_attempts()
+                && !(allow_coder_collaboration
+                    && attached_coder_collaboration_allowed(&item, &executor))
+            {
                 return Err(ForgeError::EnvironmentDrift(
                     "the attached checkout already has an active executor".into(),
                 ));
@@ -3033,6 +3089,16 @@ mod tests {
         }
     }
 
+    fn medousa_coder_executor(session_id: &str, turn_id: &str) -> ExecutorDescriptor {
+        ExecutorDescriptor {
+            kind: "medousa-coder".into(),
+            detail: serde_json::json!({
+                "session_id": session_id,
+                "turn_id": turn_id,
+            }),
+        }
+    }
+
     #[test]
     fn repository_lock_identity_is_shared_by_main_checkout_and_worktrees() {
         let fx = fixture();
@@ -3388,6 +3454,63 @@ mod tests {
             .interrupt_attempt(&lease, RecoveryDisposition::RestartAllowed, &actor())
             .unwrap();
         fs::remove_file(index_lock).unwrap();
+    }
+
+    #[test]
+    fn attached_checkout_allows_same_chat_coder_collaboration_only() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let item = forge
+            .register_with_workspace_mode(
+                "Collaborative attached work",
+                "keep the chat responsive while a peer runs",
+                &fx.repo,
+                "main",
+                "user-1",
+                WorkspaceMode::AttachedCheckout,
+                &actor(),
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &actor()).unwrap();
+        let (_, first) = forge
+            .begin_collaborative_workspace_attempt(
+                &item.id,
+                medousa_coder_executor("session-a", "turn-a"),
+                None,
+                &actor(),
+            )
+            .unwrap();
+        let (_, second) = forge
+            .begin_collaborative_workspace_attempt(
+                &item.id,
+                medousa_coder_executor("session-a", "turn-b"),
+                None,
+                &actor(),
+            )
+            .unwrap();
+
+        assert!(matches!(
+            forge.begin_collaborative_workspace_attempt(
+                &item.id,
+                medousa_coder_executor("session-b", "turn-c"),
+                None,
+                &actor(),
+            ),
+            Err(ForgeError::EnvironmentDrift(message)) if message.contains("active executor")
+        ));
+        assert!(matches!(
+            forge.begin_workspace_attempt(&item.id, script_executor(), None, &actor()),
+            Err(ForgeError::EnvironmentDrift(message)) if message.contains("active executor")
+        ));
+
+        forge
+            .interrupt_attempt(&first, RecoveryDisposition::RestartAllowed, &actor())
+            .unwrap();
+        assert!(forge.load(&item.id).unwrap().has_active_attempts());
+        forge
+            .interrupt_attempt(&second, RecoveryDisposition::RestartAllowed, &actor())
+            .unwrap();
+        assert!(!forge.load(&item.id).unwrap().has_active_attempts());
     }
 
     #[test]

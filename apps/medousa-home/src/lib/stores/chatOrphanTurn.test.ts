@@ -139,6 +139,56 @@ describe("orphaned interactive turn lease", () => {
     ).toBe(true);
   });
 
+  it("merges committed history while reattaching a still-active turn", async () => {
+    const { store } = await loadStore();
+    const { getSessionHistory, listSessionTurns } = await import("$lib/daemon");
+    const ticket = {
+      turn_id: "turn-still-active",
+      session_id: store.sessionId,
+      mode: "interactive" as const,
+      phase: "streaming" as const,
+      stream_url: "interactive://stream/turn-still-active",
+      prompt_preview: "keep working",
+      workspace_card_id: null,
+      composer_handoff: false,
+      started_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    store.beginTurn("keep working", {
+      ...ticket,
+      accepted_at_utc: ticket.started_at,
+      stream_ready: true,
+    });
+    vi.mocked(listSessionTurns).mockResolvedValue({
+      session_id: store.sessionId,
+      turns: [ticket],
+    } as never);
+    vi.mocked(getSessionHistory).mockResolvedValue({
+      authority_id: "auth_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      session_id: store.sessionId,
+      turns: [
+        {
+          entry_id: "ent_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          entry_seq: 1,
+          content_digest: "sha256:committed",
+          role: "assistant",
+          content: "committed while the phone was suspended",
+          timestamp: new Date().toISOString(),
+          tool_names: [],
+        },
+      ],
+    } as never);
+
+    await store.reconcileOnResume({ notice: false });
+
+    expect(
+      store.messages.some((message) =>
+        message.content.includes("committed while the phone was suspended"),
+      ),
+    ).toBe(true);
+    expect(store.hasLiveInteractiveTurn()).toBe(true);
+  });
+
   it("keeps the assistant bubble live across a recoverable stream failure", async () => {
     const { store } = await loadStore();
     store.beginTurn("hello", {

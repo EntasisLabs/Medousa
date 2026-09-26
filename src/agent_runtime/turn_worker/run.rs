@@ -111,7 +111,7 @@ fn delegated_task_grant_error(
     if grant.schema_version != crate::peer_execution_policy::TASK_EXECUTION_GRANT_SCHEMA_VERSION {
         return Some("unsupported task execution grant");
     }
-    if grant.expires_at <= Utc::now() {
+    if grant.expires_at.is_some_and(|expiry| expiry <= Utc::now()) {
         return Some("task execution grant expired before execution");
     }
     if grant.work_id != record.work_id
@@ -137,19 +137,47 @@ fn delegated_task_grant_error(
         return Some("task execution grant does not match the resolved runtime");
     }
     if record.intent == TurnWorkerIntent::Coder.as_str() {
-        let Some(project) = record
-            .worker_spawn_spec
-            .as_ref()
-            .and_then(|spec| spec.code_project.as_ref())
-        else {
-            return Some("remote Coder work is missing its project authority");
+        let Some(spec) = record.worker_spawn_spec.as_ref() else {
+            return Some("remote Coder work is missing its canonical worker specification");
         };
-        if grant.project_id.as_deref() != Some(project.repo_id.as_str())
-            || grant.destination_runtime_id != project.runtime_id
-            || !grant
-                .effective_tool_domains
-                .iter()
-                .any(|domain| domain == "code")
+        let binding = (spec.code_project.is_none() && spec.code_project_setup.is_some())
+            .then(|| crate::agent_mode_state::get_session_code_binding(&record.session_id).ok())
+            .flatten();
+        let (project_id, project_runtime_id, project_work_id) =
+            if let Some(project) = spec.code_project.as_ref() {
+                (
+                    Some(project.repo_id.as_str()),
+                    Some(project.runtime_id.as_str()),
+                    Some(project.work_id.as_str()),
+                )
+            } else if let Some(binding) = binding.as_ref() {
+                (
+                    binding.repo_id.as_deref(),
+                    binding.execution_runtime_id.as_deref(),
+                    binding.work_id.as_deref(),
+                )
+            } else {
+                (None, None, None)
+            };
+        let pending_portal_project_setup = spec.code_project.is_none()
+            && spec.code_project_setup.is_some()
+            && grant.authorization_role == Some(crate::pairing::PairingRole::Portal)
+            && grant.project_id.is_none();
+        if !grant
+            .effective_tool_domains
+            .iter()
+            .any(|domain| domain == "code")
+        {
+            return Some("remote Coder grant does not include code authority");
+        }
+        if !pending_portal_project_setup
+            && (project_id.is_none()
+                || project_runtime_id.is_none()
+                || project_work_id.is_none()
+                || grant.project_id.as_deref() != project_id
+                || grant.destination_runtime_id != project_runtime_id.unwrap_or_default()
+                || record.execution_placement.resolved_runtime_id
+                    != project_runtime_id.unwrap_or_default())
         {
             return Some("remote Coder grant does not match its project authority");
         }
@@ -203,11 +231,55 @@ async fn prepare_worker_coder(
             "Coder worker is missing its canonical spawn specification".to_string(),
         )
     })?;
-    let project = spec.code_project.as_ref().ok_or_else(|| {
-        stasis::prelude::StasisError::PortFailure(
-            "Coder worker is missing its destination-owned project".to_string(),
-        )
-    })?;
+    let setup_project = if spec.code_project.is_none() && spec.code_project_setup.is_some() {
+        let binding = crate::agent_mode_state::get_session_code_binding(&record.session_id)
+            .map_err(|error| {
+                stasis::prelude::StasisError::PortFailure(format!(
+                    "destination Coder project binding is unavailable: {error}"
+                ))
+            })?;
+        let work_id = binding
+            .work_id
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                stasis::prelude::StasisError::PortFailure(
+                    "destination Coder project setup did not bind a Forge undertaking".to_string(),
+                )
+            })?;
+        let repo_id = binding
+            .repo_id
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                stasis::prelude::StasisError::PortFailure(
+                    "destination Coder project setup did not bind a repository identity"
+                        .to_string(),
+                )
+            })?;
+        let runtime_id = binding
+            .execution_runtime_id
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                stasis::prelude::StasisError::PortFailure(
+                    "destination Coder project setup did not bind a runtime identity".to_string(),
+                )
+            })?;
+        Some(crate::delegated_task::WorkerCodeProjectRef {
+            runtime_id,
+            work_id,
+            repo_id,
+        })
+    } else {
+        None
+    };
+    let project = spec
+        .code_project
+        .as_ref()
+        .or(setup_project.as_ref())
+        .ok_or_else(|| {
+            stasis::prelude::StasisError::PortFailure(
+                "Coder worker is missing its destination-owned project".to_string(),
+            )
+        })?;
     let local_runtime_id = agent.worker_scheduler.execution_runtime_id();
     if project.runtime_id != local_runtime_id
         || record.execution_placement.resolved_runtime_id != local_runtime_id
@@ -265,7 +337,7 @@ async fn prepare_worker_coder(
         }),
     };
     let (item, lease) = forge
-        .begin_workspace_attempt(
+        .begin_collaborative_workspace_attempt(
             &work_id,
             executor,
             Some(std::process::id()),
@@ -416,6 +488,7 @@ pub struct ActiveWorkerBusSession {
     pub parent_turn_correlation_id: Option<String>,
     /// Stable runtime identity of the daemon admitting this parent turn.
     pub parent_runtime_id: String,
+    pub parent_continuation_route: Option<super::store::ParentContinuationRoute>,
     pub delivery_target: Option<crate::turn_continuation::StoredDeliveryTarget>,
     pub host_handoff_slot: Arc<tokio::sync::RwLock<Option<WorkerHandoffCapsule>>>,
     pub host_continuity_bundle:
@@ -919,6 +992,7 @@ impl TurnWorkerScheduler {
                 supports_browser_host: bus.supports_browser_host,
             },
             code_project,
+            code_project_setup: None,
             execution_placement: execution_placement.clone(),
             world_ids,
             max_tool_rounds,
@@ -939,6 +1013,7 @@ impl TurnWorkerScheduler {
             parent_turn_correlation_id,
             parent_stream_turn_id: bus.stream_turn_id,
             parent_runtime_id: parent_runtime_id.clone(),
+            parent_continuation_route: bus.parent_continuation_route.clone(),
             execution_placement: execution_placement.clone(),
             task_execution_grant: None,
             worker_spawn_spec: Some(worker_spawn_spec),
@@ -948,6 +1023,7 @@ impl TurnWorkerScheduler {
             result_text: None,
             tool_names: Vec::new(),
             termination_reason: None,
+            needs_synthesis: None,
             error: None,
             user_ack: user_ack.trim().to_string(),
             provider,
@@ -987,7 +1063,18 @@ impl TurnWorkerScheduler {
             updated_at: now,
         };
 
-        self.store.insert(record);
+        self.store.try_insert(record).map_err(|error| {
+            stasis::domain::errors::StasisError::PortFailure(format!(
+                "cognition_workshop_mutate: could not persist worker admission: {error}"
+            ))
+        })?;
+        crate::workspace::flush_persist_writer()
+            .await
+            .map_err(|error| {
+                stasis::domain::errors::StasisError::PortFailure(format!(
+                    "cognition_workshop_mutate: worker admission was not durable: {error}"
+                ))
+            })?;
         ledger_bus_event(
             &bus.session_id,
             bus.stream_turn_id,
@@ -1151,6 +1238,7 @@ impl TurnWorkerScheduler {
             parent_turn_correlation_id,
             parent_stream_turn_id: bus.stream_turn_id,
             parent_runtime_id: parent_runtime_id.clone(),
+            parent_continuation_route: bus.parent_continuation_route.clone(),
             execution_placement: execution_placement.clone(),
             task_execution_grant: None,
             worker_spawn_spec: None,
@@ -1160,6 +1248,7 @@ impl TurnWorkerScheduler {
             result_text: None,
             tool_names: Vec::new(),
             termination_reason: None,
+            needs_synthesis: None,
             error: None,
             user_ack: user_ack.to_string(),
             provider,
@@ -1205,6 +1294,11 @@ impl TurnWorkerScheduler {
                         "A bound workshop is already active for this session ({work_id}); steer or cancel that exact generation first."
                     )
                 }
+                super::store::BoundWorkshopAdmissionError::Persistence(error) => {
+                    return Err(stasis::domain::errors::StasisError::PortFailure(format!(
+                        "cognition_turn_begin_work: could not persist bound workshop admission: {error}"
+                    )));
+                }
             };
             return Ok(EnterBoundWorkshopOutput::Failure {
                 ok: false,
@@ -1212,6 +1306,13 @@ impl TurnWorkerScheduler {
                 error,
             });
         }
+        crate::workspace::flush_persist_writer()
+            .await
+            .map_err(|error| {
+                stasis::domain::errors::StasisError::PortFailure(format!(
+                    "cognition_turn_begin_work: bound workshop admission was not durable: {error}"
+                ))
+            })?;
         ledger_bus_event(
             &bus.session_id,
             bus.stream_turn_id,
@@ -1307,7 +1408,7 @@ pub async fn run_worker_turn(
     stream_turn_id: u64,
     agent: Arc<TuiRuntime>,
 ) {
-    let Some(record) = store.get(&work_id) else {
+    let Some(mut record) = store.get(&work_id) else {
         return;
     };
     let Some(identity_user_id) = record
@@ -1350,6 +1451,127 @@ pub async fn run_worker_turn(
         .await;
         return;
     }
+    let pending_project_setup = record.disposition == TurnWorkDisposition::Delegated
+        && record.intent == TurnWorkerIntent::Coder.as_str()
+        && record.task_execution_grant.as_ref().is_some_and(|grant| {
+            grant.authorization_role == Some(crate::pairing::PairingRole::Portal)
+                && grant.project_id.is_none()
+        })
+        && record
+            .worker_spawn_spec
+            .as_ref()
+            .is_some_and(|spec| spec.code_project.is_none() && spec.code_project_setup.is_some());
+    if pending_project_setup {
+        match store.try_update(&work_id, |record| {
+            if record.status == TurnWorkStatus::Pending {
+                record.status = TurnWorkStatus::Running;
+            }
+        }) {
+            Ok(Some(updated)) if updated.status == TurnWorkStatus::Running => record = updated,
+            Ok(_) => return,
+            Err(error) => {
+                store.update(&work_id, |record| {
+                    record.status = TurnWorkStatus::Failed;
+                    record.error = Some(format!(
+                        "could not persist destination project setup start: {error}"
+                    ));
+                });
+                sink.notice(format!(
+                    "◈ work_failed work_id={work_id} error=project_setup_start_persist_failed"
+                ))
+                .await;
+                return;
+            }
+        }
+        let setup = record
+            .worker_spawn_spec
+            .as_ref()
+            .and_then(|spec| spec.code_project_setup.clone())
+            .expect("pending project setup was checked above");
+        let project = match agent
+            .ensure_worker_code_project(record.session_id.clone(), setup)
+            .await
+        {
+            Ok(project) => project,
+            Err(error) => {
+                store.update(&work_id, |record| {
+                    record.status = TurnWorkStatus::Failed;
+                    record.error = Some(format!("destination project setup failed: {error}"));
+                });
+                sink.notice(format!(
+                    "◈ work_failed work_id={work_id} error=destination_project_setup_failed"
+                ))
+                .await;
+                return;
+            }
+        };
+        let grant = record
+            .task_execution_grant
+            .as_ref()
+            .expect("pending project setup requires a task grant");
+        if project.runtime_id != grant.destination_runtime_id
+            || project.runtime_id != record.execution_placement.resolved_runtime_id
+        {
+            store.update(&work_id, |record| {
+                record.status = TurnWorkStatus::Failed;
+                record.error = Some("destination project runtime identity mismatch".to_string());
+            });
+            sink.notice(format!(
+                "◈ work_failed work_id={work_id} error=destination_project_identity_mismatch"
+            ))
+            .await;
+            return;
+        }
+        let project_repo_id = project.repo_id;
+        let project_work_id = project.work_id;
+        match store.try_update(&work_id, |record| {
+            if matches!(
+                record.status,
+                TurnWorkStatus::Pending | TurnWorkStatus::Running
+            ) && let Some(grant) = record.task_execution_grant.as_mut()
+                && grant.authorization_role == Some(crate::pairing::PairingRole::Portal)
+                && grant.project_id.is_none()
+            {
+                grant.project_id = Some(project_repo_id);
+                record.parent_code_work_id = Some(project_work_id);
+            }
+        }) {
+            Ok(Some(updated))
+                if matches!(
+                    updated.status,
+                    TurnWorkStatus::Pending | TurnWorkStatus::Running
+                ) =>
+            {
+                record = updated;
+            }
+            Ok(_) => return,
+            Err(error) => {
+                store.update(&work_id, |record| {
+                    record.status = TurnWorkStatus::Failed;
+                    record.error = Some(format!(
+                        "could not persist destination project authority: {error}"
+                    ));
+                });
+                sink.notice(format!(
+                    "◈ work_failed work_id={work_id} error=project_authority_persist_failed"
+                ))
+                .await;
+                return;
+            }
+        }
+    }
+    if let Some(error) = delegated_task_grant_error(&record, &identity_user_id) {
+        store.update(&work_id, |record| {
+            record.status = TurnWorkStatus::Cancelled;
+            record.error = Some(error.to_string());
+            record.termination_reason = Some("task_execution_grant_denied".to_string());
+        });
+        sink.notice(format!(
+            "◈ work_cancelled work_id={work_id} error=task_execution_grant_denied"
+        ))
+        .await;
+        return;
+    }
     let Ok(session_id) = crate::session_storage::SessionId::parse(&record.session_id) else {
         store.update(&work_id, |record| {
             record.status = TurnWorkStatus::Failed;
@@ -1367,18 +1589,23 @@ pub async fn run_worker_turn(
             return;
         }
     };
-    let execution_budget = record
+    let execution_deadline = record
         .task_execution_grant
         .as_ref()
-        .and_then(|grant| {
-            grant
-                .expires_at
-                .signed_duration_since(Utc::now())
+        .and_then(|grant| grant.expires_at)
+        .map(|deadline| {
+            let now = Utc::now();
+            let instant_now = std::time::Instant::now();
+            if deadline <= now {
+                return instant_now;
+            }
+            deadline
+                .signed_duration_since(now)
                 .to_std()
                 .ok()
-        })
-        .map(|remaining| remaining.min(std::time::Duration::from_secs(2 * 60 * 60)))
-        .unwrap_or_else(|| std::time::Duration::from_secs(2 * 60 * 60));
+                .and_then(|remaining| instant_now.checked_add(remaining))
+                .unwrap_or(instant_now)
+        });
     let scope = worker_turn_scope(&record);
     let execution_context = Arc::new(
         crate::agent_runtime::execution_context::TurnExecutionContext::new(
@@ -1399,7 +1626,7 @@ pub async fn run_worker_turn(
                 browser_host: record.supports_browser_host,
             },
             execution_lease.cancellation().clone(),
-            std::time::Instant::now() + execution_budget,
+            execution_deadline,
             scope.clone(),
         ),
     );
@@ -1679,6 +1906,7 @@ async fn run_worker_turn_inner(
         orchestration: None,
         budget: None,
         max_tool_rounds: worker_max_rounds,
+        enforce_tool_round_limit: medousa_runtime::tool_round_limit_enabled(),
         max_text_only_stuck_continues: turn_loop_settings.max_text_only_stuck_continues,
         scratch_out: Some(&mut worker_scratch),
         parent_turn_correlation_id: record.parent_turn_correlation_id.clone(),
@@ -1743,6 +1971,27 @@ async fn run_worker_turn_inner(
 
     release_worker_coder(prepared_coder).await;
 
+    // The tool loop returns a recoverable failure receipt as an Ok response so
+    // callers can retain its checkpoint. It must still follow the worker's
+    // failure delivery path, never publish a successful work completion.
+    let result = result.and_then(|response| {
+        if response.termination_reason != "repeated_tool_failure" {
+            return Ok(response);
+        }
+        store.update(&work_id, |worker| {
+            worker.termination_reason = Some(response.termination_reason.clone());
+            worker.tool_names = response
+                .tool_invocations
+                .iter()
+                .map(|invocation| invocation.tool_name.clone())
+                .collect();
+            worker.worker_scratch = worker_scratch.clone();
+        });
+        Err(stasis::domain::errors::StasisError::PortFailure(
+            response.text,
+        ))
+    });
+
     match result {
         Ok(response) => {
             if store.is_work_cancelled(&work_id) {
@@ -1769,11 +2018,16 @@ async fn run_worker_turn_inner(
                     .iter()
                     .map(|i| i.tool_name.clone())
                     .collect();
+                let needs_synthesis =
+                    medousa_runtime::turn_control::finish_turn_needs_synthesis_from_invocations(
+                        &response.tool_invocations,
+                    );
                 store.update(&work_id, |r| {
                     r.status = TurnWorkStatus::Completed;
                     r.result_text = Some(response.text.clone());
                     r.tool_names = tool_names;
                     r.termination_reason = Some(response.termination_reason.clone());
+                    r.needs_synthesis = needs_synthesis;
                     r.worker_scratch = worker_scratch.clone();
                 });
                 ledger_bus_event(
@@ -1950,7 +2204,7 @@ pub async fn resume_synthesis_if_needed(
         format!("{}-synthesis", record.work_id),
         crate::request_principal::RequestPrincipal::worker(identity_user_id),
         tokio_util::sync::CancellationToken::new(),
-        std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60),
+        None::<std::time::Instant>,
         scope,
     ) {
         Ok(execution) => execution,
@@ -2072,6 +2326,19 @@ async fn run_synthesis_turn(
         deliver_synthesis_response(&record, &sink, synthesis_turn_id, text).await;
         return;
     }
+    let legacy_route =
+        crate::stage_routing::StageRoutingMatrix::default_for(&ctx.provider, &ctx.model)
+            .final_response;
+    let Some(parent_route) = super::store::continuation_route_for_record(&record, &legacy_route)
+    else {
+        tracing::warn!(work_id = %record.work_id, "worker synthesis has no usable parent continuation route");
+        sink.agent_error(
+            synthesis_turn_id,
+            "Worker synthesis has no usable parent continuation route".to_string(),
+        )
+        .await;
+        return;
+    };
     let parent_prompt = record
         .parent_user_prompt
         .clone()
@@ -2115,10 +2382,18 @@ async fn run_synthesis_turn(
         record.work_id
     ))
     .await;
+    tracing::info!(
+        work_id = %record.work_id,
+        provider = %parent_route.provider,
+        model = %parent_route.model,
+        policy_profile = %parent_route.policy_profile,
+        fallback_chain = %parent_route.fallback_chain.join(","),
+        "synthesizing worker result with parent continuation route"
+    );
 
-    crate::workshop_env::apply_provider_llm_env(&record.provider);
-    let resolved_provider = crate::resolve_llm_provider(Some(record.provider.as_str()));
-    let resolved_model = crate::resolve_llm_model(Some(record.model.as_str()));
+    crate::workshop_env::apply_provider_llm_env(&parent_route.provider);
+    let resolved_provider = crate::resolve_llm_provider(Some(parent_route.provider.as_str()));
+    let resolved_model = crate::resolve_llm_model(Some(parent_route.model.as_str()));
     let resolved_base_url = crate::model_route::resolve_route_base_url(
         &resolved_provider,
         &ctx.provider,
@@ -2141,9 +2416,6 @@ async fn run_synthesis_turn(
     let response = match pipeline.execute(request).await {
         Ok(response) => response,
         Err(err) => {
-            turn_worker_store().update(&record.work_id, |worker| {
-                worker.synthesis_delivered = true;
-            });
             sink.agent_error(synthesis_turn_id, format!("Worker synthesis failed: {err}"))
                 .await;
             return;
@@ -2156,14 +2428,20 @@ async fn run_synthesis_turn(
 
 /// Phase 7C / 8D.2: skip host synthesis LLM when the worker committed via `cognition_turn_finish`.
 pub(crate) fn worker_synthesis_pass_through(record: &TurnWorkRecord) -> bool {
-    record.termination_reason.as_deref() == Some("cognition_turn_finish")
-        && record
-            .result_text
-            .as_ref()
-            .is_some_and(|text| !text.trim().is_empty())
+    let has_result = record
+        .result_text
+        .as_ref()
+        .is_some_and(|text| !text.trim().is_empty());
+    if !has_result {
+        return false;
+    }
+    match record.needs_synthesis {
+        Some(needs_synthesis) => !needs_synthesis,
+        None => record.termination_reason.as_deref() == Some("cognition_turn_finish"),
+    }
 }
 
-async fn deliver_synthesis_response(
+pub(crate) async fn deliver_synthesis_response(
     record: &TurnWorkRecord,
     sink: &SharedAgentStreamSink,
     synthesis_turn_id: u64,
@@ -2426,6 +2704,7 @@ mod tests {
             response_depth_mode: "standard".to_string(),
             parent_turn_correlation_id: Some(format!("turn-{session_id}")),
             parent_runtime_id: "runtime-local".to_string(),
+            parent_continuation_route: None,
             delivery_target: None,
             host_handoff_slot: Arc::new(RwLock::new(None)),
             host_continuity_bundle: None,
@@ -2451,6 +2730,7 @@ mod tests {
             parent_turn_correlation_id: None,
             parent_stream_turn_id: 0,
             parent_runtime_id: "runtime-test".to_string(),
+            parent_continuation_route: None,
             execution_placement: Default::default(),
             task_execution_grant: None,
             worker_spawn_spec: None,
@@ -2460,6 +2740,7 @@ mod tests {
             result_text: result_text.map(str::to_string),
             tool_names: vec!["cognition_grapheme_run".to_string()],
             termination_reason: termination_reason.map(str::to_string),
+            needs_synthesis: None,
             error: None,
             user_ack: "On it".to_string(),
             provider: "openai".to_string(),
@@ -2502,6 +2783,50 @@ mod tests {
             Some("cognition_turn_finish"),
             Some("Here is the report.")
         )));
+    }
+
+    #[test]
+    fn explicit_synthesis_decision_overrides_legacy_finish_heuristic() {
+        let mut synth = sample_record(Some("cognition_turn_finish"), Some("raw evidence"));
+        synth.needs_synthesis = Some(true);
+        assert!(!worker_synthesis_pass_through(&synth));
+
+        let mut complete = sample_record(Some("direct_prose"), Some("complete answer"));
+        complete.needs_synthesis = Some(false);
+        assert!(worker_synthesis_pass_through(&complete));
+    }
+
+    #[test]
+    fn synthesis_resume_selects_parent_route_when_worker_requires_host_synthesis() {
+        let mut record = sample_record(Some("cognition_turn_finish"), Some("partial evidence"));
+        record.provider = "worker-provider".into();
+        record.model = "worker-model".into();
+        record.needs_synthesis = Some(true);
+        record.parent_continuation_route = Some(super::super::store::ParentContinuationRoute {
+            schema_version: super::super::store::ParentContinuationRoute::SCHEMA_VERSION,
+            stage_role: "final_response".into(),
+            policy_profile: "host-careful".into(),
+            provider: "host-provider".into(),
+            model: "host-model".into(),
+            fallback_chain: vec!["host-fallback".into()],
+        });
+        let restored: TurnWorkRecord = serde_json::from_slice(
+            &serde_json::to_vec(&record).expect("serialize synthesis record"),
+        )
+        .expect("restore synthesis record");
+
+        // run_synthesis_turn bypasses route selection only for pass-through
+        // prose; synthesized work must retain and resolve the original route.
+        assert!(!worker_synthesis_pass_through(&restored));
+        let fallback =
+            crate::stage_routing::StageRoutingMatrix::default_for("changed", "changed-model")
+                .final_response;
+        let route = super::super::store::continuation_route_for_record(&restored, &fallback)
+            .expect("parent synthesis route");
+        assert_eq!(route.provider, "host-provider");
+        assert_eq!(route.model, "host-model");
+        assert_eq!(route.policy_profile, "host-careful");
+        assert_eq!(route.fallback_chain, ["host-fallback"]);
     }
 
     #[test]

@@ -36,7 +36,12 @@ const PRIORITY_FIELDS: &[&str] = &[
     "orientation",
     "encoding",
     "status",
+    "session_id",
+    "completed",
     "exit_code",
+    "interrupted",
+    "input_written",
+    "next_sequence",
     "artifact_id",
     "reference",
     "next",
@@ -315,7 +320,13 @@ impl ToolPerceptionGovernor {
             );
             return observed;
         }
-        if is_failure(output) {
+        // Command results carry execution state and diagnostics even when the
+        // program exits nonzero or its stream disconnects. A generic error
+        // cluster would erase the evidence needed to poll or repair the command.
+        if is_failure(output)
+            && output.get("exit_code").is_none()
+            && output.get("session_id").is_none()
+        {
             let signature = failure_signature(tool_name, output);
             let occurrences = self
                 .failure_occurrences
@@ -973,6 +984,25 @@ mod tests {
         let metrics = governor.take_round_metrics();
         assert_eq!(metrics.observed_results, 2);
         assert_eq!(metrics.failure_clusters, 1);
+    }
+
+    #[test]
+    fn repeated_command_failures_preserve_execution_state_and_diagnostics() {
+        let mut governor = ToolPerceptionGovernor::default();
+        for (status, completed, error) in [
+            ("completed", true, Value::Null),
+            ("unknown", false, json!("stream disconnected")),
+        ] {
+            for index in 0..4 {
+                let result = json!({
+                    "ok": false, "session_id": "command-session", "status": status,
+                    "completed": completed, "exit_code": if completed { Some(7) } else { None },
+                    "error": error, "output": format!("diagnostic {index}"),
+                });
+                assert_eq!(governor.observe("shell", &result, 4_096), result);
+            }
+        }
+        assert_eq!(governor.take_round_metrics().failure_clusters, 0);
     }
 
     #[test]

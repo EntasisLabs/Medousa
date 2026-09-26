@@ -6,15 +6,16 @@ use genai::chat::Tool;
 use crate::agent_runtime::turn_worker::{
     TurnWorkerIntent, allowed_tool_names_for_intent, host_bus_tool_names, tool_allowed,
 };
+#[cfg(feature = "full-daemon")]
+use crate::typed_tools::ToolPolicyId;
 use crate::typed_tools::{
     EmptyCallMetadata, ModeToolAdapter, ModeToolAdapterError, RegisteredToolKind, ToolCapabilityId,
     ToolCatalog, ToolDomainId, ToolEffect, ToolExposureRef, ToolId, ToolModeId, ToolPlacementIndex,
     ToolSurfaceId,
 };
-#[cfg(feature = "full-daemon")]
-use crate::typed_tools::ToolPolicyId;
 
 pub(crate) const GENERAL_MODE_ID: ToolModeId = ToolModeId::new("general");
+pub(crate) const ASSISTANT_MODE_ID: ToolModeId = ToolModeId::new("assistant");
 pub(crate) const WORKSHOP_MODE_ID: ToolModeId = ToolModeId::new("workshop");
 pub(crate) const CODER_MODE_ID: ToolModeId = ToolModeId::new("coder");
 
@@ -28,10 +29,19 @@ pub(crate) fn first_party_placement_index() -> ToolPlacementIndex {
     let mut index = ToolPlacementIndex::default();
 
     #[cfg(feature = "full-daemon")]
+    for name in crate::tool_bootstrap::HOST_BOOTSTRAP_TOOLS {
+        if !crate::agent_mode_context::ASSISTANT_ELEVATED_TOOL_NAMES.contains(name) {
+            index.add_exposure(
+                ToolId::new(name),
+                ToolExposureRef::new(GENERAL_MODE_ID, BOOTSTRAP_SURFACE_ID),
+            );
+        }
+    }
+    #[cfg(feature = "full-daemon")]
     add_ids(
         &mut index,
         crate::tool_bootstrap::HOST_BOOTSTRAP_TOOLS,
-        ToolExposureRef::new(GENERAL_MODE_ID, BOOTSTRAP_SURFACE_ID),
+        ToolExposureRef::new(ASSISTANT_MODE_ID, BOOTSTRAP_SURFACE_ID),
     );
     add_ids(
         &mut index,
@@ -44,9 +54,17 @@ pub(crate) fn first_party_placement_index() -> ToolPlacementIndex {
     #[cfg(feature = "full-daemon")]
     for name in crate::tool_names::registered_cognition_tools() {
         if tool_allowed(name, &host) {
+            let assistant_only =
+                crate::agent_mode_context::ASSISTANT_ELEVATED_TOOL_NAMES.contains(&name);
+            if !assistant_only {
+                index.add_exposure(
+                    ToolId::new(name),
+                    ToolExposureRef::new(GENERAL_MODE_ID, AUTHORIZED_SURFACE_ID),
+                );
+            }
             index.add_exposure(
                 ToolId::new(name),
-                ToolExposureRef::new(GENERAL_MODE_ID, AUTHORIZED_SURFACE_ID),
+                ToolExposureRef::new(ASSISTANT_MODE_ID, AUTHORIZED_SURFACE_ID),
             );
         }
     }
@@ -64,11 +82,23 @@ pub(crate) fn first_party_placement_index() -> ToolPlacementIndex {
     }
 
     for entry in crate::tool_bootstrap::host_tool_domain_catalog() {
+        for name in entry.tools {
+            if !crate::agent_mode_context::ASSISTANT_ELEVATED_TOOL_NAMES.contains(name) {
+                index.add_exposure(
+                    ToolId::new(name),
+                    ToolExposureRef::domain(
+                        GENERAL_MODE_ID,
+                        DOMAIN_SURFACE_ID,
+                        ToolDomainId::new(entry.domain),
+                    ),
+                );
+            }
+        }
         add_ids(
             &mut index,
             entry.tools,
             ToolExposureRef::domain(
-                GENERAL_MODE_ID,
+                ASSISTANT_MODE_ID,
                 DOMAIN_SURFACE_ID,
                 ToolDomainId::new(entry.domain),
             ),
@@ -129,6 +159,11 @@ fn add_effects_and_capabilities(index: &mut ToolPlacementIndex) {
         "cognition_utility_day_of_week",
         "cognition_utility_time_now",
         "cognition_utility_uuid",
+        #[cfg(feature = "full-daemon")]
+        "cognition_active_work_discover",
+        "cognition_assistant_placement",
+        #[cfg(feature = "full-daemon")]
+        "cognition_peer_discover",
         crate::public_api::COGNITION_STORE_READ,
         #[cfg(feature = "full-daemon")]
         crate::agent_runtime::coder_tools::COGNITION_ENGINEERING_POINTERS,
@@ -142,6 +177,15 @@ fn add_effects_and_capabilities(index: &mut ToolPlacementIndex) {
     ] {
         index.set_effect(ToolId::new(name), ToolEffect::Observe);
     }
+    #[cfg(feature = "full-daemon")]
+    index.set_effect(
+        ToolId::new("cognition_peer_propose"),
+        ToolEffect::Coordinate,
+    );
+    index.set_effect(
+        ToolId::new("cognition_peer_delegate"),
+        ToolEffect::Coordinate,
+    );
     #[cfg(feature = "full-daemon")]
     index.set_effect(
         ToolId::new(crate::computer_tools::COGNITION_COMPUTER_ACT),
@@ -272,7 +316,7 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
     ),
     (
         "cognition_turn",
-        "Record turn progress or set its outcome by typed action (turn.finish / turn.checkpoint / …)",
+        "Use turn.update_user for nonterminal progress; turn.checkpoint deliberately waits for principal input; turn.finish ends the turn after the full outcome is complete or a blocker prevents further authorized progress",
     ),
     (
         "cognition_ui_build",
@@ -361,3 +405,22 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
         "One-shot custom view + HTML + feeds + layout + recurring poll",
     ),
 ];
+
+#[cfg(all(test, feature = "full-daemon"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn peer_coordination_is_assistant_only_while_inventory_is_shared() {
+        let index = first_party_placement_index();
+        for name in crate::agent_mode_context::ASSISTANT_ELEVATED_TOOL_NAMES {
+            let placement = index.placement(ToolId::new(name));
+            assert!(placement.exposes_mode(ASSISTANT_MODE_ID), "{name}");
+            assert!(!placement.exposes_mode(GENERAL_MODE_ID), "{name}");
+        }
+
+        let inventory = index.placement(ToolId::new("cognition_active_work_discover"));
+        assert!(inventory.exposes_mode(GENERAL_MODE_ID));
+        assert!(inventory.exposes_mode(ASSISTANT_MODE_ID));
+    }
+}

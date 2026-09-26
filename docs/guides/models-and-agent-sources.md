@@ -103,14 +103,16 @@ than being falsely advertised as account-model capabilities.
 The adapter carries a separately versioned Codex-backend compatibility identity;
 Medousa's own app version is never sent as the Codex protocol version.
 
-Choose **GPT-6 Astra** under **OpenAI · ChatGPT account** when your account has
-access. Astra supports text and image input, streamed replies, and Medousa's
-tools. Its reasoning levels are **Low**, **Medium**, **High**, **Extra high**, and
-**Max**; **Model default** lets the model decide. An incompatible saved setting
-uses **Model default**, with a notice in the reasoning picker. Medousa omits temperature and top-p sampling settings for
-Astra, as required by the [OpenAI model guide](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra).
-Selecting Astra does not change your other model assignments or grant account
-access; availability follows [OpenAI's account and rollout settings](https://learn.chatgpt.com/docs/models#gpt-6-astra).
+Choose **GPT-6 Astra**, **GPT-6 Sol**, or **GPT-6 Luna** under **OpenAI ·
+ChatGPT account** when your account has access. These models support streamed
+replies and Medousa's tools; the picker also keeps their image-input capability
+visible. Astra offers **Low**, **Medium**, **High**, **Extra high**, and **Max**;
+Sol and Luna also offer **Off**. **Model default** lets the model decide. An
+incompatible saved setting uses **Model default**, with a notice in the
+reasoning picker. Medousa omits temperature and top-p sampling settings for the
+GPT-6 reasoning models, as required by the [OpenAI model guide](https://developers.openai.com/api/docs/guides/latest-model#update-api-and-model-parameters).
+Selecting one of these models does not change your other model assignments or
+grant account access; availability follows [OpenAI's account and rollout settings](https://learn.chatgpt.com/docs/models).
 
 Completed Medousa replies show a small model receipt below the answer. This is
 the successful provider/model route observed by the daemon after fallback, so
@@ -143,12 +145,18 @@ Desktop keeps using the existing optional local-engine package. Selecting
 Medousa Local never silently changes a remote workshop: the model runs wherever
 the selected workshop has inference authority.
 
-## Choose General, Teacher, Instant, or Coder
+## Choose General, Assistant, Teacher, Instant, or Coder
 
 Source and mode are independent:
 
 - **General** is for everyday conversation, planning, and research. It does not
   require a project.
+- **Assistant** keeps General's conversation, identity, memory, and tools while
+  taking ownership of accepted work across agents, workshops, devices, and
+  time. It can continue authorized work after you leave the chat or end Live,
+  then return a verified result or a concrete blocker. Assistant does not grant
+  itself new permissions: assignment approvals, target workshop policy, and
+  consequential-action boundaries still apply when they matter.
 - **Teacher** is an evidence-first mentor. It connects an unfamiliar idea to
   concepts you already understand, names the relationship between them, and
   helps you predict or apply the idea instead of only supplying an answer.
@@ -171,20 +179,21 @@ Source and mode are independent:
 - **Coder** is repository-aware and requires a governed Forge project. Choose or
   create that project from the project control above chat.
 
-General, Teacher, and Instant are policies for Medousa's native loop. Teacher
-changes its teaching and evidence policy, while Instant changes only the context
-loaded for the turn; neither changes generation settings. Codex, Cursor, and
-Hermes own their own agent policies when selected. Coder's governed project
-boundary still applies to those external runtimes, so Medousa launches them
-inside the project worktree rather than an arbitrary folder.
+General, Assistant, Teacher, and Instant are policies for Medousa's native loop.
+Assistant adds an ownership policy to General; Teacher changes its teaching and
+evidence policy; Instant changes only the context loaded for the turn. None
+changes generation settings. Codex, Cursor, and Hermes own their own agent
+policies when selected. Coder's governed project boundary still applies to those
+external runtimes, so Medousa launches them inside the project worktree rather
+than an arbitrary folder.
 
 ## Narrate replies
 
 **Narrate** is independent from the selected mode. Turn it on under the composer
 to read each completed assistant reply with the device's system voice, whether
-you are using General, Teacher, Instant, or Coder. Turn it off without changing
-the conversation mode, or use **Read aloud** on a completed reply to replay only
-that message.
+you are using General, Assistant, Teacher, Instant, or Coder. Turn it off without
+changing the conversation mode, or use **Read aloud** on a completed reply to
+replay only that message.
 
 Narration is a local presentation preference: the written reply remains the
 canonical transcript, code blocks are summarized rather than spoken character

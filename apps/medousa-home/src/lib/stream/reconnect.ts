@@ -31,7 +31,7 @@ export const DEFAULT_INTERACTIVE_BACKOFF: BackoffPolicy = {
   baseMs: 500,
   factor: 2,
   maxMs: MAX_STREAM_RECONNECT_DELAY_MS,
-  maxAttempts: 10,
+  maxAttempts: null,
 };
 
 export const DEFAULT_WORKSPACE_BACKOFF: BackoffPolicy = {
@@ -212,6 +212,8 @@ export class ReconnectScheduler {
   private readonly policy: BackoffPolicy;
   private readonly onExhausted?: () => void;
   private tornDown = false;
+  private generation = 0;
+  private deferredTask: { task: () => void | Promise<void>; generation: number } | null = null;
 
   constructor(options: ReconnectSchedulerOptions) {
     this.policy = options.policy;
@@ -226,14 +228,17 @@ export class ReconnectScheduler {
   }
 
   cancel(): void {
+    this.generation += 1;
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
+      this.overlap.release();
     }
+    this.deferredTask = null;
     this.attempt = 0;
-    this.overlap.release();
     // A deliberate cancel (foreground resume, explicit reconnect, teardown) is a
-    // clean slate — clear any tripped breaker so recovery isn't locked out.
+    // clean slate — clear any tripped breaker so recovery isn't locked out. An
+    // in-flight attempt retains the overlap guard until its promise settles.
     this.breaker.reset();
   }
 
@@ -245,12 +250,20 @@ export class ReconnectScheduler {
   /** Call after a successful reconnect to reset backoff. */
   noteSuccess(): void {
     this.attempt = 0;
+    this.deferredTask = null;
     this.breaker.onSuccess();
   }
 
   /** Schedule `task` unless a timer is already pending or overlap rejects. */
   schedule(task: () => void | Promise<void>): void {
     if (this.tornDown || this.timer) return;
+    if (this.overlap.isActive) {
+      // Recoveries can fail and request another attempt before this promise
+      // settles. Keep one retry and arm it only after releasing the guard.
+      // Fresh recovery after cancel must wait for the old attempt to settle.
+      this.deferredTask ??= { task, generation: this.generation };
+      return;
+    }
 
     const now = Date.now();
     const wasOpen = this.breaker.currentState === "open";
@@ -275,15 +288,22 @@ export class ReconnectScheduler {
 
     const delayMs = reconnectDelayMs(this.policy, this.attempt);
     this.attempt += 1;
+    const generation = this.generation;
 
     this.timer = setTimeout(() => {
       this.timer = null;
-      void Promise.resolve(task())
+      void Promise.resolve()
+        .then(() => generation === this.generation ? task() : undefined)
         .catch(() => {
-          this.breaker.onFailure();
+          if (generation === this.generation) this.breaker.onFailure();
         })
         .finally(() => {
           this.overlap.release();
+          const deferredTask = this.deferredTask;
+          this.deferredTask = null;
+          if (deferredTask?.generation === this.generation) {
+            this.schedule(deferredTask.task);
+          }
         });
     }, delayMs);
   }

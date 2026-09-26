@@ -114,6 +114,7 @@ impl From<TurnProposeModeInput> for TurnProposeModeCommand {
 struct TurnFinishCommand {
     message: Option<TrimmedText>,
     reason: Option<TrimmedText>,
+    needs_synthesis: bool,
 }
 
 impl From<TurnFinishInput> for TurnFinishCommand {
@@ -121,6 +122,7 @@ impl From<TurnFinishInput> for TurnFinishCommand {
         Self {
             message: optional_trimmed(input.message),
             reason: optional_trimmed(input.reason),
+            needs_synthesis: input.needs_synthesis,
         }
     }
 }
@@ -249,12 +251,12 @@ impl CognitionTurnBeginWorkTool {
     }
 }
 
-/// Short principal-facing status while the turn continues (not a final answer).
+/// Record nonterminal progress for the principal; the turn continues.
 pub struct CognitionTurnUpdateUserTool;
 
 #[derive(Debug, JsonSchema)]
 pub struct TurnUpdateUserInput {
-    /// Short principal-facing status line
+    /// Short principal-facing progress update; does not end or pause the turn.
     #[schemars(required, with = "String")]
     pub(crate) message: Option<String>,
 }
@@ -339,6 +341,7 @@ impl CognitionTurnProposeModeTool {
 #[serde(rename_all = "snake_case")]
 pub enum TurnModeInput {
     General,
+    Assistant,
     Coder,
 }
 
@@ -346,6 +349,7 @@ impl From<TurnModeInput> for crate::daemon_api::AgentModeId {
     fn from(value: TurnModeInput) -> Self {
         match value {
             TurnModeInput::General => Self::General,
+            TurnModeInput::Assistant => Self::Assistant,
             TurnModeInput::Coder => Self::Coder,
         }
     }
@@ -439,7 +443,7 @@ impl CognitionTurnProposeModeTool {
     }
 }
 
-/// End the turn immediately with the final user-facing answer (bypasses gatekeeper continue).
+/// End the turn immediately and declare whether the result still needs host synthesis.
 pub struct CognitionTurnFinishTool;
 
 #[derive(Debug, JsonSchema)]
@@ -452,6 +456,14 @@ pub struct TurnFinishInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", skip_serializing_if = "Option::is_none")]
     pub(crate) reason: Option<String>,
+    /// Whether the host must interpret/integrate this result before showing it.
+    /// Set false when `message` or the accompanying prose is already a complete principal-facing answer.
+    #[serde(default = "default_needs_synthesis")]
+    pub(crate) needs_synthesis: bool,
+}
+
+fn default_needs_synthesis() -> bool {
+    true
 }
 
 impl<'de> Deserialize<'de> for TurnFinishInput {
@@ -465,12 +477,15 @@ impl<'de> Deserialize<'de> for TurnFinishInput {
             message: CompatOption<String>,
             #[serde(default)]
             reason: CompatOption<String>,
+            #[serde(default = "default_needs_synthesis")]
+            needs_synthesis: bool,
         }
 
         let input = WireInput::deserialize(deserializer)?;
         Ok(Self {
             message: input.message.into_option(),
             reason: input.reason.into_option(),
+            needs_synthesis: input.needs_synthesis,
         })
     }
 }
@@ -483,6 +498,7 @@ pub enum TurnFinishOutput {
         finish_turn: bool,
         message: String,
         reason: Option<String>,
+        needs_synthesis: bool,
     },
     Failure {
         ok: bool,
@@ -493,7 +509,7 @@ pub enum TurnFinishOutput {
 
 #[medousa_tool(id = COGNITION_TURN_FINISH_ID)]
 impl CognitionTurnFinishTool {
-    /// End ActiveWork. Prefer assistant prose plus turn.finish with no message; message is a fallback only when the response contains no prose. Mid-task handoffs use turn.checkpoint.
+    /// End ActiveWork only after the full requested outcome is complete and verified, or when a concrete blocker prevents further authorized progress and is clearly reported. Prefer assistant prose plus turn.finish with no message; message is a fallback only when the response contains no prose. Set needs_synthesis=false when the prose is already the complete principal-facing answer. Progress is not completion.
     pub(crate) async fn invoke_typed(
         &self,
         input: TurnFinishInput,
@@ -507,16 +523,17 @@ impl CognitionTurnFinishTool {
                 .map(TrimmedText::into_string)
                 .unwrap_or_default(),
             reason: command.reason.map(TrimmedText::into_string),
+            needs_synthesis: command.needs_synthesis,
         })
     }
 }
 
-/// Hand a mid-task update to the principal and end this agent turn (await their reply to continue).
+/// Deliberately hand the turn back to the principal and wait for their reply; use only when their input is needed or work must pause.
 pub struct CognitionTurnCheckpointTool;
 
 #[derive(Debug, JsonSchema)]
 pub struct TurnCheckpointInput {
-    /// Principal-facing update: what you did, what you found, and what happens next or what you need from them
+    /// Principal-facing handback: what is done, what remains, and what input is needed or why work must pause
     #[schemars(required, with = "String")]
     pub(crate) message: Option<String>,
     /// Optional: what you need from the principal before more tool work (decision, confirmation, missing detail)
@@ -572,7 +589,7 @@ pub enum TurnCheckpointOutput {
 
 #[medousa_tool(id = COGNITION_TURN_CHECKPOINT_ID)]
 impl CognitionTurnCheckpointTool {
-    /// Share a substantive mid-task update with the principal and hand the turn back to them. The conversation is not over — you may continue after they reply. Use when tool work produced real progress but you are not done (not a final answer). Prefer this over streaming long interim prose that the runtime may loop on.
+    /// Deliberately end this agent turn and wait for the principal's reply. Use only when principal input is needed or work must pause; include what is done and what remains. For ordinary progress, use turn.update_user or prose and continue working; progress alone is not a reason to hand back.
     pub(crate) async fn invoke_typed(
         &self,
         input: TurnCheckpointInput,
@@ -733,6 +750,7 @@ mod tests {
         let finish = TurnFinishCommand::from(TurnFinishInput {
             message: Some("  exact final text  ".into()),
             reason: Some("  complete  ".into()),
+            needs_synthesis: false,
         });
         assert_eq!(
             finish.message.as_ref().map(TrimmedText::as_str),
@@ -742,6 +760,7 @@ mod tests {
             finish.reason.as_ref().map(TrimmedText::as_str),
             Some("complete")
         );
+        assert!(!finish.needs_synthesis);
     }
 
     #[test]

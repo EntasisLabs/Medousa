@@ -18,10 +18,30 @@ export type UndertakingLocationDeepLink = {
   entityId: string | null;
 };
 
+export type AskDeepLink = {
+  kind: "ask";
+  requestId: string;
+};
+
+export type LiveDeepLink = {
+  kind: "live";
+  requestId: string;
+  mode: "new" | "resume";
+};
+
+export type ComposeDeepLink = {
+  kind: "compose";
+  action: "new" | "camera" | "notes" | "photos" | "calendar" | "projects";
+  requestId: string;
+};
+
 export type DeepLink =
   | WorkDeepLink
   | VaultDeepLink
-  | UndertakingLocationDeepLink;
+  | UndertakingLocationDeepLink
+  | AskDeepLink
+  | LiveDeepLink
+  | ComposeDeepLink;
 
 const WORK_PATH = /^\/work\/([^/?#]+)\/?$/i;
 
@@ -65,6 +85,28 @@ export function parseDeepLink(raw: string): DeepLink | null {
       const url = new URL(trimmed);
       const host = url.hostname.toLowerCase();
       const pathSegment = url.pathname.replace(/^\/+/, "");
+      if (host === "live") {
+        const requestId = url.searchParams.get("request")?.toLowerCase() ?? "";
+        const mode = url.searchParams.get("mode");
+        if (pathSegment || url.hash || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestId)
+          || (mode !== "new" && mode !== "resume")) return null;
+        return { kind: "live", requestId, mode };
+      }
+      if (host === "ask") {
+        const requestId = url.searchParams.get("request")?.trim().toLowerCase() ?? "";
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestId)) {
+          return null;
+        }
+        return { kind: "ask", requestId };
+      }
+      if (host === "compose") {
+        const requestId = url.searchParams.get("request")?.trim().toLowerCase() ?? "";
+        const action = url.searchParams.get("action");
+        if (pathSegment || url.hash || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestId)
+          || (action !== "new" && action !== "camera" && action !== "notes" && action !== "photos"
+            && action !== "calendar" && action !== "projects")) return null;
+        return { kind: "compose", action, requestId };
+      }
       if (host === "work" && pathSegment) {
         return { kind: "work", cardId: decodeURIComponent(pathSegment) };
       }

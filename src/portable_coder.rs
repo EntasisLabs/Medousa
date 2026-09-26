@@ -304,8 +304,9 @@ fn validate_grant(
         || granted_secrets != secrets
         || !requested.is_subset(&effective)
         || grant.issued_at > now + chrono::Duration::minutes(5)
-        || grant.expires_at <= now
-        || grant.expires_at > task.deadline_at
+        || grant
+            .expires_at
+            .is_none_or(|expiry| expiry <= now || expiry > task.deadline_at)
     {
         return Err(WorkEnvironmentError::AdmissionDenied(
             "portable Coder destination grant does not match the admitted task".to_string(),
@@ -621,7 +622,7 @@ mod daemon_runner {
                         "portable Coder task must retain structural turn authority".to_string(),
                     ));
                 }
-                if grant.expires_at <= Utc::now() {
+                if grant.expires_at.is_none_or(|expiry| expiry <= Utc::now()) {
                     return Err(WorkEnvironmentError::AdmissionDenied(
                         "portable Coder destination grant expired".to_string(),
                     ));
@@ -836,7 +837,7 @@ mod daemon_runner {
                     ),
                     environment: BTreeMap::new(),
                     stdin: None,
-                    timeout_seconds: 30,
+                    timeout_seconds: Some(30),
                     max_output_bytes: max_output_bytes
                         .clamp(1, MAX_ENVIRONMENT_COMMAND_OUTPUT_BYTES),
                 },
@@ -1064,6 +1065,7 @@ mod tests {
             grant_id: "grant-a".to_string(),
             peer_device_id: "peer-a".to_string(),
             peer_pairing_id: "pair-a".to_string(),
+            authorization_role: None,
             origin_runtime_id: "peer-a".to_string(),
             destination_runtime_id: "runtime-b".to_string(),
             parent_session_id: task.parent_session_id.clone(),
@@ -1085,7 +1087,7 @@ mod tests {
             effective_world_ids: Vec::new(),
             network_policy: PeerNetworkPolicy::Deny,
             issued_at: now,
-            expires_at: task.deadline_at,
+            expires_at: Some(task.deadline_at),
         });
         task.validate(&spec, now, true).unwrap();
 

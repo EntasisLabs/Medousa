@@ -680,7 +680,7 @@ pub(crate) async fn start_prompt_run(
         MAX_COLD_WINDOW_TURNS,
     )
     .max(hot_window_turns);
-    let prior_build = build_prior_messages(
+    let mut prior_build = build_prior_messages(
         tui_rt.tool_catalog.as_ref(),
         &state.session_id,
         &state.conversation,
@@ -689,6 +689,23 @@ pub(crate) async fn start_prompt_run(
         hot_window_turns,
         cold_window_turns,
     );
+    let replay_provider = final_route
+        .as_ref()
+        .map(|route| route.provider.as_str())
+        .unwrap_or(state.settings.provider.as_str());
+    let replay_model = final_route
+        .as_ref()
+        .map(|route| route.model.as_str())
+        .unwrap_or(state.settings.model.as_str());
+    medousa::media_vision::append_recent_history_images(
+        &mut prior_build.messages,
+        &state.session_id,
+        &state.conversation,
+        &[],
+        replay_provider,
+        replay_model,
+    )
+    .await;
     super::push_obs(
         state,
         format!(
@@ -820,7 +837,7 @@ pub(crate) async fn start_prompt_run(
                     medousa::request_principal::TransportClass::Loopback,
                 ),
                 tokio_util::sync::CancellationToken::new(),
-                std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60),
+                None,
                 scope,
             ) {
                 Ok(execution) => execution,

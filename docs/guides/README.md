@@ -4,6 +4,8 @@ End-user how-tos for **Medousa the app**. No terminal required.
 
 Integrator / self-host cookbooks: [../cookbook/README.md](../cookbook/README.md).
 
+Operator evaluation: [Benchmark Coder with Terminal-Bench](terminal-bench.md).
+
 | Guide | You want to… |
 |-------|----------------|
 | [Getting started](getting-started.md) | Download → welcome → first chat |
@@ -12,6 +14,8 @@ Integrator / self-host cookbooks: [../cookbook/README.md](../cookbook/README.md)
 | [Packages](packages.md) | Add optional computer, coding, model, channel, and MCP capabilities |
 | [Workshop & Automations](workshop-and-automations.md) | Flows, schedules, specialists, background work |
 | [Phone pairing](phone-pairing.md) | Add another computer as an optional portal |
+| [Siri and Shortcuts](siri-and-shortcuts.md) | Continue the selected Medousa chat by voice or from an iPhone shortcut |
+| [Medousa Live on iPhone](medousa-live-ios.md) | Hold a continuous in-app voice conversation on iPhone |
 | [Peers & Nearby](peers-and-nearby.md) | LAN / tunnel workshops (deep dive linked) |
 | [Memory & identity](memory-and-identity.md) | Teach who you are; profiles |
 | [Channels](channels.md) | Telegram, Discord, Slack, WhatsApp from the app |
@@ -23,9 +27,10 @@ Integrator / self-host cookbooks: [../cookbook/README.md](../cookbook/README.md)
 | [Secure credential handoff](secure-credential-handoff.md) | Give OpenShell or Grapheme an API key without putting it in chat |
 | [Desktop companion](desktop-companion.md) | Keep chat, approvals, notes, and views in a floating pet |
 | [Drawing](drawing.md) | Sketch inside notes or use a full drawing note |
-| [Chat drawings and generated images](chat-media-and-images.md) | Draw in chat, generate images, refine them, and save or share the result |
+| [Chat drawings and generated images](chat-media-and-images.md) | Draw, generate, refine, and revisit images in chat |
 | [Interactive recipes](interactive-recipes.md) | Follow guided recipes/procedures with durable step timers |
 | [Undertakings & ForgeLens](undertakings.md) | Governed work, seal, review, World observe |
+| [Delegation approvals](delegation-approvals.md) | Review immutable agent-work proposals (native preview) |
 
 Also useful from the cookbook (app-user tagged):
 [Custom views & canvas](../cookbook/custom-views-and-canvas.md) ·

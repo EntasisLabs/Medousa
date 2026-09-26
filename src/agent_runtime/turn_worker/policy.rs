@@ -228,6 +228,11 @@ pub fn host_bus_tool_names() -> HashSet<String> {
         &mut names,
         &[
             "cognition_tools_discover",
+            "cognition_active_work_discover",
+            "cognition_assistant_placement",
+            "cognition_peer_delegate",
+            "cognition_peer_discover",
+            "cognition_peer_propose",
             "cognition_utility_time_now",
             "cognition_utility_day_of_week",
             "cognition_utility_uuid",
@@ -479,6 +484,7 @@ mod tests {
             grant_id: "grant-1".to_string(),
             peer_device_id: "peer-1".to_string(),
             peer_pairing_id: "pairing-1".to_string(),
+            authorization_role: None,
             origin_runtime_id: "runtime-origin".to_string(),
             destination_runtime_id: "runtime-destination".to_string(),
             parent_session_id: "session-1".to_string(),
@@ -508,7 +514,7 @@ mod tests {
             effective_world_ids: Vec::new(),
             network_policy: crate::peer_execution_policy::PeerNetworkPolicy::WebOnly,
             issued_at: now,
-            expires_at: now + chrono::Duration::minutes(5),
+            expires_at: Some(now + chrono::Duration::minutes(5)),
         };
 
         let names = remote_delegated_tool_ceiling_for_grant(Some(&grant));

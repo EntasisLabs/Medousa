@@ -408,7 +408,7 @@ impl WorkflowExecutor {
             #[cfg(feature = "full-daemon")]
             crate::grapheme_medousa_bridge::medousa_workflow_engine(),
             #[cfg(not(feature = "full-daemon"))]
-            stasis::prelude::RuntimeFactory::default_workflow_engine(),
+            crate::portable_grapheme_engine::workflow_engine(),
             prompt_pipeline,
             Arc::new(McpGatewayClient::from_env()),
             registry,
@@ -435,6 +435,33 @@ impl WorkflowExecutor {
         self.registry
             .update_status(&payload.workflow_id, WorkflowStatus::Running, Vec::new())
             .await;
+        #[cfg(feature = "full-daemon")]
+        let _ = crate::assistant_assignments::project_runtime_event(
+            medousa_types::assistant_assignment::AssistantAssignmentKind::Workflow,
+            &payload.workflow_id,
+            medousa_types::assistant_assignment::AssistantAssignmentStatus::Running,
+            1,
+            "runtime:workflow",
+            None,
+        )
+        .await;
+        #[cfg(feature = "full-daemon")]
+        if payload.lane == "scheduled" {
+            let _ = crate::assistant_assignments::project_scheduled_occurrence(
+                &payload.workflow_id,
+                &job.id,
+            )
+            .await;
+            let _ = crate::assistant_assignments::project_runtime_event(
+                medousa_types::assistant_assignment::AssistantAssignmentKind::ScheduledOccurrence,
+                &job.id,
+                medousa_types::assistant_assignment::AssistantAssignmentStatus::Running,
+                1,
+                "runtime:scheduler",
+                None,
+            )
+            .await;
+        }
 
         let lane = if payload.lane == "scheduled" {
             McpTurnLane::Scheduled
@@ -458,6 +485,34 @@ impl WorkflowExecutor {
         self.registry
             .update_status(&payload.workflow_id, final_status, step_results.clone())
             .await;
+        #[cfg(feature = "full-daemon")]
+        let assignment_status = if workflow_failed {
+            medousa_types::assistant_assignment::AssistantAssignmentStatus::Failed
+        } else {
+            medousa_types::assistant_assignment::AssistantAssignmentStatus::Completed
+        };
+        #[cfg(feature = "full-daemon")]
+        let _ = crate::assistant_assignments::project_runtime_event(
+            medousa_types::assistant_assignment::AssistantAssignmentKind::Workflow,
+            &payload.workflow_id,
+            assignment_status,
+            2,
+            "runtime:workflow",
+            None,
+        )
+        .await;
+        #[cfg(feature = "full-daemon")]
+        if payload.lane == "scheduled" {
+            let _ = crate::assistant_assignments::project_runtime_event(
+                medousa_types::assistant_assignment::AssistantAssignmentKind::ScheduledOccurrence,
+                &job.id,
+                assignment_status,
+                2,
+                "runtime:scheduler",
+                None,
+            )
+            .await;
+        }
 
         let duration_ms = started.elapsed().as_millis();
         let diagnostics = json!({

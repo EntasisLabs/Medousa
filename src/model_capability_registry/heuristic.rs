@@ -51,11 +51,15 @@ pub fn infer_supports_vision(provider: &str, model: &str) -> bool {
                 || model.starts_with("gpt-4-turbo")
                 || model.starts_with("gpt-5")
                 || model.starts_with("gpt-6-astra")
+                || model.starts_with("gpt-6-sol")
+                || model.starts_with("gpt-6-luna")
                 || model.contains("vision")
                 || model.contains("openai/gpt-4o")
                 || model.contains("openai/gpt-4.1")
                 || model.contains("openai/gpt-5")
                 || model.contains("openai/gpt-6-astra")
+                || model.contains("openai/gpt-6-sol")
+                || model.contains("openai/gpt-6-luna")
         }
         "anthropic" => {
             model.contains("claude-3")
@@ -86,9 +90,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn chatgpt_account_gpt5_models_support_vision() {
+    fn chatgpt_account_gpt_models_support_vision() {
         assert!(infer_supports_vision("openai-codex", "gpt-5.6-sol"));
         assert!(infer_supports_vision("openai-codex", "gpt-5.6-luna"));
+        assert!(infer_supports_vision("openai-codex", "gpt-6-sol"));
+        assert!(infer_supports_vision("openai-codex", "gpt-6-luna"));
     }
 
     #[test]
@@ -102,6 +108,8 @@ mod tests {
         assert_eq!(record.output_modalities, vec![Modality::Text]);
         assert!(infer_supports_vision("openai", "gpt-6-astra"));
         assert!(infer_supports_vision("openrouter", "openai/gpt-6-astra"));
+        assert!(infer_supports_vision("openai", "gpt-6-sol"));
+        assert!(infer_supports_vision("openrouter", "openai/gpt-6-luna"));
         assert!(!infer_supports_vision("openai-codex", "gpt-6-unknown"));
     }
 

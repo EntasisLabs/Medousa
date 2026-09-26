@@ -1,8 +1,6 @@
 //! Durable turn work records (host/worker bus).
 
 use std::collections::{HashMap, HashSet};
-use std::fs;
-use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
@@ -12,14 +10,10 @@ use tokio_util::sync::CancellationToken;
 
 use crate::agent_runtime::turn_context::WorkerHandoffCapsule;
 use crate::peer_execution_policy::TaskExecutionGrant;
-use crate::session;
+use crate::stage_routing::StageRoute;
 use crate::turn_continuation::StoredDeliveryTarget;
-use crate::workshop_contract::{
-    ExecutionPlacementResolution, default_unknown_runtime_id,
-};
+use crate::workshop_contract::{ExecutionPlacementResolution, default_unknown_runtime_id};
 
-const TURN_WORKERS_FILE: &str = "workspace/turn_workers.json";
-const LEGACY_TURN_WORKERS_FILE: &str = "turn_workers.json";
 const MAX_ACTIVE_TURN_WORKERS: usize = 500;
 use crate::workspace::retention::WorkspaceRetentionConfig;
 
@@ -93,6 +87,83 @@ fn default_parent_stream_turn_id() -> u64 {
     0
 }
 
+/// The parent's user-facing route, captured before the worker can resolve its
+/// own execution model. Versioned so future routing policy can evolve without
+/// reinterpreting durable work records.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ParentContinuationRoute {
+    pub schema_version: u16,
+    pub stage_role: String,
+    pub policy_profile: String,
+    pub provider: String,
+    pub model: String,
+    /// Route policy labels selected by the parent StageRoutingMatrix.
+    #[serde(default)]
+    pub fallback_chain: Vec<String>,
+}
+
+impl ParentContinuationRoute {
+    pub const SCHEMA_VERSION: u16 = 1;
+
+    pub fn from_stage_route(route: &StageRoute) -> Self {
+        Self {
+            schema_version: Self::SCHEMA_VERSION,
+            stage_role: route.role.clone(),
+            policy_profile: route.policy_profile.clone(),
+            provider: route.provider.clone(),
+            model: route.model.clone(),
+            fallback_chain: route.fallback_chain.clone(),
+        }
+    }
+
+    pub fn stage_route(&self) -> Option<StageRoute> {
+        if self.schema_version != Self::SCHEMA_VERSION
+            || self.stage_role.trim() != "final_response"
+            || self.policy_profile.trim().is_empty()
+            || self.provider.trim().is_empty()
+            || self.model.trim().is_empty()
+        {
+            return None;
+        }
+        Some(StageRoute {
+            role: self.stage_role.clone(),
+            provider: self.provider.clone(),
+            model: self.model.clone(),
+            policy_profile: self.policy_profile.clone(),
+            fallback_chain: self.fallback_chain.clone(),
+        })
+    }
+}
+
+/// Resolve old records through an explicit legacy policy. Parallel records
+/// can still recover the parent provider/model from their spawn contract;
+/// bound records use the currently configured workshop final-response route.
+/// The worker's resolved provider/model is intentionally never consulted.
+pub fn continuation_route_for_record(
+    record: &TurnWorkRecord,
+    legacy_route: &StageRoute,
+) -> Option<StageRoute> {
+    if let Some(contract) = record.parent_continuation_route.as_ref() {
+        // An unknown or malformed future contract must not silently degrade
+        // to today's defaults or a worker model.
+        return contract.stage_route();
+    }
+
+    if let Some(parent) = record.worker_spawn_spec.as_ref().map(|spec| &spec.parent)
+        && !parent.provider.trim().is_empty()
+        && !parent.model.trim().is_empty()
+    {
+        return Some(
+            crate::stage_routing::StageRoutingMatrix::default_for(&parent.provider, &parent.model)
+                .final_response,
+        );
+    }
+
+    // The caller supplies its already-admitted host fallback. Resolving a
+    // legacy record must not perform synchronous settings I/O on the turn task.
+    ParentContinuationRoute::from_stage_route(legacy_route).stage_route()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TurnWorkRecord {
     pub work_id: String,
@@ -106,6 +177,10 @@ pub struct TurnWorkRecord {
     /// explicit unknown value rather than pretending they ran locally.
     #[serde(default = "default_unknown_runtime_id")]
     pub parent_runtime_id: String,
+    /// Parent final-response route. Missing on legacy records, which use the
+    /// explicit compatibility resolver above.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_continuation_route: Option<ParentContinuationRoute>,
     /// Requested and resolved execution target captured before enqueue.
     #[serde(default)]
     pub execution_placement: ExecutionPlacementResolution,
@@ -123,6 +198,10 @@ pub struct TurnWorkRecord {
     pub result_text: Option<String>,
     pub tool_names: Vec<String>,
     pub termination_reason: Option<String>,
+    /// Explicit worker handback decision. `false` means the worker result is
+    /// already principal-facing and must be delivered without another model call.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub needs_synthesis: Option<bool>,
     pub error: Option<String>,
     pub user_ack: String,
     pub provider: String,
@@ -133,7 +212,7 @@ pub struct TurnWorkRecord {
     pub max_tool_rounds: usize,
     pub delivery_target: Option<StoredDeliveryTarget>,
     pub parent_user_prompt: Option<String>,
-    /// Snapshotted host agent mode (`general` / `teacher` / `instant` / `coder`) so resume stays in-lane.
+    /// Snapshotted host agent mode (`general` / `assistant` / `teacher` / `instant` / `coder`) so resume stays in-lane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_agent_mode: Option<String>,
     /// Snapshotted Forge work id when the host spawned from Coder.
@@ -219,6 +298,7 @@ impl TurnWorkRecord {
             parent_turn_correlation_id: Some(parent_turn_correlation_id),
             parent_stream_turn_id: 0,
             parent_runtime_id,
+            parent_continuation_route: None,
             execution_placement,
             task_execution_grant: Some(task_execution_grant),
             worker_spawn_spec: None,
@@ -228,6 +308,7 @@ impl TurnWorkRecord {
             result_text: None,
             tool_names: Vec::new(),
             termination_reason: None,
+            needs_synthesis: None,
             error: None,
             user_ack: String::new(),
             provider,
@@ -269,7 +350,16 @@ pub struct TurnWorkerStore {
     records: Mutex<HashMap<String, TurnWorkRecord>>,
     live_cancellations: Mutex<HashMap<String, Arc<CancellationToken>>>,
     parallel_intakes: Mutex<HashSet<ParallelCohortKey>>,
+    admit_mutations: MutationAdmitter,
 }
+
+type MutationAdmitter = Arc<
+    dyn Fn(
+            Vec<crate::workspace::persist::WorkspaceMutation>,
+        ) -> Result<(), crate::persistence::PersistenceError>
+        + Send
+        + Sync,
+>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct ParallelCohortKey {
@@ -374,12 +464,14 @@ impl Drop for WorkerExecutionLease {
 pub enum BoundWorkshopAdmissionError {
     SessionDeleting,
     ActiveGeneration { work_id: String },
+    Persistence(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DelegatedWorkAdmissionError {
     SessionDeleting,
     ConflictingIdentity,
+    Persistence(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -387,6 +479,7 @@ pub enum BoundWorkshopMutationError {
     SessionDeleting,
     MissingGeneration,
     StaleGeneration { active_work_id: Option<String> },
+    Persistence(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -394,6 +487,7 @@ pub enum TurnWorkerMutationError {
     SessionDeleting,
     MissingWork,
     ForeignSession,
+    Persistence(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -403,6 +497,7 @@ pub enum DelegatedWorkControlError {
     ForeignIdentity,
     WrongDisposition,
     NotActive,
+    Persistence(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -411,6 +506,7 @@ pub enum WorkerExecutionRegistrationError {
     NotActive,
     AlreadyRunning,
     AtCapacity { limit: usize },
+    Persistence(String),
 }
 
 impl Default for TurnWorkerStore {
@@ -421,95 +517,94 @@ impl Default for TurnWorkerStore {
 
 impl TurnWorkerStore {
     pub fn new() -> Self {
-        let store = Self {
-            records: Mutex::new(HashMap::new()),
-            live_cancellations: Mutex::new(HashMap::new()),
-            parallel_intakes: Mutex::new(HashSet::new()),
-        };
+        let store = Self::with_admitter(Arc::new(crate::workspace::persist::queue_mutations));
         store.reload_from_disk();
         store
     }
 
-    #[cfg(test)]
-    pub(crate) fn empty_for_tests() -> Self {
+    fn with_admitter(admit_mutations: MutationAdmitter) -> Self {
         Self {
             records: Mutex::new(HashMap::new()),
             live_cancellations: Mutex::new(HashMap::new()),
             parallel_intakes: Mutex::new(HashSet::new()),
+            admit_mutations,
         }
     }
 
-    fn path() -> PathBuf {
-        Self::path_in(&session::medousa_data_dir())
-    }
-
-    fn legacy_path() -> PathBuf {
-        Self::legacy_path_in(&session::medousa_data_dir())
-    }
-
-    fn path_in(data_dir: &Path) -> PathBuf {
-        data_dir.join(TURN_WORKERS_FILE)
-    }
-
-    fn legacy_path_in(data_dir: &Path) -> PathBuf {
-        data_dir.join(LEGACY_TURN_WORKERS_FILE)
+    #[cfg(test)]
+    pub(crate) fn empty_for_tests() -> Self {
+        Self::with_admitter(Arc::new(|_| Ok(())))
     }
 
     fn reload_from_disk(&self) {
-        let _ = fs::create_dir_all(session::medousa_data_dir().join("workspace"));
         if let Some(projection) = crate::workspace::persist::startup_projection() {
             *self.records.lock().expect("turn worker records") = projection.turn_workers;
-            return;
-        }
-        self.reload_from_paths(&Self::path(), &Self::legacy_path());
-    }
-
-    fn reload_from_paths(&self, canonical_path: &Path, legacy_path: &Path) {
-        let (raw, migrated_legacy) = match fs::read_to_string(canonical_path) {
-            Ok(raw) => (raw, false),
-            Err(_) => match fs::read_to_string(legacy_path) {
-                Ok(raw) => (raw, true),
-                Err(_) => return,
-            },
-        };
-        let Ok(map) = serde_json::from_str::<HashMap<String, TurnWorkRecord>>(&raw) else {
-            return;
-        };
-        *self.records.lock().expect("turn worker records") = map;
-        if migrated_legacy {
-            if let Some(parent) = canonical_path.parent() {
-                let _ = fs::create_dir_all(parent);
-            }
-            if let Err(err) = fs::write(canonical_path, raw) {
-                eprintln!(
-                    "turn_worker_store: legacy snapshot migration failed path={} error={err}",
-                    canonical_path.display()
-                );
-            }
+        } else {
+            tracing::error!(
+                "turn_worker_store: workspace persistence projection unavailable; refusing ambient snapshot fallback"
+            );
         }
     }
 
-    fn persist(&self, work_id: &str, stasis_job_id: Option<&str>) {
+    fn persist(
+        &self,
+        work_id: &str,
+        stasis_job_id: Option<&str>,
+    ) -> Result<(), crate::persistence::PersistenceError> {
         let mut guard = self.records.lock().expect("turn worker records");
         let mut changed = Self::prune_map(&mut guard);
         if let Some(record) = guard.get(work_id).cloned() {
             changed.push(record);
         }
         let retained = guard.keys().cloned().collect::<Vec<_>>();
-        drop(guard);
         changed.sort_by(|left, right| left.work_id.cmp(&right.work_id));
         changed.dedup_by(|left, right| left.work_id == right.work_id);
-        for record in changed {
-            let _ = crate::workspace::persist::queue_mutation(
-                crate::workspace::persist::WorkspaceMutation::UpsertTurnWorker {
+        let mutations = Self::mutations_for_records(changed, retained);
+        (self.admit_mutations)(mutations)?;
+        drop(guard);
+        Self::notify_turn_worker_changed(work_id, stasis_job_id);
+        Ok(())
+    }
+
+    fn persist_candidate(
+        &self,
+        candidate: &mut HashMap<String, TurnWorkRecord>,
+        work_id: &str,
+    ) -> Result<(), crate::persistence::PersistenceError> {
+        let mut changed = Self::prune_map(candidate);
+        if let Some(record) = candidate.get(work_id).cloned() {
+            changed.push(record);
+        }
+        let retained = candidate.keys().cloned().collect::<Vec<_>>();
+        changed.sort_by(|left, right| left.work_id.cmp(&right.work_id));
+        changed.dedup_by(|left, right| left.work_id == right.work_id);
+        (self.admit_mutations)(Self::mutations_for_records(changed, retained))
+    }
+
+    fn mutations_for_records(
+        changed: Vec<TurnWorkRecord>,
+        retained: Vec<String>,
+    ) -> Vec<crate::workspace::persist::WorkspaceMutation> {
+        let mut mutations = changed
+            .into_iter()
+            .map(
+                |record| crate::workspace::persist::WorkspaceMutation::UpsertTurnWorker {
                     record: Box::new(record),
                 },
-            );
-        }
-        let _ = crate::workspace::persist::queue_mutation(
+            )
+            .collect::<Vec<_>>();
+        mutations.push(
             crate::workspace::persist::WorkspaceMutation::RetainTurnWorkers { work_ids: retained },
         );
-        Self::notify_turn_worker_changed(work_id, stasis_job_id);
+        mutations
+    }
+
+    fn report_persistence_error(
+        action: &str,
+        work_id: &str,
+        error: &crate::persistence::PersistenceError,
+    ) {
+        tracing::error!(work_id, action, error = %error, "turn_worker_store persistence admission failed");
     }
 
     fn notify_turn_worker_changed(work_id: &str, stasis_job_id: Option<&str>) {
@@ -573,18 +668,33 @@ impl TurnWorkerStore {
     }
 
     pub fn insert(&self, record: TurnWorkRecord) {
+        if let Err(error) = self.try_insert(record) {
+            Self::report_persistence_error("insert", "unknown", &error);
+        }
+    }
+
+    pub fn try_insert(
+        &self,
+        record: TurnWorkRecord,
+    ) -> Result<(), crate::persistence::PersistenceError> {
         let Ok((_session, _mutation)) =
             crate::session_deletion::acquire_mutation_for_str(&record.session_id)
         else {
-            tracing::warn!(session_id = %record.session_id, "rejected turn-worker insert for deleting session");
-            return;
+            return Err(crate::persistence::PersistenceError::new(
+                crate::persistence::PersistenceErrorKind::Conflict,
+                "session is deleting",
+            ));
         };
         let work_id = record.work_id.clone();
         let stasis_job_id = record.stasis_job_id.clone();
         let mut guard = self.records.lock().expect("turn worker records");
-        guard.insert(work_id.clone(), record);
+        let mut candidate = guard.clone();
+        candidate.insert(work_id.clone(), record);
+        self.persist_candidate(&mut candidate, &work_id)?;
+        *guard = candidate;
         drop(guard);
-        self.persist(&work_id, stasis_job_id.as_deref());
+        Self::notify_turn_worker_changed(&work_id, stasis_job_id.as_deref());
+        Ok(())
     }
 
     pub fn try_insert_bound(
@@ -600,16 +710,20 @@ impl TurnWorkerStore {
         let work_id = record.work_id.clone();
         let stasis_job_id = record.stasis_job_id.clone();
         let mut records = self.records.lock().expect("turn worker records");
-        if let Some(active) = records.values().find(|candidate| {
+        let mut candidate_records = records.clone();
+        if let Some(active) = candidate_records.values().find(|candidate| {
             is_active_bound(candidate) && candidate.session_id == record.session_id
         }) {
             return Err(BoundWorkshopAdmissionError::ActiveGeneration {
                 work_id: active.work_id.clone(),
             });
         }
-        records.insert(work_id.clone(), record);
+        candidate_records.insert(work_id.clone(), record);
+        self.persist_candidate(&mut candidate_records, &work_id)
+            .map_err(|error| BoundWorkshopAdmissionError::Persistence(error.to_string()))?;
+        *records = candidate_records;
         drop(records);
-        self.persist(&work_id, stasis_job_id.as_deref());
+        Self::notify_turn_worker_changed(&work_id, stasis_job_id.as_deref());
         Ok(())
     }
 
@@ -644,9 +758,13 @@ impl TurnWorkerStore {
                 Err(DelegatedWorkAdmissionError::ConflictingIdentity)
             };
         }
-        records.insert(work_id.clone(), record);
+        let mut candidate_records = records.clone();
+        candidate_records.insert(work_id.clone(), record);
+        self.persist_candidate(&mut candidate_records, &work_id)
+            .map_err(|error| DelegatedWorkAdmissionError::Persistence(error.to_string()))?;
+        *records = candidate_records;
         drop(records);
-        self.persist(&work_id, stasis_job_id.as_deref());
+        Self::notify_turn_worker_changed(&work_id, stasis_job_id.as_deref());
         Ok(true)
     }
 
@@ -830,33 +948,94 @@ impl TurnWorkerStore {
         record.updated_at = Utc::now();
         let cloned = record.clone();
         drop(guard);
-        self.persist(&cloned.work_id, cloned.stasis_job_id.as_deref());
+        if let Err(error) = self.persist(&cloned.work_id, cloned.stasis_job_id.as_deref()) {
+            Self::report_persistence_error("update", &cloned.work_id, &error);
+        }
         Some(cloned)
     }
 
-    pub fn archive(&self, work_id: &str, purge_body: bool) -> Option<TurnWorkRecord> {
-        let session_id = self
-            .records
-            .lock()
-            .expect("turn worker records")
-            .get(work_id)?
-            .session_id
-            .clone();
-        let (_session, _mutation) =
-            crate::session_deletion::acquire_mutation_for_str(&session_id).ok()?;
-        let now = Utc::now();
+    /// Apply and durably persist a record mutation before exposing it in
+    /// memory. Use this for authority transitions that must be committed
+    /// before a worker crosses the corresponding execution boundary.
+    pub fn try_update<F>(
+        &self,
+        work_id: &str,
+        update: F,
+    ) -> Result<Option<TurnWorkRecord>, crate::persistence::PersistenceError>
+    where
+        F: FnOnce(&mut TurnWorkRecord),
+    {
+        let Some(current) = self.get(work_id) else {
+            return Ok(None);
+        };
+        let (_session, _mutation) = crate::session_deletion::acquire_mutation_for_str(
+            &current.session_id,
+        )
+        .map_err(|error| {
+            crate::persistence::PersistenceError::new(
+                crate::persistence::PersistenceErrorKind::Cancelled,
+                error,
+            )
+        })?;
         let mut guard = self.records.lock().expect("turn worker records");
-        let record = guard.get_mut(work_id)?;
+        let mut candidate = guard.clone();
+        let Some(record) = candidate.get_mut(work_id) else {
+            return Ok(None);
+        };
+        update(record);
+        record.updated_at = Utc::now();
+        let snapshot = record.clone();
+        self.persist_candidate(&mut candidate, work_id)?;
+        *guard = candidate;
+        drop(guard);
+        Self::notify_turn_worker_changed(work_id, snapshot.stasis_job_id.as_deref());
+        Ok(Some(snapshot))
+    }
+
+    pub fn try_archive(
+        &self,
+        work_id: &str,
+        purge_body: bool,
+    ) -> Result<Option<TurnWorkRecord>, crate::persistence::PersistenceError> {
+        let Some(current) = self.get(work_id) else {
+            return Ok(None);
+        };
+        let (_session, _mutation) = crate::session_deletion::acquire_mutation_for_str(
+            &current.session_id,
+        )
+        .map_err(|error| {
+            crate::persistence::PersistenceError::new(
+                crate::persistence::PersistenceErrorKind::Cancelled,
+                error,
+            )
+        })?;
+        let mut guard = self.records.lock().expect("turn worker records");
+        let mut candidate = guard.clone();
+        let Some(record) = candidate.get_mut(work_id) else {
+            return Ok(None);
+        };
         record.archived = true;
-        record.updated_at = now;
+        record.updated_at = Utc::now();
         if purge_body {
             record.result_text = None;
             record.worker_scratch = None;
         }
         let snapshot = record.clone();
+        self.persist_candidate(&mut candidate, work_id)?;
+        *guard = candidate;
         drop(guard);
-        self.persist(&snapshot.work_id, snapshot.stasis_job_id.as_deref());
-        Some(snapshot)
+        Self::notify_turn_worker_changed(work_id, snapshot.stasis_job_id.as_deref());
+        Ok(Some(snapshot))
+    }
+
+    pub fn archive(&self, work_id: &str, purge_body: bool) -> Option<TurnWorkRecord> {
+        match self.try_archive(work_id, purge_body) {
+            Ok(record) => record,
+            Err(error) => {
+                Self::report_persistence_error("archive", work_id, &error);
+                None
+            }
+        }
     }
 
     pub fn delete_session(&self, session_id: &str) -> Result<(), String> {
@@ -866,7 +1045,15 @@ impl TurnWorkerStore {
             .filter(|record| record.session_id == session_id)
             .map(|record| record.work_id.clone())
             .collect();
-        guard.retain(|_, record| record.session_id != session_id);
+        let mut candidate = guard.clone();
+        candidate.retain(|_, record| record.session_id != session_id);
+        let retained = candidate.keys().cloned().collect::<Vec<_>>();
+        (self.admit_mutations)(vec![
+            crate::workspace::persist::WorkspaceMutation::RetainTurnWorkers { work_ids: retained },
+        ])
+        .map_err(|error| error.to_string())?;
+        *guard = candidate;
+        drop(guard);
         let mut live = self
             .live_cancellations
             .lock()
@@ -877,38 +1064,16 @@ impl TurnWorkerStore {
             }
         }
         drop(live);
-        let retained = guard.keys().cloned().collect::<Vec<_>>();
-        drop(guard);
-        crate::workspace::persist::queue_mutation(
-            crate::workspace::persist::WorkspaceMutation::RetainTurnWorkers { work_ids: retained },
-        )
-        .map_err(|error| error.to_string())?;
         Ok(())
     }
 
     pub fn session_absent_on_disk(session_id: &str) -> Result<bool, String> {
-        if let Ok(projection) = crate::workspace::persist::persisted_projection() {
-            return Ok(!projection
-                .turn_workers
-                .values()
-                .any(|record| record.session_id == session_id));
-        }
-        for path in [Self::path(), Self::legacy_path()] {
-            let raw = match fs::read_to_string(path) {
-                Ok(raw) => raw,
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(error) => return Err(error.to_string()),
-            };
-            let records = serde_json::from_str::<HashMap<String, TurnWorkRecord>>(&raw)
-                .map_err(|_| "turn-worker snapshot is corrupt".to_string())?;
-            if records
-                .values()
-                .any(|record| record.session_id == session_id)
-            {
-                return Ok(false);
-            }
-        }
-        Ok(true)
+        let projection =
+            crate::workspace::persist::persisted_projection().map_err(|error| error.to_string())?;
+        Ok(!projection
+            .turn_workers
+            .values()
+            .any(|record| record.session_id == session_id))
     }
 
     pub fn active_bound_workshop(&self, session_id: &str) -> Option<TurnWorkRecord> {
@@ -941,7 +1106,8 @@ impl TurnWorkerStore {
         if active_work_id.as_deref() != Some(work_id) {
             return Err(BoundWorkshopMutationError::StaleGeneration { active_work_id });
         }
-        let record = records
+        let mut candidate = records.clone();
+        let record = candidate
             .get_mut(work_id)
             .ok_or(BoundWorkshopMutationError::MissingGeneration)?;
         record.steer_messages.push(WorkshopSteerMessage {
@@ -952,8 +1118,11 @@ impl TurnWorkerStore {
         });
         record.updated_at = Utc::now();
         let updated = record.clone();
+        self.persist_candidate(&mut candidate, &updated.work_id)
+            .map_err(|error| BoundWorkshopMutationError::Persistence(error.to_string()))?;
+        *records = candidate;
         drop(records);
-        self.persist(&updated.work_id, updated.stasis_job_id.as_deref());
+        Self::notify_turn_worker_changed(&updated.work_id, updated.stasis_job_id.as_deref());
         Ok(updated)
     }
 
@@ -975,7 +1144,8 @@ impl TurnWorkerStore {
             return Err(DelegatedWorkControlError::SessionDeleting);
         };
         let mut records = self.records.lock().expect("turn worker records");
-        let record = records
+        let mut candidate = records.clone();
+        let record = candidate
             .get_mut(work_id)
             .ok_or(DelegatedWorkControlError::MissingWork)?;
         if record.disposition != TurnWorkDisposition::Delegated {
@@ -984,7 +1154,10 @@ impl TurnWorkerStore {
         if record.identity_user_id.as_deref() != Some(identity_user_id) {
             return Err(DelegatedWorkControlError::ForeignIdentity);
         }
-        if !matches!(record.status, TurnWorkStatus::Pending | TurnWorkStatus::Running) {
+        if !matches!(
+            record.status,
+            TurnWorkStatus::Pending | TurnWorkStatus::Running
+        ) {
             return Err(DelegatedWorkControlError::NotActive);
         }
         if record
@@ -1009,8 +1182,11 @@ impl TurnWorkerStore {
         }
         record.updated_at = Utc::now();
         let updated = record.clone();
+        self.persist_candidate(&mut candidate, &updated.work_id)
+            .map_err(|error| DelegatedWorkControlError::Persistence(error.to_string()))?;
+        *records = candidate;
         drop(records);
-        self.persist(&updated.work_id, updated.stasis_job_id.as_deref());
+        Self::notify_turn_worker_changed(&updated.work_id, updated.stasis_job_id.as_deref());
         Ok(updated)
     }
 
@@ -1037,6 +1213,9 @@ impl TurnWorkerStore {
                 TurnWorkerMutationError::ForeignSession => {
                     DelegatedWorkControlError::ForeignIdentity
                 }
+                TurnWorkerMutationError::Persistence(error) => {
+                    DelegatedWorkControlError::Persistence(error)
+                }
             })
     }
 
@@ -1051,7 +1230,8 @@ impl TurnWorkerStore {
             return Err(TurnWorkerMutationError::SessionDeleting);
         };
         let mut records = self.records.lock().expect("turn worker records");
-        let record = records
+        let mut candidate = records.clone();
+        let record = candidate
             .get_mut(work_id)
             .ok_or(TurnWorkerMutationError::MissingWork)?;
         if record.session_id != session_id {
@@ -1065,6 +1245,10 @@ impl TurnWorkerStore {
             record.updated_at = Utc::now();
         }
         let updated = record.clone();
+        self.persist_candidate(&mut candidate, &updated.work_id)
+            .map_err(|error| TurnWorkerMutationError::Persistence(error.to_string()))?;
+        *records = candidate;
+        drop(records);
         if let Some(cancellation) = self
             .live_cancellations
             .lock()
@@ -1074,8 +1258,7 @@ impl TurnWorkerStore {
         {
             cancellation.cancel();
         }
-        drop(records);
-        self.persist(&updated.work_id, updated.stasis_job_id.as_deref());
+        Self::notify_turn_worker_changed(&updated.work_id, updated.stasis_job_id.as_deref());
         Ok(updated)
     }
 
@@ -1168,16 +1351,143 @@ mod tests {
     use super::*;
 
     #[test]
-    fn canonical_snapshot_lives_in_workspace_directory() {
-        let root = Path::new("/tmp/medousa-test-data");
-        assert_eq!(
-            TurnWorkerStore::path_in(root),
-            root.join("workspace/turn_workers.json")
+    fn parent_continuation_route_wins_over_worker_model_and_round_trips() {
+        let mut record = test_record("work-route", "session-route", 1, TurnWorkStatus::Completed);
+        record.provider = "worker-provider".to_string();
+        record.model = "worker-model".to_string();
+        record.parent_continuation_route =
+            Some(ParentContinuationRoute::from_stage_route(&StageRoute {
+                role: "final_response".to_string(),
+                provider: "host-provider".to_string(),
+                model: "host-model".to_string(),
+                policy_profile: "careful".to_string(),
+                fallback_chain: vec!["safe-default".to_string()],
+            }));
+
+        let serialized = serde_json::to_vec(&record).expect("serialize durable route");
+        let restored: TurnWorkRecord =
+            serde_json::from_slice(&serialized).expect("restore durable route");
+        let route = continuation_route_for_record(
+            &restored,
+            &crate::stage_routing::StageRoutingMatrix::default_for("legacy", "default")
+                .final_response,
+        )
+        .expect("parent route");
+        assert_eq!(route.provider, "host-provider");
+        assert_eq!(route.model, "host-model");
+        assert_eq!(route.policy_profile, "careful");
+        assert_eq!(route.fallback_chain, ["safe-default"]);
+    }
+
+    #[test]
+    fn legacy_parallel_route_uses_parent_spawn_contract_not_worker_target() {
+        let mut record = test_record(
+            "work-legacy-route",
+            "session-legacy",
+            1,
+            TurnWorkStatus::Completed,
         );
+        record.provider = "worker-provider".to_string();
+        record.model = "worker-model".to_string();
+        record.worker_spawn_spec = Some(crate::delegated_task::WorkerSpawnSpec {
+            schema_version: crate::delegated_task::WORKER_SPAWN_SPEC_SCHEMA_VERSION,
+            intent: "research".to_string(),
+            task: "task".to_string(),
+            user_ack: "On it".to_string(),
+            manuscript_ids: Vec::new(),
+            manuscript: None,
+            stage_role: None,
+            model_hint: None,
+            parent: crate::delegated_task::WorkerParentSpec {
+                stream_turn_id: 1,
+                turn_correlation_id: "turn-parent".to_string(),
+                agent_mode: None,
+                original_user_prompt: "question".to_string(),
+                provider: "host-provider".to_string(),
+                model: "host-model".to_string(),
+                response_depth_mode: "normal".to_string(),
+                code_work_id: None,
+                bot: None,
+                supports_ui_artifacts: false,
+                supports_liquid_markdown: false,
+                supports_browser_host: false,
+            },
+            code_project: None,
+            code_project_setup: None,
+            execution_placement: Default::default(),
+            world_ids: Vec::new(),
+            max_tool_rounds: 8,
+            tools: crate::delegated_task::WorkerToolRequest { names: Vec::new() },
+        });
+
+        let route = continuation_route_for_record(
+            &record,
+            &crate::stage_routing::StageRoutingMatrix::default_for("legacy", "default")
+                .final_response,
+        )
+        .expect("legacy parent route");
+        assert_eq!(route.provider, "host-provider");
+        assert_eq!(route.model, "host-model");
+    }
+
+    #[test]
+    fn legacy_bound_route_is_explicit_and_malformed_contract_never_falls_back() {
+        let mut record = test_record("legacy-bound", "owner", 1, TurnWorkStatus::Completed);
+        record.provider = "worker-provider".into();
+        record.model = "worker-small".into();
+        let fallback =
+            crate::stage_routing::StageRoutingMatrix::default_for("host-provider", "host-fallback")
+                .final_response;
         assert_eq!(
-            TurnWorkerStore::legacy_path_in(root),
-            root.join("turn_workers.json")
+            continuation_route_for_record(&record, &fallback),
+            Some(fallback.clone())
         );
+        let mut contract = ParentContinuationRoute::from_stage_route(&fallback);
+        contract.schema_version = 999;
+        record.parent_continuation_route = Some(contract);
+        assert!(continuation_route_for_record(&record, &fallback).is_none());
+        record
+            .parent_continuation_route
+            .as_mut()
+            .unwrap()
+            .schema_version = 1;
+        record
+            .parent_continuation_route
+            .as_mut()
+            .unwrap()
+            .stage_role = "worker".into();
+        assert!(continuation_route_for_record(&record, &fallback).is_none());
+    }
+
+    #[test]
+    fn parent_continuation_route_round_trips_as_durable_record_data() {
+        let mut record = test_record(
+            "work-route-roundtrip",
+            "session-route-roundtrip",
+            7,
+            TurnWorkStatus::Completed,
+        );
+        record.provider = "worker-provider".into();
+        record.model = "worker-model".into();
+        record.parent_continuation_route = Some(ParentContinuationRoute {
+            schema_version: ParentContinuationRoute::SCHEMA_VERSION,
+            stage_role: "final_response".into(),
+            policy_profile: "host-careful".into(),
+            provider: "host-provider".into(),
+            model: "host-model".into(),
+            fallback_chain: vec!["host-fallback".into()],
+        });
+        let reopened: TurnWorkRecord =
+            serde_json::from_slice(&serde_json::to_vec(&record).unwrap()).unwrap();
+        let fallback =
+            crate::stage_routing::StageRoutingMatrix::default_for("changed", "changed-model")
+                .final_response;
+        let route = continuation_route_for_record(&reopened, &fallback)
+            .expect("captured parent route survives serialization");
+        assert_eq!(route.provider, "host-provider");
+        assert_eq!(route.model, "host-model");
+        assert_eq!(route.policy_profile, "host-careful");
+        assert_eq!(route.fallback_chain, ["host-fallback"]);
     }
 
     #[test]
@@ -1214,21 +1524,24 @@ mod tests {
     }
 
     #[test]
-    fn legacy_snapshot_is_migrated_without_deleting_source() {
-        let temp = tempfile::tempdir().expect("temp data directory");
-        let canonical = TurnWorkerStore::path_in(temp.path());
-        let legacy = TurnWorkerStore::legacy_path_in(temp.path());
-        fs::write(&legacy, "{}").expect("write legacy snapshot");
-        let store = TurnWorkerStore {
-            records: Mutex::new(HashMap::new()),
-            live_cancellations: Mutex::new(HashMap::new()),
-            parallel_intakes: Mutex::new(HashSet::new()),
-        };
+    fn worker_admission_is_not_published_when_persistence_queue_rejects_it() {
+        let store = TurnWorkerStore::with_admitter(Arc::new(|_| {
+            Err(crate::persistence::PersistenceError::new(
+                crate::persistence::PersistenceErrorKind::Overloaded,
+                "test queue full",
+            ))
+        }));
+        let record = test_record(
+            "work-not-durable",
+            "session-admission-test",
+            1,
+            TurnWorkStatus::Pending,
+        );
 
-        store.reload_from_paths(&canonical, &legacy);
+        let error = store.try_insert(record).expect_err("admission must fail");
 
-        assert_eq!(fs::read_to_string(&canonical).unwrap(), "{}");
-        assert!(legacy.exists());
+        assert_eq!(error.to_string(), "test queue full");
+        assert!(store.get("work-not-durable").is_none());
     }
 
     fn test_record(
@@ -1244,6 +1557,7 @@ mod tests {
             parent_turn_correlation_id: None,
             parent_stream_turn_id,
             parent_runtime_id: "runtime-test".to_string(),
+            parent_continuation_route: None,
             execution_placement: Default::default(),
             task_execution_grant: None,
             worker_spawn_spec: None,
@@ -1253,6 +1567,7 @@ mod tests {
             result_text: Some("done".to_string()),
             tool_names: Vec::new(),
             termination_reason: None,
+            needs_synthesis: None,
             error: None,
             user_ack: "On it".to_string(),
             provider: "openai".to_string(),

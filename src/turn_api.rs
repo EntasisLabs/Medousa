@@ -96,6 +96,13 @@ pub struct TurnFinish {
     /// Optional short note for logs
     #[serde(default)]
     reason: Option<String>,
+    /// Worker handback policy. False means this is already the complete answer.
+    #[serde(default = "default_turn_finish_needs_synthesis")]
+    needs_synthesis: bool,
+}
+
+fn default_turn_finish_needs_synthesis() -> bool {
+    true
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -232,7 +239,7 @@ pub fn register_turn_tools(
 
 #[medousa_tool(id = TURN_ID)]
 impl CognitionTurnTool {
-    /// Record turn progress or set its outcome. action is a typed name (turn.finish, turn.checkpoint, …). Fetch fields with cognition_schema types=[...].
+    /// Record nonterminal progress with turn.update_user and continue, deliberately hand back with turn.checkpoint only when principal input is needed or work must pause, or end with turn.finish after the full requested outcome is complete and verified or a concrete blocker prevents further authorized progress. Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(&self, action: TurnAction) -> stasis::prelude::Result<ExternalJson> {
         Ok(ExternalJson::new(dispatch(self, action).await?))
     }
@@ -321,6 +328,7 @@ impl TurnFinish {
             .invoke_typed(TurnFinishInput {
                 message: self.message,
                 reason: self.reason,
+                needs_synthesis: self.needs_synthesis,
             })
             .await?;
         serialize_output(CognitionTurnFinishTool::tool_id(), output)
@@ -385,9 +393,14 @@ mod tests {
         }))
         .expect("finish");
         match finish {
-            TurnAction::Finish(TurnFinish { message, reason }) => {
+            TurnAction::Finish(TurnFinish {
+                message,
+                reason,
+                needs_synthesis,
+            }) => {
                 assert_eq!(message.as_deref(), Some("Done."));
                 assert!(reason.is_none());
+                assert!(needs_synthesis);
             }
             other => panic!("expected finish, got {other:?}"),
         }

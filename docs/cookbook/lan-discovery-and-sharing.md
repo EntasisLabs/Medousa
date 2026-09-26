@@ -84,7 +84,12 @@ Under the hood, two trust directions still matter:
 
 Select a person to message (optional note/artifact attachment). Unread badges the Peers rail icon. Opening a thread marks it read; use ⋯ → **Mark read** to clear manually. If an outbound peer shows **Needs reconnect**, use **Reconnect** (nearby match when possible, otherwise connect by address).
 
-Local notifications fire when new inbound peer messages arrive (poll-based; respects Settings notification preference).
+Local notifications can fire when new inbound peer messages arrive (poll-based;
+controlled by the peer-message notification setting). Peer messages are a
+separate category from turn updates and needs-input alerts. Local delivery
+requires device notification permission; Remote push controls APNs delivery to
+a paired phone. User-created calendar and timer reminders also use their own
+notification category settings.
 
 Threads show **both sides**: messages they sent you and messages you sent them (outbound copies stay on your workshop).
 

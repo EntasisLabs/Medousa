@@ -8,7 +8,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use schemars::JsonSchema;
 use schemars::schema::Schema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[cfg(feature = "full-daemon")]
@@ -150,11 +150,22 @@ pub trait WorkshopExecution: Send + Sync {
 }
 
 /// One concrete execution authority beneath the location-neutral workshop
-/// tool. The router resolves placement before handing work to an adapter.
+/// tool. The router captures placement intent before offering durable admission
+/// and resolves candidates only when an adapter declines that path.
 #[async_trait]
 pub trait WorkshopExecutionTarget: Send + Sync {
     async fn candidates(&self) -> stasis::prelude::Result<Vec<ExecutionTargetCandidate>>;
     async fn ingress_default_runtime_id(&self) -> stasis::prelude::Result<Option<String>> {
+        Ok(None)
+    }
+    /// Optionally durably admit a request whose placement will be resolved by
+    /// the target's background worker. This is the fast path for remote targets
+    /// that must not make a foreground tool turn wait on network discovery.
+    async fn enqueue_spawn(
+        &self,
+        _input: WorkshopSpawn,
+        _placement: WorkshopPlacementRequest,
+    ) -> stasis::prelude::Result<Option<Value>> {
         Ok(None)
     }
     async fn spawn_resolved(
@@ -195,6 +206,43 @@ pub enum WorkshopIngressDefault {
     /// Compatibility bridge for Personal/mobile deployments that historically
     /// exposed one explicitly bound remote daemon as their only worker.
     BoundRemote,
+}
+
+/// Placement intent captured from the admitted parent turn before remote
+/// target discovery. A background admission may resolve this against a fresh,
+/// authenticated candidate inventory after it has durably accepted the task.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkshopPlacementRequest {
+    pub(crate) parent_runtime_id: String,
+    pub(crate) requested: ExecutionTargetSelection,
+    pub(crate) agent_selected: bool,
+    pub(crate) ingress_default: bool,
+}
+
+impl WorkshopPlacementRequest {
+    pub(crate) fn resolve(
+        &self,
+        candidates: &[ExecutionTargetCandidate],
+    ) -> stasis::prelude::Result<ExecutionPlacementResolution> {
+        let candidates = candidates
+            .iter()
+            .filter(|candidate| {
+                if self.agent_selected {
+                    candidate.agent_selectable
+                } else {
+                    candidate.user_selectable
+                }
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut resolution =
+            resolve_execution_target(self.requested.clone(), &self.parent_runtime_id, &candidates)
+                .map_err(target_resolution_error)?;
+        if self.ingress_default {
+            resolution.resolution_reason = ExecutionResolutionReason::IngressDefault;
+        }
+        Ok(resolution)
+    }
 }
 
 pub struct WorkshopExecutionRouter {
@@ -243,21 +291,11 @@ impl WorkshopExecutionRouter {
         Ok(candidates)
     }
 
-    async fn resolve_spawn(
+    async fn capture_placement(
         &self,
         input: &WorkshopSpawn,
-    ) -> stasis::prelude::Result<(
-        Arc<dyn WorkshopExecutionTarget>,
-        String,
-        ExecutionPlacementResolution,
-    )> {
-        let candidates = self.candidates().await?;
+    ) -> stasis::prelude::Result<WorkshopPlacementRequest> {
         let parent_runtime_id = self.parent_runtime.runtime_id();
-        enum SelectionAuthority {
-            User,
-            Agent,
-        }
-
         let active_execution =
             crate::agent_runtime::execution_context::active_turn_execution_context();
         let user_default = active_execution
@@ -300,7 +338,7 @@ impl WorkshopExecutionRouter {
                     .and_then(|binding| binding.execution_runtime_id)
             })
             .flatten();
-        let (requested, authority) = if let Some(world_runtime_id) = world_runtime_id {
+        let (requested, agent_selected) = if let Some(world_runtime_id) = world_runtime_id {
             let conflicting_target = user_default
                 .as_ref()
                 .or(input.execution_target.as_ref())
@@ -323,19 +361,19 @@ impl WorkshopExecutionRouter {
                 ExecutionTargetSelection::Exact {
                     runtime_id: world_runtime_id,
                 },
-                SelectionAuthority::User,
+                false,
             )
         } else {
             match user_default {
                 Some(
                     requested @ (ExecutionTargetSelection::SameAsParent
                     | ExecutionTargetSelection::Exact { .. }),
-                ) => (requested, SelectionAuthority::User),
+                ) => (requested, false),
                 Some(requested @ ExecutionTargetSelection::Auto { .. }) => input
                     .execution_target
                     .clone()
-                    .map(|agent_request| (agent_request, SelectionAuthority::Agent))
-                    .unwrap_or((requested, SelectionAuthority::Agent)),
+                    .map(|agent_request| (agent_request, true))
+                    .unwrap_or((requested, true)),
                 None if input.execution_target.is_some() => {
                     let requested = input
                         .execution_target
@@ -346,19 +384,11 @@ impl WorkshopExecutionRouter {
                         ExecutionTargetSelection::Exact { runtime_id }
                             if bound_coder_runtime_id.as_deref() == Some(runtime_id.as_str())
                     );
-                    (
-                        requested,
-                        if is_bound_coder_target {
-                            SelectionAuthority::User
-                        } else {
-                            SelectionAuthority::Agent
-                        },
-                    )
+                    (requested, !is_bound_coder_target)
                 }
-                None if self.ingress_default == WorkshopIngressDefault::SameAsParent => (
-                    ExecutionTargetSelection::SameAsParent,
-                    SelectionAuthority::User,
-                ),
+                None if self.ingress_default == WorkshopIngressDefault::SameAsParent => {
+                    (ExecutionTargetSelection::SameAsParent, false)
+                }
                 None => {
                     let mut bound_runtime_id = None;
                     for target in &self.targets {
@@ -373,29 +403,32 @@ impl WorkshopExecutionRouter {
                                 .to_string(),
                         })
                     })?;
-                    (
-                        ExecutionTargetSelection::Exact { runtime_id },
-                        SelectionAuthority::User,
-                    )
+                    (ExecutionTargetSelection::Exact { runtime_id }, false)
                 }
             }
         };
+        Ok(WorkshopPlacementRequest {
+            parent_runtime_id,
+            requested,
+            agent_selected,
+            ingress_default: input.execution_target.is_none()
+                && self.ingress_default == WorkshopIngressDefault::BoundRemote,
+        })
+    }
+
+    async fn resolve_spawn(
+        &self,
+        placement: &WorkshopPlacementRequest,
+    ) -> stasis::prelude::Result<(
+        Arc<dyn WorkshopExecutionTarget>,
+        ExecutionPlacementResolution,
+    )> {
+        let candidates = self.candidates().await?;
         let candidate_values = candidates
             .iter()
             .map(|(_, candidate)| candidate.clone())
-            .filter(|candidate| match authority {
-                SelectionAuthority::User => candidate.user_selectable,
-                SelectionAuthority::Agent => candidate.agent_selectable,
-            })
             .collect::<Vec<_>>();
-        let mut resolution =
-            resolve_execution_target(requested, &parent_runtime_id, &candidate_values)
-                .map_err(target_resolution_error)?;
-        if input.execution_target.is_none()
-            && self.ingress_default == WorkshopIngressDefault::BoundRemote
-        {
-            resolution.resolution_reason = ExecutionResolutionReason::IngressDefault;
-        }
+        let resolution = placement.resolve(&candidate_values)?;
         let target = candidates
             .into_iter()
             .find(|(_, candidate)| candidate.runtime_id == resolution.resolved_runtime_id)
@@ -405,7 +438,7 @@ impl WorkshopExecutionRouter {
                     runtime_id: resolution.resolved_runtime_id.clone(),
                 })
             })?;
-        Ok((target, parent_runtime_id, resolution))
+        Ok((target, resolution))
     }
 
     fn control_target(&self) -> stasis::prelude::Result<Arc<dyn WorkshopExecutionTarget>> {
@@ -476,9 +509,18 @@ impl WorkshopExecution for WorkshopExecutionRouter {
     }
 
     async fn spawn(&self, input: WorkshopSpawn) -> stasis::prelude::Result<Value> {
-        let (target, parent_runtime_id, resolution) = self.resolve_spawn(&input).await?;
+        let placement = self.capture_placement(&input).await?;
+        for target in &self.targets {
+            if let Some(result) = target
+                .enqueue_spawn(input.clone(), placement.clone())
+                .await?
+            {
+                return Ok(result);
+            }
+        }
+        let (target, resolution) = self.resolve_spawn(&placement).await?;
         target
-            .spawn_resolved(input, &parent_runtime_id, resolution)
+            .spawn_resolved(input, &placement.parent_runtime_id, resolution)
             .await
     }
 
@@ -749,6 +791,54 @@ mod tests {
         }
     }
 
+    struct AsyncAdmissionTarget {
+        candidate_calls: Arc<AtomicUsize>,
+        placement: Arc<std::sync::Mutex<Option<WorkshopPlacementRequest>>>,
+    }
+
+    #[async_trait]
+    impl WorkshopExecutionTarget for AsyncAdmissionTarget {
+        async fn candidates(&self) -> stasis::prelude::Result<Vec<ExecutionTargetCandidate>> {
+            self.candidate_calls.fetch_add(1, Ordering::SeqCst);
+            std::future::pending().await
+        }
+
+        async fn ingress_default_runtime_id(&self) -> stasis::prelude::Result<Option<String>> {
+            Ok(Some("runtime-remote".to_string()))
+        }
+
+        async fn enqueue_spawn(
+            &self,
+            input: WorkshopSpawn,
+            placement: WorkshopPlacementRequest,
+        ) -> stasis::prelude::Result<Option<Value>> {
+            assert_eq!(input.task, "look this up");
+            *self.placement.lock().expect("placement lock") = Some(placement);
+            Ok(Some(json!({ "ok": true, "status": "pending" })))
+        }
+
+        async fn spawn_resolved(
+            &self,
+            _input: WorkshopSpawn,
+            _parent_runtime_id: &str,
+            _resolution: ExecutionPlacementResolution,
+        ) -> stasis::prelude::Result<Value> {
+            panic!("async admission should not resolve candidates in the foreground")
+        }
+
+        async fn status(&self, _input: WorkshopStatus) -> stasis::prelude::Result<Value> {
+            Ok(json!({ "ok": true }))
+        }
+
+        async fn cancel(&self, _input: WorkshopCancel) -> stasis::prelude::Result<Value> {
+            Ok(json!({ "ok": true }))
+        }
+
+        async fn steer(&self, _input: WorkshopSteer) -> stasis::prelude::Result<Value> {
+            Ok(json!({ "ok": true }))
+        }
+    }
+
     fn spawn_for(target: Option<ExecutionTargetSelection>) -> WorkshopSpawn {
         WorkshopSpawn {
             intent: Some("research".to_string()),
@@ -759,6 +849,7 @@ mod tests {
             model_hint: None,
             execution_target: target,
             world_ids: Vec::new(),
+            code_project_setup: None,
         }
     }
 
@@ -858,6 +949,45 @@ mod tests {
             "runtime-remote"
         );
         assert_eq!(output["parent_runtime_id"], "runtime-parent");
+    }
+
+    #[tokio::test]
+    async fn durable_remote_admission_precedes_candidate_discovery() {
+        let candidate_calls = Arc::new(AtomicUsize::new(0));
+        let placement = Arc::new(std::sync::Mutex::new(None));
+        let router = WorkshopExecutionRouter::new(
+            "runtime-parent",
+            WorkshopIngressDefault::BoundRemote,
+            vec![Arc::new(AsyncAdmissionTarget {
+                candidate_calls: candidate_calls.clone(),
+                placement: placement.clone(),
+            })],
+        );
+
+        let output = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            router.spawn(spawn_for(None)),
+        )
+        .await
+        .expect("remote admission should return without discovery")
+        .expect("remote admission");
+
+        assert_eq!(output["status"], "pending");
+        assert_eq!(candidate_calls.load(Ordering::SeqCst), 0);
+        let placement = placement
+            .lock()
+            .expect("placement lock")
+            .clone()
+            .expect("captured placement");
+        assert_eq!(placement.parent_runtime_id, "runtime-parent");
+        assert_eq!(
+            placement.requested,
+            ExecutionTargetSelection::Exact {
+                runtime_id: "runtime-remote".to_string(),
+            }
+        );
+        assert!(!placement.agent_selected);
+        assert!(placement.ingress_default);
     }
 
     #[tokio::test]

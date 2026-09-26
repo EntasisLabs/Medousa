@@ -31,6 +31,12 @@ fn active_profile_snapshot(
 pub async fn health(
     State(state): State<AppState>,
 ) -> Result<Json<HealthResponse>, (StatusCode, String)> {
+    crate::workspace::persist::ensure_persistence_available().map_err(|error| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("workspace persistence unavailable: {error}"),
+        )
+    })?;
     let (active_profile_id, active_profile_display_name) = state
         .profile_registry
         .read()
@@ -46,6 +52,11 @@ pub async fn health(
     ]
     .into_iter()
     .chain(cfg!(feature = "iroh-transport").then_some("transport.iroh"))
+    .chain(
+        crate::daemon::coordination::local_coordination_host()
+            .is_some()
+            .then_some("coordination.operator_proposals.v1"),
+    )
     .chain(
         state
             .work_environment
@@ -96,33 +107,35 @@ pub async fn stats(
 pub async fn execution_targets(
     State(state): State<AppState>,
 ) -> Json<crate::workshop_contract::ExecutionTargetInventory> {
+    Json(execution_target_inventory_for_state(&state).await)
+}
+
+pub async fn execution_target_inventory_for_state(
+    state: &AppState,
+) -> crate::workshop_contract::ExecutionTargetInventory {
     let runtime_id = state
         .platform
         .agent()
         .worker_scheduler
         .execution_runtime_id();
-    let mut capabilities =
-        stasis::domain::runtime::placement::WorkerCapabilities::any()
-            .node_id(&runtime_id)
-            .platform(std::env::consts::OS)
-            .architecture(std::env::consts::ARCH)
-            .with_capability("assistant.work")
-            .with_capability("coder.work");
+    let mut capabilities = stasis::domain::runtime::placement::WorkerCapabilities::any()
+        .node_id(&runtime_id)
+        .platform(std::env::consts::OS)
+        .architecture(std::env::consts::ARCH)
+        .with_capability("assistant.work")
+        .with_capability("coder.work");
     let computer_drivers = state.computer_drivers.registrations().await;
     capabilities.capabilities.extend(
         crate::workshop_contract::world_driver_execution_capabilities(&computer_drivers, true),
     );
-    let candidate = crate::workshop_contract::ExecutionTargetCandidate::local(
-        runtime_id.clone(),
-        capabilities,
-    );
-    Json(crate::workshop_contract::ExecutionTargetInventory {
-        schema_version:
-            crate::workshop_contract::EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION,
+    let candidate =
+        crate::workshop_contract::ExecutionTargetCandidate::local(runtime_id.clone(), capabilities);
+    crate::workshop_contract::ExecutionTargetInventory {
+        schema_version: crate::workshop_contract::EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION,
         parent_runtime_id: runtime_id.clone(),
         default_runtime_id: Some(runtime_id),
         targets: vec![candidate.inventory_entry()],
-    })
+    }
 }
 
 pub async fn runtime_defaults(state: State<AppState>) -> Json<RuntimeDefaultsResponse> {

@@ -53,6 +53,10 @@
       "specifier": "$lib/styles/artifact.postcss"
     },
     {
+      "from": "src/lib/components/chat/ArtifactPresentationChrome.svelte",
+      "specifier": "$lib/styles/artifact.postcss"
+    },
+    {
       "from": "src/lib/components/chat/ChatChangeReceipt.svelte",
       "specifier": "$lib/styles/chat-review.postcss"
     },
@@ -227,6 +231,10 @@
     {
       "from": "src/lib/components/vault/LibraryPanel.svelte",
       "specifier": "$lib/styles/vault-browse.postcss"
+    },
+    {
+      "from": "src/lib/components/vault/VaultAttachmentPanel.svelte",
+      "specifier": "$lib/styles/artifact.postcss"
     },
     {
       "from": "src/lib/components/vault/VaultCalloutBuilderSheet.svelte",

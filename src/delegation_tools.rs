@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::delegated_task::{
@@ -12,11 +13,11 @@ use crate::delegated_task::{
 use crate::delegation::DelegationService;
 use crate::workshop_api::{
     WorkshopCancel, WorkshopExecutionRouter, WorkshopExecutionTarget, WorkshopIngressDefault,
-    WorkshopStatus, WorkshopSteer, register_workshop_execution_tools,
+    WorkshopPlacementRequest, WorkshopStatus, WorkshopSteer, register_workshop_execution_tools,
 };
 use crate::workshop_contract::{
     ExecutionPlacementResolution, ExecutionTargetCandidate, ExecutionTargetResolutionError,
-    WorkshopSpawn,
+    WorkerCodeProjectSetup, WorkshopSpawn,
 };
 
 struct RemoteWorkshopExecution {
@@ -61,10 +62,70 @@ fn resolve_remote_manuscript(
     Ok(None)
 }
 
-fn compile_remote_worker_spec(
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PendingRemoteWorker {
+    pub(crate) schema_version: u32,
+    pub(crate) intent: String,
+    pub(crate) task: String,
+    pub(crate) user_ack: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) manuscript_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) manuscript: Option<WorkerManuscriptSpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) stage_role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) model_hint: Option<String>,
+    pub(crate) parent: WorkerParentSpec,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) code_project: Option<WorkerCodeProjectRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) code_project_setup: Option<WorkerCodeProjectSetup>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) world_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) expected_world_runtime_id: Option<String>,
+    pub(crate) max_tool_rounds: usize,
+    pub(crate) tools: WorkerToolRequest,
+}
+
+impl PendingRemoteWorker {
+    pub(crate) fn resolve(
+        &self,
+        resolution: &ExecutionPlacementResolution,
+    ) -> stasis::prelude::Result<WorkerSpawnSpec> {
+        if let Some(expected_runtime_id) = &self.expected_world_runtime_id
+            && resolution.resolved_runtime_id != *expected_runtime_id
+        {
+            return Err(worker_error(format!(
+                "requested worlds belong to execution runtime '{expected_runtime_id}', not '{}'",
+                resolution.resolved_runtime_id
+            )));
+        }
+        Ok(WorkerSpawnSpec {
+            schema_version: self.schema_version,
+            intent: self.intent.clone(),
+            task: self.task.clone(),
+            user_ack: self.user_ack.clone(),
+            manuscript_ids: self.manuscript_ids.clone(),
+            manuscript: self.manuscript.clone(),
+            stage_role: self.stage_role.clone(),
+            model_hint: self.model_hint.clone(),
+            parent: self.parent.clone(),
+            code_project: self.code_project.clone(),
+            code_project_setup: self.code_project_setup.clone(),
+            execution_placement: resolution.clone(),
+            world_ids: self.world_ids.clone(),
+            max_tool_rounds: self.max_tool_rounds,
+            tools: self.tools.clone(),
+        })
+    }
+}
+
+pub(crate) fn capture_remote_worker_spec(
     spawn: &WorkshopSpawn,
-    resolution: &ExecutionPlacementResolution,
-) -> stasis::prelude::Result<WorkerSpawnSpec> {
+) -> stasis::prelude::Result<PendingRemoteWorker> {
     let execution = crate::agent_runtime::execution_context::active_turn_execution_context()
         .ok_or_else(|| worker_error("remote worker spawn requires an admitted daemon turn"))?;
     let manuscript_id = spawn
@@ -139,48 +200,73 @@ fn compile_remote_worker_spec(
         .and_then(|value| value.max_tool_rounds)
         .unwrap_or_else(|| crate::agent_runtime::turn_worker::max_worker_tool_rounds(intent))
         .max(1);
-    let world_ids = crate::turn_scope::resolve_requested_world_ids(
+    let expected_world_runtime_id = crate::turn_scope::execution_runtime_for_requested_worlds(
         &spawn.world_ids,
         &parent_scope.selected_worlds,
-        &resolution.resolved_runtime_id,
     )
     .map_err(worker_error)?;
+    let world_ids = match expected_world_runtime_id.as_deref() {
+        Some(runtime_id) => crate::turn_scope::resolve_requested_world_ids(
+            &spawn.world_ids,
+            &parent_scope.selected_worlds,
+            runtime_id,
+        )
+        .map_err(worker_error)?,
+        None => Vec::new(),
+    };
     let code_binding =
         crate::agent_mode_state::get_session_code_binding(execution.session_id().as_str()).ok();
-    let code_work_id = code_binding
-        .as_ref()
-        .and_then(|binding| binding.work_id.clone());
-    let code_project = if intent == crate::agent_runtime::turn_worker::TurnWorkerIntent::Coder {
-        let binding = code_binding
-            .as_ref()
-            .ok_or_else(|| worker_error("remote Coder requires a session project binding"))?;
-        let runtime_id = binding
-            .execution_runtime_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| worker_error("remote Coder project has no execution authority"))?;
-        let work_id = binding
-            .work_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| worker_error("remote Coder project has no Forge undertaking"))?;
-        let repo_id = binding
-            .repo_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| worker_error("remote Coder project has no repository identity"))?;
-        Some(WorkerCodeProjectRef {
-            runtime_id: runtime_id.to_string(),
-            work_id: work_id.to_string(),
-            repo_id: repo_id.to_string(),
+    let code_work_id = spawn
+        .code_project_setup
+        .is_none()
+        .then(|| {
+            code_binding
+                .as_ref()
+                .and_then(|binding| binding.work_id.clone())
         })
+        .flatten();
+    let code_project = if intent == crate::agent_runtime::turn_worker::TurnWorkerIntent::Coder {
+        if spawn.code_project_setup.is_some() {
+            None
+        } else {
+            let binding = code_binding.as_ref().ok_or_else(|| {
+                worker_error(
+                    "remote Coder requires a bound project or explicit destination project setup",
+                )
+            })?;
+            let runtime_id = binding
+                .execution_runtime_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| worker_error("remote Coder project has no execution authority"))?;
+            let work_id = binding
+                .work_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| worker_error("remote Coder project has no Forge undertaking"))?;
+            let repo_id = binding
+                .repo_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| worker_error("remote Coder project has no repository identity"))?;
+            Some(WorkerCodeProjectRef {
+                runtime_id: runtime_id.to_string(),
+                work_id: work_id.to_string(),
+                repo_id: repo_id.to_string(),
+            })
+        }
     } else {
+        if spawn.code_project_setup.is_some() {
+            return Err(worker_error(
+                "only remote Coder work can create a destination project",
+            ));
+        }
         None
     };
-    Ok(WorkerSpawnSpec {
+    Ok(PendingRemoteWorker {
         schema_version: WORKER_SPAWN_SPEC_SCHEMA_VERSION,
         intent: intent.as_str().to_string(),
         task: spawn.task.trim().to_string(),
@@ -204,11 +290,19 @@ fn compile_remote_worker_spec(
             supports_browser_host: parent_surface.browser_host,
         },
         code_project,
-        execution_placement: resolution.clone(),
+        code_project_setup: spawn.code_project_setup.clone(),
         world_ids,
+        expected_world_runtime_id,
         max_tool_rounds,
         tools: WorkerToolRequest { names: tool_names },
     })
+}
+
+fn compile_remote_worker_spec(
+    spawn: &WorkshopSpawn,
+    resolution: &ExecutionPlacementResolution,
+) -> stasis::prelude::Result<WorkerSpawnSpec> {
+    capture_remote_worker_spec(spawn)?.resolve(resolution)
 }
 
 #[async_trait]
@@ -227,6 +321,18 @@ impl WorkshopExecutionTarget for RemoteWorkshopExecution {
             .await
             .map(|binding| binding.map(|binding| binding.target.peer_device_id))
             .map_err(|error| stasis::domain::errors::StasisError::PortFailure(error.to_string()))
+    }
+
+    async fn enqueue_spawn(
+        &self,
+        spawn: WorkshopSpawn,
+        placement: WorkshopPlacementRequest,
+    ) -> stasis::prelude::Result<Option<Value>> {
+        let worker = capture_remote_worker_spec(&spawn)?;
+        self.service
+            .enqueue_spawn(worker, placement)
+            .await
+            .map(Some)
     }
 
     async fn status(&self, input: WorkshopStatus) -> stasis::prelude::Result<Value> {
@@ -307,6 +413,9 @@ pub fn register_remote_workshop_tools(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::workshop_contract::ExecutionResolutionReason;
+
     #[test]
     fn every_canonical_worker_intent_is_available_to_remote_contracts() {
         for intent in [
@@ -318,5 +427,75 @@ mod tests {
         ] {
             assert!(crate::agent_runtime::turn_worker::TurnWorkerIntent::parse(intent).is_some());
         }
+    }
+
+    fn pending_worker() -> PendingRemoteWorker {
+        PendingRemoteWorker {
+            schema_version: WORKER_SPAWN_SPEC_SCHEMA_VERSION,
+            intent: "research".into(),
+            task: "Inspect the sources".into(),
+            user_ack: "I will inspect the sources".into(),
+            manuscript_ids: Vec::new(),
+            manuscript: None,
+            stage_role: None,
+            model_hint: None,
+            parent: WorkerParentSpec {
+                stream_turn_id: 0,
+                turn_correlation_id: "turn-a".into(),
+                agent_mode: Some("general".into()),
+                original_user_prompt: "Compare these claims".into(),
+                provider: "provider-a".into(),
+                model: "model-a".into(),
+                response_depth_mode: "normal".into(),
+                code_work_id: None,
+                bot: None,
+                supports_ui_artifacts: false,
+                supports_liquid_markdown: false,
+                supports_browser_host: false,
+            },
+            code_project: None,
+            code_project_setup: None,
+            world_ids: vec!["world:browser:alpha".into()],
+            expected_world_runtime_id: Some("runtime-a".into()),
+            max_tool_rounds: 6,
+            tools: WorkerToolRequest { names: vec![] },
+        }
+    }
+
+    #[test]
+    fn pending_remote_worker_resolves_only_on_its_selected_world_runtime() {
+        let pending = pending_worker();
+        let matching = ExecutionPlacementResolution::resolved(
+            crate::workshop_contract::ExecutionTargetSelection::Exact {
+                runtime_id: "runtime-a".into(),
+            },
+            "runtime-a",
+            ExecutionResolutionReason::ExactTarget,
+        );
+        let resolved = pending.resolve(&matching).expect("matching runtime");
+        assert_eq!(resolved.execution_placement, matching);
+        assert_eq!(resolved.world_ids, pending.world_ids);
+        assert_eq!(resolved.parent, pending.parent);
+
+        let mismatching = ExecutionPlacementResolution::resolved(
+            crate::workshop_contract::ExecutionTargetSelection::Exact {
+                runtime_id: "runtime-b".into(),
+            },
+            "runtime-b",
+            ExecutionResolutionReason::ExactTarget,
+        );
+        assert!(pending.resolve(&mismatching).is_err());
+
+        let encoded = serde_json::to_vec(&pending).expect("serialize pending worker");
+        let restored: PendingRemoteWorker =
+            serde_json::from_slice(&encoded).expect("restore pending worker");
+        assert_eq!(
+            restored.expected_world_runtime_id.as_deref(),
+            Some("runtime-a")
+        );
+        assert_eq!(
+            restored.resolve(&matching).expect("restored resolution"),
+            resolved
+        );
     }
 }

@@ -149,7 +149,9 @@ impl WorldScopedToolRegistry {
             ));
         }
         match policies.world_grant_is_active(grant) {
-            Ok(true) => Ok(u64::try_from(grant.expires_at.timestamp_millis()).ok()),
+            Ok(true) => Ok(grant
+                .expires_at
+                .and_then(|expiry| u64::try_from(expiry.timestamp_millis()).ok())),
             Ok(false) => Err(StasisError::PortFailure(
                 "governed world authority was revoked by the destination workshop".to_string(),
             )),
@@ -190,6 +192,23 @@ pub struct AllowlistToolRegistry {
     allowlist: HashSet<String>,
     include_public_api: bool,
     delegated_finish_only: bool,
+}
+
+/// Removes a small mode-owned capability set while preserving every other
+/// registry layer, including runtime/client tools outside the static catalog.
+pub struct BlocklistToolRegistry {
+    inner: Arc<dyn ToolRegistry>,
+    blocklist: HashSet<String>,
+}
+
+impl BlocklistToolRegistry {
+    pub fn new(inner: Arc<dyn ToolRegistry>, blocklist: HashSet<String>) -> Self {
+        Self { inner, blocklist }
+    }
+
+    fn blocks(&self, tool_name: &str) -> bool {
+        self.blocklist.contains(tool_name)
+    }
 }
 
 impl AllowlistToolRegistry {
@@ -372,7 +391,10 @@ fn bind_world_tool_schema(tool: &mut Tool, world_ids: &BTreeSet<String>) {
         .or_insert_with(|| serde_json::json!([]));
     if let Some(required) = required.as_array_mut() {
         required.retain(|field| field.as_str() != Some("driver_id"));
-        if !required.iter().any(|field| field.as_str() == Some("world_id")) {
+        if !required
+            .iter()
+            .any(|field| field.as_str() == Some("world_id"))
+        {
             required.push(Value::String("world_id".to_string()));
         }
     }
@@ -386,16 +408,10 @@ fn take_world_id(tool_name: &str, input: &mut Value) -> Result<String> {
         .remove("world_id")
         .and_then(|value| value.as_str().map(str::to_string))
         .filter(|value| !value.trim().is_empty() && value.trim() == value)
-        .ok_or_else(|| {
-            StasisError::PortFailure(format!("{tool_name}: exact world_id is required"))
-        })
+        .ok_or_else(|| StasisError::PortFailure(format!("{tool_name}: exact world_id is required")))
 }
 
-fn bind_computer_driver(
-    tool_name: &str,
-    input: &mut Value,
-    driver_id: &str,
-) -> Result<()> {
+fn bind_computer_driver(tool_name: &str, input: &mut Value, driver_id: &str) -> Result<()> {
     let input = input.as_object_mut().ok_or_else(|| {
         StasisError::PortFailure(format!("{tool_name}: world tool input must be an object"))
     })?;
@@ -564,12 +580,20 @@ impl ToolRegistry for AllowlistToolRegistry {
                         "properties": {
                             "action": { "type": "string", "enum": ["turn.finish"] },
                             "message": { "type": "string", "minLength": 1 },
-                            "reason": { "type": "string" }
+                            "reason": { "type": "string" },
+                            "needs_synthesis": {
+                                "type": "boolean",
+                                "description": "False when this message is already a complete principal-facing answer."
+                            }
                         },
-                        "required": ["action", "message"],
+                        "required": ["action"],
                         "additionalProperties": false
                     }));
-                    tool.strict = Some(true);
+                    // `message`, `reason`, and `needs_synthesis` intentionally
+                    // stay optional: provider strict mode requires every
+                    // declared property to be required, which makes a sparse
+                    // complete-response finish call unrepresentable.
+                    tool.strict = Some(false);
                 }
                 Some(tool)
             })
@@ -589,6 +613,26 @@ impl ToolRegistry for AllowlistToolRegistry {
             return Err(StasisError::PortFailure(
                 "delegated workers may only use cognition_turn action=turn.finish".to_string(),
             ));
+        }
+        self.inner.invoke_tool(tool_name, input).await
+    }
+}
+
+#[async_trait]
+impl ToolRegistry for BlocklistToolRegistry {
+    async fn list_tools(&self) -> Result<Vec<Tool>> {
+        let tools = self.inner.list_tools().await?;
+        Ok(tools
+            .into_iter()
+            .filter(|tool| !self.blocks(tool.name.as_str()))
+            .collect())
+    }
+
+    async fn invoke_tool(&self, tool_name: &str, input: Value) -> Result<Value> {
+        if self.blocks(tool_name) {
+            return Err(StasisError::PortFailure(format!(
+                "tool is reserved for Assistant mode: {tool_name}"
+            )));
         }
         self.inner.invoke_tool(tool_name, input).await
     }
@@ -723,6 +767,102 @@ mod tests {
         assert!(lane.allows(crate::public_api::COGNITION_IDENTITY_QUERY));
     }
 
+    #[test]
+    fn result_only_registry_denies_every_tool_including_public_api() {
+        use stasis::application::orchestration::tool_registry::InMemoryToolRegistry;
+        let exact = AllowlistToolRegistry::new_exact(
+            Arc::new(InMemoryToolRegistry::default()),
+            HashSet::new(),
+        );
+        for name in [
+            crate::public_api::COGNITION_IDENTITY_QUERY,
+            "cognition_web_search",
+            "cognition_workshop_spawn",
+            "cognition_utility_uuid",
+        ] {
+            assert!(!exact.allows(name), "result-only turn exposed {name}");
+        }
+    }
+
+    #[tokio::test]
+    async fn delegated_finish_schema_does_not_require_duplicate_prose() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let registry = AllowlistToolRegistry::delegated(
+            Arc::new(RecordingRegistry {
+                tool_name: crate::public_api::COGNITION_TURN,
+                seen,
+            }),
+            HashSet::from([crate::public_api::COGNITION_TURN.to_string()]),
+        );
+
+        let tools = registry.list_tools().await.unwrap();
+        let finish = tools
+            .iter()
+            .find(|tool| tool.name.as_str() == crate::public_api::COGNITION_TURN)
+            .expect("delegated finish tool");
+        let schema = finish.schema.as_ref().unwrap();
+        assert_eq!(finish.strict, Some(false));
+        assert_eq!(schema["required"], json!(["action"]));
+        assert_eq!(schema["additionalProperties"], json!(false));
+        assert_eq!(
+            schema["properties"]["action"]["enum"],
+            json!(["turn.finish"])
+        );
+        for optional in ["message", "reason", "needs_synthesis"] {
+            assert!(schema["properties"].get(optional).is_some());
+            assert!(!schema["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|name| name.as_str() == Some(optional)));
+        }
+    }
+
+    #[tokio::test]
+    async fn delegated_finish_registry_still_rejects_other_turn_actions() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let registry = AllowlistToolRegistry::delegated(
+            Arc::new(RecordingRegistry {
+                tool_name: crate::public_api::COGNITION_TURN,
+                seen: Arc::clone(&seen),
+            }),
+            HashSet::from([crate::public_api::COGNITION_TURN.to_string()]),
+        );
+
+        let error = registry
+            .invoke_tool(
+                crate::public_api::COGNITION_TURN,
+                json!({"action":"turn.checkpoint"}),
+            )
+            .await
+            .expect_err("delegated worker should only finish");
+        assert!(
+            error
+                .to_string()
+                .contains("may only use cognition_turn action=turn.finish")
+        );
+        assert!(seen.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn blocklist_hides_and_rejects_assistant_only_tools() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let registry = BlocklistToolRegistry::new(
+            Arc::new(RecordingRegistry {
+                tool_name: "cognition_peer_propose",
+                seen,
+            }),
+            HashSet::from(["cognition_peer_propose".to_string()]),
+        );
+
+        assert!(registry.list_tools().await.unwrap().is_empty());
+        let error = registry
+            .invoke_tool("cognition_peer_propose", json!({}))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("reserved for Assistant mode"));
+    }
+
     #[tokio::test]
     async fn world_registry_binds_only_opaque_world_and_hides_driver_mechanics() {
         let seen = Arc::new(Mutex::new(Vec::new()));
@@ -773,12 +913,7 @@ mod tests {
             tool_name: "cognition_browser_snapshot",
             seen,
         });
-        let empty = WorldScopedToolRegistry::new(
-            inner.clone(),
-            Vec::new(),
-            "worker:test",
-            None,
-        );
+        let empty = WorldScopedToolRegistry::new(inner.clone(), Vec::new(), "worker:test", None);
         assert!(empty.list_tools().await.unwrap().is_empty());
 
         let scoped = WorldScopedToolRegistry::new(

@@ -112,6 +112,7 @@ pub struct ShellRunInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "bool", skip_serializing_if = "Option::is_none")]
     network: Option<bool>,
+    /// Optional command execution deadline. Omitting it waits for command completion; it does not bound how long the workflow caller waits.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "i64", skip_serializing_if = "Option::is_none")]
     timeout_ms: Option<u64>,
@@ -287,7 +288,7 @@ impl CognitionShellRunTool {
                 args,
                 input.cwd.as_deref(),
                 None,
-                input.timeout_ms.unwrap_or(30_000),
+                input.timeout_ms,
                 input.max_output_bytes.unwrap_or(256 * 1024),
             )
             .await?;

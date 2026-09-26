@@ -357,6 +357,10 @@ impl CognitionRuntimeJobsListTool {
 
         jobs.sort_by_key(|b| std::cmp::Reverse(b.scheduled_at));
         jobs.truncate(command.limit);
+        #[cfg(feature = "full-daemon")]
+        for job in &jobs {
+            let _ = crate::assistant_assignments::project_job_snapshot(job).await;
+        }
 
         Ok(RuntimeJobsListOutput {
             count: jobs.len(),
@@ -465,6 +469,16 @@ impl CognitionRuntimeJobsCancelTool {
         job.state = JobState::Canceled;
         job.finished_at = Some(Utc::now());
         save_job(self.runtime.as_ref(), job).await?;
+        #[cfg(feature = "full-daemon")]
+        let _ = crate::assistant_assignments::project_runtime_event(
+            medousa_types::assistant_assignment::AssistantAssignmentKind::Job,
+            &job_id,
+            medousa_types::assistant_assignment::AssistantAssignmentStatus::Cancelled,
+            3,
+            "runtime:stasis",
+            Some("canceled by owner".to_string()),
+        )
+        .await;
 
         let _ = self
             .event_tx
@@ -1097,6 +1111,19 @@ impl CognitionRuntimeRecurringRegisterTool {
             bind_recurring_feed_spec_for_registration(&recurring_id, feeds.as_ref()).await?;
 
         register_recurring_definition(self.runtime.as_ref(), definition.clone()).await?;
+        #[cfg(feature = "full-daemon")]
+        if let Some(scope) = scope.as_ref() {
+            let _ = crate::assistant_assignments::project_runtime_origin(
+                medousa_types::assistant_assignment::AssistantAssignmentKind::RecurringSchedule,
+                &recurring_id,
+                &format!("recurring {job_type}"),
+                Some(max_attempts),
+                scope,
+                Some("stasis".to_string()),
+                Some(COGNITION_RUNTIME_RECURRING_REGISTER_ID.as_str().to_string()),
+            )
+            .await;
+        }
 
         let _ = self
             .event_tx
@@ -1645,6 +1672,23 @@ impl CognitionRuntimeWorkflowRunTool {
         .await?;
         let job_type = workflow_job_type_for_strategy(&request.strategy)
             .unwrap_or(WORKFLOW_SEQUENTIAL_JOB_TYPE);
+        #[cfg(feature = "full-daemon")]
+        if let Some(scope) = scope.as_ref() {
+            let _ = crate::assistant_assignments::project_runtime_origin(
+                medousa_types::assistant_assignment::AssistantAssignmentKind::Workflow,
+                &workflow_id,
+                request
+                    .name
+                    .as_deref()
+                    .or(request.note.as_deref())
+                    .unwrap_or("run workflow"),
+                Some(1),
+                scope,
+                Some("stasis".to_string()),
+                Some(job_id.clone()),
+            )
+            .await;
+        }
 
         let record = WorkflowRecord {
             workflow_id: workflow_id.clone(),
@@ -1935,6 +1979,37 @@ impl CognitionRuntimeWorkflowScheduleTool {
                 .await?;
 
         register_recurring_definition(self.runtime.as_ref(), definition.clone()).await?;
+        #[cfg(feature = "full-daemon")]
+        if let Some(scope) = scope.as_ref() {
+            let _ = crate::assistant_assignments::project_runtime_origin(
+                medousa_types::assistant_assignment::AssistantAssignmentKind::Workflow,
+                &workflow_id,
+                request
+                    .name
+                    .as_deref()
+                    .or(request.note.as_deref())
+                    .unwrap_or("scheduled workflow"),
+                Some(command.max_attempts),
+                scope,
+                Some("stasis".to_string()),
+                Some(recurring_id.clone()),
+            )
+            .await;
+            let _ = crate::assistant_assignments::project_runtime_origin(
+                medousa_types::assistant_assignment::AssistantAssignmentKind::RecurringSchedule,
+                &recurring_id,
+                request
+                    .name
+                    .as_deref()
+                    .or(request.note.as_deref())
+                    .unwrap_or("scheduled workflow occurrence"),
+                Some(command.max_attempts),
+                scope,
+                Some("stasis".to_string()),
+                Some(workflow_id.clone()),
+            )
+            .await;
+        }
 
         let mut materialized_job_id = None;
         if command.start_immediately {

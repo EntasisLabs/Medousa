@@ -17,6 +17,11 @@ Deep dive: [turn-runtime-and-lanes.md](../../architecture/turn-runtime-and-lanes
 
 Worker allowlists can strip UI-only tools when `supports_ui_artifacts=false`, and browser tools when `supports_browser_host=false`.
 
+`cognition_tools_discover` selects its lane from the authenticated execution
+principal: durable workers receive the worker catalog; other turns receive the
+host catalog. The legacy `lane` input remains accepted for wire compatibility,
+but it cannot select or widen the caller's surface.
+
 See [agent-browser-host.md](../../architecture/agent-browser-host.md) for search/fetch/CAPTCHA design.
 
 ---
@@ -51,6 +56,7 @@ Source: `src/tool_bootstrap.rs`
 | Runtime | `cognition_runtime_query` / `cognition_runtime_mutate` (`action=job.list\|job.enqueue\|workflow.run\|…`) |
 | Turn | `cognition_turn` (`action=turn.finish\|turn.checkpoint\|turn.begin_work\|…`) |
 | Memory | `cognition_memory_query` / `cognition_memory_mutate` (`action=memory.context\|memory.store\|…`) |
+| Chat history | `cognition_chat_history_read` — committed turns and attachment references; can reopen an image from a chat visible to the active profile |
 | Identity | `cognition_identity_query` / `cognition_identity_mutate` (`action=identity.recall\|identity.remember\|…`) |
 | Calendar | `cognition_calendar_query` / `cognition_calendar_mutate` (`action=calendar.list\|calendar.create\|…`) — [calendar.md](calendar.md) |
 | Workshop | `cognition_workshop_query` / `cognition_workshop_mutate` (`action=workshop.status\|workshop.spawn\|workshop.cancel\|workshop.steer`) |
@@ -66,7 +72,80 @@ Source: `src/tool_bootstrap.rs`
 | Shell | `cognition_shell_status` / `cognition_shell_run` — direct on the host for short diagnostics; opt-in and bounded by Runtime Controls → Shell |
 | OpenShell secrets | `cognition_openshell_request_secret` — trusted UI prompt; returns an opaque one-use grant, never the credential value |
 | Grapheme secrets | `cognition_grapheme_request_secret` — trusted UI prompt; authorizes an ephemeral credential capability for one native run |
-| Finish | `cognition_turn action=turn.finish` — ends tool loop |
+| Progress | `cognition_turn action=turn.update_user` — nonterminal status; work continues |
+| Handback | `cognition_turn action=turn.checkpoint` — ends this agent turn and waits for principal input; use only when input is needed or work must pause |
+| Finish | `cognition_turn action=turn.finish` — ends tool loop after the full requested outcome is complete or a concrete blocker is reported |
+
+### Grapheme and shell execution
+
+Grapheme scheduling preflight checks source policy and compiles the source; it
+does not enqueue or execute the workflow. A scheduled/run operation is a separate
+step. Workflow execution has no implicit total deadline. On the full daemon,
+operators who need a Grapheme workflow deadline can explicitly configure
+`MEDOUSA_GRAPHEME_EXECUTION_TIMEOUT_MS` (or the older
+`STASIS_GRAPHEME_EXECUTION_TIMEOUT_MS` / `GRAPHEME_EXECUTION_TIMEOUT_MS` names).
+
+`cognition_shell_run` retains the configured filesystem, network, and binary
+permissions. Native shell commands have no implicit execution timeout; explicit
+`timeout_ms` and operator-configured shell limits still apply. Output beyond the
+capture budget is drained and discarded so truncation does not break the command.
+
+For `cognition_coder_shell_run`, `wait_ms` bounds observation of PTY sessions.
+Its one-shot work-environment route waits for completion and currently has no
+per-call timeout. For OCI-backed environments, interruption of the request does
+not prove the command stopped inside the container. An uncertain result is not
+automatically replayed, to avoid duplicating side effects.
+
+### Repeated failed tool calls
+
+The tool loop detects only consecutive, identical batches where every tool
+receipt explicitly reports `ok: false`. It compares tool names, arguments, and
+failure outputs. A changed call, changed failure, successful result, or
+pending/queued/running result resets the sequence. At the second identical
+failure, the model receives a warning to change the approach or ask for input.
+At the third, the loop stops, writes a `RecoverableFailure` checkpoint when the
+checkpoint store is available, and returns a failed/blocking outcome. If the
+checkpoint cannot be confirmed, the response says to verify current state
+before retrying.
+
+This guard targets repeated failed actions, not elapsed time or productive
+tool use. Long sequences of changing or successful calls remain governed by
+the configured turn-round policy; pending asynchronous work is not mistaken
+for failure.
+
+### Memory retrieval
+
+`cognition_memory_query action=memory.recall` accepts a natural-language
+question. Omitting `session_id` searches the current turn's session; an explicit
+JSON `null` searches across sessions in the backing memory authority. Indexed
+`semantic_tags` remain available to bound that broader search.
+
+Coder normally recalls only its current environment lineage: the current and
+bounded parent environments plus accepted undertaking and repository knowledge.
+`cognition_coder_memory_recall` can use `scope=all_accepted` for natural-language
+discovery across repositories. That scope excludes unreviewed environment memory
+and labels every result as requiring repository-local revalidation before use.
+
+### Image context from chat history
+
+Interactive turns can reuse images attached to recent messages in the same
+session. The runtime considers the latest 20 transcript turns and includes at
+most five images across those turns and the current request. A vision-capable
+provider/model route is required; text-only routes do not receive the image
+content. Missing or deleted media is skipped without failing the chat.
+
+`cognition_chat_history_read` returns committed message attachment references,
+including image-only messages. Use `before_turn` with the oldest returned
+`turn_index` to page backward. Its optional `media_id` reopens one stored image
+only when that image is attached to the authorized session transcript and the
+caller has profile/session access. Accepted images up to the 25 MiB upload limit
+use one shared rendition path for current-turn vision, recent history, and
+explicit reopening. Payloads over 8 MiB are decoded with allocation/dimension
+limits and scaled into a PNG of at most 8 MiB; originals remain unchanged.
+The daemon verifies the rendition bytes and provides them as image input to the
+next model response, not as base64 or image data in tool JSON. This lets an agent reopen an older image
+explicitly; it does not make media from an unauthorized session or deleted media
+available.
 
 ### Workshop execution placement
 
@@ -80,14 +159,37 @@ Source: `src/tool_bootstrap.rs`
   through Stasis placement constraints (`required_capabilities`, `platform`,
   `architecture`, and `region`).
 
-Every durable worker record and spawn result includes `parent_runtime_id` plus
+Every resolved worker record and local spawn result includes `parent_runtime_id` plus
 `execution_placement` with the requested selection, resolved runtime, reason,
 and resolution time. Legacy records deserialize with `unknown` provenance; the
 daemon does not relabel them as local. Runtime ids are opaque identities, not
-URLs. An unavailable exact target fails before work is enqueued with an
+URLs. For local execution, an unavailable exact target fails before work is enqueued with an
 `execution_target_unavailable` error. Resolved workers are also enqueued with
 the same runtime id as their Stasis exact target-node constraint; legacy work
 with unknown provenance remains unconstrained so upgrade recovery still works.
+
+On mobile with a bound remote workshop, a spawn is
+first persisted locally with its parent context and returns immediately as
+`status: "queued"`, `worker_queued: true`, and `worker_spawned: false`. The
+response includes `work_id` and `requested_execution_target`; its
+`execution_placement` is `null` until an authenticated inventory pass resolves
+and authorizes one exact runtime. The source checkpoints that resolved route
+before dispatch, and retries stay pinned to it. Peer destinations apply their
+scoped execution policy; a portal destination admits bounded worker requests
+under its direct workshop role. `workshop.status` can inspect the queued
+request, and canceling it before dispatch prevents the worker from starting.
+This keeps remote discovery and startup out of the foreground tool call. The
+destination still validates the portal role or peer policy, and unavailable
+targets remain ineligible.
+
+For a Coder task that should start from a new repository on a portal,
+`workshop.spawn` may include `code_project_setup` with a title, brief, optional
+GitHub or GitLab repository URL (or `owner/project`), and optional base ref.
+The destination clones or initializes the repository under its own project
+storage, creates and binds its Forge undertaking, then starts the Coder worker
+with a destination-issued project grant. Use this only when the principal
+explicitly asked to create or clone a project. Peer destinations still require
+an existing project admitted by their execution policy.
 
 ---
 

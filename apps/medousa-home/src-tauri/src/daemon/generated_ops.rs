@@ -184,6 +184,14 @@ pub enum DaemonOperation {
     ContinuationsLineageByTurnCorrelationIdGet,
     #[serde(rename = "continuations.status.get")]
     ContinuationsStatusGet,
+    #[serde(rename = "coordination.channels.by_channel_id.proposals.by_proposal_id.approve.post")]
+    CoordinationChannelsByChannelIdProposalsByProposalIdApprovePost,
+    #[serde(rename = "coordination.channels.by_channel_id.proposals.by_proposal_id.deny.post")]
+    CoordinationChannelsByChannelIdProposalsByProposalIdDenyPost,
+    #[serde(rename = "coordination.channels.by_channel_id.proposals.by_proposal_id.dispatch.post")]
+    CoordinationChannelsByChannelIdProposalsByProposalIdDispatchPost,
+    #[serde(rename = "coordination.proposals.get")]
+    CoordinationProposalsGet,
     #[serde(rename = "deliver.outbox.post")]
     DeliverOutboxPost,
     #[serde(rename = "deliver.poll.by_job_id.get")]
@@ -504,6 +512,8 @@ pub enum DaemonOperation {
     JobsReportPost,
     #[serde(rename = "lan.workshops.get")]
     LanWorkshopsGet,
+    #[serde(rename = "live.sessions.post")]
+    LiveSessionsPost,
     #[serde(rename = "liveness.get")]
     LivenessGet,
     #[serde(rename = "local.catalog.get")]
@@ -566,6 +576,8 @@ pub enum DaemonOperation {
     MediaByMediaIdGet,
     #[serde(rename = "media.upload.post")]
     MediaUploadPost,
+    #[serde(rename = "mesh.active_work.post")]
+    MeshActiveWorkPost,
     #[serde(rename = "mesh.execution_target.post")]
     MeshExecutionTargetPost,
     #[serde(rename = "mesh.inbox.get")]
@@ -586,6 +598,10 @@ pub enum DaemonOperation {
     MeshOutboxGet,
     #[serde(rename = "mesh.outbox.post")]
     MeshOutboxPost,
+    #[serde(rename = "mesh.peer_assignment_results.query.post")]
+    MeshPeerAssignmentResultsQueryPost,
+    #[serde(rename = "mesh.peer_proposals.post")]
+    MeshPeerProposalsPost,
     #[serde(rename = "mesh.peers.by_device_id.patch")]
     MeshPeersByDeviceIdPatch,
     #[serde(rename = "mesh.peers.get")]
@@ -997,6 +1013,10 @@ impl DaemonOperation {
             Self::ComputerDriversGet => "computer.drivers.get",
             Self::ContinuationsLineageByTurnCorrelationIdGet => "continuations.lineage.by_turn_correlation_id.get",
             Self::ContinuationsStatusGet => "continuations.status.get",
+            Self::CoordinationChannelsByChannelIdProposalsByProposalIdApprovePost => "coordination.channels.by_channel_id.proposals.by_proposal_id.approve.post",
+            Self::CoordinationChannelsByChannelIdProposalsByProposalIdDenyPost => "coordination.channels.by_channel_id.proposals.by_proposal_id.deny.post",
+            Self::CoordinationChannelsByChannelIdProposalsByProposalIdDispatchPost => "coordination.channels.by_channel_id.proposals.by_proposal_id.dispatch.post",
+            Self::CoordinationProposalsGet => "coordination.proposals.get",
             Self::DeliverOutboxPost => "deliver.outbox.post",
             Self::DeliverPollByJobIdGet => "deliver.poll.by_job_id.get",
             Self::DeliveryStatusGet => "delivery.status.get",
@@ -1157,6 +1177,7 @@ impl DaemonOperation {
             Self::JobsPromptPost => "jobs.prompt.post",
             Self::JobsReportPost => "jobs.report.post",
             Self::LanWorkshopsGet => "lan.workshops.get",
+            Self::LiveSessionsPost => "live.sessions.post",
             Self::LivenessGet => "liveness.get",
             Self::LocalCatalogGet => "local.catalog.get",
             Self::LocalEngineStatusGet => "local.engine.status.get",
@@ -1188,6 +1209,7 @@ impl DaemonOperation {
             Self::McpPolicyEvaluatePost => "mcp.policy.evaluate.post",
             Self::MediaByMediaIdGet => "media.by_media_id.get",
             Self::MediaUploadPost => "media.upload.post",
+            Self::MeshActiveWorkPost => "mesh.active_work.post",
             Self::MeshExecutionTargetPost => "mesh.execution_target.post",
             Self::MeshInboxGet => "mesh.inbox.get",
             Self::MeshIntrosByIntroIdAcceptPost => "mesh.intros.by_intro_id.accept.post",
@@ -1198,6 +1220,8 @@ impl DaemonOperation {
             Self::MeshOutboxByItemIdFlushPost => "mesh.outbox.by_item_id.flush.post",
             Self::MeshOutboxGet => "mesh.outbox.get",
             Self::MeshOutboxPost => "mesh.outbox.post",
+            Self::MeshPeerAssignmentResultsQueryPost => "mesh.peer_assignment_results.query.post",
+            Self::MeshPeerProposalsPost => "mesh.peer_proposals.post",
             Self::MeshPeersByDeviceIdPatch => "mesh.peers.by_device_id.patch",
             Self::MeshPeersGet => "mesh.peers.get",
             Self::MeshReceiptsGet => "mesh.receipts.get",

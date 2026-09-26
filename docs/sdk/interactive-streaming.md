@@ -25,6 +25,11 @@ let response: InteractiveTurnResponse = client
 let stream_url = response.stream_url;
 ```
 
+`scheduled_tool_allowlist: None` preserves normal tool selection;
+`Some(Vec::new())` requests a result-only turn with no tools, including implicit
+public API tools. Python uses omission/`None` versus `[]` for the same distinction.
+This field narrows tool selection; it does not grant execution authority.
+
 ### Select an exact browser world
 
 Browser identity is request-scoped. After creating or listing a daemon-owned
@@ -296,6 +301,21 @@ terminal detection therefore follow the same SDK state machine as integrators.
 ## Local model download SSE
 
 Both SDKs: `local_models().download_events(job_id)` streams `ModelDownloadProgress` events (separate from interactive turns).
+
+### Coder shell observations
+
+A Coder shell tool result with `status: "running"` is an intermediate command
+observation, not a turn failure or completed command. `wait_ms` bounds how long
+that call observes output; the process continues afterward. The agent polls
+the returned `session_id` using `cognition_coder_shell_run` with `poll: true` and
+no command. An uncertain connection reports `status: "unknown"`; polling resumes
+observation without submitting the command again. See
+[agent shell output](../engine/coder-efficiency.md#agent-shell-output).
+
+When checking the opaque JSON readiness responses from `/v1/coding-engine` or
+`/v1/shell-sessions`, continue polling when `starting: true`. `available: false`
+alone does not imply that startup failed. These are additive response fields;
+older daemons may omit `starting`.
 
 ### Native reasoning options
 

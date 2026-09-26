@@ -594,7 +594,8 @@ fn v3_event_to_v2(event: &TurnStreamEventV3) -> Option<TurnStreamEventV2> {
                 text: aggregate_text.clone(),
                 tool_names: tool_names.clone(),
             },
-            TurnCompletionOutcomeV3::Failed
+            TurnCompletionOutcomeV3::Fatal
+            | TurnCompletionOutcomeV3::Failed
             | TurnCompletionOutcomeV3::Cancelled
             | TurnCompletionOutcomeV3::FuseExhausted => TurnStreamEventV2::Error {
                 operator_message: operator_message
@@ -688,7 +689,8 @@ pub fn journal_turn_event_for_v3(envelope: &TurnStreamEnvelopeV3) -> TurnEvent {
                 parts: Vec::new(),
                 committed_at: envelope.emitted_at_utc,
             },
-            TurnCompletionOutcomeV3::Failed
+            TurnCompletionOutcomeV3::Fatal
+            | TurnCompletionOutcomeV3::Failed
             | TurnCompletionOutcomeV3::Cancelled
             | TurnCompletionOutcomeV3::FuseExhausted => TurnEvent::Error {
                 message: operator_message

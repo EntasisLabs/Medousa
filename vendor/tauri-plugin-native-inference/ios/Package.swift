@@ -16,7 +16,9 @@ let package = Package(
   ],
   dependencies: [
     .package(name: "Tauri", path: "../.tauri/tauri-api"),
-    .package(url: "https://github.com/ml-explore/mlx-swift-lm", exact: "3.31.4"),
+    // Vendored so Xcode 27 can use the compatible low-level MLX snapshot
+    // without changing the MLX LM API consumed by this plugin.
+    .package(name: "mlx-swift-lm", path: "../../mlx-swift-lm"),
     .package(url: "https://github.com/huggingface/swift-huggingface", exact: "0.9.0"),
     .package(url: "https://github.com/huggingface/swift-transformers", exact: "1.3.3"),
   ],

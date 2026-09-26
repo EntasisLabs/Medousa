@@ -16,6 +16,7 @@
     "type": "string",
     "enum": [
       "general",
+      "assistant",
       "teacher",
       "instant",
       "coder"
@@ -73,6 +74,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -101,6 +103,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -287,6 +290,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -2148,6 +2152,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -2305,6 +2310,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -2581,6 +2587,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -4965,6 +4972,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -5446,6 +5454,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -13451,6 +13460,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -17254,6 +17264,512 @@
       }
     }
   },
+  "PeerProposalActionRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "PeerProposalActionRequest",
+    "description": "Decisions take no mutable assignment fields or caller-supplied owner id.",
+    "type": "object",
+    "additionalProperties": false
+  },
+  "PeerProposalActionResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "PeerProposalActionResponse",
+    "type": "object",
+    "required": [
+      "proposal_id"
+    ],
+    "properties": {
+      "binding": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ExternalPeerAssignmentBinding"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "proposal_id": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "CoordinationChannelRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "channel_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "channel_id": {
+            "type": "string"
+          }
+        }
+      },
+      "ExternalPeerAssignmentBinding": {
+        "description": "Stable correlation returned by an admitted external execution.",
+        "type": "object",
+        "required": [
+          "agent_session_id",
+          "assignment_id",
+          "channel",
+          "execution_session",
+          "owner_principal_id",
+          "target"
+        ],
+        "properties": {
+          "agent_session_id": {
+            "type": "string"
+          },
+          "assignment_id": {
+            "type": "string"
+          },
+          "channel": {
+            "$ref": "#/definitions/CoordinationChannelRef"
+          },
+          "execution_session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "owner_principal_id": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/definitions/ExternalPeerTarget"
+          }
+        }
+      },
+      "ExternalPeerRuntime": {
+        "type": "string",
+        "enum": [
+          "codex",
+          "cursor",
+          "hermes"
+        ]
+      },
+      "ExternalPeerTarget": {
+        "description": "An exact adapter on an exact execution workshop, not a model preference.",
+        "type": "object",
+        "required": [
+          "authority_id",
+          "execution_runtime_id",
+          "runtime"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "execution_runtime_id": {
+            "type": "string"
+          },
+          "runtime": {
+            "$ref": "#/definitions/ExternalPeerRuntime"
+          }
+        }
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      }
+    }
+  },
+  "PeerProposalInboxResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "PeerProposalInboxResponse",
+    "type": "object",
+    "required": [
+      "proposals"
+    ],
+    "properties": {
+      "next_cursor": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "proposals": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/PeerProposalReviewRecord"
+        }
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "ContextManifest": {
+        "type": "object",
+        "required": [
+          "created_at",
+          "created_by",
+          "manifest_id",
+          "sources"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "manifest_id": {
+            "$ref": "#/definitions/ContextManifestId"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ResolvedConversationRange"
+            }
+          }
+        }
+      },
+      "ContextManifestId": {
+        "type": "string"
+      },
+      "ConversationRangeSelection": {
+        "description": "One committed contiguous range selected from a session. The lower bound is exclusive and the upper bound is inclusive; omitting `after_entry_seq` selects from the beginning of the session.",
+        "type": "object",
+        "required": [
+          "session",
+          "through_entry_seq"
+        ],
+        "properties": {
+          "after_entry_seq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "through_entry_seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 1.0
+          }
+        }
+      },
+      "CoordinationChannelRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "channel_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "channel_id": {
+            "type": "string"
+          }
+        }
+      },
+      "ExternalPeerAssignmentBinding": {
+        "description": "Stable correlation returned by an admitted external execution.",
+        "type": "object",
+        "required": [
+          "agent_session_id",
+          "assignment_id",
+          "channel",
+          "execution_session",
+          "owner_principal_id",
+          "target"
+        ],
+        "properties": {
+          "agent_session_id": {
+            "type": "string"
+          },
+          "assignment_id": {
+            "type": "string"
+          },
+          "channel": {
+            "$ref": "#/definitions/CoordinationChannelRef"
+          },
+          "execution_session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "owner_principal_id": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/definitions/ExternalPeerTarget"
+          }
+        }
+      },
+      "ExternalPeerAssignmentReceipt": {
+        "description": "Receipt identity is used for owner-inbox deduplication, not text matching.",
+        "type": "object",
+        "required": [
+          "binding",
+          "outcome",
+          "receipt_id",
+          "result"
+        ],
+        "properties": {
+          "binding": {
+            "$ref": "#/definitions/ExternalPeerAssignmentBinding"
+          },
+          "outcome": {
+            "$ref": "#/definitions/PeerAssignmentOutcome"
+          },
+          "receipt_id": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          }
+        }
+      },
+      "ExternalPeerAssignmentRequest": {
+        "description": "Caller intent only. Grant checks occur outside the model before dispatch.",
+        "type": "object",
+        "required": [
+          "assignment_id",
+          "channel",
+          "context",
+          "execution_grant_id",
+          "execution_session",
+          "forge_work_id",
+          "idempotency_key",
+          "instructions",
+          "owner_principal_id",
+          "owner_session",
+          "target"
+        ],
+        "properties": {
+          "assignment_id": {
+            "type": "string"
+          },
+          "channel": {
+            "$ref": "#/definitions/CoordinationChannelRef"
+          },
+          "context": {
+            "$ref": "#/definitions/ContextManifest"
+          },
+          "execution_grant_id": {
+            "type": "string"
+          },
+          "execution_session": {
+            "description": "Separate executor session: never reuse the owner's interactive session.",
+            "allOf": [
+              {
+                "$ref": "#/definitions/SessionRef"
+              }
+            ]
+          },
+          "existing_agent_session_id": {
+            "description": "Exact live ACP custody to adopt instead of creating a new provider session. Absence means this assignment creates new work.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "forge_work_id": {
+            "description": "Initial local bridge is restricted to a governed Forge work item.",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "owner_principal_id": {
+            "type": "string"
+          },
+          "owner_session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "target": {
+            "$ref": "#/definitions/ExternalPeerTarget"
+          }
+        }
+      },
+      "ExternalPeerRuntime": {
+        "type": "string",
+        "enum": [
+          "codex",
+          "cursor",
+          "hermes"
+        ]
+      },
+      "ExternalPeerTarget": {
+        "description": "An exact adapter on an exact execution workshop, not a model preference.",
+        "type": "object",
+        "required": [
+          "authority_id",
+          "execution_runtime_id",
+          "runtime"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "execution_runtime_id": {
+            "type": "string"
+          },
+          "runtime": {
+            "$ref": "#/definitions/ExternalPeerRuntime"
+          }
+        }
+      },
+      "PeerAssignmentOutcome": {
+        "type": "string",
+        "enum": [
+          "completed",
+          "failed",
+          "cancelled",
+          "interrupted"
+        ]
+      },
+      "PeerAssignmentProposal": {
+        "description": "Immutable snapshot offered to the owner for explicit approval. No execution authority exists merely because a proposal was submitted.",
+        "type": "object",
+        "required": [
+          "continue_owner",
+          "expires_at",
+          "proposal_id",
+          "request"
+        ],
+        "properties": {
+          "continue_owner": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "proposal_id": {
+            "type": "string"
+          },
+          "request": {
+            "$ref": "#/definitions/ExternalPeerAssignmentRequest"
+          }
+        }
+      },
+      "PeerProposalDecision": {
+        "type": "object",
+        "required": [
+          "approved",
+          "owner_principal_id",
+          "proposal_id"
+        ],
+        "properties": {
+          "approved": {
+            "type": "boolean"
+          },
+          "owner_principal_id": {
+            "type": "string"
+          },
+          "proposal_id": {
+            "type": "string"
+          }
+        }
+      },
+      "PeerProposalReviewRecord": {
+        "type": "object",
+        "required": [
+          "proposal"
+        ],
+        "properties": {
+          "binding": {
+            "description": "Recorded custody remains visible until its terminal receipt arrives.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ExternalPeerAssignmentBinding"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/PeerProposalDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposal": {
+            "$ref": "#/definitions/PeerAssignmentProposal"
+          },
+          "receipt": {
+            "description": "Present for source-session projections so a remote owner can observe the immutable terminal even though execution belongs to another workshop.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ExternalPeerAssignmentReceipt"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ResolvedConversationRange": {
+        "type": "object",
+        "required": [
+          "selection",
+          "selection_digest"
+        ],
+        "properties": {
+          "selection": {
+            "$ref": "#/definitions/ConversationRangeSelection"
+          },
+          "selection_digest": {
+            "type": "string"
+          }
+        }
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      }
+    }
+  },
   "PromptStash": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "PromptStash",
@@ -17995,6 +18511,14 @@
           "null"
         ]
       },
+      "notify_on_delivery": {
+        "description": "Whether a successful in-app delivery should raise a notification. Absent preserves the legacy in-app behavior.",
+        "default": null,
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
       "policy_profile": {
         "type": [
           "string",
@@ -18417,6 +18941,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -19325,6 +19850,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -21153,6 +21679,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -22742,14 +23269,25 @@
   "TurnCompletionOutcomeV3": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "TurnCompletionOutcomeV3",
-    "type": "string",
-    "enum": [
-      "completed",
-      "needs_input",
-      "checkpointed",
-      "failed",
-      "cancelled",
-      "fuse_exhausted"
+    "oneOf": [
+      {
+        "type": "string",
+        "enum": [
+          "completed",
+          "needs_input",
+          "checkpointed",
+          "failed",
+          "cancelled",
+          "fuse_exhausted"
+        ]
+      },
+      {
+        "description": "An explicitly classified terminal loop failure. Unlike the broad `Failed` outcome, this is eligible for an unconditional operator alert.",
+        "type": "string",
+        "enum": [
+          "fatal"
+        ]
+      }
     ]
   },
   "TurnStreamEnvelopeV2": {
@@ -23986,14 +24524,25 @@
         }
       },
       "TurnCompletionOutcomeV3": {
-        "type": "string",
-        "enum": [
-          "completed",
-          "needs_input",
-          "checkpointed",
-          "failed",
-          "cancelled",
-          "fuse_exhausted"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "completed",
+              "needs_input",
+              "checkpointed",
+              "failed",
+              "cancelled",
+              "fuse_exhausted"
+            ]
+          },
+          {
+            "description": "An explicitly classified terminal loop failure. Unlike the broad `Failed` outcome, this is eligible for an unconditional operator alert.",
+            "type": "string",
+            "enum": [
+              "fatal"
+            ]
+          }
         ]
       },
       "TurnStreamEventV3": {
@@ -26528,14 +27077,25 @@
         }
       },
       "TurnCompletionOutcomeV3": {
-        "type": "string",
-        "enum": [
-          "completed",
-          "needs_input",
-          "checkpointed",
-          "failed",
-          "cancelled",
-          "fuse_exhausted"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "completed",
+              "needs_input",
+              "checkpointed",
+              "failed",
+              "cancelled",
+              "fuse_exhausted"
+            ]
+          },
+          {
+            "description": "An explicitly classified terminal loop failure. Unlike the broad `Failed` outcome, this is eligible for an unconditional operator alert.",
+            "type": "string",
+            "enum": [
+              "fatal"
+            ]
+          }
         ]
       },
       "WorkerAckKind": {
@@ -26765,6 +27325,7 @@
         "type": "string",
         "enum": [
           "general",
+          "assistant",
           "teacher",
           "instant",
           "coder"
@@ -26832,6 +27393,13 @@
       "feeds": {
         "description": "Replace feed binding; pass `{ \"feeds\": null }` to clear feed publish.",
         "default": null
+      },
+      "notify_on_delivery": {
+        "default": null,
+        "type": [
+          "boolean",
+          "null"
+        ]
       },
       "timezone": {
         "default": null,
@@ -27649,6 +28217,17 @@
           }
         ]
       },
+      "notification": {
+        "description": "Canonical daemon-authored notification intent. Clients present this fact; they do not re-classify cards or turn events themselves.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/HomeNotificationIntent"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "snapshot": {
         "anyOf": [
           {
@@ -27680,6 +28259,67 @@
       }
     },
     "definitions": {
+      "HomeNotificationIntent": {
+        "description": "One logical alert shared by the local-notification and APNs transports.",
+        "type": "object",
+        "required": [
+          "body",
+          "emitted_at_utc",
+          "kind",
+          "notification_id",
+          "subject_id",
+          "title"
+        ],
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "card_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "emitted_at_utc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "kind": {
+            "$ref": "#/definitions/HomeNotificationKind"
+          },
+          "notification_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subject_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "HomeNotificationKind": {
+        "description": "User-visible notification categories emitted by the daemon. Delivery transports must not infer policy from workspace columns or raw tool events.",
+        "type": "string",
+        "enum": [
+          "fatal_turn",
+          "turn_update",
+          "needs_input",
+          "scheduled_delivery"
+        ]
+      },
       "ToolInputParam": {
         "description": "One redacted key/value from a tool's arguments, for chat-adjacent tool evidence. Values are truncated at the emit site; `truncated` tells the UI to say so.",
         "type": "object",

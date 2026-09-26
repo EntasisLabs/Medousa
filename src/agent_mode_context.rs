@@ -30,6 +30,16 @@ pub const INSTANT_TOOL_NAMES: &[&str] = &[
     "cognition_utility_time_now",
 ];
 
+/// Coordination capabilities reserved for the owner-level Assistant contract.
+/// Every proposal and launch still passes through its existing authenticated
+/// approval and execution-admission boundaries.
+pub const ASSISTANT_ELEVATED_TOOL_NAMES: &[&str] = &[
+    "cognition_assistant_placement",
+    "cognition_peer_delegate",
+    "cognition_peer_discover",
+    "cognition_peer_propose",
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AgentModeContextLimits {
     pub hot_window_turns: usize,
@@ -56,12 +66,22 @@ pub const INSTANT_CONTEXT_LIMITS: AgentModeContextLimits = AgentModeContextLimit
 pub const fn context_limits_for_mode(mode: AgentModeId) -> Option<AgentModeContextLimits> {
     match mode {
         AgentModeId::Instant => Some(INSTANT_CONTEXT_LIMITS),
-        AgentModeId::General | AgentModeId::Teacher | AgentModeId::Coder => None,
+        AgentModeId::General
+        | AgentModeId::Assistant
+        | AgentModeId::Teacher
+        | AgentModeId::Coder => None,
     }
 }
 
 pub fn instant_tool_names() -> HashSet<String> {
     INSTANT_TOOL_NAMES
+        .iter()
+        .map(|name| (*name).to_string())
+        .collect()
+}
+
+pub fn assistant_elevated_tool_names() -> HashSet<String> {
+    ASSISTANT_ELEVATED_TOOL_NAMES
         .iter()
         .map(|name| (*name).to_string())
         .collect()
@@ -96,7 +116,21 @@ mod tests {
     #[test]
     fn existing_modes_keep_their_existing_context_paths() {
         assert_eq!(context_limits_for_mode(AgentModeId::General), None);
+        assert_eq!(context_limits_for_mode(AgentModeId::Assistant), None);
         assert_eq!(context_limits_for_mode(AgentModeId::Teacher), None);
         assert_eq!(context_limits_for_mode(AgentModeId::Coder), None);
+    }
+
+    #[test]
+    fn assistant_elevated_surface_is_coordination_only() {
+        let tools = assistant_elevated_tool_names();
+        assert_eq!(tools.len(), 4);
+        assert!(tools.contains("cognition_assistant_placement"));
+        assert!(tools.contains("cognition_peer_delegate"));
+        assert!(tools.contains("cognition_peer_discover"));
+        assert!(tools.contains("cognition_peer_propose"));
+        assert!(!tools.contains("cognition_active_work_discover"));
+        assert!(!tools.contains(crate::public_api::COGNITION_WORKSHOP_QUERY));
+        assert!(!tools.contains(crate::public_api::COGNITION_WORKSHOP_MUTATE));
     }
 }

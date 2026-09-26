@@ -15,24 +15,41 @@ pub const CAP_CLIENT_RELAY: &str = "client.relay";
 /// Default grants issued at peer/portal verify for mesh surfaces.
 pub fn default_mesh_grants_for_role(role: PairingRole) -> Vec<String> {
     match role {
-        PairingRole::Peer | PairingRole::Portal => vec![
+        PairingRole::Peer => vec![
             CAP_MESH_MESSAGE.to_string(),
             CAP_MESH_BUNDLE_PUSH.to_string(),
+        ],
+        PairingRole::Portal => vec![
+            CAP_MESH_MESSAGE.to_string(),
+            CAP_MESH_BUNDLE_PUSH.to_string(),
+            CAP_TASK_REQUEST.to_string(),
         ],
     }
 }
 
 /// Effective grants for a pairing record (legacy empty → role defaults).
 pub fn effective_mesh_grants(record: &PairedDeviceRecord) -> Vec<String> {
-    if record.mesh_grants.is_empty() {
-        return default_mesh_grants_for_role(record.role);
+    let mut grants = if record.mesh_grants.is_empty() {
+        default_mesh_grants_for_role(record.role)
+    } else {
+        record
+            .mesh_grants
+            .iter()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .collect()
+    };
+    if record.role.allows_full_portal() {
+        for implied in [CAP_TASK_REQUEST, CAP_MESH_BUNDLE_PUSH] {
+            if !grants
+                .iter()
+                .any(|grant| grant.eq_ignore_ascii_case(implied))
+            {
+                grants.push(implied.to_string());
+            }
+        }
     }
-    record
-        .mesh_grants
-        .iter()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .collect()
+    grants
 }
 
 pub fn record_has_capability(record: &PairedDeviceRecord, capability: &str) -> bool {
@@ -40,6 +57,9 @@ pub fn record_has_capability(record: &PairedDeviceRecord, capability: &str) -> b
     if wanted.is_empty() {
         return false;
     }
+    // A portal is the paired client's direct connection to this workshop.
+    // Its effective role grants include task and work-bundle transport;
+    // client rendezvous remains an independent capability.
     let grants = effective_mesh_grants(record);
     grants
         .iter()
@@ -72,6 +92,11 @@ mod tests {
             profile_id: None,
             mesh_grants: grants.into_iter().map(str::to_string).collect(),
             apns_device_token: None,
+            remote_push_enabled: false,
+            turn_updates_enabled: false,
+            needs_input_enabled: true,
+            peer_messages_enabled: true,
+            reminders_enabled: true,
             push_platform: None,
             push_updated_at: None,
             live_activity_push_token: None,

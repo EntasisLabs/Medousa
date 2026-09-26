@@ -12,46 +12,13 @@ use sha2::{Digest, Sha256};
 
 use medousa_types::authority_id::PairingDeviceId;
 
+pub use crate::pairing_role::PairingRole;
+
 use super::paths::pairings_dir;
 use crate::store_root::{StoreEntryKind, StorePath, StoreRoot};
 
 const MAX_PAIRING_RECORD_BYTES: u64 = 1024 * 1024;
 const REVOKED_PAIRINGS_FILE: &str = "revoked.json";
-
-/// How this surface relates to the workshop.
-/// - `portal`: full client of this brain (phone / workshop switcher)
-/// - `peer`: inbox + share only
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub enum PairingRole {
-    #[default]
-    Portal,
-    Peer,
-}
-
-impl PairingRole {
-    pub fn parse(raw: Option<&str>) -> Self {
-        match raw.map(str::trim).map(str::to_ascii_lowercase).as_deref() {
-            Some("peer") => Self::Peer,
-            _ => Self::Portal,
-        }
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Portal => "portal",
-            Self::Peer => "peer",
-        }
-    }
-
-    pub fn allows_peer_surface(self) -> bool {
-        matches!(self, Self::Peer | Self::Portal)
-    }
-
-    pub fn allows_full_portal(self) -> bool {
-        matches!(self, Self::Portal)
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -84,6 +51,17 @@ pub struct PairedDeviceRecord {
     pub mesh_grants: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub apns_device_token: Option<String>,
+    /// Missing on older records; infer enabled because they only carried a token after opt-in.
+    #[serde(default = "default_true")]
+    pub remote_push_enabled: bool,
+    #[serde(default)]
+    pub turn_updates_enabled: bool,
+    #[serde(default = "default_true")]
+    pub needs_input_enabled: bool,
+    #[serde(default = "default_true")]
+    pub peer_messages_enabled: bool,
+    #[serde(default = "default_true")]
+    pub reminders_enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub push_platform: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -92,6 +70,10 @@ pub struct PairedDeviceRecord {
     pub live_activity_push_token: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub live_activity_push_updated_at: Option<DateTime<Utc>>,
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 const fn initial_credential_generation() -> u64 {
@@ -360,6 +342,11 @@ mod tests {
             profile_id: None,
             mesh_grants: Vec::new(),
             apns_device_token: None,
+            remote_push_enabled: false,
+            turn_updates_enabled: false,
+            needs_input_enabled: true,
+            peer_messages_enabled: true,
+            reminders_enabled: true,
             push_platform: None,
             push_updated_at: None,
             live_activity_push_token: None,
@@ -389,6 +376,11 @@ mod tests {
         assert_eq!(record.trust_expires_at, None);
         assert_eq!(record.idle_timeout_seconds, None);
         assert_eq!(record.credential_generation, 1);
+        assert!(record.remote_push_enabled);
+        assert!(!record.turn_updates_enabled);
+        assert!(record.needs_input_enabled);
+        assert!(record.peer_messages_enabled);
+        assert!(record.reminders_enabled);
     }
 
     #[test]

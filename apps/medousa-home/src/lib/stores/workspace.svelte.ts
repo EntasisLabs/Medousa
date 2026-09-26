@@ -11,13 +11,7 @@ import { workspaceChatPort } from "$lib/runtime/workspaceChatPort";
 import { workCardHideAfterHours } from "$lib/runtime/workCardHideAfterHoursPort";
 import { workerTranscripts } from "$lib/work/workerTranscripts.svelte";
 import type { BlockedGroup } from "$lib/utils/groupWork";
-import {
-  budgetWorkCardId,
-  notifyAskComplete,
-  notifyBudgetApprovalRequired,
-  notifyCardDone,
-} from "$lib/notifications";
-import { isTauriMobilePlatform } from "$lib/platform";
+import { presentHomeNotification } from "$lib/notifications";
 import type { PendingAskCompletion } from "$lib/types/askJob";
 import { isAskJobId } from "$lib/types/askJob";
 import type { WorkCardDetail } from "$lib/types/card";
@@ -172,6 +166,11 @@ export class WorkspaceStore {
           }
         }
         break;
+      case "notification":
+        if (event.notification) {
+          void presentHomeNotification(event.notification);
+        }
+        break;
       case "heartbeat":
         this.heartbeatsSinceReconcile += 1;
         if (this.heartbeatsSinceReconcile >= 6) {
@@ -198,14 +197,11 @@ export class WorkspaceStore {
 
     if (transitionedToDone) {
       if (isAskJobId(card.id)) {
-        void notifyAskComplete(card.title, card.id);
         this.pendingAskCompletion = {
           jobId: card.id,
           title: card.title,
         };
         workspaceChatPort().noteAskTurnSettled(card.id);
-      } else {
-        void notifyCardDone(card.title, card.status_label, card.id);
       }
     }
     if (
@@ -215,19 +211,6 @@ export class WorkspaceStore {
       card.status_label !== "needs approval"
     ) {
       workspaceChatPort().noteAskTurnSettled(card.id);
-    }
-    if (
-      isTauriMobilePlatform() &&
-      previous !== "blocked" &&
-      card.column === "blocked" &&
-      card.status_label === "needs approval" &&
-      !workspaceChatPort().hasPendingBudgetApproval(card.id)
-    ) {
-      void notifyBudgetApprovalRequired(
-        card.title,
-        budgetWorkCardId(card.id),
-        card.status_label,
-      );
     }
     if (
       previous === "blocked" &&

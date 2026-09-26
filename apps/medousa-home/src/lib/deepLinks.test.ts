@@ -7,6 +7,19 @@ import {
 } from "./deepLinks";
 
 describe("deepLinks", () => {
+  it("validates Live launch identity and conversation mode", () => {
+    const requestId = "550e8400-e29b-41d4-a716-446655440000";
+    for (const mode of ["new", "resume"]) {
+      expect(parseDeepLink(`medousa://live?mode=${mode}&request=${requestId}`))
+        .toEqual({ kind: "live", mode, requestId });
+    }
+    for (const url of [
+      "medousa://live?mode=new&request=invalid",
+      `medousa://live?mode=unknown&request=${requestId}`,
+      `medousa://live?request=${requestId}`,
+      `medousa://live/other?mode=new&request=${requestId}`,
+    ]) expect(parseDeepLink(url)).toBeNull();
+  });
   it("builds work and vault urls", () => {
     expect(workDeepLinkUrl("card-1")).toBe("medousa://work/card-1");
     expect(vaultDeepLinkUrl("journal/daily.md")).toBe("medousa://vault/journal%2Fdaily.md");
@@ -29,6 +42,24 @@ describe("deepLinks", () => {
       kind: "work",
       cardId: "card-1",
     });
+  });
+
+  it("parses Ask Medousa deeplinks", () => {
+    expect(parseDeepLink("medousa://ask?request=550e8400-e29b-41d4-a716-446655440000")).toEqual({
+      kind: "ask",
+      requestId: "550e8400-e29b-41d4-a716-446655440000",
+    });
+    expect(parseDeepLink("medousa://ask?request=not-a-receipt")).toBe(null);
+  });
+
+  it("parses widget composer actions", () => {
+    const request = "550e8400-e29b-41d4-a716-446655440000";
+    for (const action of ["new", "camera", "notes", "photos", "calendar", "projects"] as const) {
+      expect(parseDeepLink(`medousa://compose?action=${action}&request=${request}`)).toEqual({
+        kind: "compose", action, requestId: request,
+      });
+    }
+    expect(parseDeepLink(`medousa://compose?action=files&request=${request}`)).toBeNull();
   });
 
   it("round-trips undertaking locations", () => {

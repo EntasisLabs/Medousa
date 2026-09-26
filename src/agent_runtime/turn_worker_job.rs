@@ -13,8 +13,8 @@ use stasis::prelude::{Result as StasisResult, RuntimeComposition, StasisError};
 
 use crate::agent_runtime::stream_sink::SharedAgentStreamSink;
 use crate::agent_runtime::turn_worker::{
-    TurnWorkRecord, TurnWorkStatus, WorkerRuntimeContext, resume_synthesis_if_needed,
-    run_worker_turn, turn_worker_store,
+    TurnWorkDisposition, TurnWorkRecord, TurnWorkStatus, WorkerRuntimeContext,
+    resume_synthesis_if_needed, run_worker_turn, turn_worker_store,
 };
 use crate::session::{ConversationTurn, append_turn};
 use crate::tools::TuiRuntime;
@@ -90,8 +90,7 @@ fn turn_worker_job_placement(
     };
     if resolution.resolution_reason
         == crate::workshop_contract::ExecutionResolutionReason::LegacyUnknown
-        || resolution.resolved_runtime_id
-            == crate::workshop_contract::UNKNOWN_EXECUTION_RUNTIME_ID
+        || resolution.resolved_runtime_id == crate::workshop_contract::UNKNOWN_EXECUTION_RUNTIME_ID
     {
         return PlacementConstraints::unrestricted();
     }
@@ -247,7 +246,7 @@ impl JobHandler for TurnWorkerJobHandler {
             )
             .await;
             if let Some(outcome) =
-                pending_parallel_intake_outcome(turn_worker_store().get(&payload.work_id).as_ref())
+                pending_continuation_outcome(turn_worker_store().get(&payload.work_id).as_ref())
             {
                 return Ok(outcome);
             }
@@ -273,7 +272,7 @@ impl JobHandler for TurnWorkerJobHandler {
         .await;
 
         let final_record = turn_worker_store().get(&payload.work_id);
-        if let Some(outcome) = pending_parallel_intake_outcome(final_record.as_ref()) {
+        if let Some(outcome) = pending_continuation_outcome(final_record.as_ref()) {
             return Ok(outcome);
         }
         match final_record.as_ref().map(|record| record.status) {
@@ -647,22 +646,44 @@ fn truncate_line(value: &str, max: usize) -> String {
     trimmed.chars().take(max).collect::<String>() + "…"
 }
 
-/// Stasis retries intake using the job's existing bounded retry policy. The
-/// terminal-record branch above prevents these retries from rerunning peer work.
-fn pending_parallel_intake_outcome(record: Option<&TurnWorkRecord>) -> Option<JobExecutionOutcome> {
+/// Stasis retries continuation using the job's existing bounded retry policy.
+/// Terminal-record handling above keeps these attempts from rerunning worker effects.
+fn pending_continuation_outcome(record: Option<&TurnWorkRecord>) -> Option<JobExecutionOutcome> {
     let record = record?;
-    (record.disposition == crate::agent_runtime::turn_worker::TurnWorkDisposition::Parallel
-        && !record.synthesis_delivered
-        && matches!(
-            record.status,
-            TurnWorkStatus::Completed | TurnWorkStatus::Failed | TurnWorkStatus::Cancelled
-        )
-        && turn_worker_store().parallel_intake_needs_retry(record))
+    let parallel_intake_needs_retry = record.disposition == TurnWorkDisposition::Parallel
+        && turn_worker_store().parallel_intake_needs_retry(record);
+    (continuation_needs_retry(
+        record.disposition,
+        record.status,
+        record.synthesis_delivered,
+        parallel_intake_needs_retry,
+    ))
     .then(|| JobExecutionOutcome::RetryableFailure {
-        message: format!("host intake pending for {}", record.work_id),
+        message: format!("host continuation pending for {}", record.work_id),
         execution_id: None,
         diagnostics: None,
     })
+}
+
+fn continuation_needs_retry(
+    disposition: TurnWorkDisposition,
+    status: TurnWorkStatus,
+    synthesis_delivered: bool,
+    parallel_intake_needs_retry: bool,
+) -> bool {
+    if synthesis_delivered {
+        return false;
+    }
+    match disposition {
+        TurnWorkDisposition::Bound => status == TurnWorkStatus::Completed,
+        TurnWorkDisposition::Parallel => {
+            matches!(
+                status,
+                TurnWorkStatus::Completed | TurnWorkStatus::Failed | TurnWorkStatus::Cancelled
+            ) && parallel_intake_needs_retry
+        }
+        TurnWorkDisposition::Delegated => false,
+    }
 }
 
 fn success_outcome(summary: String) -> JobExecutionOutcome {
@@ -759,5 +780,51 @@ mod tests {
             turn_worker_job_placement(Some(&ExecutionPlacementResolution::default())).target_node,
             None
         );
+    }
+
+    #[test]
+    fn undelivered_terminal_continuations_retry_without_relaunching_workers() {
+        assert!(continuation_needs_retry(
+            TurnWorkDisposition::Bound,
+            TurnWorkStatus::Completed,
+            false,
+            false,
+        ));
+        assert!(!continuation_needs_retry(
+            TurnWorkDisposition::Bound,
+            TurnWorkStatus::Completed,
+            true,
+            false,
+        ));
+        assert!(!continuation_needs_retry(
+            TurnWorkDisposition::Bound,
+            TurnWorkStatus::Failed,
+            false,
+            false,
+        ));
+        assert!(continuation_needs_retry(
+            TurnWorkDisposition::Parallel,
+            TurnWorkStatus::Completed,
+            false,
+            true,
+        ));
+        assert!(continuation_needs_retry(
+            TurnWorkDisposition::Parallel,
+            TurnWorkStatus::Failed,
+            false,
+            true,
+        ));
+        assert!(!continuation_needs_retry(
+            TurnWorkDisposition::Parallel,
+            TurnWorkStatus::Completed,
+            false,
+            false,
+        ));
+        assert!(!continuation_needs_retry(
+            TurnWorkDisposition::Delegated,
+            TurnWorkStatus::Completed,
+            false,
+            false,
+        ));
     }
 }

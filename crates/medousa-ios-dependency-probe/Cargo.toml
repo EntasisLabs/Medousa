@@ -23,8 +23,8 @@ keychain = ["dep:medousa-secrets"]
 [dependencies]
 grapheme-sdk = { version = "=0.7.1", default-features = false, optional = true }
 locus-core-rs = { version = "=0.5.1", default-features = false, optional = true }
-locus-sdk = { version = "=0.3.1", default-features = false, optional = true }
-locus-surreal-adapter = { version = "=0.1.0", default-features = false, features = ["native"], optional = true }
+locus-sdk = { version = "=0.4.0", default-features = false, optional = true }
+locus-surreal-adapter = { version = "=0.1.1", default-features = false, features = ["native"], optional = true }
 medousa-engine = { path = "../medousa-engine", optional = true }
 medousa-secrets = { path = "../medousa-secrets", optional = true }
-stasis-rs = { version = "=0.10.0", default-features = false, optional = true }
+stasis-rs = { version = "=0.12.0", default-features = false, optional = true }

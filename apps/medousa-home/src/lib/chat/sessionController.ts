@@ -26,6 +26,7 @@ import {
 } from "$lib/types/turnParts";
 import { formatSessionLabel } from "$lib/utils/formatSession";
 import { dedupeMessagesById, mergeTranscript } from "$lib/utils/mergeTranscript";
+import { attachLiveTranscripts } from "$lib/liveTranscriptAttachments";
 import { chatScenes } from "$lib/liquid/surfaces/chat/chatScenes.svelte";
 import { chatInteractions } from "$lib/liquid/surfaces/chat/chatInteractions";
 import { chatStreamPool } from "$lib/chat/chatStreamPool.svelte";
@@ -115,16 +116,18 @@ export function mapTurns(
   const askJobId = options?.askJobId ?? null;
   const sessionId = options?.sessionId?.trim() || "session";
   const authorityId = options?.authorityId?.trim() || "";
-  return turns.map((turn, index) => {
+  return attachLiveTranscripts(turns.map((turn, index) => {
     const modelReceipt = modelReceiptFromParts(turn.parts ?? null);
     const entryId = turn.entry_id?.trim();
-    const segments =
-      turn.role === "assistant" ? chatSegmentsFromParts(turn.parts ?? null) : undefined;
+    const livePart = turn.parts?.find((part) => part.kind === "handoff" && part.handoff_kind === "live_transcript");
+    const segments: ChatMessage["segments"] = livePart?.kind === "handoff" ? [{ kind: "handoff", handoffKind: "live_transcript", text: livePart.text, workId: livePart.work_id }]
+      : turn.role === "assistant" ? chatSegmentsFromParts(turn.parts ?? null) : undefined;
     return {
       id: entryId
         ? `${sessionId}:${entryId}`
         : `${sessionId}:${turn.timestamp}:${turn.role}:${index}`,
       role: normalizeRole(turn.role),
+      turnId: turn.role === "assistant" ? turn.caused_by?.execution_id : undefined,
       content: turn.content,
       lane,
       askJobId,
@@ -162,9 +165,8 @@ export function mapTurns(
             }
           : null,
     };
-  });
+  }));
 }
-
 function historyCursor(history: SessionHistoryResponse): string | null {
   return history.next_cursor?.trim() || null;
 }
@@ -674,24 +676,14 @@ export async function reconcileOnResume(
     host.sessionId.trim() === sessionId;
 
   try {
-    const attached = await host.tryReattachActiveTurn(cards);
+    await host.tryReattachActiveTurn(cards);
     if (!stillSameSession()) return;
 
-    const liveStream =
-      attached &&
-      (host.messages.some(
-        (message) =>
-          message.streaming &&
-          message.lane !== "worker" &&
-          message.phase !== "budget_blocked",
-      ) ||
-        hasLiveInteractiveTurn(host));
-
-    if (liveStream) {
-      host.sanitizeTranscript();
-      return;
-    }
-
+    // Reattaching a live ticket and reconciling committed history are separate
+    // responsibilities. A daemon may commit one turn while another ticket is
+    // still active, especially after a mobile client was suspended. Always
+    // merge the durable projection so reconnecting clients see those commits;
+    // mergeTranscript preserves the live placeholder for the attached turn.
     const history = await recentHistoryForMerge(
       sessionId,
       host.messages,
@@ -708,15 +700,6 @@ export async function reconcileOnResume(
   } catch (err) {
     host.noteResumeFailure(err);
   }
-}
-
-function hasLiveInteractiveTurn(host: ChatStoreHost): boolean {
-  for (const turn of host.turns.values()) {
-    if (turn.mode !== "interactive" || turn.terminal) continue;
-    if (host.isComposerOpenDuringHandoff(turn.turnId, turn.phase)) continue;
-    return true;
-  }
-  return false;
 }
 
 export async function reloadCurrentSession(
@@ -858,7 +841,7 @@ export async function switchSession(host: ChatStoreHost, sessionId: string) {
     const { workshops } = await import("$lib/stores/workshops.svelte");
     if (host.workshopEpoch !== workshopEpoch) return;
     void workshops.saveActiveSession(trimmed);
-    void host.tryReattachActiveTurn();
+    void reconcileOnResume(host, { notice: false });
     mirrorShellChat();
     return;
   }

@@ -536,7 +536,13 @@ pub fn fetch_artifact_at_id(session_id: &str, artifact_id: &str) -> Option<Fetch
 }
 
 pub fn is_ui_html_record(record: &ArtifactRecord) -> bool {
-    record.direction == "ui" && record.content_type == "text/html"
+    record.direction == "ui"
+        && (record.content_type.trim().is_empty()
+            || artifact_media_type(&record.content_type).eq_ignore_ascii_case("text/html"))
+}
+
+fn artifact_media_type(content_type: &str) -> &str {
+    content_type.split(';').next().unwrap_or_default().trim()
 }
 
 pub fn list_ui_artifacts(
@@ -794,14 +800,14 @@ fn load_fetched_from_store(
         }
     };
     record.payload_path = path.file_name().to_string();
-    let mime = if record.content_type.is_empty() {
+    let mime = if record.content_type.trim().is_empty() {
         if record.direction == "ui" {
             "text/html".to_string()
         } else {
             "application/json".to_string()
         }
     } else {
-        record.content_type.clone()
+        artifact_media_type(&record.content_type).to_ascii_lowercase()
     };
 
     let body = if mime == "text/html" {
@@ -868,7 +874,7 @@ fn wrap_html_document(html: &str) -> String {
         return inject_artifact_host_styles(html);
     }
     format!(
-        "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'\">{ARTIFACT_HOST_STYLE}</head><body>{html}</body></html>"
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; style-src-elem 'unsafe-inline'; style-src-attr 'unsafe-inline'\">{ARTIFACT_HOST_STYLE}</head><body>{html}</body></html>"
     )
 }
 
@@ -1245,7 +1251,9 @@ fn legacy_artifact_payload_path_for_record(record: &ArtifactRecord) -> Option<St
 fn artifact_extension(record: &ArtifactRecord) -> &'static str {
     if record.content_type == "image/png" {
         "png"
-    } else if record.content_type == "text/html" || record.direction == "ui" {
+    } else if artifact_media_type(&record.content_type).eq_ignore_ascii_case("text/html")
+        || record.direction == "ui"
+    {
         "html"
     } else {
         "json"

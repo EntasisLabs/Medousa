@@ -3,6 +3,7 @@
 mod auth;
 pub mod catalog;
 pub mod config;
+mod connection_actor;
 pub mod local_process;
 pub mod oauth;
 pub mod policy_client;
@@ -24,7 +25,7 @@ pub use oauth::{
 };
 pub use policy_client::McpPolicyEvaluator;
 pub use registry::ServerRegistry;
-pub use server_config::{McpGatewayFullConfig, gateway_config_path};
+pub use server_config::{McpGatewayFullConfig, gateway_config_path, validate_remote_server_url};
 pub use starter_config::{STARTER_MCP_GATEWAY_TOML, install_starter_gateway_config_if_missing};
 
 use std::net::SocketAddr;

@@ -10,7 +10,7 @@ SDK: [`docs/sdk/api-reference.md`](../sdk/api-reference.md).
 Generated publication: [`sdk-contract/openapi.json`](../../sdk-contract/openapi.json) (operation IDs from the declared router; regenerate with `UPDATE_API_CONTRACT=1 cargo test -p medousa --lib daemon::contract::tests::checked_in_contract_artifacts_match_generation`). Rust/Python helpers and Home transports expand those generated operation tables. Endpoint-shaped Tauri command names remain shims; their paths come from generated ops.  
 Component notes: [component-daemon.md](../../architecture/component-daemon.md).
 
-Subsystem guides: [interactive-streaming](interactive-streaming.md) · [artifacts](artifacts.md) · [vault](vault.md) · [calendar](calendar.md) · [workspace](workspace.md) · [forge](forge.md) · [agent-tools](agent-tools.md) · [runtime-config](runtime-config.md) · [extensions](extensions.md)
+Subsystem guides: [interactive-streaming](interactive-streaming.md) · [artifacts](artifacts.md) · [vault](vault.md) · [calendar](calendar.md) · [workspace](workspace.md) · [forge](forge.md) · [coordination](coordination.md) · [agent-tools](agent-tools.md) · [runtime-config](runtime-config.md) · [extensions](extensions.md)
 
 ---
 
@@ -96,6 +96,9 @@ reason instead of assuming that a protocol enum is ready to enter.
 **Stream query:** `GET …/stream?since=<seq>` (optional `u64`, default `0`). Replays events with `seq > since` from the **durable turn journal** on disk, then tails live events. Each SSE payload includes monotonic **`seq`** per turn — clients track the last seen `seq` and reconnect with `?since=` after drops.
 
 See [interactive-streaming.md](interactive-streaming.md). **Do not** expect SSE on the POST itself.
+An admitted interactive turn has no implicit whole-turn wall-clock deadline;
+the session-scoped cancel route remains available while it runs. Provider
+transport timeouts are separate from the turn lifetime.
 
 `InteractiveTurnRequest.host_context` carries a typed, bounded editor, note, or
 page snapshot separately from `prompt`. The daemon persists the human prompt as
@@ -108,7 +111,10 @@ independent of interactive/background ticket delivery. When omitted, the
 daemon checks the active task lease, then the session selection, then a bound
 Bot's default, and finally defaults to `general`. `instant` uses the General
 execution path with a smaller recent history and tool context; it does not
-change provider or generation behavior. `coder` additionally requires an active
+change provider or generation behavior. `assistant` uses General's host lane,
+identity, memory, context, and completion scheduler with an ownership policy for
+durable coordination; selecting it does not create execution grants or bypass
+target policy and approval boundaries. `coder` additionally requires an active
 Forge undertaking and its turn-scoped authority for file, shell, and engineering
 tools; without a binding it enters the restricted project-setup phase.
 Resolution is deterministic and does not require an additional model call.
@@ -983,13 +989,14 @@ Cookbook: [mobile-and-lan.md](../cookbook/mobile-and-lan.md)
 ### Peer execution policy administration
 
 These native-only routes require `admin.execute` on the workshop whose inbound
-authority is being edited. A paired portal or peer cannot use its ordinary
-pairing bearer to grant itself work:
+authority is being edited. Execution policies scope `peer` pairings; a `portal`
+uses its direct workshop role and does not have a peer execution policy to
+configure:
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/v1/peers/execution-policies` | List paired devices and this workshop's effective inbound policy for each |
-| GET | `/v1/peers/{device_id}/execution-policy` | Read one effective policy, including whether it is stored, a safe legacy mapping, or default-deny |
+| GET | `/v1/peers/execution-policies` | List peer pairings and this workshop's effective inbound policy for each |
+| GET | `/v1/peers/{device_id}/execution-policy` | Read one peer policy, including whether it is stored, a safe legacy mapping, or default-deny |
 | PUT | `/v1/peers/{device_id}/execution-policy` | Replace one peer's preset/scopes/expiry and increment its policy revision |
 | GET | `/v1/peers/execution-policy-audit?limit=100` | Read bounded policy-update and task-admission audit events |
 
@@ -1000,6 +1007,11 @@ least one execution scope is enabled; that bit still does not choose or grant a
 particular lane. Reducing or revoking a scope cancels active remote workers that
 require the removed authority; completed results retain the grant and policy
 revision under which they ran.
+
+The daemon rejects policy updates for portal pairings. Their role grants task
+transport and direct worker admission without per-tool, per-project, or
+agent-targeting allowlists. Peer pairings continue to use the configured
+destination policy.
 
 The `custom` policy keeps governed browser/computer tools in an explicit
 `world` tool domain. Ordinary web search remains in `web`; granting Assistant
@@ -1013,20 +1025,21 @@ The signed `POST /v1/mesh/execution-target` probe supplies the same sanitized
 target entry for a paired destination. In addition to worker capabilities,
 entries may advertise mechanical world-driver capability strings under
 `world.browser.*` and `world.computer.*`. Those values describe colocated
-drivers and never constitute authority. A destination includes them in a peer
-probe only when its current directional policy admits Assistant or Coder work
-and the explicit `world` tool domain; disabled, expired, legacy, and ordinary
-Assistant-work policies expose none.
+drivers and never constitute authority. A peer destination includes them only
+when its current directional policy admits Assistant or Coder work and the
+explicit `world` tool domain. A portal destination advertises its available
+worker and world capabilities from the direct portal role and local drivers.
 
-`POST /v1/mesh/tasks` is a native-only daemon-to-daemon route. It requires all
-of the following: an authenticated pairing bearer, an explicit `task.request`
-grant on that pairing, and a signed mesh envelope whose sender and recipient
-exactly match the paired identities. The destination also intersects that
-transport grant with its own directional peer-execution policy. For existing
-installations that have `task.request` but no stored execution policy, the
-compatibility mapping grants only the historical safe assistant domains
-(`turn`, utility, and web); it never implies shell, Coder, MCP, secrets,
-work-environment, or agent-targeting authority.
+`POST /v1/mesh/tasks` is a native-only daemon-to-daemon route. It requires an
+authenticated pairing bearer and a signed mesh envelope whose sender and
+recipient exactly match the paired identities. Peer pairings also require an
+explicit `task.request` grant and are intersected with the destination's
+directional peer-execution policy. A full portal receives task transport from
+its pairing role and receives a destination-issued grant for the exact tools
+and worlds in that worker request; peer allowlists do not apply. For legacy
+peer installations with `task.request` but no stored execution policy, the
+compatibility mapping still grants only the historical safe assistant domains
+(`turn`, utility, and web).
 
 The body carries a bounded Stasis `TurnGranted` request and versioned
 `worker` specification. That specification preserves the local worker's intent,
@@ -1035,10 +1048,16 @@ parent mode, Bot identity, route, placement, tool-round budget, and exact
 requested tool names. The operation is idempotent under that Stasis turn
 identity: the first exchange admits the canonical remote worker and later
 exchanges observe the same work. Admission compiles an immutable, expiring
-`taskExecutionGrant` that binds the peer, origin/destination runtimes, parent
-session, work/correlation identity, intent, exact effective tools, tool domains,
-and destination policy revision. That grant is stored with the worker and
-returned in the signed observation and terminal result.
+`taskExecutionGrant` that binds the pairing, origin/destination runtimes, parent
+session, work/correlation identity, intent, exact effective tools, and tool
+domains. Peer grants also carry the destination policy revision; portal grants
+carry portal-role provenance. That grant is stored with the worker and returned
+in the signed observation and terminal result. A Coder worker may carry either
+an existing destination-owned project reference or an explicit `codeProjectSetup`
+request with a title, brief, optional repository URL, and base ref. Only a portal
+may admit projectless Coder setup. The destination creates or clones the project
+on its own disk, binds it to the derived worker session, and adds the resulting
+project identity to the durable task grant before starting the Coder worker.
 Every response is an immediate signed `task.result` observation with `pending`,
 `running`, or terminal state plus the remote execution, requested/resolved
 runtime placement, parent runtime, task grant, and session-derivation
@@ -1064,7 +1083,19 @@ cancellation is itself terminal and idempotent. Responses are signed
 The model uses the same `cognition_workshop_query` and
 `cognition_workshop_mutate` contract for local and bound-remote execution. A
 remote `workshop.spawn` returns the source daemon's durable `work_id`
-immediately and ends the foreground turn with a worker handoff receipt.
+immediately and ends the foreground turn with a worker handoff receipt. On a
+mobile source that must discover a bound remote target, the source first stores
+the request and parent context locally, then returns `status: "queued"`,
+`worker_queued: true`, `worker_spawned: false`, the `work_id`, and the requested
+target; resolved placement remains `null` until discovery completes. A fresh
+authenticated inventory pass resolves and authorizes one destination, and the
+source checkpoints that exact route before dispatch. Retry uses the checkpointed
+route, while the destination independently enforces its policy. Queued status is
+available through `workshop.status`; canceling before dispatch prevents startup.
+Remote discovery and worker startup do not hold the foreground request open.
+An unavailable exact target on a local desktop still fails before enqueue; a
+mobile remote request instead remains queued for bounded retry and eventually
+reports failure if placement cannot be completed.
 `workshop.status` observes that same source ticket. Terminal output is committed
 once to the initiating session and emitted as worker synthesis on the original
 chronological turn stream; Home does not own a polling or result-merging loop.
