@@ -78,8 +78,10 @@ Medousa resolves LLM settings in order: **saved defaults → env → built-in de
 | `MEDOUSA_LAYA_API_KEY` | Optional bearer token for the configured Laya endpoint | unset |
 | `MEDOUSA_LAYA_MODEL` | Laya model selector sent with typed decision requests; use a Medousa-tuned checkpoint only after calibration | `english` |
 | `MEDOUSA_LAYA_TIMEOUT_MS` | Laya request timeout in milliseconds, clamped to 100–10,000 | `2000` |
+| `MEDOUSA_LAYA_SERVE_BIN` | Explicit path to a packaged local `laya-serve` binary | sibling, `{dataDir}/bin`, then PATH |
+| `MEDOUSA_LAYA_MANAGED` | Let Medousa supervise installed Laya on loopback; disable with `0`, `false`, `off`, or `no` | enabled when `laya-serve` is installed |
 
-Laya remains perception, not authority: the adapter uses the typed `choice` response and calibrated `answer_confidence`, ignores Laya's action recommendation, and leaves admission, permissions, and tool policy with Medousa. Run a local `laya-serve` instance before selecting `laya`; keep `MEDOUSA_SYSTEM_ONE_MODE=shadow` while calibrating a checkpoint for Medousa's labels. The generic `typed-decisions` checkpoint targets unrelated workflows and is not the default.
+Laya remains perception, not authority: the adapter uses the typed `choice` response and calibrated `answer_confidence`, ignores Laya's action recommendation, and leaves admission, permissions, and tool policy with Medousa. Installing **Laya System One** from Settings → Packages starts the English checkpoint on `127.0.0.1:7422` with shadow mode; an explicitly configured endpoint remains supported. Keep `MEDOUSA_SYSTEM_ONE_MODE=shadow` while calibrating a checkpoint for Medousa's labels. The generic `typed-decisions` checkpoint targets unrelated workflows and is not the default.
 
 There is no `no_auth` or loopback bypass setting. Except for constant liveness,
 an active pairing ceremony, and scoped preview URLs, daemon routes require a

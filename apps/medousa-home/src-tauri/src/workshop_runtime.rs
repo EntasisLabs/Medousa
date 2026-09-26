@@ -18,6 +18,8 @@ const PUBLIC_LOCAL_BIND: &str = "0.0.0.0:7419";
 const DEFAULT_BACKEND: &str = "surreal-mem";
 const LOCAL_PORT_START: u16 = 7419;
 const LOCAL_PORT_END: u16 = 7499;
+const DEFAULT_LAYA_BIND: &str = "127.0.0.1:7422";
+const DEFAULT_LAYA_BASE_URL: &str = "http://127.0.0.1:7422";
 static LOCAL_BRAIN_START_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 
 /// Desktop-only process helpers (`medousa-host` is not linked on iOS/Android).
@@ -246,6 +248,56 @@ pub(crate) fn local_brain_installed() -> bool {
     resolve_local_binary().is_ok()
 }
 
+fn resolve_laya_binary() -> Result<ComponentCommand, String> {
+    if let Ok(explicit) = std::env::var("MEDOUSA_LAYA_SERVE_BIN") {
+        let path = PathBuf::from(explicit.trim());
+        if path.is_file() {
+            return Ok(ComponentCommand {
+                program: path.to_string_lossy().to_string(),
+                pre_args: Vec::new(),
+            });
+        }
+    }
+
+    if let Ok(current_exe) = std::env::current_exe() {
+        let sibling = current_exe.with_file_name(platform_binary_name("laya-serve"));
+        if sibling.is_file() {
+            return Ok(ComponentCommand {
+                program: sibling.to_string_lossy().to_string(),
+                pre_args: Vec::new(),
+            });
+        }
+    }
+
+    if let Some(shared) = shared_bin_binary("laya-serve") {
+        return Ok(ComponentCommand {
+            program: shared.to_string_lossy().to_string(),
+            pre_args: Vec::new(),
+        });
+    }
+
+    if find_command_in_path("laya-serve").is_some() {
+        return Ok(ComponentCommand {
+            program: platform_binary_name("laya-serve"),
+            pre_args: Vec::new(),
+        });
+    }
+
+    Err("Laya System One is not installed".to_string())
+}
+
+fn env_flag(name: &str, default: bool) -> bool {
+    std::env::var(name)
+        .ok()
+        .map(|value| {
+            !matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "0" | "false" | "off" | "no"
+            )
+        })
+        .unwrap_or(default)
+}
+
 pub(crate) fn is_bind_reachable(bind: &str) -> bool {
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
@@ -341,6 +393,14 @@ pub fn local_brain_pid_path(workshop_id: &str) -> PathBuf {
 
 pub fn local_brain_log_path(workshop_id: &str) -> PathBuf {
     engine_runtime_dir(workshop_id).join("local.log")
+}
+
+fn laya_pid_path(workshop_id: &str) -> PathBuf {
+    engine_runtime_dir(workshop_id).join("laya.pid")
+}
+
+fn laya_log_path(workshop_id: &str) -> PathBuf {
+    engine_runtime_dir(workshop_id).join("laya.log")
 }
 
 pub const DEFAULT_LOCAL_BRAIN_BIND: &str = "127.0.0.1:7421";
@@ -497,6 +557,7 @@ fn read_daemon_pid(workshop_id: &str) -> Option<u32> {
 
 pub fn stop_local_engine(workshop_id: &str) {
     stop_local_brain(workshop_id);
+    stop_laya(workshop_id);
     if let Some(pid) = read_daemon_pid(workshop_id) {
         let _ = host_proc::request_process_stop_by_pid(pid);
     }
@@ -507,6 +568,114 @@ pub fn stop_local_engine(workshop_id: &str) {
     if workshop_id == PERSONAL_WORKSHOP_ID {
         let _ = fs::remove_file(legacy_daemon_pid_path());
     }
+}
+
+fn read_laya_pid(workshop_id: &str) -> Option<u32> {
+    fs::read_to_string(laya_pid_path(workshop_id))
+        .ok()
+        .and_then(|raw| raw.trim().parse().ok())
+}
+
+fn clear_laya_pid(workshop_id: &str) {
+    let _ = fs::remove_file(laya_pid_path(workshop_id));
+}
+
+fn stop_laya(workshop_id: &str) {
+    if let Some(pid) = read_laya_pid(workshop_id) {
+        let _ = host_proc::request_process_stop_by_pid(pid);
+    }
+    clear_laya_pid(workshop_id);
+}
+
+fn spawn_laya(workshop_id: &str, data_dir: &Path) -> Result<u32, String> {
+    let laya = resolve_laya_binary()?;
+    let log_path = laya_log_path(workshop_id);
+    if let Some(parent) = log_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    let log_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|err| err.to_string())?;
+    let log_file_err = log_file.try_clone().map_err(|err| err.to_string())?;
+
+    let mut command = Command::new(&laya.program);
+    command.args(&laya.pre_args);
+    command
+        .env("LAYA_HOST", "127.0.0.1")
+        .env("LAYA_PORT", "7422")
+        .env("LAYA_PRELOAD", "1")
+        .env("LAYA_MODELS", "english")
+        .env("HF_HOME", data_dir.join("models").join("huggingface"));
+    command.stdin(Stdio::null());
+    command.stdout(Stdio::from(log_file));
+    command.stderr(Stdio::from(log_file_err));
+    detach_new_session(&mut command);
+
+    let mut child = command
+        .spawn()
+        .map_err(|err| format!("Failed to spawn laya-serve ({}): {err}", laya.program))?;
+    let pid = child.id();
+    let pid_path = laya_pid_path(workshop_id);
+    let write_result = pid_path
+        .parent()
+        .map_or(Ok(()), |parent| fs::create_dir_all(parent))
+        .and_then(|()| fs::write(&pid_path, pid.to_string()));
+    if let Err(err) = write_result {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(format!("Failed to record laya-serve pid: {err}"));
+    }
+    Ok(pid)
+}
+
+fn configure_laya_for_daemon(command: &mut Command, workshop_id: &str, data_dir: &Path) {
+    const FORWARDED: &[&str] = &[
+        "MEDOUSA_SYSTEM_ONE_ENGINE",
+        "MEDOUSA_SYSTEM_ONE_MODE",
+        "MEDOUSA_SYSTEM_ONE_CONFIDENCE_THRESHOLD",
+        "MEDOUSA_SYSTEM_ONE_EVAL_PATH",
+        "MEDOUSA_LAYA_BASE_URL",
+        "MEDOUSA_LAYA_API_KEY",
+        "MEDOUSA_LAYA_MODEL",
+        "MEDOUSA_LAYA_TIMEOUT_MS",
+    ];
+    for key in FORWARDED {
+        if let Ok(value) = std::env::var(key) {
+            if !value.trim().is_empty() {
+                command.env(key, value);
+            }
+        }
+    }
+
+    let configured_engine = std::env::var("MEDOUSA_SYSTEM_ONE_ENGINE").ok();
+    if configured_engine
+        .as_deref()
+        .is_some_and(|engine| !engine.trim().eq_ignore_ascii_case("laya"))
+    {
+        return;
+    }
+    if configured_engine.is_some() && std::env::var("MEDOUSA_LAYA_BASE_URL").is_ok() {
+        return;
+    }
+    if !env_flag("MEDOUSA_LAYA_MANAGED", true) || resolve_laya_binary().is_err() {
+        return;
+    }
+
+    let tracked_alive = read_laya_pid(workshop_id).is_some_and(host_proc::is_process_alive);
+    if !tracked_alive {
+        clear_laya_pid(workshop_id);
+        if is_bind_reachable(DEFAULT_LAYA_BIND) || spawn_laya(workshop_id, data_dir).is_err() {
+            return;
+        }
+    }
+
+    command
+        .env("MEDOUSA_SYSTEM_ONE_ENGINE", "laya")
+        .env("MEDOUSA_SYSTEM_ONE_MODE", "shadow")
+        .env("MEDOUSA_LAYA_BASE_URL", DEFAULT_LAYA_BASE_URL)
+        .env("MEDOUSA_LAYA_MODEL", "english");
 }
 
 pub fn spawn_local_engine(
@@ -563,16 +732,29 @@ pub fn spawn_local_engine(
     // So ACP can find `agent` / `codex` / `npx` even when the GUI PATH is thin.
     enrich_daemon_path(&mut command);
     apply_daemon_apns_env(&mut command);
+    configure_laya_for_daemon(&mut command, workshop_id, data_dir);
     command.stdin(Stdio::null());
     command.stdout(Stdio::from(log_file));
     command.stderr(Stdio::from(log_file_err));
     detach_new_session(&mut command);
 
-    let child = command
-        .spawn()
-        .map_err(|err| format!("Failed to spawn medousa_daemon ({}): {err}", daemon.program))?;
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(err) => {
+            stop_laya(workshop_id);
+            return Err(format!(
+                "Failed to spawn medousa_daemon ({}): {err}",
+                daemon.program
+            ));
+        }
+    };
     let pid = child.id();
-    write_daemon_pid(workshop_id, pid)?;
+    if let Err(err) = write_daemon_pid(workshop_id, pid) {
+        let _ = child.kill();
+        let _ = child.wait();
+        stop_laya(workshop_id);
+        return Err(err);
+    }
     Ok((pid, log_path))
 }
 
@@ -1178,5 +1360,11 @@ mod tests {
     #[test]
     fn parse_bind_port_reads_trailing_port() {
         assert_eq!(parse_bind_port("127.0.0.1:7419"), Some(7419));
+    }
+
+    #[test]
+    fn managed_laya_uses_a_loopback_endpoint() {
+        assert_eq!(DEFAULT_LAYA_BIND, "127.0.0.1:7422");
+        assert_eq!(DEFAULT_LAYA_BASE_URL, "http://127.0.0.1:7422");
     }
 }
