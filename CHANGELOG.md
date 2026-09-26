@@ -7,6 +7,60 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-09-14
+
+### Added
+
+- **Expressive chat media** — draw in the composer with pressure brushes,
+  selection, and zoom; generate images through a daemon-owned OpenAI Image API
+  tool; refine, save to vault, copy, share, or download results while bytes stay
+  under workshop authority.
+- **Interactive Liquid recipes** — step-by-step procedures with durable step
+  timers, local pause/resume, and optional device notifications without turning
+  UI actions into silent model turns.
+- **Governed browser and computer worlds** — runtime-owned worlds pin browser and
+  desktop actions to an owning workshop, stream destination presentation, keep
+  causal activity and recovery checkpoints, and expose a macOS computer-driver
+  package for observation and guarded native actions.
+- **Bots** — named teammates with durable memory, archetypes, and a primary
+  conversation that stays distinct from turn modes.
+- **Teacher mode and narration** — guided teaching turns and reply narration
+  controls alongside General, Instant, and Coder modes.
+- **Remote coder federation** — portable Forge checkpoints, authorized workshop
+  placement, peer execution policy, and reconciled signed remote results.
+- **Current-checkout Coder projects** — attach and release the live working tree
+  safely without forcing a detached worktree for every task.
+- **Astra model support** — additional vision-capable routing for GPT account
+  and provider catalogs.
+- **Durable device trust pairing** — longer-lived trust sessions for phone and
+  companion pairing flows.
+
+### Changed
+
+- Chat composer, Bots, model/reasoning controls, and mobile sheets share a
+  calmer interaction model; composer model and routing are remembered per chat
+  session.
+- Drawing notes move mobile controls into note chrome, keep pencil input off the
+  persistence path, and open options above the canvas when composing.
+- Packaged Home uses a single client JS/CSS bundle so Tauri WebViews do not
+  late-fetch feature styles over the custom protocol; FRONT-001 ceilings follow
+  that packaged payload.
+- Settings Vision vs Image generation roles are explicit; ChatGPT account routing
+  remains available on mobile model pickers.
+
+### Fixed
+
+- Silent turns finish cleanly; mobile diffs and large change review rendering
+  stay bounded.
+- Peer handoffs, attached checkout access, and Grapheme result races no longer
+  drop custody or strand tool results.
+- Chat project bindings and Coder context replay avoid redundant runtime
+  history.
+- Packaged CodeMirror, shell layout, and style nonces stay stable across desktop
+  WebViews; headless Linux secrets fall back safely.
+- Local MCP policy auth provisions cleanly and restarts the gateway without
+  dropping the workshop session.
+
 ## [0.10.0] — 2026-08-31
 
 ### Added

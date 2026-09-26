@@ -1919,7 +1919,7 @@ pub(crate) async fn ensure_worker_code_project(
     let context_for_create = context.clone();
     let runtime_for_create = runtime_id.clone();
     let session_for_create = session_id.clone();
-    let create_result = context
+    context
         .forge_execution
         .run(
             medousa_forge::execution::ExecutionClass::LocalMutation,
@@ -1966,9 +1966,7 @@ pub(crate) async fn ensure_worker_code_project(
             },
         )
         .await
-        .map_err(|error| format!("could not admit destination Forge project setup: {error}"))?;
-
-    create_result
+        .map_err(|error| format!("could not admit destination Forge project setup: {error}"))?
 }
 
 fn existing_worker_project_binding(

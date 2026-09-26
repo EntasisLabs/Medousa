@@ -383,7 +383,6 @@ fn apply_item_column_transition(item: &ProjectedWorkItem) {
     let event = event_for_column_transition(&item.detail, previous, item.card.column);
     if let Err(error) = store.record_column_transition(card_id, item.card.column, event) {
         tracing::warn!(%card_id, %error, "workspace column projection persistence admission failed");
-        return;
     }
 }
 

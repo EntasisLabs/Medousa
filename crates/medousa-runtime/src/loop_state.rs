@@ -486,7 +486,7 @@ mod tests {
                 "error": "worker unavailable",
             }),
         );
-        assert_eq!(guard.observe_batch(&[failed.clone()]), 1);
+        assert_eq!(guard.observe_batch(std::slice::from_ref(&failed)), 1);
         for status in ["pending", "queued", "running"] {
             let pending = invocation(
                 json!({"work_id":"w1"}),
@@ -497,7 +497,7 @@ mod tests {
                 }),
             );
             assert_eq!(guard.observe_batch(&[pending]), 0);
-            assert_eq!(guard.observe_batch(&[failed.clone()]), 1);
+            assert_eq!(guard.observe_batch(std::slice::from_ref(&failed)), 1);
         }
     }
 

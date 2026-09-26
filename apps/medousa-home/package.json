@@ -1,7 +1,7 @@
 {
   "name": "medousa-home",
-  "version": "0.10.3",
-  "description": "Medousa — Life Manageable",
+  "version": "0.11.0",
+  "description": "Medousa \u2014 Life Manageable",
   "type": "module",
   "scripts": {
     "dev": "vite dev",

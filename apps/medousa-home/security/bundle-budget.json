@@ -1,55 +1,54 @@
 {
   "schemaVersion": 2,
-  "notes": "FRONT-001 regression ceilings for the real desktop/mobile startup closures. These are binding regression ratchets, not evidence that the H09 target has been met.",
+  "notes": "FRONT-001 regression ceilings for kit.output.bundleStrategy=single (one packaged client JS/CSS payload). Platform shell isolation is enforced by source-level H09 tests, not chunk walks.",
   "manifest": ".svelte-kit/output/client/.vite/manifest.json",
+  "bundleStrategy": "single",
   "ceilings": {
     "desktop": {
       "shellEntry": "src/lib/components/layout/WorkshopShell.svelte",
-      "jsFiles": 265,
-      "cssFiles": 33,
-      "jsBytes": 3837380,
-      "jsGzipBytes": 1261963,
-      "cssBytes": 632387,
-      "cssGzipBytes": 103205,
-      "largestJsChunkBytes": 808641
+      "jsFiles": 1,
+      "cssFiles": 1,
+      "jsBytes": 12807150,
+      "jsGzipBytes": 3672559,
+      "cssBytes": 1406850,
+      "cssGzipBytes": 192533,
+      "largestJsChunkBytes": 12807150
     },
     "mobile": {
       "shellEntry": "src/lib/components/mobile/MobileShell.svelte",
-      "jsFiles": 299,
-      "cssFiles": 48,
-      "jsBytes": 6330311,
-      "jsGzipBytes": 1969215,
-      "cssBytes": 974253,
-      "cssGzipBytes": 155250,
-      "largestJsChunkBytes": 1454824
+      "jsFiles": 1,
+      "cssFiles": 1,
+      "jsBytes": 12807150,
+      "jsGzipBytes": 3672559,
+      "cssBytes": 1406850,
+      "cssGzipBytes": 192533,
+      "largestJsChunkBytes": 12807150
     }
   },
   "measured": {
+    "bundleStrategy": "single",
     "rootEntries": [
-      ".svelte-kit/generated/client-optimized/app.js",
-      ".svelte-kit/generated/client-optimized/nodes/0.js",
-      ".svelte-kit/generated/client-optimized/nodes/2.js",
-      "node_modules/@sveltejs/kit/src/runtime/client/entry.js"
+      "node_modules/@sveltejs/kit/src/runtime/client/bundle.js"
     ],
     "desktop": {
       "shellEntry": "src/lib/components/layout/WorkshopShell.svelte",
-      "jsFiles": 265,
-      "cssFiles": 33,
-      "jsBytes": 3837380,
-      "jsGzipBytes": 1261963,
-      "cssBytes": 632387,
-      "cssGzipBytes": 103205,
-      "largestJsChunkBytes": 808641
+      "jsFiles": 1,
+      "cssFiles": 1,
+      "jsBytes": 12807150,
+      "jsGzipBytes": 3672559,
+      "cssBytes": 1406850,
+      "cssGzipBytes": 192533,
+      "largestJsChunkBytes": 12807150
     },
     "mobile": {
       "shellEntry": "src/lib/components/mobile/MobileShell.svelte",
-      "jsFiles": 299,
-      "cssFiles": 48,
-      "jsBytes": 6330311,
-      "jsGzipBytes": 1969215,
-      "cssBytes": 974253,
-      "cssGzipBytes": 155250,
-      "largestJsChunkBytes": 1454824
+      "jsFiles": 1,
+      "cssFiles": 1,
+      "jsBytes": 12807150,
+      "jsGzipBytes": 3672559,
+      "cssBytes": 1406850,
+      "cssGzipBytes": 192533,
+      "largestJsChunkBytes": 12807150
     }
   }
 }

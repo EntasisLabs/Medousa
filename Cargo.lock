@@ -837,9 +837,9 @@ dependencies = [
 
 [[package]]
 name = "aws-lc-rs"
-version = "1.17.0"
+version = "1.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ec2f1fc3ec205783a5da9a7e6c1509cc69dedf09a1949e412c1e18469326d00"
+checksum = "b281d307588d634de920874890732659e2e7672f72b5e10e81badc1a8a83621e"
 dependencies = [
  "aws-lc-sys",
  "untrusted 0.7.1",
@@ -848,14 +848,15 @@ dependencies = [
 
 [[package]]
 name = "aws-lc-sys"
-version = "0.41.0"
+version = "0.45.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a2f9779ce85b93ab6170dd940ad0169b5766ff848247aff13bb788b832fe3f4"
+checksum = "9bff6c3b54fad79a2e60b8102caf565819711497c1f5f092f49508e2f5c31b27"
 dependencies = [
  "cc",
  "cmake",
  "dunce",
  "fs_extra",
+ "pkg-config",
 ]
 
 [[package]]
@@ -2926,7 +2927,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ccc2776f0c61eca1ca32528f85548abd1a4be8fb53d1b21c013e4f18da1e7090"
 dependencies = [
  "data-encoding",
- "syn 2.0.117",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -5523,7 +5524,7 @@ dependencies = [
  "ipnet",
  "jni 0.22.4",
  "rand 0.10.1",
- "rustls 0.23.40",
+ "rustls 0.23.45",
  "thiserror 2.0.18",
  "tinyvec",
  "tokio",
@@ -5571,7 +5572,7 @@ dependencies = [
  "parking_lot",
  "rand 0.10.1",
  "resolv-conf",
- "rustls 0.23.40",
+ "rustls 0.23.45",
  "smallvec 1.15.1",
  "system-configuration 0.7.0",
  "thiserror 2.0.18",
@@ -5885,7 +5886,7 @@ dependencies = [
  "http 1.4.0",
  "hyper 1.9.0",
  "hyper-util",
- "rustls 0.23.40",
+ "rustls 0.23.45",
  "rustls-native-certs",
  "tokio",
  "tokio-rustls 0.26.4",
@@ -6549,7 +6550,7 @@ dependencies = [
  "rand 0.10.1",
  "reqwest 0.13.3",
  "rustc-hash 2.1.2",
- "rustls 0.23.40",
+ "rustls 0.23.45",
  "rustls-pki-types",
  "serde",
  "smallvec 1.15.1",
@@ -6598,7 +6599,7 @@ dependencies = [
  "ndk-context",
  "portable-atomic",
  "rand 0.10.1",
- "rustls 0.23.40",
+ "rustls 0.23.45",
  "simple-dns",
  "strum 0.28.0",
  "tokio",
@@ -6663,7 +6664,7 @@ dependencies = [
  "postcard",
  "rand 0.10.1",
  "reqwest 0.13.3",
- "rustls 0.23.40",
+ "rustls 0.23.45",
  "rustls-pki-types",
  "serde",
  "serde_bytes",
@@ -6965,7 +6966,7 @@ dependencies = [
  "nom 8.0.0",
  "percent-encoding",
  "quoted_printable",
- "rustls 0.23.40",
+ "rustls 0.23.45",
  "socket2 0.6.3",
  "tokio",
  "url",
@@ -7563,7 +7564,7 @@ dependencies = [
 
 [[package]]
 name = "medousa"
-version = "0.10.3"
+version = "0.11.0"
 dependencies = [
  "a2",
  "anyhow",
@@ -7666,7 +7667,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-acp-client"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7684,7 +7685,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-adapter-common"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "futures-util",
@@ -7697,7 +7698,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-api-contract"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -7707,7 +7708,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-browser-bridge"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "medousa-browser-lite",
  "once_cell",
@@ -7718,7 +7719,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-browser-lite"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "chrono",
  "once_cell",
@@ -7733,7 +7734,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-code"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7758,7 +7759,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-computer"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "base64 0.22.1",
  "block2",
@@ -7767,7 +7768,6 @@ dependencies = [
  "medousa-computer-bridge",
  "medousa-world",
  "objc2",
- "objc2-core-foundation",
  "objc2-core-graphics",
  "objc2-foundation",
  "objc2-screen-capture-kit",
@@ -7778,7 +7778,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-computer-bridge"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "medousa-world",
  "serde",
@@ -7787,7 +7787,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-discord"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "medousa-adapter-common",
@@ -7800,7 +7800,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-engine"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "async-trait",
  "cap-fs-ext",
@@ -7818,7 +7818,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-forge"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "chrono",
  "fs2",
@@ -7837,7 +7837,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-host"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "dirs 5.0.1",
  "libc",
@@ -7848,7 +7848,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-install-support"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "cap-fs-ext",
  "cap-std",
@@ -7882,7 +7882,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-iroh-http"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "httparse",
@@ -7893,7 +7893,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-local-credential"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -7910,7 +7910,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-local-engine"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "axum 0.8.9",
@@ -7924,7 +7924,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-local-inference"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "ash",
@@ -7950,7 +7950,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-mcp-gateway"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7972,7 +7972,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-mcp-server"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "reqwest 0.12.28",
@@ -7985,7 +7985,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-runtime"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -8008,7 +8008,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-sdk"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "bytes",
  "eventsource-stream",
@@ -8025,7 +8025,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-sdk-iroh"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "bytes",
  "futures-util",
@@ -8039,7 +8039,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-secrets"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "keyring",
@@ -8053,7 +8053,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-session"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8076,7 +8076,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-slack"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "medousa-adapter-common",
@@ -8090,7 +8090,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-store"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "cap-fs-ext",
  "cap-std",
@@ -8105,7 +8105,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-telegram"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "medousa-adapter-common",
@@ -8119,7 +8119,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-tool-macros"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "async-trait",
  "proc-macro2",
@@ -8133,7 +8133,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-types"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -8147,7 +8147,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-types-schema"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "medousa-types",
  "schemars 0.8.22",
@@ -8156,7 +8156,7 @@ dependencies = [
 
 [[package]]
 name = "medousa-world"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "serde",
  "thiserror 2.0.18",
@@ -9039,7 +9039,7 @@ dependencies = [
  "noq-udp",
  "pin-project-lite",
  "rustc-hash 2.1.2",
- "rustls 0.23.40",
+ "rustls 0.23.45",
  "socket2 0.6.3",
  "thiserror 2.0.18",
  "tokio",
@@ -9065,7 +9065,7 @@ dependencies = [
  "rand_pcg",
  "ring",
  "rustc-hash 2.1.2",
- "rustls 0.23.40",
+ "rustls 0.23.45",
  "rustls-pki-types",
  "slab",
  "sorted-index-buffer",
@@ -11416,7 +11416,7 @@ dependencies = [
  "quinn-proto",
  "quinn-udp",
  "rustc-hash 2.1.2",
- "rustls 0.23.40",
+ "rustls 0.23.45",
  "socket2 0.6.3",
  "thiserror 2.0.18",
  "tokio",
@@ -11438,7 +11438,7 @@ dependencies = [
  "rand_pcg",
  "ring",
  "rustc-hash 2.1.2",
- "rustls 0.23.40",
+ "rustls 0.23.45",
  "rustls-pki-types",
  "slab",
  "thiserror 2.0.18",
@@ -12114,7 +12114,7 @@ dependencies = [
  "percent-encoding",
  "pin-project-lite",
  "quinn",
- "rustls 0.23.40",
+ "rustls 0.23.45",
  "rustls-pki-types",
  "serde",
  "serde_json",
@@ -12163,7 +12163,7 @@ dependencies = [
  "percent-encoding",
  "pin-project-lite",
  "quinn",
- "rustls 0.23.40",
+ "rustls 0.23.45",
  "rustls-pki-types",
  "rustls-platform-verifier",
  "serde",
@@ -12678,16 +12678,16 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.40"
+version = "0.23.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef86cd5876211988985292b91c96a8f2d298df24e75989a43a3c73f2d4d8168b"
+checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
 dependencies = [
  "aws-lc-rs",
  "log",
  "once_cell",
  "ring",
  "rustls-pki-types",
- "rustls-webpki 0.103.13",
+ "rustls-webpki 0.103.15",
  "subtle",
  "zeroize",
 ]
@@ -12743,10 +12743,10 @@ dependencies = [
  "jni 0.22.4",
  "log",
  "once_cell",
- "rustls 0.23.40",
+ "rustls 0.23.45",
  "rustls-native-certs",
  "rustls-platform-verifier-android",
- "rustls-webpki 0.103.13",
+ "rustls-webpki 0.103.15",
  "security-framework 3.7.0",
  "security-framework-sys",
  "webpki-root-certs",
@@ -12782,9 +12782,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.13"
+version = "0.103.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e"
+checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
 dependencies = [
  "aws-lc-rs",
  "ring",
@@ -14039,7 +14039,7 @@ dependencies = [
  "memchr",
  "once_cell",
  "percent-encoding",
- "rustls 0.23.40",
+ "rustls 0.23.45",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -14509,7 +14509,7 @@ dependencies = [
  "path-clean",
  "reqwest 0.13.3",
  "ring",
- "rustls 0.23.40",
+ "rustls 0.23.45",
  "rustls-pki-types",
  "semver",
  "serde",
@@ -15571,7 +15571,7 @@ version = "0.26.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1729aa945f29d91ba541258c8df89027d5792d85a8841fb65e8bf0f4ede4ef61"
 dependencies = [
- "rustls 0.23.40",
+ "rustls 0.23.45",
  "tokio",
 ]
 
@@ -15611,7 +15611,7 @@ checksum = "d25a406cddcc431a75d3d9afc6a7c0f7428d4891dd973e4d54c56b46127bf857"
 dependencies = [
  "futures-util",
  "log",
- "rustls 0.23.40",
+ "rustls 0.23.45",
  "rustls-pki-types",
  "tokio",
  "tokio-rustls 0.26.4",
@@ -15627,7 +15627,7 @@ checksum = "8f72a05e828585856dacd553fba484c242c46e391fb0e58917c942ee9202915c"
 dependencies = [
  "futures-util",
  "log",
- "rustls 0.23.40",
+ "rustls 0.23.45",
  "rustls-native-certs",
  "rustls-pki-types",
  "tokio",
@@ -16233,7 +16233,7 @@ dependencies = [
  "httparse",
  "log",
  "rand 0.9.4",
- "rustls 0.23.40",
+ "rustls 0.23.45",
  "rustls-pki-types",
  "sha1",
  "thiserror 2.0.18",
@@ -16253,7 +16253,7 @@ dependencies = [
  "httparse",
  "log",
  "rand 0.9.4",
- "rustls 0.23.40",
+ "rustls 0.23.45",
  "rustls-pki-types",
  "sha1",
  "thiserror 2.0.18",
@@ -16539,7 +16539,7 @@ dependencies = [
  "flate2",
  "log",
  "once_cell",
- "rustls 0.23.40",
+ "rustls 0.23.45",
  "rustls-pki-types",
  "serde",
  "serde_json",
@@ -16558,7 +16558,7 @@ dependencies = [
  "flate2",
  "log",
  "percent-encoding",
- "rustls 0.23.40",
+ "rustls 0.23.45",
  "rustls-pki-types",
  "ureq-proto",
  "utf8-zero",
