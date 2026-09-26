@@ -237,31 +237,27 @@ open `{daemon}/v1/forge/preview/{token}/…`, which reverse-proxies to
 HMR through the proxy is best-effort; prefer Stop/restart for broken live reload.
 
 Forge records a canonical `active_attempts` set and resolves every lease
-mutation against its addressed attempt. The legacy singular `active_attempt`
-projection remains serialized for snapshot/client compatibility during the
-Slice 5 migration. `Ready` and `Executing` work can admit another executor;
-every active attempt has a distinct private worktree and branch.
+mutation against its addressed execution record. The legacy singular
+`active_attempt` projection remains serialized for snapshot/client
+compatibility. Attempts fence executor custody and evidence; they do not
+normally define workspace identity.
 
-Forge uses isolated attempts. The first isolated attempt forks a private branch
-and worktree from the undertaking staging worktree, reproducing its
-tracked, staged, deleted, binary, and regular untracked dirty state without
-mutating the staging directory. Unsafe paths and untracked symlinks fail the
-fork and remove its partial branch/worktree. The attempt owns that environment;
-seal captures it, interruption preserves it, reconciliation recognizes it, and
-discard reclaims it. A restarted turn reuses that preserved workspace after
-verifying its Git root and branch, so unfinished edits survive without creating
-one worktree per turn. When peers run concurrently, each new peer receives a
-fresh isolated worktree rather than reusing an active environment.
+An isolated undertaking owns one durable branch and worktree from provisioning
+through review. `POST /v1/forge/items/{id}/attempts` starts a fenced execution
+lease in that workspace and returns its `attempt_id`, `worktree`, and `branch`.
+Interrupting or restarting execution keeps the same path, branch, and unfinished
+files. It does not create an `-aN` branch or a second worktree. A non-collaborative
+executor is rejected while the workspace is active; same-session Coder peers may
+share it under the Coder claim layer.
 
-`POST /v1/forge/items/{id}/attempts` returns the full fenced lease plus top-level
-`attempt_id`, `worktree`, and `branch` fields. Forge item projections expose the
-current lease-owned workspace through `environment`; the durable item still
-retains its original staging anchor internally.
-
-Forked attempt environments also expose an optional `derived_from` object with
-the source `branch`, source `generation`, and immutable `forked_at` timestamp.
-The field is absent for staging environments and snapshots created before
-lineage metadata was introduced.
+Private attempt environments remain an explicit internal primitive for genuine
+parallel experiments and review candidates. Creating one deliberately forks the
+undertaking workspace, including its tracked, staged, deleted, binary, and
+regular untracked state. Unsafe paths and untracked symlinks fail the fork and
+remove its partial branch/worktree. Such a candidate exposes `derived_from` with
+the source branch, generation, and immutable `forked_at` timestamp, and discard
+reclaims both the candidate and undertaking environments. Normal execution has
+no attempt-level environment and resolves directly to the undertaking workspace.
 
 Sealing, interruption, and failure are peer-safe. Ending one attempt leaves the
 item `Executing` while any healthy lease remains. After the last active attempt
@@ -276,16 +272,16 @@ attempt, evidence digest, baseline, and reviewed head.
 
 ### Concurrent Coder claims
 
-Private attempt worktrees prevent direct filesystem races, but agents can still
-touch the same logical code or external resource. Before every Coder tool call,
+The durable undertaking workspace removes branch-transfer friction. Coder claims
+coordinate agents that intentionally collaborate in that directory, as well as
+explicit candidate forks that touch the same logical code or external resource. Before every Coder tool call,
 the runtime infers `read`, `write`, or `verify` claims from the governed tool and
 its targets. A model's required `intent` explains the operation; it cannot
 choose, weaken, or omit the inferred claims.
 
 Worktree-absolute editor and LSP paths are canonicalized to undertaking-relative
-file identities. Ordinary file overlaps remain admissible across isolated
-attempts and are surfaced to every affected agent through the shared ambient
-frame, causal activity events, and ranked pointers. Source mutations retain
+file identities. Ordinary file overlaps are surfaced to every affected agent through the shared
+ambient frame, causal activity events, and ranked pointers. Source mutations retain
 their existing digest checks, while integration remains bound to exact evidence
 and Git baselines.
 

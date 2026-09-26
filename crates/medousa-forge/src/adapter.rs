@@ -231,18 +231,10 @@ mod tests {
         .unwrap();
         assert!(commands.contains("hello-from-script"));
         assert!(commands.contains("\"exit_code\":0"));
-        // The script's work was checkpointed in its private attempt workspace.
-        let env = attempt.environment.as_ref().unwrap();
+        // Normal execution stays in the undertaking's durable workspace.
+        assert!(attempt.environment.is_none());
+        let env = item.environment_for_attempt(&attempt.id).unwrap();
         assert!(env.worktree.join("script-output.txt").exists());
-        assert!(
-            !item
-                .environment
-                .as_ref()
-                .unwrap()
-                .worktree
-                .join("script-output.txt")
-                .exists()
-        );
     }
 
     #[test]

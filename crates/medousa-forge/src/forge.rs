@@ -25,7 +25,7 @@ fn executor_session_id(executor: &ExecutorDescriptor) -> Option<&str> {
         .filter(|value| !value.is_empty())
 }
 
-fn attached_coder_collaboration_allowed(item: &WorkItem, incoming: &ExecutorDescriptor) -> bool {
+fn coder_collaboration_allowed(item: &WorkItem, incoming: &ExecutorDescriptor) -> bool {
     if incoming.kind != "medousa-coder" {
         return false;
     }
@@ -989,6 +989,36 @@ impl Forge {
         Ok(())
     }
 
+    fn verify_durable_workspace(&self, item: &WorkItem, environment: &GovernedEnv) -> Result<()> {
+        if environment.kind == crate::model::EnvironmentKind::AttachedCheckout {
+            return self.verify_attached_checkout(item, environment);
+        }
+        if !environment.worktree.exists() {
+            return Err(ForgeError::EnvironmentDrift(format!(
+                "undertaking worktree is missing: {}",
+                environment.worktree.display()
+            )));
+        }
+        let expected_root = std::fs::canonicalize(&environment.worktree)?;
+        let actual_root = std::fs::canonicalize(self.git.worktree_root(&environment.worktree)?)?;
+        if actual_root != expected_root {
+            return Err(ForgeError::EnvironmentDrift(format!(
+                "undertaking worktree root changed: expected {}, found {}",
+                expected_root.display(),
+                actual_root.display()
+            )));
+        }
+        let branch = self.git.current_branch(&environment.worktree)?;
+        if branch.as_deref() != Some(environment.branch.as_str()) {
+            return Err(ForgeError::EnvironmentDrift(format!(
+                "undertaking branch changed: expected {}, found {}",
+                environment.branch,
+                branch.as_deref().unwrap_or("detached HEAD")
+            )));
+        }
+        Ok(())
+    }
+
     pub(crate) fn verify_attached_checkout(
         &self,
         item: &WorkItem,
@@ -1162,9 +1192,10 @@ impl Forge {
         self.begin_attempt_inner(work_id, executor, pid, actor, false, None, false)
     }
 
-    /// Begin an attempt with a private worktree that preserves the staging
-    /// worktree's current dirty state. Integrations migrate to this entry point
-    /// in Slice 5C.
+    /// Begin an explicit candidate attempt in a private worktree. Normal
+    /// execution should use [`Self::begin_workspace_attempt`], which keeps the
+    /// undertaking's single durable workspace. This API exists for deliberate
+    /// parallel experiments and review candidates.
     pub fn begin_isolated_attempt(
         &self,
         work_id: &WorkId,
@@ -1175,8 +1206,9 @@ impl Forge {
         self.begin_attempt_inner(work_id, executor, pid, actor, true, None, false)
     }
 
-    /// Resume work from one exact preserved attempt environment. Used when a
-    /// reviewer selects an older concurrent candidate for another pass.
+    /// Resume one exact explicit candidate environment. Attempts that used the
+    /// undertaking workspace should instead resume through
+    /// [`Self::begin_workspace_attempt_from`].
     pub fn begin_isolated_attempt_from(
         &self,
         work_id: &WorkId,
@@ -1196,9 +1228,9 @@ impl Forge {
         )
     }
 
-    /// Begin an attempt using the placement selected when the item was
-    /// registered. Callers use this instead of branching on environment kind
-    /// throughout the daemon.
+    /// Begin an execution lease in the undertaking's durable workspace.
+    /// Workspace placement is selected once when the item is provisioned;
+    /// ordinary attempts never create another branch or worktree.
     pub fn begin_workspace_attempt(
         &self,
         work_id: &WorkId,
@@ -1206,18 +1238,14 @@ impl Forge {
         pid: Option<u32>,
         actor: &ActorRef,
     ) -> Result<(WorkItem, ExecutionLease)> {
-        let item = self.load(work_id)?;
-        if item.uses_attached_checkout() {
-            self.begin_attempt(work_id, executor, pid, actor)
-        } else {
-            self.begin_isolated_attempt(work_id, executor, pid, actor)
-        }
+        self.begin_attempt(work_id, executor, pid, actor)
     }
 
-    /// Begin a Medousa Coder attempt while another Coder from the same chat is
-    /// still using an attached checkout. Forge continues to fence each attempt;
-    /// the Coder shared-space claim layer arbitrates overlapping mutations.
-    /// Other executors and other sessions retain exclusive attached custody.
+    /// Begin a Medousa Coder lease while another Coder from the same chat is
+    /// using the undertaking workspace. Forge fences each execution record;
+    /// the Coder shared-space claim layer arbitrates overlapping mutations in
+    /// the shared directory. Other executors and sessions retain exclusive
+    /// workspace custody.
     pub fn begin_collaborative_workspace_attempt(
         &self,
         work_id: &WorkId,
@@ -1225,12 +1253,7 @@ impl Forge {
         pid: Option<u32>,
         actor: &ActorRef,
     ) -> Result<(WorkItem, ExecutionLease)> {
-        let item = self.load(work_id)?;
-        if item.uses_attached_checkout() {
-            self.begin_attempt_inner(work_id, executor, pid, actor, false, None, true)
-        } else {
-            self.begin_isolated_attempt(work_id, executor, pid, actor)
-        }
+        self.begin_attempt_inner(work_id, executor, pid, actor, false, None, true)
     }
 
     pub fn begin_workspace_attempt_from(
@@ -1242,17 +1265,20 @@ impl Forge {
         actor: &ActorRef,
     ) -> Result<(WorkItem, ExecutionLease)> {
         let item = self.load(work_id)?;
-        if item.uses_attached_checkout() {
-            if item.attempt(source_attempt_id).is_none() {
-                return Err(ForgeError::AttemptNotFound(source_attempt_id.clone()));
-            }
-            self.begin_attempt(work_id, executor, pid, actor)
-        } else {
+        let source = item
+            .attempt(source_attempt_id)
+            .ok_or_else(|| ForgeError::AttemptNotFound(source_attempt_id.clone()))?;
+        if source.environment.is_some() {
             self.begin_isolated_attempt_from(work_id, source_attempt_id, executor, pid, actor)
+        } else {
+            self.begin_attempt(work_id, executor, pid, actor)
         }
     }
 
-    #[expect(clippy::too_many_arguments, reason = "shared admission boundary keeps the caller's exact executor, revision, and collaboration policy together")]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "shared admission boundary keeps the caller's exact executor, revision, and collaboration policy together"
+    )]
     fn begin_attempt_inner(
         &self,
         work_id: &WorkId,
@@ -1277,24 +1303,23 @@ impl Forge {
                 action: "begin attempt",
             });
         }
-        if item.uses_attached_checkout() {
-            if isolated {
-                return Err(ForgeError::EnvironmentDrift(
-                    "attached checkouts cannot be forked into an isolated attempt".into(),
-                ));
-            }
+        if item.uses_attached_checkout() && isolated {
+            return Err(ForgeError::EnvironmentDrift(
+                "attached checkouts cannot be forked into an isolated attempt".into(),
+            ));
+        }
+        if !isolated {
             if item.has_active_attempts()
-                && !(allow_coder_collaboration
-                    && attached_coder_collaboration_allowed(&item, &executor))
+                && !(allow_coder_collaboration && coder_collaboration_allowed(&item, &executor))
             {
                 return Err(ForgeError::EnvironmentDrift(
-                    "the attached checkout already has an active executor".into(),
+                    "the undertaking workspace already has an active executor".into(),
                 ));
             }
             let environment = item.environment.as_ref().ok_or_else(|| {
-                ForgeError::EnvironmentDrift("attached checkout is not provisioned".into())
+                ForgeError::EnvironmentDrift("undertaking workspace is not provisioned".into())
             })?;
-            self.verify_attached_checkout(&item, environment)?;
+            self.verify_durable_workspace(&item, environment)?;
         }
         let attempt_id = crate::model::AttemptId::new();
         let attempt_seq = item.next_attempt_seq();
@@ -3855,6 +3880,81 @@ mod tests {
                 .unwrap()
                 .flatten()
                 .all(|entry| entry.path().extension().and_then(|ext| ext.to_str()) != Some("gz"))
+        );
+    }
+
+    #[test]
+    fn workspace_attempts_reuse_the_undertaking_worktree_across_restarts() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let item = forge
+            .register(
+                "durable",
+                "one workspace",
+                &fx.repo,
+                "main",
+                "user-1",
+                &actor(),
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &actor()).unwrap();
+        let workspace = item.environment.clone().unwrap();
+        let worktree_count = fx.git.worktree_list(&fx.repo).unwrap().len();
+
+        let (item, first) = forge
+            .begin_workspace_attempt(&item.id, script_executor(), None, &actor())
+            .unwrap();
+        assert!(
+            item.attempt(&first.attempt_id)
+                .unwrap()
+                .environment
+                .is_none()
+        );
+        assert_eq!(
+            item.environment_for_attempt(&first.attempt_id),
+            Some(&workspace)
+        );
+        assert_eq!(
+            fx.git.worktree_list(&fx.repo).unwrap().len(),
+            worktree_count
+        );
+        fs::write(workspace.worktree.join("unfinished.txt"), "still here\n").unwrap();
+
+        assert!(matches!(
+            forge.begin_workspace_attempt(&item.id, script_executor(), None, &actor()),
+            Err(ForgeError::EnvironmentDrift(message))
+                if message.contains("workspace already has an active executor")
+        ));
+        forge
+            .interrupt_attempt(&first, RecoveryDisposition::RestartAllowed, &actor())
+            .unwrap();
+
+        let (item, second) = forge
+            .begin_workspace_attempt_from(
+                &item.id,
+                &first.attempt_id,
+                script_executor(),
+                None,
+                &actor(),
+            )
+            .unwrap();
+        assert!(
+            item.attempt(&second.attempt_id)
+                .unwrap()
+                .environment
+                .is_none()
+        );
+        assert_eq!(
+            item.environment_for_attempt(&second.attempt_id),
+            Some(&workspace)
+        );
+        assert_eq!(
+            fx.git.worktree_list(&fx.repo).unwrap().len(),
+            worktree_count
+        );
+        assert_eq!(
+            fs::read_to_string(workspace.worktree.join("unfinished.txt")).unwrap(),
+            "still here\n"
         );
     }
 

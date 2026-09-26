@@ -560,7 +560,7 @@ mod tests {
     }
 
     #[test]
-    fn active_attempt_entry_uses_the_private_worktree() {
+    fn active_attempt_entry_uses_the_undertaking_worktree() {
         let (_repo, _forge_root, forge, work_id) = ready_work();
         let work_id = WorkId::from(work_id);
         let staging = forge
@@ -569,7 +569,7 @@ mod tests {
             .environment
             .expect("staging environment");
         let (item, lease) = forge
-            .begin_isolated_attempt(
+            .begin_workspace_attempt(
                 &work_id,
                 medousa_forge::model::ExecutorDescriptor {
                     kind: "medousa-coder".into(),
@@ -578,8 +578,8 @@ mod tests {
                 None,
                 &Forge::system_actor(),
             )
-            .expect("begin isolated attempt");
-        let private = item
+            .expect("begin workspace attempt");
+        let workspace = item
             .environment_for_attempt(&lease.attempt_id)
             .expect("attempt environment");
 
@@ -596,16 +596,11 @@ mod tests {
 
         assert_eq!(
             entry.worktree,
-            std::fs::canonicalize(&private.worktree).expect("canonical private worktree")
+            std::fs::canonicalize(&workspace.worktree).expect("canonical undertaking worktree")
         );
-        assert_eq!(entry.branch, private.branch);
-        let memory_parent = entry.memory_parent.as_ref().expect("memory parent");
-        assert_eq!(memory_parent.branch, staging.branch);
-        assert_eq!(memory_parent.environment_generation, staging.generation);
-        assert_ne!(
-            entry.worktree,
-            std::fs::canonicalize(&staging.worktree).expect("canonical staging worktree")
-        );
+        assert_eq!(entry.branch, workspace.branch);
+        assert!(entry.memory_parent.is_none());
+        assert_eq!(workspace, &staging);
         assert_eq!(entry.editor.active_path.as_deref(), Some("src/lib.rs"));
     }
 

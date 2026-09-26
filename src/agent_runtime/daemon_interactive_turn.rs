@@ -1524,9 +1524,8 @@ async fn run_agent_turn_inner(
             let can_rebind_source = source_attempt.as_ref().is_some_and(|source| {
                 forge.load(&work_id).is_ok_and(|item| {
                     !item.has_active_attempts()
-                        && item.attempt(source).is_some_and(|attempt| {
-                            attempt.environment.is_some() || item.uses_attached_checkout()
-                        })
+                        && item.attempt(source).is_some()
+                        && item.environment_for_attempt(source).is_some()
                 })
             });
             if source_attempt.is_some()

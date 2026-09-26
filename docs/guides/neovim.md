@@ -109,17 +109,16 @@ full coding tools activate on the following bound turn.
 Detaching leaves Coder active in its restricted setup phase. When the governed
 worktree is visible on the Neovim host, the plugin offers to change directory;
 remote workshop paths remain daemon-owned and are never treated as local paths.
-Coder executes in a private attempt worktree. Runtime refreshes expose that same
-path through the existing project binding, and interrupted turns preserve it—
-including unfinished edits—for the next turn without mutating the staging
-worktree.
-Separate conversations may run agents against the same project concurrently;
-each lease owns a different worktree and branch.
+Coder executes in the undertaking's governed worktree. Runtime refreshes keep
+that same path through the existing project binding, and interrupted turns
+preserve it—including unfinished edits—for the next turn. Starting another turn
+does not create an `-aN` branch or another worktree.
 
-Coder still sees logical overlap across those private worktrees. Normal file
-overlap is reported as coordination context, while shared-risk operations such
-as lockfiles, migrations, ports, and deployment are serialized with an
-actionable conflict result instead of racing silently.
+Coder coordinates same-project collaborators in that durable workspace. Normal
+file overlap is reported as coordination context, while shared-risk operations
+such as lockfiles, migrations, ports, and deployment are serialized with an
+actionable conflict result instead of racing silently. Additional worktrees are
+reserved for an explicitly requested experiment or alternative candidate.
 
 Mode changes proposed by Medousa appear as a Switch/Not now picker after the
 turn. The workshop's configured expiry and auto-accept policy remains
