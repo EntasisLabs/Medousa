@@ -90,6 +90,8 @@ describe("css inventory and cascade", () => {
       "",
     );
     expect(sheet).not.toContain("@layer");
+    expect(sheet).not.toMatch(/input\[type="text"\]/);
+    expect(source("postcss.config.js")).toContain("restoreCascadeLayers");
     expect(source("src/app.postcss")).toMatch(/@import[^;]*input-chrome\.postcss/);
     expect(source("src/app.postcss")).toMatch(/@import[^;]*workshop-primitives\.postcss/);
   });
