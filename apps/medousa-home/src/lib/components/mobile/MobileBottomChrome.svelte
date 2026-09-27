@@ -1,4 +1,10 @@
 <script lang="ts">
+  import type { createAgentSessionController } from "$lib/chat/agentSessionController.svelte";
+  import type { createExternalConversationController } from "$lib/chat/externalConversationController.svelte";
+  let { agentSession, externalConversation }: {
+    agentSession: ReturnType<typeof createAgentSessionController>;
+    externalConversation: ReturnType<typeof createExternalConversationController>;
+  } = $props();
   import MobileChatComposer from "$lib/components/mobile/MobileChatComposer.svelte";
   import MedousaLiveBar from "$lib/components/mobile/MedousaLiveBar.svelte";
   import { isTauriIos } from "$lib/platform";
@@ -30,6 +36,6 @@
 >
   {#if isTauriIos()}<MedousaLiveBar />{/if}
   {#if showComposer}
-    <MobileChatComposer />
+    <MobileChatComposer {agentSession} {externalConversation} />
   {/if}
 </div>

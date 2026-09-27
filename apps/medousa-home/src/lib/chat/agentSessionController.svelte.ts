@@ -3,6 +3,7 @@
  * ChatStore still owns turn start (`beginTurn` / `startTurnStream`).
  */
 
+import { untrack } from "svelte";
 import {
   cancelAgentSession,
   createAgentSession,
@@ -215,6 +216,22 @@ export function createAgentSessionController() {
     agentConfigOptions = response.config_options;
     setSessionAgentConfigOptions(chat.sessionId, agentConfigOptions);
   }
+
+  $effect(() => {
+    chat.workshopScopeId;
+    const { sessionId, runtimeChoice } = syncFromFocusedSession();
+    if (isExternalAgentRuntime(runtimeChoice)) {
+      // Busy counters belong outside this effect's dependency graph.
+      void untrack(() => synchronizeAgentSession(sessionId, runtimeChoice)).catch(() => {
+        // First send retries and surfaces connection/provider errors.
+      });
+    }
+  });
+
+  $effect(() => {
+    window.addEventListener("medousa-code-project-binding-changed", onCodeProjectBindingChanged as EventListener);
+    return () => window.removeEventListener("medousa-code-project-binding-changed", onCodeProjectBindingChanged as EventListener);
+  });
 
   return {
     get sessionRuntime() {

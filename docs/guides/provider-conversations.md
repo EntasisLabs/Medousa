@@ -26,9 +26,25 @@ If the callback key is lost or exposed, use **Rotate callback key** in External 
 2. In **Settings → External Agents → Muse**, choose **Add session → Find Muse chat**. Send the one-time code Medousa shows in the normal Muse chat on your phone. Use **Check for code** if the page has not updated. The linked adapter uses your outgoing code to discover the chat's internal ID; you do not need a phone number or a reply containing the code. **WhatsApp linked** only confirms that the adapter paired with your account; it does not confirm that the Muse chat reached the adapter.
 3. When Medousa reports that it observed the chat ID, you can register the session. Registration records the WhatsApp chat ID only. A test message can appear in WhatsApp while failing to reach Muse's own integration, and Muse's reply can remain visible only on the phone. Do not rely on this route for tasks until a message sent from Medousa appears in Muse's app and its reply appears back in Medousa.
 
-In our linked-device test, a message sent from Medousa appeared in WhatsApp and was marked **Read**, but it did not appear in Muse's app and Muse did not reply. A message sent from the official WhatsApp Web linked device did appear in Muse's app; Muse's reply appeared in both WhatsApp Web and Muse's app. WhatsApp delivery or read status therefore does not verify that Muse received a Medousa message. The adapter receives Muse's encrypted bot frames but its current WhatsApp library does not surface them as ordinary incoming messages. Discovery expiring without observing your outgoing code means the adapter has not seen the chat. The linked-device WhatsApp adapter is experimental. If a send is uncertain, check Muse's app before sending the same request again.
+Muse uses an additional encrypted envelope beyond ordinary WhatsApp messages. The adapter obtains Muse's pairing secret from authenticated WhatsApp device sync, wraps outgoing text for Muse, and decrypts and extracts text from Muse's rich replies. It supports text conversations; images and other rich content are not imported. If the adapter reports that the Muse pairing secret is unavailable, keep your phone connected so linked-device sync can finish, and verify that Muse is connected in WhatsApp before retrying.
+
+WhatsApp delivery or **Read** status still does not verify that Muse received a request: older adapter builds could produce a visible, read message without reaching Muse. Verify a round trip with a harmless test in your own session. Discovery expiring without observing your outgoing code means the adapter has not seen the chat. The linked-device WhatsApp adapter remains experimental. If a send is uncertain, check Muse's app before sending the same request again.
 
 If the adapter connects in a terminal but Medousa keeps showing **Waiting for the workshop’s WhatsApp pairing QR**, check which `medousa_whatsapp` binary the launcher used. Older adapter builds can pair in the terminal but do not publish QR or connected status to the workshop. Update the adapter package and restart it; an already-paired session reconnects from its session database.
+
+## On iPhone and Android
+
+Open **Chat context** above the composer, then **Runtime** (above Mode). Choose
+**Muse** or **Grok Bot**, then choose the registered session or bot in that same
+sheet. To change it later, open Chat context and tap **Muse session** or **Grok
+bot**. Sending and the transcript follow that selection; native Mode, Project,
+and Workers controls return when you choose Medousa.
+
+The list belongs to the currently connected workshop. The embedded Personal
+workshop on your phone has its own list. To use a Muse session already running
+on your Mac, select that Mac's workshop on the phone first. The Mac keeps its
+WhatsApp adapter running; the installed phone app uses its bundled interface
+and does not need a Vite server.
 
 ## What the status means
 

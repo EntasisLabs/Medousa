@@ -11,6 +11,7 @@ import { externalConversationMessages } from "$lib/utils/externalConversationMes
 export function createExternalConversationController(input: {
   provider: () => ExternalProvider | null;
   sessionId: () => string;
+  scope: () => string | null;
   offline: () => boolean;
   visible: () => boolean;
 }) {
@@ -37,13 +38,14 @@ export function createExternalConversationController(input: {
     const provider = input.provider();
     if (!provider || input.offline()) return;
     const sessionId = input.sessionId();
+    const scope = input.scope();
     const sequence = ++refreshSeq;
     if (!loaded) loading = true;
     try {
       const next = await listExternalConversations();
       if (sequence !== refreshSeq) return;
+      if (input.provider() !== provider || input.sessionId() !== sessionId || input.scope() !== scope) return;
       conversations = next;
-      if (input.provider() !== provider || input.sessionId() !== sessionId) return;
       const available = next.filter((item) => item.provider === provider);
       const desired = selectedId ?? getExternalConversationSelection(sessionId, provider);
       if (desired && available.some((item) => item.id === desired)) {
@@ -66,7 +68,7 @@ export function createExternalConversationController(input: {
 
   async function send(text: string, hasExtraInputs: boolean) {
     if (!selected) {
-      error = "Choose a registered session or bot from the model picker.";
+      error = "Choose a registered Muse session or Grok bot before sending.";
       throw new Error(error);
     }
     if (hasExtraInputs) {
@@ -76,12 +78,18 @@ export function createExternalConversationController(input: {
     if (busy) throw new Error("A message is still sending.");
     busy = true;
     error = null;
+    const scope = input.scope();
+    const sessionId = input.sessionId();
+    const provider = input.provider();
+    const current = () => input.scope() === scope && input.sessionId() === sessionId && input.provider() === provider;
     try {
       const updated = await sendExternalConversationMessage(selected.id, text, crypto.randomUUID());
-      conversations = conversations.map((item) => item.id === updated.id ? updated : item);
+      if (current()) conversations = conversations.map((item) => item.id === updated.id ? updated : item);
     } catch (cause) {
-      await refresh();
-      error = cause instanceof Error ? cause.message : String(cause);
+      if (current()) {
+        await refresh();
+        if (current()) error = cause instanceof Error ? cause.message : String(cause);
+      }
       throw cause;
     } finally {
       busy = false;
@@ -91,6 +99,11 @@ export function createExternalConversationController(input: {
   $effect(() => {
     const provider = input.provider();
     const sessionId = input.sessionId();
+    input.scope();
+    refreshSeq += 1;
+    conversations = [];
+    loading = false;
+    error = null;
     loaded = false;
     selectedId = provider ? getExternalConversationSelection(sessionId, provider) : null;
     if (provider) void refresh();

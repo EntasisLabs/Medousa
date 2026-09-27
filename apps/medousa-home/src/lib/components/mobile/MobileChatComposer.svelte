@@ -1,4 +1,10 @@
 <script lang="ts">
+  import type { createAgentSessionController } from "$lib/chat/agentSessionController.svelte";
+  import type { createExternalConversationController } from "$lib/chat/externalConversationController.svelte";
+  let { agentSession, externalConversation }: {
+    agentSession: ReturnType<typeof createAgentSessionController>;
+    externalConversation: ReturnType<typeof createExternalConversationController>;
+  } = $props();
   import MobileChatContext from "./MobileChatContext.svelte";
   import { Mic } from "@lucide/svelte";
   import { isTauriIos } from "$lib/platform";
@@ -11,19 +17,19 @@
   import ChatComposerBar from "$lib/components/chat/ChatComposerBar.svelte";
   import VaultChatContextChip from "$lib/components/vault/VaultChatContextChip.svelte";
   import { applyActiveAgentPrompt } from "$lib/utils/activeAgentPrompt";
-  import { prepareInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
+  import { submitChatTurn } from "$lib/chat/submitTurnController";
+  import { isProviderConversationRuntime } from "$lib/utils/sessionAgentRuntime";
+  import { composerAttachments } from "$lib/stores/composerAttachments.svelte";
   import { haptic } from "$lib/haptics";
   import { chat } from "$lib/stores/chat.svelte";
   import { bots } from "$lib/stores/bots.svelte";
   import { connection } from "$lib/stores/connection.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
-  import { executionTargets } from "$lib/stores/executionTargets.svelte";
-  import { voicePresets } from "$lib/stores/voicePresets.svelte";
   import { switchMobileTab } from "$lib/mobileNavigation";
   import { pendingComposeLaunch } from "$lib/composeLaunch";
   import { layout } from "$lib/runtime/layout.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
-  import { createTurnTicket, getSessionAgentMode, getSessionCodeBinding } from "$lib/daemon";
+  import { getSessionAgentMode, getSessionCodeBinding } from "$lib/daemon";
   import { pendingMediaLabels } from "$lib/utils/chatMediaUpload";
   import { hasVisionMediaRefs } from "$lib/types/media";
   import { visionProfileReady } from "$lib/types/inferenceProfiles";
@@ -34,6 +40,13 @@
   import { setMobileComposerFocus } from "$lib/utils/mobileKeyboardViewport";
   import { ensureVaultSelectionInPrompt } from "$lib/utils/vaultNoteBridge";
   import { activeCodeContext } from "$lib/utils/undertakingWorkspace";
+
+  const providerRuntime = $derived(isProviderConversationRuntime(agentSession.sessionRuntime));
+  const blocked = $derived(chat.composerBlocked || runtime.savingControls || externalConversation.busy || agentSession.preparingAgent);
+
+  function scrollToLatest() {
+    window.dispatchEvent(new CustomEvent("medousa-chat-scroll-to-bottom", { detail: { force: true } }));
+  }
 
   let composerBlurTimer: ReturnType<typeof setTimeout> | undefined;
   let formEl = $state<HTMLFormElement | null>(null);
@@ -89,50 +102,35 @@
     mode: "interactive" | "background",
     codeProjectSetupAuthorized = false,
   ) {
-    const opts = await prepareInteractiveTurnOptions(chat);
-    const mediaRefs = [...chat.pendingMediaRefs];
-    const voice = voicePresets.turnVoiceFields();
-    const codeContext = activeCodeContext(chat.sessionId);
-    const accepted = await createTurnTicket({
-      sessionId: chat.sessionId,
+    await submitChatTurn({
+      userContent,
       prompt,
       mode,
-      codeContext,
       codeProjectSetupAuthorized,
-      workerExecutionTarget: executionTargets.turnSelection(chat.sessionId),
-      provider: opts.provider,
-      model: opts.model,
-      responseDepthMode: opts.responseDepthMode,
-      reasoningEffort: opts.reasoningEffort,
-      stageRouting: opts.stageRouting,
-      channelSurface: opts.channelSurface,
-      browserDriverId: opts.browserDriverId,
-      selectedWorlds: opts.selectedWorlds,
-      mediaRefs,
-      voicePresetId: voice.voicePresetId,
-      voiceAppendix: voice.voiceAppendix,
-      identityUserId: opts.identityUserId,
+      synchronizeAgentSession: agentSession.synchronizeAgentSession,
+      onAgentSessionLost: () => { agentSession.agentConfigOptions = []; },
+      scrollToLatest,
     });
-    chat.beginTurn(
-      userContent,
-      accepted,
-      mediaRefs,
-      opts.identityUserId,
-    );
-    chat.clearPendingMedia();
-    window.dispatchEvent(
-      new CustomEvent("medousa-chat-scroll-to-bottom", { detail: { force: true } }),
-    );
-    await chat.startTurnStream(
-      accepted.turn_id,
-      accepted.session_id,
-      accepted.stream_url,
-    );
   }
 
   async function submit(event: Event) {
     event.preventDefault();
-    if (connection.offline || runtime.savingControls || chat.pendingMediaUploading) return;
+    if (connection.offline || blocked || chat.pendingMediaUploading) return;
+    if (providerRuntime) {
+      const draft = chat.draft;
+      const sessionId = chat.sessionId;
+      const scope = chat.workshopScopeId;
+      if (!draft.trim()) return;
+      const attachments = composerAttachments.forHost("chat");
+      try {
+        await externalConversation.send(draft.trim(), chat.pendingMediaRefs.length > 0 || attachments.skillIds.length > 0 || attachments.toolIds.length > 0);
+        if (chat.sessionId === sessionId && chat.workshopScopeId === scope && chat.draft === draft) chat.clearComposerDraft();
+        scrollToLatest();
+      } catch {
+        // The shared controller shows the error and preserves the draft.
+      }
+      return;
+    }
     const basePrompt = ensureVaultSelectionInPrompt(
       chat.draft.trim(),
       chat.vaultNoteContext,
@@ -224,17 +222,18 @@
 </script>
 
 <form bind:this={formEl} class="mobile-chat-composer" onsubmit={submit}>
-  {#if chat.hasWorkshopHandoff()}
+  {#if !providerRuntime && chat.hasWorkshopHandoff()}
     <p class="mb-1.5 px-1 text-[11px] font-medium text-content-link/90">
       Steering handoff — your next message continues the worker
     </p>
   {/if}
-  {#if chat.vaultNoteContext}
+  {#if !providerRuntime && chat.vaultNoteContext}
     <VaultChatContextChip compact class="mb-2" />
   {/if}
-  {#if chat.streamError}
+  {#if !providerRuntime && chat.streamError}
     <p class="mb-2 px-1 text-xs text-content-error" role="alert">{chat.streamError}</p>
   {/if}
+  {#if !providerRuntime}
   <PeerProposalBar mobile sessionId={chat.focusedSessionId} />
   <BudgetApprovalBar
     mobile
@@ -250,11 +249,12 @@
   />
   <AgentPermissionBar mobile />
   <AgentSecretBar mobile />
+  {/if}
   <div class="flex min-w-0 items-center justify-between gap-2">
   <div class="min-w-0 flex-1">
-    <MobileChatContext disabled={connection.offline || chat.composerBlocked || runtime.savingControls}/>
+    <MobileChatContext {agentSession} {externalConversation} disabled={connection.offline || blocked}/>
   </div>
-  {#if isTauriIos() && !$liveVoiceState.active}
+  {#if agentSession.sessionRuntime === "medousa" && isTauriIos() && !$liveVoiceState.active}
     <button
       type="button"
       class="mr-2 mb-1 flex min-h-11 shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-sm text-white disabled:opacity-45"
@@ -268,8 +268,16 @@
   </div>
   <ChatComposerBar
     mobile
-    disabled={connection.offline}
-    composerBlocked={chat.composerBlocked || runtime.savingControls}
+    disabled={connection.offline || externalConversation.busy}
+    composerBlocked={blocked}
+    agentRuntime={agentSession.sessionRuntime}
+    agentConfigOptions={agentSession.agentConfigOptions}
+    agentRuntimePending={agentSession.preparingAgent}
+    onAgentConfigChange={agentSession.updateAgentConfig}
+    externalConversations={externalConversation.conversations}
+    externalConversationId={externalConversation.selectedId}
+    onExternalConversationChange={externalConversation.select}
+    onExternalConversationsRefresh={externalConversation.refresh}
     onfocus={handleComposerFocus}
     onblur={handleComposerBlur}
   />

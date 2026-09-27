@@ -1,5 +1,9 @@
 //! Thin WhatsApp adapter — whatsapp-rust client + local deliver endpoint for daemon outbox push.
 
+mod muse;
+mod protocol_diagnostics;
+
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -94,10 +98,12 @@ enum AdapterDeliveryOutcome {
 struct WhatsAppAdapterState {
     client: Arc<whatsapp_rust::Client>,
     daemon_url: String,
+    muse: Arc<muse::MuseProtocol>,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    protocol_diagnostics::init();
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     if has_flag(&args, "--help") || has_flag(&args, "-h") {
         print_usage();
@@ -121,16 +127,34 @@ async fn main() -> Result<()> {
     }
     let daemon_url_for_events = daemon_url.clone();
     let http_client_for_events = http_client.clone();
+    let muse = Arc::new(muse::MuseProtocol::default());
+    let muse_for_events = muse.clone();
 
-    let mut bot = Bot::builder()
-        .with_backend(backend)
+    let bot = Bot::builder()
+        .with_backend_arc(backend)
         .with_transport_factory(transport_factory)
         .with_http_client(UreqHttpClient::new())
         .with_runtime(TokioRuntime)
+        .with_cache_config(whatsapp_rust::CacheConfig {
+            original_message_resolver: Some(muse.clone()),
+            msg_secret_resolver_timeout: Duration::from_secs(60),
+            ..Default::default()
+        })
         .on_event(move |event, client| {
             let daemon_url = daemon_url_for_events.clone();
             let http_client = http_client_for_events.clone();
+            let muse = muse_for_events.clone();
             async move {
+                if matches!(&*event, Event::LoggedOut(_)) {
+                    muse.reset().await;
+                }
+                if matches!(&*event, Event::Connected(_)) {
+                    tokio::spawn(async move {
+                        if let Err(err) = muse.refresh().await {
+                            eprintln!("medousa_whatsapp Muse key sync error: {err}");
+                        }
+                    });
+                }
                 if let Err(err) = handle_event(event, client, http_client, daemon_url).await {
                     eprintln!("medousa_whatsapp event handling error: {err:#}");
                 }
@@ -141,9 +165,11 @@ async fn main() -> Result<()> {
         .context("build whatsapp bot")?;
 
     let wa_client = bot.client();
+    muse.attach(&wa_client);
     let adapter_state = Arc::new(WhatsAppAdapterState {
         client: wa_client,
         daemon_url,
+        muse,
     });
 
     println!(
@@ -160,8 +186,7 @@ async fn main() -> Result<()> {
         }
     });
 
-    let bot_handle = bot.run().await.context("start whatsapp bot")?;
-    bot_handle.await.ok();
+    bot.run().await;
     Ok(())
 }
 
@@ -211,6 +236,12 @@ async fn deliver_whatsapp_text(
     text: &str,
 ) -> Result<()> {
     let jid = parse_whatsapp_chat_jid(channel_id)?;
+    if muse::is_muse(&jid) {
+        return state
+            .muse
+            .send_text(&state.client, truncate_for_whatsapp(text))
+            .await;
+    }
     let message = wa::Message {
         conversation: Some(truncate_for_whatsapp(text)),
         ..Default::default()
@@ -230,19 +261,26 @@ async fn handle_event(
     daemon_url: String,
 ) -> Result<()> {
     match &*event {
-        Event::PairingQrCode { code, timeout } => {
+        Event::PairingQrCode(qr_event) => {
+            let code = &qr_event.code;
+            let timeout = qr_event.timeout;
             println!(
                 "Scan WhatsApp QR in Linked Devices (valid ~{}s):",
                 timeout.as_secs()
             );
-            let qr = qrcode::QrCode::new(code.as_bytes()).context("render WhatsApp pairing QR")?;
-            println!(
-                "{}",
-                qr.render::<char>()
-                    .quiet_zone(true)
-                    .module_dimensions(2, 1)
-                    .build()
-            );
+            // The app receives the QR over its authenticated pairing route.
+            // Never write a reusable pairing payload into redirected logs.
+            if std::io::stdout().is_terminal() {
+                let qr =
+                    qrcode::QrCode::new(code.as_bytes()).context("render WhatsApp pairing QR")?;
+                println!(
+                    "{}",
+                    qr.render::<char>()
+                        .quiet_zone(true)
+                        .module_dimensions(2, 1)
+                        .build()
+                );
+            }
             publish_pairing_state(
                 &http_client,
                 &daemon_url,
@@ -252,11 +290,15 @@ async fn handle_event(
             )
             .await?;
         }
-        Event::PairingCode { code, timeout } => {
-            println!(
-                "Enter WhatsApp pairing code on phone (valid ~{}s): {code}",
-                timeout.as_secs()
-            );
+        Event::PairingCode(pairing) => {
+            let code = &pairing.code;
+            let timeout = pairing.timeout;
+            if std::io::stdout().is_terminal() {
+                println!(
+                    "Enter WhatsApp pairing code on phone (valid ~{}s): {code}",
+                    timeout.as_secs()
+                );
+            }
         }
         Event::Connected(_) => {
             println!("medousa_whatsapp connected");
@@ -266,29 +308,70 @@ async fn handle_event(
             eprintln!("medousa_whatsapp logged out — restart adapter to re-pair");
             publish_pairing_state(&http_client, &daemon_url, "logged_out", None, None).await?;
         }
-        Event::Message(msg, info) => {
-            let text = msg.text_content().map(str::trim).filter(|value| !value.is_empty());
-            if info.source.is_from_me {
-                if let Some(text) = text.filter(|value| value.contains("MEDOUSA-MUSE-")) {
-                    route_external_agent_message(
-                        &http_client,
-                        &daemon_url,
-                        &info.source.chat.to_string(),
-                        &info.source.sender.to_string(),
-                        &info.id.to_string(),
-                        text,
-                    )
-                    .await?;
+        Event::Messages(batch) => {
+            for inbound in batch.iter() {
+                let msg = &inbound.message;
+                let info = &inbound.info;
+                if protocol_diagnostics::enabled()
+                    && (muse::is_muse(&info.source.chat) || muse::is_muse(&info.source.sender))
+                {
+                    eprintln!(
+                        "medousa_whatsapp protocol: muse-event from_me={} text={} rich={}",
+                        info.source.is_from_me,
+                        msg.text_content().is_some(),
+                        msg.rich_response_message.is_set()
+                    );
+                    if let Some(rich) = msg.rich_response_message.as_option() {
+                        eprintln!(
+                            "medousa_whatsapp protocol: rich-response parts={} text_parts={} unified={}",
+                            rich.submessages.len(),
+                            rich.submessages
+                                .iter()
+                                .filter(|p| p.message_text.is_some())
+                                .count(),
+                            rich.unified_response.is_set()
+                        );
+                    }
                 }
-                return Ok(());
+                let extracted = if muse::is_muse(&info.source.chat) {
+                    muse::message_text(msg)
+                } else {
+                    msg.text_content().map(str::to_owned)
+                };
+                let text = extracted
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty());
+                if info.source.is_from_me {
+                    if let Some(text) = text.filter(|value| value.contains("MEDOUSA-MUSE-"))
+                        && let Err(err) = route_external_agent_message(
+                            &http_client,
+                            &daemon_url,
+                            &info.source.chat.to_string(),
+                            &info.source.sender.to_string(),
+                            &info.id.to_string(),
+                            text,
+                        )
+                        .await
+                    {
+                        eprintln!("medousa_whatsapp discovery routing error: {err:#}");
+                    }
+                    continue;
+                }
+
+                let Some(text) = text else {
+                    continue;
+                };
+
+                let ctx = MessageContext::from_parts(msg, info, client.clone());
+                // One failed daemon request must not discard the rest of a
+                // committed 0.7 message batch.
+                if let Err(err) =
+                    handle_inbound_message(&http_client, &daemon_url, &ctx, text).await
+                {
+                    eprintln!("medousa_whatsapp inbound routing error: {err:#}");
+                }
             }
-
-            let Some(text) = text else {
-                return Ok(());
-            };
-
-            let ctx = MessageContext::from_parts(msg, info, client);
-            handle_inbound_message(&http_client, &daemon_url, &ctx, text).await?;
         }
         _ => {}
     }

@@ -99,6 +99,8 @@
 
   interface Props {
     visible: boolean;
+    sharedAgentSession?: ReturnType<typeof createAgentSessionController>;
+    sharedExternalConversation?: ReturnType<typeof createExternalConversationController>;
     mobile?: boolean;
     embedded?: boolean;
     /** Already hosted in the dedicated chat window. */
@@ -113,6 +115,8 @@
 
   let {
     visible,
+    sharedAgentSession,
+    sharedExternalConversation,
     mobile = false,
     embedded = false,
     popout = false,
@@ -123,7 +127,7 @@
     onOpenConnection,
   }: Props = $props();
 
-  const agentSession = createAgentSessionController();
+  const agentSession = untrack(() => sharedAgentSession ?? createAgentSessionController());
   let presenceComposerCentered = $state(false);
   let runPresenceDockBlurp: () => Promise<void> | void = $state(() => {});
   let scrollToLatest: (force?: boolean, behavior?: ScrollBehavior) => void = $state(
@@ -182,7 +186,7 @@
   /** Stable principal — ignores temporary session swaps during background SSE. */
   const panelSessionId = $derived(chat.focusedSessionId);
   const providerRuntime = $derived(isProviderConversationRuntime(agentSession.sessionRuntime) ? agentSession.sessionRuntime : null);
-  const externalConversation = createExternalConversationController({ provider: () => providerRuntime, sessionId: () => panelSessionId, offline: () => connection.offline, visible: () => visible });
+  const externalConversation = untrack(() => sharedExternalConversation ?? createExternalConversationController({ provider: () => providerRuntime, sessionId: () => panelSessionId, scope: () => chat.workshopScopeId, offline: () => connection.offline, visible: () => visible }));
   const panelBot = $derived(bots.forSession(panelSessionId));
   const chatCodeProject = $derived(undertakings.forChat(panelSessionId));
   const panelMessages = $derived(chat.messagesFor(panelSessionId));
@@ -549,31 +553,6 @@
       onAccepted,
     });
   }
-
-  $effect(() => {
-    const { sessionId, runtimeChoice } = agentSession.syncFromFocusedSession();
-    if (isExternalAgentRuntime(runtimeChoice)) {
-      // The lifecycle queue updates its busy counter synchronously. Keep that
-      // counter outside this bootstrap effect's dependency graph.
-      void untrack(() => agentSession.synchronizeAgentSession(sessionId, runtimeChoice)).catch(
-        () => {
-          // First send retries and surfaces connection/provider errors.
-        },
-      );
-    }
-  });
-
-  $effect(() => {
-    window.addEventListener(
-      "medousa-code-project-binding-changed",
-      agentSession.onCodeProjectBindingChanged as EventListener,
-    );
-    return () =>
-      window.removeEventListener(
-        "medousa-code-project-binding-changed",
-        agentSession.onCodeProjectBindingChanged as EventListener,
-      );
-  });
 
   type FailedSend = {
     display: string;

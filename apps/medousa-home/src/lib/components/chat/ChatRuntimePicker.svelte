@@ -21,9 +21,11 @@
     value: ChatAgentRuntime;
     disabled?: boolean;
     onChange?: (value: ChatAgentRuntime) => void;
+    onchoose?: (value: ChatAgentRuntime) => void;
+    onSettings?: () => void;
   }
 
-  let { value, disabled = false, onChange, inline = false }: Props = $props();
+  let { value, disabled = false, onChange, onchoose, onSettings, inline = false }: Props = $props();
 
   const OPTIONS: {
     id: ChatAgentRuntime;
@@ -65,6 +67,7 @@
 
   function openExternalAgents() {
     open = false;
+    if (onSettings) { onSettings(); return; }
     settingsNav.setActiveSection("connections");
   }
 
@@ -110,10 +113,12 @@
   function pick(next: ChatAgentRuntime) {
     if (next === value) {
       open = false;
+      onchoose?.(next);
       return;
     }
     onChange?.(next);
     open = false;
+    onchoose?.(next);
   }
 
   function opticalLogoSize(runtime: ChatAgentRuntime, baseSize: number): number {

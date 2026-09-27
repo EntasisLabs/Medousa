@@ -25,7 +25,9 @@ External Agents** for installation or sign-in. Hermes can also be prepared from 
 terminal with `hermes acp --setup`.
 
 For Muse and Grok Bot, configure the connection in **Settings → External Agents**,
-then use the model picker to choose the registered session or bot. Their messages
+then use the desktop model picker to choose the registered session or bot. On
+mobile, open **Chat context → Runtime**, select Muse or Grok Bot, and choose the
+session or bot in the same sheet. Runtime appears above Mode. Their messages
 appear in the chat view for the selected runtime.
 
 ## Composer controls
