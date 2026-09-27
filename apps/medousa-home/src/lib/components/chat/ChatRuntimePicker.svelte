@@ -6,6 +6,7 @@
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import {
     agentRuntimeLabel,
+    isProviderConversationRuntime,
     type ChatAgentRuntime,
   } from "$lib/utils/sessionAgentRuntime";
   import { attachComposerMenuDismiss } from "$lib/utils/composerMenuDismiss";
@@ -32,6 +33,8 @@
     { id: "cursor", hint: "External Cursor agent" },
     { id: "codex", hint: "ChatGPT-backed agent + chat" },
     { id: "hermes", hint: "External Hermes agent" },
+    { id: "grok_bot", hint: "Registered Grok bots" },
+    { id: "muse", hint: "Registered Muse sessions" },
   ];
 
   onMount(() => {
@@ -40,7 +43,7 @@
 
   /** Signed-out external runtimes stay visible but locked with a sign-in CTA. */
   function lockedFor(runtime: ChatAgentRuntime): boolean {
-    if (runtime === "medousa") return false;
+    if (runtime === "medousa" || isProviderConversationRuntime(runtime)) return false;
     const account = accountIdForRuntime(runtime);
     const info = accountConnections.connection(account);
     if (!info) return false;
@@ -49,7 +52,7 @@
   }
 
   function lockHint(runtime: ChatAgentRuntime): string | null {
-    if (runtime === "medousa" || !lockedFor(runtime)) return null;
+    if (runtime === "medousa" || isProviderConversationRuntime(runtime) || !lockedFor(runtime)) return null;
     const account = accountIdForRuntime(runtime);
     const info = accountConnections.connection(account);
     if (info && !info.binaryPresent) {
@@ -139,6 +142,8 @@
           decorative
         />
       </span>
+    {:else if isProviderConversationRuntime(runtime)}
+      <span class="text-[11px] font-bold leading-none">{runtime === "muse" ? "M" : "G"}</span>
     {:else}
       <ExternalAgentLogo agent={runtime} size={opticalLogoSize(runtime, size)} />
     {/if}

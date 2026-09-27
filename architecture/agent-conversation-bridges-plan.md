@@ -139,8 +139,10 @@ VM reads or edits workshop data only through admitted daemon tools.
 ## Home behavior
 
 List Muse and Grok Bot with daemon-reported `ready`, `needs setup`,
-`disconnected`, or `unavailable` states. Setup belongs under Connection /
-external agents and Settings → Packages where an optional adapter is needed.
+`disconnected`, or `unavailable` states. Setup belongs under Settings →
+External Agents and Settings → Packages where an optional adapter is needed.
+The composer runtime picker chooses Muse or Grok Bot; its model picker chooses
+a registered Muse session or Grok bot. Their transcript uses the Chat view.
 Medousa's home-first chat works before either is configured. The transcript
 shows pending, accepted, reply/progress, needs input, and terminal states from
 durable events. For provider-only approvals, link to the provider's approval
@@ -168,7 +170,8 @@ provider transcript.
 
 - Implemented: daemon-owned conversation journal, owner-scoped API and SDK
   contract, Grok Bot webhook send and authenticated event callback, Muse
-  WhatsApp inbound routing, and a Medousa conversation panel. Credentials are
+  WhatsApp inbound routing, External Agents setup cards, and Chat runtime
+  selection with a provider transcript. Credentials are
   stored on the workshop; the UI receives a callback key only at setup or
   rotation.
 - Still required for release: prove Muse's managed WhatsApp chat is visible to

@@ -17,6 +17,8 @@ import {
   agentSessionStreamUrl,
   clearSessionAgentSessionId,
   getSessionAgentRuntime,
+  isExternalAgentRuntime,
+  isProviderConversationRuntime,
   setSessionAgentConfigOptions,
 } from "$lib/utils/sessionAgentRuntime";
 import type { PreparedAgentSession } from "./agentSessionController.svelte";
@@ -28,7 +30,7 @@ export async function submitChatTurn(input: {
   codeProjectSetupAuthorized?: boolean;
   synchronizeAgentSession: (
     sessionId: string,
-    runtime: Exclude<ReturnType<typeof getSessionAgentRuntime>, "medousa">,
+    runtime: "cursor" | "codex" | "hermes",
     options?: { openChooserWhenMissing?: boolean },
   ) => Promise<PreparedAgentSession | null>;
   onAgentSessionLost: () => void;
@@ -43,7 +45,10 @@ export async function submitChatTurn(input: {
   const identityUserId = userProfiles.turnIdentityUserId();
   const codeProjectSetupAuthorized = input.codeProjectSetupAuthorized ?? false;
   const runtime = getSessionAgentRuntime(chat.sessionId);
-  if (runtime !== "medousa" && input.mode === "interactive" && !codeProjectSetupAuthorized) {
+  if (isProviderConversationRuntime(runtime)) {
+    throw new Error("Provider conversations must use the selected session or bot.");
+  }
+  if (isExternalAgentRuntime(runtime) && input.mode === "interactive" && !codeProjectSetupAuthorized) {
     const prepared = await input.synchronizeAgentSession(chat.sessionId, runtime, {
       openChooserWhenMissing: true,
     });

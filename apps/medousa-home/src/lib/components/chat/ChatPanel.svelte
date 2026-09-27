@@ -1,9 +1,12 @@
 <script lang="ts">
   import { composerModel } from "$lib/chat/composerModel";
   import { tick, untrack } from "svelte";
-  import { ExternalLink, LoaderCircle, MessagesSquare } from "@lucide/svelte";
-  import ExternalConversationPanel from "$lib/components/chat/ExternalConversationPanel.svelte";
-  import { providerConversations } from "$lib/stores/providerConversations.svelte";
+  import { ExternalLink, LoaderCircle } from "@lucide/svelte";
+  import { createExternalConversationController } from "$lib/chat/externalConversationController.svelte";
+  import ExternalConversationTranscript from "$lib/components/chat/ExternalConversationTranscript.svelte";
+  import { externalConversationStatus } from "$lib/utils/externalConversationMessages";
+  import { chatTurnNavigationItems } from "$lib/utils/chatTurnNavigation";
+  import { agentRuntimeLabel, isExternalAgentRuntime, isProviderConversationRuntime } from "$lib/utils/sessionAgentRuntime";
   import ChatAsyncToolsHint from "$lib/components/chat/ChatAsyncToolsHint.svelte";
   import ChatChangeReceipt from "$lib/components/chat/ChatChangeReceipt.svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
@@ -178,10 +181,11 @@
 
   /** Stable principal — ignores temporary session swaps during background SSE. */
   const panelSessionId = $derived(chat.focusedSessionId);
+  const providerRuntime = $derived(isProviderConversationRuntime(agentSession.sessionRuntime) ? agentSession.sessionRuntime : null);
+  const externalConversation = createExternalConversationController({ provider: () => providerRuntime, sessionId: () => panelSessionId, offline: () => connection.offline, visible: () => visible });
   const panelBot = $derived(bots.forSession(panelSessionId));
   const chatCodeProject = $derived(undertakings.forChat(panelSessionId));
   const panelMessages = $derived(chat.messagesFor(panelSessionId));
-
   async function loadOlderMessages() {
     if (loadingOlderForScroll) return;
     loadingOlderForScroll = true;
@@ -196,11 +200,7 @@
    * Worker-lane turns stay in the principal thread: they carry the sub-agent's
    * synthesis prose, and their position is where the beat belongs chronologically.
    */
-  const chatMessages = $derived(
-    panelMessages.filter(
-      (message) => isChatLaneMessage(message) || message.lane === "worker",
-    ),
-  );
+  const chatMessages = $derived(providerRuntime ? externalConversation.messages : panelMessages.filter((message) => isChatLaneMessage(message) || message.lane === "worker"));
   const derivationSource = $derived.by(() =>
     chatMessages.find((message) => message.transcript?.source)?.transcript?.source ?? null,
   );
@@ -221,14 +221,12 @@
   const useMobileChatLayout = $derived(mobile);
   /** The centered new-chat state exists only after an explicit New action. */
   const showChatEmptyState = $derived(
-    chat.sessionPristine &&
-      chatMessages.length === 0 &&
-      subagentRows.length === 0,
+    !providerRuntime && chat.sessionPristine && chatMessages.length === 0 && subagentRows.length === 0,
   );
 
   /** Don't treat "history still loading" as empty Presence — that centers the dock on cold start. */
   const historyPending = $derived(
-    chat.historyLoadingFor(panelSessionId) && panelMessages.length === 0,
+    !providerRuntime && chat.historyLoadingFor(panelSessionId) && panelMessages.length === 0,
   );
 
   /** Presence — the quiet, centered landing for a genuinely empty main chat. */
@@ -377,6 +375,7 @@
     showChatTurnSaveFeedback(result);
   }
   const sessionLabel = $derived.by(() => {
+    if (providerRuntime) return externalConversation.selected?.label ?? agentRuntimeLabel(providerRuntime);
     // Presence empty: always the time-of-day room title — don't keep a stale preview.
     if (showPresenceEmpty) return presenceRoomTitle();
     const session = chat.sessions.find((entry) => entry.session_id === panelSessionId);
@@ -420,6 +419,7 @@
 
   const mobileChatTitle = $derived.by(() => {
     if (!mobile) return "Medousa";
+    if (providerRuntime) return externalConversation.selected?.label ?? agentRuntimeLabel(providerRuntime);
     if (chat.backgroundActivity > 0) {
       return chat.backgroundActivity === 1
         ? "Working in background"
@@ -430,6 +430,7 @@
 
   const mobileChatSubtitle = $derived.by(() => {
     if (!mobile) return sessionLabel;
+    if (providerRuntime) return externalConversationStatus(externalConversation.selected) ?? agentRuntimeLabel(providerRuntime);
     if (chat.liveStreamActive && phaseLine) return phaseLine;
     if (chat.liveStreamActive) return "Thinking…";
     if (chat.backgroundActivity > 0) return "Background work · see Work";
@@ -450,25 +451,14 @@
 
   const showScrollFab = $derived(
     !atBottom &&
-      (chatMessages.length > 0 || subagentRows.length > 0),
+      (chatMessages.length > 0 || (!providerRuntime && subagentRows.length > 0)),
   );
 
-  const chatTurnItems = $derived(
-    chatMessages
-      .filter((message) => message.role === "user" && message.content.trim())
-      .map((message) => {
-        const firstLine = message.content.trim().split("\n")[0];
-        return {
-          id: message.id,
-          text: firstLine.length > 120 ? `${firstLine.slice(0, 119)}…` : firstLine,
-          depth: 2,
-        };
-      }),
-  );
+  const chatTurnItems = $derived(chatTurnNavigationItems(chatMessages));
   const showChatTurnRail = $derived(
-    !embedded && !useMobileChatLayout && chatTurnItems.length > 1,
+    !providerRuntime && !embedded && !useMobileChatLayout && chatTurnItems.length > 1,
   );
-  const showCurrentTurnAnchor = $derived(chatTurnItems.length > 0);
+  const showCurrentTurnAnchor = $derived(!providerRuntime && chatTurnItems.length > 0);
 
   $effect(() => {
     void panelSessionId;
@@ -541,6 +531,11 @@
     codeProjectSetupAuthorized = false,
     onAccepted?: () => void,
   ) {
+    if (providerRuntime) {
+      await externalConversation.send(prompt, chat.pendingMediaRefs.length > 0 || chatAttachments.skillIds.length > 0 || chatAttachments.toolIds.length > 0);
+      scrollToLatest(true); onAccepted?.();
+      return;
+    }
     await submitChatTurn({
       userContent,
       prompt,
@@ -557,7 +552,7 @@
 
   $effect(() => {
     const { sessionId, runtimeChoice } = agentSession.syncFromFocusedSession();
-    if (runtimeChoice !== "medousa") {
+    if (isExternalAgentRuntime(runtimeChoice)) {
       // The lifecycle queue updates its busy counter synchronously. Keep that
       // counter outside this bootstrap effect's dependency graph.
       void untrack(() => agentSession.synchronizeAgentSession(sessionId, runtimeChoice)).catch(
@@ -628,6 +623,12 @@
   async function submit(event: Event) {
     event.preventDefault();
     if (connection.offline || runtime.savingControls || chat.pendingMediaUploading) return;
+    if (providerRuntime) {
+      if (!chat.draft.trim() || externalConversation.busy) return;
+      await externalConversation.send(chat.draft.trim(), chat.pendingMediaRefs.length > 0 || chatAttachments.skillIds.length > 0 || chatAttachments.toolIds.length > 0)
+        .then(() => { chat.clearComposerDraft(); scrollToLatest(true); }).catch(() => {});
+      return;
+    }
     const scopeForSend = chat.vaultNoteContext;
     const draftForSend = chat.draft;
     const basePrompt = ensureVaultSelectionInPrompt(chat.draft.trim(), scopeForSend);
@@ -805,13 +806,7 @@
         ? 'mobile-chat-panel'
         : 'chat-pane'}"
 >
-  {#if providerConversations.open && !embedded}
-    <ExternalConversationPanel onClose={() => providerConversations.open = false} />
-  {/if}
-  {#if mobile && !embedded && isTauri() && !providerConversations.open}
-    <button type="button" class="absolute right-3 top-3 z-20 workshop-rail-btn" aria-label="Muse and Grok Bot conversations" onclick={() => providerConversations.open = true}><MessagesSquare size={16} /></button>
-  {/if}
-  {#if !embedded && (!mobile || chat.streamErrorFor(panelSessionId))}
+  {#if !embedded && (!mobile || (!providerRuntime && chat.streamErrorFor(panelSessionId)))}
   <header class="{mobile ? 'mobile-chat-header' : 'workshop-header'}">
     <div class="flex w-full min-w-0 items-center gap-2">
       {#if !mobile}
@@ -829,12 +824,6 @@
         </button>
       {/if}
       {#if !mobile && !popout && isTauri()}
-        <button type="button" class="chat-view-popout" title="Muse and Grok Bot conversations"
-          aria-label="Muse and Grok Bot conversations" onclick={() => providerConversations.open = true}>
-          <MessagesSquare size={15} strokeWidth={1.8} />
-        </button>
-      {/if}
-      {#if !mobile && !popout && isTauri()}
         <button
           type="button"
           class="chat-view-popout"
@@ -846,7 +835,7 @@
         </button>
       {/if}
     </div>
-    {#if chat.streamErrorFor(panelSessionId)}
+    {#if !providerRuntime && chat.streamErrorFor(panelSessionId)}
       <div class="mt-1 flex flex-wrap items-baseline gap-2">
         <p class="text-content-error min-w-0 flex-1 text-[11px]" role="alert">
           {chat.streamErrorFor(panelSessionId)}
@@ -864,13 +853,13 @@
           Dismiss
         </button>
       </div>
-    {:else if !mobile && chat.historyLoadingFor(panelSessionId) && panelMessages.length === 0}
+    {:else if !providerRuntime && !mobile && chat.historyLoadingFor(panelSessionId) && panelMessages.length === 0}
       <p class="mt-1 text-[11px] text-content-tertiary">Loading conversation…</p>
     {/if}
   </header>
   {/if}
 
-  {#if mobile && chat.liveStreamActive && phaseLine}
+  {#if mobile && !providerRuntime && chat.liveStreamActive && phaseLine}
     <div class="mobile-chat-phase" aria-live="polite">
       <span
         class="inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-primary-400"
@@ -969,10 +958,10 @@
     bind:scrollToLatest
     bind:scheduleChatNavigationMeasure
     bind:resetForSession={resetScrollSession}
-    historyKey={panelSessionId}
-    canLoadOlder={Boolean(chat.historyCursorFor(panelSessionId))}
-    loadingOlder={chat.historyLoadingOlderFor(panelSessionId)}
-    onLoadOlder={loadOlderMessages}
+    historyKey={providerRuntime ? `${panelSessionId}:${externalConversation.selectedId ?? providerRuntime}` : panelSessionId}
+    canLoadOlder={!providerRuntime && Boolean(chat.historyCursorFor(panelSessionId))}
+    loadingOlder={!providerRuntime && chat.historyLoadingOlderFor(panelSessionId)}
+    onLoadOlder={providerRuntime ? undefined : loadOlderMessages}
     onAtBottomChange={(value) => (atBottom = value)}
     bodyClass={embedded && !useMobileChatLayout
       ? "vault-workshop-chat-body"
@@ -985,6 +974,11 @@
         ? 'mobile-chat-scroll space-y-3'
         : 'chat-scroll space-y-4'} {showPresenceEmpty ? 'chat-scroll--presence' : ''}"
   >
+      {#if providerRuntime}
+        <ExternalConversationTranscript provider={providerRuntime} selected={externalConversation.selected}
+          choices={externalConversation.choices} messages={externalConversation.messages} sessionId={panelSessionId}
+          {mobile} loading={externalConversation.loading} error={externalConversation.error} />
+      {:else}
       <ChatAsyncToolsHint {mobile} />
       {#if askThreads.length > 0 && !embedded && mobile}
         <button
@@ -1091,6 +1085,7 @@
           onReviewChanged={() => undertakings.select(chatCodeProject.workId)}
         />
       {/if}
+      {/if}
     </ChatScrollChrome>
 
   <ChatPresenceDock
@@ -1102,7 +1097,7 @@
     showContinue={Boolean(continueSession)}
     onContinue={continueWhereLeftOff}
   >
-    {#if !embedded && !presenceComposerCentered}
+    {#if !providerRuntime && !embedded && !presenceComposerCentered}
       <PeerProposalBar sessionId={panelSessionId} />
       <BudgetApprovalBar
         onOpenWork={() => {
@@ -1141,21 +1136,21 @@
         : 'chat-composer'}"
       onsubmit={submit}
     >
-      {#if chat.scriptWorkbenchContext}
+      {#if !providerRuntime && chat.scriptWorkbenchContext}
         <ScriptChatContextChip compact={workshop || scriptWorkbench} class={embedded ? "mb-2" : "mx-4 mb-2"} />
-      {:else if chat.vaultNoteContext}
+      {:else if !providerRuntime && chat.vaultNoteContext}
         <VaultChatContextChip
           compact={workshop}
           whisper={workshopSticky}
           class={workshop ? "mb-1.5" : "mx-4 mb-2"}
         />
       {/if}
-      <ComposerSkillPills
+      {#if !providerRuntime || chatAttachments.skillIds.length > 0 || chatAttachments.toolIds.length > 0}<ComposerSkillPills
         host="chat"
         disabled={connection.offline || chat.composerBlocked}
         class={workshop ? "mb-1.5" : "mx-4 mb-2"}
-      />
-      {#if chat.hasWorkshopHandoff()}
+      />{/if}
+      {#if !providerRuntime && chat.hasWorkshopHandoff()}
         <p
           class="{workshop ? 'mb-1.5' : 'mx-4 mb-1.5'} text-[11px] font-medium text-content-link/90"
         >
@@ -1164,7 +1159,7 @@
       {/if}
       <ChatComposerBar
         mobile={workshop || useMobileChatLayout}
-        disabled={connection.offline}
+        disabled={connection.offline || externalConversation.busy}
         composerBlocked={chat.composerBlocked}
         modelPickerEnabled
         agentRuntime={agentSession.sessionRuntime}
@@ -1172,6 +1167,10 @@
         agentRuntimePending={agentSession.preparingAgent}
         onAgentRuntimeChange={agentSession.onRuntimeChange}
         onAgentConfigChange={agentSession.updateAgentConfig}
+        externalConversations={externalConversation.conversations}
+        externalConversationId={externalConversation.selectedId}
+        onExternalConversationChange={externalConversation.select}
+        onExternalConversationsRefresh={externalConversation.refresh}
         bind:element={composerTextareaEl}
         onkeydown={handleKeydown}
         onCursorChange={(cursor) => (draftCursor = cursor)}
@@ -1182,12 +1181,12 @@
           value={agentSession.sessionRuntime}
           configOptions={agentSession.agentConfigOptions}
           pending={agentSession.preparingAgent}
-          disabled={connection.offline || chat.composerBlocked}
+          disabled={connection.offline || chat.composerBlocked || externalConversation.busy}
           onChange={agentSession.onRuntimeChange}
           onConfigChange={agentSession.updateAgentConfig}
         />
       {/if}
-      <ComposerSkillSlashMenu
+      {#if !providerRuntime}<ComposerSkillSlashMenu
         open={slashMenuOpen}
         items={slashItems}
         anchor={slashAnchor}
@@ -1195,7 +1194,7 @@
         onSelect={applyChatSlashItem}
         onClose={dismissSlashMenu}
         onHighlight={(index) => (slashHighlight = index)}
-      />
+      />{/if}
     </form>
   </ChatPresenceDock>
   </div>

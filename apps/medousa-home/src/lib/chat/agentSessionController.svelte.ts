@@ -20,6 +20,7 @@ import {
   getSessionAgentSessionId,
   getSessionAgentConfigOptions,
   getSessionAgentWorkId,
+  isExternalAgentRuntime,
   setSessionAgentRuntime,
   setSessionAgentSessionId,
   setSessionAgentConfigOptions,
@@ -69,7 +70,7 @@ export function createAgentSessionController() {
 
   function synchronizeAgentSession(
     sessionId: string,
-    runtimeChoice: Exclude<ChatAgentRuntime, "medousa">,
+    runtimeChoice: "cursor" | "codex" | "hermes",
     options?: { openChooserWhenMissing?: boolean; stopWhenUnbound?: boolean },
   ): Promise<PreparedAgentSession | null> {
     return queueAgentLifecycle(async () => {
@@ -183,7 +184,7 @@ export function createAgentSessionController() {
           return;
         }
       }
-      if (value !== "medousa") {
+      if (isExternalAgentRuntime(value)) {
         await synchronizeAgentSession(sessionId, value, { openChooserWhenMissing: true }).catch(
           () => {
             /* Sending the first message retries and surfaces provider errors. */
@@ -199,7 +200,7 @@ export function createAgentSessionController() {
     const sessionId = event.detail?.sessionId?.trim();
     if (!sessionId || sessionId !== chat.sessionId) return;
     const runtimeChoice = getSessionAgentRuntime(sessionId);
-    if (runtimeChoice === "medousa") return;
+    if (!isExternalAgentRuntime(runtimeChoice)) return;
     void synchronizeAgentSession(sessionId, runtimeChoice, {
       stopWhenUnbound: !event.detail?.workId,
     }).catch((err) => {

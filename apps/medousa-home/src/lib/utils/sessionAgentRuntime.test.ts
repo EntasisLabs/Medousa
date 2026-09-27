@@ -2,6 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearSessionAgentSessionId,
   getSessionAgentWorkId,
+  getSessionAgentRuntime,
+  isExternalAgentRuntime,
+  isProviderConversationRuntime,
+  setSessionAgentRuntime,
   setSessionAgentSessionId,
   setSessionAgentWorkId,
 } from "./sessionAgentRuntime";
@@ -29,5 +33,14 @@ describe("session agent workspace metadata", () => {
     setSessionAgentWorkId("chat-1", "work-1");
     clearSessionAgentSessionId("chat-1");
     expect(getSessionAgentWorkId("chat-1")).toBeUndefined();
+  });
+
+  it("keeps provider conversations distinct from ACP agent sessions", () => {
+    setSessionAgentRuntime("chat-1", "muse");
+    expect(getSessionAgentRuntime("chat-1")).toBe("muse");
+    expect(isProviderConversationRuntime(getSessionAgentRuntime("chat-1"))).toBe(true);
+    expect(isExternalAgentRuntime(getSessionAgentRuntime("chat-1"))).toBe(false);
+    setSessionAgentRuntime("chat-1", "grok_bot");
+    expect(getSessionAgentRuntime("chat-1")).toBe("grok_bot");
   });
 });
