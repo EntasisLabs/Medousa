@@ -70,6 +70,10 @@ reuse Medousa's private first-party local credentials.
 
 Full method table: [api-reference.md](api-reference.md) · contract: [`../../sdk-contract/openapi.json`](../../sdk-contract/openapi.json)
 
+Provider-hosted Muse and Grok Bot conversations currently use the generic authenticated
+`http()` transport. See the [external conversation HTTP contract](../engine/external-conversations.md)
+for endpoints, event IDs, and callback authentication.
+
 ## Transport diagram
 
 ```mermaid

@@ -1,7 +1,9 @@
 <script lang="ts">
   import { composerModel } from "$lib/chat/composerModel";
   import { tick, untrack } from "svelte";
-  import { ExternalLink, LoaderCircle } from "@lucide/svelte";
+  import { ExternalLink, LoaderCircle, MessagesSquare } from "@lucide/svelte";
+  import ExternalConversationPanel from "$lib/components/chat/ExternalConversationPanel.svelte";
+  import { providerConversations } from "$lib/stores/providerConversations.svelte";
   import ChatAsyncToolsHint from "$lib/components/chat/ChatAsyncToolsHint.svelte";
   import ChatChangeReceipt from "$lib/components/chat/ChatChangeReceipt.svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
@@ -803,6 +805,12 @@
         ? 'mobile-chat-panel'
         : 'chat-pane'}"
 >
+  {#if providerConversations.open && !embedded}
+    <ExternalConversationPanel onClose={() => providerConversations.open = false} />
+  {/if}
+  {#if mobile && !embedded && isTauri() && !providerConversations.open}
+    <button type="button" class="absolute right-3 top-3 z-20 workshop-rail-btn" aria-label="Muse and Grok Bot conversations" onclick={() => providerConversations.open = true}><MessagesSquare size={16} /></button>
+  {/if}
   {#if !embedded && (!mobile || chat.streamErrorFor(panelSessionId))}
   <header class="{mobile ? 'mobile-chat-header' : 'workshop-header'}">
     <div class="flex w-full min-w-0 items-center gap-2">
@@ -818,6 +826,12 @@
           }}
         >
           <h1 class="truncate text-sm font-semibold text-surface-50">{sessionLabel}</h1>
+        </button>
+      {/if}
+      {#if !mobile && !popout && isTauri()}
+        <button type="button" class="chat-view-popout" title="Muse and Grok Bot conversations"
+          aria-label="Muse and Grok Bot conversations" onclick={() => providerConversations.open = true}>
+          <MessagesSquare size={15} strokeWidth={1.8} />
         </button>
       {/if}
       {#if !mobile && !popout && isTauri()}

@@ -1963,6 +1963,134 @@
       "bootstrap_public": false,
       "browser_policy": "native_only",
       "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "external_conversations.get",
+      "path": "/v1/external-conversations",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 20480,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "external_conversations.post",
+      "path": "/v1/external-conversations",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 20480,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "external_conversations.whatsapp.inbound.post",
+      "path": "/v1/external-conversations/whatsapp/inbound",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "core",
+      "method": "DELETE",
+      "operation_id": "external_conversations.by_id.delete",
+      "path": "/v1/external-conversations/{id}",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "external_conversations.by_id.get",
+      "path": "/v1/external-conversations/{id}",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "external_conversations.by_id.callback_key.rotate.post",
+      "path": "/v1/external-conversations/{id}/callback-key/rotate",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 20480,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "external_conversations.by_id.events.post",
+      "path": "/v1/external-conversations/{id}/events",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 20480,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "external_conversations.by_id.messages.post",
+      "path": "/v1/external-conversations/{id}/messages",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
         "content.read"
       ],
       "feature_profile": "core",

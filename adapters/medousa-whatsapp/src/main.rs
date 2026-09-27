@@ -29,8 +29,7 @@ const DEFAULT_DAEMON_URL: &str = "http://127.0.0.1:7419";
 const DEFAULT_DELIVER_BIND: &str = "127.0.0.1:7422";
 const DEFAULT_DELIVERY_TIMEOUT: Duration = Duration::from_secs(120);
 const DEFAULT_POLL_INTERVAL: Duration = Duration::from_millis(700);
-const ADAPTER_COMMAND_HINT: &str =
-    "Commands: /new /help /history /model /depth /stop /regen /health /heartbeat — or send a message to chat.";
+const ADAPTER_COMMAND_HINT: &str = "Commands: /new /help /history /model /depth /stop /regen /health /heartbeat — or send a message to chat.";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct IngestRequest {
@@ -79,6 +78,11 @@ struct JobResultResponse {
     latest_outcome: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct ExternalInboundClaim {
+    claimed: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum AdapterDeliveryOutcome {
     PushDelivered,
@@ -110,7 +114,7 @@ async fn main() -> Result<()> {
         transport_factory = transport_factory.with_url(ws_url);
     }
 
-    let http_client = Client::new();
+    let http_client = daemon_http_client()?;
     let daemon_url_for_events = daemon_url.clone();
     let http_client_for_events = http_client.clone();
 
@@ -142,9 +146,7 @@ async fn main() -> Result<()> {
         "medousa_whatsapp thin adapter started — forwarding to daemon at {}",
         adapter_state.daemon_url
     );
-    println!(
-        "medousa_whatsapp deliver endpoint on http://{deliver_bind}/v1/deliver"
-    );
+    println!("medousa_whatsapp deliver endpoint on http://{deliver_bind}/v1/deliver");
     println!("medousa_whatsapp session db: {}", session_db.display());
 
     let deliver_state = adapter_state.clone();
@@ -188,12 +190,8 @@ async fn deliver_message(
 
 async fn build_sqlite_backend(session_db: &Path) -> Result<Arc<dyn Backend>> {
     if let Some(parent) = session_db.parent() {
-        std::fs::create_dir_all(parent).with_context(|| {
-            format!(
-                "create whatsapp session directory {}",
-                parent.display()
-            )
-        })?;
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("create whatsapp session directory {}", parent.display()))?;
     }
 
     let backend = SqliteStore::new(session_db.to_string_lossy().as_ref())
@@ -229,7 +227,10 @@ async fn handle_event(
 ) -> Result<()> {
     match &*event {
         Event::PairingQrCode { code, timeout } => {
-            println!("Scan WhatsApp QR in Linked Devices (valid ~{}s):", timeout.as_secs());
+            println!(
+                "Scan WhatsApp QR in Linked Devices (valid ~{}s):",
+                timeout.as_secs()
+            );
             println!("{code}");
         }
         Event::PairingCode { code, timeout } => {
@@ -249,7 +250,10 @@ async fn handle_event(
                 return Ok(());
             }
 
-            let Some(text) = msg.text_content().map(str::trim).filter(|value| !value.is_empty())
+            let Some(text) = msg
+                .text_content()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
             else {
                 return Ok(());
             };
@@ -271,6 +275,18 @@ async fn handle_inbound_message(
 ) -> Result<()> {
     let chat_jid = ctx.info.source.chat.to_string();
     let sender_jid = ctx.info.source.sender.to_string();
+    if route_external_agent_message(
+        http_client,
+        daemon_url,
+        &chat_jid,
+        &sender_jid,
+        &ctx.info.id.to_string(),
+        text,
+    )
+    .await?
+    {
+        return Ok(());
+    }
     let request = IngestRequest {
         channel: "whatsapp".to_string(),
         user_id: format!("whatsapp:user:{sender_jid}"),
@@ -311,6 +327,40 @@ async fn handle_inbound_message(
     }
 
     Ok(())
+}
+
+async fn route_external_agent_message(
+    http_client: &Client,
+    daemon_url: &str,
+    chat_jid: &str,
+    sender_jid: &str,
+    message_id: &str,
+    text: &str,
+) -> Result<bool> {
+    let response = http_client
+        .post(format!(
+            "{}/v1/external-conversations/whatsapp/inbound",
+            daemon_url.trim_end_matches('/')
+        ))
+        .json(&serde_json::json!({
+            "chat_jid": chat_jid,
+            "sender_jid": sender_jid,
+            "message_id": message_id,
+            "text": text,
+        }))
+        .send()
+        .await
+        .context("external conversation routing request failed")?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(false);
+    }
+    Ok(response
+        .error_for_status()
+        .context("external conversation routing failed")?
+        .json::<ExternalInboundClaim>()
+        .await
+        .context("decode external conversation routing response")?
+        .claimed)
 }
 
 async fn send_whatsapp_reply(ctx: &MessageContext, text: &str) -> Result<()> {
@@ -442,6 +492,16 @@ fn resolve_daemon_url(explicit: Option<&str>) -> String {
         .unwrap_or_else(|| DEFAULT_DAEMON_URL.to_string())
 }
 
+fn daemon_http_client() -> Result<Client> {
+    let bearer = non_empty_env("MEDOUSA_DAEMON_BEARER")
+        .context("WhatsApp adapter requires MEDOUSA_DAEMON_BEARER from its workshop launcher")?;
+    let mut authorization = reqwest::header::HeaderValue::from_str(&format!("Bearer {bearer}"))?;
+    authorization.set_sensitive(true);
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(reqwest::header::AUTHORIZATION, authorization);
+    Ok(Client::builder().default_headers(headers).build()?)
+}
+
 fn default_session_db_path() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -489,7 +549,9 @@ fn print_usage() {
     println!("medousa_whatsapp — thin WhatsApp adapter (whatsapp-rust)");
     println!();
     println!("USAGE:");
-    println!("  medousa_whatsapp [--daemon-url <url>] [--deliver-bind <host:port>] [--session-db <path>]");
+    println!(
+        "  medousa_whatsapp [--daemon-url <url>] [--deliver-bind <host:port>] [--session-db <path>]"
+    );
     println!();
     println!("ENV:");
     println!("  MEDOUSA_DAEMON_URL");

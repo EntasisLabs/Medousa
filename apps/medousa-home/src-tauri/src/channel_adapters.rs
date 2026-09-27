@@ -3,8 +3,8 @@ use std::io;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use crate::messaging::product_config::ProductConfigSummary;
 use crate::integration_secrets;
+use crate::messaging::product_config::ProductConfigSummary;
 
 const DEFAULT_DAEMON_URL: &str = "http://127.0.0.1:7419";
 
@@ -282,6 +282,7 @@ fn start_adapter(
     let mut command = Command::new(&adapter.program);
     command.args(&adapter.pre_args);
     command.arg("--daemon-url").arg(daemon_url);
+    command.env("MEDOUSA_DATA_DIR", crate::paths::medousa_data_dir());
 
     match channel {
         "telegram" => {
@@ -306,6 +307,22 @@ fn start_adapter(
             command.arg("--app-token").arg(app_token);
         }
         "whatsapp" => {
+            let url = reqwest::Url::parse(daemon_url).map_err(|error| error.to_string())?;
+            let local = url.host_str().is_some_and(|host| {
+                host == "localhost"
+                    || host
+                        .parse::<std::net::IpAddr>()
+                        .is_ok_and(|ip| ip.is_loopback())
+            });
+            if !local {
+                return Err("WhatsApp must run on the connected workshop host".to_string());
+            }
+            let credential = medousa_local_credential::load_named_secret(
+                &crate::paths::medousa_data_dir(),
+                medousa_local_credential::CLI_LOCAL_NAME,
+            )
+            .map_err(|error| format!("load workshop adapter credential: {error}"))?;
+            command.env("MEDOUSA_DAEMON_BEARER", credential.token());
             command
                 .arg("--deliver-bind")
                 .arg(summary.whatsapp.deliver_bind.trim());

@@ -19,6 +19,10 @@ while IFS= read -r line; do
       # Test fixtures for the access boundary, not production assembly.
       continue
       ;;
+    src/agent_runtime/laya_system_one.rs:*'.route("/v1/systemone", post(respond))'*)
+      # The mock provider route is registered inside a test-only module.
+      continue
+      ;;
     *)
       echo "ERROR: raw /v1 route registration outside ContractRouter: $line"
       bad=1

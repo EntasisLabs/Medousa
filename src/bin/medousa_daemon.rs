@@ -685,6 +685,12 @@ async fn start_daemon() -> Result<()> {
             tracing::info!("detamu host dormant (SurrealKV opens on first world/Forge index)");
             handle
         },
+        external_conversations:
+            medousa::daemon::external_conversations::ExternalConversationStore::open(
+                medousa::paths::medousa_data_dir().join("external_conversations.json"),
+            )
+            .await
+            .context("open external conversation store")?,
     };
     medousa::daemon::forge_watch::spawn_forge_worktree_watcher(
         state.forge_events.clone(),
@@ -995,6 +1001,7 @@ async fn start_daemon() -> Result<()> {
         )
         .merge(medousa::daemon::coding_engine_host::coding_engine_surface())
         .merge(medousa::daemon::shell_session_host::shell_session_surface())
+        .merge(medousa::daemon::external_conversations::surface())
         .merge(medousa::daemon::detamu_host::world_surface())
         .merge(medousa::daemon::forge_api::forge_surface())
         .merge(medousa::browser_handlers::browser_surface())

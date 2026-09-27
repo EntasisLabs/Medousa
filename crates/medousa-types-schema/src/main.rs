@@ -45,6 +45,65 @@ fn main() {
     export_type!(schemas, ArchiveAskJobRequest, "ArchiveAskJobRequest");
     export_type!(schemas, ArchiveAskJobResponse, "ArchiveAskJobResponse");
 
+    // Provider-hosted agent conversations
+    export_type!(schemas, ExternalProvider, "ExternalProvider");
+    export_type!(schemas, ExternalEventKind, "ExternalEventKind");
+    export_type!(
+        schemas,
+        ExternalConversationEvent,
+        "ExternalConversationEvent"
+    );
+    export_type!(
+        schemas,
+        ExternalConversationView,
+        "ExternalConversationView"
+    );
+    export_type!(
+        schemas,
+        CreateExternalConversationRequest,
+        "CreateExternalConversationRequest"
+    );
+    export_type!(
+        schemas,
+        CreateExternalConversationResponse,
+        "CreateExternalConversationResponse"
+    );
+    export_type!(
+        schemas,
+        ExternalConversationListResponse,
+        "ExternalConversationListResponse"
+    );
+    export_type!(
+        schemas,
+        ExternalConversationSendRequest,
+        "ExternalConversationSendRequest"
+    );
+    export_type!(
+        schemas,
+        ExternalProviderEventRequest,
+        "ExternalProviderEventRequest"
+    );
+    export_type!(
+        schemas,
+        ExternalWhatsAppInboundRequest,
+        "ExternalWhatsAppInboundRequest"
+    );
+    export_type!(
+        schemas,
+        ExternalInboundClaimResponse,
+        "ExternalInboundClaimResponse"
+    );
+    export_type!(
+        schemas,
+        RotateExternalCallbackResponse,
+        "RotateExternalCallbackResponse"
+    );
+    export_type!(
+        schemas,
+        DeleteExternalConversationResponse,
+        "DeleteExternalConversationResponse"
+    );
+
     // Sessions
     export_type!(
         schemas,

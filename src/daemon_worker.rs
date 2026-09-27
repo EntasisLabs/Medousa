@@ -496,10 +496,10 @@ impl DelegatedTaskTransport for DaemonWorkerTransport {
                 peer_device_id: x.summary.workshop_device_id,
                 label: Some(x.summary.label),
             };
-            if let Ok(Ok(p)) = tokio::time::timeout(Duration::from_secs(5), self.probe(t)).await {
-                if p.candidate.user_selectable {
-                    out.push(p)
-                }
+            if let Ok(Ok(p)) = tokio::time::timeout(Duration::from_secs(5), self.probe(t)).await
+                && p.candidate.user_selectable
+            {
+                out.push(p)
             }
         }
         out.sort_by(|a, b| {

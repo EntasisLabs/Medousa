@@ -47,16 +47,50 @@ pub(crate) fn stream_spec(transport: StreamTransport, item_name: &str) -> Stream
 
 pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
     Some(match operation_id {
+        "external_conversations.get" => WireBinding {
+            request: None,
+            response: "ExternalConversationListResponse",
+        },
+        "external_conversations.post" => WireBinding {
+            request: Some("CreateExternalConversationRequest"),
+            response: "CreateExternalConversationResponse",
+        },
+        "external_conversations.by_id.get" => WireBinding {
+            request: None,
+            response: "ExternalConversationView",
+        },
+        "external_conversations.by_id.delete" => WireBinding {
+            request: None,
+            response: "DeleteExternalConversationResponse",
+        },
+        "external_conversations.by_id.callback_key.rotate.post" => WireBinding {
+            request: None,
+            response: "RotateExternalCallbackResponse",
+        },
+        "external_conversations.by_id.messages.post" => WireBinding {
+            request: Some("ExternalConversationSendRequest"),
+            response: "ExternalConversationView",
+        },
+        "external_conversations.by_id.events.post" => WireBinding {
+            request: Some("ExternalProviderEventRequest"),
+            response: "ExternalConversationView",
+        },
+        "external_conversations.whatsapp.inbound.post" => WireBinding {
+            request: Some("ExternalWhatsAppInboundRequest"),
+            response: "ExternalInboundClaimResponse",
+        },
         "coordination.proposals.get" => WireBinding {
             request: None,
             response: "PeerProposalInboxResponse",
         },
         "coordination.channels.by_channel_id.proposals.by_proposal_id.approve.post"
         | "coordination.channels.by_channel_id.proposals.by_proposal_id.deny.post"
-        | "coordination.channels.by_channel_id.proposals.by_proposal_id.dispatch.post" => WireBinding {
-            request: Some("PeerProposalActionRequest"),
-            response: "PeerProposalActionResponse",
-        },
+        | "coordination.channels.by_channel_id.proposals.by_proposal_id.dispatch.post" => {
+            WireBinding {
+                request: Some("PeerProposalActionRequest"),
+                response: "PeerProposalActionResponse",
+            }
+        }
         "liveness.get" => WireBinding {
             request: None,
             response: "HealthLiveness",

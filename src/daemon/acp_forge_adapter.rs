@@ -210,7 +210,8 @@ mod tests {
         assert_eq!(lease.work_id, work_id);
         let attempt = item.attempts.last().unwrap();
         assert_eq!(attempt.executor.kind, "acp-cursor");
-        assert_ne!(attempt.environment.as_ref().unwrap().worktree, staging);
+        assert!(attempt.environment.is_none());
+        assert_eq!(item.environment.as_ref().unwrap().worktree, staging);
         assert_eq!(
             attempt.executor.detail["agent_session_id"],
             serde_json::Value::String("agent-test".into())

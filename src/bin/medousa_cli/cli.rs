@@ -34,6 +34,8 @@ pub enum Commands {
     DaemonJobReport(DaemonJobReportArgs),
     #[command(name = "daemon-watch-add")]
     DaemonWatchAdd(DaemonWatchAddArgs),
+    #[command(name = "daemon-external-event")]
+    DaemonExternalEvent(DaemonExternalEventArgs),
     #[command(name = "daemon-identity-context")]
     DaemonIdentityContext(IdentityCommonArgs),
     #[command(name = "daemon-identity-inspect")]
@@ -69,6 +71,18 @@ pub struct AskArgs {
 
 #[derive(Debug, Args)]
 pub struct DaemonUrlArgs {
+    #[arg(long = "daemon-url")]
+    pub daemon_url: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct DaemonExternalEventArgs {
+    pub conversation_id: String,
+    pub event_id: String,
+    pub kind: String,
+    pub text: String,
+    #[arg(long = "request-id")]
+    pub request_id: String,
     #[arg(long = "daemon-url")]
     pub daemon_url: Option<String>,
 }

@@ -27,6 +27,7 @@
     type AccountId,
   } from "$lib/utils/accountConnections";
   import { openGuide } from "$lib/guide/openGuide";
+  import { providerConversations } from "$lib/stores/providerConversations.svelte";
 
   let actionBusy = $state<string | null>(null);
   let actionNote = $state<string | null>(null);
@@ -277,6 +278,22 @@
         </div>
         {/each}
       {/if}
+    </div>
+
+    <div class="connections-card mt-3">
+      <div class="connections-card-head">
+        <span class="connections-card-icon"><MessageSquare size={18} /></span>
+        <div class="min-w-0 flex-1">
+          <p class="connections-card-title">Muse and Grok Bot</p>
+          <p class="connections-card-sub workshop-faint">Provider-hosted conversations through WhatsApp and a webhook routine</p>
+        </div>
+      </div>
+      <p class="connections-note workshop-faint">Connect and message them in Chat. The connected workshop keeps the transcript and credentials.</p>
+      <div class="connections-card-actions">
+        <button type="button" class="btn btn-sm variant-filled-primary" onclick={() => { providerConversations.open = true; openChat(); }}>
+          <MessageSquare size={13} strokeWidth={2} /> Open conversations
+        </button>
+      </div>
     </div>
 
     {#if anySignedIn && !waitingFor && !actionNote}

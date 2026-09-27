@@ -758,6 +758,62 @@ pub const EXECUTION_TARGETS_GET: Operation = Operation {
     streaming: false,
 };
 
+pub const EXTERNAL_CONVERSATIONS_BY_ID_CALLBACK_KEY_ROTATE_POST: Operation = Operation {
+    id: "external_conversations.by_id.callback_key.rotate.post",
+    method: "POST",
+    path: "/v1/external-conversations/{id}/callback-key/rotate",
+    streaming: false,
+};
+
+pub const EXTERNAL_CONVERSATIONS_BY_ID_DELETE: Operation = Operation {
+    id: "external_conversations.by_id.delete",
+    method: "DELETE",
+    path: "/v1/external-conversations/{id}",
+    streaming: false,
+};
+
+pub const EXTERNAL_CONVERSATIONS_BY_ID_EVENTS_POST: Operation = Operation {
+    id: "external_conversations.by_id.events.post",
+    method: "POST",
+    path: "/v1/external-conversations/{id}/events",
+    streaming: false,
+};
+
+pub const EXTERNAL_CONVERSATIONS_BY_ID_GET: Operation = Operation {
+    id: "external_conversations.by_id.get",
+    method: "GET",
+    path: "/v1/external-conversations/{id}",
+    streaming: false,
+};
+
+pub const EXTERNAL_CONVERSATIONS_BY_ID_MESSAGES_POST: Operation = Operation {
+    id: "external_conversations.by_id.messages.post",
+    method: "POST",
+    path: "/v1/external-conversations/{id}/messages",
+    streaming: false,
+};
+
+pub const EXTERNAL_CONVERSATIONS_GET: Operation = Operation {
+    id: "external_conversations.get",
+    method: "GET",
+    path: "/v1/external-conversations",
+    streaming: false,
+};
+
+pub const EXTERNAL_CONVERSATIONS_POST: Operation = Operation {
+    id: "external_conversations.post",
+    method: "POST",
+    path: "/v1/external-conversations",
+    streaming: false,
+};
+
+pub const EXTERNAL_CONVERSATIONS_WHATSAPP_INBOUND_POST: Operation = Operation {
+    id: "external_conversations.whatsapp.inbound.post",
+    method: "POST",
+    path: "/v1/external-conversations/whatsapp/inbound",
+    streaming: false,
+};
+
 pub const FEEDS_BY_FEED_ID_LATEST_GOOD_GET: Operation = Operation {
     id: "feeds.by_feed_id.latest_good.get",
     method: "GET",
@@ -3351,6 +3407,14 @@ pub static ALL: &[Operation] = &[
     ENVIRONMENT_SPEC_VALIDATE_POST,
     ENVIRONMENT_STATUS_GET,
     EXECUTION_TARGETS_GET,
+    EXTERNAL_CONVERSATIONS_BY_ID_CALLBACK_KEY_ROTATE_POST,
+    EXTERNAL_CONVERSATIONS_BY_ID_DELETE,
+    EXTERNAL_CONVERSATIONS_BY_ID_EVENTS_POST,
+    EXTERNAL_CONVERSATIONS_BY_ID_GET,
+    EXTERNAL_CONVERSATIONS_BY_ID_MESSAGES_POST,
+    EXTERNAL_CONVERSATIONS_GET,
+    EXTERNAL_CONVERSATIONS_POST,
+    EXTERNAL_CONVERSATIONS_WHATSAPP_INBOUND_POST,
     FEEDS_BY_FEED_ID_LATEST_GOOD_GET,
     FEEDS_BY_FEED_ID_READ_POST,
     FEEDS_BY_FEED_ID_TAIL_GET,

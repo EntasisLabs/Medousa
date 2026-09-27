@@ -169,6 +169,9 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::daemon::coordination::http::surface().inventory())
         .expect("duplicate coordination route policy");
     inventory
+        .extend(crate::daemon::external_conversations::surface().inventory())
+        .expect("duplicate external conversation route policy");
+    inventory
         .extend(crate::daemon::forge_api::forge_surface().inventory())
         .expect("duplicate Forge route policy");
     inventory
@@ -1401,12 +1404,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 438);
-        assert_eq!(with_pairing.entries().len(), 457);
+        assert_eq!(without_pairing.entries().len(), 451);
+        assert_eq!(with_pairing.entries().len(), 470);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 457);
+        assert_eq!(rows.len(), 470);
         assert_eq!(rows[0]["path"], "/health");
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
@@ -1473,7 +1476,7 @@ mod tests {
             .inventory()
             .entries()
             .collect::<Vec<_>>();
-        assert_eq!(entries.len(), 55);
+        assert_eq!(entries.len(), 60);
         assert_eq!(
             entries
                 .iter()
@@ -1500,7 +1503,7 @@ mod tests {
                 .iter()
                 .filter(|entry| entry.required_capability == Some("admin.runtime"))
                 .count(),
-            1
+            6
         );
     }
 

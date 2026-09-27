@@ -1,6 +1,6 @@
 # Agent conversation bridges: Muse and Grok Bot
 
-Status: proposed implementation plan; no provider bridge is shipped.
+Status: prototype implemented on this branch; live provider gates remain open.
 Date: 2026-09-27.
 Branch: `codex/agent-conversation-bridges`, based on `medousa/low-user-friction` at `4ee79366`.
 
@@ -161,6 +161,19 @@ end to end.
 Keep each provider behind a capability/readiness flag until its live gate
 passes. An outbound transport proof does not establish VM access or a complete
 provider transcript.
+
+### Prototype checkpoint (2026-09-27)
+
+- Implemented: daemon-owned conversation journal, owner-scoped API and SDK
+  contract, Grok Bot webhook send and authenticated event callback, Muse
+  WhatsApp inbound routing, and a Medousa conversation panel. Credentials are
+  stored on the workshop; the UI receives a callback key only at setup or
+  rotation.
+- Still required for release: live Muse send/reply and reconnect on the linked
+  account; real Grok Bot routine start and VM callback; exact webhook host
+  validation; workshop reachability from each provider VM; provider readiness
+  and account checks; scoped VM credentials and governed delegation receipts.
+  The current panel is an opt-in prototype until those checks pass.
 
 ## Provider facts to verify during prototypes
 
