@@ -232,7 +232,7 @@
 
   {#if registered.length > 0}
     {#if provider === "muse"}
-      <p class="text-xs text-content-warning">WhatsApp may accept Medousa messages without delivering them to Muse. In our linked-device test, Muse's app did not receive the message and replies did not reach Medousa.</p>
+      <p class="text-xs text-content-warning">WhatsApp may mark Medousa messages Read without delivering them to Muse. In our linked-device test, the message did not appear in Muse's app and replies did not reach Medousa.</p>
     {/if}
     <div class="mt-3 space-y-2">
       {#each registered as conversation (conversation.id)}
