@@ -123,11 +123,14 @@ does not give the local engine an identity it can use for delegated execution.
 
 To let this workshop delegate work to another daemon:
 
-1. On the destination workshop, open a pairing window and copy its pairing link.
+1. On the destination workshop, generate a full v2 pairing link containing an
+   Iroh ticket (`medousa pair qr --full`). The destination daemon can remain on
+   loopback; its HTTP port does not need to be reachable from the caller.
 2. On the machine that will delegate, open **Settings → Workshops** and choose
    **Add worker daemon** (the processor icon).
-3. Paste the destination pairing link. Confirm the destination address and name,
-   then choose **Add worker daemon**.
+3. Paste the destination pairing link, confirm its name, then choose
+   **Add worker daemon**. The daemon uses the ticket for pairing and subsequent
+   worker requests. Legacy links without a ticket require a reachable LAN address.
 4. Select the paired runtime from the Workers control when you want to target it.
 
 The local `medousa_daemon` creates and stores its own identity and credentials.
@@ -137,7 +140,7 @@ portal therefore does not silently remove its worker identity, and vice versa.
 The same flow is available from the CLI:
 
 ```bash
-medousa pair join '<pairing-link>' --worker-url http://worker-host:7419 --label 'Studio Mac'
+medousa pair join '<full-pairing-link>' --label 'Studio Mac'
 medousa pair workers
 medousa pair targets
 medousa pair target use <runtime-id>

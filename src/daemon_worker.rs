@@ -22,6 +22,7 @@ use base64::Engine as _;
 use chrono::Utc;
 use ed25519_dalek::SigningKey;
 use rand::{RngCore as _, rngs::OsRng};
+use reqwest::Method;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sha2::{Digest as _, Sha256};
 use std::{
@@ -129,21 +130,21 @@ impl DaemonWorkerPairing {
         let Some(stored) = stored else {
             return Ok(None);
         };
-        let response = self
-            .client
-            .delete(format!(
-                "{}/pair/{}",
-                stored.summary.daemon_url, stored.summary.pairing_id
-            ))
-            .bearer_auth(&stored.session_token)
-            .send()
-            .await
-            .context("revoke destination worker credential")?;
-        if !response.status().is_success() && response.status() != reqwest::StatusCode::NOT_FOUND {
+        let (status, body) = worker_request(
+            &self.client,
+            &stored.summary.daemon_url,
+            stored.summary.iroh_ticket.as_deref(),
+            Method::DELETE,
+            &format!("/pair/{}", stored.summary.pairing_id),
+            Some(&stored.session_token),
+            None,
+        )
+        .await
+        .context("revoke destination worker credential")?;
+        if !(200..300).contains(&status) && status != 404 {
             bail!(
-                "destination rejected worker credential revocation: {}: {}",
-                response.status(),
-                response.text().await.unwrap_or_default()
+                "destination rejected worker credential revocation: HTTP {status}: {}",
+                String::from_utf8_lossy(&body)
             )
         }
         let summary = stored.summary;
@@ -180,7 +181,16 @@ impl DaemonWorkerPairing {
         let (remote_id, remote_name, remote_key) = if let Some(k) = qr.public_key.clone() {
             (qr.device_id.clone(), qr.name.clone(), k)
         } else {
-            let s: Status = self.get(&base, "/pair/status", None).await?;
+            let s: Status = worker_request_json(
+                &self.client,
+                &base,
+                qr.ticket.as_deref(),
+                Method::GET,
+                "/pair/status",
+                None,
+                None::<&serde_json::Value>,
+            )
+            .await?;
             (s.device_id, s.peer_name, s.daemon_public_key)
         };
         if remote_id != qr.device_id {
@@ -192,7 +202,16 @@ impl DaemonWorkerPairing {
             .await
             .context("join worker identity load")??;
         let public_key = crate::pairing::crypto::verifying_key_to_b64(&ident.key.verifying_key());
-        let init:Init=self.client.post(format!("{base}/pair/init")).json(&serde_json::json!({"qrToken":qr.token,"phoneId":ident.device_id,"phoneName":label.filter(|x|!x.trim().is_empty()).unwrap_or("Medousa worker daemon"),"publicKey":public_key,"role":"portal"})).send().await?.error_for_status()?.json().await?;
+        let init: Init = worker_request_json(
+            &self.client,
+            &base,
+            qr.ticket.as_deref(),
+            Method::POST,
+            "/pair/init",
+            None,
+            Some(&serde_json::json!({"qrToken":qr.token,"phoneId":ident.device_id,"phoneName":label.filter(|x|!x.trim().is_empty()).unwrap_or("Medousa worker daemon"),"publicKey":public_key,"role":"portal"})),
+        )
+        .await?;
         if init.status != "challenge" {
             bail!(
                 "pair init failed: {}",
@@ -205,15 +224,16 @@ impl DaemonWorkerPairing {
         let mut phone = [0; 32];
         OsRng.fill_bytes(&mut phone);
         let phone = b64(&phone);
-        let done: Verify = self
-            .client
-            .post(format!("{base}/pair/verify"))
-            .json(&serde_json::json!({"sessionId":session,"signedNonce":signed,"phoneNonce":phone}))
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?;
+        let done: Verify = worker_request_json(
+            &self.client,
+            &base,
+            qr.ticket.as_deref(),
+            Method::POST,
+            "/pair/verify",
+            None,
+            Some(&serde_json::json!({"sessionId":session,"signedNonce":signed,"phoneNonce":phone})),
+        )
+        .await?;
         if done.status != "paired" {
             bail!(
                 "pair verify failed: {}",
@@ -229,13 +249,23 @@ impl DaemonWorkerPairing {
         )?;
         let token = done.session_token.context("pair verify omitted token")?;
         let pairing_id = done.pairing_id.context("pair verify omitted pairing id")?;
-        let ticket = self
-            .get::<Ticket>(&base, "/pair/iroh-ticket", Some(&token))
-            .await
-            .ok()
-            .and_then(|x| x.ticket)
-            .filter(|x| !x.trim().is_empty())
-            .or(qr.ticket);
+        #[cfg(feature = "iroh-transport")]
+        let ticket = worker_request_json::<Ticket, _>(
+            &self.client,
+            &base,
+            qr.ticket.as_deref(),
+            Method::GET,
+            "/pair/iroh-ticket",
+            Some(&token),
+            None::<&serde_json::Value>,
+        )
+        .await
+        .ok()
+        .and_then(|x| x.ticket)
+        .filter(|x| !x.trim().is_empty())
+        .or(qr.ticket);
+        #[cfg(not(feature = "iroh-transport"))]
+        let ticket = None;
         let summary = DaemonWorkerConnection {
             id: format!("worker-{remote_id}"),
             label: label
@@ -265,13 +295,6 @@ impl DaemonWorkerPairing {
         .await
         .context("join worker credential store")??;
         Ok(summary)
-    }
-    async fn get<T: DeserializeOwned>(&self, b: &str, p: &str, t: Option<&str>) -> Result<T> {
-        let mut r = self.client.get(format!("{b}{p}"));
-        if let Some(t) = t {
-            r = r.bearer_auth(t)
-        }
-        Ok(r.send().await?.error_for_status()?.json().await?)
     }
     fn load(&self) -> Result<Store> {
         let p = self.root.join("workers.json");
@@ -379,28 +402,21 @@ impl DaemonWorkerTransport {
             &hash,
             chrono::Duration::seconds(DEFAULT_ENVELOPE_TTL_SECS),
         );
-        let r = self
-            .client
-            .post(format!("{}{}", s.summary.daemon_url, path))
-            .bearer_auth(&s.session_token)
-            .json(&MeshEnvelopedRequest {
-                envelope: env,
-                payload,
-            })
-            .send()
-            .await
-            .map_err(|e| DelegatedTaskError::transport(e.to_string()))?;
-        let status = r.status();
-        if !status.is_success() {
-            return Err(DelegatedTaskError::transport(format!(
-                "worker HTTP {status}: {}",
-                r.text().await.unwrap_or_default()
-            )));
-        }
-        let wrapped: MeshEnvelopedRequest<R> = r
-            .json()
-            .await
-            .map_err(|e| DelegatedTaskError::transport(e.to_string()))?;
+        let request = MeshEnvelopedRequest {
+            envelope: env,
+            payload,
+        };
+        let wrapped: MeshEnvelopedRequest<R> = worker_request_json(
+            &self.client,
+            &s.summary.daemon_url,
+            s.summary.iroh_ticket.as_deref(),
+            Method::POST,
+            path,
+            Some(&s.session_token),
+            Some(&request),
+        )
+        .await
+        .map_err(|e| DelegatedTaskError::transport(e.to_string()))?;
         verify_enveloped_payload(
             &wrapped,
             &s.summary.daemon_public_key,
@@ -558,7 +574,7 @@ struct Status {
     peer_name: String,
     daemon_public_key: String,
 }
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Init {
     status: String,
@@ -575,10 +591,12 @@ struct Verify {
     pairing_id: Option<String>,
     reason: Option<String>,
 }
+#[cfg(feature = "iroh-transport")]
 #[derive(Deserialize)]
 struct Ticket {
     ticket: Option<String>,
 }
+#[derive(Debug)]
 struct Qr {
     address: String,
     device_id: String,
@@ -591,8 +609,9 @@ struct Qr {
 }
 impl Qr {
     fn parse(raw: &str) -> Result<Self> {
-        if !raw.trim().starts_with("medousa://pair/") {
-            bail!("pairing URL must use medousa://pair/")
+        let version = raw.trim().split_once('?').map_or(raw.trim(), |x| x.0);
+        if !matches!(version, "medousa://pair/1.0" | "medousa://pair/2.0") {
+            bail!("pairing URL must use medousa://pair/1.0 or /2.0")
         }
         let mut m = HashMap::new();
         for p in raw.split_once('?').map(|x| x.1).unwrap_or("").split('&') {
@@ -601,6 +620,10 @@ impl Qr {
             }
         }
         let get = |k| m.get(k).cloned().filter(|v| !v.trim().is_empty());
+        let ticket = get("k");
+        if version == "medousa://pair/2.0" && ticket.is_none() {
+            bail!("v2 worker pairing link is missing its Iroh ticket")
+        }
         Ok(Self {
             address: get("a").context("missing a")?,
             device_id: get("d").context("missing d")?,
@@ -608,7 +631,7 @@ impl Qr {
             signature: get("s").context("missing s")?,
             name: get("n").unwrap_or_else(|| "Worker daemon".into()),
             public_key: get("u"),
-            ticket: get("k"),
+            ticket,
             profile: get("p"),
         })
     }
@@ -641,6 +664,95 @@ fn url_from_address(x: &str) -> String {
     } else {
         format!("http://{x}")
     }
+}
+
+async fn worker_request_json<T: DeserializeOwned, B: Serialize>(
+    client: &reqwest::Client,
+    base: &str,
+    ticket: Option<&str>,
+    method: Method,
+    path: &str,
+    bearer: Option<&str>,
+    body: Option<&B>,
+) -> Result<T> {
+    let encoded = body.map(serde_json::to_vec).transpose()?;
+    let (status, response) = worker_request(
+        client,
+        base,
+        ticket,
+        method,
+        path,
+        bearer,
+        encoded.as_deref(),
+    )
+    .await?;
+    if !(200..300).contains(&status) {
+        bail!(
+            "worker request {path} returned HTTP {status}: {}",
+            String::from_utf8_lossy(&response)
+        );
+    }
+    serde_json::from_slice(&response).with_context(|| format!("decode worker response from {path}"))
+}
+
+async fn worker_request(
+    client: &reqwest::Client,
+    base: &str,
+    ticket: Option<&str>,
+    method: Method,
+    path: &str,
+    bearer: Option<&str>,
+    body: Option<&[u8]>,
+) -> Result<(u16, Vec<u8>)> {
+    if let Some(ticket) = ticket {
+        #[cfg(feature = "iroh-transport")]
+        {
+            let mut headers = Vec::new();
+            if body.is_some() {
+                headers.push(("Content-Type", "application/json"));
+            }
+            let auth = bearer.map(|token| format!("Bearer {token}"));
+            if let Some(ref auth) = auth {
+                headers.push(("Authorization", auth.as_str()));
+            }
+            let mut response = crate::iroh_transport::iroh_http_request(
+                ticket,
+                method.as_str(),
+                path,
+                &headers,
+                body,
+            )
+            .await
+            .with_context(|| format!("reach worker over Iroh for {path}"))?;
+            let mut bytes = Vec::new();
+            while let Some(chunk) = response.body.read_chunk().await? {
+                bytes.extend_from_slice(&chunk);
+            }
+            return Ok((response.status, bytes));
+        }
+        #[cfg(not(feature = "iroh-transport"))]
+        {
+            let _ = ticket;
+            bail!(
+                "worker invite has an Iroh ticket, but this daemon was built without Iroh support"
+            );
+        }
+    }
+    let mut request = client.request(method, format!("{base}{path}"));
+    if let Some(token) = bearer {
+        request = request.bearer_auth(token);
+    }
+    if let Some(body) = body {
+        request = request
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(body.to_vec());
+    }
+    let response = request
+        .send()
+        .await
+        .with_context(|| format!("reach worker at {base} for {path}"))?;
+    let status = response.status().as_u16();
+    Ok((status, response.bytes().await?.to_vec()))
 }
 fn b64(x: &[u8]) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(x)
@@ -875,5 +987,72 @@ mod tests {
         .unwrap();
         assert!(p.remove("studio").unwrap());
         assert!(p.list().unwrap().is_empty())
+    }
+
+    #[test]
+    fn v2_worker_link_requires_iroh_ticket() {
+        let without_ticket = "medousa://pair/2.0?a=127.0.0.1%3A7419&d=worker&t=token&s=sig";
+        assert!(
+            Qr::parse(without_ticket)
+                .unwrap_err()
+                .to_string()
+                .contains("Iroh ticket")
+        );
+        let with_ticket = format!("{without_ticket}&k=endpoint-ticket");
+        assert_eq!(
+            Qr::parse(&with_ticket).unwrap().ticket.as_deref(),
+            Some("endpoint-ticket")
+        );
+    }
+
+    #[cfg(feature = "iroh-transport")]
+    #[tokio::test]
+    async fn ticket_routes_worker_request_over_iroh() {
+        let error = worker_request(
+            &reqwest::Client::new(),
+            "http://127.0.0.1:1",
+            Some("invalid-ticket"),
+            Method::GET,
+            "/pair/status",
+            None,
+            None,
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("reach worker over Iroh"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn worker_pairing_error_includes_remote_rejection() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let app = axum::Router::new().route(
+            "/pair/init",
+            axum::routing::post(|| async {
+                (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    axum::Json(serde_json::json!({"status":"rejected","reason":"invalid_invite"})),
+                )
+            }),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let error = worker_request_json::<Init, _>(
+            &reqwest::Client::new(),
+            &base,
+            None,
+            Method::POST,
+            "/pair/init",
+            None,
+            Some(&serde_json::json!({"qrToken":"expired"})),
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+        server.abort();
+        assert!(error.contains("HTTP 400"), "{error}");
+        assert!(error.contains("invalid_invite"), "{error}");
     }
 }

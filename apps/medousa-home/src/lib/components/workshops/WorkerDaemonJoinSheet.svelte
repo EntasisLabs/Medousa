@@ -25,7 +25,7 @@
 
   function inferDetails() {
     const parsed = parsePairQrUrl(pairLink.trim());
-    if (parsed && !workerUrl.trim()) workerUrl = parsed.daemonUrl;
+    if (parsed && !parsed.irohTicket && !workerUrl.trim()) workerUrl = parsed.daemonUrl;
     if (parsed && !label.trim()) label = parsed.peerName;
   }
 
@@ -35,8 +35,9 @@
     error = null;
     try {
       inferDetails();
+      const hasIrohTicket = Boolean(parsePairQrUrl(pairLink.trim())?.irohTicket);
       await pairWorkerDaemon(pairLink.trim(), {
-        workerUrl: workerUrl.trim() || undefined,
+        workerUrl: hasIrohTicket ? undefined : workerUrl.trim() || undefined,
         label: label.trim() || undefined,
       });
       onPaired?.();
@@ -55,7 +56,7 @@
       <header class="flex items-start justify-between gap-4">
         <div>
           <h2 class="text-sm font-semibold text-surface-50">Add worker daemon</h2>
-          <p class="workshop-faint mt-1 text-xs leading-relaxed">The local engine joins with its own identity. This does not add the worker as a Home portal.</p>
+          <p class="workshop-faint mt-1 text-xs leading-relaxed">Paste a full pairing link with an Iroh ticket to connect across networks. The local engine joins with its own identity.</p>
         </div>
         <button type="button" class="btn btn-sm variant-ghost-surface" onclick={onClose}>Cancel</button>
       </header>
@@ -63,10 +64,12 @@
         <span class="workshop-label">Worker pairing link</span>
         <textarea class="textarea mt-1 min-h-[5rem] w-full font-mono text-xs" placeholder="medousa://pair/2.0?a=…" bind:value={pairLink} oninput={inferDetails}></textarea>
       </label>
-      <label class="block">
-        <span class="workshop-label">Worker address</span>
-        <input class="input mt-1 w-full font-mono text-xs" placeholder="http://192.168.1.42:7419" bind:value={workerUrl} />
-      </label>
+      {#if parsePairQrUrl(pairLink.trim()) && !parsePairQrUrl(pairLink.trim())?.irohTicket}
+        <label class="block">
+          <span class="workshop-label">Worker LAN address (legacy link)</span>
+          <input class="input mt-1 w-full font-mono text-xs" placeholder="http://192.168.1.42:7419" bind:value={workerUrl} />
+        </label>
+      {/if}
       <label class="block">
         <span class="workshop-label">Name</span>
         <input class="input mt-1 w-full text-sm" placeholder="Studio Mac" bind:value={label} />
