@@ -56,7 +56,7 @@ struct Stored {
     summary: DaemonWorkerConnection,
     session_token: String,
 }
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Store {
     #[serde(default = "version")]
@@ -66,6 +66,14 @@ struct Store {
 }
 const fn version() -> u32 {
     VERSION
+}
+impl Default for Store {
+    fn default() -> Self {
+        Self {
+            version: VERSION,
+            connections: Vec::new(),
+        }
+    }
 }
 struct Identity {
     device_id: String,
@@ -101,6 +109,20 @@ impl DaemonWorkerPairing {
             .into_iter()
             .map(|x| x.summary)
             .collect())
+    }
+    pub fn rename(&self, id: &str, label: &str) -> Result<Option<DaemonWorkerConnection>> {
+        let label = label.trim();
+        if label.is_empty() || label.chars().count() > 80 {
+            bail!("worker name must be between 1 and 80 characters")
+        }
+        let mut store = self.load()?;
+        let Some(connection) = store.connections.iter_mut().find(|x| x.summary.id == id) else {
+            return Ok(None);
+        };
+        connection.summary.label = label.to_string();
+        let summary = connection.summary.clone();
+        self.save(&store)?;
+        Ok(Some(summary))
     }
     pub fn remove(&self, id: &str) -> Result<bool> {
         let mut s = self.load()?;
@@ -301,9 +323,13 @@ impl DaemonWorkerPairing {
         if !p.is_file() {
             return Ok(Store::default());
         }
-        let s: Store = serde_json::from_slice(&fs::read(&p)?)?;
-        if s.version != VERSION {
-            bail!("unsupported worker store version {}", s.version)
+        let mut s: Store = serde_json::from_slice(&fs::read(&p)?)?;
+        match s.version {
+            VERSION => {}
+            // Earlier builds wrote version 0 because `derive(Default)` did not
+            // use the serde field default. The stored record format is the same.
+            0 => s.version = VERSION,
+            other => bail!("unsupported worker store version {other}"),
         }
         Ok(s)
     }
@@ -448,9 +474,11 @@ impl DaemonWorkerTransport {
                 "execution target identity mismatch",
             ));
         }
+        let mut candidate = ExecutionTargetCandidate::from_inventory_entry(r.target);
+        candidate.label = s.summary.label.clone();
         Ok(AuthorizedDelegationTarget {
             target: t,
-            candidate: ExecutionTargetCandidate::from_inventory_entry(r.target),
+            candidate,
             policy_revision: r.policy_revision,
         })
     }
@@ -836,6 +864,36 @@ pub async fn pair_daemon_worker(
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RenameDaemonWorkerRequest {
+    pub label: String,
+}
+
+pub async fn rename_daemon_worker(
+    axum::extract::State(state): axum::extract::State<crate::daemon::state::AppState>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    axum::Json(request): axum::Json<RenameDaemonWorkerRequest>,
+) -> Result<axum::Json<DaemonWorkerConnection>, (axum::http::StatusCode, String)> {
+    if request.label.trim().is_empty() || request.label.trim().chars().count() > 80 {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            "worker name must be between 1 and 80 characters".to_string(),
+        ));
+    }
+    let pairing = state.daemon_workers.clone();
+    let renamed = tokio::task::spawn_blocking(move || pairing.rename(&id, &request.label))
+        .await
+        .map_err(|error| worker_api_error(anyhow::anyhow!(error.to_string())))?
+        .map_err(worker_api_error)?;
+    renamed.map(axum::Json).ok_or_else(|| {
+        (
+            axum::http::StatusCode::NOT_FOUND,
+            "worker not found".to_string(),
+        )
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SelectDaemonWorkerRequest {
     #[serde(default)]
     pub runtime_id: Option<String>,
@@ -935,6 +993,32 @@ mod tests {
         }
     }
     #[test]
+    fn new_store_uses_current_version() {
+        assert_eq!(Store::default().version, VERSION);
+    }
+    #[test]
+    fn legacy_zero_version_store_keeps_worker_credentials() {
+        let d = tempdir().unwrap();
+        let p = DaemonWorkerPairing::new(d.path().into());
+        let legacy = Store {
+            version: 0,
+            connections: vec![Stored {
+                summary: sample(),
+                session_token: "secret".into(),
+            }],
+        };
+        private_dir(d.path()).unwrap();
+        private_write(
+            &d.path().join("workers.json"),
+            &serde_json::to_vec(&legacy).unwrap(),
+        )
+        .unwrap();
+        let loaded = p.load().unwrap();
+        assert_eq!(loaded.version, VERSION);
+        assert_eq!(loaded.connections.len(), 1);
+        assert_eq!(loaded.connections[0].session_token, "secret");
+    }
+    #[test]
     fn store_redacts_token_and_is_private() {
         let d = tempdir().unwrap();
         let p = DaemonWorkerPairing::new(d.path().into());
@@ -990,6 +1074,28 @@ mod tests {
     }
 
     #[test]
+    fn rename_changes_only_local_label() {
+        let d = tempdir().unwrap();
+        let p = DaemonWorkerPairing::new(d.path().into());
+        p.save(&Store {
+            version: VERSION,
+            connections: vec![Stored {
+                summary: sample(),
+                session_token: "secret".into(),
+            }],
+        })
+        .unwrap();
+        let renamed = p
+            .rename("worker-abcd1234", "  Studio Mac  ")
+            .unwrap()
+            .unwrap();
+        assert_eq!(renamed.label, "Studio Mac");
+        assert_eq!(p.load().unwrap().connections[0].session_token, "secret");
+        assert_eq!(p.rename("missing", "New name").unwrap(), None);
+        assert!(p.rename("worker-abcd1234", " ").is_err());
+    }
+
+    #[test]
     fn v2_worker_link_requires_iroh_ticket() {
         let without_ticket = "medousa://pair/2.0?a=127.0.0.1%3A7419&d=worker&t=token&s=sig";
         assert!(
@@ -1025,9 +1131,7 @@ mod tests {
 
     #[tokio::test]
     async fn worker_pairing_error_includes_remote_rejection() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         let app = axum::Router::new().route(
             "/pair/init",

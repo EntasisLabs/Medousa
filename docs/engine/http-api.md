@@ -1027,6 +1027,7 @@ portal pairings:
 |---|---|---|
 | GET | `/v1/workers` | List worker identities owned by this daemon |
 | POST | `/v1/workers/pair` | Redeem a destination pairing link as a new daemon identity |
+| PUT | `/v1/workers/{id}` | Change this daemon's local name for a paired worker (`label`) |
 | PUT | `/v1/workers/default` | Select a paired runtime, or clear it with a null `runtimeId` |
 | DELETE | `/v1/workers/{id}` | Revoke the destination credential and remove the local worker |
 

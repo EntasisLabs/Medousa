@@ -61,7 +61,8 @@ human lease; neither route talks to the sidecar directly.
 See [Native computer drivers](../engine/http-api.md#native-computer-drivers).
 
 Daemon worker pairing uses generated operations `workers.get`,
-`workers.pair.post`, `workers.default.put`, and `workers.id.delete`. These
+`workers.pair.post`, `workers.by_id.put`, `workers.default.put`, and
+`workers.by_id.delete`. These
 local-admin operations intentionally have no typed SDK accessor yet; native
 hosts may call them through `http()` while keeping pairing credentials inside
 the daemon. Home portal pairing is a separate identity and transport.

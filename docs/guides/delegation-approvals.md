@@ -126,12 +126,15 @@ To let this workshop delegate work to another daemon:
 1. On the destination workshop, generate a full v2 pairing link containing an
    Iroh ticket (`medousa pair qr --full`). The destination daemon can remain on
    loopback; its HTTP port does not need to be reachable from the caller.
-2. On the machine that will delegate, open **Settings → Workshops** and choose
-   **Add worker daemon** (the processor icon).
+2. On the machine that will delegate, open **Settings → Connection → Remote
+   workers** and choose **Add worker**.
 3. Paste the destination pairing link, confirm its name, then choose
    **Add worker daemon**. The daemon uses the ticket for pairing and subsequent
    worker requests. Legacy links without a ticket require a reachable LAN address.
 4. Select the paired runtime from the Workers control when you want to target it.
+   The picker offers **Auto**, the current workshop, and each paired worker.
+   Rename or remove paired workers in **Remote workers**; the name is stored on
+   the local daemon and does not rename the destination workshop.
 
 The local `medousa_daemon` creates and stores its own identity and credentials.
 Home never reuses or exports its portal identity for delegated work. Removing a

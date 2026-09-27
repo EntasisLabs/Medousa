@@ -898,6 +898,7 @@ fn run_home() {
             daemon::runtime::runtime_list_workers,
             daemon::runtime::runtime_pair_worker,
             daemon::runtime::runtime_remove_worker,
+            daemon::runtime::runtime_rename_worker,
             daemon::runtime::runtime_select_worker,
             daemon::runtime::runtime_get_defaults,
             daemon::runtime::runtime_get_worker_config,

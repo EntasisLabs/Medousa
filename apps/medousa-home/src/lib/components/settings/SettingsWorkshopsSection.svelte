@@ -11,7 +11,7 @@
     Plus,
     Pencil,
   } from "@lucide/svelte";
-  import WorkshopJoinSheet from "$lib/components/workshops/WorkshopJoinSheet.svelte"; import WorkerDaemonControl from "$lib/components/workshops/WorkerDaemonControl.svelte";
+  import WorkshopJoinSheet from "$lib/components/workshops/WorkshopJoinSheet.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import {
     PERSONAL_WORKSHOP_ID,
@@ -377,7 +377,6 @@
           >
             <HardDrive size={15} strokeWidth={1.75} />
           </button>
-          <WorkerDaemonControl />
           <button
             type="button"
             class="ws-icon-btn"

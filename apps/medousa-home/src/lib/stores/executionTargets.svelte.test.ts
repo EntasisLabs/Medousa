@@ -38,7 +38,11 @@ describe("ExecutionTargetStore", () => {
     await store.refresh();
 
     expect(store.shouldShow("session-1")).toBe(true);
-    expect(store.selectionLabel("session-1")).toBe("Mac mini");
+    expect(store.selectionLabel("session-1")).toBe("Auto");
+    expect(store.turnSelection("session-1")).toEqual({
+      kind: "auto",
+      requirements: { selection_key: "session:session-1" },
+    });
 
     store.setSelection("session-1", {
       kind: "exact",
@@ -63,6 +67,19 @@ describe("ExecutionTargetStore", () => {
       kind: "auto",
       requirements: { selection_key: "session:session-2" },
     });
+  });
+
+  it("uses the parent when there is no automatic candidate", async () => {
+    const local = inventory();
+    local.targets = [local.targets[0]];
+    local.default_runtime_id = "runtime-phone";
+    const store = new ExecutionTargetStore(async () => local);
+    store.activateWorkshopScope("parent-only-test");
+    await store.refresh();
+
+    expect(store.selectionLabel("session-local")).toBe("This iPhone");
+    expect(store.turnSelection("session-local")).toEqual({ kind: "same_as_parent" });
+    expect(store.selectionUnavailable("session-local")).toBe(false);
   });
 
   it("keeps a stale exact choice visible so admission rejects instead of falling back", async () => {

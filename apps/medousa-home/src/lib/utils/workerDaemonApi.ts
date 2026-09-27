@@ -30,6 +30,13 @@ export async function removeWorkerDaemon(workerId: string): Promise<void> {
   await invoke("runtime_remove_worker", { workerId });
 }
 
+export async function renameWorkerDaemon(
+  workerId: string,
+  label: string,
+): Promise<DaemonWorkerConnection> {
+  return invoke<DaemonWorkerConnection>("runtime_rename_worker", { workerId, label });
+}
+
 export async function selectWorkerDaemon(runtimeId: string | null): Promise<void> {
   await invoke("runtime_select_worker", { runtimeId });
 }

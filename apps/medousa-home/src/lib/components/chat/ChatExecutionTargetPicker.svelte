@@ -6,6 +6,7 @@
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { layout } from "$lib/runtime/layout.svelte";
   import { executionTargets } from "$lib/stores/executionTargets.svelte";
+  import { workshops } from "$lib/stores/workshops.svelte";
   import type {
     ExecutionTargetInventoryEntry,
     ExecutionTargetSelection,
@@ -32,12 +33,26 @@
   const userTargets = $derived(executionTargets.userTargets());
   const agentTargets = $derived(executionTargets.agentTargets());
   const parentTarget = $derived(executionTargets.parentTarget());
-  const label = $derived(executionTargets.selectionLabel(sessionId));
+  const localLabel = $derived(
+    workshops.activeLabel === "Personal" ? "This workshop" : workshops.activeLabel,
+  );
+  const remoteTargets = $derived(
+    userTargets.filter((target) => target.runtime_id !== parentTarget?.runtime_id),
+  );
+  const autoDescription = $derived(
+    agentTargets.length > 0
+      ? `Let Medousa choose among ${agentTargets.length} authorized ${agentTargets.length === 1 ? "workshop" : "workshops"}`
+      : "No workshops available for automatic routing",
+  );
+  const label = $derived(
+    (!selection && agentTargets.length === 0 && parentTarget) ||
+    selection?.kind === "same_as_parent" ||
+    (selection?.kind === "exact" && selection.runtime_id === parentTarget?.runtime_id)
+      ? localLabel
+      : executionTargets.selectionLabel(sessionId),
+  );
   const unavailable = $derived(executionTargets.selectionUnavailable(sessionId));
   const visible = $derived(executionTargets.shouldShow(sessionId));
-  const defaultLabel = $derived(
-    executionTargets.runtimeLabel(executionTargets.defaultRuntimeId()) ?? "current default",
-  );
 
   $effect(() => {
     const id = sessionId.trim();
@@ -47,10 +62,16 @@
   });
 
   function sameSelection(candidate: ExecutionTargetSelection | null): boolean {
-    if (!candidate || !selection) return candidate === selection;
-    if (candidate.kind !== selection.kind) return false;
-    if (candidate.kind === "exact" && selection.kind === "exact") {
-      return candidate.runtime_id === selection.runtime_id;
+    const current = selection ?? (
+      agentTargets.length > 0 ? { kind: "auto" } : { kind: "same_as_parent" }
+    );
+    if (!candidate) return false;
+    if (candidate.kind === "same_as_parent" && current.kind === "exact") {
+      return current.runtime_id === parentTarget?.runtime_id;
+    }
+    if (candidate.kind !== current.kind) return false;
+    if (candidate.kind === "exact" && current.kind === "exact") {
+      return candidate.runtime_id === current.runtime_id;
     }
     return true;
   }
@@ -255,15 +276,12 @@
                   That workshop is unavailable. Choose another target before sending.
                 </p>
               {/if}
-              {@render desktopOption(null, `Default · ${defaultLabel}`, "Follow the workshop's current worker destination")}
-              {#if parentTarget}
-                {@render desktopOption({ kind: "same_as_parent" }, "This workshop", `Keep workers on ${parentTarget.label}`)}
-              {/if}
-              {#if agentTargets.length > 0}
-                {@render desktopOption({ kind: "auto" }, "Auto", `Let Medousa choose among ${agentTargets.length} authorized ${agentTargets.length === 1 ? "workshop" : "workshops"}`, "auto")}
-              {/if}
+              {@render desktopOption({ kind: "auto" }, "Auto", autoDescription, "auto")}
               <div class="my-1 border-t border-surface-500/25" role="separator"></div>
-              {#each userTargets as target (target.runtime_id)}
+              {#if parentTarget}
+                {@render desktopOption({ kind: "same_as_parent" }, localLabel, "Run delegated work here")}
+              {/if}
+              {#each remoteTargets as target (target.runtime_id)}
                 {@render desktopOption({ kind: "exact", runtime_id: target.runtime_id }, target.label, targetDescription(target))}
               {/each}
               {#if executionTargets.error}
@@ -324,21 +342,18 @@
                     That workshop is no longer available. Choose another target before sending.
                   </p>
                 {/if}
-                <p class="mobile-turn-sheet-section-label">Routing</p>
+                <p class="mobile-turn-sheet-section-label">Worker workshop</p>
                 <div class="mobile-turn-sheet-group">
-                  {@render mobileOption(null, `Default · ${defaultLabel}`, "Follow the workshop's current worker destination", 0)}
-                  {#if parentTarget}
-                    {@render mobileOption({ kind: "same_as_parent" }, "This workshop", `Keep workers on ${parentTarget.label}`, 1)}
-                  {/if}
-                  {#if agentTargets.length > 0}
-                    {@render mobileOption({ kind: "auto" }, "Auto", `Let Medousa choose among ${agentTargets.length} authorized ${agentTargets.length === 1 ? "workshop" : "workshops"}`, parentTarget ? 2 : 1, "auto")}
-                  {/if}
+                  {@render mobileOption({ kind: "auto" }, "Auto", autoDescription, 0, "auto")}
                 </div>
 
-                <p class="mobile-turn-sheet-section-label mt-5">Pin a workshop</p>
+                <p class="mobile-turn-sheet-section-label mt-5">Choose a workshop</p>
                 <div class="mobile-turn-sheet-group">
-                  {#each userTargets as target, index (target.runtime_id)}
-                    {@render mobileOption({ kind: "exact", runtime_id: target.runtime_id }, target.label, targetDescription(target), index)}
+                  {#if parentTarget}
+                    {@render mobileOption({ kind: "same_as_parent" }, localLabel, "Run delegated work here", 0)}
+                  {/if}
+                  {#each remoteTargets as target, index (target.runtime_id)}
+                    {@render mobileOption({ kind: "exact", runtime_id: target.runtime_id }, target.label, targetDescription(target), parentTarget ? index + 1 : index)}
                   {/each}
                 </div>
                 {#if executionTargets.error}

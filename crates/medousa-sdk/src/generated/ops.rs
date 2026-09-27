@@ -2998,6 +2998,13 @@ pub const WORKERS_BY_ID_DELETE: Operation = Operation {
     streaming: false,
 };
 
+pub const WORKERS_BY_ID_PUT: Operation = Operation {
+    id: "workers.by_id.put",
+    method: "PUT",
+    path: "/v1/workers/{id}",
+    streaming: false,
+};
+
 pub const WORKERS_DEFAULT_PUT: Operation = Operation {
     id: "workers.default.put",
     method: "PUT",
@@ -3664,6 +3671,7 @@ pub static ALL: &[Operation] = &[
     VAULT_TRASH_GET,
     VAULT_TRASH_RESTORE_POST,
     WORKERS_BY_ID_DELETE,
+    WORKERS_BY_ID_PUT,
     WORKERS_DEFAULT_PUT,
     WORKERS_GET,
     WORKERS_PAIR_POST,

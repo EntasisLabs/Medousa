@@ -439,6 +439,7 @@ OPERATIONS: dict[str, Operation] = {
     "vault.trash.get": Operation("vault.trash.get", "GET", "/v1/vault/trash", False),
     "vault.trash.restore.post": Operation("vault.trash.restore.post", "POST", "/v1/vault/trash/restore", False),
     "workers.by_id.delete": Operation("workers.by_id.delete", "DELETE", "/v1/workers/{id}", False),
+    "workers.by_id.put": Operation("workers.by_id.put", "PUT", "/v1/workers/{id}", False),
     "workers.default.put": Operation("workers.default.put", "PUT", "/v1/workers/default", False),
     "workers.get": Operation("workers.get", "GET", "/v1/workers", False),
     "workers.pair.post": Operation("workers.pair.post", "POST", "/v1/workers/pair", False),

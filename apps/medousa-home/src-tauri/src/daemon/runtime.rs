@@ -152,6 +152,20 @@ pub async fn runtime_remove_worker(
 }
 
 #[tauri::command]
+pub async fn runtime_rename_worker(
+    _state: State<'_, DaemonState>,
+    worker_id: String,
+    label: String,
+) -> Result<serde_json::Value, String> {
+    crate::workshop_transport::workshop_put_json(
+        &crate::active_workshop::personal_transport_config()?,
+        &format!("/v1/workers/{worker_id}"),
+        &serde_json::json!({ "label": label }),
+    )
+    .await
+}
+
+#[tauri::command]
 pub async fn runtime_select_worker(
     _state: State<'_, DaemonState>,
     runtime_id: Option<String>,

@@ -858,6 +858,8 @@ pub enum DaemonOperation {
     VaultTrashRestorePost,
     #[serde(rename = "workers.by_id.delete")]
     WorkersByIdDelete,
+    #[serde(rename = "workers.by_id.put")]
+    WorkersByIdPut,
     #[serde(rename = "workers.default.put")]
     WorkersDefaultPut,
     #[serde(rename = "workers.get")]
@@ -1358,6 +1360,7 @@ impl DaemonOperation {
             Self::VaultTrashGet => "vault.trash.get",
             Self::VaultTrashRestorePost => "vault.trash.restore.post",
             Self::WorkersByIdDelete => "workers.by_id.delete",
+            Self::WorkersByIdPut => "workers.by_id.put",
             Self::WorkersDefaultPut => "workers.default.put",
             Self::WorkersGet => "workers.get",
             Self::WorkersPairPost => "workers.pair.post",

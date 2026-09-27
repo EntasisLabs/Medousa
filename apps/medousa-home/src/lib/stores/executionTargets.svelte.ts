@@ -152,8 +152,13 @@ export class ExecutionTargetStore {
 
   turnSelection(sessionId: string): ExecutionTargetSelection | null {
     const id = sessionId.trim();
-    const selection = this.selectionFor(id);
-    if (!selection || selection.kind !== "auto") return selection;
+    const selection = this.selectionFor(id) ?? (
+      !this.inventory ? null : this.agentTargets().length > 0
+        ? { kind: "auto" }
+        : this.parentTarget() ? { kind: "same_as_parent" } : null
+    );
+    if (!selection) return null;
+    if (selection.kind !== "auto") return selection;
     return {
       kind: "auto",
       requirements: {
@@ -246,7 +251,11 @@ export class ExecutionTargetStore {
 
   selectionLabel(sessionId: string): string {
     const selection = this.selectionFor(sessionId);
-    if (!selection) return this.runtimeLabel(this.defaultRuntimeId()) ?? "Default";
+    if (!selection) {
+      return this.inventory && this.agentTargets().length === 0
+        ? this.runtimeLabel(this.inventory.parent_runtime_id) ?? "This workshop"
+        : "Auto";
+    }
     if (selection.kind === "same_as_parent") {
       return this.runtimeLabel(this.inventory?.parent_runtime_id) ?? "This workshop";
     }
@@ -258,7 +267,8 @@ export class ExecutionTargetStore {
 
   selectionUnavailable(sessionId: string): boolean {
     const selection = this.selectionFor(sessionId);
-    if (!selection || !this.inventory) return false;
+    if (!this.inventory) return false;
+    if (!selection) return this.agentTargets().length === 0 && !this.parentTarget();
     if (selection.kind === "same_as_parent") return !this.parentTarget();
     if (selection.kind === "auto") return this.agentTargets().length === 0;
     return !this.userTargets().some((target) => target.runtime_id === selection.runtime_id);

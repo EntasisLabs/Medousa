@@ -188,6 +188,7 @@
     "daemon::runtime::runtime_put_tui_defaults",
     "daemon::runtime::runtime_put_worker_config",
     "daemon::runtime::runtime_remove_worker",
+    "daemon::runtime::runtime_rename_worker",
     "daemon::runtime::runtime_select_worker",
     "daemon::runtime::runtime_stage_route_command",
     "daemon::session::agent_mode_list",

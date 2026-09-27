@@ -605,6 +605,10 @@ pub fn build_workshop_surface() -> DeclaredRouter<AppState> {
             workshop_admin_policy(axum::http::Method::DELETE, "/v1/workers/{id}", 1024),
             delete(crate::daemon_worker::remove_daemon_worker),
         )
+        .route(
+            workshop_admin_policy(axum::http::Method::PUT, "/v1/workers/{id}", 16 * 1024),
+            put(crate::daemon_worker::rename_daemon_worker),
+        )
         .merge(crate::live_handlers::surface())
         .route(workshop_read_policy("/v1/health"), get(health))
         .route(workshop_read_policy("/v1/stats"), get(stats))

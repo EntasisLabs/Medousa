@@ -436,6 +436,7 @@ export const OPERATIONS = {
   "vault.trash.get": { id: "vault.trash.get", method: "GET", path: "/v1/vault/trash", streaming: false },
   "vault.trash.restore.post": { id: "vault.trash.restore.post", method: "POST", path: "/v1/vault/trash/restore", streaming: false },
   "workers.by_id.delete": { id: "workers.by_id.delete", method: "DELETE", path: "/v1/workers/{id}", streaming: false },
+  "workers.by_id.put": { id: "workers.by_id.put", method: "PUT", path: "/v1/workers/{id}", streaming: false },
   "workers.default.put": { id: "workers.default.put", method: "PUT", path: "/v1/workers/default", streaming: false },
   "workers.get": { id: "workers.get", method: "GET", path: "/v1/workers", streaming: false },
   "workers.pair.post": { id: "workers.pair.post", method: "POST", path: "/v1/workers/pair", streaming: false },
