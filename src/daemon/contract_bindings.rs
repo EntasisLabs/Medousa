@@ -55,6 +55,11 @@ pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
             request: Some("CreateExternalConversationRequest"),
             response: "CreateExternalConversationResponse",
         },
+        "external_conversations.muse.discovery.get"
+        | "external_conversations.muse.discovery.post" => WireBinding {
+            request: None,
+            response: "ExternalMuseDiscoveryStatus",
+        },
         "external_conversations.by_id.get" => WireBinding {
             request: None,
             response: "ExternalConversationView",

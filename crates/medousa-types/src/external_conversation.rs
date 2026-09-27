@@ -108,6 +108,14 @@ pub struct ExternalInboundClaimResponse {
     pub claimed: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ExternalMuseDiscoveryStatus {
+    pub challenge: String,
+    pub observed_chat_jid: Option<String>,
+    pub expires_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct RotateExternalCallbackResponse {

@@ -3635,6 +3635,29 @@
         "title": "ExternalInboundClaimResponse",
         "type": "object"
       },
+      "ExternalMuseDiscoveryStatus": {
+        "properties": {
+          "challenge": {
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "observed_chat_jid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "challenge",
+          "expires_at"
+        ],
+        "title": "ExternalMuseDiscoveryStatus",
+        "type": "object"
+      },
       "ExternalPeerAssignmentBinding": {
         "description": "Stable correlation returned by an admitted external execution.",
         "properties": {
@@ -17417,6 +17440,104 @@
         },
         "x-medousa-policy": {
           "body_limit": 20480,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/external-conversations/muse/discovery": {
+      "get": {
+        "operationId": "external_conversations.muse.discovery.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalMuseDiscoveryStatus"
+                }
+              }
+            },
+            "description": "external_conversations.muse.discovery.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.muse.discovery.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.muse.discovery.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      },
+      "post": {
+        "operationId": "external_conversations.muse.discovery.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalMuseDiscoveryStatus"
+                }
+              }
+            },
+            "description": "external_conversations.muse.discovery.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.muse.discovery.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.muse.discovery.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
           "bootstrap_public": false,
           "browser_policy": "native_only",
           "capabilities": [

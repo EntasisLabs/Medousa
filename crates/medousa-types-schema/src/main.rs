@@ -95,6 +95,11 @@ fn main() {
     );
     export_type!(
         schemas,
+        ExternalMuseDiscoveryStatus,
+        "ExternalMuseDiscoveryStatus"
+    );
+    export_type!(
+        schemas,
         RotateExternalCallbackResponse,
         "RotateExternalCallbackResponse"
     );

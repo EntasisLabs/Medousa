@@ -6,10 +6,19 @@ import type {
   ExternalConversationView,
   RotateExternalCallbackResponse,
   DeleteExternalConversationResponse,
+  ExternalMuseDiscoveryStatus,
 } from "$lib/types/generated/daemon_api";
 
 export type { ExternalProvider } from "$lib/types/generated/daemon_api";
 export type ExternalConversation = ExternalConversationView;
+
+export function startMuseDiscovery(): Promise<ExternalMuseDiscoveryStatus> {
+  return daemonUnary("external_conversations.muse.discovery.post");
+}
+
+export function getMuseDiscovery(): Promise<ExternalMuseDiscoveryStatus> {
+  return daemonUnary("external_conversations.muse.discovery.get");
+}
 
 export async function listExternalConversations(): Promise<ExternalConversation[]> {
   const result = await daemonUnary<ExternalConversationListResponse>(

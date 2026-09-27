@@ -90,10 +90,12 @@ verified. A stop-request message, if supported, must be labeled as such.
 ## Muse transport
 
 First prove a real send/reply through the existing linked-device adapter with
-an opt-in Muse account. Pair on the workshop that owns the session. Bind only
-an explicitly selected and verified Muse JID. Inbound routing checks both the
-paired account and exact chat JID before recording an external-agent message.
-Ignore `is_from_me` echoes as replies while retaining outbound send IDs.
+an opt-in Muse account. Pair on the workshop that owns the session. Muse's
+WhatsApp UI does not show a phone number. A five-minute one-time challenge asks
+Muse to reply with an exact code; only the adapter-observed individual chat ID
+can be bound. This still requires a live check that Meta's managed Muse chat is
+visible to a linked device. Inbound routing checks the exact chat ID before
+recording an external-agent message. Ignore `is_from_me` echoes as replies.
 
 The linked-device client in this repo is unofficial and already warns about
 production use. The WhatsApp Business Cloud API sends as a registered business
@@ -169,8 +171,9 @@ provider transcript.
   WhatsApp inbound routing, and a Medousa conversation panel. Credentials are
   stored on the workshop; the UI receives a callback key only at setup or
   rotation.
-- Still required for release: live Muse send/reply and reconnect on the linked
-  account; real Grok Bot routine start and VM callback; exact webhook host
+- Still required for release: prove Muse's managed WhatsApp chat is visible to
+  the linked adapter, then live send/reply and reconnect on the linked account;
+  real Grok Bot routine start and VM callback; exact webhook host
   validation; workshop reachability from each provider VM; provider readiness
   and account checks; scoped VM credentials and governed delegation receipts.
   The current panel is an opt-in prototype until those checks pass.

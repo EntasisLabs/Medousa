@@ -11,7 +11,7 @@ use axum::Json;
 use axum::extract::{ConnectInfo, Extension, Path, State};
 use axum::http::{HeaderMap, Method, StatusCode};
 use axum::routing::{delete, get, post};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use medousa_secrets::{
     delete_daemon_secret, ensure_installation_id, load_daemon_secret, save_daemon_secret,
 };
@@ -23,7 +23,8 @@ use medousa_types::{
     ExternalConversationListResponse as ConversationListResponse,
     ExternalConversationSendRequest as SendMessageRequest,
     ExternalConversationView as ConversationView, ExternalEventKind as EventKind,
-    ExternalInboundClaimResponse as InboundClaimResponse, ExternalProvider as Provider,
+    ExternalInboundClaimResponse as InboundClaimResponse,
+    ExternalMuseDiscoveryStatus as MuseDiscoveryStatus, ExternalProvider as Provider,
     ExternalProviderEventRequest as ProviderEventRequest,
     ExternalWhatsAppInboundRequest as WhatsAppInboundRequest, RotateExternalCallbackResponse,
 };
@@ -71,10 +72,28 @@ struct Document {
     conversations: BTreeMap<String, ConversationRecord>,
 }
 
+#[derive(Clone)]
+struct MuseDiscovery {
+    challenge: String,
+    observed_chat_jid: Option<String>,
+    expires_at: DateTime<Utc>,
+}
+
+impl From<&MuseDiscovery> for MuseDiscoveryStatus {
+    fn from(discovery: &MuseDiscovery) -> Self {
+        Self {
+            challenge: discovery.challenge.clone(),
+            observed_chat_jid: discovery.observed_chat_jid.clone(),
+            expires_at: discovery.expires_at,
+        }
+    }
+}
+
 pub struct ExternalConversationStore {
     path: PathBuf,
     document: Mutex<Document>,
     send_locks: Mutex<BTreeMap<String, Arc<Mutex<()>>>>,
+    muse_discoveries: Mutex<BTreeMap<String, MuseDiscovery>>,
 }
 
 impl ExternalConversationStore {
@@ -88,6 +107,7 @@ impl ExternalConversationStore {
             path,
             document: Mutex::new(document),
             send_locks: Mutex::new(BTreeMap::new()),
+            muse_discoveries: Mutex::new(BTreeMap::new()),
         }))
     }
 
@@ -236,6 +256,47 @@ impl ExternalConversationStore {
             .find(|record| record.provider == Provider::Muse && record.target == jid)
             .cloned()
     }
+
+    async fn start_muse_discovery(&self, owner_id: String) -> MuseDiscoveryStatus {
+        let discovery = MuseDiscovery {
+            challenge: format!("MEDOUSA-MUSE-{}", uuid::Uuid::new_v4()),
+            observed_chat_jid: None,
+            expires_at: Utc::now() + TimeDelta::minutes(5),
+        };
+        let status = MuseDiscoveryStatus::from(&discovery);
+        self.muse_discoveries
+            .lock()
+            .await
+            .insert(owner_id, discovery);
+        status
+    }
+
+    async fn muse_discovery(&self, owner_id: &str) -> Option<MuseDiscoveryStatus> {
+        self.muse_discoveries
+            .lock()
+            .await
+            .get(owner_id)
+            .filter(|discovery| discovery.expires_at > Utc::now())
+            .map(MuseDiscoveryStatus::from)
+    }
+
+    async fn observe_muse_challenge(&self, chat_jid: &str, text: &str) -> bool {
+        if chat_jid.ends_with("@g.us") || chat_jid.trim().is_empty() {
+            return false;
+        }
+        let mut discoveries = self.muse_discoveries.lock().await;
+        let Some(discovery) = discoveries.values_mut().find(|discovery| {
+            discovery.expires_at > Utc::now() && text.contains(&discovery.challenge)
+        }) else {
+            return false;
+        };
+        discovery.observed_chat_jid = Some(chat_jid.to_string());
+        true
+    }
+
+    async fn clear_muse_discovery(&self, owner_id: &str) {
+        self.muse_discoveries.lock().await.remove(owner_id);
+    }
 }
 
 fn owner(principal: &RequestPrincipal, state: &AppState) -> String {
@@ -268,15 +329,6 @@ fn validate_webhook_url(raw: &str) -> Result<(), HttpError> {
         ));
     }
     Ok(())
-}
-
-fn valid_muse_chat_jid(raw: &str) -> bool {
-    let Some((number, domain)) = raw.trim().split_once('@') else {
-        return false;
-    };
-    (5..=20).contains(&number.len())
-        && number.bytes().all(|byte| byte.is_ascii_digit())
-        && matches!(domain, "s.whatsapp.net" | "lid")
 }
 
 fn secret_path(id: &str, slot: IntegrationSecretSlot) -> anyhow::Result<DaemonSecretPath> {
@@ -316,6 +368,7 @@ pub async fn create(
     Extension(principal): Extension<RequestPrincipal>,
     Json(input): Json<CreateConversationRequest>,
 ) -> Result<Json<CreateConversationResponse>, HttpError> {
+    let owner_id = owner(&principal, &state);
     if input.label.trim().is_empty()
         || input.label.len() > 120
         || input.target.trim().is_empty()
@@ -325,11 +378,18 @@ pub async fn create(
     }
     match input.provider {
         Provider::Muse => {
-            if input.webhook_url.is_some()
-                || input.webhook_key.is_some()
-                || !valid_muse_chat_jid(&input.target)
-            {
-                return Err(bad_request("Muse requires a WhatsApp chat JID"));
+            if input.webhook_url.is_some() || input.webhook_key.is_some() {
+                return Err(bad_request("Muse does not use webhook settings"));
+            }
+            let discovered = state
+                .external_conversations
+                .muse_discovery(&owner_id)
+                .await
+                .and_then(|status| status.observed_chat_jid);
+            if discovered.as_deref() != Some(input.target.trim()) {
+                return Err(bad_request(
+                    "Discover the Muse chat through WhatsApp before connecting",
+                ));
             }
         }
         Provider::GrokBot => {
@@ -365,7 +425,7 @@ pub async fn create(
     }
     let created = state
         .external_conversations
-        .create(id.clone(), owner(&principal, &state), &input)
+        .create(id.clone(), owner_id.clone(), &input)
         .await;
     let conversation = match created {
         Ok(conversation) => conversation,
@@ -375,10 +435,40 @@ pub async fn create(
             return Err(internal(error));
         }
     };
+    if input.provider == Provider::Muse {
+        state
+            .external_conversations
+            .clear_muse_discovery(&owner_id)
+            .await;
+    }
     Ok(Json(CreateConversationResponse {
         conversation,
         callback_key,
     }))
+}
+
+pub async fn start_muse_discovery(
+    State(state): State<AppState>,
+    Extension(principal): Extension<RequestPrincipal>,
+) -> Json<MuseDiscoveryStatus> {
+    Json(
+        state
+            .external_conversations
+            .start_muse_discovery(owner(&principal, &state))
+            .await,
+    )
+}
+
+pub async fn get_muse_discovery(
+    State(state): State<AppState>,
+    Extension(principal): Extension<RequestPrincipal>,
+) -> Result<Json<MuseDiscoveryStatus>, HttpError> {
+    state
+        .external_conversations
+        .muse_discovery(&owner(&principal, &state))
+        .await
+        .map(Json)
+        .ok_or((StatusCode::NOT_FOUND, "Muse discovery expired".into()))
 }
 
 pub async fn list(
@@ -687,6 +777,13 @@ pub async fn whatsapp_inbound(
     {
         return Err(bad_request("invalid WhatsApp message"));
     }
+    if state
+        .external_conversations
+        .observe_muse_challenge(&input.chat_jid, &input.text)
+        .await
+    {
+        return Ok(Json(InboundClaimResponse { claimed: true }));
+    }
     let Some(binding) = state
         .external_conversations
         .muse_binding(&input.chat_jid)
@@ -694,9 +791,6 @@ pub async fn whatsapp_inbound(
     else {
         return Ok(Json(InboundClaimResponse { claimed: false }));
     };
-    if input.sender_jid != binding.target {
-        return Ok(Json(InboundClaimResponse { claimed: false }));
-    }
     let recorded = state
         .external_conversations
         .record(
@@ -746,6 +840,26 @@ pub fn surface() -> DeclaredRouter<AppState> {
                     20 * 1024,
                 ),
                 post(create),
+            ),
+        ])
+        .methods([
+            (
+                policy(
+                    Method::GET,
+                    "/v1/external-conversations/muse/discovery",
+                    Capability::WorkshopRead,
+                    1024,
+                ),
+                get(get_muse_discovery),
+            ),
+            (
+                policy(
+                    Method::POST,
+                    "/v1/external-conversations/muse/discovery",
+                    Capability::AdminExecute,
+                    1024,
+                ),
+                post(start_muse_discovery),
             ),
         ])
         .methods([
@@ -884,12 +998,38 @@ mod tests {
         assert!(validate_webhook_url("https://127.0.0.1/routine/1").is_err());
     }
 
-    #[test]
-    fn muse_binding_requires_an_individual_whatsapp_jid() {
-        assert!(valid_muse_chat_jid("123456789@s.whatsapp.net"));
-        assert!(valid_muse_chat_jid("123456789@lid"));
-        assert!(!valid_muse_chat_jid("123456789@g.us"));
-        assert!(!valid_muse_chat_jid("anything@s.whatsapp.net"));
-        assert!(!valid_muse_chat_jid("123456789@s.whatsapp.net/other"));
+    #[tokio::test]
+    async fn muse_discovery_requires_challenge_in_an_individual_chat() {
+        let path =
+            std::env::temp_dir().join(format!("medousa-external-{}.json", uuid::Uuid::new_v4()));
+        let store = ExternalConversationStore::open(path).await.unwrap();
+        let started = store.start_muse_discovery("owner".into()).await;
+        assert!(started.observed_chat_jid.is_none());
+        assert!(!store.observe_muse_challenge("opaque@lid", "wrong").await);
+        assert!(
+            !store
+                .observe_muse_challenge("group@g.us", &started.challenge)
+                .await
+        );
+        assert!(
+            store
+                .observe_muse_challenge(
+                    "opaque@lid",
+                    &format!("Here is the code: {}", started.challenge),
+                )
+                .await
+        );
+        assert_eq!(
+            store
+                .muse_discovery("owner")
+                .await
+                .unwrap()
+                .observed_chat_jid
+                .as_deref(),
+            Some("opaque@lid")
+        );
+        assert!(store.muse_discovery("other").await.is_none());
+        store.clear_muse_discovery("owner").await;
+        assert!(store.muse_discovery("owner").await.is_none());
     }
 }

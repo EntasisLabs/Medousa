@@ -3105,6 +3105,12 @@ class ExternalInboundClaimResponse(MedousaModel):
     claimed: bool
 
 
+class ExternalMuseDiscoveryStatus(MedousaModel):
+    challenge: str
+    expires_at: AwareDatetime
+    observed_chat_jid: str | None = None
+
+
 class ExternalProviderEventRequest(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',

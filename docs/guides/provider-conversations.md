@@ -23,10 +23,10 @@ If the callback key is lost or exposed, use **Rotate callback key** in the conve
 ## Muse
 
 1. Install and pair the WhatsApp adapter on the **connected workshop** through **Settings → Packages** and the [Channels guide](channels.md).
-2. Find Muse's exact WhatsApp chat number. Choose **Connect agent → Muse** and enter that number, including country code, or its full chat JID.
-3. Send a message in the conversation. Replies from the bound Muse chat appear here after the WhatsApp adapter receives them.
+2. Choose **Connect agent → Muse → Find Muse chat**. In the normal Muse chat in WhatsApp, ask Muse to reply with the exact one-time code Medousa shows. The linked adapter uses that reply to discover the chat's internal ID; you do not need a phone number.
+3. When Medousa reports **Chat observed**, connect the conversation. Send a small test message. Replies from the bound chat appear here if the linked adapter can access this Meta-managed chat.
 
-The linked-device WhatsApp adapter is an experimental connection. If it is disconnected, a send can have an uncertain outcome. Check the native WhatsApp chat before sending the same request again.
+Muse's WhatsApp chat may be managed by Meta and may not be visible to linked-device adapters. Discovery expiring without observing a reply means the transport is unavailable; it is not evidence that Muse ignored the message. The linked-device WhatsApp adapter is experimental. If a send is uncertain, check the native chat before sending the same request again.
 
 ## What the status means
 

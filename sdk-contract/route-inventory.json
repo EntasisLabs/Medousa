@@ -1991,6 +1991,38 @@
       "trust_group": "portal"
     },
     {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "external_conversations.muse.discovery.get",
+      "path": "/v1/external-conversations/muse/discovery",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "external_conversations.muse.discovery.post",
+      "path": "/v1/external-conversations/muse/discovery",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
       "body_limit": 20480,
       "bootstrap_public": false,
       "browser_policy": "native_only",

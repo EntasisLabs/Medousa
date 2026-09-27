@@ -800,6 +800,20 @@ pub const EXTERNAL_CONVERSATIONS_GET: Operation = Operation {
     streaming: false,
 };
 
+pub const EXTERNAL_CONVERSATIONS_MUSE_DISCOVERY_GET: Operation = Operation {
+    id: "external_conversations.muse.discovery.get",
+    method: "GET",
+    path: "/v1/external-conversations/muse/discovery",
+    streaming: false,
+};
+
+pub const EXTERNAL_CONVERSATIONS_MUSE_DISCOVERY_POST: Operation = Operation {
+    id: "external_conversations.muse.discovery.post",
+    method: "POST",
+    path: "/v1/external-conversations/muse/discovery",
+    streaming: false,
+};
+
 pub const EXTERNAL_CONVERSATIONS_POST: Operation = Operation {
     id: "external_conversations.post",
     method: "POST",
@@ -3413,6 +3427,8 @@ pub static ALL: &[Operation] = &[
     EXTERNAL_CONVERSATIONS_BY_ID_GET,
     EXTERNAL_CONVERSATIONS_BY_ID_MESSAGES_POST,
     EXTERNAL_CONVERSATIONS_GET,
+    EXTERNAL_CONVERSATIONS_MUSE_DISCOVERY_GET,
+    EXTERNAL_CONVERSATIONS_MUSE_DISCOVERY_POST,
     EXTERNAL_CONVERSATIONS_POST,
     EXTERNAL_CONVERSATIONS_WHATSAPP_INBOUND_POST,
     FEEDS_BY_FEED_ID_LATEST_GOOD_GET,

@@ -46,6 +46,12 @@ export interface ExternalConversationSendRequest {
   text: string;
 }
 
+export interface ExternalMuseDiscoveryStatus {
+  challenge: string;
+  expires_at: string;
+  observed_chat_jid?: string | null;
+}
+
 export interface RotateExternalCallbackResponse {
   callback_key: string;
 }

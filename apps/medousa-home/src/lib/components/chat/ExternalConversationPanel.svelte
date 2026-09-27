@@ -3,6 +3,8 @@
   import { ArrowLeft, Plus, RefreshCw, Send } from "@lucide/svelte";
   import {
     createExternalConversation,
+    startMuseDiscovery,
+    getMuseDiscovery,
     getExternalConversation,
     listExternalConversations,
     rotateExternalCallbackKey,
@@ -11,6 +13,7 @@
     type ExternalConversation,
     type ExternalProvider,
   } from "$lib/daemon/externalConversations";
+  import type { ExternalMuseDiscoveryStatus } from "$lib/types/generated/daemon_api";
 
   let { onClose }: { onClose: () => void } = $props();
   let conversations = $state<ExternalConversation[]>([]);
@@ -26,6 +29,7 @@
   let webhookKey = $state("");
   let callbackKey = $state<string | null>(null);
   let confirmDelete = $state(false);
+  let museDiscovery = $state<ExternalMuseDiscoveryStatus | null>(null);
   const selected = $derived(conversations.find((item) => item.id === selectedId) ?? null);
 
   function statusFor(conversation: ExternalConversation): string {
@@ -51,32 +55,43 @@
       } else {
         conversations = await listExternalConversations();
       }
-      error = null;
+      if (!creating) error = null;
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause);
+    }
+  }
+
+  async function refreshMuseDiscovery() {
+    if (!creating || provider !== "muse" || !museDiscovery) return;
+    try {
+      museDiscovery = await getMuseDiscovery();
+    } catch {
+      museDiscovery = null;
+      error = "Muse chat discovery expired. Start it again.";
     }
   }
 
   onMount(() => {
     void refresh();
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible" && !busy) void refresh();
+      if (document.visibilityState === "visible" && !busy) {
+        void refresh();
+        void refreshMuseDiscovery();
+      }
     }, 3000);
     return () => window.clearInterval(timer);
   });
 
   async function create() {
     if (busy || !label.trim()) return;
+    if (provider === "muse" && !museDiscovery?.observed_chat_jid) return;
     busy = true;
     error = null;
     try {
-      const museTarget = target.trim().includes("@")
-        ? target.trim()
-        : `${target.replace(/\D/g, "")}@s.whatsapp.net`;
       const result = await createExternalConversation({
         provider,
         label: label.trim(),
-        target: provider === "muse" ? museTarget : target.trim(),
+        target: provider === "muse" ? museDiscovery!.observed_chat_jid! : target.trim(),
         ...(provider === "grok_bot"
           ? { webhook_url: webhookUrl.trim(), webhook_key: webhookKey.trim() }
           : {}),
@@ -86,6 +101,20 @@
       upsert(result.conversation);
       selectedId = result.conversation.id;
       creating = false;
+      museDiscovery = null;
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : String(cause);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function discoverMuse() {
+    if (busy) return;
+    busy = true;
+    error = null;
+    try {
+      museDiscovery = await startMuseDiscovery();
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause);
     } finally {
@@ -181,9 +210,11 @@
       <label class="text-sm">Conversation name
         <input class="mt-1 w-full rounded-md bg-surface-800 p-2" bind:value={label} required maxlength="120" />
       </label>
-      <label class="text-sm">{provider === "muse" ? "Muse WhatsApp number or chat JID" : "Bot name"}
-        <input class="mt-1 w-full rounded-md bg-surface-800 p-2" bind:value={target} required maxlength="256" />
-      </label>
+      {#if provider === "grok_bot"}
+        <label class="text-sm">Bot name
+          <input class="mt-1 w-full rounded-md bg-surface-800 p-2" bind:value={target} required maxlength="256" />
+        </label>
+      {/if}
       {#if provider === "grok_bot"}
         <label class="text-sm">Webhook POST URL
           <input class="mt-1 w-full rounded-md bg-surface-800 p-2" type="url" bind:value={webhookUrl} required />
@@ -192,10 +223,18 @@
           <input class="mt-1 w-full rounded-md bg-surface-800 p-2" type="password" bind:value={webhookKey} required autocomplete="off" />
         </label>
       {:else}
-        <p class="workshop-faint text-xs">Pair the WhatsApp package on the connected workshop first. Use the exact Muse chat number.</p>
+        <div class="rounded-lg bg-surface-800 p-3 text-sm">
+          <p>Pair the WhatsApp package on the connected workshop. Then start discovery and ask Muse in your normal WhatsApp chat to reply with the exact code shown here.</p>
+          <button type="button" class="mt-3 text-content-link" disabled={busy} onclick={() => void discoverMuse()}>{museDiscovery ? "Restart discovery" : "Find Muse chat"}</button>
+          {#if museDiscovery}
+            <code class="mt-2 block break-all select-all">{museDiscovery.challenge}</code>
+            <p class="workshop-faint mt-2 text-xs">Send: “Reply with exactly {museDiscovery.challenge}”</p>
+            <p class="mt-2 text-xs">{museDiscovery.observed_chat_jid ? "Chat observed. You can connect now; a live send/reply still needs verification." : "Waiting for Muse's exact reply. Discovery expires after five minutes."}</p>
+          {/if}
+        </div>
       {/if}
       <div class="flex gap-3">
-        <button type="submit" class="rounded-md bg-primary-600 px-4 py-2 text-sm" disabled={busy}>Connect</button>
+        <button type="submit" class="rounded-md bg-primary-600 px-4 py-2 text-sm" disabled={busy || (provider === "muse" && !museDiscovery?.observed_chat_jid)}>Connect</button>
         <button type="button" class="text-sm" onclick={() => creating = false}>Cancel</button>
       </div>
     </form>

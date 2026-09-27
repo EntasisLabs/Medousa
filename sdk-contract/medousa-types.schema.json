@@ -12968,6 +12968,30 @@
       }
     }
   },
+  "ExternalMuseDiscoveryStatus": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExternalMuseDiscoveryStatus",
+    "type": "object",
+    "required": [
+      "challenge",
+      "expires_at"
+    ],
+    "properties": {
+      "challenge": {
+        "type": "string"
+      },
+      "expires_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "observed_chat_jid": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
   "ExternalProvider": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "ExternalProvider",
