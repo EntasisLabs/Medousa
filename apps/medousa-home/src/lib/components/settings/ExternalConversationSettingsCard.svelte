@@ -196,7 +196,7 @@
           <input class="mt-1 w-full rounded-md bg-surface-800 p-2" type="password" bind:value={webhookKey} required autocomplete="off" />
         </label>
       {:else}
-        <p class="workshop-faint text-xs">Pair WhatsApp in Settings → Packages on the connected workshop, then ask Muse in WhatsApp to reply with the code below.</p>
+        <p class="workshop-faint text-xs">Install the WhatsApp adapter in Settings → Packages. Set WhatsApp’s deliver bind to <code>127.0.0.1:7423</code> in Messaging if it was configured earlier. On the connected workshop, run <code>medousa whatsapp</code> and scan its QR from WhatsApp → Linked Devices. Then ask Muse to reply with the code below.</p>
         <button type="button" class="text-content-link text-sm" disabled={busy} onclick={() => void discoverMuse()}>{discovery ? "Restart discovery" : "Find Muse chat"}</button>
         {#if discovery}
           <code class="block break-all select-all text-xs">{discovery.challenge}</code>

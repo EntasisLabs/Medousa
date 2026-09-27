@@ -49,7 +49,7 @@
   let slackClearBotToken = $state(false);
   let slackClearAppToken = $state(false);
 
-  let whatsappDeliverBind = $state("127.0.0.1:7422");
+  let whatsappDeliverBind = $state("127.0.0.1:7423");
   let whatsappDeliverUrl = $state("");
   let whatsappSessionDb = $state("");
   let whatsappAllowedUsers = $state("");
@@ -87,7 +87,7 @@
     slackClearBotToken = false;
     slackClearAppToken = false;
 
-    whatsappDeliverBind = summary.whatsapp.deliverBind || "127.0.0.1:7422";
+    whatsappDeliverBind = summary.whatsapp.deliverBind || "127.0.0.1:7423";
     whatsappDeliverUrl = summary.whatsapp.deliverUrl ?? "";
     whatsappSessionDb = summary.whatsapp.sessionDbPath ?? "";
     whatsappAllowedUsers = formatStringCsv(summary.whatsapp.allowedUserIds);
@@ -141,7 +141,7 @@
       return;
     }
     await messaging.saveWhatsApp({
-      deliverBind: whatsappDeliverBind.trim() || "127.0.0.1:7422",
+      deliverBind: whatsappDeliverBind.trim() || "127.0.0.1:7423",
       deliverUrl: whatsappDeliverUrl.trim() || null,
       sessionDbPath: whatsappSessionDb.trim() || null,
       allowedUserIds: parseStringCsv(whatsappAllowedUsers),

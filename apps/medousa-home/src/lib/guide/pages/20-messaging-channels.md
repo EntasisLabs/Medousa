@@ -18,7 +18,7 @@ Related: [Sharing and phone](guide:sharing-phone) · [Permissions, budgets, and 
 | **Telegram** | **Bot token** | **Your Telegram user ID** (`/whoami`) | Optional heartbeat chat IDs |
 | **Discord** | **Bot token** | **Command prefix** (default `!`) | Heartbeat channel IDs |
 | **Slack** | **Bot token** (xoxb) + **App token** (xapp) | **Allowed Slack user IDs** | Heartbeat channel IDs |
-| **WhatsApp** | **Deliver bind** (default `127.0.0.1:7422`); JIDs in Connect | **Deliver URL**, optional **Session DB path** | Heartbeat chat JIDs |
+| **WhatsApp** | **Deliver bind** (default `127.0.0.1:7423`); JIDs in Connect | **Deliver URL**, optional **Session DB path** | Heartbeat chat JIDs |
 
 Tokens are cleared/replaced on save according to the field UX — do not paste tokens into chat or vault notes.
 

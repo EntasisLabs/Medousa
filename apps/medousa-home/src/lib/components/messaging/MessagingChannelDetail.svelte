@@ -66,7 +66,7 @@
     slackAppToken = $bindable(""),
     slackClearBotToken = $bindable(false),
     slackClearAppToken = $bindable(false),
-    whatsappDeliverBind = $bindable("127.0.0.1:7422"),
+    whatsappDeliverBind = $bindable("127.0.0.1:7423"),
     whatsappDeliverUrl = $bindable(""),
     whatsappSessionDb = $bindable(""),
     whatsappAllowedUsers = $bindable(""),

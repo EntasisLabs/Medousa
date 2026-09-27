@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 const DEFAULT_DAEMON_BIND: &str = "127.0.0.1:7419";
 const DEFAULT_DISCORD_PREFIX: &str = "!";
-const DEFAULT_WHATSAPP_DELIVER_BIND: &str = "127.0.0.1:7422";
+const DEFAULT_WHATSAPP_DELIVER_BIND: &str = "127.0.0.1:7423";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct ProductConfig {

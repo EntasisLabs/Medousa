@@ -26,7 +26,7 @@ use whatsapp_rust_tokio_transport::TokioWebSocketTransportFactory;
 use whatsapp_rust_ureq_http_client::UreqHttpClient;
 
 const DEFAULT_DAEMON_URL: &str = "http://127.0.0.1:7419";
-const DEFAULT_DELIVER_BIND: &str = "127.0.0.1:7422";
+const DEFAULT_DELIVER_BIND: &str = "127.0.0.1:7423";
 const DEFAULT_DELIVERY_TIMEOUT: Duration = Duration::from_secs(120);
 const DEFAULT_POLL_INTERVAL: Duration = Duration::from_millis(700);
 const ADAPTER_COMMAND_HINT: &str = "Commands: /new /help /history /model /depth /stop /regen /health /heartbeat — or send a message to chat.";
@@ -231,7 +231,14 @@ async fn handle_event(
                 "Scan WhatsApp QR in Linked Devices (valid ~{}s):",
                 timeout.as_secs()
             );
-            println!("{code}");
+            let qr = qrcode::QrCode::new(code.as_bytes()).context("render WhatsApp pairing QR")?;
+            println!(
+                "{}",
+                qr.render::<char>()
+                    .quiet_zone(true)
+                    .module_dimensions(2, 1)
+                    .build()
+            );
         }
         Event::PairingCode { code, timeout } => {
             println!(
@@ -555,8 +562,10 @@ fn print_usage() {
     println!();
     println!("ENV:");
     println!("  MEDOUSA_DAEMON_URL");
-    println!("  MEDOUSA_WHATSAPP_DELIVER_BIND (default 127.0.0.1:7422)");
-    println!("  MEDOUSA_WHATSAPP_SESSION_DB (default ~/.local/share/medousa/whatsapp/session.db)");
+    println!("  MEDOUSA_WHATSAPP_DELIVER_BIND (default 127.0.0.1:7423)");
+    println!(
+        "  MEDOUSA_WHATSAPP_SESSION_DB (default <local app data>/medousa/whatsapp/session.db)"
+    );
     println!("  WHATSAPP_WS_URL (optional transport override)");
     println!();
     println!("NOTE: First run prints a QR code for WhatsApp Linked Devices pairing.");

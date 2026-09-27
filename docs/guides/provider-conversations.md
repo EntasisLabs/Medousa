@@ -22,11 +22,11 @@ If the callback key is lost or exposed, use **Rotate callback key** in External 
 
 ## Muse
 
-1. Install and pair the WhatsApp adapter on the **connected workshop** through **Settings → Packages** and the [Channels guide](channels.md).
+1. Install the WhatsApp adapter on the **connected workshop** through **Settings → Packages**. If WhatsApp was configured earlier, set its **Deliver bind** to `127.0.0.1:7423` in Messaging settings; older builds used the port reserved by Medousa desktop. On that workshop, run `medousa whatsapp` in a terminal. On your phone, open **WhatsApp → Settings → Linked Devices → Link a Device** and scan the QR shown in the terminal. Keep the adapter running while you use Muse. Pairing does not require Muse's phone number or JID.
 2. In **Settings → External Agents → Muse**, choose **Add session → Find Muse chat**. In the normal Muse chat in WhatsApp, ask Muse to reply with the exact one-time code Medousa shows. The linked adapter uses that reply to discover the chat's internal ID; you do not need a phone number.
 3. When Medousa reports **Chat observed**, connect the session. In Chat, choose **Muse** and that session, then send a small test message. Replies from the bound chat appear in the same chat view if the linked adapter can access this Meta-managed chat.
 
-Muse's WhatsApp chat may be managed by Meta and may not be visible to linked-device adapters. Discovery expiring without observing a reply means the transport is unavailable; it is not evidence that Muse ignored the message. The linked-device WhatsApp adapter is experimental. If a send is uncertain, check the native chat before sending the same request again.
+Muse's WhatsApp chat may be managed by Meta and may not be visible to linked-device adapters. Discovery expiring without observing a reply means this adapter has not seen Muse's reply; check that the adapter connected before treating it as a transport limitation. The linked-device WhatsApp adapter is experimental. If a send is uncertain, check the native chat before sending the same request again.
 
 ## What the status means
 
