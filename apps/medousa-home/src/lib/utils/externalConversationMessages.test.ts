@@ -17,5 +17,7 @@ describe("external conversation projection", () => {
     expect(externalConversationStatus(conversation)).toBeNull();
     conversation.events.pop();
     expect(externalConversationStatus(conversation)).toBe("Accepted · awaiting provider reply");
+    conversation.provider = "muse";
+    expect(externalConversationStatus(conversation)).toBe("WhatsApp accepted · Muse delivery unverified");
   });
 });

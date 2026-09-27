@@ -1,6 +1,6 @@
 # Muse and Grok Bot conversations
 
-Medousa can show conversations with agents that run on their own computers. Set up Muse sessions and Grok bots in **Settings → External Agents**. In Chat, choose **Muse** or **Grok Bot** from the runtime picker, then choose the registered session or bot from the model picker. Their transcripts belong to the connected workshop, so the same history appears when you reconnect from another Medousa device.
+Medousa can show conversations with agents that run on their own computers. Set up Grok bots in **Settings → External Agents**. Muse WhatsApp support is experimental: a registered chat ID does not establish that Muse receives Medousa messages. Conversation transcripts belong to the connected workshop, so the same history appears when you reconnect from another Medousa device.
 
 ## Grok Bot
 
@@ -23,17 +23,17 @@ If the callback key is lost or exposed, use **Rotate callback key** in External 
 ## Muse
 
 1. Install the WhatsApp adapter on the **connected workshop** through **Settings → Packages**. In **Settings → Sharing → Channels**, configure WhatsApp with **Deliver bind** `127.0.0.1:7423`; older builds used the port reserved by Medousa desktop. On a local workshop, **Settings → External Agents → Muse → Add session** starts the adapter and shows its live QR. For a remote workshop, start the adapter on that workshop with `medousa whatsapp`. On your phone, open **WhatsApp → Settings → Linked Devices → Link a Device** and scan the QR from Medousa. Keep the adapter running while you use Muse. Pairing does not require Muse's phone number or JID.
-2. In **Settings → External Agents → Muse**, choose **Add session → Find Muse chat**. In the normal Muse chat in WhatsApp, ask Muse to reply with the exact one-time code Medousa shows. The linked adapter uses that reply to discover the chat's internal ID; you do not need a phone number.
-3. When Medousa reports **Chat observed**, connect the session. In Chat, choose **Muse** and that session, then send a small test message. Replies from the bound chat appear in the same chat view if the linked adapter can access this Meta-managed chat.
+2. In **Settings → External Agents → Muse**, choose **Add session → Find Muse chat**. Send the one-time code Medousa shows in the normal Muse chat on your phone. Use **Check for code** if the page has not updated. The linked adapter uses your outgoing code to discover the chat's internal ID; you do not need a phone number or a reply containing the code. **WhatsApp linked** only confirms that the adapter paired with your account; it does not confirm that the Muse chat reached the adapter.
+3. When Medousa reports that it observed the chat ID, you can register the session. Registration records the WhatsApp chat ID only. A test message can appear in WhatsApp while failing to reach Muse's own integration, and Muse's reply can remain visible only on the phone. Do not rely on this route for tasks until a message sent from Medousa appears in Muse's app and its reply appears back in Medousa.
 
-Muse's WhatsApp chat may be managed by Meta and may not be visible to linked-device adapters. Discovery expiring without observing a reply means this adapter has not seen Muse's reply; check that the adapter connected before treating it as a transport limitation. The linked-device WhatsApp adapter is experimental. If a send is uncertain, check the native chat before sending the same request again.
+In our linked-device test, WhatsApp accepted a Medousa message and displayed it in the phone chat, but Muse's app did not receive it; Muse's replies to phone messages did not reach the adapter. Discovery expiring without observing your outgoing code means the adapter has not seen the chat. The linked-device WhatsApp adapter is experimental. If a send is uncertain, check Muse's app before sending the same request again.
 
 If the adapter connects in a terminal but Medousa keeps showing **Waiting for the workshop’s WhatsApp pairing QR**, check which `medousa_whatsapp` binary the launcher used. Older adapter builds can pair in the terminal but do not publish QR or connected status to the workshop. Update the adapter package and restart it; an already-paired session reconnects from its session database.
 
 ## What the status means
 
 - **Sending** is a durable attempt. If it remains after a workshop restart, check the provider's native history before resending.
-- **Transport accepted** means WhatsApp accepted a send or the Grok Bot webhook accepted a request. It does not mean the agent finished.
+- **Transport accepted** means WhatsApp accepted a send or the Grok Bot webhook accepted a request. For Muse, WhatsApp acceptance does not confirm delivery to Muse. It does not mean the agent finished.
 - **Transport uncertain** means the workshop could not prove whether the provider received the request. Check the provider's native chat or routine history before resending.
 - **Provider message, progress, question, completed, failed** are events the workshop actually received. An ordinary Muse reply does not claim a task is complete.
 

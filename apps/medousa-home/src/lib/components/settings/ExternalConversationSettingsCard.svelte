@@ -31,6 +31,7 @@
   let callbackConversationId = $state<string | null>(null);
   let confirmDeleteId = $state<string | null>(null);
   let discovery = $state<ExternalMuseDiscoveryStatus | null>(null);
+  let discoveryFeedback = $state<string | null>(null);
   let pairing = $state<ExternalWhatsAppPairingStatus | null>(null);
   let pairingError = $state<string | null>(null);
   let adapterError = $state<string | null>(null);
@@ -95,20 +96,38 @@
       if (document.visibilityState !== "visible" || !creating || provider !== "muse") return;
       void refreshPairing();
       if (busy || !discovery) return;
-      void getMuseDiscovery().then((status) => {
-        discovery = status;
-      }).catch(() => {
-        discovery = null;
-        error = "Muse chat discovery expired. Start it again.";
-      });
+      void checkMuseDiscovery();
     }, 3000);
     return () => window.clearInterval(timer);
   });
+
+  async function checkMuseDiscovery(manual = false) {
+    const challenge = discovery?.challenge;
+    if (!challenge) return;
+    if (manual) discoveryFeedback = "Checking whether the linked adapter saw your code…";
+    try {
+      const status = await getMuseDiscovery();
+      if (discovery?.challenge !== challenge) return;
+      discovery = status;
+      if (status.observed_chat_jid) {
+        error = null;
+        discoveryFeedback = null;
+      } else if (manual) {
+        discoveryFeedback = "The linked adapter has not seen this code yet.";
+      }
+    } catch (cause) {
+      if (discovery?.challenge !== challenge) return;
+      discovery = null;
+      discoveryFeedback = null;
+      error = cause instanceof Error ? cause.message : "Muse chat discovery expired. Start it again.";
+    }
+  }
 
   async function discoverMuse() {
     if (busy) return;
     busy = true;
     error = null;
+    discoveryFeedback = null;
     try {
       discovery = await startMuseDiscovery();
     } catch (cause) {
@@ -194,9 +213,9 @@
       <p class="connections-card-title">{title}</p>
       <p class="connections-card-sub workshop-faint">{provider === "muse" ? "WhatsApp sessions" : "Webhook bots and routines"}</p>
     </div>
-    <span class="connections-status" class:connections-status--in={registered.length > 0}>
-      {#if registered.length > 0}<Check size={12} strokeWidth={2.5} />{/if}
-      {registered.length > 0 ? registered.length + " connected" : "Not connected"}
+    <span class="connections-status" class:connections-status--in={provider === "grok_bot" && registered.length > 0}>
+      {#if provider === "grok_bot" && registered.length > 0}<Check size={12} strokeWidth={2.5} />{/if}
+      {provider === "muse" ? registered.length + " registered" : registered.length > 0 ? registered.length + " connected" : "Not connected"}
     </span>
   </div>
 
@@ -212,6 +231,9 @@
   {/if}
 
   {#if registered.length > 0}
+    {#if provider === "muse"}
+      <p class="text-xs text-content-warning">WhatsApp may accept Medousa messages without delivering them to Muse. In our linked-device test, Muse's app did not receive the message and replies did not reach Medousa.</p>
+    {/if}
     <div class="mt-3 space-y-2">
       {#each registered as conversation (conversation.id)}
         <div class="rounded-lg bg-surface-800 p-3">
@@ -263,11 +285,17 @@
         {#if canStartAdapter && (!pairing || pairing.state === "waiting")}
           <button type="button" class="text-content-link text-sm" disabled={adapterBusy} onclick={() => void startWhatsAppAdapter()}>{adapterBusy ? "Starting WhatsApp adapter…" : "Start WhatsApp adapter"}</button>
         {/if}
-        <button type="button" class="text-content-link text-sm" disabled={busy} onclick={() => void discoverMuse()}>{discovery ? "Restart discovery" : "Find Muse chat"}</button>
+        <div class="flex flex-wrap gap-3">
+          <button type="button" class="text-content-link text-sm" disabled={busy} onclick={() => void discoverMuse()}>{discovery ? "Restart discovery" : "Find Muse chat"}</button>
+          {#if discovery && !discovery.observed_chat_jid}
+            <button type="button" class="text-content-link text-sm" disabled={busy} onclick={() => void checkMuseDiscovery(true)}>Check for code</button>
+          {/if}
+        </div>
         {#if discovery}
           <code class="block break-all select-all text-xs">{discovery.challenge}</code>
-          <p class="workshop-faint text-xs">Send: “Reply with exactly {discovery.challenge}”</p>
-          <p class="text-xs">{discovery.observed_chat_jid ? "Chat observed. You can connect this session." : "Waiting for Muse’s reply. Discovery expires after five minutes."}</p>
+          <p class="workshop-faint text-xs">Send this code in your Muse chat on WhatsApp: {discovery.challenge}</p>
+          <p class="text-xs">{discovery.observed_chat_jid ? "Chat ID observed. This does not verify delivery to Muse." : "Waiting for the linked adapter to see your code. Discovery expires after five minutes."}</p>
+          {#if discoveryFeedback}<p class="workshop-faint text-xs">{discoveryFeedback}</p>{/if}
         {/if}
       {/if}
       <div class="flex gap-3">

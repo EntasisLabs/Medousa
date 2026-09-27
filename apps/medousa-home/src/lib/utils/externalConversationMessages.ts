@@ -23,6 +23,8 @@ export function externalConversationStatus(conversation: ExternalConversation | 
   if (kind === "transport_pending") return "Sending · outcome unknown after restart";
   if (kind === "transport_uncertain") return "Delivery unconfirmed · check the provider before resending";
   if (kind === "transport_failed") return "Send failed";
-  if (kind === "transport_accepted") return "Accepted · awaiting provider reply";
+  if (kind === "transport_accepted") return conversation?.provider === "muse"
+    ? "WhatsApp accepted · Muse delivery unverified"
+    : "Accepted · awaiting provider reply";
   return null;
 }

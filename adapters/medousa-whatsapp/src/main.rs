@@ -267,15 +267,23 @@ async fn handle_event(
             publish_pairing_state(&http_client, &daemon_url, "logged_out", None, None).await?;
         }
         Event::Message(msg, info) => {
+            let text = msg.text_content().map(str::trim).filter(|value| !value.is_empty());
             if info.source.is_from_me {
+                if let Some(text) = text.filter(|value| value.contains("MEDOUSA-MUSE-")) {
+                    route_external_agent_message(
+                        &http_client,
+                        &daemon_url,
+                        &info.source.chat.to_string(),
+                        &info.source.sender.to_string(),
+                        &info.id.to_string(),
+                        text,
+                    )
+                    .await?;
+                }
                 return Ok(());
             }
 
-            let Some(text) = msg
-                .text_content()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-            else {
+            let Some(text) = text else {
                 return Ok(());
             };
 
