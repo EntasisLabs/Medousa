@@ -25,6 +25,10 @@ export async function loadProductConfigSummary(): Promise<ProductConfigSummary> 
   return invoke<ProductConfigSummary>("messaging_load_product_config_summary");
 }
 
+export async function ensureWhatsAppAdapter(daemonUrl: string): Promise<void> {
+  await invoke("messaging_ensure_whatsapp_adapter", { daemonUrl });
+}
+
 export async function saveTelegramConfig(config: {
   allowedUserIds: number[];
   heartbeatNudgesEnabled: boolean;

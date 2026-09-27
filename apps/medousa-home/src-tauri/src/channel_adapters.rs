@@ -391,3 +391,19 @@ pub fn adapter_status_for_summary(summary: &mut ProductConfigSummary) {
 pub fn messaging_sync_adapters(daemon_url: Option<String>) -> Result<(), String> {
     sync_channel_adapters(daemon_url.as_deref())
 }
+
+#[tauri::command]
+pub fn messaging_ensure_whatsapp_adapter(daemon_url: Option<String>) -> Result<(), String> {
+    if adapter_is_running("whatsapp") {
+        return Ok(());
+    }
+    let summary = crate::messaging::product_config::load_product_config_summary()?;
+    if !channel_should_run(&summary, "whatsapp") {
+        return Err("Configure WhatsApp in Settings → Sharing → Channels first.".to_string());
+    }
+    start_adapter(
+        "whatsapp",
+        daemon_url.as_deref().unwrap_or(DEFAULT_DAEMON_URL),
+        &summary,
+    )
+}

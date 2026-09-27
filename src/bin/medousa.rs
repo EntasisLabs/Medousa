@@ -2895,6 +2895,18 @@ fn start_adapter_background(
     let log = medousa::service_launch::BackgroundLog::new(log_path);
     let mut command = Command::new(&adapter.program);
     command.args(&adapter.pre_args);
+    if binary_name == "medousa_whatsapp" {
+        if let Some(header) = medousa::local_daemon_auth::authorization_header(
+            daemon_url,
+            medousa_local_credential::CLI_LOCAL_NAME,
+        )? {
+            let bearer = header
+                .to_str()?
+                .strip_prefix("Bearer ")
+                .ok_or_else(|| anyhow!("invalid local workshop authorization header"))?;
+            command.env("MEDOUSA_DAEMON_BEARER", bearer);
+        }
+    }
     command.arg("--daemon-url").arg(daemon_url);
     if let Some(token) = token {
         command.arg("--token").arg(token);
@@ -2962,6 +2974,16 @@ fn resolve_component_command(binary_name: &str) -> Result<ComponentCommand> {
                 pre_args: Vec::new(),
             });
         }
+    }
+
+    let installed = medousa_data_dir()
+        .join("bin")
+        .join(format!("{binary_name}{}", std::env::consts::EXE_SUFFIX));
+    if installed.is_file() {
+        return Ok(ComponentCommand {
+            program: installed.to_string_lossy().to_string(),
+            pre_args: Vec::new(),
+        });
     }
 
     if find_command_in_path(binary_name).is_some() {

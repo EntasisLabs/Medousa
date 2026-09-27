@@ -22,11 +22,13 @@ If the callback key is lost or exposed, use **Rotate callback key** in External 
 
 ## Muse
 
-1. Install the WhatsApp adapter on the **connected workshop** through **Settings → Packages**. If WhatsApp was configured earlier, set its **Deliver bind** to `127.0.0.1:7423` in Messaging settings; older builds used the port reserved by Medousa desktop. Start the adapter on the workshop with `medousa whatsapp` if it is not already running. The live QR appears in **Settings → External Agents → Muse → Add session**. On your phone, open **WhatsApp → Settings → Linked Devices → Link a Device** and scan it from Medousa. Keep the adapter running while you use Muse. Pairing does not require Muse's phone number or JID.
+1. Install the WhatsApp adapter on the **connected workshop** through **Settings → Packages**. In **Settings → Sharing → Channels**, configure WhatsApp with **Deliver bind** `127.0.0.1:7423`; older builds used the port reserved by Medousa desktop. On a local workshop, **Settings → External Agents → Muse → Add session** starts the adapter and shows its live QR. For a remote workshop, start the adapter on that workshop with `medousa whatsapp`. On your phone, open **WhatsApp → Settings → Linked Devices → Link a Device** and scan the QR from Medousa. Keep the adapter running while you use Muse. Pairing does not require Muse's phone number or JID.
 2. In **Settings → External Agents → Muse**, choose **Add session → Find Muse chat**. In the normal Muse chat in WhatsApp, ask Muse to reply with the exact one-time code Medousa shows. The linked adapter uses that reply to discover the chat's internal ID; you do not need a phone number.
 3. When Medousa reports **Chat observed**, connect the session. In Chat, choose **Muse** and that session, then send a small test message. Replies from the bound chat appear in the same chat view if the linked adapter can access this Meta-managed chat.
 
 Muse's WhatsApp chat may be managed by Meta and may not be visible to linked-device adapters. Discovery expiring without observing a reply means this adapter has not seen Muse's reply; check that the adapter connected before treating it as a transport limitation. The linked-device WhatsApp adapter is experimental. If a send is uncertain, check the native chat before sending the same request again.
+
+If the adapter connects in a terminal but Medousa keeps showing **Waiting for the workshop’s WhatsApp pairing QR**, check which `medousa_whatsapp` binary the launcher used. Older adapter builds can pair in the terminal but do not publish QR or connected status to the workshop. Update the adapter package and restart it; an already-paired session reconnects from its session database.
 
 ## What the status means
 

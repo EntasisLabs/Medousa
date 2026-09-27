@@ -1,6 +1,10 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { Check, Plus, RefreshCw } from "@lucide/svelte";
+  import { getDaemonUrl } from "$lib/daemon/client";
+  import { ensureWhatsAppAdapter } from "$lib/messaging";
+  import { isTauriDesktop } from "$lib/platform";
+  import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
   import {
     createExternalConversation,
     deleteExternalConversation,
@@ -29,9 +33,12 @@
   let discovery = $state<ExternalMuseDiscoveryStatus | null>(null);
   let pairing = $state<ExternalWhatsAppPairingStatus | null>(null);
   let pairingError = $state<string | null>(null);
+  let adapterError = $state<string | null>(null);
+  let adapterBusy = $state(false);
   let pairingBusy = false;
   const title = $derived(provider === "muse" ? "Muse" : "Grok Bot");
   const registered = $derived(conversations.filter((item) => item.provider === provider));
+  const canStartAdapter = $derived(isTauriDesktop() && isCoLocatedWorkshop());
 
   function changed() {
     window.dispatchEvent(new Event("medousa-external-conversation-changed"));
@@ -57,6 +64,28 @@
       pairingError = cause instanceof Error ? cause.message : String(cause);
     } finally {
       pairingBusy = false;
+    }
+  }
+
+  async function startWhatsAppAdapter() {
+    if (!canStartAdapter || adapterBusy) return;
+    adapterBusy = true;
+    adapterError = null;
+    try {
+      await ensureWhatsAppAdapter(await getDaemonUrl());
+      await refreshPairing();
+    } catch (cause) {
+      adapterError = cause instanceof Error ? cause.message : String(cause);
+    } finally {
+      adapterBusy = false;
+    }
+  }
+
+  async function openMuseSetup() {
+    creating = true;
+    await refreshPairing();
+    if (!pairing || pairing.state === "waiting") {
+      await startWhatsAppAdapter();
     }
   }
 
@@ -216,7 +245,7 @@
           <input class="mt-1 w-full rounded-md bg-surface-800 p-2" type="password" bind:value={webhookKey} required autocomplete="off" />
         </label>
       {:else}
-        <p class="workshop-faint text-xs">Install the WhatsApp adapter in Settings → Packages. Start it on the connected workshop with <code>medousa whatsapp</code> if it is not already running. If you configured WhatsApp earlier, set its Messaging deliver bind to <code>127.0.0.1:7423</code>.</p>
+        <p class="workshop-faint text-xs">Install the WhatsApp adapter in Settings → Packages. Configure WhatsApp in Settings → Sharing → Channels with deliver bind <code>127.0.0.1:7423</code>. {canStartAdapter ? "Medousa starts the adapter when you add a session." : "Start the adapter on the workshop machine."}</p>
         {#if pairing?.state === "qr_ready" && pairing.qr_svg && pairing.expires_at && Date.parse(pairing.expires_at) > Date.now()}
           <div class="muse-pairing-qr">
             <img src={`data:image/svg+xml,${encodeURIComponent(pairing.qr_svg)}`} alt="WhatsApp Linked Devices pairing QR" />
@@ -225,11 +254,15 @@
         {:else if pairing?.state === "connected"}
           <p class="text-xs text-content-success">WhatsApp linked. You can find the Muse chat below.</p>
         {:else if pairing?.state === "logged_out"}
-          <p class="text-xs text-content-warning">WhatsApp signed out. Restart the adapter to get a new QR.</p>
+          <p class="text-xs text-content-warning">WhatsApp signed out. Save WhatsApp again in Settings → Sharing → Channels to restart the adapter and get a new QR.</p>
         {:else}
-          <p class="workshop-faint text-xs">Waiting for the workshop’s WhatsApp pairing QR. It refreshes automatically when the adapter rotates it.</p>
+          <p class="workshop-faint text-xs">Waiting for the workshop’s WhatsApp pairing QR. If WhatsApp is already connected and this stays blank, update the WhatsApp adapter in Settings → Packages and restart it.</p>
         {/if}
         {#if pairingError}<p class="workshop-faint text-xs">Pairing status unavailable: {pairingError}</p>{/if}
+        {#if adapterError}<p class="text-xs text-content-warning">WhatsApp adapter could not start: {adapterError}</p>{/if}
+        {#if canStartAdapter && (!pairing || pairing.state === "waiting")}
+          <button type="button" class="text-content-link text-sm" disabled={adapterBusy} onclick={() => void startWhatsAppAdapter()}>{adapterBusy ? "Starting WhatsApp adapter…" : "Start WhatsApp adapter"}</button>
+        {/if}
         <button type="button" class="text-content-link text-sm" disabled={busy} onclick={() => void discoverMuse()}>{discovery ? "Restart discovery" : "Find Muse chat"}</button>
         {#if discovery}
           <code class="block break-all select-all text-xs">{discovery.challenge}</code>
@@ -244,7 +277,7 @@
     </form>
   {:else}
     <div class="connections-card-actions">
-      <button type="button" class="btn btn-sm variant-filled-primary" onclick={() => { creating = true; if (provider === "muse") void refreshPairing(); }}><Plus size={13} strokeWidth={2} /> {provider === "muse" ? "Add session" : "Add bot"}</button>
+      <button type="button" class="btn btn-sm variant-filled-primary" onclick={() => { if (provider === "muse") void openMuseSetup(); else creating = true; }}><Plus size={13} strokeWidth={2} /> {provider === "muse" ? "Add session" : "Add bot"}</button>
       <button type="button" class="btn btn-sm variant-soft-surface" disabled={busy} onclick={() => void refresh()}><RefreshCw size={13} strokeWidth={2} /> Refresh</button>
     </div>
   {/if}
