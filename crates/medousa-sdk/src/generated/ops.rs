@@ -828,6 +828,20 @@ pub const EXTERNAL_CONVERSATIONS_WHATSAPP_INBOUND_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const EXTERNAL_CONVERSATIONS_WHATSAPP_PAIRING_GET: Operation = Operation {
+    id: "external_conversations.whatsapp.pairing.get",
+    method: "GET",
+    path: "/v1/external-conversations/whatsapp/pairing",
+    streaming: false,
+};
+
+pub const EXTERNAL_CONVERSATIONS_WHATSAPP_PAIRING_POST: Operation = Operation {
+    id: "external_conversations.whatsapp.pairing.post",
+    method: "POST",
+    path: "/v1/external-conversations/whatsapp/pairing",
+    streaming: false,
+};
+
 pub const FEEDS_BY_FEED_ID_LATEST_GOOD_GET: Operation = Operation {
     id: "feeds.by_feed_id.latest_good.get",
     method: "GET",
@@ -3431,6 +3445,8 @@ pub static ALL: &[Operation] = &[
     EXTERNAL_CONVERSATIONS_MUSE_DISCOVERY_POST,
     EXTERNAL_CONVERSATIONS_POST,
     EXTERNAL_CONVERSATIONS_WHATSAPP_INBOUND_POST,
+    EXTERNAL_CONVERSATIONS_WHATSAPP_PAIRING_GET,
+    EXTERNAL_CONVERSATIONS_WHATSAPP_PAIRING_POST,
     FEEDS_BY_FEED_ID_LATEST_GOOD_GET,
     FEEDS_BY_FEED_ID_READ_POST,
     FEEDS_BY_FEED_ID_TAIL_GET,

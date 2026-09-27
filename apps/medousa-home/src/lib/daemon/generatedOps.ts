@@ -126,6 +126,8 @@ export const OPERATIONS = {
   "external_conversations.muse.discovery.post": { id: "external_conversations.muse.discovery.post", method: "POST", path: "/v1/external-conversations/muse/discovery", streaming: false },
   "external_conversations.post": { id: "external_conversations.post", method: "POST", path: "/v1/external-conversations", streaming: false },
   "external_conversations.whatsapp.inbound.post": { id: "external_conversations.whatsapp.inbound.post", method: "POST", path: "/v1/external-conversations/whatsapp/inbound", streaming: false },
+  "external_conversations.whatsapp.pairing.get": { id: "external_conversations.whatsapp.pairing.get", method: "GET", path: "/v1/external-conversations/whatsapp/pairing", streaming: false },
+  "external_conversations.whatsapp.pairing.post": { id: "external_conversations.whatsapp.pairing.post", method: "POST", path: "/v1/external-conversations/whatsapp/pairing", streaming: false },
   "feeds.by_feed_id.latest_good.get": { id: "feeds.by_feed_id.latest_good.get", method: "GET", path: "/v1/feeds/{feed_id}/latest-good", streaming: false },
   "feeds.by_feed_id.read.post": { id: "feeds.by_feed_id.read.post", method: "POST", path: "/v1/feeds/{feed_id}/read", streaming: false },
   "feeds.by_feed_id.tail.get": { id: "feeds.by_feed_id.tail.get", method: "GET", path: "/v1/feeds/{feed_id}/tail", streaming: false },

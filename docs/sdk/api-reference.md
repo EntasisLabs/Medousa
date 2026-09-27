@@ -540,6 +540,7 @@ See [python.md](python.md).
 
 ## Remaining gaps (use `http()`)
 
+- WhatsApp pairing QR status for Muse setup (`external_conversations.whatsapp.pairing.get`, requires `admin.execute`). The local adapter publishes updates through the corresponding POST operation; client apps only read the short-lived status.
 - Runtime worker capacity (`GET/PUT /v1/runtime/workers`)
 - Identity, grapheme, workflows (full surface)
 - Ingest SSE stream

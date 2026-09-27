@@ -129,6 +129,8 @@ OPERATIONS: dict[str, Operation] = {
     "external_conversations.muse.discovery.post": Operation("external_conversations.muse.discovery.post", "POST", "/v1/external-conversations/muse/discovery", False),
     "external_conversations.post": Operation("external_conversations.post", "POST", "/v1/external-conversations", False),
     "external_conversations.whatsapp.inbound.post": Operation("external_conversations.whatsapp.inbound.post", "POST", "/v1/external-conversations/whatsapp/inbound", False),
+    "external_conversations.whatsapp.pairing.get": Operation("external_conversations.whatsapp.pairing.get", "GET", "/v1/external-conversations/whatsapp/pairing", False),
+    "external_conversations.whatsapp.pairing.post": Operation("external_conversations.whatsapp.pairing.post", "POST", "/v1/external-conversations/whatsapp/pairing", False),
     "feeds.by_feed_id.latest_good.get": Operation("feeds.by_feed_id.latest_good.get", "GET", "/v1/feeds/{feed_id}/latest-good", False),
     "feeds.by_feed_id.read.post": Operation("feeds.by_feed_id.read.post", "POST", "/v1/feeds/{feed_id}/read", False),
     "feeds.by_feed_id.tail.get": Operation("feeds.by_feed_id.tail.get", "GET", "/v1/feeds/{feed_id}/tail", False),

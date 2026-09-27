@@ -116,6 +116,33 @@ pub struct ExternalMuseDiscoveryStatus {
     pub expires_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum ExternalWhatsAppPairingState {
+    Waiting,
+    QrReady,
+    Connected,
+    LoggedOut,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ExternalWhatsAppPairingUpdateRequest {
+    pub state: ExternalWhatsAppPairingState,
+    pub qr_code: Option<String>,
+    pub expires_in_seconds: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ExternalWhatsAppPairingStatus {
+    pub state: ExternalWhatsAppPairingState,
+    pub qr_svg: Option<String>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct RotateExternalCallbackResponse {

@@ -2046,6 +2046,38 @@
         "admin.execute"
       ],
       "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "external_conversations.whatsapp.pairing.get",
+      "path": "/v1/external-conversations/whatsapp/pairing",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 4096,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "external_conversations.whatsapp.pairing.post",
+      "path": "/v1/external-conversations/whatsapp/pairing",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "core",
       "method": "DELETE",
       "operation_id": "external_conversations.by_id.delete",
       "path": "/v1/external-conversations/{id}",

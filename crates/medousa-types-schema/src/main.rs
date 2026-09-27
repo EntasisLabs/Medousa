@@ -100,6 +100,16 @@ fn main() {
     );
     export_type!(
         schemas,
+        ExternalWhatsAppPairingUpdateRequest,
+        "ExternalWhatsAppPairingUpdateRequest"
+    );
+    export_type!(
+        schemas,
+        ExternalWhatsAppPairingStatus,
+        "ExternalWhatsAppPairingStatus"
+    );
+    export_type!(
+        schemas,
         RotateExternalCallbackResponse,
         "RotateExternalCallbackResponse"
     );

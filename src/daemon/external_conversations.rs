@@ -26,7 +26,9 @@ use medousa_types::{
     ExternalInboundClaimResponse as InboundClaimResponse,
     ExternalMuseDiscoveryStatus as MuseDiscoveryStatus, ExternalProvider as Provider,
     ExternalProviderEventRequest as ProviderEventRequest,
-    ExternalWhatsAppInboundRequest as WhatsAppInboundRequest, RotateExternalCallbackResponse,
+    ExternalWhatsAppInboundRequest as WhatsAppInboundRequest,
+    ExternalWhatsAppPairingState as PairingState, ExternalWhatsAppPairingStatus as PairingStatus,
+    ExternalWhatsAppPairingUpdateRequest as PairingUpdateRequest, RotateExternalCallbackResponse,
 };
 use reqwest::redirect::Policy;
 use serde::{Deserialize, Serialize};
@@ -94,6 +96,7 @@ pub struct ExternalConversationStore {
     document: Mutex<Document>,
     send_locks: Mutex<BTreeMap<String, Arc<Mutex<()>>>>,
     muse_discoveries: Mutex<BTreeMap<String, MuseDiscovery>>,
+    whatsapp_pairing: Mutex<PairingStatus>,
 }
 
 impl ExternalConversationStore {
@@ -108,6 +111,11 @@ impl ExternalConversationStore {
             document: Mutex::new(document),
             send_locks: Mutex::new(BTreeMap::new()),
             muse_discoveries: Mutex::new(BTreeMap::new()),
+            whatsapp_pairing: Mutex::new(PairingStatus {
+                state: PairingState::Waiting,
+                qr_svg: None,
+                expires_at: None,
+            }),
         }))
     }
 
@@ -296,6 +304,59 @@ impl ExternalConversationStore {
 
     async fn clear_muse_discovery(&self, owner_id: &str) {
         self.muse_discoveries.lock().await.remove(owner_id);
+    }
+
+    async fn whatsapp_pairing(&self) -> PairingStatus {
+        let mut status = self.whatsapp_pairing.lock().await;
+        if status
+            .expires_at
+            .is_some_and(|expires_at| expires_at <= Utc::now())
+        {
+            *status = PairingStatus {
+                state: PairingState::Waiting,
+                qr_svg: None,
+                expires_at: None,
+            };
+        }
+        status.clone()
+    }
+
+    async fn update_whatsapp_pairing(
+        &self,
+        update: PairingUpdateRequest,
+    ) -> Result<PairingStatus, String> {
+        let (qr_svg, expires_at) = if update.state == PairingState::QrReady {
+            let code = update
+                .qr_code
+                .as_deref()
+                .filter(|code| !code.is_empty() && code.len() <= 2048)
+                .ok_or_else(|| "invalid WhatsApp pairing QR".to_string())?;
+            let seconds = update
+                .expires_in_seconds
+                .filter(|seconds| (1..=120).contains(seconds))
+                .ok_or_else(|| "invalid WhatsApp pairing expiry".to_string())?;
+            let svg = qrcode::QrCode::new(code.as_bytes())
+                .map_err(|_| "invalid WhatsApp pairing QR".to_string())?
+                .render::<qrcode::render::svg::Color>()
+                .min_dimensions(256, 256)
+                .build();
+            (
+                Some(svg),
+                Some(Utc::now() + TimeDelta::seconds(seconds as i64)),
+            )
+        } else {
+            if update.qr_code.is_some() || update.expires_in_seconds.is_some() {
+                return Err("pairing code only allowed for QR state".into());
+            }
+            (None, None)
+        };
+        let status = PairingStatus {
+            state: update.state,
+            qr_svg,
+            expires_at,
+        };
+        *self.whatsapp_pairing.lock().await = status.clone();
+        Ok(status)
     }
 }
 
@@ -807,6 +868,32 @@ pub async fn whatsapp_inbound(
     }))
 }
 
+pub async fn get_whatsapp_pairing(
+    State(state): State<AppState>,
+) -> Result<Json<PairingStatus>, HttpError> {
+    Ok(Json(state.external_conversations.whatsapp_pairing().await))
+}
+
+pub async fn update_whatsapp_pairing(
+    State(state): State<AppState>,
+    ConnectInfo(source): ConnectInfo<SocketAddr>,
+    Json(update): Json<PairingUpdateRequest>,
+) -> Result<Json<PairingStatus>, HttpError> {
+    if !source.ip().is_loopback() {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "WhatsApp adapter must connect locally".into(),
+        ));
+    }
+    Ok(Json(
+        state
+            .external_conversations
+            .update_whatsapp_pairing(update)
+            .await
+            .map_err(|message| bad_request(&message))?,
+    ))
+}
+
 fn policy(method: Method, path: &'static str, capability: Capability, limit: usize) -> RoutePolicy {
     RoutePolicy {
         method,
@@ -817,6 +904,18 @@ fn policy(method: Method, path: &'static str, capability: Capability, limit: usi
         browser_policy: BrowserPolicy::NativeOnly,
         body_limit: limit,
         rate_limit_class: RateLimitClass::Mutation,
+    }
+}
+
+fn whatsapp_pairing_read_policy() -> RoutePolicy {
+    RoutePolicy {
+        rate_limit_class: RateLimitClass::Read,
+        ..policy(
+            Method::GET,
+            "/v1/external-conversations/whatsapp/pairing",
+            Capability::AdminExecute,
+            1024,
+        )
     }
 }
 
@@ -860,6 +959,18 @@ pub fn surface() -> DeclaredRouter<AppState> {
                     1024,
                 ),
                 post(start_muse_discovery),
+            ),
+        ])
+        .methods([
+            (whatsapp_pairing_read_policy(), get(get_whatsapp_pairing)),
+            (
+                policy(
+                    Method::POST,
+                    "/v1/external-conversations/whatsapp/pairing",
+                    Capability::WorkshopInteract,
+                    4096,
+                ),
+                post(update_whatsapp_pairing),
             ),
         ])
         .methods([
@@ -1031,5 +1142,35 @@ mod tests {
         assert!(store.muse_discovery("other").await.is_none());
         store.clear_muse_discovery("owner").await;
         assert!(store.muse_discovery("owner").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn whatsapp_pairing_qr_expires_without_leaking_its_payload() {
+        let path =
+            std::env::temp_dir().join(format!("medousa-external-{}.json", uuid::Uuid::new_v4()));
+        let store = ExternalConversationStore::open(path).await.unwrap();
+        let status = store
+            .update_whatsapp_pairing(PairingUpdateRequest {
+                state: PairingState::QrReady,
+                qr_code: Some("whatsapp-pairing-test".into()),
+                expires_in_seconds: Some(1),
+            })
+            .await
+            .unwrap();
+        assert!(status.qr_svg.as_deref().unwrap().contains("<svg"));
+        store.whatsapp_pairing.lock().await.expires_at = Some(Utc::now() - TimeDelta::seconds(1));
+        let expired = store.whatsapp_pairing().await;
+        assert_eq!(expired.state, PairingState::Waiting);
+        assert!(expired.qr_svg.is_none());
+        assert!(store.whatsapp_pairing.lock().await.qr_svg.is_none());
+        let connected = store
+            .update_whatsapp_pairing(PairingUpdateRequest {
+                state: PairingState::Connected,
+                qr_code: None,
+                expires_in_seconds: None,
+            })
+            .await
+            .unwrap();
+        assert!(connected.qr_svg.is_none());
     }
 }

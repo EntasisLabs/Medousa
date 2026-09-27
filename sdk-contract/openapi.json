@@ -3864,6 +3864,67 @@
         "title": "ExternalWhatsAppInboundRequest",
         "type": "object"
       },
+      "ExternalWhatsAppPairingState": {
+        "enum": [
+          "waiting",
+          "qr_ready",
+          "connected",
+          "logged_out"
+        ],
+        "type": "string"
+      },
+      "ExternalWhatsAppPairingStatus": {
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "qr_svg": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/ExternalWhatsAppPairingState"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "ExternalWhatsAppPairingStatus",
+        "type": "object"
+      },
+      "ExternalWhatsAppPairingUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_in_seconds": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "qr_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/ExternalWhatsAppPairingState"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "ExternalWhatsAppPairingUpdateRequest",
+        "type": "object"
+      },
       "FeedEvent": {
         "properties": {
           "emittedAtUtc": {
@@ -17598,6 +17659,114 @@
         },
         "x-medousa-policy": {
           "body_limit": 20480,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/external-conversations/whatsapp/pairing": {
+      "get": {
+        "operationId": "external_conversations.whatsapp.pairing.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalWhatsAppPairingStatus"
+                }
+              }
+            },
+            "description": "external_conversations.whatsapp.pairing.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.whatsapp.pairing.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.whatsapp.pairing.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      },
+      "post": {
+        "operationId": "external_conversations.whatsapp.pairing.post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExternalWhatsAppPairingUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalWhatsAppPairingStatus"
+                }
+              }
+            },
+            "description": "external_conversations.whatsapp.pairing.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.whatsapp.pairing.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.whatsapp.pairing.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 4096,
           "bootstrap_public": false,
           "browser_policy": "native_only",
           "capabilities": [

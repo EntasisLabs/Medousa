@@ -5,13 +5,14 @@
     createExternalConversation,
     deleteExternalConversation,
     getMuseDiscovery,
+    getWhatsAppPairingStatus,
     listExternalConversations,
     rotateExternalCallbackKey,
     startMuseDiscovery,
     type ExternalConversation,
     type ExternalProvider,
   } from "$lib/daemon/externalConversations";
-  import type { ExternalMuseDiscoveryStatus } from "$lib/types/generated/daemon_api";
+  import type { ExternalMuseDiscoveryStatus, ExternalWhatsAppPairingStatus } from "$lib/types/generated/daemon_api";
 
   let { provider }: { provider: ExternalProvider } = $props();
   let conversations = $state<ExternalConversation[]>([]);
@@ -26,6 +27,9 @@
   let callbackConversationId = $state<string | null>(null);
   let confirmDeleteId = $state<string | null>(null);
   let discovery = $state<ExternalMuseDiscoveryStatus | null>(null);
+  let pairing = $state<ExternalWhatsAppPairingStatus | null>(null);
+  let pairingError = $state<string | null>(null);
+  let pairingBusy = false;
   const title = $derived(provider === "muse" ? "Muse" : "Grok Bot");
   const registered = $derived(conversations.filter((item) => item.provider === provider));
 
@@ -42,10 +46,26 @@
     }
   }
 
+  async function refreshPairing() {
+    if (pairingBusy) return;
+    pairingBusy = true;
+    try {
+      pairing = await getWhatsAppPairingStatus();
+      pairingError = null;
+    } catch (cause) {
+      pairing = null;
+      pairingError = cause instanceof Error ? cause.message : String(cause);
+    } finally {
+      pairingBusy = false;
+    }
+  }
+
   onMount(() => {
     void refresh();
     const timer = window.setInterval(() => {
-      if (document.visibilityState !== "visible" || busy || !creating || provider !== "muse" || !discovery) return;
+      if (document.visibilityState !== "visible" || !creating || provider !== "muse") return;
+      void refreshPairing();
+      if (busy || !discovery) return;
       void getMuseDiscovery().then((status) => {
         discovery = status;
       }).catch(() => {
@@ -196,7 +216,20 @@
           <input class="mt-1 w-full rounded-md bg-surface-800 p-2" type="password" bind:value={webhookKey} required autocomplete="off" />
         </label>
       {:else}
-        <p class="workshop-faint text-xs">Install the WhatsApp adapter in Settings → Packages. Set WhatsApp’s deliver bind to <code>127.0.0.1:7423</code> in Messaging if it was configured earlier. On the connected workshop, run <code>medousa whatsapp</code> and scan its QR from WhatsApp → Linked Devices. Then ask Muse to reply with the code below.</p>
+        <p class="workshop-faint text-xs">Install the WhatsApp adapter in Settings → Packages. Start it on the connected workshop with <code>medousa whatsapp</code> if it is not already running. If you configured WhatsApp earlier, set its Messaging deliver bind to <code>127.0.0.1:7423</code>.</p>
+        {#if pairing?.state === "qr_ready" && pairing.qr_svg && pairing.expires_at && Date.parse(pairing.expires_at) > Date.now()}
+          <div class="muse-pairing-qr">
+            <img src={`data:image/svg+xml,${encodeURIComponent(pairing.qr_svg)}`} alt="WhatsApp Linked Devices pairing QR" />
+            <p class="text-xs">On your phone: WhatsApp → Settings → Linked Devices → Link a Device. Scan this QR from Medousa. It refreshes automatically when it expires.</p>
+          </div>
+        {:else if pairing?.state === "connected"}
+          <p class="text-xs text-content-success">WhatsApp linked. You can find the Muse chat below.</p>
+        {:else if pairing?.state === "logged_out"}
+          <p class="text-xs text-content-warning">WhatsApp signed out. Restart the adapter to get a new QR.</p>
+        {:else}
+          <p class="workshop-faint text-xs">Waiting for the workshop’s WhatsApp pairing QR. It refreshes automatically when the adapter rotates it.</p>
+        {/if}
+        {#if pairingError}<p class="workshop-faint text-xs">Pairing status unavailable: {pairingError}</p>{/if}
         <button type="button" class="text-content-link text-sm" disabled={busy} onclick={() => void discoverMuse()}>{discovery ? "Restart discovery" : "Find Muse chat"}</button>
         {#if discovery}
           <code class="block break-all select-all text-xs">{discovery.challenge}</code>
@@ -211,13 +244,28 @@
     </form>
   {:else}
     <div class="connections-card-actions">
-      <button type="button" class="btn btn-sm variant-filled-primary" onclick={() => creating = true}><Plus size={13} strokeWidth={2} /> {provider === "muse" ? "Add session" : "Add bot"}</button>
+      <button type="button" class="btn btn-sm variant-filled-primary" onclick={() => { creating = true; if (provider === "muse") void refreshPairing(); }}><Plus size={13} strokeWidth={2} /> {provider === "muse" ? "Add session" : "Add bot"}</button>
       <button type="button" class="btn btn-sm variant-soft-surface" disabled={busy} onclick={() => void refresh()}><RefreshCw size={13} strokeWidth={2} /> Refresh</button>
     </div>
   {/if}
 </div>
 
 <style>
+  .muse-pairing-qr {
+    display: grid;
+    justify-items: center;
+    gap: 0.65rem;
+    border-radius: 0.75rem;
+    background: white;
+    color: #171717;
+    padding: 1rem;
+    text-align: center;
+  }
+  .muse-pairing-qr img {
+    width: min(100%, 280px);
+    height: auto;
+    image-rendering: pixelated;
+  }
   .connections-card {
     display: flex;
     flex-direction: column;

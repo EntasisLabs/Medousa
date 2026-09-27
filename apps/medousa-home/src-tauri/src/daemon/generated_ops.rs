@@ -238,6 +238,10 @@ pub enum DaemonOperation {
     ExternalConversationsPost,
     #[serde(rename = "external_conversations.whatsapp.inbound.post")]
     ExternalConversationsWhatsappInboundPost,
+    #[serde(rename = "external_conversations.whatsapp.pairing.get")]
+    ExternalConversationsWhatsappPairingGet,
+    #[serde(rename = "external_conversations.whatsapp.pairing.post")]
+    ExternalConversationsWhatsappPairingPost,
     #[serde(rename = "feeds.by_feed_id.latest_good.get")]
     FeedsByFeedIdLatestGoodGet,
     #[serde(rename = "feeds.by_feed_id.read.post")]
@@ -1070,6 +1074,8 @@ impl DaemonOperation {
             Self::ExternalConversationsMuseDiscoveryPost => "external_conversations.muse.discovery.post",
             Self::ExternalConversationsPost => "external_conversations.post",
             Self::ExternalConversationsWhatsappInboundPost => "external_conversations.whatsapp.inbound.post",
+            Self::ExternalConversationsWhatsappPairingGet => "external_conversations.whatsapp.pairing.get",
+            Self::ExternalConversationsWhatsappPairingPost => "external_conversations.whatsapp.pairing.post",
             Self::FeedsByFeedIdLatestGoodGet => "feeds.by_feed_id.latest_good.get",
             Self::FeedsByFeedIdReadPost => "feeds.by_feed_id.read.post",
             Self::FeedsByFeedIdTailGet => "feeds.by_feed_id.tail.get",

@@ -7,6 +7,7 @@ import type {
   RotateExternalCallbackResponse,
   DeleteExternalConversationResponse,
   ExternalMuseDiscoveryStatus,
+  ExternalWhatsAppPairingStatus,
 } from "$lib/types/generated/daemon_api";
 
 export type { ExternalProvider } from "$lib/types/generated/daemon_api";
@@ -18,6 +19,10 @@ export function startMuseDiscovery(): Promise<ExternalMuseDiscoveryStatus> {
 
 export function getMuseDiscovery(): Promise<ExternalMuseDiscoveryStatus> {
   return daemonUnary("external_conversations.muse.discovery.get");
+}
+
+export function getWhatsAppPairingStatus(): Promise<ExternalWhatsAppPairingStatus> {
+  return daemonUnary("external_conversations.whatsapp.pairing.get");
 }
 
 export async function listExternalConversations(): Promise<ExternalConversation[]> {

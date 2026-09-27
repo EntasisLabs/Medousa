@@ -13070,6 +13070,82 @@
     },
     "additionalProperties": false
   },
+  "ExternalWhatsAppPairingStatus": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExternalWhatsAppPairingStatus",
+    "type": "object",
+    "required": [
+      "state"
+    ],
+    "properties": {
+      "expires_at": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date-time"
+      },
+      "qr_svg": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "state": {
+        "$ref": "#/definitions/ExternalWhatsAppPairingState"
+      }
+    },
+    "definitions": {
+      "ExternalWhatsAppPairingState": {
+        "type": "string",
+        "enum": [
+          "waiting",
+          "qr_ready",
+          "connected",
+          "logged_out"
+        ]
+      }
+    }
+  },
+  "ExternalWhatsAppPairingUpdateRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExternalWhatsAppPairingUpdateRequest",
+    "type": "object",
+    "required": [
+      "state"
+    ],
+    "properties": {
+      "expires_in_seconds": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "qr_code": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "state": {
+        "$ref": "#/definitions/ExternalWhatsAppPairingState"
+      }
+    },
+    "additionalProperties": false,
+    "definitions": {
+      "ExternalWhatsAppPairingState": {
+        "type": "string",
+        "enum": [
+          "waiting",
+          "qr_ready",
+          "connected",
+          "logged_out"
+        ]
+      }
+    }
+  },
   "FeedListResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "FeedListResponse",

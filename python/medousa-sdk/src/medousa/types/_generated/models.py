@@ -787,6 +787,13 @@ class FeedRef(MedousaModel):
     ref_type: str
 
 
+class ExternalWhatsAppPairingState(Enum):
+    waiting = 'waiting'
+    qr_ready = 'qr_ready'
+    connected = 'connected'
+    logged_out = 'logged_out'
+
+
 class FeedListEntry(MedousaModel):
     eventCount: int = Field(..., ge=0)
     feedId: str
@@ -3129,6 +3136,21 @@ class ExternalWhatsAppInboundRequest(MedousaModel):
     message_id: str
     sender_jid: str
     text: str
+
+
+class ExternalWhatsAppPairingStatus(MedousaModel):
+    expires_at: AwareDatetime | None = None
+    qr_svg: str | None = None
+    state: ExternalWhatsAppPairingState
+
+
+class ExternalWhatsAppPairingUpdateRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    expires_in_seconds: int | None = Field(None, ge=0)
+    qr_code: str | None = None
+    state: ExternalWhatsAppPairingState
 
 
 class FeedListResponse(MedousaModel):

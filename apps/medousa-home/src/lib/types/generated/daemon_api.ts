@@ -52,6 +52,14 @@ export interface ExternalMuseDiscoveryStatus {
   observed_chat_jid?: string | null;
 }
 
+export type ExternalWhatsAppPairingState = "waiting" | "qr_ready" | "connected" | "logged_out";
+
+export interface ExternalWhatsAppPairingStatus {
+  expires_at?: string | null;
+  qr_svg?: string | null;
+  state: ExternalWhatsAppPairingState;
+}
+
 export interface RotateExternalCallbackResponse {
   callback_key: string;
 }

@@ -115,6 +115,10 @@ async fn main() -> Result<()> {
     }
 
     let http_client = daemon_http_client()?;
+    if let Err(err) = publish_pairing_state(&http_client, &daemon_url, "waiting", None, None).await
+    {
+        eprintln!("medousa_whatsapp pairing status error: {err:#}");
+    }
     let daemon_url_for_events = daemon_url.clone();
     let http_client_for_events = http_client.clone();
 
@@ -239,6 +243,14 @@ async fn handle_event(
                     .module_dimensions(2, 1)
                     .build()
             );
+            publish_pairing_state(
+                &http_client,
+                &daemon_url,
+                "qr_ready",
+                Some(code),
+                Some(timeout.as_secs().max(1)),
+            )
+            .await?;
         }
         Event::PairingCode { code, timeout } => {
             println!(
@@ -248,9 +260,11 @@ async fn handle_event(
         }
         Event::Connected(_) => {
             println!("medousa_whatsapp connected");
+            publish_pairing_state(&http_client, &daemon_url, "connected", None, None).await?;
         }
         Event::LoggedOut(_) => {
             eprintln!("medousa_whatsapp logged out — restart adapter to re-pair");
+            publish_pairing_state(&http_client, &daemon_url, "logged_out", None, None).await?;
         }
         Event::Message(msg, info) => {
             if info.source.is_from_me {
@@ -271,6 +285,31 @@ async fn handle_event(
         _ => {}
     }
 
+    Ok(())
+}
+
+async fn publish_pairing_state(
+    client: &Client,
+    daemon_url: &str,
+    state: &str,
+    qr_code: Option<&str>,
+    expires_in_seconds: Option<u64>,
+) -> Result<()> {
+    client
+        .post(format!(
+            "{}/v1/external-conversations/whatsapp/pairing",
+            daemon_url.trim_end_matches('/')
+        ))
+        .json(&serde_json::json!({
+            "state": state,
+            "qr_code": qr_code,
+            "expires_in_seconds": expires_in_seconds,
+        }))
+        .send()
+        .await
+        .context("publish WhatsApp pairing status")?
+        .error_for_status()
+        .context("WhatsApp pairing status rejected")?;
     Ok(())
 }
 

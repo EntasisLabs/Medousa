@@ -25,6 +25,8 @@ EXPORTED_TYPES = [
     "ExternalConversationListResponse",
     "ExternalConversationSendRequest",
     "ExternalMuseDiscoveryStatus",
+    "ExternalWhatsAppPairingState",
+    "ExternalWhatsAppPairingStatus",
     "RotateExternalCallbackResponse",
     "DeleteExternalConversationResponse",
     "PeerProposalInboxResponse",

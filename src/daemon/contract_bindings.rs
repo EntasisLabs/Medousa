@@ -60,6 +60,14 @@ pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
             request: None,
             response: "ExternalMuseDiscoveryStatus",
         },
+        "external_conversations.whatsapp.pairing.get" => WireBinding {
+            request: None,
+            response: "ExternalWhatsAppPairingStatus",
+        },
+        "external_conversations.whatsapp.pairing.post" => WireBinding {
+            request: Some("ExternalWhatsAppPairingUpdateRequest"),
+            response: "ExternalWhatsAppPairingStatus",
+        },
         "external_conversations.by_id.get" => WireBinding {
             request: None,
             response: "ExternalConversationView",
