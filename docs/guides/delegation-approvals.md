@@ -114,3 +114,36 @@ approval and launch are still executed by the exact destination workshop.
 
 A terminal agent result is evidence that its prompt finished. Inspect the changes
 and relevant checks before treating the project as reviewed or ready to publish.
+
+## Add another daemon as a worker
+
+A Home portal connection and a delegated worker connection are deliberately
+separate. **Add workshop** lets Home browse and chat with another workshop. It
+does not give the local engine an identity it can use for delegated execution.
+
+To let this workshop delegate work to another daemon:
+
+1. On the destination workshop, open a pairing window and copy its pairing link.
+2. On the machine that will delegate, open **Settings → Workshops** and choose
+   **Add worker daemon** (the processor icon).
+3. Paste the destination pairing link. Confirm the destination address and name,
+   then choose **Add worker daemon**.
+4. Select the paired runtime from the Workers control when you want to target it.
+
+The local `medousa_daemon` creates and stores its own identity and credentials.
+Home never reuses or exports its portal identity for delegated work. Removing a
+portal therefore does not silently remove its worker identity, and vice versa.
+
+The same flow is available from the CLI:
+
+```bash
+medousa pair join '<pairing-link>' --worker-url http://worker-host:7419 --label 'Studio Mac'
+medousa pair workers
+medousa pair targets
+medousa pair target use <runtime-id>
+medousa pair target local
+medousa pair worker-remove <worker-id>
+```
+
+`pair target local` returns delegation to this workshop. Pairing credentials are
+kept by the daemon in its private data directory rather than by the CLI process.

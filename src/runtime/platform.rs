@@ -18,7 +18,7 @@ use crate::runtime::vault_surreal_schema::ensure_vault_surreal_schema;
 use crate::session_meta_store;
 use crate::session_store;
 use crate::tools::TuiRuntime;
-use crate::tui::runtime_services::assemble_tui_runtime;
+use crate::tui::runtime_services::assemble_tui_runtime_with_delegation;
 use crate::turn_continuation;
 use crate::verification_store;
 
@@ -26,6 +26,7 @@ use crate::verification_store;
 pub struct MedousaPlatformRuntime {
     agent: Arc<TuiRuntime>,
     client_registry: ClientRegistry,
+    delegation_service: Option<Arc<crate::delegation::DelegationService>>,
 }
 
 impl MedousaPlatformRuntime {
@@ -39,6 +40,10 @@ impl MedousaPlatformRuntime {
 
     pub fn client_registry(&self) -> ClientRegistry {
         self.client_registry.clone()
+    }
+
+    pub fn delegation_service(&self) -> Option<Arc<crate::delegation::DelegationService>> {
+        self.delegation_service.clone()
     }
 
     pub fn composition(&self) -> &stasis::prelude::RuntimeComposition {
@@ -99,23 +104,25 @@ pub async fn build_medousa_platform(
     config: PlatformBuildConfig,
     event_tx: mpsc::Sender<TuiEvent>,
 ) -> Result<Arc<MedousaPlatformRuntime>> {
-    build_platform_inner(backend, config, event_tx).await
+    build_platform_inner(backend, config, event_tx, None).await
 }
 
 /// Build the daemon platform: one DB connection, shared memory, agent tools registered once.
 pub async fn build_daemon_platform(
     backend: RuntimeBackend,
     config: PlatformBuildConfig,
+    delegated_task_transport: Arc<dyn crate::delegated_task::DelegatedTaskTransport>,
 ) -> Result<Arc<MedousaPlatformRuntime>> {
     let (event_tx, mut event_rx) = mpsc::channel(256);
     tokio::spawn(async move { while event_rx.recv().await.is_some() {} });
-    build_platform_inner(backend, config, event_tx).await
+    build_platform_inner(backend, config, event_tx, Some(delegated_task_transport)).await
 }
 
 async fn build_platform_inner(
     backend: RuntimeBackend,
     config: PlatformBuildConfig,
     event_tx: mpsc::Sender<TuiEvent>,
+    delegated_task_transport: Option<Arc<dyn crate::delegated_task::DelegatedTaskTransport>>,
 ) -> Result<Arc<MedousaPlatformRuntime>> {
     crate::runtime::stasis_otel::prepare_stasis_otel_from_tui_defaults();
     crate::ensure_runtime_backend_prerequisites(&backend)?;
@@ -152,10 +159,25 @@ async fn build_platform_inner(
     recurring_delivery::init_recurring_delivery_store_with_runtime(&composition).await;
     recurring_feed::init_recurring_feed_store_with_runtime(&composition).await;
 
+    let composition = Arc::new(composition);
+    let delegation_service = delegated_task_transport
+        .map(|transport| {
+            crate::delegation::install_delegation_runtime(
+                composition.clone(),
+                crate::workshop_authority::current()
+                    .map_err(anyhow::Error::msg)?
+                    .clone(),
+                crate::session_store::get_session_store(),
+                transport,
+            )
+        })
+        .transpose()
+        .context("install daemon delegation runtime")?;
+
     eprintln!("medousa-daemon: assembling agent runtime…");
     let client_registry = ClientRegistry::new();
-    let agent = assemble_tui_runtime(
-        Arc::new(composition),
+    let agent = assemble_tui_runtime_with_delegation(
+        composition,
         memory.identity_store.clone(),
         memory.memory_reader.clone(),
         memory.memory_writer.clone(),
@@ -169,6 +191,7 @@ async fn build_platform_inner(
         &config.session_id,
         true,
         client_registry.clone(),
+        delegation_service.clone(),
         event_tx,
     )
     .await
@@ -208,9 +231,17 @@ async fn build_platform_inner(
     )
     .await;
 
+    if let Some(service) = delegation_service.as_ref() {
+        service
+            .resume_pending()
+            .await
+            .context("resume daemon delegation drivers")?;
+    }
+
     Ok(Arc::new(MedousaPlatformRuntime {
         agent,
         client_registry,
+        delegation_service,
     }))
 }
 

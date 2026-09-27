@@ -70,9 +70,9 @@ impl From<RuntimeWorkerConfigDto> for RuntimeWorkerConfigWire {
     }
 }
 
+use super::DaemonState;
 use super::sdk::{client, sdk_error};
 use super::workshop_http;
-use super::DaemonState;
 
 #[tauri::command]
 pub async fn runtime_get_stats(
@@ -106,6 +106,62 @@ pub async fn runtime_get_execution_targets(
         .map_err(|error| error.to_string());
     }
     workshop_http::get_json(&state, "/v1/execution-targets").await
+}
+
+#[tauri::command]
+pub async fn runtime_list_workers(
+    _state: State<'_, DaemonState>,
+) -> Result<serde_json::Value, String> {
+    crate::workshop_transport::workshop_get_json(
+        &crate::active_workshop::personal_transport_config()?,
+        "/v1/workers",
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn runtime_pair_worker(
+    _state: State<'_, DaemonState>,
+    pairing_url: String,
+    worker_url: Option<String>,
+    label: Option<String>,
+) -> Result<serde_json::Value, String> {
+    crate::workshop_transport::workshop_post_json(
+        &crate::active_workshop::personal_transport_config()?,
+        "/v1/workers/pair",
+        &serde_json::json!({
+            "pairingUrl": pairing_url,
+            "daemonUrl": worker_url,
+            "label": label,
+        }),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn runtime_remove_worker(
+    _state: State<'_, DaemonState>,
+    worker_id: String,
+) -> Result<(), String> {
+    let _: serde_json::Value = crate::workshop_transport::workshop_delete_json(
+        &crate::active_workshop::personal_transport_config()?,
+        &format!("/v1/workers/{worker_id}"),
+    )
+    .await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn runtime_select_worker(
+    _state: State<'_, DaemonState>,
+    runtime_id: Option<String>,
+) -> Result<serde_json::Value, String> {
+    crate::workshop_transport::workshop_put_json(
+        &crate::active_workshop::personal_transport_config()?,
+        "/v1/workers/default",
+        &serde_json::json!({ "runtimeId": runtime_id }),
+    )
+    .await
 }
 
 #[tauri::command]

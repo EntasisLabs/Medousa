@@ -76,6 +76,36 @@ pub fn display_url() -> Result<String, String> {
     Ok(resolve()?.display_url().to_string())
 }
 
+pub fn personal_transport_config() -> Result<WorkshopTransportConfig, String> {
+    let registry = ensure_migrated()?;
+    let workshop = registry
+        .workshops
+        .iter()
+        .find(|workshop| workshop.id == PERSONAL_WORKSHOP_ID)
+        .ok_or_else(|| "Personal workshop is missing".to_string())?;
+    if workshop.kind != "local" {
+        return Err("Personal workshop is not a local engine".to_string());
+    }
+    let session_token =
+        medousa_local_credential::load_home_local_secret(&resolve_workshop_data_dir(workshop))
+            .map_err(|error| format!("load Personal engine credential: {error}"))?
+            .token()
+            .to_string();
+    Ok(WorkshopTransportConfig {
+        lan_base: resolve_workshop_url(workshop)
+            .trim()
+            .trim_end_matches('/')
+            .to_string(),
+        iroh_ticket: None,
+        session_token: Some(session_token),
+        pairing_id: String::new(),
+        session_expires_at: None,
+        phone_id: String::new(),
+        workshop_device_id: String::new(),
+        daemon_public_key: None,
+    })
+}
+
 pub fn transport_config() -> Result<WorkshopTransportConfig, String> {
     match resolve()? {
         ActiveWorkshopTarget::EmbeddedPersonal => Err(

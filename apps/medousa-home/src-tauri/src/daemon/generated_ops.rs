@@ -856,6 +856,14 @@ pub enum DaemonOperation {
     VaultTrashGet,
     #[serde(rename = "vault.trash.restore.post")]
     VaultTrashRestorePost,
+    #[serde(rename = "workers.by_id.delete")]
+    WorkersByIdDelete,
+    #[serde(rename = "workers.default.put")]
+    WorkersDefaultPut,
+    #[serde(rename = "workers.get")]
+    WorkersGet,
+    #[serde(rename = "workers.pair.post")]
+    WorkersPairPost,
     #[serde(rename = "workflows.by_workflow_id.get")]
     WorkflowsByWorkflowIdGet,
     #[serde(rename = "workflows.by_workflow_id.runs.get")]
@@ -1349,6 +1357,10 @@ impl DaemonOperation {
             Self::VaultTagsGet => "vault.tags.get",
             Self::VaultTrashGet => "vault.trash.get",
             Self::VaultTrashRestorePost => "vault.trash.restore.post",
+            Self::WorkersByIdDelete => "workers.by_id.delete",
+            Self::WorkersDefaultPut => "workers.default.put",
+            Self::WorkersGet => "workers.get",
+            Self::WorkersPairPost => "workers.pair.post",
             Self::WorkflowsByWorkflowIdGet => "workflows.by_workflow_id.get",
             Self::WorkflowsByWorkflowIdRunsGet => "workflows.by_workflow_id.runs.get",
             Self::WorkflowsFromSlicePost => "workflows.from_slice.post",

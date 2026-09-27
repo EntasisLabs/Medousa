@@ -21,10 +21,128 @@ pub fn run_pair(args: &[String]) -> Result<()> {
         Some("remove") => run_pair_remove(&resolve_pair_remove_daemon_url(args), args),
         Some("lan") => run_pair_lan(args),
         Some("permissions") => run_pair_permissions(&daemon_url, args),
+        Some("join") => run_worker_join(&daemon_url, args),
+        Some("workers") => run_workers(&daemon_url),
+        Some("worker-remove") => run_worker_remove(&daemon_url, args),
+        Some("targets") => run_targets(&daemon_url),
+        Some("target") => run_target(&daemon_url, args),
         Some(other) => {
             bail!("unknown pair subcommand '{other}'. run 'medousa pair --help' for usage")
         }
     }
+}
+
+fn run_worker_join(daemon_url: &str, args: &[String]) -> Result<()> {
+    let pairing_url = args
+        .get(1)
+        .context("usage: medousa pair join <pairing_url> [--worker-url <url>] [--label <name>]")?;
+    let response = http_client(daemon_url)?
+        .post(format!("{daemon_url}/v1/workers/pair"))
+        .json(&json!({
+            "pairingUrl": pairing_url,
+            "daemonUrl": find_arg_value(args, "--worker-url"),
+            "label": find_arg_value(args, "--label"),
+        }))
+        .send()
+        .context("POST /v1/workers/pair")?;
+    let body = successful_json(response, "POST /v1/workers/pair")?;
+    println!(
+        "Paired worker {} ({})",
+        value_str(&body, "label"),
+        value_str(&body, "workshopDeviceId")
+    );
+    Ok(())
+}
+
+fn run_workers(daemon_url: &str) -> Result<()> {
+    let response = http_client(daemon_url)?
+        .get(format!("{daemon_url}/v1/workers"))
+        .send()
+        .context("GET /v1/workers")?;
+    let workers = successful_json(response, "GET /v1/workers")?;
+    let workers = workers
+        .as_array()
+        .context("worker response is not an array")?;
+    if workers.is_empty() {
+        println!("No worker daemons paired.");
+        return Ok(());
+    }
+    println!("ID\tRUNTIME\tLABEL\tURL");
+    for worker in workers {
+        println!(
+            "{}\t{}\t{}\t{}",
+            value_str(worker, "id"),
+            value_str(worker, "workshopDeviceId"),
+            value_str(worker, "label"),
+            value_str(worker, "daemonUrl")
+        );
+    }
+    Ok(())
+}
+
+fn run_worker_remove(daemon_url: &str, args: &[String]) -> Result<()> {
+    let id = args
+        .get(1)
+        .context("usage: medousa pair worker-remove <worker_id>")?;
+    let response = http_client(daemon_url)?
+        .delete(format!("{daemon_url}/v1/workers/{id}"))
+        .send()
+        .context("DELETE /v1/workers/{id}")?;
+    successful_json(response, "DELETE /v1/workers/{id}")?;
+    println!("Removed worker {id}");
+    Ok(())
+}
+
+fn run_targets(daemon_url: &str) -> Result<()> {
+    let response = http_client(daemon_url)?
+        .get(format!("{daemon_url}/v1/execution-targets"))
+        .send()
+        .context("GET /v1/execution-targets")?;
+    let body = successful_json(response, "GET /v1/execution-targets")?;
+    let selected = body.get("default_runtime_id").and_then(Value::as_str);
+    println!("DEFAULT\tRUNTIME\tLABEL\tAGENT");
+    for target in body
+        .get("targets")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let runtime = value_str(target, "runtime_id");
+        println!(
+            "{}\t{}\t{}\t{}",
+            if Some(runtime) == selected { "*" } else { "" },
+            runtime,
+            value_str(target, "label"),
+            target
+                .get("agent_selectable")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        );
+    }
+    Ok(())
+}
+
+fn run_target(daemon_url: &str, args: &[String]) -> Result<()> {
+    let runtime_id = match args.get(1).map(String::as_str) {
+        Some("use") => Some(
+            args.get(2)
+                .context("usage: medousa pair target use <runtime_id>")?
+                .clone(),
+        ),
+        Some("local") => None,
+        _ => bail!("usage: medousa pair target use <runtime_id> | medousa pair target local"),
+    };
+    let response = http_client(daemon_url)?
+        .put(format!("{daemon_url}/v1/workers/default"))
+        .json(&json!({ "runtimeId": runtime_id }))
+        .send()
+        .context("PUT /v1/workers/default")?;
+    successful_json(response, "PUT /v1/workers/default")?;
+    println!(
+        "Default execution target: {}",
+        runtime_id.as_deref().unwrap_or("this workshop")
+    );
+    Ok(())
 }
 
 fn run_pair_permissions(daemon_url: &str, args: &[String]) -> Result<()> {
@@ -377,6 +495,9 @@ fn print_pair_help() {
     println!("  medousa pair list [--daemon-url <url>]");
     println!("  medousa pair qr [--term] [--open] [--full] [--daemon-url <url>]");
     println!("  medousa pair remove <pairing_id> [--daemon-url <url>]");
+    println!("  medousa pair join <pairing_url> [--worker-url <url>] [--label <name>]");
+    println!("  medousa pair workers | worker-remove <worker_id>");
+    println!("  medousa pair targets | target use <runtime_id> | target local");
     println!("  medousa pair lan status|on|off");
     println!("  medousa pair permissions list [--daemon-url <url>]");
     println!(

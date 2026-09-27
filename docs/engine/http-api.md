@@ -1020,6 +1020,20 @@ control.
 
 ## Explicit daemon delegation
 
+Daemon-owned outbound worker connections are managed separately from Home
+portal pairings:
+
+| Method | Route | Purpose |
+|---|---|---|
+| GET | `/v1/workers` | List worker identities owned by this daemon |
+| POST | `/v1/workers/pair` | Redeem a destination pairing link as a new daemon identity |
+| PUT | `/v1/workers/default` | Select a paired runtime, or clear it with a null `runtimeId` |
+| DELETE | `/v1/workers/{id}` | Revoke the destination credential and remove the local worker |
+
+These are local-admin operations. Credentials remain in the daemon's private
+data directory; callers receive only sanitized connection metadata. Removing a
+worker also clears a matching default delegation binding.
+
 `GET /v1/execution-targets` returns the local authorized execution inventory.
 The signed `POST /v1/mesh/execution-target` probe supplies the same sanitized
 target entry for a paired destination. In addition to worker capabilities,

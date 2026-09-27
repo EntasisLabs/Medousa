@@ -431,9 +431,11 @@ async fn start_daemon() -> Result<()> {
         .await
         .context("workspace persistence initialization failed")?;
 
-    let platform = build_daemon_platform(backend.clone(), platform_config)
-        .await
-        .context("failed to build medousa platform runtime")?;
+    let daemon_workers = Arc::new(medousa::daemon_worker::DaemonWorkerPairing::default());
+    let platform =
+        build_daemon_platform(backend.clone(), platform_config, daemon_workers.transport())
+            .await
+            .context("failed to build medousa platform runtime")?;
 
     let identity_service = platform.identity_service();
     let profile_registry = Arc::new(std::sync::RwLock::new(
@@ -622,6 +624,7 @@ async fn start_daemon() -> Result<()> {
 
     let state = AppState {
         platform: platform.clone(),
+        daemon_workers,
         daemon_base_url: medousa::daemon_api::resolve_daemon_public_base_url(bind),
         interactive_turn_streams: medousa::daemon::turn_stream_registry::new_turn_stream_registry(),
         active_ingest_jobs: Arc::new(RwLock::new(HashMap::new())),
