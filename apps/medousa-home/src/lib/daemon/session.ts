@@ -194,6 +194,14 @@ export async function getSessionHistory(
       `/v1/sessions/${encodeURIComponent(sessionId)}/history${suffix}`,
     );
   }
+  if (isBrowserWorkshop()) {
+    return {
+      authority_id: "",
+      session_id: sessionId,
+      turns: [],
+      next_cursor: null,
+    };
+  }
   return invoke<SessionHistoryResponse>("session_get_history", {
     sessionId,
     limit: options?.limit,
@@ -322,6 +330,7 @@ export async function getActiveSessionTurn(
       `/v1/sessions/${encodeURIComponent(sessionId)}/active-turn`,
     );
   }
+  if (isBrowserWorkshop()) return { active: false };
   return invoke<ActiveSessionTurnResponse>("session_get_active_turn", {
     sessionId,
   });
@@ -585,6 +594,7 @@ export async function listSessionTurns(
       `/v1/sessions/${encodeURIComponent(sessionId)}/turns?active=${active}`,
     );
   }
+  if (isBrowserWorkshop()) return { session_id: sessionId, turns: [] };
   return invoke<import("$lib/types/session").SessionTurnsResponse>(
     "turn_list_session",
     {

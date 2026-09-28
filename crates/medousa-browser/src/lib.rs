@@ -6,6 +6,14 @@
 #[cfg(not(target_arch = "wasm32"))]
 pub fn browser_bridge_is_wasm32_only() {}
 
+mod clock_parts;
+
+#[cfg(target_arch = "wasm32")]
+mod wasm_clock;
+
+#[cfg(target_arch = "wasm32")]
+include!(concat!(env!("OUT_DIR"), "/wasm_clock_exports.rs"));
+
 #[cfg(target_arch = "wasm32")]
 mod page {
 
@@ -15,8 +23,16 @@ mod page {
         JsValue::from_str(&error)
     }
 
+    #[wasm_bindgen(start)]
+    pub fn start() {
+        console_error_panic_hook::set_once();
+        medousa::wasm_daemon::install_browser_runtime();
+    }
+
     #[wasm_bindgen]
     pub async fn boot() -> Result<(), JsValue> {
+        console_error_panic_hook::set_once();
+        medousa::wasm_daemon::install_browser_runtime();
         medousa::wasm_daemon::boot().await.map_err(js_error)
     }
 

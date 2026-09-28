@@ -8,16 +8,16 @@
 
 use std::sync::Mutex;
 
-use grapheme_wasm::{ExecuteRequest, execute};
+use grapheme_wasm::{execute, ExecuteRequest};
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use stasis::infrastructure::memory::locus_node_store_factory::LocusMemoryStore;
 use stasis::infrastructure::memory::surreal_identity_memory_store::SurrealIdentityMemoryStore;
 use stasis::prelude::{RuntimeComposition, RuntimeFactory};
-use surrealdb::Surreal;
 use surrealdb::engine::any::Any;
-use wasm_bindgen::JsCast;
+use surrealdb::Surreal;
 use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
 use crate::stasis_surreal_schema::ensure_stasis_runtime_schema;
@@ -137,21 +137,27 @@ fn surreal_db(runtime: &RuntimeComposition) -> Result<Surreal<Any>, String> {
 
 async fn apply_statements(db: &Surreal<Any>, statements: &[&str]) -> Result<(), String> {
     for statement in statements {
-        match db.query(*statement).await {
-            Ok(response) => {
-                response
-                    .check()
-                    .map_err(|err| format!("workshop schema `{statement}`: {err}"))?;
+        let result = match db.query(*statement).await {
+            Ok(response) => response.check().map(|_| ()),
+            Err(err) => Err(err),
+        };
+        if let Err(err) = result {
+            let text = err.to_string();
+            if text.contains("already exists") || text.contains("already defined") {
+                continue;
             }
-            Err(err) => {
-                let text = err.to_string();
-                if !(text.contains("already exists") || text.contains("already defined")) {
-                    return Err(format!("workshop schema `{statement}`: {text}"));
-                }
-            }
+            return Err(format!("workshop schema `{statement}`: {text}"));
         }
     }
     Ok(())
+}
+
+fn json_u64(value: &Value) -> u64 {
+    value
+        .as_u64()
+        .or_else(|| value.as_i64().map(|n| n.max(0) as u64))
+        .or_else(|| value.as_f64().map(|n| n.max(0.0) as u64))
+        .unwrap_or(0)
 }
 
 async fn query_checked(db: &Surreal<Any>, statement: &str) -> Result<(), String> {
@@ -167,8 +173,32 @@ async fn query_rows(
     response.check().map_err(|err| err.to_string())
 }
 
+/// Keep a current-thread Tokio runtime entered for the page.
+///
+/// Surreal's IndexedDB retry path calls `tokio::time::timeout`. That panics
+/// with "there is no reactor running" unless a runtime context is entered.
+/// The guard is leaked so later polls of boot, sessions, and portal dials
+/// still see it. The browser event loop drives the futures; this does not
+/// `block_on`.
+pub fn install_browser_runtime() {
+    use std::sync::OnceLock;
+    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+    let runtime = RUNTIME.get_or_init(|| {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("browser tokio runtime")
+    });
+    static ENTERED: OnceLock<()> = OnceLock::new();
+    ENTERED.get_or_init(|| {
+        let guard = runtime.enter();
+        std::mem::forget(guard);
+    });
+}
+
 /// Open `indxdb://medousa`, apply the shared Stasis schema, then workshop tables.
 pub async fn boot() -> Result<(), String> {
+    install_browser_runtime();
     if lock_workshop()?.is_some() {
         return Ok(());
     }
@@ -224,19 +254,18 @@ pub async fn list_sessions() -> Result<Vec<Value>, String> {
         "SELECT session_id, title, updated_ms, preview FROM workshop_session ORDER BY updated_ms DESC",
     )
     .await?;
-    let session_ids: Vec<String> = response.take("session_id").map_err(|err| err.to_string())?;
-    let titles: Vec<String> = response.take("title").map_err(|err| err.to_string())?;
-    let updated_ms: Vec<f64> = response.take("updated_ms").map_err(|err| err.to_string())?;
-    let previews: Vec<String> = response.take("preview").map_err(|err| err.to_string())?;
-    let mut rows = Vec::with_capacity(session_ids.len());
-    for (index, session_id) in session_ids.into_iter().enumerate() {
-        rows.push(json!({
-            "session_id": session_id,
-            "title": titles.get(index).cloned().unwrap_or_default(),
-            "updated_ms": updated_ms.get(index).copied().unwrap_or(0.0) as u64,
-            "preview": previews.get(index).cloned().unwrap_or_default(),
-        }));
-    }
+    let records: Vec<Value> = response.take(0).map_err(|err| err.to_string())?;
+    let rows = records
+        .into_iter()
+        .map(|row| {
+            json!({
+                "session_id": row.get("session_id").and_then(Value::as_str).unwrap_or_default(),
+                "title": row.get("title").and_then(Value::as_str).unwrap_or_default(),
+                "updated_ms": row.get("updated_ms").map(json_u64).unwrap_or(0),
+                "preview": row.get("preview").and_then(Value::as_str).unwrap_or_default(),
+            })
+        })
+        .collect();
     Ok(rows)
 }
 
@@ -274,19 +303,18 @@ pub async fn list_notes() -> Result<Vec<Value>, String> {
         "SELECT note_id, title, body, updated_ms FROM workshop_note ORDER BY updated_ms DESC",
     )
     .await?;
-    let note_ids: Vec<String> = response.take("note_id").map_err(|err| err.to_string())?;
-    let titles: Vec<String> = response.take("title").map_err(|err| err.to_string())?;
-    let bodies: Vec<String> = response.take("body").map_err(|err| err.to_string())?;
-    let updated_ms: Vec<f64> = response.take("updated_ms").map_err(|err| err.to_string())?;
-    let mut rows = Vec::with_capacity(note_ids.len());
-    for (index, note_id) in note_ids.into_iter().enumerate() {
-        rows.push(json!({
-            "note_id": note_id,
-            "title": titles.get(index).cloned().unwrap_or_default(),
-            "body": bodies.get(index).cloned().unwrap_or_default(),
-            "updated_ms": updated_ms.get(index).copied().unwrap_or(0.0) as u64,
-        }));
-    }
+    let records: Vec<Value> = response.take(0).map_err(|err| err.to_string())?;
+    let rows = records
+        .into_iter()
+        .map(|row| {
+            json!({
+                "note_id": row.get("note_id").and_then(Value::as_str).unwrap_or_default(),
+                "title": row.get("title").and_then(Value::as_str).unwrap_or_default(),
+                "body": row.get("body").and_then(Value::as_str).unwrap_or_default(),
+                "updated_ms": row.get("updated_ms").map(json_u64).unwrap_or(0),
+            })
+        })
+        .collect();
     Ok(rows)
 }
 
@@ -624,7 +652,7 @@ pub async fn write_vault(path: &str, body: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{WORKSHOP_ENDPOINT, accept_workshop_endpoint, reject_memory_boot};
+    use super::{accept_workshop_endpoint, reject_memory_boot, WORKSHOP_ENDPOINT};
 
     #[test]
     fn in_memory_boot_is_a_hard_error() {

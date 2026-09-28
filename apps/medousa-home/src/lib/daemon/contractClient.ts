@@ -27,6 +27,9 @@ export async function daemonUnary<T>(
         : "";
     return runBrowserGrapheme(source) as Promise<T>;
   }
+  if (isBrowserWorkshop()) {
+    throw new Error(`${id} is not available in the browser workshop`);
+  }
   return invoke<T>("daemon_unary", {
     operation: id,
     pathParams,
@@ -43,6 +46,9 @@ export async function daemonStreamStart(
   clientHandle?: string,
   executionRuntimeId?: string | null,
 ): Promise<string> {
+  if (isBrowserWorkshop()) {
+    throw new Error(`${id} is not available in the browser workshop`);
+  }
   return invoke<string>("daemon_stream_start", {
     operation: id,
     pathParams,
@@ -53,5 +59,6 @@ export async function daemonStreamStart(
 }
 
 export async function daemonStreamCancel(handle: string): Promise<void> {
+  if (isBrowserWorkshop()) return;
   return invoke("daemon_stream_cancel", { handle });
 }

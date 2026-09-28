@@ -19,7 +19,7 @@ import {
   DEFAULT_WORKSPACE_BACKOFF,
   ReconnectScheduler,
 } from "$lib/stream/reconnect";
-import { isTauriMobilePlatform } from "$lib/platform";
+import { isBrowserWorkshop, isTauriMobilePlatform } from "$lib/platform";
 import { sendPairingHeartbeat } from "$lib/utils/pairingClient";
 import { haptic } from "$lib/haptics";
 import { ensureWorkshopEngineHealthy } from "$lib/utils/ensureWorkshopEngine";
@@ -59,7 +59,7 @@ export type WorkshopConnection = {
 export type WorkshopConnectMode = "full" | "observer";
 
 async function registerBrowserHostClient(health: DaemonHealth): Promise<void> {
-  if (!health.ok) return;
+  if (!health.ok || isBrowserWorkshop()) return;
   try {
     const daemonUrl = await getDaemonUrl();
     await registerBrowserClient(daemonUrl, homeChannelSurface());

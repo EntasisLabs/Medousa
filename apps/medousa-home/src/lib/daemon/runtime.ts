@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import { isBrowserWorkshop } from "$lib/platform";
+import { bootBrowserWorkshop } from "$lib/wasm/browserDaemon";
 import { browserPortalActive, portalRequest } from "$lib/wasm/browserPortal";
 import type {
   ContinuationStatusResponse,
@@ -41,6 +43,20 @@ export async function checkDaemonHealth(): Promise<DaemonHealth> {
         last_agent_turn_latency_ms: detail.last_agent_turn_latency_ms ?? null,
         active_profile_id: detail.active_profile_id || null,
         active_profile_display_name: detail.active_profile_display_name || null,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+  if (isBrowserWorkshop()) {
+    try {
+      await bootBrowserWorkshop();
+      return {
+        ok: true,
+        message: "Personal workshop in this tab",
       };
     } catch (error) {
       return {

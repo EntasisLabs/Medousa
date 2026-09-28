@@ -1,3 +1,5 @@
+import { isBrowserWorkshop } from "$lib/platform";
+import { browserPortalActive } from "$lib/wasm/browserPortal";
 import {
   applyEnvironmentPending,
   dismissEnvironmentPending,
@@ -160,6 +162,13 @@ export class EnvironmentStore {
 
   async load(profileId?: string): Promise<void> {
     const workshopEpoch = this.workshopEpoch;
+    if (isBrowserWorkshop() && !browserPortalActive()) {
+      this.spec = migrateBuiltinNavSurfaces(defaultEnvironmentSpec(profileId));
+      this.revision = 0;
+      this.streamError = null;
+      this.loading = false;
+      return;
+    }
     this.loading = true;
     try {
       const response = await getEnvironmentSpec(profileId);

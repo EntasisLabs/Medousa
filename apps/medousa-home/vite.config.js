@@ -96,7 +96,12 @@ function mobileDevOriginPlugin() {
 export default defineConfig(async () => ({
   plugins: [themeCssPlugin(), mobileDevOriginPlugin(), sveltekit(), themeBootPlugin()],
   // Component tests exercise the same lifecycle and DOM behavior as the app.
-  resolve: process.env.VITEST ? { conditions: ["browser"] } : undefined,
+  resolve: {
+    ...(process.env.VITEST ? { conditions: ["browser"] } : {}),
+    alias: {
+      "@tauri-apps/api/core": join(homeRoot, "src/lib/tauri/browserCore.ts"),
+    },
+  },
   build: {
     manifest: true,
   },
