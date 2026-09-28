@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { browserPortalActive, portalRequest } from "$lib/wasm/browserPortal";
 import type {
   ContinuationStatusResponse,
   DaemonStatsResponse,
@@ -13,6 +14,41 @@ import type { TuiDefaults } from "$lib/types/workshopDefaults";
 import type { DaemonHealth } from "./client";
 
 export async function checkDaemonHealth(): Promise<DaemonHealth> {
+  if (browserPortalActive()) {
+    try {
+      const detail = await portalRequest<{
+        runtime?: DaemonHealth["runtime"];
+        backend?: string;
+        worker_id?: string;
+        tool_registry_count?: number;
+        agent_runtime_version?: string;
+        last_agent_turn_at_utc?: string | null;
+        last_agent_turn_latency_ms?: number | null;
+        active_profile_id?: string;
+        active_profile_display_name?: string;
+      }>("GET", "/v1/health");
+      const tools = detail.tool_registry_count ?? 0;
+      const revision = detail.runtime?.build_revision ?? "";
+      return {
+        ok: true,
+        message: `connected over Iroh · ${tools} tools · build ${revision}`,
+        runtime: detail.runtime ?? null,
+        backend: detail.backend ?? null,
+        worker_id: detail.worker_id ?? null,
+        tool_registry_count: tools,
+        agent_runtime_version: detail.agent_runtime_version || null,
+        last_agent_turn_at_utc: detail.last_agent_turn_at_utc ?? null,
+        last_agent_turn_latency_ms: detail.last_agent_turn_latency_ms ?? null,
+        active_profile_id: detail.active_profile_id || null,
+        active_profile_display_name: detail.active_profile_display_name || null,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
   return invoke<DaemonHealth>("daemon_health");
 }
 

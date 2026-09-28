@@ -35,13 +35,26 @@ import type {
 } from "$lib/types/media";
 import type { StageRoutingMatrix } from "$lib/types/runtime";
 import { invokePlain, type StreamErrorPayload } from "./client";
-import { isBrowserWorkshop } from "$lib/platform";
+import { homeChannelSurface, isBrowserWorkshop } from "$lib/platform";
 import {
   createBrowserSession,
   listBrowserSessions,
   sendBrowserInteractiveTurn,
   subscribeBrowserTurnEvents,
 } from "$lib/wasm/browserDaemon";
+import {
+  browserPortalActive,
+  openPortalInteractiveStream,
+  portalRequest,
+  stopPortalInteractiveStreams,
+  stopPortalStreams,
+  subscribePortalStream,
+  subscribePortalStreamError,
+} from "$lib/wasm/browserPortal";
+
+function useBrowserPortal(): boolean {
+  return isBrowserWorkshop() && browserPortalActive();
+}
 
 export interface InteractiveTurnAccepted {
   turn_id: string;
@@ -70,6 +83,15 @@ export async function listSessions(
     typeof limitOrOptions === "number"
       ? { limit: limitOrOptions }
       : (limitOrOptions ?? {});
+  if (useBrowserPortal()) {
+    const query: Record<string, string> = {
+      limit: String(options.limit ?? 50),
+      include_verification: String(options.includeVerification ?? false),
+    };
+    if (options.q?.trim()) query.q = options.q.trim();
+    if (options.cursor?.trim()) query.cursor = options.cursor.trim();
+    return portalRequest<ListSessionsResponse>("GET", `/v1/sessions?${new URLSearchParams(query)}`);
+  }
   if (isBrowserWorkshop()) return listBrowserSessions(options.limit);
   return invoke<ListSessionsResponse>("session_list", {
     limit: options.limit,
@@ -89,6 +111,14 @@ export interface CreateSessionOptions {
 export async function createSession(
   options?: CreateSessionOptions,
 ): Promise<CreateSessionResponse> {
+  if (useBrowserPortal()) {
+    return portalRequest<CreateSessionResponse>("POST", "/v1/sessions", {
+      catalog: options?.catalog,
+      member_profile_ids: options?.memberProfileIds,
+      agent_profile_id: options?.agentProfileId,
+      display_name: options?.displayName,
+    });
+  }
   if (isBrowserWorkshop()) return createBrowserSession(options?.displayName);
   return invoke<CreateSessionResponse>("session_create", {
     catalog: options?.catalog,
@@ -154,6 +184,16 @@ export async function getSessionHistory(
   sessionId: string,
   options?: SessionHistoryOptions,
 ): Promise<SessionHistoryResponse> {
+  if (useBrowserPortal()) {
+    const query = new URLSearchParams();
+    if (options?.limit) query.set("limit", String(options.limit));
+    if (options?.cursor?.trim()) query.set("cursor", options.cursor.trim());
+    const suffix = query.size ? `?${query}` : "";
+    return portalRequest<SessionHistoryResponse>(
+      "GET",
+      `/v1/sessions/${encodeURIComponent(sessionId)}/history${suffix}`,
+    );
+  }
   return invoke<SessionHistoryResponse>("session_get_history", {
     sessionId,
     limit: options?.limit,
@@ -276,6 +316,12 @@ export async function deleteSession(
 export async function getActiveSessionTurn(
   sessionId: string,
 ): Promise<ActiveSessionTurnResponse> {
+  if (useBrowserPortal()) {
+    return portalRequest<ActiveSessionTurnResponse>(
+      "GET",
+      `/v1/sessions/${encodeURIComponent(sessionId)}/active-turn`,
+    );
+  }
   return invoke<ActiveSessionTurnResponse>("session_get_active_turn", {
     sessionId,
   });
@@ -284,6 +330,12 @@ export async function getActiveSessionTurn(
 export async function cancelActiveSessionTurn(
   sessionId: string,
 ): Promise<CancelActiveSessionTurnResponse> {
+  if (useBrowserPortal()) {
+    return portalRequest<CancelActiveSessionTurnResponse>(
+      "POST",
+      `/v1/sessions/${encodeURIComponent(sessionId)}/active-turn`,
+    );
+  }
   return invoke<CancelActiveSessionTurnResponse>("session_cancel_active_turn", {
     sessionId,
   });
@@ -300,6 +352,38 @@ export async function steerBoundWorkshop(
 export async function createTurnTicket(
   request: import("$lib/types/session").CreateTurnTicketRequest,
 ): Promise<import("$lib/types/session").TurnTicketResponse> {
+  if (useBrowserPortal()) {
+    const channelSurface = request.channelSurface?.trim() || homeChannelSurface();
+    return portalRequest<import("$lib/types/session").TurnTicketResponse>("POST", "/v1/turns", {
+      session_id: request.sessionId,
+      prompt: request.prompt,
+      agent_mode: request.agentMode ?? null,
+      code_context: request.codeContext ?? null,
+      code_project_setup_authorized: request.codeProjectSetupAuthorized ?? false,
+      worker_execution_target: request.workerExecutionTarget ?? null,
+      mode: request.mode ?? "interactive",
+      persist_user_turn: true,
+      response_depth_mode: request.responseDepthMode ?? "standard",
+      reasoning_effort: request.reasoningEffort ?? "default",
+      provider: request.provider ?? "",
+      model: request.model ?? "",
+      stage_routing: request.stageRouting ?? null,
+      surface: {
+        channel_surface: channelSurface,
+        channel_id: request.sessionId,
+        supports_ui_artifacts: true,
+        supports_liquid_markdown: true,
+        supports_browser_host: Boolean(request.browserDriverId),
+        browser_driver_id: request.browserDriverId ?? null,
+        selected_worlds: request.selectedWorlds ?? [],
+      },
+      media_refs: request.mediaRefs ?? [],
+      liquid_interactions: request.liquidInteractions ?? [],
+      voice_preset_id: request.voicePresetId ?? null,
+      voice_appendix: request.voiceAppendix ?? null,
+      identity_user_id: request.identityUserId ?? null,
+    });
+  }
   return invoke<import("$lib/types/session").TurnTicketResponse>("turn_create", {
     sessionId: request.sessionId,
     prompt: request.prompt,
@@ -494,6 +578,13 @@ export async function listSessionTurns(
   sessionId: string,
   activeOnly = true,
 ): Promise<import("$lib/types/session").SessionTurnsResponse> {
+  if (useBrowserPortal()) {
+    const active = activeOnly ? "true" : "false";
+    return portalRequest<import("$lib/types/session").SessionTurnsResponse>(
+      "GET",
+      `/v1/sessions/${encodeURIComponent(sessionId)}/turns?active=${active}`,
+    );
+  }
   return invoke<import("$lib/types/session").SessionTurnsResponse>(
     "turn_list_session",
     {
@@ -522,6 +613,25 @@ export async function sendInteractiveTurn(
   prompt: string,
   options?: InteractiveTurnOptions & { mediaRefs?: MediaRef[] },
 ): Promise<InteractiveTurnAccepted> {
+  if (useBrowserPortal()) {
+    const accepted = await createTurnTicket({
+      sessionId,
+      prompt,
+      agentMode: options?.agentMode,
+      codeContext: options?.codeContext,
+      provider: options?.provider,
+      model: options?.model,
+      responseDepthMode: options?.responseDepthMode,
+      reasoningEffort: options?.reasoningEffort,
+      stageRouting: options?.stageRouting,
+      channelSurface: options?.channelSurface,
+      browserDriverId: options?.browserDriverId,
+      selectedWorlds: options?.selectedWorlds,
+      mediaRefs: options?.mediaRefs,
+      identityUserId: options?.identityUserId,
+    });
+    return { turn_id: accepted.turn_id, stream_url: accepted.stream_url };
+  }
   if (isBrowserWorkshop()) return sendBrowserInteractiveTurn(sessionId, prompt);
   return invoke<InteractiveTurnAccepted>("interactive_turn_send", {
     sessionId,
@@ -604,15 +714,26 @@ function base64ToBytes(value: string): Uint8Array {
 }
 
 export async function startInteractiveStream(streamUrl: string): Promise<void> {
+  if (useBrowserPortal()) return openPortalInteractiveStream(streamUrl);
   if (isBrowserWorkshop()) return;
   return invoke("interactive_stream_start", { streamUrl });
 }
 
 export async function stopInteractiveStream(): Promise<void> {
+  if (useBrowserPortal()) {
+    stopPortalInteractiveStreams();
+    return;
+  }
+  if (isBrowserWorkshop()) return;
   return invoke("interactive_stream_stop");
 }
 
 export async function stopInteractiveStreamTurn(turnId: string): Promise<void> {
+  if (useBrowserPortal()) {
+    stopPortalStreams(`interactive:${turnId}`);
+    return;
+  }
+  if (isBrowserWorkshop()) return;
   return invoke("interactive_stream_stop_turn", { turnId });
 }
 
@@ -620,11 +741,16 @@ export function onInteractiveEvent<T>(
   handler: (payload: T) => void,
 ): Promise<UnlistenFn> {
   if (isBrowserWorkshop()) {
-    return Promise.resolve(
-      subscribeBrowserTurnEvents((event) => {
-        handler(event as T);
-      }),
-    );
+    const unsubPortal = subscribePortalStream<T>("interactive", (event) => {
+      if (browserPortalActive()) handler(event);
+    });
+    const unsubLocal = subscribeBrowserTurnEvents((event) => {
+      if (!browserPortalActive()) handler(event as T);
+    });
+    return Promise.resolve(() => {
+      unsubPortal();
+      unsubLocal();
+    });
   }
   return listen<T>("interactive://event", (event) => {
     handler(event.payload);
@@ -634,6 +760,12 @@ export function onInteractiveEvent<T>(
 export function onInteractiveError(
   handler: (error: StreamErrorPayload) => void,
 ): Promise<UnlistenFn> {
+  if (isBrowserWorkshop()) {
+    const unsub = subscribePortalStreamError("interactive", (message) => {
+      if (browserPortalActive()) handler({ message, recoverable: true, transport: "iroh" });
+    });
+    return Promise.resolve(unsub);
+  }
   return listen<StreamErrorPayload>("interactive://error", (event) => {
     handler(event.payload);
   });

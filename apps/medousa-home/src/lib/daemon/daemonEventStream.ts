@@ -2,9 +2,11 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   daemonStreamCancel,
   daemonStreamStart,
+  OPERATIONS,
   type OperationId,
 } from "$lib/daemon/contractClient";
 import { isTauri } from "$lib/window";
+import { browserPortalActive, expandOperationPath, openPortalStream, stopPortalStreams } from "$lib/wasm/browserPortal";
 
 export type DaemonStreamFailure = {
   message: string;
@@ -134,9 +136,45 @@ async function openBrowserDaemonEventStream<T>(
  * Open an authenticated daemon SSE operation. Tauri listens before starting
  * the native stream, so event zero cannot race the IPC subscription.
  */
+async function openPortalDaemonEventStream<T>(
+  options: OpenDaemonEventStreamOptions<T>,
+): Promise<DaemonEventConnection> {
+  const handle = nextDaemonStreamHandle(options.operation);
+  const operation = OPERATIONS[options.operation];
+  const path = expandOperationPath(operation.path, options.pathParams, options.query);
+  let closed = false;
+  await openPortalStream(handle, path, "", {
+    onEvent: (event) => {
+      if (!closed) options.onEvent(event as T);
+    },
+    onError: (message) => {
+      if (closed) return;
+      closed = true;
+      options.onError({
+        message,
+        recoverable: true,
+        transport: "iroh",
+        stage: "read",
+      });
+    },
+  });
+  if (!closed) options.onOpen?.();
+  return {
+    close: () => {
+      if (closed) return;
+      closed = true;
+      stopPortalStreams(handle);
+    },
+    get closed() {
+      return closed;
+    },
+  };
+}
+
 export function openDaemonEventStream<T>(
   options: OpenDaemonEventStreamOptions<T>,
 ): Promise<DaemonEventConnection> {
+  if (browserPortalActive()) return openPortalDaemonEventStream(options);
   return isTauri()
     ? openNativeDaemonEventStream(options)
     : openBrowserDaemonEventStream(options);

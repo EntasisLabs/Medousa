@@ -4,7 +4,7 @@
   import { workshops } from "$lib/stores/workshops.svelte";
   import { attachMobileSheetGestures } from "$lib/utils/mobileSheetGestures";
   import { parsePairQrUrl } from "$lib/utils/pairingUrl";
-  import { isTauriMobilePlatform } from "$lib/platform";
+  import { isBrowserWorkshop, isTauriMobilePlatform } from "$lib/platform";
   import { workshopQrScanHint } from "$lib/platformCopy";
 
   interface Props {
@@ -105,7 +105,11 @@
           <div class="min-w-0">
             <h2 class="text-sm font-semibold text-surface-50">Add workshop</h2>
             <p class="workshop-faint mt-0.5 text-xs leading-relaxed">
-              Connect to another Medousa engine — scan or paste the invite link from your team.
+              {#if isBrowserWorkshop()}
+                Paste a full Iroh invite. This tab pairs as a portal and reaches that private daemon over the relay.
+              {:else}
+                Connect to another Medousa engine — scan or paste the invite link from your team.
+              {/if}
             </p>
           </div>
           <button type="button" class="btn btn-sm variant-ghost-surface shrink-0" onclick={onClose}>
@@ -137,6 +141,7 @@
           ></textarea>
         </label>
 
+        {#if !isBrowserWorkshop()}
         <label class="block" for="workshop-daemon-url">
           <span class="workshop-label">Workshop address</span>
           <input
@@ -149,6 +154,7 @@
             Filled automatically from the link when possible.
           </span>
         </label>
+        {/if}
 
         {#if parsedPreview}
           <p class="text-xs text-content-secondary">

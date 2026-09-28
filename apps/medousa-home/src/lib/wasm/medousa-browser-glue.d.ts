@@ -13,6 +13,18 @@ declare module "/wasm/medousa_browser.js" {
   ): Promise<string>;
   export function run_grapheme(source: string): string;
   export function dial_iroh_ticket(ticket: string, path: string): Promise<string>;
+  export function pair_from_invite(qrUrl: string, displayName: string): Promise<string>;
+  export function set_active_portal(workshopId: string): void;
+  export function forget_portal(workshopId: string): void;
+  export function portal_request(method: string, path: string, body: string): Promise<string>;
+  export function portal_open_stream(
+    kind: string,
+    path: string,
+    accept: string,
+    onEvent: (data: string) => void,
+    onError: (message: string) => void,
+  ): void;
+  export function portal_stop_streams(prefix: string): void;
   export function read_vault(path: string): Promise<string>;
   export function write_vault(path: string, body: string): Promise<void>;
   export default function init(input?: unknown): Promise<unknown>;

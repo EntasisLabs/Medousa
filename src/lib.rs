@@ -242,6 +242,25 @@ pub fn resolve_llm_base_url(
         .or_else(|| std::env::var("STASIS_LLM_BASE_URL").ok())
 }
 
+pub mod browser_portal_parse;
+
+#[cfg(all(
+    feature = "wasm-daemon",
+    target_arch = "wasm32",
+    not(feature = "full-daemon"),
+    not(feature = "embedded-daemon")
+))]
+#[path = "pairing/crypto.rs"]
+pub mod pairing_crypto;
+
+#[cfg(all(
+    feature = "wasm-daemon",
+    target_arch = "wasm32",
+    not(feature = "full-daemon"),
+    not(feature = "embedded-daemon")
+))]
+pub mod browser_portal;
+
 #[cfg(all(
     feature = "wasm-daemon",
     target_arch = "wasm32",

@@ -13,7 +13,7 @@ Operator evaluation: [Benchmark Coder with Terminal-Bench](terminal-bench.md).
 | [Bots](bots.md) | Create durable named teammates with their own memory and conversation |
 | [Packages](packages.md) | Add optional computer, coding, model, channel, and MCP capabilities |
 | [Workshop & Automations](workshop-and-automations.md) | Flows, schedules, specialists, background work |
-| [Phone pairing](phone-pairing.md) | Add another computer as an optional portal |
+| [Phone pairing](phone-pairing.md) | Add another computer as an optional portal, including from a browser |
 | [Siri and Shortcuts](siri-and-shortcuts.md) | Continue the selected Medousa chat by voice or from an iPhone shortcut |
 | [Medousa Live on iPhone](medousa-live-ios.md) | Hold a continuous in-app voice conversation on iPhone |
 | [Peers & Nearby](peers-and-nearby.md) | LAN / tunnel workshops (deep dive linked) |

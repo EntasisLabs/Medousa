@@ -17,6 +17,18 @@ interface BrowserDaemonExports {
   ) => Promise<string>;
   run_grapheme: (source: string) => string;
   dial_iroh_ticket: (ticket: string, path: string) => Promise<string>;
+  pair_from_invite: (qrUrl: string, displayName: string) => Promise<string>;
+  set_active_portal: (workshopId: string) => void;
+  forget_portal: (workshopId: string) => void;
+  portal_request: (method: string, path: string, body: string) => Promise<string>;
+  portal_open_stream: (
+    kind: string,
+    path: string,
+    accept: string,
+    onEvent: (data: string) => void,
+    onError: (message: string) => void,
+  ) => void;
+  portal_stop_streams: (prefix: string) => void;
   read_vault: (path: string) => Promise<string>;
   write_vault: (path: string, body: string) => Promise<void>;
 }
@@ -94,7 +106,7 @@ export function mapBrowserTurnEvent(event: BrowserTurnEvent): InteractiveTurnStr
   };
 }
 
-async function loadDaemon(): Promise<BrowserDaemonExports> {
+export async function loadDaemon(): Promise<BrowserDaemonExports> {
   if (!daemonPromise) {
     daemonPromise = (async () => {
       const loadGlue = new Function(

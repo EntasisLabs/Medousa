@@ -369,6 +369,9 @@ wasm-daemon = [
     "dep:iroh-tickets",
     "dep:httparse",
     "dep:medousa-iroh-http",
+    "dep:base64",
+    "dep:ed25519-dalek",
+    "dep:rand",
 ]
 
 [dev-dependencies]

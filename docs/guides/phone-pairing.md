@@ -74,6 +74,23 @@ pair/join-workshop flow and paste that full URL. The initial pairing ceremony
 and subsequent workshop traffic use Iroh, so the phone does not need to reach
 the host's LAN or public IP address.
 
+## Pair from a browser
+
+A browser tab can join the same way. The tab keeps its own Personal workshop.
+Pasting a full invite adds a portal to your private daemon; it does not upload
+that daemon's files into the browser.
+
+1. On the workshop, print a full invite: `medousa pair qr --full`.
+2. Open Medousa in the browser.
+3. Add a workshop and paste the complete `medousa://pair/2.0?...` link.
+4. Switch to that workshop. Chat, sessions, and the rest of Home talk to the
+   private daemon over Iroh.
+
+A compact LAN link has no Iroh ticket, so it still belongs on the Medousa app
+while you are on the same network. Switch back to Personal when you want the
+workshop that lives in the browser. The pairing session stays in this site's
+storage and renews with the device key created during pairing.
+
 ---
 
 ## What you can do on the phone

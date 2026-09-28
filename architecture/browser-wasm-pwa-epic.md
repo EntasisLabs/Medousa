@@ -15,9 +15,12 @@ The iOS plan already names browser WASM as the later deployment of
 loop, a second persistence model, or a slim product beside the daemon.
 
 A tab boots its own Personal workshop. Chat, sessions, memory, notes, and
-Grapheme scripts run in the page. Inference stays a remote API call. Pairing
-and portal use the Iroh relay client. Forge, Wasmer, Axum, process spawn,
-local model binaries, and SurrealKV stay on native hosts.
+Grapheme scripts run in the page. Inference stays a remote API call. A full
+`medousa://pair/2.0` invite pairs the tab as a portal: the same Ed25519
+ceremony the phone runs, then Home's daemon calls go to that private daemon
+over the Iroh relay. Compact LAN invites stay on the Medousa app. Forge,
+Wasmer, Axum, process spawn, local model binaries, and SurrealKV stay on
+native hosts.
 
 ```mermaid
 flowchart LR
