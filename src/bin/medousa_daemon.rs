@@ -1251,6 +1251,9 @@ async fn start_daemon() -> Result<()> {
     // storm. The semaphore is shared across all cloned per-connection services.
     let max_concurrency = resolve_max_concurrency();
     let app = app
+        .layer(axum::middleware::from_fn(
+            medousa::daemon::request_boundary::answer_browser_preflight,
+        ))
         .layer(tower::limit::GlobalConcurrencyLimitLayer::new(
             max_concurrency,
         ))

@@ -141,7 +141,17 @@ pub async fn pair_from_invite(qr_url: &str, display_name: &str) -> Result<String
             peer_name: invite.peer_name.clone(),
             daemon_public_key,
         },
-        None => iroh_json(&invite.iroh_ticket, "GET", "/pair/status", None, &[]).await?,
+        None => {
+            iroh_json(
+                &invite.iroh_ticket,
+                Some(invite.advertise_address.as_str()),
+                "GET",
+                "/pair/status",
+                None,
+                &[],
+            )
+            .await?
+        }
     };
     if invite.device_id != status.device_id {
         return Err(
@@ -177,6 +187,7 @@ pub async fn pair_from_invite(qr_url: &str, display_name: &str) -> Result<String
     });
     let init: PairInitPayload = iroh_json(
         &invite.iroh_ticket,
+        Some(invite.advertise_address.as_str()),
         "POST",
         "/pair/init",
         Some(&init_body),
@@ -205,6 +216,7 @@ pub async fn pair_from_invite(qr_url: &str, display_name: &str) -> Result<String
     });
     let verify: PairVerifyPayload = iroh_json(
         &invite.iroh_ticket,
+        Some(invite.advertise_address.as_str()),
         "POST",
         "/pair/verify",
         Some(&verify_body),
@@ -428,16 +440,110 @@ async fn authed_exchange(
         .iter()
         .map(|(name, value)| (name.as_str(), value.as_str()))
         .collect();
-    let mut response =
-        medousa_iroh_http::iroh_http_request(&record.iroh_ticket, method, path, &header_refs, body)
-            .await
-            .map_err(|err| format!("Cannot reach workshop over Iroh: {err}"))?;
-    let text = read_body_text(&mut response.body).await?;
-    Ok((response.status, text))
+    reach_text(
+        &record.iroh_ticket,
+        Some(record.daemon_url.as_str()),
+        method,
+        path,
+        &header_refs,
+        body,
+    )
+    .await
 }
 
 fn exchange_json(status: u16, body: &str) -> Result<String, String> {
     Ok(serde_json::json!({ "status": status, "body": body }).to_string())
+}
+
+/// Loopback invites talk to the daemon's own HTTP listener. A closed Iroh
+/// relay then cannot leave the join parked on "Joining…". Remote invites
+/// still dial the ticket, and that dial is bounded.
+async fn reach_text(
+    ticket: &str,
+    http_base: Option<&str>,
+    method: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: Option<&[u8]>,
+) -> Result<(u16, String), String> {
+    if let Some(base) = http_base.and_then(crate::browser_portal_parse::loopback_http_origin) {
+        match browser_http(&base, method, path, headers, body).await {
+            Ok(response) => return Ok(response),
+            Err(http_err) => {
+                let iroh = iroh_text(ticket, method, path, headers, body).await;
+                return match iroh {
+                    Ok(response) => Ok(response),
+                    Err(iroh_err) => Err(format!("{http_err} ({iroh_err})")),
+                };
+            }
+        }
+    }
+    iroh_text(ticket, method, path, headers, body).await
+}
+
+async fn iroh_text(
+    ticket: &str,
+    method: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: Option<&[u8]>,
+) -> Result<(u16, String), String> {
+    let mut response = medousa_iroh_http::iroh_http_request(ticket, method, path, headers, body)
+        .await
+        .map_err(|err| format!("Cannot reach workshop over Iroh: {err}"))?;
+    let text = read_body_text(&mut response.body).await?;
+    Ok((response.status, text))
+}
+
+async fn browser_http(
+    base: &str,
+    method: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: Option<&[u8]>,
+) -> Result<(u16, String), String> {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen::JsValue;
+    use wasm_bindgen_futures::JsFuture;
+
+    let path = if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("/{path}")
+    };
+    let url = format!("{}{path}", base.trim_end_matches('/'));
+    let header_list = web_sys::Headers::new().map_err(|_| "failed to build request headers")?;
+    for (name, value) in headers {
+        header_list
+            .set(name, value)
+            .map_err(|_| format!("failed to set header {name}"))?;
+    }
+    let init = web_sys::RequestInit::new();
+    init.set_method(method);
+    init.set_mode(web_sys::RequestMode::Cors);
+    init.set_headers(&header_list);
+    if let Some(body) = body {
+        let text = String::from_utf8_lossy(body);
+        init.set_body(&JsValue::from_str(&text));
+    }
+    let request = web_sys::Request::new_with_str_and_init(&url, &init)
+        .map_err(|_| format!("invalid workshop URL {url}"))?;
+    let window = web_sys::window().ok_or_else(|| "browser window is unavailable".to_string())?;
+    let response = JsFuture::from(window.fetch_with_request(&request))
+        .await
+        .map_err(|_| format!("Cannot reach workshop at {url}"))?;
+    let response: web_sys::Response = response
+        .dyn_into()
+        .map_err(|_| "workshop response was not a Response".to_string())?;
+    let status = response.status();
+    let text = JsFuture::from(
+        response
+            .text()
+            .map_err(|_| "workshop body was unreadable".to_string())?,
+    )
+    .await
+    .map_err(|_| "workshop body read failed".to_string())?;
+    Ok((status, text.as_string().unwrap_or_default()))
 }
 
 async fn read_body_text(body: &mut medousa_iroh_http::IrohHttpBody) -> Result<String, String> {
@@ -450,6 +556,7 @@ async fn read_body_text(body: &mut medousa_iroh_http::IrohHttpBody) -> Result<St
 
 async fn iroh_json<T: for<'de> Deserialize<'de>>(
     ticket: &str,
+    http_base: Option<&str>,
     method: &str,
     path: &str,
     body: Option<&serde_json::Value>,
@@ -470,15 +577,11 @@ async fn iroh_json<T: for<'de> Deserialize<'de>>(
         .iter()
         .map(|(name, value)| (name.as_str(), value.as_str()))
         .collect();
-    let mut response =
-        medousa_iroh_http::iroh_http_request(ticket, method, path, &refs, encoded.as_deref())
-            .await
-            .map_err(|err| format!("Cannot reach workshop over Iroh: {err}"))?;
-    let text = read_body_text(&mut response.body).await?;
-    if !(200..300).contains(&response.status) {
+    let (status, text) =
+        reach_text(ticket, http_base, method, path, &refs, encoded.as_deref()).await?;
+    if !(200..300).contains(&status) {
         return Err(format!(
-            "Workshop returned HTTP {} over Iroh for {method} {path}: {text}",
-            response.status
+            "Workshop returned HTTP {status} for {method} {path}: {text}"
         ));
     }
     serde_json::from_str(&text).map_err(|err| format!("Invalid workshop response over Iroh: {err}"))
@@ -526,6 +629,7 @@ async fn refresh_session(record: PortalRecord) -> Result<PortalRecord, String> {
     });
     let challenge: PairSessionChallengePayload = iroh_json(
         &record.iroh_ticket,
+        Some(record.daemon_url.as_str()),
         "POST",
         "/pair/session/challenge",
         Some(&challenge_body),
@@ -560,6 +664,7 @@ async fn refresh_session(record: PortalRecord) -> Result<PortalRecord, String> {
     });
     let refresh: PairSessionRefreshPayload = iroh_json(
         &record.iroh_ticket,
+        Some(record.daemon_url.as_str()),
         "POST",
         "/pair/session/refresh",
         Some(&refresh_body),

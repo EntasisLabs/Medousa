@@ -2,8 +2,8 @@
 //!
 //! `Instant` on this target is a `Duration` written through an sret pointer:
 //! `secs: u64` at offset 0 and `nanos: u32` at offset 8. `now` is `(out: i32)`,
-//! and `elapsed` is `(out: i32, self: i32)`. The link uses
-//! `--allow-multiple-definition` so these definitions win over libstd.
+//! and `elapsed` is `(out: i32, self: i32)`. `wasm-ld --wrap` sends every call
+//! at the libstd panic stubs to these writers.
 
 use wasm_bindgen::prelude::*;
 

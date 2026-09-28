@@ -101,6 +101,32 @@ fn frame_data(frame: &[u8]) -> Option<String> {
     }
 }
 
+/// `http://127.0.0.1:7419` when `address` is loopback. Remote invites stay on Iroh.
+pub fn loopback_http_origin(address: &str) -> Option<String> {
+    let trimmed = address.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return None;
+    }
+    let url = if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        trimmed.to_string()
+    } else {
+        format!("http://{trimmed}")
+    };
+    let rest = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))?;
+    let hostport = rest.split(['/', '?', '#']).next().unwrap_or(rest);
+    let host = if let Some(v6) = hostport.strip_prefix('[') {
+        v6.split(']').next().unwrap_or(v6)
+    } else {
+        hostport.split(':').next().unwrap_or(hostport)
+    };
+    match host.trim().to_ascii_lowercase().as_str() {
+        "localhost" | "127.0.0.1" | "::1" => Some(url),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,6 +139,23 @@ mod tests {
         assert_eq!(query_param(raw, "k").as_deref(), Some("ticket+value"));
         assert_eq!(query_param(raw, "n").as_deref(), Some("Home"));
         assert!(query_param(raw, "missing").is_none());
+    }
+
+    #[test]
+    fn loopback_origin_accepts_local_advertise_addresses() {
+        assert_eq!(
+            loopback_http_origin("127.0.0.1:7419").as_deref(),
+            Some("http://127.0.0.1:7419")
+        );
+        assert_eq!(
+            loopback_http_origin("http://localhost:7419/").as_deref(),
+            Some("http://localhost:7419")
+        );
+        assert_eq!(
+            loopback_http_origin("http://[::1]:7419").as_deref(),
+            Some("http://[::1]:7419")
+        );
+        assert!(loopback_http_origin("http://192.168.1.20:7419").is_none());
     }
 
     #[test]

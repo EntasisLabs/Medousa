@@ -145,15 +145,12 @@ pub async fn enforce_compatibility_origin(
 }
 
 pub async fn enforce_declared_browser_policy(
-    State(policy): State<BrowserPolicy>,
+    State(_policy): State<BrowserPolicy>,
     request: Request<Body>,
     next: Next,
 ) -> Response {
     if request.headers().get(ORIGIN).is_none() {
         return next.run(request).await;
-    }
-    if matches!(policy, BrowserPolicy::NativeOnly) {
-        return StatusCode::FORBIDDEN.into_response();
     }
     let Some(boundary) = INSTALLED_BOUNDARY.get() else {
         return StatusCode::FORBIDDEN.into_response();
@@ -163,6 +160,9 @@ pub async fn enforce_declared_browser_policy(
         Ok(None) => return next.run(request).await,
         Err(status) => return status.into_response(),
     };
+    // `NativeOnly` still rejects every origin that is not an allowed Home
+    // origin. The browser workshop is served from those origins and dials a
+    // loopback daemon directly when the Iroh relay socket closes.
     let mut response = next.run(request).await;
     response
         .headers_mut()
@@ -170,6 +170,36 @@ pub async fn enforce_declared_browser_policy(
     response
         .headers_mut()
         .append(VARY, HeaderValue::from_static("Origin"));
+    response
+}
+
+/// Answer CORS preflight for an allowed Home origin without entering the route.
+pub async fn answer_browser_preflight(request: Request<Body>, next: Next) -> Response {
+    if request.method() != axum::http::Method::OPTIONS {
+        return next.run(request).await;
+    }
+    let Some(boundary) = INSTALLED_BOUNDARY.get() else {
+        return next.run(request).await;
+    };
+    let Ok(Some(origin)) = boundary.permits_origin(request.headers()) else {
+        return StatusCode::FORBIDDEN.into_response();
+    };
+    let mut response = StatusCode::NO_CONTENT.into_response();
+    let headers = response.headers_mut();
+    headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, origin);
+    headers.insert(
+        axum::http::header::ACCESS_CONTROL_ALLOW_METHODS,
+        HeaderValue::from_static("GET,POST,PUT,PATCH,DELETE,OPTIONS"),
+    );
+    headers.insert(
+        axum::http::header::ACCESS_CONTROL_ALLOW_HEADERS,
+        HeaderValue::from_static("authorization,content-type,accept"),
+    );
+    headers.insert(
+        axum::http::header::ACCESS_CONTROL_MAX_AGE,
+        HeaderValue::from_static("600"),
+    );
+    headers.append(VARY, HeaderValue::from_static("Origin"));
     response
 }
 
@@ -406,6 +436,47 @@ mod tests {
         assert_eq!(
             allowed.headers().get(ACCESS_CONTROL_ALLOW_ORIGIN),
             Some(&HeaderValue::from_static("http://localhost:1420"))
+        );
+    }
+
+    #[tokio::test]
+    async fn native_only_allows_the_home_origin_and_rejects_other_browsers() {
+        RequestBoundary::for_listener("127.0.0.1:7419".parse().unwrap())
+            .unwrap()
+            .install();
+        let app = Router::new()
+            .route("/", get(|| async { StatusCode::NO_CONTENT }))
+            .layer(axum::middleware::from_fn_with_state(
+                BrowserPolicy::NativeOnly,
+                enforce_declared_browser_policy,
+            ));
+        let denied = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/")
+                    .header(ORIGIN, "https://attacker.example")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+
+        let allowed = app
+            .oneshot(
+                Request::builder()
+                    .uri("/")
+                    .header(ORIGIN, "http://127.0.0.1:1420")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(allowed.status(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            allowed.headers().get(ACCESS_CONTROL_ALLOW_ORIGIN),
+            Some(&HeaderValue::from_static("http://127.0.0.1:1420"))
         );
     }
 }

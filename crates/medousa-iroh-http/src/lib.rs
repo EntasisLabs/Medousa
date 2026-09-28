@@ -59,13 +59,32 @@ impl IrohHttpBody {
 async fn shared_client_endpoint() -> Result<&'static Endpoint> {
     WORKSHOP_CLIENT
         .get_or_try_init(|| async {
-            let endpoint = Endpoint::bind(presets::N0)
+            Endpoint::bind(presets::N0)
                 .await
-                .context("bind iroh client endpoint")?;
-            endpoint.online().await;
-            Ok(endpoint)
+                .context("bind iroh client endpoint")
         })
         .await
+}
+
+/// `Endpoint::online` waits until a relay socket is up, and if that watcher
+/// drops it parks forever. A browser relay that closes (`ERR_CONNECTION_CLOSED`)
+/// would leave the portal join on "Joining…" with no error.
+async fn wait_for_relay(endpoint: &Endpoint) -> Result<()> {
+    let online = endpoint.online();
+    #[cfg(target_arch = "wasm32")]
+    {
+        n0_future::time::timeout(std::time::Duration::from_secs(8), online)
+            .await
+            .map_err(|_| anyhow::anyhow!("Iroh relay connection closed"))?;
+        return Ok(());
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        tokio::time::timeout(std::time::Duration::from_secs(8), online)
+            .await
+            .map_err(|_| anyhow::anyhow!("Iroh relay connection closed"))?;
+        Ok(())
+    }
 }
 
 pub async fn iroh_http_request(
@@ -77,10 +96,18 @@ pub async fn iroh_http_request(
 ) -> Result<IrohHttpResponse> {
     let ticket = EndpointTicket::from_str(ticket).map_err(|err| anyhow::anyhow!("{err}"))?;
     let endpoint = shared_client_endpoint().await?;
+    wait_for_relay(endpoint).await?;
 
-    let conn = endpoint
-        .connect(ticket.endpoint_addr().clone(), ALPN)
+    let dial = endpoint.connect(ticket.endpoint_addr().clone(), ALPN);
+    #[cfg(target_arch = "wasm32")]
+    let conn = n0_future::time::timeout(std::time::Duration::from_secs(12), dial)
         .await
+        .map_err(|_| anyhow::anyhow!("Iroh relay connection closed"))?
+        .context("connect to workshop over iroh")?;
+    #[cfg(not(target_arch = "wasm32"))]
+    let conn = tokio::time::timeout(std::time::Duration::from_secs(12), dial)
+        .await
+        .map_err(|_| anyhow::anyhow!("Iroh relay connection closed"))?
         .context("connect to workshop over iroh")?;
     let (mut send, mut recv) = conn.open_bi().await.context("open bi stream")?;
 
