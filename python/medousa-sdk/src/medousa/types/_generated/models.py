@@ -447,6 +447,24 @@ class ExternalEventKind(Enum):
     failed = 'failed'
 
 
+class MessageReactionTarget1(Enum):
+    current_user_message = 'current_user_message'
+
+
+class MessageReactionTarget2(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    message_id: str
+
+
+class MessageReactionTarget(RootModel[MessageReactionTarget1 | MessageReactionTarget2]):
+    root: MessageReactionTarget1 | MessageReactionTarget2 = Field(
+        ...,
+        description='Agent reactions initially target only the message that triggered the turn.',
+    )
+
+
 class MediaRef(MedousaModel):
     generation_id: str | None = None
     kind: str = Field(..., description='image | drawing | document | spreadsheet | audio')
@@ -1974,33 +1992,24 @@ class TurnCompletionOutcomeV3(RootModel[TurnCompletionOutcomeV31 | TurnCompletio
 
 
 class Type30(Enum):
-    assistant_text_started = 'assistant_text_started'
-
-
-class TurnStreamEventV31(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    model_round: int = Field(..., ge=0)
-    segment_id: str
-    type: Type30
+    reaction = 'reaction'
 
 
 class Type31(Enum):
-    content_append = 'content_append'
+    assistant_text_started = 'assistant_text_started'
 
 
 class TurnStreamEventV32(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
+    model_round: int = Field(..., ge=0)
     segment_id: str
-    text: str
     type: Type31
 
 
 class Type32(Enum):
-    assistant_text_committed = 'assistant_text_committed'
+    content_append = 'content_append'
 
 
 class TurnStreamEventV33(MedousaModel):
@@ -2008,84 +2017,83 @@ class TurnStreamEventV33(MedousaModel):
         extra='forbid',
     )
     segment_id: str
+    text: str
     type: Type32
 
 
 class Type33(Enum):
-    reasoning_append = 'reasoning_append'
+    assistant_text_committed = 'assistant_text_committed'
 
 
 class TurnStreamEventV34(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    text: str
+    segment_id: str
     type: Type33
 
 
 class Type34(Enum):
-    status = 'status'
+    reasoning_append = 'reasoning_append'
 
 
 class TurnStreamEventV35(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    debug_message: str | None = None
-    operator_message: str | None = None
-    phase: str
+    text: str
     type: Type34
 
 
 class Type35(Enum):
-    progress = 'progress'
+    status = 'status'
 
 
 class TurnStreamEventV36(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    message: str
-    tool_names: list[str] | None = []
+    debug_message: str | None = None
+    operator_message: str | None = None
+    phase: str
     type: Type35
 
 
 class Type36(Enum):
-    model_receipt = 'model_receipt'
+    progress = 'progress'
 
 
 class TurnStreamEventV37(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    model: str
-    provider: str
+    message: str
+    tool_names: list[str] | None = []
     type: Type36
 
 
 class Type37(Enum):
-    worker_ack = 'worker_ack'
+    model_receipt = 'model_receipt'
 
 
 class TurnStreamEventV38(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    ack_kind: WorkerAckKind
-    text: str
-    tool_names: list[str] | None = []
+    model: str
+    provider: str
     type: Type37
-    work_id: str | None = None
 
 
 class Type38(Enum):
-    worker_synthesis = 'worker_synthesis'
+    worker_ack = 'worker_ack'
 
 
 class TurnStreamEventV39(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
+    ack_kind: WorkerAckKind
     text: str
     tool_names: list[str] | None = []
     type: Type38
@@ -2093,23 +2101,37 @@ class TurnStreamEventV39(MedousaModel):
 
 
 class Type39(Enum):
-    error = 'error'
+    worker_synthesis = 'worker_synthesis'
 
 
 class TurnStreamEventV310(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    debug_message: str | None = None
-    operator_message: str
+    text: str
+    tool_names: list[str] | None = []
     type: Type39
+    work_id: str | None = None
 
 
 class Type40(Enum):
-    tool_started = 'tool_started'
+    error = 'error'
 
 
 class TurnStreamEventV311(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    debug_message: str | None = None
+    operator_message: str
+    type: Type40
+
+
+class Type41(Enum):
+    tool_started = 'tool_started'
+
+
+class TurnStreamEventV312(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
@@ -2118,14 +2140,14 @@ class TurnStreamEventV311(MedousaModel):
     tool_name: str
     tool_round: int = Field(..., ge=0)
     tool_run_id: str
-    type: Type40
+    type: Type41
 
 
-class Type41(Enum):
+class Type42(Enum):
     tool_finished = 'tool_finished'
 
 
-class TurnStreamEventV312(MedousaModel):
+class TurnStreamEventV313(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
@@ -2137,23 +2159,11 @@ class TurnStreamEventV312(MedousaModel):
     tool_name: str
     tool_round: int = Field(..., ge=0)
     tool_run_id: str
-    type: Type41
-
-
-class Type42(Enum):
-    artifact_presented = 'artifact_presented'
-
-
-class TurnStreamEventV313(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    artifact: StreamUiArtifact
     type: Type42
 
 
 class Type43(Enum):
-    artifact_updated = 'artifact_updated'
+    artifact_presented = 'artifact_presented'
 
 
 class TurnStreamEventV314(MedousaModel):
@@ -2161,28 +2171,40 @@ class TurnStreamEventV314(MedousaModel):
         extra='forbid',
     )
     artifact: StreamUiArtifact
-    previous_artifact_id: str
-    root_artifact_id: str | None = None
     type: Type43
 
 
 class Type44(Enum):
-    ui_scene = 'ui_scene'
+    artifact_updated = 'artifact_updated'
 
 
 class TurnStreamEventV315(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    scene: StreamUiScene
+    artifact: StreamUiArtifact
+    previous_artifact_id: str
+    root_artifact_id: str | None = None
     type: Type44
 
 
 class Type45(Enum):
-    budget_approval_required = 'budget_approval_required'
+    ui_scene = 'ui_scene'
 
 
 class TurnStreamEventV316(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    scene: StreamUiScene
+    type: Type45
+
+
+class Type46(Enum):
+    budget_approval_required = 'budget_approval_required'
+
+
+class TurnStreamEventV317(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
@@ -2192,55 +2214,55 @@ class TurnStreamEventV316(MedousaModel):
     request_id: str
     requested_rounds: int = Field(..., ge=0)
     rounds_executed: int = Field(..., ge=0)
-    type: Type45
-
-
-class Type46(Enum):
-    browser_challenge = 'browser_challenge'
-
-
-class TurnStreamEventV317(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    challenge_url: str
-    reason: str
-    session_id: str
     type: Type46
 
 
 class Type47(Enum):
-    browser_navigated = 'browser_navigated'
+    browser_challenge = 'browser_challenge'
 
 
 class TurnStreamEventV318(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    opened_by_agent: bool | None = False
-    title: str | None = None
+    challenge_url: str
+    reason: str
+    session_id: str
     type: Type47
-    url: str
 
 
 class Type48(Enum):
-    context_usage = 'context_usage'
+    browser_navigated = 'browser_navigated'
 
 
 class TurnStreamEventV319(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    operator_summary: str | None = None
-    report: ContextUsageReport
+    opened_by_agent: bool | None = False
+    title: str | None = None
     type: Type48
+    url: str
 
 
 class Type49(Enum):
-    permission_request = 'permission_request'
+    context_usage = 'context_usage'
 
 
 class TurnStreamEventV320(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    operator_summary: str | None = None
+    report: ContextUsageReport
+    type: Type49
+
+
+class Type50(Enum):
+    permission_request = 'permission_request'
+
+
+class TurnStreamEventV321(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
@@ -2248,14 +2270,14 @@ class TurnStreamEventV320(MedousaModel):
     agent_session_id: str | None = None
     message: str
     request_id: str
-    type: Type49
+    type: Type50
 
 
-class Type50(Enum):
+class Type51(Enum):
     secret_request = 'secret_request'
 
 
-class TurnStreamEventV321(MedousaModel):
+class TurnStreamEventV322(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
@@ -2266,14 +2288,14 @@ class TurnStreamEventV321(MedousaModel):
     provider_type: str
     reason: str
     request_id: str
-    type: Type50
+    type: Type51
 
 
-class Type51(Enum):
+class Type52(Enum):
     turn_completed = 'turn_completed'
 
 
-class TurnStreamEventV322(MedousaModel):
+class TurnStreamEventV323(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
@@ -2282,59 +2304,7 @@ class TurnStreamEventV322(MedousaModel):
     operator_message: str | None = None
     outcome: TurnCompletionOutcomeV3
     tool_names: list[str] | None = []
-    type: Type51
-
-
-class TurnStreamEventV3(
-    RootModel[
-        TurnStreamEventV31
-        | TurnStreamEventV32
-        | TurnStreamEventV33
-        | TurnStreamEventV34
-        | TurnStreamEventV35
-        | TurnStreamEventV36
-        | TurnStreamEventV37
-        | TurnStreamEventV38
-        | TurnStreamEventV39
-        | TurnStreamEventV310
-        | TurnStreamEventV311
-        | TurnStreamEventV312
-        | TurnStreamEventV313
-        | TurnStreamEventV314
-        | TurnStreamEventV315
-        | TurnStreamEventV316
-        | TurnStreamEventV317
-        | TurnStreamEventV318
-        | TurnStreamEventV319
-        | TurnStreamEventV320
-        | TurnStreamEventV321
-        | TurnStreamEventV322
-    ]
-):
-    root: (
-        TurnStreamEventV31
-        | TurnStreamEventV32
-        | TurnStreamEventV33
-        | TurnStreamEventV34
-        | TurnStreamEventV35
-        | TurnStreamEventV36
-        | TurnStreamEventV37
-        | TurnStreamEventV38
-        | TurnStreamEventV39
-        | TurnStreamEventV310
-        | TurnStreamEventV311
-        | TurnStreamEventV312
-        | TurnStreamEventV313
-        | TurnStreamEventV314
-        | TurnStreamEventV315
-        | TurnStreamEventV316
-        | TurnStreamEventV317
-        | TurnStreamEventV318
-        | TurnStreamEventV319
-        | TurnStreamEventV320
-        | TurnStreamEventV321
-        | TurnStreamEventV322
-    ) = Field(..., description='Chronological turn facts. Visible prose is addressed by `segment_id`, tool receipts update by `tool_run_id`, and terminal settlement never replaces the preceding timeline.', title='TurnStreamEventV3')
+    type: Type52
 
 
 class TurnTicketPhase(Enum):
@@ -3142,26 +3112,6 @@ class ExternalMuseDiscoveryStatus(MedousaModel):
     observed_chat_jid: str | None = None
 
 
-class ExternalProviderEventRequest(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    event_id: str
-    kind: ExternalEventKind
-    request_id: str
-    text: str
-
-
-class ExternalWhatsAppInboundRequest(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    chat_jid: str
-    message_id: str
-    sender_jid: str
-    text: str
-
-
 class ExternalWhatsAppPairingStatus(MedousaModel):
     expires_at: AwareDatetime | None = None
     qr_svg: str | None = None
@@ -3225,6 +3175,9 @@ class IngestRequest(MedousaModel):
     channel_id: str = Field(
         ..., description='Channel/chat/conversation identifier, e.g. "telegram:chat:67890"'
     )
+    source_message_id: str | None = Field(
+        None, description='Stable provider message identifier for this inbound message.'
+    )
     text: str = Field(..., description='The text content of the message (command or prompt)')
     user_id: str = Field(
         ..., description='User identifier within the channel, e.g. "telegram:user:12345"'
@@ -3281,100 +3234,6 @@ class InteractiveTurnResponse(MedousaModel):
     stream_ready: bool
     stream_url: str
     turn_id: str
-
-
-class InteractiveTurnStreamEvent(MedousaModel):
-    agent_runtime: str | None = Field(
-        None,
-        description='External runtime kind when streaming an ACP session (`cursor` / `codex` / `hermes`).',
-    )
-    agent_session_id: str | None = Field(
-        None,
-        description='Bound Medousa chat session for agent-runtime streams (`turn_id` holds agent_session_id).',
-    )
-    browser_challenge_url: str | None = Field(
-        None, description='URL the client should load in Agent Browser WebView.'
-    )
-    browser_session_id: str | None = Field(
-        None, description='Agent Browser CAPTCHA / verification handoff session id.'
-    )
-    budget_request_id: str | None = Field(
-        None, description='Turn budget approval pause — card id for Home deep link / notifications.'
-    )
-    content_delta: str | None = None
-    context_usage: ContextUsageReport | None = Field(
-        None,
-        description='Per-layer context budget estimate (chars/4 heuristic) for operator telemetry.',
-    )
-    debug_message: str | None = Field(
-        None,
-        description='Engine/TUI telemetry — shown only when the operator opts into engine details.',
-    )
-    emitted_at_utc: AwareDatetime
-    event_type: str
-    final_text: str | None = None
-    message: str
-    operator_message: str | None = Field(
-        None, description='Human-facing status whisper for rich surfaces (Home default).'
-    )
-    permission_request_id: str | None = Field(
-        None,
-        description='External ACP agent permission pause — resolve via `/v1/agents/permission-requests/{id}/approve|deny`.',
-    )
-    phase: str
-    previous_artifact_id: str | None = Field(
-        None,
-        description='Previous artifact id when cognition_artifact_write supersedes a revision.',
-    )
-    reasoning_delta: str | None = None
-    requested_rounds: int | None = Field(None, ge=0)
-    response_model: str | None = None
-    response_provider: str | None = Field(
-        None, description='Successful inference route after provider fallback resolution.'
-    )
-    root_artifact_id: str | None = Field(
-        None, description='Root artifact lineage id for revision chains.'
-    )
-    secret_allowed_hosts: list[str] | None = None
-    secret_backend: str | None = None
-    secret_credential_key: str | None = None
-    secret_label: str | None = None
-    secret_provider_type: str | None = None
-    secret_request_id: str | None = Field(
-        None,
-        description='Trusted secret-entry handoff. Metadata only; the value never enters a stream frame or transcript payload.',
-    )
-    seq: int | None = Field(
-        0,
-        description='Monotonic per-turn sequence number, stamped server-side by `TurnEventChannel::publish`. Enables exactly-once replay/dedup on reconnect. `#[serde(default)]` keeps the Python SDK and any older payloads (which never carried `seq`) wire-compatible.',
-        ge=0,
-    )
-    terminal: bool
-    tool_artifact_refs: list[StreamToolArtifactRef] | None = None
-    tool_input_params: list[ToolInputParam] | None = Field(
-        None,
-        description='Redacted key/value arguments so chat can show `query: "…"`, not just the tool name.',
-    )
-    tool_input_summary: str | None = None
-    tool_name: str | None = None
-    tool_names: list[str] | None = None
-    tool_output_summary: str | None = None
-    tool_round: int | None = Field(None, ge=0)
-    tool_run_id: str | None = Field(
-        None, description='Structured tool bus (P1) — correlates started/finished pair.'
-    )
-    tool_status: str | None = None
-    turn_id: str
-    ui_artifact: StreamUiArtifact | None = Field(
-        None, description='Rich UI artifact presented inline in chat (cognition_ui_present).'
-    )
-    ui_scene: StreamUiScene | None = Field(
-        None,
-        description='Liquid UI scene operations (cognition_ui_scene) — model-authored structure-then-fill turns. Ops are opaque JSON validated client-side.',
-    )
-    work_id: str | None = Field(
-        None, description='Turn worker handoff — workspace card id (`work-…`).'
-    )
 
 
 class JobReportResponse(MedousaModel):
@@ -3720,17 +3579,6 @@ class TurnBudgetRequestResponse(MedousaModel):
     request: TurnBudgetRequestRecord
 
 
-class TurnStreamEnvelopeV3(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    emitted_at_utc: AwareDatetime
-    event: TurnStreamEventV3
-    schema_version: int = Field(..., ge=3, le=3)
-    seq: int = Field(..., ge=1)
-    turn_id: str
-
-
 class TurnTicketRecord(MedousaModel):
     composer_handoff: bool
     mode: TurnTicketMode
@@ -4048,6 +3896,10 @@ class TurnSurfaceContext(MedousaModel):
         None,
         description='Exact worlds selected by the user for this turn. The daemon validates, bounds, and freezes these bindings before any model or worker runs.',
     )
+    source_message_id: str | None = Field(
+        None,
+        description='Provider message identifier for effects targeting the current inbound message.',
+    )
     supports_browser_host: bool | None = Field(
         False,
         description='When true, the connected client can run Agent Browser (local BrowserHost or client WebView). Telegram/TUI/ingest leave this false; Home desktop/iOS set true when browser is available.',
@@ -4063,24 +3915,10 @@ class TurnSurfaceContext(MedousaModel):
     user_id: str | None = None
 
 
-class ExternalConversationEvent(MedousaModel):
-    created_at: AwareDatetime
-    event_id: str
-    kind: ExternalEventKind
-    request_id: str | None = None
-    sequence: int = Field(..., ge=0)
-    text: str
-
-
-class ExternalConversationView(MedousaModel):
-    api_access: ExternalAgentAccessStatus | None = None
-    created_at: AwareDatetime
-    events: list[ExternalConversationEvent]
-    id: str
-    label: str
-    provider: ExternalProvider
-    target: str
-    updated_at: AwareDatetime
+class MessageReaction(MedousaModel):
+    effect_id: str
+    emoji: str
+    target: MessageReactionTarget
 
 
 class HostContextDiagnostic(MedousaModel):
@@ -4295,6 +4133,9 @@ class TranscriptEntry(MedousaModel):
     entry_id: TranscriptEntryId
     entry_seq: int = Field(..., ge=1)
     parts: list[TurnPart] | None = None
+    reactions: list[MessageReaction] | None = Field(
+        None, description='Effects emitted with this turn; these are not model-visible content.'
+    )
     role: str
     slice_summary: TurnSliceSummary | None = None
     source: TranscriptEntryRef | None = None
@@ -4373,6 +4214,68 @@ class TurnStreamEventV2(
         | TurnStreamEventV224
         | TurnStreamEventV225
     ) = Field(..., title='TurnStreamEventV2')
+
+
+class TurnStreamEventV31(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    reaction: MessageReaction
+    type: Type30
+
+
+class TurnStreamEventV3(
+    RootModel[
+        TurnStreamEventV31
+        | TurnStreamEventV32
+        | TurnStreamEventV33
+        | TurnStreamEventV34
+        | TurnStreamEventV35
+        | TurnStreamEventV36
+        | TurnStreamEventV37
+        | TurnStreamEventV38
+        | TurnStreamEventV39
+        | TurnStreamEventV310
+        | TurnStreamEventV311
+        | TurnStreamEventV312
+        | TurnStreamEventV313
+        | TurnStreamEventV314
+        | TurnStreamEventV315
+        | TurnStreamEventV316
+        | TurnStreamEventV317
+        | TurnStreamEventV318
+        | TurnStreamEventV319
+        | TurnStreamEventV320
+        | TurnStreamEventV321
+        | TurnStreamEventV322
+        | TurnStreamEventV323
+    ]
+):
+    root: (
+        TurnStreamEventV31
+        | TurnStreamEventV32
+        | TurnStreamEventV33
+        | TurnStreamEventV34
+        | TurnStreamEventV35
+        | TurnStreamEventV36
+        | TurnStreamEventV37
+        | TurnStreamEventV38
+        | TurnStreamEventV39
+        | TurnStreamEventV310
+        | TurnStreamEventV311
+        | TurnStreamEventV312
+        | TurnStreamEventV313
+        | TurnStreamEventV314
+        | TurnStreamEventV315
+        | TurnStreamEventV316
+        | TurnStreamEventV317
+        | TurnStreamEventV318
+        | TurnStreamEventV319
+        | TurnStreamEventV320
+        | TurnStreamEventV321
+        | TurnStreamEventV322
+        | TurnStreamEventV323
+    ) = Field(..., description='Chronological turn facts. Visible prose is addressed by `segment_id`, tool receipts update by `tool_run_id`, and terminal settlement never replaces the preceding timeline.', title='TurnStreamEventV3')
 
 
 class WorkCard(MedousaModel):
@@ -4505,11 +4408,6 @@ class CreateBotRequest(MedousaModel):
     )
 
 
-class CreateExternalConversationResponse(MedousaModel):
-    callback_key: str | None = None
-    conversation: ExternalConversationView
-
-
 class CreateTurnTicketRequest(MedousaModel):
     additional_manuscript_ids: list[str] | None = None
     agent_mode: AgentModeId | None = Field(
@@ -4578,8 +4476,26 @@ class DeriveSessionResponse(MedousaModel):
     session_id: str
 
 
-class ExternalConversationListResponse(MedousaModel):
-    conversations: list[ExternalConversationView]
+class ExternalProviderEventRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    event_id: str
+    kind: ExternalEventKind
+    reaction: MessageReaction | None = None
+    request_id: str
+    text: str
+
+
+class ExternalWhatsAppInboundRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    chat_jid: str
+    message_id: str
+    reaction: MessageReaction | None = None
+    sender_jid: str
+    text: str
 
 
 class FeedStreamEvent(MedousaModel):
@@ -4660,6 +4576,101 @@ class InteractiveTurnRequest(MedousaModel):
     )
 
 
+class InteractiveTurnStreamEvent(MedousaModel):
+    agent_runtime: str | None = Field(
+        None,
+        description='External runtime kind when streaming an ACP session (`cursor` / `codex` / `hermes`).',
+    )
+    agent_session_id: str | None = Field(
+        None,
+        description='Bound Medousa chat session for agent-runtime streams (`turn_id` holds agent_session_id).',
+    )
+    browser_challenge_url: str | None = Field(
+        None, description='URL the client should load in Agent Browser WebView.'
+    )
+    browser_session_id: str | None = Field(
+        None, description='Agent Browser CAPTCHA / verification handoff session id.'
+    )
+    budget_request_id: str | None = Field(
+        None, description='Turn budget approval pause — card id for Home deep link / notifications.'
+    )
+    content_delta: str | None = None
+    context_usage: ContextUsageReport | None = Field(
+        None,
+        description='Per-layer context budget estimate (chars/4 heuristic) for operator telemetry.',
+    )
+    debug_message: str | None = Field(
+        None,
+        description='Engine/TUI telemetry — shown only when the operator opts into engine details.',
+    )
+    emitted_at_utc: AwareDatetime
+    event_type: str
+    final_text: str | None = None
+    message: str
+    operator_message: str | None = Field(
+        None, description='Human-facing status whisper for rich surfaces (Home default).'
+    )
+    permission_request_id: str | None = Field(
+        None,
+        description='External ACP agent permission pause — resolve via `/v1/agents/permission-requests/{id}/approve|deny`.',
+    )
+    phase: str
+    previous_artifact_id: str | None = Field(
+        None,
+        description='Previous artifact id when cognition_artifact_write supersedes a revision.',
+    )
+    reaction: MessageReaction | None = None
+    reasoning_delta: str | None = None
+    requested_rounds: int | None = Field(None, ge=0)
+    response_model: str | None = None
+    response_provider: str | None = Field(
+        None, description='Successful inference route after provider fallback resolution.'
+    )
+    root_artifact_id: str | None = Field(
+        None, description='Root artifact lineage id for revision chains.'
+    )
+    secret_allowed_hosts: list[str] | None = None
+    secret_backend: str | None = None
+    secret_credential_key: str | None = None
+    secret_label: str | None = None
+    secret_provider_type: str | None = None
+    secret_request_id: str | None = Field(
+        None,
+        description='Trusted secret-entry handoff. Metadata only; the value never enters a stream frame or transcript payload.',
+    )
+    seq: int | None = Field(
+        0,
+        description='Monotonic per-turn sequence number, stamped server-side by `TurnEventChannel::publish`. Enables exactly-once replay/dedup on reconnect. `#[serde(default)]` keeps the Python SDK and any older payloads (which never carried `seq`) wire-compatible.',
+        ge=0,
+    )
+    terminal: bool
+    tool_artifact_refs: list[StreamToolArtifactRef] | None = None
+    tool_input_params: list[ToolInputParam] | None = Field(
+        None,
+        description='Redacted key/value arguments so chat can show `query: "…"`, not just the tool name.',
+    )
+    tool_input_summary: str | None = None
+    tool_name: str | None = None
+    tool_names: list[str] | None = None
+    tool_output_summary: str | None = None
+    tool_round: int | None = Field(None, ge=0)
+    tool_run_id: str | None = Field(
+        None, description='Structured tool bus (P1) — correlates started/finished pair.'
+    )
+    tool_status: str | None = None
+    turn_id: str
+    ui_artifact: StreamUiArtifact | None = Field(
+        None, description='Rich UI artifact presented inline in chat (cognition_ui_present).'
+    )
+    ui_scene: StreamUiScene | None = Field(
+        None,
+        description='Liquid UI scene operations (cognition_ui_scene) — model-authored structure-then-fill turns. Ops are opaque JSON validated client-side.',
+    )
+    work_id: str | None = Field(
+        None, description='Turn worker handoff — workspace card id (`work-…`).'
+    )
+
+
 class PeerProposalActionResponse(MedousaModel):
     binding: ExternalPeerAssignmentBinding | None = None
     proposal_id: str
@@ -4694,6 +4705,17 @@ class TurnStreamEnvelopeV2(MedousaModel):
     emitted_at_utc: AwareDatetime
     event: TurnStreamEventV2
     schema_version: int = Field(..., ge=2, le=2)
+    seq: int = Field(..., ge=1)
+    turn_id: str
+
+
+class TurnStreamEnvelopeV3(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    emitted_at_utc: AwareDatetime
+    event: TurnStreamEventV3
+    schema_version: int = Field(..., ge=3, le=3)
     seq: int = Field(..., ge=1)
     turn_id: str
 
@@ -4758,6 +4780,27 @@ class BotProfile(MedousaModel):
     world_binding: BotWorldBinding | None = None
 
 
+class ExternalConversationEvent(MedousaModel):
+    created_at: AwareDatetime
+    event_id: str
+    kind: ExternalEventKind
+    reaction: MessageReaction | None = None
+    request_id: str | None = None
+    sequence: int = Field(..., ge=0)
+    text: str
+
+
+class ExternalConversationView(MedousaModel):
+    api_access: ExternalAgentAccessStatus | None = None
+    created_at: AwareDatetime
+    events: list[ExternalConversationEvent]
+    id: str
+    label: str
+    provider: ExternalProvider
+    target: str
+    updated_at: AwareDatetime
+
+
 class ShellChromeDef(MedousaModel):
     desktop: ShellChromeDesktop | None = None
     mobile: ShellChromeMobile | None = None
@@ -4797,6 +4840,9 @@ class ConversationTurn(MedousaModel):
     answer_state: str | None = None
     content: str
     parts: list[TurnPart] | None = None
+    reactions: list[MessageReaction] | None = Field(
+        None, description='Effects emitted with this turn; these are not model-visible content.'
+    )
     role: str
     slice_summary: TurnSliceSummary | None = None
     speaker_profile_id: str | None = Field(
@@ -4814,6 +4860,15 @@ class BotListResponse(MedousaModel):
 class BotOpenResponse(MedousaModel):
     binding: BotSessionBinding
     bot: BotProfile
+
+
+class CreateExternalConversationResponse(MedousaModel):
+    callback_key: str | None = None
+    conversation: ExternalConversationView
+
+
+class ExternalConversationListResponse(MedousaModel):
+    conversations: list[ExternalConversationView]
 
 
 class LocalBenchmarkManifest(MedousaModel):

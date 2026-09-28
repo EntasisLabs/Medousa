@@ -137,6 +137,15 @@ question. Omitting `session_id` searches the current turn's session; an explicit
 JSON `null` searches across sessions in the backing memory authority. Indexed
 `semantic_tags` remain available to bound that broader search.
 
+`cognition_memory_query action=memory.reflex` asks whether that stimulus should
+recall, find, persist, explain, aggregate, or be ignored. The call returns a
+bus envelope and does not read or write the store. When
+`MEDOUSA_SYSTEM_ONE_ENGINE=laya`, Medousa posts the reflex catalog to the same
+`/v1/systemone` endpoint used for turn perception and applies that body. The
+host engine, and a failed forward pass, leave the decision to the offline
+heuristic. Pass `system1_response` to apply a finished System 1 body instead.
+Durable jobs of type `workflow.stasis.memory.reflex` follow the same rule.
+
 Coder normally recalls only its current environment lineage: the current and
 bounded parent environments plus accepted undertaking and repository knowledge.
 `cognition_coder_memory_recall` can use `scope=all_accepted` for natural-language

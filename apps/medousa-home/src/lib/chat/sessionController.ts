@@ -35,6 +35,7 @@ import {
   emptySessionRuntime,
 } from "$lib/chat/chatSessionRuntime";
 import { loadDraftForSession } from "$lib/chat/draftPersistence";
+import { shellTabs } from "$lib/stores/shellTabs.svelte";
 import { sessionModelSelections } from "./sessionModelSelection.svelte";
 import type { ChatStoreHost } from "$lib/chat/chatStoreHost";
 import { workshopScopedStorageKey } from "$lib/utils/workshopLocality";
@@ -303,7 +304,6 @@ export async function forkSessionFromEntry(
     host.flushDraftPersist();
     host.stashFocusedRuntime();
   }
-  const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
   if (host.workshopEpoch !== workshopEpoch) {
     throw new Error("Workshop changed while the fork was opening");
   }
@@ -555,7 +555,6 @@ export async function newSession(
   host.contextUsagePanelOpen = false;
   chatStreamPool.acquire(id);
   host.stashFocusedRuntime();
-  const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
   if (host.workshopEpoch !== workshopEpoch) return;
   const shellContext = options?.shellContext;
   if (
@@ -625,8 +624,6 @@ export async function newSharedRoom(
   chatStreamPool.acquire(id);
   host.stashFocusedRuntime();
   await refreshSessions(host, { force: true });
-  if (host.workshopEpoch !== workshopEpoch) return;
-  const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
   if (host.workshopEpoch !== workshopEpoch) return;
   shellTabs.openChat(id, { activate: true });
   const { workshops } = await import("$lib/stores/workshops.svelte");
@@ -796,7 +793,7 @@ export async function switchSession(host: ChatStoreHost, sessionId: string) {
   const sourceSessionId = host.sessionId.trim();
   const mirrorShellChat = () => {
     chatStreamPool.acquire(sessionId);
-    void import("$lib/stores/shellTabs.svelte").then(({ shellTabs }) => {
+    void Promise.resolve().then(() => {
       if (host.workshopEpoch !== workshopEpoch) return;
       if (host.sessionId.trim() !== sessionId) return;
       const active = shellTabs.activeTab;

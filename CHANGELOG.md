@@ -7,6 +7,29 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Locus memory reflex** — `cognition_memory_query action=memory.reflex` and
+  `workflow.stasis.memory.reflex` turn a stimulus into a dispatch, ignore, or
+  escalate envelope. When System 1 is Laya, that same `/v1/systemone` layer runs
+  the forward pass. The reflex does not read or write the store.
+
+### Changed
+
+- **Stasis 0.13.0** — the runtime pin moves from 0.12.0, with `locus-sdk` 0.5.0.
+  `locus-core-rs` stays 0.5.1.
+
+### Fixed
+
+- **CI** — clippy on reaction delivery, the Home laya pid write, the generated
+  API contract, and the Python SDK models match the reaction types again. The
+  cascade-layer check gets enough time to compile Tailwind on CI.
+- **Dependencies** — workspace `h2` 0.4 is 0.4.19, the patched line for the
+  empty-DATA-frame advisory. The remaining `h2` 0.3.27 copy stays behind
+  grapheme's `websearch` / reqwest 0.11 stack. Home updates Tiptap past the
+  prototype and markdown advisories, and Vitest to 4.1.11 for the mocker
+  path-traversal advisory. `npm audit` in Home is clean.
+
 ## [0.11.0] — 2026-09-14
 
 ### Added

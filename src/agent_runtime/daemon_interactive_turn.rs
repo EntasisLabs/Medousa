@@ -497,21 +497,22 @@ fn stream_tracking(event: &TurnStreamEventV3) -> (&str, &str, bool) {
 #[async_trait]
 impl AgentStreamSink for InteractiveTurnStreamSink {
     async fn agent_reaction(&self, _turn_id: u64, reaction: MessageReaction) {
-        if let Ok(mut reactions) = self.reactions.lock() {
-            if reactions.iter().all(|existing| existing.effect_id != reaction.effect_id) {
-                reactions.push(reaction.clone());
-            }
+        if let Ok(mut reactions) = self.reactions.lock()
+            && reactions
+                .iter()
+                .all(|existing| existing.effect_id != reaction.effect_id)
+        {
+            reactions.push(reaction.clone());
         }
-        if let Some(delivery) = &self.delivery {
-            if let Err(error) = crate::channel_delivery::dispatch_channel_reaction(
+        if let Some(delivery) = &self.delivery
+            && let Err(error) = crate::channel_delivery::dispatch_channel_reaction(
                 &delivery.dispatch_client,
                 &delivery.delivery_target,
                 &reaction,
             )
             .await
-            {
-                tracing::warn!(turn_id = %self.turn_id, %error, "interactive reaction delivery failed");
-            }
+        {
+            tracing::warn!(turn_id = %self.turn_id, %error, "interactive reaction delivery failed");
         }
         self.publish_tracked(TurnStreamEventV3::Reaction { reaction }).await;
     }

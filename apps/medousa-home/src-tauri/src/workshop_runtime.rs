@@ -620,7 +620,7 @@ fn spawn_laya(workshop_id: &str, data_dir: &Path) -> Result<u32, String> {
     let pid_path = laya_pid_path(workshop_id);
     let write_result = pid_path
         .parent()
-        .map_or(Ok(()), |parent| fs::create_dir_all(parent))
+        .map_or(Ok(()), fs::create_dir_all)
         .and_then(|()| fs::write(&pid_path, pid.to_string()));
     if let Err(err) = write_result {
         let _ = child.kill();
