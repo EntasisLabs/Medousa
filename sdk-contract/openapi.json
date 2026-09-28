@@ -1945,6 +1945,13 @@
               "null"
             ]
           },
+          "reactions": {
+            "description": "Effects emitted with this turn; these are not model-visible content.",
+            "items": {
+              "$ref": "#/components/schemas/MessageReaction"
+            },
+            "type": "array"
+          },
           "role": {
             "type": "string"
           },
@@ -3575,6 +3582,16 @@
           "kind": {
             "$ref": "#/components/schemas/ExternalEventKind"
           },
+          "reaction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MessageReaction"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "request_id": {
             "type": [
               "string",
@@ -3898,6 +3915,16 @@
           "kind": {
             "$ref": "#/components/schemas/ExternalEventKind"
           },
+          "reaction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MessageReaction"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "request_id": {
             "type": "string"
           },
@@ -3922,6 +3949,16 @@
           },
           "message_id": {
             "type": "string"
+          },
+          "reaction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MessageReaction"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "sender_jid": {
             "type": "string"
@@ -4649,6 +4686,13 @@
           "channel_id": {
             "description": "Channel/chat/conversation identifier, e.g. \"telegram:chat:67890\"",
             "type": "string"
+          },
+          "source_message_id": {
+            "description": "Stable provider message identifier for this inbound message.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "text": {
             "description": "The text content of the message (command or prompt)",
@@ -5621,6 +5665,48 @@
           "mime"
         ],
         "type": "object"
+      },
+      "MessageReaction": {
+        "properties": {
+          "effect_id": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/MessageReactionTarget"
+          }
+        },
+        "required": [
+          "effect_id",
+          "emoji",
+          "target"
+        ],
+        "type": "object"
+      },
+      "MessageReactionTarget": {
+        "description": "Agent reactions initially target only the message that triggered the turn.",
+        "oneOf": [
+          {
+            "enum": [
+              "current_user_message"
+            ],
+            "type": "string"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "message_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "message_id"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "MobileAskEntry": {
         "enum": [
@@ -7143,6 +7229,13 @@
               "null"
             ]
           },
+          "reactions": {
+            "description": "Effects emitted with this turn; these are not model-visible content.",
+            "items": {
+              "$ref": "#/components/schemas/MessageReaction"
+            },
+            "type": "array"
+          },
           "role": {
             "type": "string"
           },
@@ -8660,6 +8753,13 @@
               "$ref": "#/components/schemas/TurnWorldSelection"
             },
             "type": "array"
+          },
+          "source_message_id": {
+            "description": "Provider message identifier for effects targeting the current inbound message.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "supports_browser_host": {
             "default": false,

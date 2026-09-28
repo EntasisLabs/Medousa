@@ -48,6 +48,8 @@ pub enum MemoryQueryAction {
     Tags(MemoryTags),
     #[serde(rename = "memory.moods")]
     Moods(MemoryMoods),
+    #[serde(rename = "memory.reflex")]
+    Reflex(MemoryReflex),
 }
 
 #[derive(Debug, Deserialize)]
@@ -134,6 +136,20 @@ pub struct MemoryTags {
     limit: Option<usize>,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MemoryReflex {
+    /// Stimulus the reflex should classify. This call does not read or write memory.
+    text: String,
+    #[serde(default)]
+    role: Option<String>,
+    /// Omit for the current turn; JSON null leaves session scope open
+    #[serde(default)]
+    session_id: MemorySessionScopeInput,
+    /// Finished POST /v1/systemone body. When set, Medousa applies it instead of calling System 1.
+    #[serde(default)]
+    system1_response: Option<Value>,
+}
+
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 pub struct MemoryMoods {
     #[serde(default)]
@@ -209,6 +225,7 @@ impl JsonSchema for MemoryQueryAction {
                 "memory.recall",
                 "memory.tags",
                 "memory.moods",
+                "memory.reflex",
             ]),
             true,
         )])
@@ -261,6 +278,11 @@ pub fn memory_type_schemas() -> Vec<TypedActionSchema> {
             "memory.moods",
             "AVEC mood presets and blend preview",
         ),
+        typed_action_schema::<MemoryReflex>(
+            MEMORY_QUERY_ID,
+            "memory.reflex",
+            "System 1 memory reflex envelope (does not read or write the store)",
+        ),
         typed_action_schema::<MemoryStore>(
             MEMORY_MUTATE_ID,
             "memory.store",
@@ -282,6 +304,8 @@ pub fn memory_type_schemas() -> Vec<TypedActionSchema> {
 pub struct CognitionMemoryQueryTool {
     locus_store: Arc<dyn NodeStore>,
     memory_reader: Arc<dyn MemoryContextReader>,
+    memory_operations:
+        Arc<dyn stasis::ports::outbound::memory::memory_operations::MemoryOperations>,
     semantic_index: Arc<dyn locus_core_rs::SemanticIndexStore>,
     fallback_chat_session_id: String,
     workshop_dynamic: bool,
@@ -318,6 +342,7 @@ pub fn register_memory_tools(
     registry.register_typed_tool(CognitionMemoryQueryTool {
         locus_store: locus_store.clone(),
         memory_reader,
+        memory_operations: memory_operations.clone(),
         semantic_index,
         fallback_chat_session_id: fallback_chat_session_id.clone(),
         workshop_dynamic,
@@ -338,7 +363,7 @@ pub fn register_memory_tools(
 
 #[medousa_tool(id = MEMORY_QUERY_ID)]
 impl CognitionMemoryQueryTool {
-    /// Read Locus memory: schema, AVEC context, list, natural-language recall, tags, or mood presets. memory.recall accepts a question; omit session_id for the current turn or pass null for cross-session retrieval. Fetch action fields with cognition_schema types=[...].
+    /// Read Locus memory: schema, AVEC context, list, natural-language recall, tags, mood presets, or a memory reflex. memory.recall accepts a question. memory.reflex asks System 1 whether to recall, find, persist, ignore, or escalate and does not touch the store. Omit session_id for the current turn or pass null for cross-session retrieval. Fetch action fields with cognition_schema types=[...].
     async fn invoke_typed(
         &self,
         action: MemoryQueryAction,
@@ -369,6 +394,7 @@ async fn dispatch_query(
         MemoryQueryAction::Recall(params) => params.execute(tool).await,
         MemoryQueryAction::Tags(params) => params.execute(tool).await,
         MemoryQueryAction::Moods(params) => params.execute(tool).await,
+        MemoryQueryAction::Reflex(params) => params.execute(tool).await,
     }
 }
 
@@ -506,6 +532,29 @@ impl MemoryMoods {
     }
 }
 
+impl MemoryReflex {
+    async fn execute(self, tool: &CognitionMemoryQueryTool) -> stasis::prelude::Result<Value> {
+        let output = crate::memory_tools::CognitionMemoryReflexTool::new(
+            tool.memory_operations.clone(),
+            tool.fallback_chat_session_id.clone(),
+            tool.workshop_dynamic,
+            tool.turn_scope.clone(),
+            tool.event_tx.clone(),
+        )
+        .invoke_typed(crate::memory_tools::MemoryReflexInput {
+            text: self.text,
+            role: self.role,
+            session_id: self.session_id,
+            system1_response: self.system1_response,
+        })
+        .await?;
+        serialize_output(
+            crate::memory_tools::CognitionMemoryReflexTool::tool_id(),
+            output,
+        )
+    }
+}
+
 impl MemoryStore {
     async fn execute(self, tool: &CognitionMemoryMutateTool) -> stasis::prelude::Result<Value> {
         let output = CognitionMemoryStoreTool::new(
@@ -605,6 +654,23 @@ mod tests {
                 assert_eq!(node, "⊕⟨ prime ⟩");
             }
             other => panic!("expected memory.store, got {other:?}"),
+        }
+        let reflex: MemoryQueryAction = serde_json::from_value(json!({
+            "action": "memory.reflex",
+            "text": "remember aisle seats",
+            "system1_response": {"answers": {}}
+        }))
+        .expect("reflex");
+        match reflex {
+            MemoryQueryAction::Reflex(MemoryReflex {
+                text,
+                system1_response,
+                ..
+            }) => {
+                assert_eq!(text, "remember aisle seats");
+                assert!(system1_response.is_some());
+            }
+            other => panic!("expected memory.reflex, got {other:?}"),
         }
     }
 

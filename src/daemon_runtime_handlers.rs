@@ -16,6 +16,8 @@ use stasis::application::runtime::grapheme_textops_job_handler::GraphemeTextOpsJ
 use stasis::application::runtime::handoff_pattern_job_handler::HandoffPatternJobHandler;
 use stasis::application::runtime::memory_aggregate_job_handler::MemoryAggregateJobHandler;
 use stasis::application::runtime::memory_recall_job_handler::MemoryRecallJobHandler;
+#[cfg(not(feature = "full-daemon"))]
+use stasis::application::runtime::memory_reflex_job_handler::MemoryReflexJobHandler;
 use stasis::application::runtime::memory_rollup_job_handler::MemoryRollupJobHandler;
 use stasis::application::runtime::memory_schema_job_handler::MemorySchemaJobHandler;
 use stasis::application::runtime::memory_transform_job_handler::MemoryTransformJobHandler;
@@ -92,7 +94,13 @@ where
         runtime.register_daemon_handler(MemoryAggregateJobHandler::new(operations.clone()))?;
         runtime.register_daemon_handler(MemoryTransformJobHandler::new(operations.clone()))?;
         runtime.register_daemon_handler(MemoryRollupJobHandler::new(operations.clone()))?;
-        runtime.register_daemon_handler(MemorySchemaJobHandler::new(operations))?;
+        runtime.register_daemon_handler(MemorySchemaJobHandler::new(operations.clone()))?;
+        #[cfg(feature = "full-daemon")]
+        runtime.register_daemon_handler(
+            crate::agent_runtime::memory_reflex::SystemOneMemoryReflexJobHandler::new(operations),
+        )?;
+        #[cfg(not(feature = "full-daemon"))]
+        runtime.register_daemon_handler(MemoryReflexJobHandler::new(operations))?;
     }
 
     runtime.register_daemon_handler(

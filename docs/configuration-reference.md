@@ -83,6 +83,8 @@ Medousa resolves LLM settings in order: **saved defaults → env → built-in de
 
 Laya remains perception, not authority: the adapter uses the typed `choice` response and calibrated `answer_confidence`, ignores Laya's action recommendation, and leaves admission, permissions, and tool policy with Medousa. Installing **Laya System One** from Settings → Packages starts the English checkpoint on `127.0.0.1:7422` with shadow mode; an explicitly configured endpoint remains supported. Keep `MEDOUSA_SYSTEM_ONE_MODE=shadow` while calibrating a checkpoint for Medousa's labels. The generic `typed-decisions` checkpoint targets unrelated workflows and is not the default.
 
+The same Laya endpoint answers the Locus memory reflex (`cognition_memory_query action=memory.reflex` and `workflow.stasis.memory.reflex`). Medousa posts that catalog to `/v1/systemone` and passes the body through. When the engine is `host`, or the forward pass fails, the offline heuristic decides. A supplied `system1_response` is applied as-is. The reflex does not read or write memory.
+
 There is no `no_auth` or loopback bypass setting. Except for constant liveness,
 an active pairing ceremony, and scoped preview URLs, daemon routes require a
 named local-app or paired bearer. First-party native clients load their own

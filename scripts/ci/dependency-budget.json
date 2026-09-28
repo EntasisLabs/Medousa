@@ -77,6 +77,15 @@
       "oldNew": "932->937 default; 1007->1012 iroh; 840->845 home-tauri; duplicate-version counts unchanged",
       "evidence": "architecture/expressive-chat-media-ink-liquid-epic.md; docs/releases/v0.11.0.md; PR cursor/prep-0-11-0-release-1de0",
       "revisit": "2026-11-01"
+    },
+    {
+      "date": "2026-09-28",
+      "workload": "P09 medousa-default and medousa-iroh-transport",
+      "owner": "stasis / embedded image codecs / worker supervision",
+      "reason": "Post-0.11.0 trains raised the default and iroh closures by nine unique pairs: Stasis 0.12 brought grapheme-wasm, locus-surreal-adapter, and sse-stream; embedded image codecs added gif, image-webp, and color_quant; worker supervision added process-wrap and nix, plus a second base64. genai 0.5.3 left the graph. Duplicate-version counts stayed put. Stasis 0.13.0, locus-sdk 0.5.0, and h2 0.4.19 replace existing versions and do not add pairs.",
+      "oldNew": "937->946 default; 1012->1021 iroh; duplicate-version counts unchanged",
+      "evidence": "cargo tree -p medousa compared at 720ba839 (0.11.0 ceiling) and 19938039; CI run 36429400161",
+      "revisit": "2026-11-01"
     }
   ],
   "profiles": {
@@ -85,7 +94,7 @@
       "package": "medousa",
       "features": [],
       "forbidAdapterFrameworks": true,
-      "uniqueNameVersionPairs": 937,
+      "uniqueNameVersionPairs": 946,
       "duplicateVersionNames": 92
     },
     "medousa-iroh-transport": {
@@ -95,7 +104,7 @@
         "iroh-transport"
       ],
       "forbidAdapterFrameworks": true,
-      "uniqueNameVersionPairs": 1012,
+      "uniqueNameVersionPairs": 1021,
       "duplicateVersionNames": 99
     },
     "medousa-runtime-portable": {

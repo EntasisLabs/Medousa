@@ -1761,10 +1761,12 @@ impl IngestAgentStreamSink {
 #[async_trait]
 impl AgentStreamSink for IngestAgentStreamSink {
     async fn agent_reaction(&self, _turn_id: u64, reaction: medousa_types::MessageReaction) {
-        if let Ok(mut reactions) = self.reactions.lock() {
-            if reactions.iter().all(|existing| existing.effect_id != reaction.effect_id) {
-                reactions.push(reaction.clone());
-            }
+        if let Ok(mut reactions) = self.reactions.lock()
+            && reactions
+                .iter()
+                .all(|existing| existing.effect_id != reaction.effect_id)
+        {
+            reactions.push(reaction.clone());
         }
         if let Err(err) = channel_delivery::dispatch_channel_reaction(
             &self.dispatch_client,

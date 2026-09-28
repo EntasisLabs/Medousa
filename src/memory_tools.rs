@@ -9,7 +9,9 @@ use schemars::schema::Schema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use stasis::domain::errors::StasisError;
-use stasis::memory_prelude::{MemoryRecallRequest, MemoryScope, MemoryStoreRequest};
+use stasis::memory_prelude::{
+    MemoryRecallRequest, MemoryReflexRequest, MemoryReflexResponse, MemoryScope, MemoryStoreRequest,
+};
 use stasis::memory_prelude_ext::MemoryContextReader;
 use stasis::ports::outbound::memory::memory_context_writer::MemoryContextWriter;
 use stasis::ports::outbound::memory::memory_models::{
@@ -38,6 +40,7 @@ const COGNITION_MEMORY_RECALL_ID: ToolId = ToolId::new("cognition_memory_recall"
 const COGNITION_MEMORY_TAGS_ID: ToolId = ToolId::new("cognition_memory_tags");
 const COGNITION_MEMORY_MOODS_ID: ToolId = ToolId::new("cognition_memory_moods");
 const COGNITION_MEMORY_EVICT_ID: ToolId = ToolId::new("cognition_memory_evict");
+const COGNITION_MEMORY_REFLEX_ID: ToolId = ToolId::new("cognition_memory_reflex");
 
 const DEFAULT_RECALL_AVEC: (f32, f32, f32, f32) = (0.82, 0.31, 0.88, 0.74);
 
@@ -365,6 +368,7 @@ impl CognitionMemorySchemaTool {
                 "cognition_memory_query action=memory.context or action=memory.list with semantic_tags for indexed recall",
                 "cognition_memory_query action=memory.tags to browse the tag vocabulary",
                 "cognition_memory_query action=memory.context for AVEC-ranked retrieval",
+                "cognition_memory_query action=memory.reflex to ask System 1 whether to recall, find, persist, ignore, or escalate before touching the store",
             ]
             .into_iter()
             .map(str::to_string)
@@ -2081,5 +2085,228 @@ impl CognitionMemoryEvictTool {
             would_delete: response.would_delete,
             session_id: locus_session,
         })
+    }
+}
+
+// ── cognition_memory_reflex ───────────────────────────────────────────────────
+
+pub struct CognitionMemoryReflexTool {
+    operations: Arc<dyn MemoryOperations>,
+    fallback_chat_session_id: String,
+    workshop_dynamic: bool,
+    turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
+    event_tx: mpsc::Sender<TuiEvent>,
+}
+
+impl CognitionMemoryReflexTool {
+    pub fn new(
+        operations: Arc<dyn MemoryOperations>,
+        fallback_chat_session_id: String,
+        workshop_dynamic: bool,
+        turn_scope: crate::agent_runtime::execution_context::TurnScopeAccess,
+        event_tx: mpsc::Sender<TuiEvent>,
+    ) -> Self {
+        Self {
+            operations,
+            fallback_chat_session_id,
+            workshop_dynamic,
+            turn_scope,
+            event_tx,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MemoryReflexInput {
+    /// Stimulus the reflex should classify
+    pub(crate) text: String,
+    #[serde(default)]
+    pub(crate) role: Option<String>,
+    /// Omit for the current turn; JSON null leaves session scope open
+    #[serde(default)]
+    pub(crate) session_id: MemorySessionScopeInput,
+    /// Finished POST /v1/systemone body. When set, Medousa applies it instead of calling System 1.
+    #[serde(default)]
+    pub(crate) system1_response: Option<Value>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct MemoryReflexOutput {
+    schema_version: String,
+    stimulus_id: String,
+    kind: String,
+    action: String,
+    topic: String,
+    salience: f32,
+    salience_label: String,
+    salience_confidence: f32,
+    confidence: f32,
+    propositions: MemoryReflexPropositionsOutput,
+    gate: String,
+    companions: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recall: Option<MemoryReflexRecallHintOutput>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    find: Option<MemoryReflexFindHintOutput>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    aggregate: Option<MemoryReflexAggregateHintOutput>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    persist: Option<MemoryReflexPersistHintOutput>,
+    decider_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    checkpoint: Option<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct MemoryReflexPropositionsOutput {
+    references_prior: f32,
+    should_persist: f32,
+    needs_system2: f32,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct MemoryReflexRecallHintOutput {
+    query_text: Option<String>,
+    limit: usize,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct MemoryReflexFindHintOutput {
+    text_contains: Option<String>,
+    limit: usize,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct MemoryReflexAggregateHintOutput {
+    max_groups: usize,
+    max_nodes: usize,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+struct MemoryReflexPersistHintOutput {
+    text: String,
+    role: Option<String>,
+}
+
+impl From<&MemoryReflexResponse> for MemoryReflexOutput {
+    fn from(response: &MemoryReflexResponse) -> Self {
+        Self {
+            schema_version: response.schema_version.clone(),
+            stimulus_id: response.stimulus_id.clone(),
+            kind: response.kind.clone(),
+            action: response.action.clone(),
+            topic: response.topic.clone(),
+            salience: response.salience,
+            salience_label: response.salience_label.clone(),
+            salience_confidence: response.salience_confidence,
+            confidence: response.confidence,
+            propositions: MemoryReflexPropositionsOutput {
+                references_prior: response.propositions.references_prior,
+                should_persist: response.propositions.should_persist,
+                needs_system2: response.propositions.needs_system2,
+            },
+            gate: response.gate.clone(),
+            companions: response.companions.clone(),
+            recall: response
+                .recall
+                .as_ref()
+                .map(|recall| MemoryReflexRecallHintOutput {
+                    query_text: recall.query_text.clone(),
+                    limit: recall.limit,
+                }),
+            find: response
+                .find
+                .as_ref()
+                .map(|find| MemoryReflexFindHintOutput {
+                    text_contains: find.text_contains.clone(),
+                    limit: find.limit,
+                }),
+            aggregate: response.aggregate.as_ref().map(|aggregate| {
+                MemoryReflexAggregateHintOutput {
+                    max_groups: aggregate.max_groups,
+                    max_nodes: aggregate.max_nodes,
+                }
+            }),
+            persist: response
+                .persist
+                .as_ref()
+                .map(|persist| MemoryReflexPersistHintOutput {
+                    text: persist.text.clone(),
+                    role: persist.role.clone(),
+                }),
+            decider_id: response.decider_id.clone(),
+            checkpoint: response.checkpoint.clone(),
+        }
+    }
+}
+
+#[medousa_tool(id = COGNITION_MEMORY_REFLEX_ID)]
+impl CognitionMemoryReflexTool {
+    /// Classify a stimulus into a Locus memory reflex envelope. Does not read or write the store. When System 1 is Laya, that layer runs the forward pass; otherwise the offline heuristic decides. Pass system1_response to apply a finished /v1/systemone body.
+    pub(crate) async fn invoke_typed(
+        &self,
+        input: MemoryReflexInput,
+    ) -> stasis::prelude::Result<MemoryReflexOutput> {
+        let text = input.text;
+        let role = input
+            .role
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        let session = resolve_optional_locus_session_scope(
+            &input.session_id,
+            &self.turn_scope,
+            &self.fallback_chat_session_id,
+            self.workshop_dynamic,
+        )
+        .await?;
+        let mut scope = MemoryScope::default();
+        if let Some(session) = session {
+            let tenant = derive_locus_tenant_id(&session);
+            if tenant != LOCUS_DEFAULT_TENANT {
+                scope.tenant_id = Some(tenant);
+            }
+            scope.session_ids = Some(vec![session]);
+        }
+        let system1_response = match input.system1_response {
+            Some(response) => Some(response),
+            None => {
+                // Embedded builds use `embedded_agent_runtime`, which has no Laya
+                // client. A supplied body is still applied; otherwise Stasis
+                // stays on the offline heuristic.
+                #[cfg(feature = "full-daemon")]
+                {
+                    crate::agent_runtime::memory_reflex::configured_system1_response(
+                        &text,
+                        role.as_deref(),
+                        scope.session_ids.clone(),
+                        serde_json::Map::new(),
+                    )
+                    .await
+                }
+                #[cfg(not(feature = "full-daemon"))]
+                {
+                    None
+                }
+            }
+        };
+
+        emit_invoked(&self.event_tx, COGNITION_MEMORY_REFLEX_ID.as_str(), &text).await;
+
+        let response = self
+            .operations
+            .reflex(&MemoryReflexRequest {
+                text,
+                role,
+                scope,
+                system1_response,
+                ..Default::default()
+            })
+            .await
+            .map_err(|error| {
+                StasisError::PortFailure(format!(
+                    "cognition_memory_query action=memory.reflex: {error}"
+                ))
+            })?;
+        Ok(MemoryReflexOutput::from(&response))
     }
 }

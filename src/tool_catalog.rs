@@ -260,7 +260,7 @@ const PRESENTATION_OVERRIDES: &[(&str, &str)] = &[
     ),
     (
         crate::public_api::COGNITION_MEMORY_QUERY,
-        "Read Locus memory by typed action (memory.context, memory.recall, memory.schema, …)",
+        "Read Locus memory by typed action (memory.context, memory.recall, memory.reflex, memory.schema, …)",
     ),
     (
         crate::public_api::COGNITION_MEMORY_MUTATE,

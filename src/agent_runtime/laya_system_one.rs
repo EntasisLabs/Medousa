@@ -10,6 +10,7 @@ use medousa_runtime::{
 };
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 pub const SYSTEM_ONE_ENGINE_ENV: &str = "MEDOUSA_SYSTEM_ONE_ENGINE";
 pub const LAYA_BASE_URL_ENV: &str = "MEDOUSA_LAYA_BASE_URL";
@@ -102,6 +103,31 @@ impl LayaSystemOneEngine {
             .build()
             .map_err(engine_error)?;
         Ok(Self { client, config })
+    }
+
+    pub(crate) fn model(&self) -> &str {
+        &self.config.model
+    }
+
+    /// POST an arbitrary `/v1/systemone` body and return the raw JSON.
+    ///
+    /// Turn perception and Locus memory reflex share this client so both
+    /// catalogs hit the same endpoint, timeout, and API key.
+    pub(crate) async fn post_systemone(&self, body: &Value) -> Result<Value, SystemOneError> {
+        let mut request = self.client.post(self.config.endpoint.clone()).json(body);
+        if let Some(api_key) = &self.config.api_key {
+            request = request.bearer_auth(api_key);
+        }
+        let response = request.send().await.map_err(engine_error)?;
+        let status = response.status();
+        if !status.is_success() {
+            let detail = response.text().await.unwrap_or_default();
+            let detail = detail.chars().take(240).collect::<String>();
+            return Err(SystemOneError::Engine(format!(
+                "Laya returned HTTP {status}: {detail}"
+            )));
+        }
+        response.json::<Value>().await.map_err(engine_error)
     }
 
     fn request<'a>(&'a self, input: &'a SystemOneInput) -> LayaRequest<'a> {

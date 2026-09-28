@@ -5246,9 +5246,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.4.14"
+version = "0.4.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "171fefbc92fe4a4de27e0698d6a5b392d6a0e333506bc49133760b3bcf948733"
+checksum = "ef8e5e5a340588f4452631496976cf8636d4a7ecf600239fdc27615d2530bc16"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -5517,7 +5517,7 @@ dependencies = [
  "futures-channel",
  "futures-io",
  "futures-util",
- "h2 0.4.14",
+ "h2 0.4.19",
  "hickory-proto",
  "http 1.4.0",
  "idna",
@@ -5833,7 +5833,7 @@ dependencies = [
  "bytes",
  "futures-channel",
  "futures-core",
- "h2 0.4.14",
+ "h2 0.4.19",
  "http 1.4.0",
  "http-body 1.0.1",
  "httparse",
@@ -7188,9 +7188,9 @@ dependencies = [
 
 [[package]]
 name = "locus-sdk"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1dda350fe00d3f8e6c17fd8c983d40ae61411f2ac8583e7dc2e4971d873260f0"
+checksum = "4f64c4063e99b125829ac5597a4b49fd63817c827a8086cb50e3d1aa6cedb384"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7600,6 +7600,7 @@ dependencies = [
  "keyring",
  "libc",
  "locus-core-rs",
+ "locus-sdk",
  "mdns-sd",
  "medousa-acp-client",
  "medousa-adapter-common",
@@ -12099,7 +12100,7 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-util",
- "h2 0.4.14",
+ "h2 0.4.19",
  "http 1.4.0",
  "http-body 1.0.1",
  "http-body-util",
@@ -12148,7 +12149,7 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-util",
- "h2 0.4.14",
+ "h2 0.4.19",
  "http 1.4.0",
  "http-body 1.0.1",
  "http-body-util",
@@ -14228,9 +14229,9 @@ dependencies = [
 
 [[package]]
 name = "stasis-rs"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72e6a562c6e0cd46ea3d75dc2fcf212856da5575003f26fd6f2f9a313c7ee7d2"
+checksum = "56a0571c6c9c1a90d9da2556b3f3cd7f562e838b6b7dcb48ed52b62a1809e8ac"
 dependencies = [
  "anyhow",
  "askama",
@@ -15859,7 +15860,7 @@ dependencies = [
  "axum 0.7.9",
  "base64 0.22.1",
  "bytes",
- "h2 0.4.14",
+ "h2 0.4.19",
  "http 1.4.0",
  "http-body 1.0.1",
  "http-body-util",
@@ -15888,7 +15889,7 @@ dependencies = [
  "axum 0.8.9",
  "base64 0.22.1",
  "bytes",
- "h2 0.4.14",
+ "h2 0.4.19",
  "http 1.4.0",
  "http-body 1.0.1",
  "http-body-util",

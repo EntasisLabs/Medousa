@@ -47,6 +47,7 @@ pub mod continuation;
 pub mod heartbeat_turn;
 pub mod host_context;
 pub mod laya_system_one;
+pub(crate) mod memory_reflex;
 pub mod modes;
 pub mod perception_governor;
 pub mod presentation;
