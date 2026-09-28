@@ -621,6 +621,7 @@ fn build_event_messages(
         debug_message: messages.debug_message,
         content_delta: None,
         reasoning_delta: None,
+        reaction: None,
         final_text: None,
         tool_names: None,
         response_provider: None,

@@ -23,6 +23,7 @@ pub struct DaemonAccessState {
     pairing: Option<Arc<PairingService>>,
     local_credentials: Option<Arc<LocalCredentialSet>>,
     mcp_policy_token: Option<Arc<str>>,
+    external_agents: Option<Arc<crate::daemon::external_conversations::ExternalConversationStore>>,
     surface: AccessSurface,
     credential_lifecycle: CredentialLifecycle,
 }
@@ -37,6 +38,7 @@ impl DaemonAccessState {
             pairing,
             local_credentials: None,
             mcp_policy_token: None,
+            external_agents: None,
             surface: AccessSurface::Protected,
             credential_lifecycle,
         }
@@ -60,11 +62,20 @@ impl DaemonAccessState {
         self
     }
 
+    pub fn with_external_agents(
+        mut self,
+        agents: Arc<crate::daemon::external_conversations::ExternalConversationStore>,
+    ) -> Self {
+        self.external_agents = Some(agents);
+        self
+    }
+
     fn for_surface(&self, surface: AccessSurface) -> Self {
         Self {
             pairing: self.pairing.clone(),
             local_credentials: self.local_credentials.clone(),
             mcp_policy_token: self.mcp_policy_token.clone(),
+            external_agents: self.external_agents.clone(),
             surface,
             credential_lifecycle: self.credential_lifecycle.clone(),
         }
@@ -206,6 +217,43 @@ pub async fn enforce_daemon_access(
     }
 
     let credential = bearer_credential(request.headers());
+    if let BearerCredential::Valid(token) = credential
+        && token.starts_with("medousa_agent_")
+    {
+        let agent = if let Some(store) = &state.external_agents {
+            store.resolve_agent_token(token).await
+        } else {
+            None
+        };
+        let Some(agent) = agent else {
+            return deny(
+                &state.credential_lifecycle,
+                AccessDenial::InvalidCredential,
+                request.headers(),
+            );
+        };
+        let route = request
+            .extensions()
+            .get::<axum::extract::MatchedPath>()
+            .map(|path| path.as_str())
+            .unwrap_or("");
+        if !matches!(state.surface, AccessSurface::Declared)
+            || !agent.permits(request.method(), route)
+        {
+            return deny(
+                &state.credential_lifecycle,
+                AccessDenial::Forbidden,
+                request.headers(),
+            );
+        }
+        return run_with_principal(
+            &state.credential_lifecycle,
+            agent.principal(transport),
+            request,
+            next,
+        )
+        .await;
+    }
     let local_credential = match credential {
         BearerCredential::Valid(token) if trusted_local => state
             .local_credentials

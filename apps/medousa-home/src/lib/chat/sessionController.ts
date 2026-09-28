@@ -129,6 +129,7 @@ export function mapTurns(
       role: normalizeRole(turn.role),
       turnId: turn.role === "assistant" ? turn.caused_by?.execution_id : undefined,
       content: turn.content,
+      reactions: turn.reactions?.length ? turn.reactions : undefined,
       lane,
       askJobId,
       turnIndex: turn.entry_seq || index + 1,

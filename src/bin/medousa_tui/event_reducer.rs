@@ -821,6 +821,9 @@ async fn handle_turn_stream_v3(
                 format!("⏸ secure credential entry requires Medousa — {label}: {reason}"),
             );
         }
+        TurnStreamEventV3::Reaction { reaction } => {
+            super::push_obs(state, format!("◉ agent reaction {}", reaction.emoji));
+        }
         TurnStreamEventV3::UiScene { .. } => {}
         TurnStreamEventV3::TurnCompleted {
             outcome,

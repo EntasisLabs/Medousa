@@ -167,7 +167,7 @@ When the app launches on device:
 2. Set daemon URL to the **Mobile / LAN clients** URL printed by `medousa start daemon --public`
 3. Confirm **Connected** / green health
 
-`tauri ios dev` runs Vite on your Mac and hot-reloads the webview on device — keep the Mac awake on the same Wi‑Fi as the phone. If the app opens then goes blank, open `http://<mac-lan-ip>:1420` in Safari on the phone; if that fails, re-run with `npm run tauri:ios:dev -- --host` so Vite binds to the LAN address.
+`tauri ios dev` runs Vite on your Mac and hot-reloads the webview on device — keep the Mac awake on the same Wi‑Fi as the phone. Allow Medousa to access the local network when iOS asks. If the app opens then goes blank, open `http://<mac-lan-ip>:1420` in Safari on the phone; if that fails, re-run with `npm run tauri:ios:dev -- --host` so Vite binds to the LAN address. If Safari loads but Medousa remains blank, check **Settings → Privacy & Security → Local Network** on the phone and enable Medousa.
 
 ### Useful variants
 

@@ -7,11 +7,12 @@ export function externalConversationMessages(conversation: ExternalConversation 
     const role = event.kind === "user_message" ? "user" :
       ["provider_message", "progress", "question", "completed", "failed"].includes(event.kind)
         ? "assistant" : null;
-    if (!role || !event.text.trim()) return [];
+    if (!role || (!event.text.trim() && !event.reaction)) return [];
     return [{
       id: `external:${conversation.id}:${event.sequence}`,
       role,
       content: event.text,
+      reactions: event.reaction ? [event.reaction] : undefined,
       failed: event.kind === "failed",
       lane: "chat" as const,
     }];

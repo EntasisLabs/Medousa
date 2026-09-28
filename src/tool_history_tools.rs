@@ -301,6 +301,7 @@ mod tests {
             }]),
             slice_summary: None,
             speaker_profile_id: None,
+            reactions: Vec::new(),
         }];
         let rows = tool_history_summary_rows(&turns, 5, None, None);
         assert_eq!(rows.len(), 1);

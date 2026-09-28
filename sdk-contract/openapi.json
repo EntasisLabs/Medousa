@@ -2189,6 +2189,44 @@
         "title": "CreateBotRequest",
         "type": "object"
       },
+      "CreateExternalAgentTokenRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_in_days": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "scopes": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalAgentScope"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "expires_in_days",
+          "scopes"
+        ],
+        "title": "CreateExternalAgentTokenRequest",
+        "type": "object"
+      },
+      "CreateExternalAgentTokenResponse": {
+        "properties": {
+          "access": {
+            "$ref": "#/components/schemas/ExternalAgentAccessStatus"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "access",
+          "token"
+        ],
+        "title": "CreateExternalAgentTokenResponse",
+        "type": "object"
+      },
       "CreateExternalConversationRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3499,6 +3537,32 @@
           }
         ]
       },
+      "ExternalAgentAccessStatus": {
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalAgentScope"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "expires_at",
+          "scopes"
+        ],
+        "type": "object"
+      },
+      "ExternalAgentScope": {
+        "enum": [
+          "read",
+          "work"
+        ],
+        "type": "string"
+      },
       "ExternalConversationEvent": {
         "properties": {
           "created_at": {
@@ -3569,6 +3633,16 @@
       },
       "ExternalConversationView": {
         "properties": {
+          "api_access": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExternalAgentAccessStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "created_at": {
             "format": "date-time",
             "type": "string"
@@ -3810,7 +3884,8 @@
       "ExternalProvider": {
         "enum": [
           "muse",
-          "grok_bot"
+          "grok_bot",
+          "instinct"
         ],
         "type": "string"
       },
@@ -17887,6 +17962,132 @@
           "browser_policy": "native_only",
           "capabilities": [
             "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/external-conversations/{id}/api-token": {
+      "delete": {
+        "operationId": "external_conversations.by_id.api_token.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalConversationView"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.api_token.delete"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.api_token.delete"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.api_token.delete"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      },
+      "post": {
+        "operationId": "external_conversations.by_id.api_token.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateExternalAgentTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateExternalAgentTokenResponse"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.api_token.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.api_token.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.api_token.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 4096,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
           ],
           "credential_scheme": "bearer",
           "feature_profile": "core",

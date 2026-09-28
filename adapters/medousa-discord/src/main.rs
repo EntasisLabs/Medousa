@@ -115,6 +115,7 @@ async fn handle_message(
         user_id: format!("discord:user:{}", msg.author.id.get()),
         channel_id: format!("discord:channel:{}", msg.channel_id.get()),
         text,
+        source_message_id: Some(msg.id.get().to_string()),
         attachments: Vec::new(),
     };
 

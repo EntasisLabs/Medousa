@@ -1375,6 +1375,7 @@ async fn spawn_continuation_agent_turn(
             cancelled_streams: state.cancelled_ingest_streams.clone(),
             delivery_started: std::time::Instant::now(),
             parts: std::sync::Mutex::new(crate::turn_parts::TurnPartsAccumulator::default()),
+            reactions: std::sync::Mutex::new(Vec::new()),
         });
 
         let agent_runtime = state.platform.agent_handle();
@@ -1713,6 +1714,7 @@ struct IngestAgentStreamSink {
     cancelled_streams: Arc<RwLock<BoundedDedupSet>>,
     delivery_started: std::time::Instant,
     parts: std::sync::Mutex<crate::turn_parts::TurnPartsAccumulator>,
+    reactions: std::sync::Mutex<Vec<medousa_types::MessageReaction>>,
 }
 
 impl IngestAgentStreamSink {
@@ -1741,6 +1743,15 @@ impl IngestAgentStreamSink {
                     vec![],
                 )
             });
+        // The reaction effect is persisted with the immutable assistant turn
+        // that produced it; it does not become conversation prose.
+        let reactions = self
+            .reactions
+            .lock()
+            .map(|reactions| reactions.clone())
+            .unwrap_or_default();
+        let mut turn = turn;
+        turn.reactions = reactions;
         if let Err(error) = crate::session::append_turn(&self.session_id, &turn).await {
             tracing::error!(session_id = %self.session_id, %error, "ingest assistant turn persistence failed");
         }
@@ -1749,6 +1760,23 @@ impl IngestAgentStreamSink {
 
 #[async_trait]
 impl AgentStreamSink for IngestAgentStreamSink {
+    async fn agent_reaction(&self, _turn_id: u64, reaction: medousa_types::MessageReaction) {
+        if let Ok(mut reactions) = self.reactions.lock() {
+            if reactions.iter().all(|existing| existing.effect_id != reaction.effect_id) {
+                reactions.push(reaction.clone());
+            }
+        }
+        if let Err(err) = channel_delivery::dispatch_channel_reaction(
+            &self.dispatch_client,
+            &self.delivery_target,
+            &reaction,
+        )
+        .await
+        {
+            tracing::warn!(job_id = %self.job_id, %err, "ingest reaction delivery failed");
+        }
+    }
+
     async fn content_chunk(&self, _turn_id: u64, delta: String) {
         publish_interactive_turn_event(
             &self.stream,
@@ -1886,27 +1914,8 @@ impl AgentStreamSink for IngestAgentStreamSink {
             &tool_names,
             &self.delivery_target.channel,
         );
-        if let Err(err) = channel_delivery::dispatch_channel_message(
-            &self.dispatch_client,
-            &self.delivery_target,
-            &delivery_text,
-        )
-        .await
-        {
-            eprintln!(
-                "ingest agent turn channel dispatch failed job_id={} channel={}: {err:#}",
-                self.job_id, self.delivery_target.channel
-            );
-            mark_job_delivery_success(
-                &self.job_id,
-                latency_ms,
-                Some(err.to_string()),
-                &self.delivery_records,
-                &self.last_delivery_at,
-                &self.last_delivery_latency_ms,
-            )
-            .await;
-        } else {
+        if delivery_text.trim().is_empty() {
+            // A reaction-only turn has already delivered its provider effect.
             mark_job_delivery_success(
                 &self.job_id,
                 latency_ms,
@@ -1916,6 +1925,38 @@ impl AgentStreamSink for IngestAgentStreamSink {
                 &self.last_delivery_latency_ms,
             )
             .await;
+        } else {
+            if let Err(err) = channel_delivery::dispatch_channel_message(
+                &self.dispatch_client,
+                &self.delivery_target,
+                &delivery_text,
+            )
+            .await
+            {
+                eprintln!(
+                    "ingest agent turn channel dispatch failed job_id={} channel={}: {err:#}",
+                    self.job_id, self.delivery_target.channel
+                );
+                mark_job_delivery_success(
+                    &self.job_id,
+                    latency_ms,
+                    Some(err.to_string()),
+                    &self.delivery_records,
+                    &self.last_delivery_at,
+                    &self.last_delivery_latency_ms,
+                )
+                .await;
+            } else {
+                mark_job_delivery_success(
+                    &self.job_id,
+                    latency_ms,
+                    None,
+                    &self.delivery_records,
+                    &self.last_delivery_at,
+                    &self.last_delivery_latency_ms,
+                )
+                .await;
+            }
         }
 
         self.channel_deliveries.write().await.remove(&self.job_id);
@@ -2336,6 +2377,7 @@ async fn start_ingest_ask_stream(
             cancelled_streams,
             delivery_started: std::time::Instant::now(),
             parts: std::sync::Mutex::new(crate::turn_parts::TurnPartsAccumulator::default()),
+            reactions: std::sync::Mutex::new(Vec::new()),
         });
 
         crate::agent_runtime::run_agent_turn(

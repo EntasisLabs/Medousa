@@ -266,6 +266,7 @@
     >
       <ChatUserWhisper
         message={beat.user}
+        reactions={beat.assistant.reactions}
         {sessionId}
         {mobile}
         {compact}

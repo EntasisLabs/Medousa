@@ -7993,6 +7993,7 @@ dependencies = [
  "futures-util",
  "genai",
  "medousa-engine",
+ "medousa-types",
  "reqwest 0.13.3",
  "serde",
  "serde_json",

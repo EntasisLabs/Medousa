@@ -68,11 +68,11 @@ export function createExternalConversationController(input: {
 
   async function send(text: string, hasExtraInputs: boolean) {
     if (!selected) {
-      error = "Choose a registered Muse session or Grok bot before sending.";
+      error = "Choose a registered external agent conversation before sending.";
       throw new Error(error);
     }
     if (hasExtraInputs) {
-      error = "Muse and Grok Bot currently accept text only. Remove attachments and tools before sending.";
+      error = "External agent conversations currently accept text only. Remove attachments and tools before sending.";
       throw new Error(error);
     }
     if (busy) throw new Error("A message is still sending.");

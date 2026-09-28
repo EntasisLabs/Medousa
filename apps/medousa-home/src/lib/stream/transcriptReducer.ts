@@ -233,6 +233,19 @@ export function applyStreamEventToMessage(
   const current = messages[index];
   const showEngineDetails = ctx.showEngineDetails;
 
+  if (event.event_type === "reaction" && event.reaction) {
+    const reactions = current.reactions ?? [];
+    return {
+      messages: replaceMessage(messages, index, {
+        ...current,
+        reactions: reactions.some((reaction) => reaction.effect_id === event.reaction?.effect_id)
+          ? reactions
+          : [...reactions, event.reaction],
+      }),
+      followUp: "none",
+    };
+  }
+
   if (event.event_type === "model_receipt") {
     const responseProvider = event.response_provider?.trim();
     const responseModel = event.response_model?.trim();

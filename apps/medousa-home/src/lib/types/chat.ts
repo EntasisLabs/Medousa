@@ -70,6 +70,7 @@ import type {
   ContextUsageReport as GeneratedContextUsageReport,
   HostTurnContext,
   InteractiveTurnStreamEvent as GeneratedInteractiveTurnStreamEvent,
+  MessageReaction,
   StreamUiScene as GeneratedStreamUiScene,
 } from "$lib/types/generated/daemon_api";
 
@@ -77,6 +78,8 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  /** Agent-emitted effects attached to this message's user turn. */
+  reactions?: MessageReaction[];
   streaming?: boolean;
   /** Media attachments rendered with the turn (images, files). */
   mediaAttachments?: ChatMediaAttachment[];

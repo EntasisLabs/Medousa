@@ -556,6 +556,7 @@ pub async fn interactive_turn_send(
             channel_surface: Some(channel_surface.clone()),
             channel_id: Some(session_id.clone()),
             user_id: None,
+            source_message_id: None,
             supports_ui_artifacts: true,
             supports_liquid_markdown: true,
             supports_browser_host,

@@ -6,6 +6,7 @@ use serde_json::Value;
 use crate::receipt::ArtifactReceiptMeta;
 
 pub use medousa_types::daemon_api::ToolInputParam;
+pub use medousa_types::message_effect::MessageReaction;
 
 #[allow(clippy::too_many_arguments)]
 #[async_trait]
@@ -26,6 +27,7 @@ pub trait AgentStreamSink: Send + Sync {
         self.model_response_completed(turn_id, model_round).await;
     }
     async fn agent_response(&self, turn_id: u64, text: String, tool_names: Vec<String>);
+    async fn agent_reaction(&self, _turn_id: u64, _reaction: MessageReaction) {}
     async fn agent_needs_input(&self, turn_id: u64, text: String, tool_names: Vec<String>) {
         self.agent_response(turn_id, text, tool_names).await;
     }

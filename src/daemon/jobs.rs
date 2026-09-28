@@ -316,7 +316,9 @@ pub async fn enqueue_ask(
     });
     let _identity_context = resolve_identity_context_for_request(
         &state,
-        request.identity_user_id.as_deref(),
+        principal
+            .profile_id()
+            .or(request.identity_user_id.as_deref()),
         request.identity_persona_id.as_deref(),
         request.identity_channel_id.as_deref(),
         Some(effective_policy_profile.as_str()),

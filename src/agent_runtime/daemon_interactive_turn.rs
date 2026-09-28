@@ -8,6 +8,7 @@ use crate::daemon::bounded_set::BoundedDedupSet;
 use chrono::{DateTime, Utc};
 use medousa_engine::TurnPipelineHandle;
 use medousa_types::turn_stream::{TurnCompletionOutcomeV3, TurnStreamEventV3, WorkerAckKind};
+use medousa_types::MessageReaction;
 use serde_json::Value;
 use tokio::sync::RwLock;
 use tracing::Instrument;
@@ -44,6 +45,8 @@ pub struct InteractiveTurnDeliveryContext {
     pub last_turn_at: Arc<RwLock<Option<DateTime<Utc>>>>,
     pub last_turn_latency_ms: Arc<RwLock<Option<u64>>>,
     pub started: Instant,
+    pub delivery_target: ChannelDeliveryTarget,
+    pub dispatch_client: reqwest::Client,
 }
 
 impl InteractiveTurnDeliveryContext {
@@ -86,6 +89,7 @@ pub struct InteractiveTurnStreamSink {
     parts: std::sync::Mutex<TurnPartsAccumulator>,
     text: std::sync::Mutex<ChronologicalTextState>,
     pending_slice_scratch: std::sync::Mutex<Option<TurnScratchpad>>,
+    reactions: std::sync::Mutex<Vec<MessageReaction>>,
 }
 
 #[derive(Debug)]
@@ -303,8 +307,9 @@ impl InteractiveTurnStreamSink {
         assistant_turn: crate::session::ConversationTurn,
         event: super::turn_event::TurnEvent,
     ) -> Result<crate::session_store::CommitReceipt, crate::session_store::StoreError> {
-        let projected =
-            super::turn_event_log::project_turn_to_history(&event).unwrap_or(assistant_turn);
+        let mut projected =
+            super::turn_event_log::project_turn_to_history(&event).unwrap_or(assistant_turn.clone());
+        projected.reactions = assistant_turn.reactions.clone();
         self.persist_turn(projected).await
     }
 
@@ -450,6 +455,7 @@ fn stream_tracking(event: &TurnStreamEventV3) -> (&str, &str, bool) {
             ("assistant_text_committed", "streaming", false)
         }
         TurnStreamEventV3::ReasoningAppend { .. } => ("reasoning_delta", "streaming", false),
+        TurnStreamEventV3::Reaction { .. } => ("reaction", "complete", false),
         TurnStreamEventV3::Status { phase, .. } => ("status", phase, false),
         TurnStreamEventV3::Progress { .. } => ("turn_progress", "tool_loop", false),
         TurnStreamEventV3::ModelReceipt { .. } => ("model_receipt", "inference", false),
@@ -490,6 +496,26 @@ fn stream_tracking(event: &TurnStreamEventV3) -> (&str, &str, bool) {
 
 #[async_trait]
 impl AgentStreamSink for InteractiveTurnStreamSink {
+    async fn agent_reaction(&self, _turn_id: u64, reaction: MessageReaction) {
+        if let Ok(mut reactions) = self.reactions.lock() {
+            if reactions.iter().all(|existing| existing.effect_id != reaction.effect_id) {
+                reactions.push(reaction.clone());
+            }
+        }
+        if let Some(delivery) = &self.delivery {
+            if let Err(error) = crate::channel_delivery::dispatch_channel_reaction(
+                &delivery.dispatch_client,
+                &delivery.delivery_target,
+                &reaction,
+            )
+            .await
+            {
+                tracing::warn!(turn_id = %self.turn_id, %error, "interactive reaction delivery failed");
+            }
+        }
+        self.publish_tracked(TurnStreamEventV3::Reaction { reaction }).await;
+    }
+
     async fn model_receipt(&self, _turn_id: u64, provider: String, model: String) {
         if self.emit_cancelled_if_needed().await {
             return;
@@ -628,7 +654,7 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
 
         let body = self.terminal_body(&text).await;
 
-        let assistant_turn = self
+        let mut assistant_turn = self
             .parts
             .lock()
             .map(|mut parts| {
@@ -647,6 +673,9 @@ impl AgentStreamSink for InteractiveTurnStreamSink {
                     }],
                 )
             });
+        if let Ok(reactions) = self.reactions.lock() {
+            assistant_turn.reactions = reactions.clone();
+        }
 
         let final_event = TurnStreamEventV3::TurnCompleted {
             outcome: TurnCompletionOutcomeV3::Completed,
@@ -1200,6 +1229,7 @@ pub async fn run_daemon_interactive_turn(
             parts: std::sync::Mutex::new(TurnPartsAccumulator::default()),
             text: std::sync::Mutex::new(ChronologicalTextState::default()),
             pending_slice_scratch: std::sync::Mutex::new(None),
+            reactions: std::sync::Mutex::new(Vec::new()),
         });
         let sink: SharedAgentStreamSink = interactive_sink.clone();
 
@@ -2557,6 +2587,7 @@ mod chronological_sink_tests {
             parts: std::sync::Mutex::new(TurnPartsAccumulator::default()),
             text: std::sync::Mutex::new(ChronologicalTextState::default()),
             pending_slice_scratch: std::sync::Mutex::new(None),
+            reactions: std::sync::Mutex::new(Vec::new()),
         }
     }
 

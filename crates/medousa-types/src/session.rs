@@ -5,6 +5,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use crate::inference::InferenceProfilesConfig;
+use crate::message_effect::MessageReaction;
 use crate::secrets::InstallationId;
 use crate::stage_routing::StageRoutingMatrix;
 use crate::turn::TurnPart;
@@ -389,6 +390,9 @@ pub struct ConversationTurn {
     /// Shared-room human speaker (`user:alice`). Absent on assistant turns / personal chats.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub speaker_profile_id: Option<String>,
+    /// Effects emitted with this turn; these are not model-visible content.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reactions: Vec<MessageReaction>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -520,6 +524,7 @@ impl ConversationTurn {
             parts: None,
             slice_summary: None,
             speaker_profile_id: None,
+            reactions: Vec::new(),
         }
     }
 

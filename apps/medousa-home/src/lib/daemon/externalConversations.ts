@@ -1,5 +1,7 @@
 import { daemonUnary } from "./contractClient";
 import type {
+  CreateExternalAgentTokenRequest,
+  CreateExternalAgentTokenResponse,
   CreateExternalConversationRequest,
   CreateExternalConversationResponse,
   ExternalConversationListResponse,
@@ -57,4 +59,12 @@ export function rotateExternalCallbackKey(id: string): Promise<RotateExternalCal
 
 export function deleteExternalConversation(id: string): Promise<DeleteExternalConversationResponse> {
   return daemonUnary("external_conversations.by_id.delete", { id });
+}
+
+export function createExternalAgentToken(id: string, request: CreateExternalAgentTokenRequest): Promise<CreateExternalAgentTokenResponse> {
+  return daemonUnary("external_conversations.by_id.api_token.post", { id }, request);
+}
+
+export function revokeExternalAgentToken(id: string): Promise<ExternalConversation> {
+  return daemonUnary("external_conversations.by_id.api_token.delete", { id });
 }

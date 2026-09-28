@@ -20,4 +20,31 @@ describe("external conversation projection", () => {
     conversation.provider = "muse";
     expect(externalConversationStatus(conversation)).toBe("WhatsApp accepted · Muse delivery unverified");
   });
+
+  it("keeps reaction-only provider events attached to the assistant beat", () => {
+    const conversation = {
+      id: "session-2",
+      events: [
+        { sequence: 1, kind: "user_message", text: "Thanks" },
+        {
+          sequence: 2,
+          kind: "provider_message",
+          text: "",
+          reaction: {
+            effect_id: "whatsapp:reaction-1",
+            target: "current_user_message",
+            emoji: "❤️",
+          },
+        },
+      ],
+    } as ExternalConversation;
+    expect(externalConversationMessages(conversation)).toEqual([
+      expect.objectContaining({ role: "user", content: "Thanks" }),
+      expect.objectContaining({
+        role: "assistant",
+        content: "",
+        reactions: [conversation.events[1].reaction],
+      }),
+    ]);
+  });
 });

@@ -12,6 +12,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "serd
 futures-util = "0.3"
 genai = "0.6.5"
 medousa-engine = { path = "../medousa-engine" }
+medousa-types = { path = "../medousa-types" }
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -14,6 +14,7 @@ pub struct ChannelDeliveryTarget {
     pub channel_id: String,
     pub session_id: String,
     pub stream_id: Option<String>,
+    pub source_message_id: Option<String>,
 }
 
 impl ChannelDeliveryTarget {
@@ -30,7 +31,15 @@ impl ChannelDeliveryTarget {
             channel_id: channel_id.into(),
             session_id: session_id.into(),
             stream_id,
+            source_message_id: None,
         }
+    }
+
+    pub fn with_source_message_id(mut self, source_message_id: Option<String>) -> Self {
+        self.source_message_id = source_message_id
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        self
     }
 
     pub fn interactive(

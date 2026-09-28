@@ -132,6 +132,7 @@ async fn handle_push_event(
         user_id,
         channel_id: format!("slack:channel:{channel_id}"),
         text: text.to_string(),
+        source_message_id: Some(message.origin.ts.to_string()),
         attachments: Vec::new(),
     };
 

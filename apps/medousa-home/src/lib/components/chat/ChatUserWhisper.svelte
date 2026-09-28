@@ -22,6 +22,7 @@
     onFork?: (includeDraft: boolean) => void | Promise<void>;
     forkBusy?: boolean;
     forkHasDraft?: boolean;
+    reactions?: ChatMessage["reactions"];
   }
 
   let {
@@ -34,6 +35,7 @@
     onFork,
     forkBusy = false,
     forkHasDraft = false,
+    reactions = [],
   }: Props = $props();
 
   let collapsed = $state(false);
@@ -70,7 +72,7 @@
   }
 </script>
 
-{#if trimmed}
+{#if trimmed || reactions.length}
   <div
     class="chat-user-whisper"
     class:chat-user-whisper-expanded={expanded}
@@ -94,7 +96,9 @@
     </button>
 
     <div class="chat-user-whisper-body" inert={!expanded}>
-      <LiquidChatMessage {message} {sessionId} {mobile} {compact} {onSubmitIntent} />
+      {#if trimmed}
+        <LiquidChatMessage {message} {sessionId} {mobile} {compact} {onSubmitIntent} />
+      {/if}
       {#if contextLabel}
         <div class="chat-user-whisper-context" title="Context supplied with this turn">
           {contextLabel}
@@ -111,6 +115,15 @@
         </div>
       {/if}
     </div>
+    {#if reactions.length}
+      <div class="chat-user-whisper-reactions" aria-label="Message reactions">
+        {#each reactions as reaction (reaction.effect_id)}
+          <span class="chat-user-whisper-reaction" title={`Agent reaction: ${reaction.emoji}`}>
+            {reaction.emoji}
+          </span>
+        {/each}
+      </div>
+    {/if}
   </div>
 {/if}
 
@@ -231,6 +244,30 @@
     display: flex;
     justify-content: flex-end;
     margin-top: 0.2rem;
+  }
+
+  .chat-user-whisper-reactions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.25rem;
+    max-width: min(100%, 32rem);
+    margin-top: 0.1rem;
+  }
+
+  .chat-user-whisper-reaction {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.55rem;
+    min-height: 1.35rem;
+    padding: 0.12rem 0.38rem;
+    border: 1px solid rgb(var(--color-surface-600) / 0.55);
+    border-radius: 999px;
+    background: rgb(var(--color-surface-800) / 0.75);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+    font-size: 0.9rem;
+    line-height: 1;
   }
 
   .chat-user-whisper:hover .chat-user-whisper-actions :global(.chat-turn-action),

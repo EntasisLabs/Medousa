@@ -113,6 +113,7 @@ async fn execute_native_delegation(
             channel_surface: Some("home-ios-live".to_string()),
             channel_id: Some(session_id.to_string()),
             user_id: None,
+            source_message_id: None,
             supports_ui_artifacts: false,
             supports_liquid_markdown: false,
             supports_browser_host: false,

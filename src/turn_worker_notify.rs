@@ -360,6 +360,7 @@ mod tests {
                 channel_id: "c".to_string(),
                 session_id: "s1".to_string(),
                 stream_id: None,
+                source_message_id: None,
             }),
             parent_user_prompt: None,
             parent_agent_mode: None,

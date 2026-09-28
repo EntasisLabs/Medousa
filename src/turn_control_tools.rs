@@ -10,6 +10,7 @@ use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 use stasis::application::orchestration::tool_registry::StasisTool;
 
 use crate::semantic_values::TrimmedText;
+use medousa_types::ReactionIntent;
 use crate::typed_tools::{CompatOption, ToolId, medousa_tool};
 
 /// Canonical registry name (snake_case). Inner tools stay unregistered; the
@@ -48,6 +49,7 @@ pub use medousa_runtime::turn_control::{
     is_turn_control_call, is_update_user_tool_name, request_more_rounds_from_invocations,
     terminal_text_for_fsm_end, turn_progress_message_from_invocations,
     update_user_message_from_invocations, workshop_entered_from_invocations,
+    reaction_intents_from_invocations,
 };
 
 fn optional_trimmed(value: Option<String>) -> Option<TrimmedText> {
@@ -115,6 +117,7 @@ struct TurnFinishCommand {
     message: Option<TrimmedText>,
     reason: Option<TrimmedText>,
     needs_synthesis: bool,
+    reactions: Vec<ReactionIntent>,
 }
 
 impl From<TurnFinishInput> for TurnFinishCommand {
@@ -123,6 +126,7 @@ impl From<TurnFinishInput> for TurnFinishCommand {
             message: optional_trimmed(input.message),
             reason: optional_trimmed(input.reason),
             needs_synthesis: input.needs_synthesis,
+            reactions: input.reactions,
         }
     }
 }
@@ -460,6 +464,9 @@ pub struct TurnFinishInput {
     /// Set false when `message` or the accompanying prose is already a complete principal-facing answer.
     #[serde(default = "default_needs_synthesis")]
     pub(crate) needs_synthesis: bool,
+    /// Reactions to apply to the current user message.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) reactions: Vec<ReactionIntent>,
 }
 
 fn default_needs_synthesis() -> bool {
@@ -479,6 +486,8 @@ impl<'de> Deserialize<'de> for TurnFinishInput {
             reason: CompatOption<String>,
             #[serde(default = "default_needs_synthesis")]
             needs_synthesis: bool,
+            #[serde(default)]
+            reactions: Vec<ReactionIntent>,
         }
 
         let input = WireInput::deserialize(deserializer)?;
@@ -486,6 +495,7 @@ impl<'de> Deserialize<'de> for TurnFinishInput {
             message: input.message.into_option(),
             reason: input.reason.into_option(),
             needs_synthesis: input.needs_synthesis,
+            reactions: input.reactions,
         })
     }
 }
@@ -499,6 +509,7 @@ pub enum TurnFinishOutput {
         message: String,
         reason: Option<String>,
         needs_synthesis: bool,
+        reactions: Vec<ReactionIntent>,
     },
     Failure {
         ok: bool,
@@ -524,6 +535,7 @@ impl CognitionTurnFinishTool {
                 .unwrap_or_default(),
             reason: command.reason.map(TrimmedText::into_string),
             needs_synthesis: command.needs_synthesis,
+            reactions: command.reactions,
         })
     }
 }
@@ -751,6 +763,7 @@ mod tests {
             message: Some("  exact final text  ".into()),
             reason: Some("  complete  ".into()),
             needs_synthesis: false,
+            reactions: Vec::new(),
         });
         assert_eq!(
             finish.message.as_ref().map(TrimmedText::as_str),

@@ -161,7 +161,7 @@
   {#if !supported}
     <p class="workshop-faint mt-2 text-sm">
       Codex, Cursor, and Hermes CLI adapters run on desktop workshop hosts.
-      Muse and Grok Bot setup uses the connected workshop below.
+      Muse, Grok Bot, and Instinct Agent setup uses the connected workshop below.
     </p>
   {:else}
     {#if accountConnections.error}
@@ -303,6 +303,7 @@
   <div class="connections-cards mt-3">
     <ExternalConversationSettingsCard provider="muse" />
     <ExternalConversationSettingsCard provider="grok_bot" />
+    <ExternalConversationSettingsCard provider="instinct" />
   </div>
 </section>
 

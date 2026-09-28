@@ -92,6 +92,7 @@ async fn handle_message(
             .unwrap_or_else(|| "telegram:user:unknown".to_string()),
         channel_id: format!("telegram:chat:{}", msg.chat.id.0),
         text: input.to_string(),
+        source_message_id: Some(msg.id.0.to_string()),
         attachments: Vec::new(),
     };
 

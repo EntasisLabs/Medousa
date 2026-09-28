@@ -1,6 +1,8 @@
 //! Durable conversations with provider-hosted agents. Transport acknowledgments
 //! and agent outcomes are separate events; no ACP process is created here.
 
+pub mod access;
+
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -26,6 +28,7 @@ use medousa_types::{
     ExternalInboundClaimResponse as InboundClaimResponse,
     ExternalMuseDiscoveryStatus as MuseDiscoveryStatus, ExternalProvider as Provider,
     ExternalProviderEventRequest as ProviderEventRequest,
+    MessageReaction,
     ExternalWhatsAppInboundRequest as WhatsAppInboundRequest,
     ExternalWhatsAppPairingState as PairingState, ExternalWhatsAppPairingStatus as PairingStatus,
     ExternalWhatsAppPairingUpdateRequest as PairingUpdateRequest, RotateExternalCallbackResponse,
@@ -53,6 +56,8 @@ struct ConversationRecord {
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
     events: Vec<ConversationEvent>,
+    #[serde(default)]
+    api_access: Option<access::StoredGrant>,
 }
 
 impl From<&ConversationRecord> for ConversationView {
@@ -65,6 +70,7 @@ impl From<&ConversationRecord> for ConversationView {
             created_at: record.created_at,
             updated_at: record.updated_at,
             events: record.events.clone(),
+            api_access: record.api_access.as_ref().map(|grant| grant.status.clone()),
         }
     }
 }
@@ -176,12 +182,13 @@ impl ExternalConversationStore {
         input: &CreateConversationRequest,
     ) -> anyhow::Result<ConversationView> {
         let mut current = self.document.lock().await;
-        if input.provider == Provider::Muse
+        if matches!(input.provider, Provider::Muse | Provider::Instinct)
             && current.conversations.values().any(|record| {
-                record.provider == Provider::Muse && record.target == input.target.trim()
+                matches!(record.provider, Provider::Muse | Provider::Instinct)
+                    && record.target == input.target.trim()
             })
         {
-            anyhow::bail!("Muse chat is already bound to a conversation");
+            anyhow::bail!("WhatsApp chat is already bound to a conversation");
         }
         let mut next = current.clone();
         let now = Utc::now();
@@ -195,6 +202,7 @@ impl ExternalConversationStore {
             created_at: now,
             updated_at: now,
             events: Vec::new(),
+            api_access: None,
         };
         let view = ConversationView::from(&record);
         next.conversations.insert(record.id.clone(), record);
@@ -211,6 +219,32 @@ impl ExternalConversationStore {
         kind: EventKind,
         text: String,
     ) -> anyhow::Result<Option<ConversationView>> {
+        self.record_event(id, event_id, request_id, kind, text, None)
+            .await
+    }
+
+    async fn record_reaction(
+        &self,
+        id: &str,
+        event_id: String,
+        request_id: Option<String>,
+        kind: EventKind,
+        text: String,
+        reaction: MessageReaction,
+    ) -> anyhow::Result<Option<ConversationView>> {
+        self.record_event(id, event_id, request_id, kind, text, Some(reaction))
+            .await
+    }
+
+    async fn record_event(
+        &self,
+        id: &str,
+        event_id: String,
+        request_id: Option<String>,
+        kind: EventKind,
+        text: String,
+        reaction: Option<MessageReaction>,
+    ) -> anyhow::Result<Option<ConversationView>> {
         let mut current = self.document.lock().await;
         let Some(record) = current.conversations.get(id) else {
             return Ok(None);
@@ -226,6 +260,7 @@ impl ExternalConversationStore {
             request_id,
             kind,
             text,
+            reaction,
             created_at: Utc::now(),
         });
         record.updated_at = Utc::now();
@@ -255,13 +290,16 @@ impl ExternalConversationStore {
         Ok(true)
     }
 
-    async fn muse_binding(&self, jid: &str) -> Option<ConversationRecord> {
+    async fn whatsapp_binding(&self, jid: &str) -> Option<ConversationRecord> {
         self.document
             .lock()
             .await
             .conversations
             .values()
-            .find(|record| record.provider == Provider::Muse && record.target == jid)
+            .find(|record| {
+                matches!(record.provider, Provider::Muse | Provider::Instinct)
+                    && record.target == jid
+            })
             .cloned()
     }
 
@@ -424,10 +462,28 @@ async fn delete_secret(id: String, slot: IntegrationSecretSlot) -> anyhow::Resul
     .await?
 }
 
+fn normalize_instinct_phone(raw: &str) -> Result<String, HttpError> {
+    let raw = raw.trim();
+    if !raw.starts_with('+')
+        || raw[1..]
+            .chars()
+            .any(|c| !c.is_ascii_digit() && !matches!(c, ' ' | '-' | '(' | ')'))
+    {
+        return Err(bad_request(
+            "use an international WhatsApp phone number starting with +",
+        ));
+    }
+    let digits: String = raw.chars().filter(char::is_ascii_digit).collect();
+    if !(7..=15).contains(&digits.len()) || digits.starts_with('0') {
+        return Err(bad_request("invalid international WhatsApp phone number"));
+    }
+    Ok(format!("{digits}@s.whatsapp.net"))
+}
+
 pub async fn create(
     State(state): State<AppState>,
     Extension(principal): Extension<RequestPrincipal>,
-    Json(input): Json<CreateConversationRequest>,
+    Json(mut input): Json<CreateConversationRequest>,
 ) -> Result<Json<CreateConversationResponse>, HttpError> {
     let owner_id = owner(&principal, &state);
     if input.label.trim().is_empty()
@@ -452,6 +508,14 @@ pub async fn create(
                     "Discover the Muse chat through WhatsApp before connecting",
                 ));
             }
+        }
+        Provider::Instinct => {
+            if input.webhook_url.is_some() || input.webhook_key.is_some() {
+                return Err(bad_request(
+                    "Instinct uses a WhatsApp phone number, not a webhook",
+                ));
+            }
+            input.target = normalize_instinct_phone(&input.target)?;
         }
         Provider::GrokBot => {
             validate_webhook_url(
@@ -676,7 +740,7 @@ pub async fn send(
         .await
         .map_err(internal)?;
     let outcome: Result<(), (EventKind, String)> = match binding.provider {
-        Provider::Muse => {
+        Provider::Muse | Provider::Instinct => {
             let target = crate::turn_scope::ChannelDeliveryTarget::interactive(
                 "whatsapp",
                 binding.owner_id.clone(),
@@ -771,6 +835,10 @@ pub async fn provider_event(
         || input.event_id.trim().is_empty()
         || input.event_id.len() > 128
         || input.text.len() > 16 * 1024
+        || input
+            .reaction
+            .as_ref()
+            .is_some_and(|reaction| reaction.emoji.trim().is_empty())
     {
         return Err(bad_request("invalid provider event"));
     }
@@ -796,16 +864,26 @@ pub async fn provider_event(
     {
         return Err((StatusCode::CONFLICT, "unknown request ID".into()));
     }
-    state
-        .external_conversations
-        .record(
-            &id,
-            format!("provider:{}", input.event_id),
-            Some(input.request_id),
-            input.kind,
-            input.text,
-        )
-        .await
+    let event_id = format!("provider:{}", input.event_id);
+    let view = if let Some(reaction) = input.reaction {
+        state
+            .external_conversations
+            .record_reaction(
+                &id,
+                event_id,
+                Some(input.request_id),
+                input.kind,
+                input.text,
+                reaction,
+            )
+            .await
+    } else {
+        state
+            .external_conversations
+            .record(&id, event_id, Some(input.request_id), input.kind, input.text)
+            .await
+    };
+    view
         .map_err(internal)?
         .map(Json)
         .ok_or((StatusCode::NOT_FOUND, "conversation not found".into()))
@@ -835,6 +913,10 @@ pub async fn whatsapp_inbound(
         || input.message_id.trim().is_empty()
         || input.message_id.len() > 128
         || input.text.len() > 16 * 1024
+        || input
+            .reaction
+            .as_ref()
+            .is_some_and(|reaction| reaction.emoji.trim().is_empty())
     {
         return Err(bad_request("invalid WhatsApp message"));
     }
@@ -847,21 +929,36 @@ pub async fn whatsapp_inbound(
     }
     let Some(binding) = state
         .external_conversations
-        .muse_binding(&input.chat_jid)
+        .whatsapp_binding(&input.chat_jid)
         .await
     else {
         return Ok(Json(InboundClaimResponse { claimed: false }));
     };
-    let recorded = state
-        .external_conversations
-        .record(
-            &binding.id,
-            format!("whatsapp:{}", input.message_id),
-            None,
-            EventKind::ProviderMessage,
-            input.text,
-        )
-        .await
+    let event_id = format!("whatsapp:{}", input.message_id);
+    let recorded = if let Some(reaction) = input.reaction {
+        state
+            .external_conversations
+            .record_reaction(
+                &binding.id,
+                event_id,
+                None,
+                EventKind::ProviderMessage,
+                input.text,
+                reaction,
+            )
+            .await
+    } else {
+        state
+            .external_conversations
+            .record(
+                &binding.id,
+                event_id,
+                None,
+                EventKind::ProviderMessage,
+                input.text,
+            )
+            .await
+    }
         .map_err(internal)?;
     Ok(Json(InboundClaimResponse {
         claimed: recorded.is_some(),
@@ -993,6 +1090,26 @@ pub fn surface() -> DeclaredRouter<AppState> {
                 delete(remove),
             ),
         ])
+        .methods([
+            (
+                policy(
+                    Method::POST,
+                    "/v1/external-conversations/{id}/api-token",
+                    Capability::AdminExecute,
+                    4096,
+                ),
+                post(access::issue),
+            ),
+            (
+                policy(
+                    Method::DELETE,
+                    "/v1/external-conversations/{id}/api-token",
+                    Capability::AdminExecute,
+                    1024,
+                ),
+                delete(access::revoke),
+            ),
+        ])
         .route(
             policy(
                 Method::POST,
@@ -1051,9 +1168,13 @@ mod tests {
             .create(uuid::Uuid::new_v4().to_string(), "owner".into(), &input)
             .await
             .unwrap();
-        assert!(store.muse_binding("999@s.whatsapp.net").await.is_none());
+        assert!(store.whatsapp_binding("999@s.whatsapp.net").await.is_none());
         assert_eq!(
-            store.muse_binding("123@s.whatsapp.net").await.unwrap().id,
+            store
+                .whatsapp_binding("123@s.whatsapp.net")
+                .await
+                .unwrap()
+                .id,
             created.id
         );
         assert!(

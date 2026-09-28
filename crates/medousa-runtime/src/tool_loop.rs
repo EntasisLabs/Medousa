@@ -60,9 +60,10 @@ use crate::turn_control::{
     ABSOLUTE_MAX_TOOL_ROUNDS, COGNITION_TURN, WorkerSpawnDisposition,
     begin_work_note_from_invocations, checkpoint_turn_from_invocations,
     finish_turn_from_invocations, is_begin_work_tool_name, is_terminal_turn_tool_name,
-    is_workshop_spawn_call, request_input_from_invocations, request_more_rounds_from_invocations,
-    terminal_text_for_fsm_end, turn_progress_message_from_invocations,
-    worker_spawn_control_from_invocations, workshop_entered_from_invocations,
+    is_workshop_spawn_call, reaction_intents_from_invocations, request_input_from_invocations,
+    request_more_rounds_from_invocations, terminal_text_for_fsm_end,
+    turn_progress_message_from_invocations, worker_spawn_control_from_invocations,
+    workshop_entered_from_invocations,
 };
 
 const DEFAULT_MAX_TOOL_ROUNDS: usize = DEFAULT_FOREGROUND_MAX_TOOL_ROUNDS;
@@ -1213,7 +1214,9 @@ impl MedousaToolLoopPipeline {
                     // turn.finish.message exists only for providers that cannot
                     // emit prose and a tool call in the same response.
                     let message = maybe_text.clone().unwrap_or(message);
-                    if message.trim().is_empty() {
+                    if message.trim().is_empty()
+                        && reaction_intents_from_invocations(round_invocations).is_empty()
+                    {
                         push_turn_control_message(
                             &mut turn_ctx.tool_lane.messages,
                             SILENT_FINISH_GUIDANCE,

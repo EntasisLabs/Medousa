@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::message_effect::MessageReaction;
 use crate::session::{
     AuthorityId, ContextManifestId, ConversationRangeSelection, ConversationTurn, PromptStashId,
     SessionDerivation, SessionHistorySummary, SessionRef, TranscriptEntry,
@@ -1385,6 +1386,9 @@ pub struct TurnSurfaceContext {
     pub channel_id: Option<String>,
     #[serde(default)]
     pub user_id: Option<String>,
+    /// Provider message identifier for effects targeting the current inbound message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_message_id: Option<String>,
     /// When true, the connected client can render sandboxed HTML UI artifacts (`cognition_ui_present`).
     /// Channel adapters and clients set this — the daemon does not infer it from channel name.
     #[serde(default)]
@@ -1412,6 +1416,7 @@ impl TurnSurfaceContext {
             channel_surface: Some(channel.trim().to_string()),
             channel_id: Some(channel_id.trim().to_string()),
             user_id: Some(user_id.trim().to_string()),
+            source_message_id: None,
             supports_ui_artifacts: false,
             supports_liquid_markdown: false,
             supports_browser_host: false,
@@ -1425,6 +1430,7 @@ impl TurnSurfaceContext {
             channel_surface: Some("tui".to_string()),
             channel_id: None,
             user_id: None,
+            source_message_id: None,
             supports_ui_artifacts: false,
             supports_liquid_markdown: false,
             supports_browser_host: false,
@@ -1999,6 +2005,8 @@ pub struct InteractiveTurnStreamEvent {
     pub message: String,
     pub content_delta: Option<String>,
     pub reasoning_delta: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reaction: Option<MessageReaction>,
     pub final_text: Option<String>,
     pub tool_names: Option<Vec<String>>,
     /// Successful inference route after provider fallback resolution.
@@ -2404,6 +2412,9 @@ pub struct IngestRequest {
     pub channel_id: String,
     /// The text content of the message (command or prompt)
     pub text: String,
+    /// Stable provider message identifier for this inbound message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_message_id: Option<String>,
     /// Optional attachment payloads merged into ask prompts
     #[serde(default)]
     pub attachments: Vec<IngestAttachment>,

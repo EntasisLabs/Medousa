@@ -76,6 +76,23 @@ Source: `src/tool_bootstrap.rs`
 | Handback | `cognition_turn action=turn.checkpoint` — ends this agent turn and waits for principal input; use only when input is needed or work must pause |
 | Finish | `cognition_turn action=turn.finish` — ends tool loop after the full requested outcome is complete or a concrete blocker is reported |
 
+`turn.finish` may also carry a short reaction without assistant prose:
+
+```json
+{
+  "action": "turn.finish",
+  "reactions": [{
+    "target": "current_user_message",
+    "emoji": "👍"
+  }]
+}
+```
+
+Reactions are typed effects, persisted with the assistant turn, and rendered or
+delivered through the active surface's native reaction API when supported. The
+first contract only targets the message that triggered the turn; user-to-agent
+reactions are intentionally a separate capability.
+
 ### Grapheme and shell execution
 
 Grapheme scheduling preflight checks source policy and compiles the source; it

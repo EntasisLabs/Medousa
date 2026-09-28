@@ -37,6 +37,7 @@
     { id: "hermes", hint: "External Hermes agent" },
     { id: "grok_bot", hint: "Registered Grok bots" },
     { id: "muse", hint: "Registered Muse sessions" },
+    { id: "instinct", hint: "WhatsApp + remote API" },
   ];
 
   onMount(() => {
@@ -148,7 +149,7 @@
         />
       </span>
     {:else if isProviderConversationRuntime(runtime)}
-      <span class="text-[11px] font-bold leading-none">{runtime === "muse" ? "M" : "G"}</span>
+      <span class="text-[11px] font-bold leading-none">{agentRuntimeLabel(runtime)[0]}</span>
     {:else}
       <ExternalAgentLogo agent={runtime} size={opticalLogoSize(runtime, size)} />
     {/if}

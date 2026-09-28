@@ -119,6 +119,8 @@ OPERATIONS: dict[str, Operation] = {
     "environment.spec.validate.post": Operation("environment.spec.validate.post", "POST", "/v1/environment/spec/validate", False),
     "environment.status.get": Operation("environment.status.get", "GET", "/v1/environment/status", False),
     "execution_targets.get": Operation("execution_targets.get", "GET", "/v1/execution-targets", False),
+    "external_conversations.by_id.api_token.delete": Operation("external_conversations.by_id.api_token.delete", "DELETE", "/v1/external-conversations/{id}/api-token", False),
+    "external_conversations.by_id.api_token.post": Operation("external_conversations.by_id.api_token.post", "POST", "/v1/external-conversations/{id}/api-token", False),
     "external_conversations.by_id.callback_key.rotate.post": Operation("external_conversations.by_id.callback_key.rotate.post", "POST", "/v1/external-conversations/{id}/callback-key/rotate", False),
     "external_conversations.by_id.delete": Operation("external_conversations.by_id.delete", "DELETE", "/v1/external-conversations/{id}", False),
     "external_conversations.by_id.events.post": Operation("external_conversations.by_id.events.post", "POST", "/v1/external-conversations/{id}/events", False),

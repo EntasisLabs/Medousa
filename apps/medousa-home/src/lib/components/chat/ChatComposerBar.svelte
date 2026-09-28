@@ -22,7 +22,7 @@
   import { isTauri, isTauriMobilePlatform } from "$lib/platform";
   import { haptic } from "$lib/haptics";
   import type { AgentSessionConfigOption } from "$lib/daemon";
-  import { isProviderConversationRuntime, type ChatAgentRuntime } from "$lib/utils/sessionAgentRuntime";
+  import { agentRuntimeLabel, isProviderConversationRuntime, type ChatAgentRuntime } from "$lib/utils/sessionAgentRuntime";
   import type { ExternalConversation } from "$lib/daemon/externalConversations";
   import {
     idleVoiceWaveform,
@@ -96,7 +96,7 @@
   );
   const placeholder = $derived(
     isProviderConversationRuntime(agentRuntime)
-      ? `Message ${agentRuntime === "muse" ? "Muse" : "Grok Bot"}…`
+      ? `Message ${agentRuntimeLabel(agentRuntime)}…`
       : chat.hasWorkshopHandoff()
       ? "Steer the handoff…"
       : quietChrome

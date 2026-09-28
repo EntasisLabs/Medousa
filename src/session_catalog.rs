@@ -1447,6 +1447,7 @@ mod tests {
             }]),
             slice_summary: None,
             speaker_profile_id: None,
+            reactions: Vec::new(),
         };
         assert_eq!(
             preview_from_turn(&turn).as_deref(),
@@ -1513,6 +1514,7 @@ mod tests {
             }]),
             slice_summary: None,
             speaker_profile_id: None,
+            reactions: Vec::new(),
         };
         record_turn_appended(&session_id, &home_turn);
         assert!(get_summary(&session_id).unwrap().origin_surface.is_none());
@@ -1541,6 +1543,7 @@ mod tests {
             }]),
             slice_summary: None,
             speaker_profile_id: None,
+            reactions: Vec::new(),
         };
         record_turn_appended(&session_id, &vscode_turn);
         assert_eq!(
@@ -1572,6 +1575,7 @@ mod tests {
             }]),
             slice_summary: None,
             speaker_profile_id: None,
+            reactions: Vec::new(),
         };
         record_turn_appended(&session_id, &browser_turn);
         assert_eq!(
