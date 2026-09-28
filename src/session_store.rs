@@ -70,6 +70,7 @@ const SESSION_SCHEMA_STATEMENTS: &[&str] = &[
     "DEFINE FIELD parts ON TABLE session_turn TYPE option<string>",
     "DEFINE FIELD slice_summary ON TABLE session_turn TYPE option<string>",
     "DEFINE FIELD speaker_profile_id ON TABLE session_turn TYPE option<string>",
+    "DEFINE FIELD reactions ON TABLE session_turn TYPE option<string>",
     "DEFINE FIELD search_text ON TABLE session_turn TYPE option<string>",
     "DEFINE INDEX idx_session_turn_session_id ON TABLE session_turn COLUMNS session_id",
     "DEFINE INDEX idx_session_turn_timestamp ON TABLE session_turn COLUMNS timestamp",
@@ -85,6 +86,7 @@ const SESSION_SCHEMA_STATEMENTS: &[&str] = &[
     "DEFINE FIELD parts ON TABLE transcript_entry TYPE option<string>",
     "DEFINE FIELD slice_summary ON TABLE transcript_entry TYPE option<string>",
     "DEFINE FIELD speaker_profile_id ON TABLE transcript_entry TYPE option<string>",
+    "DEFINE FIELD reactions ON TABLE transcript_entry TYPE option<string>",
     "DEFINE FIELD execution_authority_id ON TABLE transcript_entry TYPE option<string>",
     "DEFINE FIELD execution_session_id ON TABLE transcript_entry TYPE option<string>",
     "DEFINE FIELD execution_id ON TABLE transcript_entry TYPE option<string>",
@@ -131,6 +133,8 @@ const SESSION_SCHEMA_MIGRATIONS: &[&str] = &[
     "DEFINE FIELD OVERWRITE parts ON TABLE session_turn TYPE option<string>",
     "DEFINE FIELD OVERWRITE slice_summary ON TABLE session_turn TYPE option<string>",
     "DEFINE FIELD OVERWRITE speaker_profile_id ON TABLE session_turn TYPE option<string>",
+    "DEFINE FIELD OVERWRITE reactions ON TABLE session_turn TYPE option<string>",
+    "DEFINE FIELD OVERWRITE reactions ON TABLE transcript_entry TYPE option<string>",
     "DEFINE FIELD OVERWRITE search_text ON TABLE session_turn TYPE option<string>",
     "UPDATE session_turn SET search_text = content WHERE search_text = NONE OR search_text = NULL",
 ];
@@ -176,6 +180,8 @@ struct SessionTurnRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     speaker_profile_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    reactions: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     search_text: Option<String>,
 }
 
@@ -194,6 +200,8 @@ struct TranscriptEntryRecord {
     slice_summary: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     speaker_profile_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reactions: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     execution_authority_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -394,6 +402,18 @@ fn parts_from_json(value: Option<String>) -> Option<Vec<TurnPart>> {
     (!parts.is_empty()).then_some(parts)
 }
 
+fn reactions_to_json(reactions: &[medousa_types::MessageReaction]) -> Option<String> {
+    (!reactions.is_empty())
+        .then(|| serde_json::to_string(reactions).ok())
+        .flatten()
+}
+
+fn reactions_from_json(value: Option<String>) -> Vec<medousa_types::MessageReaction> {
+    value
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default()
+}
+
 fn slice_summary_from_json(value: Option<String>) -> Option<TurnSliceSummary> {
     value.and_then(|raw| serde_json::from_str(&raw).ok())
 }
@@ -413,6 +433,7 @@ impl From<SessionTurnRecord> for ConversationTurn {
             parts: parts_from_json(record.parts),
             slice_summary: slice_summary_from_json(record.slice_summary),
             speaker_profile_id: record.speaker_profile_id,
+            reactions: reactions_from_json(record.reactions),
         }
     }
 }
@@ -429,6 +450,7 @@ impl From<&ConversationTurn> for SessionTurnRecord {
             parts: parts_to_json(turn.parts.as_deref()),
             slice_summary: slice_summary_to_json(turn.slice_summary.as_ref()),
             speaker_profile_id: turn.speaker_profile_id.clone(),
+            reactions: reactions_to_json(&turn.reactions),
             search_text: turn_search_text(turn),
         }
     }
@@ -517,6 +539,7 @@ fn entry_record(entry: &TranscriptEntry) -> TranscriptEntryRecord {
         parts: parts_to_json(entry.turn.parts.as_deref()),
         slice_summary: slice_summary_to_json(entry.turn.slice_summary.as_ref()),
         speaker_profile_id: entry.turn.speaker_profile_id.clone(),
+        reactions: reactions_to_json(&entry.turn.reactions),
         execution_authority_id: entry
             .caused_by
             .as_ref()
@@ -612,6 +635,7 @@ fn transcript_entry_from_records(
             parts: parts_from_json(entry.parts),
             slice_summary: slice_summary_from_json(entry.slice_summary),
             speaker_profile_id: entry.speaker_profile_id,
+            reactions: reactions_from_json(entry.reactions),
         },
     })
 }
@@ -1292,7 +1316,7 @@ impl SurrealSessionStore {
             let mut legacy_rows = db
                 .query(
                     "SELECT id, session_id, role, content, timestamp, tool_names, answer_state, parts, \
-                     slice_summary, speaker_profile_id, search_text \
+                     slice_summary, speaker_profile_id, reactions, search_text \
                      FROM session_turn WHERE session_id = $session_id \
                      ORDER BY timestamp ASC, id ASC",
                 )
@@ -1338,7 +1362,7 @@ impl SurrealSessionStore {
             .map(|binding| binding.entry_id.clone())
             .collect::<Vec<_>>();
         let entry_sql = "SELECT entry_id, role, content, timestamp, tool_names, answer_state, \
-                         parts, slice_summary, speaker_profile_id, execution_authority_id, \
+                         parts, slice_summary, speaker_profile_id, reactions, execution_authority_id, \
                          execution_session_id, execution_id, content_digest \
                          FROM type::table($table) WHERE entry_id IN $entry_ids";
         let mut entry_response = match block_on(
@@ -1609,7 +1633,7 @@ impl SessionStore for SurrealSessionStore {
             .db
             .query(
                 "SELECT entry_id, role, content, timestamp, tool_names, answer_state, parts, \
-                 slice_summary, speaker_profile_id, execution_authority_id, \
+                 slice_summary, speaker_profile_id, reactions, execution_authority_id, \
                  execution_session_id, execution_id, content_digest \
                  FROM transcript_entry WHERE entry_id IN $entry_ids",
             )
@@ -2027,6 +2051,7 @@ mod tests {
             parts: None,
             slice_summary: None,
             speaker_profile_id: None,
+            reactions: Vec::new(),
         }
     }
 

@@ -315,6 +315,7 @@ async fn run_daemon_ask(daemon_url: &str, args: &[String]) -> Result<()> {
         user_id,
         channel_id,
         text: prompt.to_string(),
+        source_message_id: None,
         attachments: Vec::new(),
     };
 

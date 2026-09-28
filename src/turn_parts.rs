@@ -524,6 +524,7 @@ pub fn conversation_turn_from_parts_at(
         parts: if parts.is_empty() { None } else { Some(parts) },
         slice_summary: None,
         speaker_profile_id: None,
+        reactions: Vec::new(),
     }
 }
 

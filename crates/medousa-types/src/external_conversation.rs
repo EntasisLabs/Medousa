@@ -3,6 +3,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::message_effect::MessageReaction;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
@@ -66,6 +68,8 @@ pub struct ExternalConversationEvent {
     pub request_id: Option<String>,
     pub kind: ExternalEventKind,
     pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reaction: Option<MessageReaction>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -123,6 +127,8 @@ pub struct ExternalProviderEventRequest {
     pub request_id: String,
     pub kind: ExternalEventKind,
     pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reaction: Option<MessageReaction>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -133,6 +139,8 @@ pub struct ExternalWhatsAppInboundRequest {
     pub sender_jid: String,
     pub message_id: String,
     pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reaction: Option<MessageReaction>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

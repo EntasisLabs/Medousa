@@ -416,6 +416,7 @@ pub fn surface_from_scope(
         channel_surface: scope.channel_surface.clone(),
         channel_id: Some(scope.session_id.clone()),
         user_id: None,
+        source_message_id: None,
         supports_ui_artifacts: scope.supports_ui_artifacts,
         supports_liquid_markdown: scope.supports_liquid_markdown,
         supports_browser_host: scope.supports_browser_host,

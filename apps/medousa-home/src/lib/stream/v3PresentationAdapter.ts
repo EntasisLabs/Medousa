@@ -29,6 +29,14 @@ function project(
   event: TurnStreamEventV3,
 ): InteractiveTurnStreamEvent {
   switch (event.type) {
+    case "reaction":
+      return {
+        ...base,
+        event_type: "reaction",
+        phase: "complete",
+        message: event.reaction.emoji,
+        reaction: event.reaction,
+      };
     case "assistant_text_started":
       return base;
     case "content_append":

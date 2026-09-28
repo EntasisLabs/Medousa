@@ -42,6 +42,8 @@ struct IngestRequest {
     channel_id: String,
     text: String,
     #[serde(default)]
+    source_message_id: Option<String>,
+    #[serde(default)]
     attachments: Vec<IngestAttachment>,
 }
 
@@ -67,6 +69,14 @@ struct IngestResponse {
 struct DeliverRequest {
     channel_id: String,
     text: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ReactRequest {
+    channel_id: String,
+    target_message_id: String,
+    emoji: String,
+    participant: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -193,6 +203,7 @@ async fn main() -> Result<()> {
 async fn serve_deliver_endpoint(bind: String, state: Arc<WhatsAppAdapterState>) -> Result<()> {
     let app = Router::new()
         .route("/v1/deliver", post(deliver_message))
+        .route("/v1/react", post(react_message))
         .with_state(state);
 
     let listener = TcpListener::bind(&bind)
@@ -212,6 +223,41 @@ async fn deliver_message(
         Ok(()) => Ok(StatusCode::OK),
         Err(err) => {
             eprintln!("medousa_whatsapp deliver error: {err:#}");
+            Err(StatusCode::BAD_GATEWAY)
+        }
+    }
+}
+
+async fn react_message(
+    State(state): State<Arc<WhatsAppAdapterState>>,
+    Json(body): Json<ReactRequest>,
+) -> Result<StatusCode, StatusCode> {
+    let result = async {
+        let jid = parse_whatsapp_chat_jid(&body.channel_id)?;
+        let participant = body
+            .participant
+            .as_deref()
+            .and_then(|value| value.strip_prefix("whatsapp:user:"))
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string);
+        let key = wa::MessageKey {
+            remote_jid: Some(jid.to_string()),
+            from_me: Some(false),
+            id: Some(body.target_message_id),
+            participant: jid.to_string().ends_with("@g.us").then_some(participant).flatten(),
+        };
+        state
+            .client
+            .send_reaction(jid, key, &body.emoji)
+            .await
+            .context("whatsapp send_reaction failed")?;
+        Ok::<(), anyhow::Error>(())
+    }
+    .await;
+    match result {
+        Ok(()) => Ok(StatusCode::OK),
+        Err(err) => {
+            eprintln!("medousa_whatsapp reaction error: {err:#}");
             Err(StatusCode::BAD_GATEWAY)
         }
     }
@@ -338,11 +384,32 @@ async fn handle_event(
                 } else {
                     msg.text_content().map(str::to_owned)
                 };
+                let reaction = msg.reaction_message.as_option().and_then(|message| {
+                    let target_message_id = message.key.as_ref()?.id.as_ref()?.trim();
+                    let emoji = message.text.as_ref()?.trim();
+                    (!target_message_id.is_empty() && !emoji.is_empty()).then(|| {
+                        (target_message_id.to_string(), emoji.to_string())
+                    })
+                });
                 let text = extracted
                     .as_deref()
                     .map(str::trim)
                     .filter(|value| !value.is_empty());
                 if info.source.is_from_me {
+                    if let Some((target_message_id, emoji)) = reaction.as_ref()
+                        && let Err(err) = route_external_agent_reaction(
+                            &http_client,
+                            &daemon_url,
+                            &info.source.chat.to_string(),
+                            &info.source.sender.to_string(),
+                            &info.id.to_string(),
+                            target_message_id,
+                            emoji,
+                        )
+                        .await
+                    {
+                        eprintln!("medousa_whatsapp external reaction routing error: {err:#}");
+                    }
                     if let Some(text) = text.filter(|value| value.contains("MEDOUSA-MUSE-"))
                         && let Err(err) = route_external_agent_message(
                             &http_client,
@@ -356,6 +423,12 @@ async fn handle_event(
                     {
                         eprintln!("medousa_whatsapp discovery routing error: {err:#}");
                     }
+                    continue;
+                }
+
+                // User-to-agent reactions are intentionally deferred to the
+                // separate inbound reaction epic.
+                if reaction.is_some() {
                     continue;
                 }
 
@@ -460,6 +533,7 @@ async fn handle_inbound_message(
         user_id: format!("whatsapp:user:{sender_jid}"),
         channel_id: format!("whatsapp:chat:{chat_jid}"),
         text: text.to_string(),
+        source_message_id: Some(ctx.info.id.to_string()),
         attachments: Vec::new(),
     };
 
@@ -528,6 +602,46 @@ async fn route_external_agent_message(
         .json::<ExternalInboundClaim>()
         .await
         .context("decode external conversation routing response")?
+        .claimed)
+}
+
+async fn route_external_agent_reaction(
+    http_client: &Client,
+    daemon_url: &str,
+    chat_jid: &str,
+    sender_jid: &str,
+    message_id: &str,
+    target_message_id: &str,
+    emoji: &str,
+) -> Result<bool> {
+    let response = http_client
+        .post(format!(
+            "{}/v1/external-conversations/whatsapp/inbound",
+            daemon_url.trim_end_matches('/')
+        ))
+        .json(&serde_json::json!({
+            "chat_jid": chat_jid,
+            "sender_jid": sender_jid,
+            "message_id": message_id,
+            "text": "",
+            "reaction": {
+                "effect_id": format!("whatsapp:{message_id}"),
+                "target": { "message_id": target_message_id },
+                "emoji": emoji,
+            },
+        }))
+        .send()
+        .await
+        .context("external reaction routing request failed")?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(false);
+    }
+    Ok(response
+        .error_for_status()
+        .context("external reaction routing failed")?
+        .json::<ExternalInboundClaim>()
+        .await
+        .context("decode external reaction routing response")?
         .claimed)
 }
 

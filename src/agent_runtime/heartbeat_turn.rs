@@ -72,6 +72,7 @@ pub fn build_heartbeat_turn_prompt(snapshot: &HeartbeatRuntimeSnapshot) -> Strin
         channel_surface: Some("heartbeat".to_string()),
         channel_id: None,
         user_id: None,
+        source_message_id: None,
         supports_ui_artifacts: false,
         supports_liquid_markdown: false,
         supports_browser_host: false,

@@ -275,6 +275,7 @@ mod tests {
             parts: None,
             slice_summary: None,
             speaker_profile_id: None,
+            reactions: Vec::new(),
         }
     }
 

@@ -276,6 +276,7 @@ of the legacy `terminal` boolean. Key legacy fields:
 | `seq` | Monotonic per-turn sequence (use for reconnect cursor) |
 | `content_delta` | Append to assistant bubble |
 | `ui_artifact` | Show artifact embed |
+| V3 `reaction` | Apply the typed agent reaction to the originating user-message bubble |
 | `terminal` | Turn finished — stop reading |
 
 `worker_ack` and `workshop_ack` are non-terminal host handoff events. A surface

@@ -605,6 +605,7 @@ mod tests {
             ]),
             slice_summary: None,
             speaker_profile_id: None,
+            reactions: Vec::new(),
         }
     }
 
@@ -633,6 +634,7 @@ mod tests {
             parts: None,
             slice_summary: None,
             speaker_profile_id: None,
+            reactions: Vec::new(),
         };
         let assistant = assistant_with_tools();
         let turns = vec![user.clone(), assistant.clone()];

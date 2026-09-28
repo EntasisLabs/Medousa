@@ -864,6 +864,7 @@ mod tests {
             parts,
             slice_summary: None,
             speaker_profile_id: None,
+            reactions: Vec::new(),
         }
     }
 

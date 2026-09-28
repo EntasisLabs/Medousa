@@ -19,6 +19,7 @@ use stasis::application::orchestration::tool_loop_pipeline::{
 use stasis::ports::outbound::ai_chat_client::StreamDelta;
 
 use crate::channel_delivery;
+use medousa_types::MessageReaction;
 use crate::daemon_api::TurnSurfaceContext;
 use crate::engine_context::{EngineExecutionLane, RecallReadiness};
 use crate::session::ConversationTurn;
@@ -63,6 +64,24 @@ use super::turn_worker::{
 };
 use crate::turn_continuation::StoredDeliveryTarget;
 use crate::turn_slice::session_scratch_seed_from_history;
+
+async fn emit_turn_reactions(
+    sink: &SharedAgentStreamSink,
+    turn_id: u64,
+    invocations: &[ToolInvocation],
+) {
+    for (index, intent) in medousa_runtime::turn_control::reaction_intents_from_invocations(invocations)
+        .into_iter()
+        .enumerate()
+    {
+        if let Some(reaction) = MessageReaction::from_intent(
+            format!("turn:{turn_id}:reaction:{index}"),
+            intent,
+        ) {
+            sink.agent_reaction(turn_id, reaction).await;
+        }
+    }
+}
 
 #[cfg(test)]
 use super::provider_stream::{
@@ -1801,6 +1820,7 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
             )
             .await;
             stage_scratch_for_persist(&sink, &last_tool_scratch).await;
+            emit_turn_reactions(&sink, turn_id, &combined_invocations).await;
             super::turn_delivery::deliver_agent_turn_outcome(
                 &sink,
                 turn_id,
@@ -1896,6 +1916,7 @@ async fn execute_local_turn_inner(sink: SharedAgentStreamSink, params: LocalTurn
                             let tool_names = collect_tool_names(&response.tool_invocations);
                             stream_bridge.drain().await;
                             stage_scratch_for_persist(&sink, &last_tool_scratch).await;
+                            emit_turn_reactions(&sink, turn_id, &response.tool_invocations).await;
                             super::turn_delivery::deliver_agent_turn_outcome(
                                 &sink,
                                 turn_id,

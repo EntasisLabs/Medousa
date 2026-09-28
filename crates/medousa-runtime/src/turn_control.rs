@@ -1,5 +1,6 @@
 //! Portable interpretation of Medousa turn-control tool receipts.
 
+use medousa_types::{MessageReactionTarget, ReactionIntent};
 use serde_json::Value;
 use stasis::application::orchestration::tool_loop_pipeline::ToolInvocation;
 
@@ -142,6 +143,34 @@ pub fn finish_turn_needs_synthesis_from_invocations(
                     .and_then(Value::as_bool)
             })
     })
+}
+
+/// Read the typed reaction intents from a successful `turn.finish` call.
+/// Invalid intents are ignored at the runtime boundary and never reach a
+/// channel adapter.
+pub fn reaction_intents_from_invocations(invocations: &[ToolInvocation]) -> Vec<ReactionIntent> {
+    let Some(invocation) = invocations.iter().rev().find(|invocation| {
+        is_finish_turn_tool_name(&invocation.tool_name, &invocation.tool_input)
+            && invocation.tool_output.get("ok") != Some(&Value::Bool(false))
+    }) else {
+        return Vec::new();
+    };
+    let Some(values) = invocation
+        .tool_input
+        .get("reactions")
+        .and_then(Value::as_array)
+    else {
+        return Vec::new();
+    };
+    values
+        .iter()
+        .filter_map(|value| serde_json::from_value::<ReactionIntent>(value.clone()).ok())
+        .filter(|intent| {
+            matches!(intent.target, MessageReactionTarget::CurrentUserMessage)
+                && intent.validate().is_ok()
+        })
+        .take(1)
+        .collect()
 }
 
 pub fn checkpoint_turn_from_invocations(invocations: &[ToolInvocation]) -> Option<String> {
@@ -371,6 +400,24 @@ mod tests {
         assert_eq!(
             finish_turn_from_invocations(&[silent_finish]),
             Some(String::new())
+        );
+
+        let reaction_finish = invocation(
+            "turn.finish",
+            json!({
+                "reactions": [{
+                    "target": "current_user_message",
+                    "emoji": "👍"
+                }]
+            }),
+            json!({ "ok": true }),
+        );
+        assert_eq!(
+            reaction_intents_from_invocations(&[reaction_finish]),
+            vec![ReactionIntent {
+                target: MessageReactionTarget::CurrentUserMessage,
+                emoji: "👍".to_string(),
+            }]
         );
 
         let checkpoint = invocation(

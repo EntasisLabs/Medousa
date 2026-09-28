@@ -20,6 +20,8 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Medousa uses the camera when you choose Take photo so you can attach a picture to your chat.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Medousa connects to your workshop on your local network so you can chat and access your files.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Medousa records audio when you tap the voice button so your message can be transcribed in chat.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

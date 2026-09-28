@@ -361,6 +361,8 @@ pub async fn spawn_turn_ticket(
         last_turn_at: last_agent_turn_at,
         last_turn_latency_ms: last_agent_turn_latency_ms,
         started: std::time::Instant::now(),
+        delivery_target: delivery_target.clone(),
+        dispatch_client: state.channel_dispatch_client.clone(),
     };
     let ask_job_id = workspace_card_id.clone();
     let ask_job_id_for_notify = ask_job_id.clone();

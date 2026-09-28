@@ -28,6 +28,7 @@ use medousa_types::{
     ExternalInboundClaimResponse as InboundClaimResponse,
     ExternalMuseDiscoveryStatus as MuseDiscoveryStatus, ExternalProvider as Provider,
     ExternalProviderEventRequest as ProviderEventRequest,
+    MessageReaction,
     ExternalWhatsAppInboundRequest as WhatsAppInboundRequest,
     ExternalWhatsAppPairingState as PairingState, ExternalWhatsAppPairingStatus as PairingStatus,
     ExternalWhatsAppPairingUpdateRequest as PairingUpdateRequest, RotateExternalCallbackResponse,
@@ -218,6 +219,32 @@ impl ExternalConversationStore {
         kind: EventKind,
         text: String,
     ) -> anyhow::Result<Option<ConversationView>> {
+        self.record_event(id, event_id, request_id, kind, text, None)
+            .await
+    }
+
+    async fn record_reaction(
+        &self,
+        id: &str,
+        event_id: String,
+        request_id: Option<String>,
+        kind: EventKind,
+        text: String,
+        reaction: MessageReaction,
+    ) -> anyhow::Result<Option<ConversationView>> {
+        self.record_event(id, event_id, request_id, kind, text, Some(reaction))
+            .await
+    }
+
+    async fn record_event(
+        &self,
+        id: &str,
+        event_id: String,
+        request_id: Option<String>,
+        kind: EventKind,
+        text: String,
+        reaction: Option<MessageReaction>,
+    ) -> anyhow::Result<Option<ConversationView>> {
         let mut current = self.document.lock().await;
         let Some(record) = current.conversations.get(id) else {
             return Ok(None);
@@ -233,6 +260,7 @@ impl ExternalConversationStore {
             request_id,
             kind,
             text,
+            reaction,
             created_at: Utc::now(),
         });
         record.updated_at = Utc::now();
@@ -807,6 +835,10 @@ pub async fn provider_event(
         || input.event_id.trim().is_empty()
         || input.event_id.len() > 128
         || input.text.len() > 16 * 1024
+        || input
+            .reaction
+            .as_ref()
+            .is_some_and(|reaction| reaction.emoji.trim().is_empty())
     {
         return Err(bad_request("invalid provider event"));
     }
@@ -832,16 +864,26 @@ pub async fn provider_event(
     {
         return Err((StatusCode::CONFLICT, "unknown request ID".into()));
     }
-    state
-        .external_conversations
-        .record(
-            &id,
-            format!("provider:{}", input.event_id),
-            Some(input.request_id),
-            input.kind,
-            input.text,
-        )
-        .await
+    let event_id = format!("provider:{}", input.event_id);
+    let view = if let Some(reaction) = input.reaction {
+        state
+            .external_conversations
+            .record_reaction(
+                &id,
+                event_id,
+                Some(input.request_id),
+                input.kind,
+                input.text,
+                reaction,
+            )
+            .await
+    } else {
+        state
+            .external_conversations
+            .record(&id, event_id, Some(input.request_id), input.kind, input.text)
+            .await
+    };
+    view
         .map_err(internal)?
         .map(Json)
         .ok_or((StatusCode::NOT_FOUND, "conversation not found".into()))
@@ -871,6 +913,10 @@ pub async fn whatsapp_inbound(
         || input.message_id.trim().is_empty()
         || input.message_id.len() > 128
         || input.text.len() > 16 * 1024
+        || input
+            .reaction
+            .as_ref()
+            .is_some_and(|reaction| reaction.emoji.trim().is_empty())
     {
         return Err(bad_request("invalid WhatsApp message"));
     }
@@ -888,16 +934,31 @@ pub async fn whatsapp_inbound(
     else {
         return Ok(Json(InboundClaimResponse { claimed: false }));
     };
-    let recorded = state
-        .external_conversations
-        .record(
-            &binding.id,
-            format!("whatsapp:{}", input.message_id),
-            None,
-            EventKind::ProviderMessage,
-            input.text,
-        )
-        .await
+    let event_id = format!("whatsapp:{}", input.message_id);
+    let recorded = if let Some(reaction) = input.reaction {
+        state
+            .external_conversations
+            .record_reaction(
+                &binding.id,
+                event_id,
+                None,
+                EventKind::ProviderMessage,
+                input.text,
+                reaction,
+            )
+            .await
+    } else {
+        state
+            .external_conversations
+            .record(
+                &binding.id,
+                event_id,
+                None,
+                EventKind::ProviderMessage,
+                input.text,
+            )
+            .await
+    }
         .map_err(internal)?;
     Ok(Json(InboundClaimResponse {
         claimed: recorded.is_some(),

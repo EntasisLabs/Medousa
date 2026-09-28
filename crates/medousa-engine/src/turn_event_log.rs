@@ -814,6 +814,7 @@ fn history_turn(
         parts: Some(parts),
         slice_summary: None,
         speaker_profile_id: None,
+        reactions: Vec::new(),
     }
 }
 

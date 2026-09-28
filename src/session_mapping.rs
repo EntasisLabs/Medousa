@@ -535,13 +535,20 @@ pub fn build_interactive_turn_request_for_ingest(
     let defaults = crate::session::load_tui_defaults();
     let surface = ingest
         .map(|request| {
-            TurnSurfaceContext::from_ingest(&request.channel, &request.channel_id, &request.user_id)
+            let mut surface = TurnSurfaceContext::from_ingest(
+                &request.channel,
+                &request.channel_id,
+                &request.user_id,
+            );
+            surface.source_message_id = request.source_message_id.clone();
+            surface
         })
         .or_else(|| {
             Some(TurnSurfaceContext {
                 channel_surface: Some("api".to_string()),
                 channel_id: None,
                 user_id: None,
+                source_message_id: None,
                 supports_ui_artifacts: false,
                 supports_liquid_markdown: false,
                 supports_browser_host: false,
@@ -671,6 +678,7 @@ mod tests {
             user_id: "telegram:user:1".to_string(),
             channel_id: "telegram:chat:2".to_string(),
             text: "/stop".to_string(),
+            source_message_id: None,
             attachments: Vec::new(),
         };
         let outcome = process_ingest(&request, "key", Some("session-1".to_string()));
@@ -711,6 +719,7 @@ mod tests {
             user_id: "telegram:user:1".to_string(),
             channel_id: "telegram:chat:2".to_string(),
             text: "/brief".to_string(),
+            source_message_id: None,
             attachments: Vec::new(),
         };
         let outcome = process_ingest(&request, "key", None);

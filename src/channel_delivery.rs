@@ -11,6 +11,7 @@ use stasis::runtime_prelude_ext::{
 };
 
 use crate::session::{load_discord_bot_token, load_slack_bot_token, load_telegram_bot_token};
+use medousa_types::MessageReaction;
 
 pub use crate::turn_scope::ChannelDeliveryTarget;
 
@@ -90,7 +91,8 @@ pub fn delivery_target_from_interactive_turn(
             .unwrap_or_else(|| session_id.clone());
         return ChannelDeliveryTarget::interactive(
             channel, user_id, channel_id, session_id, turn_id,
-        );
+        )
+        .with_source_message_id(surface.source_message_id.clone());
     }
 
     ChannelDeliveryTarget::interactive(
@@ -304,6 +306,13 @@ pub fn resolve_whatsapp_deliver_url() -> String {
         })
 }
 
+pub fn resolve_whatsapp_react_url() -> String {
+    resolve_whatsapp_deliver_url()
+        .trim_end_matches("/v1/deliver")
+        .to_string()
+        + "/v1/react"
+}
+
 pub async fn dispatch_channel_message(
     client: &reqwest::Client,
     target: &ChannelDeliveryTarget,
@@ -317,6 +326,163 @@ pub async fn dispatch_channel_message(
         "cli" => Ok(()),
         other => Err(anyhow!("unsupported delivery channel: {other}")),
     }
+}
+
+/// Deliver a typed reaction to the provider message captured at ingest.
+/// Missing provider message ids are a capability miss, not a reason to emit
+/// an emoji as assistant prose.
+pub async fn dispatch_channel_reaction(
+    client: &reqwest::Client,
+    target: &ChannelDeliveryTarget,
+    reaction: &MessageReaction,
+) -> Result<()> {
+    let Some(message_id) = target.source_message_id.as_deref() else {
+        return Ok(());
+    };
+    match target.channel.as_str() {
+        "telegram" => dispatch_telegram_reaction(client, &target.channel_id, message_id, reaction).await,
+        "discord" => dispatch_discord_reaction(client, &target.channel_id, message_id, reaction).await,
+        "slack" => dispatch_slack_reaction(client, &target.channel_id, message_id, reaction).await,
+        "whatsapp" => dispatch_whatsapp_reaction(
+            client,
+            &target.channel_id,
+            &target.user_id,
+            message_id,
+            reaction,
+        )
+        .await,
+        "home" | "home-desktop" | "home-ios" | "home-android" | "interactive" | "tui" | "cli" => Ok(()),
+        other => Err(anyhow!("unsupported reaction delivery channel: {other}")),
+    }
+}
+
+async fn dispatch_telegram_reaction(
+    client: &reqwest::Client,
+    channel_id: &str,
+    message_id: &str,
+    reaction: &MessageReaction,
+) -> Result<()> {
+    let token = load_telegram_bot_token().context("telegram bot token missing")?;
+    let chat_id = parse_telegram_chat_id(channel_id)?;
+    let message_id = message_id.parse::<i64>().context("invalid Telegram message id")?;
+    let response = client
+        .post(format!("https://api.telegram.org/bot{token}/setMessageReaction"))
+        .json(&json!({
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "reaction": [{ "type": "emoji", "emoji": reaction.emoji }]
+        }))
+        .send()
+        .await
+        .context("telegram setMessageReaction request failed")?;
+    if !response.status().is_success() {
+        return Err(anyhow!("telegram setMessageReaction returned {}: {}", response.status(), response.text().await.unwrap_or_default()));
+    }
+    Ok(())
+}
+
+async fn dispatch_discord_reaction(
+    client: &reqwest::Client,
+    channel_id: &str,
+    message_id: &str,
+    reaction: &MessageReaction,
+) -> Result<()> {
+    let token = load_discord_bot_token().context("discord bot token missing")?;
+    let channel = parse_discord_channel_id(channel_id)?;
+    let encoded = encode_path_segment(&reaction.emoji);
+    let url = format!("https://discord.com/api/v10/channels/{channel}/messages/{message_id}/reactions/{encoded}/@me");
+    let response = client
+        .put(url)
+        .header("Authorization", format!("Bot {token}"))
+        .send()
+        .await
+        .context("discord create reaction request failed")?;
+    if !response.status().is_success() {
+        return Err(anyhow!("discord create reaction returned {}: {}", response.status(), response.text().await.unwrap_or_default()));
+    }
+    Ok(())
+}
+
+async fn dispatch_slack_reaction(
+    client: &reqwest::Client,
+    channel_id: &str,
+    message_id: &str,
+    reaction: &MessageReaction,
+) -> Result<()> {
+    let token = load_slack_bot_token().context("slack bot token missing")?;
+    let channel = parse_slack_channel_id(channel_id)?;
+    let name = slack_reaction_name(&reaction.emoji)
+        .ok_or_else(|| anyhow!("no Slack emoji alias for {}", reaction.emoji))?;
+    let response = client
+        .post("https://slack.com/api/reactions.add")
+        .bearer_auth(token)
+        .json(&json!({"channel": channel, "timestamp": message_id, "name": name}))
+        .send()
+        .await
+        .context("slack reactions.add request failed")?;
+    let payload: serde_json::Value = response
+        .json()
+        .await
+        .context("decode Slack reaction response")?;
+    if payload.get("ok").and_then(serde_json::Value::as_bool) != Some(true) {
+        return Err(anyhow!("slack reactions.add failed: {}", payload.get("error").and_then(serde_json::Value::as_str).unwrap_or("unknown")));
+    }
+    Ok(())
+}
+
+async fn dispatch_whatsapp_reaction(
+    client: &reqwest::Client,
+    channel_id: &str,
+    participant: &str,
+    message_id: &str,
+    reaction: &MessageReaction,
+) -> Result<()> {
+    let jid = parse_whatsapp_chat_jid(channel_id)?;
+    let url = resolve_whatsapp_react_url();
+    let response = client
+        .post(url)
+        .json(&json!({
+            "channel_id": format!("whatsapp:chat:{jid}"),
+            "target_message_id": message_id,
+            "emoji": reaction.emoji,
+            "participant": participant,
+        }))
+        .send()
+        .await
+        .context("whatsapp reaction request failed")?;
+    if !response.status().is_success() {
+        return Err(anyhow!("whatsapp reaction endpoint returned {}: {}", response.status(), response.text().await.unwrap_or_default()));
+    }
+    Ok(())
+}
+
+fn encode_path_segment(value: &str) -> String {
+    value.bytes().fold(String::new(), |mut output, byte| {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            output.push(byte as char);
+        } else {
+            output.push_str(&format!("%{byte:02X}"));
+        }
+        output
+    })
+}
+
+fn slack_reaction_name(emoji: &str) -> Option<&'static str> {
+    Some(match emoji {
+        "👍" => "thumbsup",
+        "👎" => "thumbsdown",
+        "❤️" | "❤" => "heart",
+        "✅" => "white_check_mark",
+        "🎉" => "tada",
+        "🙏" => "pray",
+        "🔥" => "fire",
+        "👀" => "eyes",
+        "👋" => "wave",
+        "🚀" => "rocket",
+        "❓" | "❔" => "question",
+        "🤔" => "thinking_face",
+        _ => return None,
+    })
 }
 
 async fn dispatch_telegram_message(
@@ -652,6 +818,7 @@ mod tests {
                 channel_surface: Some("home-ios".to_string()),
                 channel_id: None,
                 user_id: None,
+                source_message_id: None,
                 supports_ui_artifacts: true,
                 supports_liquid_markdown: true,
                 supports_browser_host: true,

@@ -4751,6 +4751,13 @@
               "$ref": "#/definitions/TurnWorldSelection"
             }
           },
+          "source_message_id": {
+            "description": "Provider message identifier for effects targeting the current inbound message.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "supports_browser_host": {
             "description": "When true, the connected client can run Agent Browser (local BrowserHost or client WebView). Telegram/TUI/ingest leave this false; Home desktop/iOS set true when browser is available.",
             "default": false,
@@ -5193,6 +5200,16 @@
           "kind": {
             "$ref": "#/definitions/ExternalEventKind"
           },
+          "reaction": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/MessageReaction"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "request_id": {
             "type": [
               "string",
@@ -5280,6 +5297,48 @@
           "muse",
           "grok_bot",
           "instinct"
+        ]
+      },
+      "MessageReaction": {
+        "type": "object",
+        "required": [
+          "effect_id",
+          "emoji",
+          "target"
+        ],
+        "properties": {
+          "effect_id": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/definitions/MessageReactionTarget"
+          }
+        }
+      },
+      "MessageReactionTarget": {
+        "description": "Agent reactions initially target only the message that triggered the turn.",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "current_user_message"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "message_id"
+            ],
+            "properties": {
+              "message_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
         ]
       }
     }
@@ -6301,6 +6360,13 @@
             "items": {
               "$ref": "#/definitions/TurnWorldSelection"
             }
+          },
+          "source_message_id": {
+            "description": "Provider message identifier for effects targeting the current inbound message.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "supports_browser_host": {
             "description": "When true, the connected client can run Agent Browser (local BrowserHost or client WebView). Telegram/TUI/ingest leave this false; Home desktop/iOS set true when browser is available.",
@@ -12823,6 +12889,16 @@
       "kind": {
         "$ref": "#/definitions/ExternalEventKind"
       },
+      "reaction": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/MessageReaction"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "request_id": {
         "type": [
           "string",
@@ -12852,6 +12928,48 @@
           "question",
           "completed",
           "failed"
+        ]
+      },
+      "MessageReaction": {
+        "type": "object",
+        "required": [
+          "effect_id",
+          "emoji",
+          "target"
+        ],
+        "properties": {
+          "effect_id": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/definitions/MessageReactionTarget"
+          }
+        }
+      },
+      "MessageReactionTarget": {
+        "description": "Agent reactions initially target only the message that triggered the turn.",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "current_user_message"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "message_id"
+            ],
+            "properties": {
+              "message_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
         ]
       }
     }
@@ -12917,6 +13035,16 @@
           },
           "kind": {
             "$ref": "#/definitions/ExternalEventKind"
+          },
+          "reaction": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/MessageReaction"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "request_id": {
             "type": [
@@ -13005,6 +13133,48 @@
           "muse",
           "grok_bot",
           "instinct"
+        ]
+      },
+      "MessageReaction": {
+        "type": "object",
+        "required": [
+          "effect_id",
+          "emoji",
+          "target"
+        ],
+        "properties": {
+          "effect_id": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/definitions/MessageReactionTarget"
+          }
+        }
+      },
+      "MessageReactionTarget": {
+        "description": "Agent reactions initially target only the message that triggered the turn.",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "current_user_message"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "message_id"
+            ],
+            "properties": {
+              "message_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
         ]
       }
     }
@@ -13125,6 +13295,16 @@
           "kind": {
             "$ref": "#/definitions/ExternalEventKind"
           },
+          "reaction": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/MessageReaction"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "request_id": {
             "type": [
               "string",
@@ -13162,6 +13342,48 @@
           "muse",
           "grok_bot",
           "instinct"
+        ]
+      },
+      "MessageReaction": {
+        "type": "object",
+        "required": [
+          "effect_id",
+          "emoji",
+          "target"
+        ],
+        "properties": {
+          "effect_id": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/definitions/MessageReactionTarget"
+          }
+        }
+      },
+      "MessageReactionTarget": {
+        "description": "Agent reactions initially target only the message that triggered the turn.",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "current_user_message"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "message_id"
+            ],
+            "properties": {
+              "message_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
         ]
       }
     }
@@ -13247,6 +13469,16 @@
       "kind": {
         "$ref": "#/definitions/ExternalEventKind"
       },
+      "reaction": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/MessageReaction"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "request_id": {
         "type": "string"
       },
@@ -13270,6 +13502,48 @@
           "completed",
           "failed"
         ]
+      },
+      "MessageReaction": {
+        "type": "object",
+        "required": [
+          "effect_id",
+          "emoji",
+          "target"
+        ],
+        "properties": {
+          "effect_id": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/definitions/MessageReactionTarget"
+          }
+        }
+      },
+      "MessageReactionTarget": {
+        "description": "Agent reactions initially target only the message that triggered the turn.",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "current_user_message"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "message_id"
+            ],
+            "properties": {
+              "message_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
       }
     }
   },
@@ -13290,6 +13564,16 @@
       "message_id": {
         "type": "string"
       },
+      "reaction": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/MessageReaction"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "sender_jid": {
         "type": "string"
       },
@@ -13297,7 +13581,51 @@
         "type": "string"
       }
     },
-    "additionalProperties": false
+    "additionalProperties": false,
+    "definitions": {
+      "MessageReaction": {
+        "type": "object",
+        "required": [
+          "effect_id",
+          "emoji",
+          "target"
+        ],
+        "properties": {
+          "effect_id": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/definitions/MessageReactionTarget"
+          }
+        }
+      },
+      "MessageReactionTarget": {
+        "description": "Agent reactions initially target only the message that triggered the turn.",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "current_user_message"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "message_id"
+            ],
+            "properties": {
+              "message_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    }
   },
   "ExternalWhatsAppPairingStatus": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -13807,6 +14135,13 @@
       "channel_id": {
         "description": "Channel/chat/conversation identifier, e.g. \"telegram:chat:67890\"",
         "type": "string"
+      },
+      "source_message_id": {
+        "description": "Stable provider message identifier for this inbound message.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "text": {
         "description": "The text content of the message (command or prompt)",
@@ -14934,6 +15269,13 @@
               "$ref": "#/definitions/TurnWorldSelection"
             }
           },
+          "source_message_id": {
+            "description": "Provider message identifier for effects targeting the current inbound message.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "supports_browser_host": {
             "description": "When true, the connected client can run Agent Browser (local BrowserHost or client WebView). Telegram/TUI/ingest leave this false; Home desktop/iOS set true when browser is available.",
             "default": false,
@@ -15128,6 +15470,16 @@
         "type": [
           "string",
           "null"
+        ]
+      },
+      "reaction": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/MessageReaction"
+          },
+          {
+            "type": "null"
+          }
         ]
       },
       "reasoning_delta": {
@@ -15391,6 +15743,48 @@
             "minimum": 0.0
           }
         }
+      },
+      "MessageReaction": {
+        "type": "object",
+        "required": [
+          "effect_id",
+          "emoji",
+          "target"
+        ],
+        "properties": {
+          "effect_id": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/definitions/MessageReactionTarget"
+          }
+        }
+      },
+      "MessageReactionTarget": {
+        "description": "Agent reactions initially target only the message that triggered the turn.",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "current_user_message"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "message_id"
+            ],
+            "properties": {
+              "message_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
       },
       "StreamToolArtifactRef": {
         "type": "object",
@@ -19946,6 +20340,13 @@
               "$ref": "#/definitions/TurnPart"
             }
           },
+          "reactions": {
+            "description": "Effects emitted with this turn; these are not model-visible content.",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/MessageReaction"
+            }
+          },
           "role": {
             "type": "string"
           },
@@ -20156,6 +20557,48 @@
             ]
           }
         }
+      },
+      "MessageReaction": {
+        "type": "object",
+        "required": [
+          "effect_id",
+          "emoji",
+          "target"
+        ],
+        "properties": {
+          "effect_id": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/definitions/MessageReactionTarget"
+          }
+        }
+      },
+      "MessageReactionTarget": {
+        "description": "Agent reactions initially target only the message that triggered the turn.",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "current_user_message"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "message_id"
+            ],
+            "properties": {
+              "message_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
       },
       "ToolInputParam": {
         "description": "One redacted key/value from a tool's arguments, for chat-adjacent tool evidence. Values are truncated at the emit site; `truncated` tells the UI to say so.",
@@ -21643,6 +22086,48 @@
           }
         }
       },
+      "MessageReaction": {
+        "type": "object",
+        "required": [
+          "effect_id",
+          "emoji",
+          "target"
+        ],
+        "properties": {
+          "effect_id": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/definitions/MessageReactionTarget"
+          }
+        }
+      },
+      "MessageReactionTarget": {
+        "description": "Agent reactions initially target only the message that triggered the turn.",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "current_user_message"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "message_id"
+            ],
+            "properties": {
+              "message_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
       "SessionId": {
         "description": "Canonical chat session identifier. Construction never normalizes input.",
         "type": "string"
@@ -21732,6 +22217,13 @@
             ],
             "items": {
               "$ref": "#/definitions/TurnPart"
+            }
+          },
+          "reactions": {
+            "description": "Effects emitted with this turn; these are not model-visible content.",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/MessageReaction"
             }
           },
           "role": {
@@ -23020,6 +23512,13 @@
           "$ref": "#/definitions/TurnPart"
         }
       },
+      "reactions": {
+        "description": "Effects emitted with this turn; these are not model-visible content.",
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/MessageReaction"
+        }
+      },
       "role": {
         "type": "string"
       },
@@ -23266,6 +23765,48 @@
             ]
           }
         }
+      },
+      "MessageReaction": {
+        "type": "object",
+        "required": [
+          "effect_id",
+          "emoji",
+          "target"
+        ],
+        "properties": {
+          "effect_id": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/definitions/MessageReactionTarget"
+          }
+        }
+      },
+      "MessageReactionTarget": {
+        "description": "Agent reactions initially target only the message that triggered the turn.",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "current_user_message"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "message_id"
+            ],
+            "properties": {
+              "message_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
       },
       "SessionId": {
         "description": "Canonical chat session identifier. Construction never normalizes input.",
@@ -25307,6 +25848,48 @@
           }
         }
       },
+      "MessageReaction": {
+        "type": "object",
+        "required": [
+          "effect_id",
+          "emoji",
+          "target"
+        ],
+        "properties": {
+          "effect_id": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/definitions/MessageReactionTarget"
+          }
+        }
+      },
+      "MessageReactionTarget": {
+        "description": "Agent reactions initially target only the message that triggered the turn.",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "current_user_message"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "message_id"
+            ],
+            "properties": {
+              "message_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
       "StreamToolArtifactRef": {
         "type": "object",
         "required": [
@@ -25464,6 +26047,25 @@
       "TurnStreamEventV3": {
         "description": "Chronological turn facts. Visible prose is addressed by `segment_id`, tool receipts update by `tool_run_id`, and terminal settlement never replaces the preceding timeline.",
         "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "reaction",
+              "type"
+            ],
+            "properties": {
+              "reaction": {
+                "$ref": "#/definitions/MessageReaction"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "reaction"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
           {
             "type": "object",
             "required": [
@@ -27110,6 +27712,25 @@
       {
         "type": "object",
         "required": [
+          "reaction",
+          "type"
+        ],
+        "properties": {
+          "reaction": {
+            "$ref": "#/definitions/MessageReaction"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "reaction"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
           "model_round",
           "segment_id",
           "type"
@@ -27859,6 +28480,48 @@
             "minimum": 0.0
           }
         }
+      },
+      "MessageReaction": {
+        "type": "object",
+        "required": [
+          "effect_id",
+          "emoji",
+          "target"
+        ],
+        "properties": {
+          "effect_id": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/definitions/MessageReactionTarget"
+          }
+        }
+      },
+      "MessageReactionTarget": {
+        "description": "Agent reactions initially target only the message that triggered the turn.",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "current_user_message"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "message_id"
+            ],
+            "properties": {
+              "message_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
       },
       "StreamToolArtifactRef": {
         "type": "object",

@@ -723,6 +723,7 @@ mod tests {
                 parts: None,
                 slice_summary: None,
                 speaker_profile_id: None,
+                reactions: Vec::new(),
             });
         }
 
@@ -753,6 +754,7 @@ mod tests {
                 parts: None,
                 slice_summary: None,
                 speaker_profile_id: None,
+                reactions: Vec::new(),
             },
             ConversationTurn {
                 role: "agent".to_string(),
@@ -763,6 +765,7 @@ mod tests {
                 parts: None,
                 slice_summary: None,
                 speaker_profile_id: None,
+                reactions: Vec::new(),
             },
         ];
 
@@ -795,6 +798,7 @@ mod tests {
                 parts: None,
                 slice_summary: None,
                 speaker_profile_id: None,
+                reactions: Vec::new(),
             },
             ConversationTurn {
                 role: "agent".to_string(),
@@ -805,6 +809,7 @@ mod tests {
                 parts: None,
                 slice_summary: None,
                 speaker_profile_id: None,
+                reactions: Vec::new(),
             },
             ConversationTurn {
                 role: "user".to_string(),
@@ -815,6 +820,7 @@ mod tests {
                 parts: None,
                 slice_summary: None,
                 speaker_profile_id: None,
+                reactions: Vec::new(),
             },
         ];
 
@@ -848,6 +854,7 @@ mod tests {
                 parts: None,
                 slice_summary: None,
                 speaker_profile_id: None,
+                reactions: Vec::new(),
             },
             ConversationTurn {
                 role: "assistant".to_string(),
@@ -875,6 +882,7 @@ mod tests {
                     ..Default::default()
                 }),
                 speaker_profile_id: None,
+                reactions: Vec::new(),
             },
         ];
 
@@ -922,6 +930,7 @@ mod tests {
                 parts: None,
                 slice_summary: None,
                 speaker_profile_id: None,
+                reactions: Vec::new(),
             },
             ConversationTurn {
                 role: "user".to_string(),
@@ -932,6 +941,7 @@ mod tests {
                 parts: None,
                 slice_summary: None,
                 speaker_profile_id: None,
+                reactions: Vec::new(),
             },
         ];
 

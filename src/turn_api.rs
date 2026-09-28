@@ -14,6 +14,7 @@ use serde_json::Value;
 #[cfg(feature = "full-daemon")]
 use crate::agent_runtime::turn_worker::TurnWorkerScheduler;
 use crate::public_api::COGNITION_TURN;
+use medousa_types::ReactionIntent;
 use crate::schema_api::{
     TypedActionSchema, advertised_object_schema, string_enum_schema, typed_action_schema,
 };
@@ -99,6 +100,9 @@ pub struct TurnFinish {
     /// Worker handback policy. False means this is already the complete answer.
     #[serde(default = "default_turn_finish_needs_synthesis")]
     needs_synthesis: bool,
+    /// Short acknowledgements attached to the current user message.
+    #[serde(default)]
+    reactions: Vec<ReactionIntent>,
 }
 
 fn default_turn_finish_needs_synthesis() -> bool {
@@ -329,6 +333,7 @@ impl TurnFinish {
                 message: self.message,
                 reason: self.reason,
                 needs_synthesis: self.needs_synthesis,
+                reactions: self.reactions,
             })
             .await?;
         serialize_output(CognitionTurnFinishTool::tool_id(), output)
@@ -397,10 +402,12 @@ mod tests {
                 message,
                 reason,
                 needs_synthesis,
+                reactions,
             }) => {
                 assert_eq!(message.as_deref(), Some("Done."));
                 assert!(reason.is_none());
                 assert!(needs_synthesis);
+                assert!(reactions.is_empty());
             }
             other => panic!("expected finish, got {other:?}"),
         }

@@ -720,6 +720,7 @@ impl RecurringDeliveryStore for InMemoryRecurringDeliveryStore {
                 channel_id: target.channel_id.clone(),
                 session_id: target.session_id.clone(),
                 stream_id: target.stream_id.clone(),
+                source_message_id: target.source_message_id.clone(),
             },
         );
         Ok(())
@@ -825,6 +826,7 @@ impl RecurringDeliveryStore for SurrealRecurringDeliveryStore {
             channel_id: row.channel_id,
             session_id: row.session_id,
             stream_id: row.stream_id,
+            source_message_id: None,
         }))
     }
 

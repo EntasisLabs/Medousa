@@ -409,6 +409,7 @@ pub fn v3_to_v2(envelope: &TurnStreamEnvelopeV3) -> Result<Option<TurnStreamEnve
 
 fn v3_event_to_v2(event: &TurnStreamEventV3) -> Option<TurnStreamEventV2> {
     Some(match event {
+        TurnStreamEventV3::Reaction { .. } => return None,
         TurnStreamEventV3::AssistantTextStarted { .. }
         | TurnStreamEventV3::AssistantTextCommitted { .. } => return None,
         TurnStreamEventV3::ContentAppend { text, .. } => {
@@ -698,6 +699,9 @@ pub fn journal_turn_event_for_v3(envelope: &TurnStreamEnvelopeV3) -> TurnEvent {
                     .unwrap_or_else(|| "turn did not complete".to_string()),
             },
         },
+        TurnStreamEventV3::Reaction { reaction } => {
+            TurnEvent::StreamMirror(serde_json::json!({ "type": "reaction", "reaction": reaction }))
+        }
         other => TurnEvent::StreamMirror(serde_json::to_value(other).unwrap_or_default()),
     }
 }
@@ -876,6 +880,7 @@ fn empty_stream_event(turn_id: &str) -> InteractiveTurnStreamEvent {
         message: String::new(),
         content_delta: None,
         reasoning_delta: None,
+        reaction: None,
         final_text: None,
         tool_names: None,
         response_provider: None,

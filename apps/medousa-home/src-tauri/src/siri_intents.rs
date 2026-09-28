@@ -201,6 +201,7 @@ async fn execute_personal_turn(
                 channel_surface: Some("home-ios-siri".to_string()),
                 channel_id: Some(request.session_id.clone()),
                 user_id: None,
+                source_message_id: None,
                 supports_ui_artifacts: false,
                 supports_liquid_markdown: false,
                 supports_browser_host: false,

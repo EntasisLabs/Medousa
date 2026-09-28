@@ -309,6 +309,7 @@ mod tests {
                 parts: None,
                 slice_summary: None,
                 speaker_profile_id: None,
+                reactions: Vec::new(),
             })
             .collect::<Vec<_>>();
 
@@ -330,6 +331,7 @@ mod tests {
                 parts: None,
                 slice_summary: None,
                 speaker_profile_id: None,
+                reactions: Vec::new(),
             }],
             Some("turn-abc".to_string()),
         );

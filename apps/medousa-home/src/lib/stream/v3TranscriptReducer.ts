@@ -304,6 +304,13 @@ export function applyV3EnvelopeToMessage(
     case "model_receipt":
       chrome = { responseProvider: event.provider, responseModel: event.model };
       break;
+    case "reaction": {
+      const reactions = message.reactions ?? [];
+      if (!reactions.some((reaction) => reaction.effect_id === event.reaction.effect_id)) {
+        chrome = { reactions: [...reactions, event.reaction] };
+      }
+      break;
+    }
     case "turn_completed":
       if (
         message.segments !== undefined &&
@@ -353,6 +360,8 @@ export function v3EventPromotesChatMessage(event: TurnStreamEventV3): boolean {
     case "worker_ack":
     case "budget_approval_required":
     case "progress":
+      return true;
+    case "reaction":
       return true;
     case "turn_completed":
       return Boolean(event.aggregate_text.trim());

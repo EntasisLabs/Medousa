@@ -4,6 +4,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use crate::daemon_api::{
     ContextUsageReport, StreamToolArtifactRef, StreamUiArtifact, StreamUiScene, ToolInputParam,
 };
+use crate::message_effect::MessageReaction;
 
 pub const TURN_STREAM_SCHEMA_VERSION: u8 = 2;
 pub const TURN_STREAM_V2_MEDIA_TYPE: &str = "text/event-stream; medousa-version=2";
@@ -354,6 +355,9 @@ pub enum TurnCompletionOutcomeV3 {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum TurnStreamEventV3 {
+    Reaction {
+        reaction: MessageReaction,
+    },
     AssistantTextStarted {
         segment_id: String,
         model_round: usize,

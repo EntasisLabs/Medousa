@@ -107,6 +107,8 @@ pub struct StoredDeliveryTarget {
     pub channel_id: String,
     pub session_id: String,
     pub stream_id: Option<String>,
+    #[serde(default)]
+    pub source_message_id: Option<String>,
 }
 
 impl From<&ChannelDeliveryTarget> for StoredDeliveryTarget {
@@ -117,6 +119,7 @@ impl From<&ChannelDeliveryTarget> for StoredDeliveryTarget {
             channel_id: value.channel_id.clone(),
             session_id: value.session_id.clone(),
             stream_id: value.stream_id.clone(),
+            source_message_id: value.source_message_id.clone(),
         }
     }
 }
@@ -130,6 +133,7 @@ impl From<&StoredDeliveryTarget> for ChannelDeliveryTarget {
             value.session_id.clone(),
             value.stream_id.clone(),
         )
+        .with_source_message_id(value.source_message_id.clone())
     }
 }
 
@@ -866,6 +870,7 @@ mod tests {
             channel_id: "channel-1".to_string(),
             session_id: "sess-2".to_string(),
             stream_id: None,
+            source_message_id: None,
         });
         assert!(!crossed.resume_authorized_by(|_, _| true));
     }

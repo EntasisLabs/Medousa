@@ -22,10 +22,19 @@ export interface CreateExternalAgentTokenResponse {
 
 export type ExternalEventKind = "user_message" | "transport_pending" | "transport_accepted" | "transport_failed" | "transport_uncertain" | "provider_message" | "progress" | "question" | "completed" | "failed";
 
+export type MessageReactionTarget = "current_user_message" | { message_id: string };
+
+export interface MessageReaction {
+  effect_id: string;
+  emoji: string;
+  target: MessageReactionTarget;
+}
+
 export interface ExternalConversationEvent {
   created_at: string;
   event_id: string;
   kind: ExternalEventKind;
+  reaction?: MessageReaction | null;
   request_id?: string | null;
   sequence: number;
   text: string;
@@ -325,6 +334,7 @@ export interface TranscriptEntry {
   entry_id: TranscriptEntryId;
   entry_seq: number;
   parts?: TurnPart[] | null;
+  reactions?: MessageReaction[];
   role: string;
   slice_summary?: TurnSliceSummary | null;
   source?: TranscriptEntryRef | null;
@@ -398,6 +408,7 @@ export interface InteractiveTurnStreamEvent {
   permission_request_id?: string | null;
   phase: string;
   previous_artifact_id?: string | null;
+  reaction?: MessageReaction | null;
   reasoning_delta?: string | null;
   requested_rounds?: number | null;
   response_model?: string | null;
@@ -440,7 +451,7 @@ export interface TurnStreamEnvelopeV2 {
 
 export type TurnCompletionOutcomeV3 = "completed" | "needs_input" | "checkpointed" | "failed" | "cancelled" | "fuse_exhausted" | "fatal";
 
-export type TurnStreamEventV3 = { model_round: number; segment_id: string; type: "assistant_text_started" } | { segment_id: string; text: string; type: "content_append" } | { segment_id: string; type: "assistant_text_committed" } | { text: string; type: "reasoning_append" } | { debug_message?: string | null; operator_message?: string | null; phase: string; type: "status" } | { message: string; tool_names?: string[]; type: "progress" } | { model: string; provider: string; type: "model_receipt" } | { ack_kind: WorkerAckKind; text: string; tool_names?: string[]; type: "worker_ack"; work_id?: string | null } | { text: string; tool_names?: string[]; type: "worker_synthesis"; work_id?: string | null } | { debug_message?: string | null; operator_message: string; type: "error" } | { input_params?: ToolInputParam[]; input_summary: string; tool_name: string; tool_round: number; tool_run_id: string; type: "tool_started" } | { artifact_refs?: StreamToolArtifactRef[]; input_params?: ToolInputParam[]; input_summary: string; output_summary?: string | null; status: string; tool_name: string; tool_round: number; tool_run_id: string; type: "tool_finished" } | { artifact: StreamUiArtifact; type: "artifact_presented" } | { artifact: StreamUiArtifact; previous_artifact_id: string; root_artifact_id?: string | null; type: "artifact_updated" } | { scene: StreamUiScene; type: "ui_scene" } | { max_tool_rounds: number; progress_summary?: string | null; reason: string; request_id: string; requested_rounds: number; rounds_executed: number; type: "budget_approval_required" } | { challenge_url: string; reason: string; session_id: string; type: "browser_challenge" } | { opened_by_agent?: boolean; title?: string | null; type: "browser_navigated"; url: string } | { operator_summary?: string | null; report: ContextUsageReport; type: "context_usage" } | { agent_runtime?: string | null; agent_session_id?: string | null; message: string; request_id: string; type: "permission_request" } | { allowed_hosts?: string[]; backend: string; credential_key: string; label: string; provider_type: string; reason: string; request_id: string; type: "secret_request" } | { aggregate_text: string; debug_message?: string | null; operator_message?: string | null; outcome: TurnCompletionOutcomeV3; tool_names?: string[]; type: "turn_completed" };
+export type TurnStreamEventV3 = { reaction: MessageReaction; type: "reaction" } | { model_round: number; segment_id: string; type: "assistant_text_started" } | { segment_id: string; text: string; type: "content_append" } | { segment_id: string; type: "assistant_text_committed" } | { text: string; type: "reasoning_append" } | { debug_message?: string | null; operator_message?: string | null; phase: string; type: "status" } | { message: string; tool_names?: string[]; type: "progress" } | { model: string; provider: string; type: "model_receipt" } | { ack_kind: WorkerAckKind; text: string; tool_names?: string[]; type: "worker_ack"; work_id?: string | null } | { text: string; tool_names?: string[]; type: "worker_synthesis"; work_id?: string | null } | { debug_message?: string | null; operator_message: string; type: "error" } | { input_params?: ToolInputParam[]; input_summary: string; tool_name: string; tool_round: number; tool_run_id: string; type: "tool_started" } | { artifact_refs?: StreamToolArtifactRef[]; input_params?: ToolInputParam[]; input_summary: string; output_summary?: string | null; status: string; tool_name: string; tool_round: number; tool_run_id: string; type: "tool_finished" } | { artifact: StreamUiArtifact; type: "artifact_presented" } | { artifact: StreamUiArtifact; previous_artifact_id: string; root_artifact_id?: string | null; type: "artifact_updated" } | { scene: StreamUiScene; type: "ui_scene" } | { max_tool_rounds: number; progress_summary?: string | null; reason: string; request_id: string; requested_rounds: number; rounds_executed: number; type: "budget_approval_required" } | { challenge_url: string; reason: string; session_id: string; type: "browser_challenge" } | { opened_by_agent?: boolean; title?: string | null; type: "browser_navigated"; url: string } | { operator_summary?: string | null; report: ContextUsageReport; type: "context_usage" } | { agent_runtime?: string | null; agent_session_id?: string | null; message: string; request_id: string; type: "permission_request" } | { allowed_hosts?: string[]; backend: string; credential_key: string; label: string; provider_type: string; reason: string; request_id: string; type: "secret_request" } | { aggregate_text: string; debug_message?: string | null; operator_message?: string | null; outcome: TurnCompletionOutcomeV3; tool_names?: string[]; type: "turn_completed" };
 
 export interface TurnStreamEnvelopeV3 {
   emitted_at_utc: string;
@@ -540,6 +551,7 @@ export interface TurnSurfaceContext {
   channel_id?: string | null;
   channel_surface?: string | null;
   selected_worlds?: TurnWorldSelection[];
+  source_message_id?: string | null;
   supports_browser_host?: boolean;
   supports_liquid_markdown?: boolean;
   supports_ui_artifacts?: boolean;
