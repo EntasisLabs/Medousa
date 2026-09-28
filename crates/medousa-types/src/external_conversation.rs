@@ -9,6 +9,37 @@ use serde::{Deserialize, Serialize};
 pub enum ExternalProvider {
     Muse,
     GrokBot,
+    Instinct,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum ExternalAgentScope {
+    Read,
+    Work,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ExternalAgentAccessStatus {
+    pub scopes: Vec<ExternalAgentScope>,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct CreateExternalAgentTokenRequest {
+    pub scopes: Vec<ExternalAgentScope>,
+    pub expires_in_days: u32,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct CreateExternalAgentTokenResponse {
+    pub token: String,
+    pub access: ExternalAgentAccessStatus,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -48,6 +79,8 @@ pub struct ExternalConversationView {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub events: Vec<ExternalConversationEvent>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_access: Option<ExternalAgentAccessStatus>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

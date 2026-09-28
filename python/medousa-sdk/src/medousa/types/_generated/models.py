@@ -418,9 +418,20 @@ class AgentSessionConfigOption(MedousaModel):
     type: str
 
 
+class ExternalAgentScope(Enum):
+    read = 'read'
+    work = 'work'
+
+
+class ExternalAgentAccessStatus(MedousaModel):
+    expires_at: AwareDatetime
+    scopes: list[ExternalAgentScope]
+
+
 class ExternalProvider(Enum):
     muse = 'muse'
     grok_bot = 'grok_bot'
+    instinct = 'instinct'
 
 
 class ExternalEventKind(Enum):
@@ -2965,6 +2976,19 @@ class CreateAgentSessionResponse(MedousaModel):
     work_id: str | None = None
 
 
+class CreateExternalAgentTokenRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    expires_in_days: int = Field(..., ge=0)
+    scopes: list[ExternalAgentScope]
+
+
+class CreateExternalAgentTokenResponse(MedousaModel):
+    access: ExternalAgentAccessStatus
+    token: str
+
+
 class CreateExternalConversationRequest(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -4049,6 +4073,7 @@ class ExternalConversationEvent(MedousaModel):
 
 
 class ExternalConversationView(MedousaModel):
+    api_access: ExternalAgentAccessStatus | None = None
     created_at: AwareDatetime
     events: list[ExternalConversationEvent]
     id: str

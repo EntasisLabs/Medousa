@@ -22,6 +22,7 @@ pub enum PrincipalKind {
     Peer,
     Root,
     Worker,
+    ExternalAgent,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -199,6 +200,28 @@ impl RequestPrincipal {
             capabilities: CapabilitySet::operator(),
             transport,
             revocation_generation,
+        }
+    }
+
+    pub fn external_agent(
+        credential_id: Arc<str>,
+        profile_id: String,
+        work: bool,
+        transport: TransportClass,
+    ) -> Self {
+        Self {
+            kind: PrincipalKind::ExternalAgent,
+            credential_id: Some(CredentialId(credential_id)),
+            profile_id: Some(profile_id),
+            capabilities: if work {
+                CapabilitySet::member()
+            } else {
+                CapabilitySet::empty()
+                    .with(Capability::WorkshopRead)
+                    .with(Capability::ContentRead)
+            },
+            transport,
+            revocation_generation: 1,
         }
     }
 

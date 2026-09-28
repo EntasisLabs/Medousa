@@ -32,9 +32,12 @@ function click(label: string) {
   flushSync();
 }
 
-it("opens Runtime above Mode, then selects and reselects a Muse session in the sheet", () => {
+it.each([
+  { provider: "muse", runtimeLabel: "Muse", selectionLabel: "Muse session" },
+  { provider: "instinct", runtimeLabel: "Instinct Agent", selectionLabel: "Instinct agent" },
+] as const)("selects and reselects a $provider conversation in Chat context", ({ provider, runtimeLabel, selectionLabel }) => {
   const state = $state({ runtime: "medousa" as ChatAgentRuntime, selectedId: null as string | null });
-  const choices = [{ id: "personal", provider: "muse", label: "Personal Muse" }, { id: "work", provider: "muse", label: "Work Muse" }];
+  const choices = [{ id: "personal", provider, label: "Personal Muse" }, { id: "work", provider, label: "Work Muse" }];
   const change = vi.fn((value: ChatAgentRuntime) => { state.runtime = value; });
   const select = vi.fn((id: string) => { state.selectedId = id; });
   const agentSession = { get sessionRuntime() { return state.runtime; }, onRuntimeChange: change } as unknown as ReturnType<typeof createAgentSessionController>;
@@ -49,14 +52,14 @@ it("opens Runtime above Mode, then selects and reselects a Muse session in the s
   click("Chat context");
   expect([...document.querySelectorAll(".context-row")].filter((row) => !row.closest("[hidden]")).map((row) => row.firstElementChild?.textContent)).toEqual(["Runtime", "Mode", "Project", "Workers"]);
   click("Runtime");
-  click("Muse");
-  expect(document.querySelector("dialog")?.getAttribute("aria-label")).toBe("Muse session");
+  click(runtimeLabel);
+  expect(document.querySelector("dialog")?.getAttribute("aria-label")).toBe(selectionLabel);
   click("Work Muse");
   expect(select).toHaveBeenLastCalledWith("work");
   expect(document.querySelector("dialog")?.getAttribute("aria-label")).toBe("Chat context");
   expect(document.querySelector(".context-summary")?.textContent).toContain("Work Muse");
   click("Runtime");
-  click("Muse"); // Already-selected runtime must still let us choose another session.
+  click(runtimeLabel); // Already-selected runtime must still let us choose another session.
   click("Personal Muse");
   expect(select).toHaveBeenLastCalledWith("personal");
   expect(change).toHaveBeenCalledTimes(1);

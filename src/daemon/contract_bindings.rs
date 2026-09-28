@@ -76,6 +76,14 @@ pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
             request: None,
             response: "DeleteExternalConversationResponse",
         },
+        "external_conversations.by_id.api_token.post" => WireBinding {
+            request: Some("CreateExternalAgentTokenRequest"),
+            response: "CreateExternalAgentTokenResponse",
+        },
+        "external_conversations.by_id.api_token.delete" => WireBinding {
+            request: None,
+            response: "ExternalConversationView",
+        },
         "external_conversations.by_id.callback_key.rotate.post" => WireBinding {
             request: None,
             response: "RotateExternalCallbackResponse",

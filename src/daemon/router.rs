@@ -1404,13 +1404,20 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 453);
-        assert_eq!(with_pairing.entries().len(), 472);
+        assert_eq!(without_pairing.entries().len(), 457);
+        assert_eq!(with_pairing.entries().len(), 476);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 472);
+        assert_eq!(rows.len(), 476);
         assert_eq!(rows[0]["path"], "/health");
+        for method in ["POST", "DELETE"] {
+            assert!(rows.iter().any(|row| {
+                row["method"] == method
+                    && row["path"] == "/v1/external-conversations/{id}/api-token"
+                    && row["required_capability"] == "admin.execute"
+            }));
+        }
         assert!(rows.iter().any(|row| {
             row["method"] == "POST"
                 && row["path"] == "/v1/mesh/outbox"

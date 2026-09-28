@@ -2110,6 +2110,38 @@
         "admin.execute"
       ],
       "feature_profile": "core",
+      "method": "DELETE",
+      "operation_id": "external_conversations.by_id.api_token.delete",
+      "path": "/v1/external-conversations/{id}/api-token",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 4096,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "external_conversations.by_id.api_token.post",
+      "path": "/v1/external-conversations/{id}/api-token",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "core",
       "method": "POST",
       "operation_id": "external_conversations.by_id.callback_key.rotate.post",
       "path": "/v1/external-conversations/{id}/callback-key/rotate",

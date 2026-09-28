@@ -107,6 +107,9 @@ pub async fn spawn_turn_ticket(
     mut interactive_request: InteractiveTurnRequest,
     workspace_card_id: Option<String>,
 ) -> Result<TurnTicketResponse, (StatusCode, String)> {
+    // Every admission path, including background jobs, must carry the bound
+    // profile into runtime identity and durable continuations.
+    apply_principal_identity(&principal, &mut interactive_request.identity_user_id);
     let session_id = crate::session_storage::SessionId::parse(&interactive_request.session_id)
         .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     if let Some(surface) = interactive_request.surface.as_mut() {
@@ -441,7 +444,7 @@ fn apply_principal_identity(
     principal: &crate::request_principal::RequestPrincipal,
     request_identity: &mut Option<String>,
 ) {
-    // Portal/shared seats: bound pairing profile wins over client-supplied identity.
+    // Bound profiles (including external agents) win over client-supplied identity.
     if let Some(bound) = principal.profile_id() {
         *request_identity = Some(bound.to_string());
     }
@@ -734,6 +737,25 @@ mod tests {
     use medousa_types::{
         BotWorldBinding, BotWorldBindingKind, TurnSurfaceContext, TurnWorldSelection,
     };
+
+    #[test]
+    fn external_agent_work_keeps_its_owner_identity() {
+        use crate::request_principal::{RequestPrincipal, TransportClass};
+        let principal = RequestPrincipal::external_agent(
+            Arc::from("external-agent:test"),
+            "user:instinct-owner".to_string(),
+            true,
+            TransportClass::Iroh,
+        );
+        for mut identity in [None, Some("user:someone-else".to_string())] {
+            apply_principal_identity(&principal, &mut identity);
+            assert_eq!(identity.as_deref(), Some("user:instinct-owner"));
+        }
+        let local = RequestPrincipal::local_app(Arc::from("local:test"), TransportClass::Loopback);
+        let mut identity = Some("user:chosen-locally".to_string());
+        apply_principal_identity(&local, &mut identity);
+        assert_eq!(identity.as_deref(), Some("user:chosen-locally"));
+    }
 
     fn binding() -> BotWorldBinding {
         BotWorldBinding {

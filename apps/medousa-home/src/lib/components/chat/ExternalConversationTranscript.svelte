@@ -48,7 +48,7 @@
   <div class="flex min-h-[160px] items-center justify-center"><LoaderCircle size={22} class="animate-spin text-content-quiet/80" aria-label="Loading sessions" /></div>
 {:else}
   <div class="px-2 py-8 text-sm">
-    <p class="text-surface-200">{choices.length > 0 ? (mobile ? "Choose a session or bot in Chat context → Runtime." : "Choose a session or bot from the model picker.") : "No " + (provider === "muse" ? "Muse sessions" : "Grok bots") + " connected yet."}</p>
+    <p class="text-surface-200">{choices.length > 0 ? (mobile ? "Choose a session or bot in Chat context → Runtime." : "Choose a session or bot from the model picker.") : "No " + (provider === "muse" ? "Muse sessions" : provider === "instinct" ? "Instinct agents" : "Grok bots") + " connected yet."}</p>
     {#if choices.length === 0}<button type="button" class="mt-3 text-content-link" onclick={openSettings}>Set up in External Agents</button>{/if}
   </div>
 {/if}

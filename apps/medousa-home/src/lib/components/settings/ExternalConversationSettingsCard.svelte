@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import ExternalAgentAccessControls from "./ExternalAgentAccessControls.svelte";
   import { Check, Plus, RefreshCw } from "@lucide/svelte";
   import { getDaemonUrl } from "$lib/daemon/client";
   import { ensureWhatsAppAdapter } from "$lib/messaging";
@@ -37,7 +38,7 @@
   let adapterError = $state<string | null>(null);
   let adapterBusy = $state(false);
   let pairingBusy = false;
-  const title = $derived(provider === "muse" ? "Muse" : "Grok Bot");
+  const title = $derived(provider === "muse" ? "Muse" : provider === "instinct" ? "Instinct Agent" : "Grok Bot");
   const registered = $derived(conversations.filter((item) => item.provider === provider));
   const canStartAdapter = $derived(isTauriDesktop() && isCoLocatedWorkshop());
 
@@ -82,7 +83,7 @@
     }
   }
 
-  async function openMuseSetup() {
+  async function openWhatsAppSetup() {
     creating = true;
     await refreshPairing();
     if (!pairing || pairing.state === "waiting") {
@@ -93,9 +94,9 @@
   onMount(() => {
     void refresh();
     const timer = window.setInterval(() => {
-      if (document.visibilityState !== "visible" || !creating || provider !== "muse") return;
+      if (document.visibilityState !== "visible" || !creating || provider === "grok_bot") return;
       void refreshPairing();
-      if (busy || !discovery) return;
+      if (busy || provider !== "muse" || !discovery) return;
       void checkMuseDiscovery();
     }, 3000);
     return () => window.clearInterval(timer);
@@ -208,14 +209,14 @@
 
 <div class="connections-card" data-provider={provider}>
   <div class="connections-card-head">
-    <span class="connections-card-icon" aria-hidden="true">{provider === "muse" ? "M" : "G"}</span>
+    <span class="connections-card-icon" aria-hidden="true">{title[0]}</span>
     <div class="min-w-0 flex-1">
       <p class="connections-card-title">{title}</p>
-      <p class="connections-card-sub workshop-faint">{provider === "muse" ? "WhatsApp sessions" : "Webhook bots and routines"}</p>
+      <p class="connections-card-sub workshop-faint">{provider === "grok_bot" ? "Webhook bots and routines" : "WhatsApp sessions"}</p>
     </div>
     <span class="connections-status" class:connections-status--in={provider === "grok_bot" && registered.length > 0}>
       {#if provider === "grok_bot" && registered.length > 0}<Check size={12} strokeWidth={2.5} />{/if}
-      {provider === "muse" ? registered.length + " registered" : registered.length > 0 ? registered.length + " connected" : "Not connected"}
+      {provider !== "grok_bot" ? registered.length + " registered" : registered.length > 0 ? registered.length + " connected" : "Not connected"}
     </span>
   </div>
 
@@ -238,7 +239,10 @@
       {#each registered as conversation (conversation.id)}
         <div class="rounded-lg bg-surface-800 p-3">
           <p class="text-sm font-medium text-surface-50">{conversation.label}</p>
-          <p class="workshop-faint mt-1 text-xs">{provider === "muse" ? "Session" : "Bot · " + conversation.target}</p>
+          <p class="workshop-faint mt-1 text-xs">{provider === "muse" ? "Session" : provider === "instinct" ? "WhatsApp · +" + conversation.target.split("@")[0] : "Bot · " + conversation.target}</p>
+          {#if provider === "instinct"}
+            <ExternalAgentAccessControls {conversation} onchange={(updated) => { conversations = conversations.map((item) => item.id === updated.id ? updated : item); }} />
+          {/if}
           <div class="mt-2 flex flex-wrap gap-3 text-xs">
             {#if provider === "grok_bot"}
               <button type="button" class="text-content-link" disabled={busy} onclick={() => void rotate(conversation.id)}>Rotate callback key</button>
@@ -253,7 +257,7 @@
 
   {#if creating}
     <form class="mt-3 space-y-3" onsubmit={(event) => { event.preventDefault(); void create(); }}>
-      <label class="block text-sm">{provider === "muse" ? "Session name" : "Bot label"}
+      <label class="block text-sm">{provider === "grok_bot" ? "Bot label" : "Session name"}
         <input class="mt-1 w-full rounded-md bg-surface-800 p-2" bind:value={label} required maxlength="120" />
       </label>
       {#if provider === "grok_bot"}
@@ -274,7 +278,7 @@
             <p class="text-xs">On your phone: WhatsApp → Settings → Linked Devices → Link a Device. Scan this QR from Medousa. It refreshes automatically when it expires.</p>
           </div>
         {:else if pairing?.state === "connected"}
-          <p class="text-xs text-content-success">WhatsApp linked. You can find the Muse chat below.</p>
+          <p class="text-xs text-content-success">WhatsApp linked. {provider === "muse" ? "You can find the Muse chat below." : "Enter Instinct’s international phone number below."}</p>
         {:else if pairing?.state === "logged_out"}
           <p class="text-xs text-content-warning">WhatsApp signed out. Save WhatsApp again in Settings → Sharing → Channels to restart the adapter and get a new QR.</p>
         {:else}
@@ -285,6 +289,12 @@
         {#if canStartAdapter && (!pairing || pairing.state === "waiting")}
           <button type="button" class="text-content-link text-sm" disabled={adapterBusy} onclick={() => void startWhatsAppAdapter()}>{adapterBusy ? "Starting WhatsApp adapter…" : "Start WhatsApp adapter"}</button>
         {/if}
+        {#if provider === "instinct"}
+          <label class="block text-sm">Instinct WhatsApp phone number
+            <input class="mt-1 w-full rounded-md bg-surface-800 p-2" type="tel" bind:value={target} placeholder="+1 555 123 4567" required maxlength="40" />
+          </label>
+          <p class="workshop-faint text-xs">Include the country code. After connecting, create an API token if Instinct needs workshop tools or background work.</p>
+        {:else}
         <div class="flex flex-wrap gap-3">
           <button type="button" class="text-content-link text-sm" disabled={busy} onclick={() => void discoverMuse()}>{discovery ? "Restart discovery" : "Find Muse chat"}</button>
           {#if discovery && !discovery.observed_chat_jid}
@@ -297,6 +307,7 @@
           <p class="text-xs">{discovery.observed_chat_jid ? "Chat ID observed. This does not verify delivery to Muse." : "Waiting for the linked adapter to see your code. Discovery expires after five minutes."}</p>
           {#if discoveryFeedback}<p class="workshop-faint text-xs">{discoveryFeedback}</p>{/if}
         {/if}
+        {/if}
       {/if}
       <div class="flex gap-3">
         <button type="submit" class="btn btn-sm variant-filled-primary" disabled={busy || (provider === "muse" && !discovery?.observed_chat_jid)}>Connect</button>
@@ -305,7 +316,7 @@
     </form>
   {:else}
     <div class="connections-card-actions">
-      <button type="button" class="btn btn-sm variant-filled-primary" onclick={() => { if (provider === "muse") void openMuseSetup(); else creating = true; }}><Plus size={13} strokeWidth={2} /> {provider === "muse" ? "Add session" : "Add bot"}</button>
+      <button type="button" class="btn btn-sm variant-filled-primary" onclick={() => { if (provider !== "grok_bot") void openWhatsAppSetup(); else creating = true; }}><Plus size={13} strokeWidth={2} /> {provider === "grok_bot" ? "Add bot" : "Add session"}</button>
       <button type="button" class="btn btn-sm variant-soft-surface" disabled={busy} onclick={() => void refresh()}><RefreshCw size={13} strokeWidth={2} /> Refresh</button>
     </div>
   {/if}

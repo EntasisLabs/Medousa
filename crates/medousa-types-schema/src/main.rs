@@ -47,6 +47,23 @@ fn main() {
 
     // Provider-hosted agent conversations
     export_type!(schemas, ExternalProvider, "ExternalProvider");
+    export_type!(schemas, ExternalAgentScope, "ExternalAgentScope");
+    export_type!(
+        schemas,
+        ExternalAgentAccessStatus,
+        "ExternalAgentAccessStatus"
+    );
+    export_type!(
+        schemas,
+        CreateExternalAgentTokenRequest,
+        "CreateExternalAgentTokenRequest"
+    );
+    export_type!(
+        schemas,
+        CreateExternalAgentTokenResponse,
+        "CreateExternalAgentTokenResponse"
+    );
+
     export_type!(schemas, ExternalEventKind, "ExternalEventKind");
     export_type!(
         schemas,

@@ -1039,6 +1039,7 @@ async fn start_daemon() -> Result<()> {
     let daemon_access_state =
         medousa::peer_scope::DaemonAccessState::new(peer_message_state.pairing.clone())
             .with_local_credentials(local_credentials)
+            .with_external_agents(state.external_conversations.clone())
             .with_credential_lifecycle(credential_lifecycle)
             .with_mcp_policy_token(Some(mcp_policy_token));
     let mesh_api_state = medousa::mesh::MeshApiState {

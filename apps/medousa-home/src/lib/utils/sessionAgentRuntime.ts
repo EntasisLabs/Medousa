@@ -20,17 +20,17 @@ function scopedKey(key: string): string {
   return workshopScopedStorageKey(key);
 }
 
-export type ChatAgentRuntime = "medousa" | "cursor" | "codex" | "hermes" | "muse" | "grok_bot";
+export type ChatAgentRuntime = "medousa" | "cursor" | "codex" | "hermes" | "muse" | "grok_bot" | "instinct";
 
-const VALID = new Set<ChatAgentRuntime>(["medousa", "cursor", "codex", "hermes", "muse", "grok_bot"]);
+const VALID = new Set<ChatAgentRuntime>(["medousa", "cursor", "codex", "hermes", "muse", "grok_bot", "instinct"]);
 
 /** Cursor/Codex/Hermes — external ACP participants (waitable turns on the daemon). */
 export function isExternalAgentRuntime(runtime: ChatAgentRuntime): runtime is "cursor" | "codex" | "hermes" {
   return runtime === "cursor" || runtime === "codex" || runtime === "hermes";
 }
 
-export function isProviderConversationRuntime(runtime: ChatAgentRuntime): runtime is "muse" | "grok_bot" {
-  return runtime === "muse" || runtime === "grok_bot";
+export function isProviderConversationRuntime(runtime: ChatAgentRuntime): runtime is "muse" | "grok_bot" | "instinct" {
+  return runtime === "muse" || runtime === "grok_bot" || runtime === "instinct";
 }
 
 function loadMap(): Record<string, ChatAgentRuntime> {
@@ -211,6 +211,8 @@ export function agentRuntimeLabel(runtime: ChatAgentRuntime): string {
       return "ChatGPT / Codex";
     case "hermes":
       return "Hermes";
+    case "instinct":
+      return "Instinct Agent";
     case "muse":
       return "Muse";
     case "grok_bot":

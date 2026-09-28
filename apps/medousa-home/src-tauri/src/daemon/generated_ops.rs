@@ -218,6 +218,10 @@ pub enum DaemonOperation {
     EnvironmentStatusGet,
     #[serde(rename = "execution_targets.get")]
     ExecutionTargetsGet,
+    #[serde(rename = "external_conversations.by_id.api_token.delete")]
+    ExternalConversationsByIdApiTokenDelete,
+    #[serde(rename = "external_conversations.by_id.api_token.post")]
+    ExternalConversationsByIdApiTokenPost,
     #[serde(rename = "external_conversations.by_id.callback_key.rotate.post")]
     ExternalConversationsByIdCallbackKeyRotatePost,
     #[serde(rename = "external_conversations.by_id.delete")]
@@ -1064,6 +1068,8 @@ impl DaemonOperation {
             Self::EnvironmentSpecValidatePost => "environment.spec.validate.post",
             Self::EnvironmentStatusGet => "environment.status.get",
             Self::ExecutionTargetsGet => "execution_targets.get",
+            Self::ExternalConversationsByIdApiTokenDelete => "external_conversations.by_id.api_token.delete",
+            Self::ExternalConversationsByIdApiTokenPost => "external_conversations.by_id.api_token.post",
             Self::ExternalConversationsByIdCallbackKeyRotatePost => "external_conversations.by_id.callback_key.rotate.post",
             Self::ExternalConversationsByIdDelete => "external_conversations.by_id.delete",
             Self::ExternalConversationsByIdEventsPost => "external_conversations.by_id.events.post",

@@ -116,6 +116,8 @@ export const OPERATIONS = {
   "environment.spec.validate.post": { id: "environment.spec.validate.post", method: "POST", path: "/v1/environment/spec/validate", streaming: false },
   "environment.status.get": { id: "environment.status.get", method: "GET", path: "/v1/environment/status", streaming: false },
   "execution_targets.get": { id: "execution_targets.get", method: "GET", path: "/v1/execution-targets", streaming: false },
+  "external_conversations.by_id.api_token.delete": { id: "external_conversations.by_id.api_token.delete", method: "DELETE", path: "/v1/external-conversations/{id}/api-token", streaming: false },
+  "external_conversations.by_id.api_token.post": { id: "external_conversations.by_id.api_token.post", method: "POST", path: "/v1/external-conversations/{id}/api-token", streaming: false },
   "external_conversations.by_id.callback_key.rotate.post": { id: "external_conversations.by_id.callback_key.rotate.post", method: "POST", path: "/v1/external-conversations/{id}/callback-key/rotate", streaming: false },
   "external_conversations.by_id.delete": { id: "external_conversations.by_id.delete", method: "DELETE", path: "/v1/external-conversations/{id}", streaming: false },
   "external_conversations.by_id.events.post": { id: "external_conversations.by_id.events.post", method: "POST", path: "/v1/external-conversations/{id}/events", streaming: false },

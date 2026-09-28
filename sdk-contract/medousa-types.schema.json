@@ -5007,6 +5007,83 @@
       }
     }
   },
+  "CreateExternalAgentTokenRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreateExternalAgentTokenRequest",
+    "type": "object",
+    "required": [
+      "expires_in_days",
+      "scopes"
+    ],
+    "properties": {
+      "expires_in_days": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0.0
+      },
+      "scopes": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ExternalAgentScope"
+        }
+      }
+    },
+    "additionalProperties": false,
+    "definitions": {
+      "ExternalAgentScope": {
+        "type": "string",
+        "enum": [
+          "read",
+          "work"
+        ]
+      }
+    }
+  },
+  "CreateExternalAgentTokenResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreateExternalAgentTokenResponse",
+    "type": "object",
+    "required": [
+      "access",
+      "token"
+    ],
+    "properties": {
+      "access": {
+        "$ref": "#/definitions/ExternalAgentAccessStatus"
+      },
+      "token": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "ExternalAgentAccessStatus": {
+        "type": "object",
+        "required": [
+          "expires_at",
+          "scopes"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ExternalAgentScope"
+            }
+          }
+        }
+      },
+      "ExternalAgentScope": {
+        "type": "string",
+        "enum": [
+          "read",
+          "work"
+        ]
+      }
+    }
+  },
   "CreateExternalConversationRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "CreateExternalConversationRequest",
@@ -5045,7 +5122,8 @@
         "type": "string",
         "enum": [
           "muse",
-          "grok_bot"
+          "grok_bot",
+          "instinct"
         ]
       }
     }
@@ -5069,6 +5147,32 @@
       }
     },
     "definitions": {
+      "ExternalAgentAccessStatus": {
+        "type": "object",
+        "required": [
+          "expires_at",
+          "scopes"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ExternalAgentScope"
+            }
+          }
+        }
+      },
+      "ExternalAgentScope": {
+        "type": "string",
+        "enum": [
+          "read",
+          "work"
+        ]
+      },
       "ExternalConversationEvent": {
         "type": "object",
         "required": [
@@ -5117,6 +5221,16 @@
           "updated_at"
         ],
         "properties": {
+          "api_access": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ExternalAgentAccessStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -5164,7 +5278,8 @@
         "type": "string",
         "enum": [
           "muse",
-          "grok_bot"
+          "grok_bot",
+          "instinct"
         ]
       }
     }
@@ -12647,6 +12762,45 @@
       }
     }
   },
+  "ExternalAgentAccessStatus": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExternalAgentAccessStatus",
+    "type": "object",
+    "required": [
+      "expires_at",
+      "scopes"
+    ],
+    "properties": {
+      "expires_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "scopes": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ExternalAgentScope"
+        }
+      }
+    },
+    "definitions": {
+      "ExternalAgentScope": {
+        "type": "string",
+        "enum": [
+          "read",
+          "work"
+        ]
+      }
+    }
+  },
+  "ExternalAgentScope": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExternalAgentScope",
+    "type": "string",
+    "enum": [
+      "read",
+      "work"
+    ]
+  },
   "ExternalConversationEvent": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "ExternalConversationEvent",
@@ -12718,6 +12872,32 @@
       }
     },
     "definitions": {
+      "ExternalAgentAccessStatus": {
+        "type": "object",
+        "required": [
+          "expires_at",
+          "scopes"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ExternalAgentScope"
+            }
+          }
+        }
+      },
+      "ExternalAgentScope": {
+        "type": "string",
+        "enum": [
+          "read",
+          "work"
+        ]
+      },
       "ExternalConversationEvent": {
         "type": "object",
         "required": [
@@ -12766,6 +12946,16 @@
           "updated_at"
         ],
         "properties": {
+          "api_access": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ExternalAgentAccessStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -12813,7 +13003,8 @@
         "type": "string",
         "enum": [
           "muse",
-          "grok_bot"
+          "grok_bot",
+          "instinct"
         ]
       }
     }
@@ -12850,6 +13041,16 @@
       "updated_at"
     ],
     "properties": {
+      "api_access": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ExternalAgentAccessStatus"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "created_at": {
         "type": "string",
         "format": "date-time"
@@ -12878,6 +13079,32 @@
       }
     },
     "definitions": {
+      "ExternalAgentAccessStatus": {
+        "type": "object",
+        "required": [
+          "expires_at",
+          "scopes"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ExternalAgentScope"
+            }
+          }
+        }
+      },
+      "ExternalAgentScope": {
+        "type": "string",
+        "enum": [
+          "read",
+          "work"
+        ]
+      },
       "ExternalConversationEvent": {
         "type": "object",
         "required": [
@@ -12933,7 +13160,8 @@
         "type": "string",
         "enum": [
           "muse",
-          "grok_bot"
+          "grok_bot",
+          "instinct"
         ]
       }
     }
@@ -12998,7 +13226,8 @@
     "type": "string",
     "enum": [
       "muse",
-      "grok_bot"
+      "grok_bot",
+      "instinct"
     ]
   },
   "ExternalProviderEventRequest": {

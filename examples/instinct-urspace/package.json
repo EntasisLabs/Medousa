@@ -1,0 +1,8 @@
+{
+  "name": "medousa-instinct-urspace-example",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": { "test": "node --test" },
+  "dependencies": { "@urspace/client": "0.5.0" }
+}

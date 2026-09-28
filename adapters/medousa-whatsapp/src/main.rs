@@ -240,7 +240,7 @@ async fn deliver_whatsapp_text(
         return state.muse.send_text(&state.client, text.to_owned()).await;
     }
     let message = wa::Message {
-        conversation: Some(truncate_for_whatsapp(text)),
+        conversation: Some(text.to_owned()),
         ..Default::default()
     };
     state
@@ -423,6 +423,37 @@ async fn handle_inbound_message(
     .await?
     {
         return Ok(());
+    }
+    // A phone-number contact may reply using a linked ID. Keep the original
+    // chat first (Muse discovery may bind it), then try WhatsApp's PN mapping.
+    if ctx.info.source.chat.is_lid() && !ctx.info.source.is_group {
+        let phone = if let Some(alt) = ctx
+            .info
+            .source
+            .sender_alt
+            .as_ref()
+            .filter(|jid| jid.is_pn())
+        {
+            Some(alt.user.to_string())
+        } else {
+            ctx.client
+                .get_lid_pn_entry(&ctx.info.source.chat)
+                .await?
+                .map(|entry| entry.phone_number.to_string())
+        };
+        if let Some(phone) = phone
+            && route_external_agent_message(
+                http_client,
+                daemon_url,
+                &format!("{phone}@s.whatsapp.net"),
+                &sender_jid,
+                &ctx.info.id.to_string(),
+                text,
+            )
+            .await?
+        {
+            return Ok(());
+        }
     }
     let request = IngestRequest {
         channel: "whatsapp".to_string(),

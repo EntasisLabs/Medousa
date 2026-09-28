@@ -94,3 +94,13 @@ Custom transports that support typed turn stream v2 or v3 must override
 `stream_sse_with_accept`; the trait default intentionally rejects media types
 other than plain `text/event-stream` instead of silently returning the v1
 projection.
+
+## Lightweight external agents
+
+Instinct can use a scoped external-agent bearer over an ordinary HTTPS gateway.
+Alternatively, the [Node 22 example](../../examples/instinct-urspace/client.mjs)
+uses Urspace's WASM SDK and a saved private session identity to carry requests
+over Iroh. This requires an Urspace host proxying the daemon; a Medousa Iroh
+ticket cannot be passed to the Urspace SDK. See the [Instinct guide](../guides/instinct-agent.md)
+and [credential API](../engine/external-conversations.md#instinct-api-credentials).
+The gateway must preserve Authorization and JSON request/response bodies.

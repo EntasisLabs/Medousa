@@ -758,6 +758,20 @@ pub const EXECUTION_TARGETS_GET: Operation = Operation {
     streaming: false,
 };
 
+pub const EXTERNAL_CONVERSATIONS_BY_ID_API_TOKEN_DELETE: Operation = Operation {
+    id: "external_conversations.by_id.api_token.delete",
+    method: "DELETE",
+    path: "/v1/external-conversations/{id}/api-token",
+    streaming: false,
+};
+
+pub const EXTERNAL_CONVERSATIONS_BY_ID_API_TOKEN_POST: Operation = Operation {
+    id: "external_conversations.by_id.api_token.post",
+    method: "POST",
+    path: "/v1/external-conversations/{id}/api-token",
+    streaming: false,
+};
+
 pub const EXTERNAL_CONVERSATIONS_BY_ID_CALLBACK_KEY_ROTATE_POST: Operation = Operation {
     id: "external_conversations.by_id.callback_key.rotate.post",
     method: "POST",
@@ -3435,6 +3449,8 @@ pub static ALL: &[Operation] = &[
     ENVIRONMENT_SPEC_VALIDATE_POST,
     ENVIRONMENT_STATUS_GET,
     EXECUTION_TARGETS_GET,
+    EXTERNAL_CONVERSATIONS_BY_ID_API_TOKEN_DELETE,
+    EXTERNAL_CONVERSATIONS_BY_ID_API_TOKEN_POST,
     EXTERNAL_CONVERSATIONS_BY_ID_CALLBACK_KEY_ROTATE_POST,
     EXTERNAL_CONVERSATIONS_BY_ID_DELETE,
     EXTERNAL_CONVERSATIONS_BY_ID_EVENTS_POST,
