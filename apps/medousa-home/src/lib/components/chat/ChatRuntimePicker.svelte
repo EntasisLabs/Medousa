@@ -6,6 +6,7 @@
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import {
     agentRuntimeLabel,
+    isProviderConversationRuntime,
     type ChatAgentRuntime,
   } from "$lib/utils/sessionAgentRuntime";
   import { attachComposerMenuDismiss } from "$lib/utils/composerMenuDismiss";
@@ -20,9 +21,11 @@
     value: ChatAgentRuntime;
     disabled?: boolean;
     onChange?: (value: ChatAgentRuntime) => void;
+    onchoose?: (value: ChatAgentRuntime) => void;
+    onSettings?: () => void;
   }
 
-  let { value, disabled = false, onChange, inline = false }: Props = $props();
+  let { value, disabled = false, onChange, onchoose, onSettings, inline = false }: Props = $props();
 
   const OPTIONS: {
     id: ChatAgentRuntime;
@@ -32,6 +35,8 @@
     { id: "cursor", hint: "External Cursor agent" },
     { id: "codex", hint: "ChatGPT-backed agent + chat" },
     { id: "hermes", hint: "External Hermes agent" },
+    { id: "grok_bot", hint: "Registered Grok bots" },
+    { id: "muse", hint: "Registered Muse sessions" },
   ];
 
   onMount(() => {
@@ -40,7 +45,7 @@
 
   /** Signed-out external runtimes stay visible but locked with a sign-in CTA. */
   function lockedFor(runtime: ChatAgentRuntime): boolean {
-    if (runtime === "medousa") return false;
+    if (runtime === "medousa" || isProviderConversationRuntime(runtime)) return false;
     const account = accountIdForRuntime(runtime);
     const info = accountConnections.connection(account);
     if (!info) return false;
@@ -49,7 +54,7 @@
   }
 
   function lockHint(runtime: ChatAgentRuntime): string | null {
-    if (runtime === "medousa" || !lockedFor(runtime)) return null;
+    if (runtime === "medousa" || isProviderConversationRuntime(runtime) || !lockedFor(runtime)) return null;
     const account = accountIdForRuntime(runtime);
     const info = accountConnections.connection(account);
     if (info && !info.binaryPresent) {
@@ -62,6 +67,7 @@
 
   function openExternalAgents() {
     open = false;
+    if (onSettings) { onSettings(); return; }
     settingsNav.setActiveSection("connections");
   }
 
@@ -107,10 +113,12 @@
   function pick(next: ChatAgentRuntime) {
     if (next === value) {
       open = false;
+      onchoose?.(next);
       return;
     }
     onChange?.(next);
     open = false;
+    onchoose?.(next);
   }
 
   function opticalLogoSize(runtime: ChatAgentRuntime, baseSize: number): number {
@@ -139,6 +147,8 @@
           decorative
         />
       </span>
+    {:else if isProviderConversationRuntime(runtime)}
+      <span class="text-[11px] font-bold leading-none">{runtime === "muse" ? "M" : "G"}</span>
     {:else}
       <ExternalAgentLogo agent={runtime} size={opticalLogoSize(runtime, size)} />
     {/if}

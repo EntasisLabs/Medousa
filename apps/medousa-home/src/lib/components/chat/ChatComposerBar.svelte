@@ -7,6 +7,7 @@
   import GrowingTextarea from "$lib/components/ui/GrowingTextarea.svelte";
   import ChatAttachmentChips from "$lib/components/chat/ChatAttachmentChips.svelte";
   import ChatModelPicker from "$lib/components/chat/ChatModelPicker.svelte";
+  import ChatRuntimePicker from "$lib/components/chat/ChatRuntimePicker.svelte";
   import ChatVoiceRecorder from "$lib/components/chat/ChatVoiceRecorder.svelte";
   import ComposerAgentChip from "$lib/components/chat/ComposerAgentChip.svelte";
   import ComposerPlusMenu from "$lib/components/chat/ComposerPlusMenu.svelte";
@@ -21,7 +22,8 @@
   import { isTauri, isTauriMobilePlatform } from "$lib/platform";
   import { haptic } from "$lib/haptics";
   import type { AgentSessionConfigOption } from "$lib/daemon";
-  import type { ChatAgentRuntime } from "$lib/utils/sessionAgentRuntime";
+  import { isProviderConversationRuntime, type ChatAgentRuntime } from "$lib/utils/sessionAgentRuntime";
+  import type { ExternalConversation } from "$lib/daemon/externalConversations";
   import {
     idleVoiceWaveform,
     pushVoiceWaveSample,
@@ -53,6 +55,10 @@
     agentRuntimePending?: boolean;
     onAgentRuntimeChange?: (runtime: ChatAgentRuntime) => void;
     onAgentConfigChange?: (configId: string, value: unknown) => void | Promise<void>;
+    externalConversations?: ExternalConversation[];
+    externalConversationId?: string | null;
+    onExternalConversationChange?: (id: string) => void;
+    onExternalConversationsRefresh?: () => void | Promise<void>;
     onkeydown?: (event: KeyboardEvent) => void;
     onfocus?: () => void;
     onblur?: () => void;
@@ -72,6 +78,10 @@
     agentRuntimePending = false,
     onAgentRuntimeChange,
     onAgentConfigChange,
+    externalConversations = [],
+    externalConversationId = null,
+    onExternalConversationChange,
+    onExternalConversationsRefresh,
     onkeydown,
     onfocus,
     onblur,
@@ -85,7 +95,9 @@
       (settings.showChatModelPicker || onAgentRuntimeChange !== undefined),
   );
   const placeholder = $derived(
-    chat.hasWorkshopHandoff()
+    isProviderConversationRuntime(agentRuntime)
+      ? `Message ${agentRuntime === "muse" ? "Muse" : "Grok Bot"}…`
+      : chat.hasWorkshopHandoff()
       ? "Steer the handoff…"
       : quietChrome
         ? "Ask anything"
@@ -128,8 +140,10 @@
       : sttReason ?? "Voice input unavailable",
   );
   const blocked = $derived(disabled || composerBlocked || runtime.savingControls);
+  const providerConversation = $derived(isProviderConversationRuntime(agentRuntime));
   const canSend = $derived(
-    !blocked && !chat.pendingMediaUploading && (chat.draft.trim().length > 0 || chat.pendingMediaRefs.length > 0),
+    !blocked && !chat.pendingMediaUploading &&
+      (chat.draft.trim().length > 0 || (!providerConversation && chat.pendingMediaRefs.length > 0)),
   );
 
   onMount(() => {
@@ -234,14 +248,14 @@
     event.preventDefault();
     event.stopPropagation();
     dropActive = false;
-    if (blocked) return;
+    if (blocked || providerConversation) return;
     const files = Array.from(event.dataTransfer?.files ?? []);
     if (files.length > 0) void chat.attachDroppedFiles(files);
   }
 
   function handlePaste(event: ClipboardEvent) {
     handleChatImagePaste(event, {
-      blocked,
+      blocked: blocked || providerConversation,
       attach: (files) => void chat.attachDroppedFiles(files),
     });
   }
@@ -389,7 +403,7 @@
   </div>
 {/if}
 
-<ChatAttachmentChips {disabled} />
+{#if !providerConversation || chat.pendingMediaRefs.length > 0}<ChatAttachmentChips {disabled} />{/if}
 
 {#if voiceError}
   <p class="composer-voice-status composer-voice-status-error" role="alert">{voiceError}</p>
@@ -419,7 +433,7 @@
       <GrowingTextarea
         bind:value={chat.draft}
         bind:element
-        placeholder="Message… / for skills"
+        placeholder={placeholder}
         disabled={blocked}
         maxHeight={360}
         minHeight={34}
@@ -437,6 +451,10 @@
       />
 
       <div class="mobile-composer-dock-toolbar">
+        {#if onAgentRuntimeChange}
+          <ChatRuntimePicker value={agentRuntime} disabled={blocked} onChange={onAgentRuntimeChange} />
+        {/if}
+        {#if !providerConversation}
         <div bind:this={plusAnchorEl} class="composer-plus-anchor relative shrink-0">
           <ComposerPlusMenu
             {mobile}
@@ -473,9 +491,10 @@
           showTrigger={false}
           bind:sheetOpen={workshopOpen}
         />
+        {/if}
 
         {#if showModelPicker}
-          {#if isTauriMobilePlatform()}
+          {#if isTauriMobilePlatform() && agentRuntime === "medousa"}
             <MobileComposerTurnSettings disabled={blocked} quiet />
           {:else}
             <ChatModelPicker
@@ -485,13 +504,17 @@
               {agentConfigOptions}
               {agentRuntimePending}
               onAgentConfigChange={onAgentConfigChange}
+              {externalConversations}
+              {externalConversationId}
+              {onExternalConversationChange}
+              {onExternalConversationsRefresh}
             />
           {/if}
         {/if}
 
         <span class="mobile-composer-dock-spacer" aria-hidden="true"></span>
 
-        <ContextUsageIndicator compact />
+        {#if !providerConversation}<ContextUsageIndicator compact />{/if}
 
         <button
           type="button"
@@ -504,7 +527,7 @@
           <Mic size={16} strokeWidth={2} />
         </button>
 
-        {#if chat.liveStreamActive}
+        {#if chat.liveStreamActive && !providerConversation}
           <button
             type="button"
             class="composer-bar-send composer-bar-stop"
@@ -576,6 +599,7 @@
     />
 
     <div class="composer-bar-footer">
+      {#if !providerConversation}
       <div bind:this={plusAnchorEl} class="composer-plus-anchor relative shrink-0">
         <ComposerPlusMenu
           {mobile}
@@ -600,6 +624,7 @@
         anchorEl={plusAnchorEl}
       />
       <ComposerAgentChip showChip bind:open={agentOpen} anchorEl={plusAnchorEl} />
+      {/if}
 
       {#if showModelPicker}
         <ChatModelPicker
@@ -609,6 +634,10 @@
           {agentConfigOptions}
           {agentRuntimePending}
           onAgentConfigChange={onAgentConfigChange}
+          {externalConversations}
+          {externalConversationId}
+          {onExternalConversationChange}
+          {onExternalConversationsRefresh}
         />
       {/if}
 
@@ -625,9 +654,9 @@
         <Mic size={16} strokeWidth={2} />
       </button>
 
-      <ContextUsageIndicator />
+      {#if !providerConversation}<ContextUsageIndicator />{/if}
 
-      {#if chat.liveStreamActive}
+      {#if chat.liveStreamActive && !providerConversation}
         <button
           type="button"
           class="composer-bar-send composer-bar-stop"

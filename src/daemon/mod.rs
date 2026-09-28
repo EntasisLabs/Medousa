@@ -12,6 +12,7 @@ mod contract_bindings;
 pub mod core;
 pub mod coordination;
 pub mod detamu_host;
+pub mod external_conversations;
 pub mod forge_api;
 pub mod forge_events;
 pub mod forge_host;

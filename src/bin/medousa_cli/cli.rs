@@ -34,6 +34,8 @@ pub enum Commands {
     DaemonJobReport(DaemonJobReportArgs),
     #[command(name = "daemon-watch-add")]
     DaemonWatchAdd(DaemonWatchAddArgs),
+    #[command(name = "daemon-external-event")]
+    DaemonExternalEvent(DaemonExternalEventArgs),
     #[command(name = "daemon-identity-context")]
     DaemonIdentityContext(IdentityCommonArgs),
     #[command(name = "daemon-identity-inspect")]
@@ -71,6 +73,25 @@ pub struct AskArgs {
 pub struct DaemonUrlArgs {
     #[arg(long = "daemon-url")]
     pub daemon_url: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct DaemonExternalEventArgs {
+    pub conversation_id: String,
+    pub event_id: String,
+    pub kind: String,
+    pub text: String,
+    #[arg(long = "request-id")]
+    pub request_id: String,
+    #[arg(long = "daemon-url")]
+    pub daemon_url: Option<String>,
+    /// Send over Iroh without probing or falling back to the daemon URL.
+    /// Also accepts MEDOUSA_BRIDGE_IROH_TICKET from the private environment.
+    #[arg(long = "iroh-ticket", conflicts_with = "worker")]
+    pub iroh_ticket: Option<String>,
+    /// Read the Iroh ticket and bearer from a saved `medousa pair join` worker.
+    #[arg(long, conflicts_with = "daemon_url")]
+    pub worker: Option<String>,
 }
 
 #[derive(Debug, Args)]

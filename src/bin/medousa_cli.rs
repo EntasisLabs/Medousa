@@ -7,6 +7,8 @@ use clap::Parser;
 
 #[path = "medousa_cli/cli.rs"]
 mod cli;
+#[path = "medousa_cli/external_event.rs"]
+mod external_event;
 use medousa::engine_context::{
     EngineExecutionLane, compile_default_lane_prompt, default_policy_profile_for_lane,
 };
@@ -119,6 +121,7 @@ async fn main() -> Result<()> {
             let prompt = args.prompt.join(" ");
             run_daemon_watch_add(&daemon_url, &args.cron_expr, &args.tz, &prompt).await
         }
+        cli::Commands::DaemonExternalEvent(args) => external_event::run(args).await,
         cli::Commands::DaemonIdentityContext(args) => {
             let daemon_url = resolve_daemon_url(args.daemon_url.as_deref());
             let legacy = with_cmd("daemon-identity-context", args.to_legacy());
@@ -1671,6 +1674,9 @@ fn print_usage() {
         "  medousa-cli daemon-report <query> [--policy-profile <profile>] [--model-hint <model>] [--max-turns <n>] [--poll-timeout-ms <n>] [--poll-interval-ms <n>] [--identity-user-id <id>] [--identity-persona-id <id>] [--identity-channel-id <id>] [--daemon-url <url>]"
     );
     println!("  medousa-cli daemon-job-report <job_id> [--daemon-url <url>]");
+    println!(
+        "  medousa-cli daemon-external-event <conversation_id> <event_id> <kind> <text> --request-id <id> [--iroh-ticket <ticket> | --worker <id|label> | --daemon-url <url>] (uses MEDOUSA_BRIDGE_KEY; explicit tickets also use MEDOUSA_BRIDGE_BEARER)"
+    );
     println!(
         "  medousa-cli daemon-watch-add <cron_expr> <prompt> [--tz <timezone>] [--daemon-url <url>]"
     );

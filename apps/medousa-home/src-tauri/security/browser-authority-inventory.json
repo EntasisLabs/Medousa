@@ -32,6 +32,7 @@
     "capabilities::capabilities_load_overlay",
     "capabilities::capabilities_save_web_search",
     "capabilities::capabilities_set_binding_enabled",
+    "channel_adapters::messaging_ensure_whatsapp_adapter",
     "channel_adapters::messaging_sync_adapters",
     "code_lsp_transport::code_lsp_attach",
     "code_lsp_transport::code_lsp_detach",

@@ -121,6 +121,8 @@ pub struct AppState {
     /// Detamu world-model host (published SDK; SurrealKV under `{dataDir}/detamu`).
     /// Dormant at boot — KV opens on first world query or Forge index.
     pub detamu: Arc<crate::daemon::detamu_host::DetamuHandle>,
+    /// Durable provider-hosted conversation ledger and transport bindings.
+    pub external_conversations: Arc<crate::daemon::external_conversations::ExternalConversationStore>,
 }
 
 impl AppState {

@@ -5007,6 +5007,168 @@
       }
     }
   },
+  "CreateExternalConversationRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreateExternalConversationRequest",
+    "type": "object",
+    "required": [
+      "label",
+      "provider",
+      "target"
+    ],
+    "properties": {
+      "label": {
+        "type": "string"
+      },
+      "provider": {
+        "$ref": "#/definitions/ExternalProvider"
+      },
+      "target": {
+        "type": "string"
+      },
+      "webhook_key": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "webhook_url": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "definitions": {
+      "ExternalProvider": {
+        "type": "string",
+        "enum": [
+          "muse",
+          "grok_bot"
+        ]
+      }
+    }
+  },
+  "CreateExternalConversationResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CreateExternalConversationResponse",
+    "type": "object",
+    "required": [
+      "conversation"
+    ],
+    "properties": {
+      "callback_key": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "conversation": {
+        "$ref": "#/definitions/ExternalConversationView"
+      }
+    },
+    "definitions": {
+      "ExternalConversationEvent": {
+        "type": "object",
+        "required": [
+          "created_at",
+          "event_id",
+          "kind",
+          "sequence",
+          "text"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/definitions/ExternalEventKind"
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "ExternalConversationView": {
+        "type": "object",
+        "required": [
+          "created_at",
+          "events",
+          "id",
+          "label",
+          "provider",
+          "target",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ExternalConversationEvent"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/definitions/ExternalProvider"
+          },
+          "target": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ExternalEventKind": {
+        "type": "string",
+        "enum": [
+          "user_message",
+          "transport_pending",
+          "transport_accepted",
+          "transport_failed",
+          "transport_uncertain",
+          "provider_message",
+          "progress",
+          "question",
+          "completed",
+          "failed"
+        ]
+      },
+      "ExternalProvider": {
+        "type": "string",
+        "enum": [
+          "muse",
+          "grok_bot"
+        ]
+      }
+    }
+  },
   "CreateIntegrationConnectionRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "CreateIntegrationConnectionRequest",
@@ -6136,6 +6298,19 @@
     ],
     "properties": {
       "accept": {
+        "type": "boolean"
+      }
+    }
+  },
+  "DeleteExternalConversationResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "DeleteExternalConversationResponse",
+    "type": "object",
+    "required": [
+      "deleted"
+    ],
+    "properties": {
+      "deleted": {
         "type": "boolean"
       }
     }
@@ -12472,6 +12647,505 @@
       }
     }
   },
+  "ExternalConversationEvent": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExternalConversationEvent",
+    "type": "object",
+    "required": [
+      "created_at",
+      "event_id",
+      "kind",
+      "sequence",
+      "text"
+    ],
+    "properties": {
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "event_id": {
+        "type": "string"
+      },
+      "kind": {
+        "$ref": "#/definitions/ExternalEventKind"
+      },
+      "request_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "sequence": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "text": {
+        "type": "string"
+      }
+    },
+    "definitions": {
+      "ExternalEventKind": {
+        "type": "string",
+        "enum": [
+          "user_message",
+          "transport_pending",
+          "transport_accepted",
+          "transport_failed",
+          "transport_uncertain",
+          "provider_message",
+          "progress",
+          "question",
+          "completed",
+          "failed"
+        ]
+      }
+    }
+  },
+  "ExternalConversationListResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExternalConversationListResponse",
+    "type": "object",
+    "required": [
+      "conversations"
+    ],
+    "properties": {
+      "conversations": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ExternalConversationView"
+        }
+      }
+    },
+    "definitions": {
+      "ExternalConversationEvent": {
+        "type": "object",
+        "required": [
+          "created_at",
+          "event_id",
+          "kind",
+          "sequence",
+          "text"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/definitions/ExternalEventKind"
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "ExternalConversationView": {
+        "type": "object",
+        "required": [
+          "created_at",
+          "events",
+          "id",
+          "label",
+          "provider",
+          "target",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ExternalConversationEvent"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/definitions/ExternalProvider"
+          },
+          "target": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ExternalEventKind": {
+        "type": "string",
+        "enum": [
+          "user_message",
+          "transport_pending",
+          "transport_accepted",
+          "transport_failed",
+          "transport_uncertain",
+          "provider_message",
+          "progress",
+          "question",
+          "completed",
+          "failed"
+        ]
+      },
+      "ExternalProvider": {
+        "type": "string",
+        "enum": [
+          "muse",
+          "grok_bot"
+        ]
+      }
+    }
+  },
+  "ExternalConversationSendRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExternalConversationSendRequest",
+    "type": "object",
+    "required": [
+      "request_id",
+      "text"
+    ],
+    "properties": {
+      "request_id": {
+        "type": "string"
+      },
+      "text": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  },
+  "ExternalConversationView": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExternalConversationView",
+    "type": "object",
+    "required": [
+      "created_at",
+      "events",
+      "id",
+      "label",
+      "provider",
+      "target",
+      "updated_at"
+    ],
+    "properties": {
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "events": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ExternalConversationEvent"
+        }
+      },
+      "id": {
+        "type": "string"
+      },
+      "label": {
+        "type": "string"
+      },
+      "provider": {
+        "$ref": "#/definitions/ExternalProvider"
+      },
+      "target": {
+        "type": "string"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "definitions": {
+      "ExternalConversationEvent": {
+        "type": "object",
+        "required": [
+          "created_at",
+          "event_id",
+          "kind",
+          "sequence",
+          "text"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/definitions/ExternalEventKind"
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "ExternalEventKind": {
+        "type": "string",
+        "enum": [
+          "user_message",
+          "transport_pending",
+          "transport_accepted",
+          "transport_failed",
+          "transport_uncertain",
+          "provider_message",
+          "progress",
+          "question",
+          "completed",
+          "failed"
+        ]
+      },
+      "ExternalProvider": {
+        "type": "string",
+        "enum": [
+          "muse",
+          "grok_bot"
+        ]
+      }
+    }
+  },
+  "ExternalEventKind": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExternalEventKind",
+    "type": "string",
+    "enum": [
+      "user_message",
+      "transport_pending",
+      "transport_accepted",
+      "transport_failed",
+      "transport_uncertain",
+      "provider_message",
+      "progress",
+      "question",
+      "completed",
+      "failed"
+    ]
+  },
+  "ExternalInboundClaimResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExternalInboundClaimResponse",
+    "type": "object",
+    "required": [
+      "claimed"
+    ],
+    "properties": {
+      "claimed": {
+        "type": "boolean"
+      }
+    }
+  },
+  "ExternalMuseDiscoveryStatus": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExternalMuseDiscoveryStatus",
+    "type": "object",
+    "required": [
+      "challenge",
+      "expires_at"
+    ],
+    "properties": {
+      "challenge": {
+        "type": "string"
+      },
+      "expires_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "observed_chat_jid": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "ExternalProvider": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExternalProvider",
+    "type": "string",
+    "enum": [
+      "muse",
+      "grok_bot"
+    ]
+  },
+  "ExternalProviderEventRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExternalProviderEventRequest",
+    "type": "object",
+    "required": [
+      "event_id",
+      "kind",
+      "request_id",
+      "text"
+    ],
+    "properties": {
+      "event_id": {
+        "type": "string"
+      },
+      "kind": {
+        "$ref": "#/definitions/ExternalEventKind"
+      },
+      "request_id": {
+        "type": "string"
+      },
+      "text": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "definitions": {
+      "ExternalEventKind": {
+        "type": "string",
+        "enum": [
+          "user_message",
+          "transport_pending",
+          "transport_accepted",
+          "transport_failed",
+          "transport_uncertain",
+          "provider_message",
+          "progress",
+          "question",
+          "completed",
+          "failed"
+        ]
+      }
+    }
+  },
+  "ExternalWhatsAppInboundRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExternalWhatsAppInboundRequest",
+    "type": "object",
+    "required": [
+      "chat_jid",
+      "message_id",
+      "sender_jid",
+      "text"
+    ],
+    "properties": {
+      "chat_jid": {
+        "type": "string"
+      },
+      "message_id": {
+        "type": "string"
+      },
+      "sender_jid": {
+        "type": "string"
+      },
+      "text": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  },
+  "ExternalWhatsAppPairingStatus": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExternalWhatsAppPairingStatus",
+    "type": "object",
+    "required": [
+      "state"
+    ],
+    "properties": {
+      "expires_at": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date-time"
+      },
+      "qr_svg": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "state": {
+        "$ref": "#/definitions/ExternalWhatsAppPairingState"
+      }
+    },
+    "definitions": {
+      "ExternalWhatsAppPairingState": {
+        "type": "string",
+        "enum": [
+          "waiting",
+          "qr_ready",
+          "connected",
+          "logged_out"
+        ]
+      }
+    }
+  },
+  "ExternalWhatsAppPairingUpdateRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExternalWhatsAppPairingUpdateRequest",
+    "type": "object",
+    "required": [
+      "state"
+    ],
+    "properties": {
+      "expires_in_seconds": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "qr_code": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "state": {
+        "$ref": "#/definitions/ExternalWhatsAppPairingState"
+      }
+    },
+    "additionalProperties": false,
+    "definitions": {
+      "ExternalWhatsAppPairingState": {
+        "type": "string",
+        "enum": [
+          "waiting",
+          "qr_ready",
+          "connected",
+          "logged_out"
+        ]
+      }
+    }
+  },
   "FeedListResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "FeedListResponse",
@@ -18649,6 +19323,19 @@
             "$ref": "#/definitions/SessionId"
           }
         }
+      }
+    }
+  },
+  "RotateExternalCallbackResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "RotateExternalCallbackResponse",
+    "type": "object",
+    "required": [
+      "callback_key"
+    ],
+    "properties": {
+      "callback_key": {
+        "type": "string"
       }
     }
   },

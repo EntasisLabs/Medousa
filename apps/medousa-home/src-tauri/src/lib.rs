@@ -1032,6 +1032,7 @@ fn run_home() {
             messaging::messaging_clear_secret,
             messaging::messaging_read_secret,
             channel_adapters::messaging_sync_adapters,
+            channel_adapters::messaging_ensure_whatsapp_adapter,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             external_desk::external_desk_scan_root,
             external_desk::external_desk_read_file,

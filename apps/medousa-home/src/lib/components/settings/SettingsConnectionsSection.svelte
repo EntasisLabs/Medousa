@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * Settings → External Agents — Codex/Cursor/Hermes vendor runtime sign-in.
+   * Settings → External Agents — independent runtime and provider conversation setup.
    * Medousa-owned provider access lives with Models under Medousa Agent.
    */
   import { onMount } from "svelte";
@@ -15,6 +15,7 @@
     RefreshCw,
   } from "@lucide/svelte";
   import ExternalAgentLogo from "$lib/components/brand/ExternalAgentLogo.svelte";
+  import ExternalConversationSettingsCard from "$lib/components/settings/ExternalConversationSettingsCard.svelte";
   import { accountConnections } from "$lib/stores/accountConnections.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { isTauriDesktop } from "$lib/platform";
@@ -141,8 +142,8 @@
     <div class="min-w-0 flex-1">
       <h2 class="text-base font-semibold text-surface-50">External Agents</h2>
       <p class="workshop-faint mt-1 text-sm">
-        Install and sign in to independent agent runtimes. Their accounts stay
-        separate from the Medousa Agent and its model providers.
+        Connect independent agent runtimes and provider-hosted conversations.
+        Their accounts stay separate from the Medousa Agent and its model providers.
       </p>
     </div>
     <button
@@ -159,8 +160,8 @@
 
   {#if !supported}
     <p class="workshop-faint mt-2 text-sm">
-      External agent adapters run on desktop workshop hosts. ChatGPT provider access for
-      Medousa lives under Medousa Agent on this device.
+      Codex, Cursor, and Hermes CLI adapters run on desktop workshop hosts.
+      Muse and Grok Bot setup uses the connected workshop below.
     </p>
   {:else}
     {#if accountConnections.error}
@@ -299,6 +300,10 @@
       </button>
     </p>
   {/if}
+  <div class="connections-cards mt-3">
+    <ExternalConversationSettingsCard provider="muse" />
+    <ExternalConversationSettingsCard provider="grok_bot" />
+  </div>
 </section>
 
 <style>

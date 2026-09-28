@@ -201,7 +201,7 @@ pub fn load_product_config_summary() -> Result<ProductConfigSummary, String> {
             deliver_bind: whatsapp
                 .get("deliver_bind")
                 .and_then(|value| value.as_str())
-                .unwrap_or("127.0.0.1:7422")
+                .unwrap_or("127.0.0.1:7423")
                 .to_string(),
             deliver_url: whatsapp
                 .get("deliver_url")

@@ -19,6 +19,7 @@ Operator evaluation: [Benchmark Coder with Terminal-Bench](terminal-bench.md).
 | [Peers & Nearby](peers-and-nearby.md) | LAN / tunnel workshops (deep dive linked) |
 | [Memory & identity](memory-and-identity.md) | Teach who you are; profiles |
 | [Channels](channels.md) | Telegram, Discord, Slack, WhatsApp from the app |
+| [Muse and Grok Bot conversations](provider-conversations.md) | Connect provider-hosted agents and replay their messages |
 | [VS Code](vscode.md) | Use Medousa chat beside your editor |
 | [Neovim](neovim.md) | Use the keyboard-first Medousa coding room |
 | [Obsidian](obsidian.md) | Use the vault-native Medousa companion |

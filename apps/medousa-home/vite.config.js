@@ -95,6 +95,8 @@ function mobileDevOriginPlugin() {
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [themeCssPlugin(), mobileDevOriginPlugin(), sveltekit(), themeBootPlugin()],
+  // Component tests exercise the same lifecycle and DOM behavior as the app.
+  resolve: process.env.VITEST ? { conditions: ["browser"] } : undefined,
   build: {
     manifest: true,
   },

@@ -23,6 +23,10 @@
   import { layout } from "$lib/runtime/layout.svelte";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { connection } from "$lib/stores/connection.svelte";
+  import { createAgentSessionController } from "$lib/chat/agentSessionController.svelte";
+  import { createExternalConversationController } from "$lib/chat/externalConversationController.svelte";
+  import { isProviderConversationRuntime } from "$lib/utils/sessionAgentRuntime";
   import { workspace } from "$lib/stores/workspace.svelte";
   import { vault } from "$lib/stores/vault.svelte";
   import { ensureNotificationPermission } from "$lib/notifications";
@@ -57,6 +61,16 @@
   import { shellAskFabVisible } from "$lib/utils/mobileEnvironmentChrome";
   import { MOBILE_TABS } from "$lib/types/mobile";
   import "$lib/styles/mobile-home-convergence.postcss";
+
+  // The transcript and the bottom composer must share one runtime/selection.
+  const agentSession = createAgentSessionController();
+  const externalConversation = createExternalConversationController({
+    provider: () => isProviderConversationRuntime(agentSession.sessionRuntime) ? agentSession.sessionRuntime : null,
+    sessionId: () => chat.sessionId,
+    scope: () => chat.workshopScopeId,
+    offline: () => connection.offline,
+    visible: () => layout.mobileTab === "chat",
+  });
 
   // Destinations menu pulls extra switchers + Lucide icons — keep it off the cold path.
   const destinationsMenuMod = () =>
@@ -247,6 +261,8 @@
         <ChatPanel
           visible={true}
           mobile={true}
+          sharedAgentSession={agentSession}
+          sharedExternalConversation={externalConversation}
           onOpenContext={() => {
             layout.setIdentityDrawerOpen(false);
             layout.openMore("map");
@@ -276,7 +292,7 @@
     {/key}
   </main>
 
-  <MobileBottomChrome />
+  <MobileBottomChrome {agentSession} {externalConversation} />
 
   {#if showShellAskFab}
     <ShellAskFab />

@@ -15,6 +15,7 @@ class MedousaModel(BaseModel):
 
 class AgentModeId(Enum):
     general = 'general'
+    assistant = 'assistant'
     teacher = 'teacher'
     instant = 'instant'
     coder = 'coder'
@@ -417,6 +418,24 @@ class AgentSessionConfigOption(MedousaModel):
     type: str
 
 
+class ExternalProvider(Enum):
+    muse = 'muse'
+    grok_bot = 'grok_bot'
+
+
+class ExternalEventKind(Enum):
+    user_message = 'user_message'
+    transport_pending = 'transport_pending'
+    transport_accepted = 'transport_accepted'
+    transport_failed = 'transport_failed'
+    transport_uncertain = 'transport_uncertain'
+    provider_message = 'provider_message'
+    progress = 'progress'
+    question = 'question'
+    completed = 'completed'
+    failed = 'failed'
+
+
 class MediaRef(MedousaModel):
     generation_id: str | None = None
     kind: str = Field(..., description='image | drawing | document | spreadsheet | audio')
@@ -766,6 +785,13 @@ class ComponentRuntimeProbeRequest(MedousaModel):
 class FeedRef(MedousaModel):
     ref_id: str
     ref_type: str
+
+
+class ExternalWhatsAppPairingState(Enum):
+    waiting = 'waiting'
+    qr_ready = 'qr_ready'
+    connected = 'connected'
+    logged_out = 'logged_out'
 
 
 class FeedListEntry(MedousaModel):
@@ -1190,6 +1216,13 @@ class ExternalPeerTarget(MedousaModel):
     authority_id: AuthorityId
     execution_runtime_id: str
     runtime: ExternalPeerRuntime
+
+
+class PeerAssignmentOutcome(Enum):
+    completed = 'completed'
+    failed = 'failed'
+    cancelled = 'cancelled'
+    interrupted = 'interrupted'
 
 
 class PeerProposalDecision(MedousaModel):
@@ -1910,13 +1943,23 @@ class WorkerAckKind(Enum):
     workshop = 'workshop'
 
 
-class TurnCompletionOutcomeV3(Enum):
+class TurnCompletionOutcomeV31(Enum):
     completed = 'completed'
     needs_input = 'needs_input'
     checkpointed = 'checkpointed'
     failed = 'failed'
     cancelled = 'cancelled'
     fuse_exhausted = 'fuse_exhausted'
+
+
+class TurnCompletionOutcomeV32(Enum):
+    fatal = 'fatal'
+
+
+class TurnCompletionOutcomeV3(RootModel[TurnCompletionOutcomeV31 | TurnCompletionOutcomeV32]):
+    root: TurnCompletionOutcomeV31 | TurnCompletionOutcomeV32 = Field(
+        ..., title='TurnCompletionOutcomeV3'
+    )
 
 
 class Type30(Enum):
@@ -2349,6 +2392,13 @@ class WorkBoardColumn(Enum):
 
 class WorkCardId(RootModel[str]):
     root: str
+
+
+class HomeNotificationKind(Enum):
+    fatal_turn = 'fatal_turn'
+    turn_update = 'turn_update'
+    needs_input = 'needs_input'
+    scheduled_delivery = 'scheduled_delivery'
 
 
 class WorkerToolActivityDto(MedousaModel):
@@ -2915,6 +2965,17 @@ class CreateAgentSessionResponse(MedousaModel):
     work_id: str | None = None
 
 
+class CreateExternalConversationRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    label: str
+    provider: ExternalProvider
+    target: str
+    webhook_key: str | None = None
+    webhook_url: str | None = None
+
+
 class CreateIntegrationConnectionRequest(MedousaModel):
     base_url: str | None = None
     kind: str = Field(..., description='Catalog slug (`openai`, `discord`, …).')
@@ -2955,6 +3016,10 @@ class CreateSessionResponse(MedousaModel):
 
 class DecideAgentModeProposalRequest(MedousaModel):
     accept: bool
+
+
+class DeleteExternalConversationResponse(MedousaModel):
+    deleted: bool
 
 
 class DeleteIntegrationConnectionResponse(MedousaModel):
@@ -3033,6 +3098,59 @@ class EnvironmentStreamQuery(MedousaModel):
 class EnvironmentValidateResponse(MedousaModel):
     errors: list[str]
     valid: bool
+
+
+class ExternalConversationSendRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    request_id: str
+    text: str
+
+
+class ExternalInboundClaimResponse(MedousaModel):
+    claimed: bool
+
+
+class ExternalMuseDiscoveryStatus(MedousaModel):
+    challenge: str
+    expires_at: AwareDatetime
+    observed_chat_jid: str | None = None
+
+
+class ExternalProviderEventRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    event_id: str
+    kind: ExternalEventKind
+    request_id: str
+    text: str
+
+
+class ExternalWhatsAppInboundRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    chat_jid: str
+    message_id: str
+    sender_jid: str
+    text: str
+
+
+class ExternalWhatsAppPairingStatus(MedousaModel):
+    expires_at: AwareDatetime | None = None
+    qr_svg: str | None = None
+    state: ExternalWhatsAppPairingState
+
+
+class ExternalWhatsAppPairingUpdateRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    expires_in_seconds: int | None = Field(None, ge=0)
+    qr_code: str | None = None
+    state: ExternalWhatsAppPairingState
 
 
 class FeedListResponse(MedousaModel):
@@ -3385,6 +3503,10 @@ class RegisterRecurringPromptRequest(MedousaModel):
     )
     max_attempts: int | None = Field(None, ge=0)
     model_hint: str | None = None
+    notify_on_delivery: bool | None = Field(
+        None,
+        description='Whether a successful in-app delivery should raise a notification. Absent preserves the legacy in-app behavior.',
+    )
     policy_profile: str | None = None
     prompt: str
     queue: str | None = None
@@ -3402,6 +3524,10 @@ class RegisterRecurringResponse(MedousaModel):
     queue: str
     recurring_id: str
     timezone: str
+
+
+class RotateExternalCallbackResponse(MedousaModel):
+    callback_key: str
 
 
 class RuntimeConfigCommandResponse(MedousaModel):
@@ -3617,6 +3743,7 @@ class UpdateRecurringRequest(MedousaModel):
     feeds: Any | None = Field(
         None, description='Replace feed binding; pass `{ "feeds": null }` to clear feed publish.'
     )
+    notify_on_delivery: bool | None = None
     timezone: str | None = None
 
 
@@ -3912,6 +4039,25 @@ class TurnSurfaceContext(MedousaModel):
     user_id: str | None = None
 
 
+class ExternalConversationEvent(MedousaModel):
+    created_at: AwareDatetime
+    event_id: str
+    kind: ExternalEventKind
+    request_id: str | None = None
+    sequence: int = Field(..., ge=0)
+    text: str
+
+
+class ExternalConversationView(MedousaModel):
+    created_at: AwareDatetime
+    events: list[ExternalConversationEvent]
+    id: str
+    label: str
+    provider: ExternalProvider
+    target: str
+    updated_at: AwareDatetime
+
+
 class HostContextDiagnostic(MedousaModel):
     end: HostContextPosition | None = None
     message: str
@@ -4026,6 +4172,13 @@ class ExternalPeerAssignmentBinding(MedousaModel):
     target: ExternalPeerTarget
 
 
+class ExternalPeerAssignmentReceipt(MedousaModel):
+    binding: ExternalPeerAssignmentBinding
+    outcome: PeerAssignmentOutcome
+    receipt_id: str
+    result: str
+
+
 class ExternalPeerAssignmentRequest(MedousaModel):
     assignment_id: str
     channel: CoordinationChannelRef
@@ -4062,6 +4215,10 @@ class PeerProposalReviewRecord(MedousaModel):
     )
     decision: PeerProposalDecision | None = None
     proposal: PeerAssignmentProposal
+    receipt: ExternalPeerAssignmentReceipt | None = Field(
+        None,
+        description='Present for source-session projections so a remote owner can observe the immutable terminal even though execution belongs to another workshop.',
+    )
 
 
 class RuntimeConfigCommandSpec4(MedousaModel):
@@ -4202,6 +4359,18 @@ class WorkCard(MedousaModel):
     updated_at_utc: AwareDatetime
 
 
+class HomeNotificationIntent(MedousaModel):
+    body: str
+    card_id: str | None = None
+    emitted_at_utc: AwareDatetime
+    kind: HomeNotificationKind
+    notification_id: str
+    session_id: str | None = None
+    subject_id: str
+    title: str
+    url: str | None = None
+
+
 class WorkerProgressDto(MedousaModel):
     column: WorkBoardColumn
     execution_runtime_id: str | None = Field(
@@ -4311,6 +4480,11 @@ class CreateBotRequest(MedousaModel):
     )
 
 
+class CreateExternalConversationResponse(MedousaModel):
+    callback_key: str | None = None
+    conversation: ExternalConversationView
+
+
 class CreateTurnTicketRequest(MedousaModel):
     additional_manuscript_ids: list[str] | None = None
     agent_mode: AgentModeId | None = Field(
@@ -4377,6 +4551,10 @@ class DeriveSessionResponse(MedousaModel):
         ..., description='True when this idempotency key had already committed the same request.'
     )
     session_id: str
+
+
+class ExternalConversationListResponse(MedousaModel):
+    conversations: list[ExternalConversationView]
 
 
 class FeedStreamEvent(MedousaModel):
@@ -4523,6 +4701,10 @@ class WorkspaceStreamEvent(MedousaModel):
     counts: dict[str, Any] | None = None
     emitted_at_utc: AwareDatetime
     feed_event: WorkspaceEvent | None = None
+    notification: HomeNotificationIntent | None = Field(
+        None,
+        description='Canonical daemon-authored notification intent. Clients present this fact; they do not re-classify cards or turn events themselves.',
+    )
     snapshot: WorkspaceSnapshot | None = None
     stream_event_type: str
     worker_progress: WorkerProgressDto | None = Field(

@@ -43,7 +43,8 @@
     type FavoriteModel,
   } from "$lib/utils/modelCatalog";
   import { getEngineTuiDefaults, type AgentSessionConfigOption } from "$lib/daemon";
-  import type { ChatAgentRuntime } from "$lib/utils/sessionAgentRuntime";
+  import { isProviderConversationRuntime, type ChatAgentRuntime } from "$lib/utils/sessionAgentRuntime";
+  import type { ExternalConversation } from "$lib/daemon/externalConversations";
   import {
     agentModelConfigOption,
     agentModelDisplayLabel,
@@ -67,6 +68,10 @@
     agentConfigOptions?: AgentSessionConfigOption[];
     agentRuntimePending?: boolean;
     onAgentConfigChange?: (configId: string, value: unknown) => void | Promise<void>;
+    externalConversations?: ExternalConversation[];
+    externalConversationId?: string | null;
+    onExternalConversationChange?: (id: string) => void;
+    onExternalConversationsRefresh?: () => void | Promise<void>;
   }
 
   let {
@@ -77,6 +82,10 @@
     agentConfigOptions = [],
     agentRuntimePending = false,
     onAgentConfigChange,
+    externalConversations = [],
+    externalConversationId = null,
+    onExternalConversationChange,
+    onExternalConversationsRefresh,
   }: Props = $props();
 
   let open = $state(false);
@@ -100,11 +109,19 @@
 
   let loadingLiveModels = $state(false);
   let capabilityMap = $state<Map<string, ModelCapabilityRecord>>(new Map());
-  const displayName = $derived.by(() =>
-    agentRuntime === "medousa"
-      ? resolveModelDisplayLabel(chatModel.provider, chatModel.model)
-      : agentModelDisplayLabel(agentRuntime, agentConfigOptions),
+  const providerChoices = $derived(
+    isProviderConversationRuntime(agentRuntime)
+      ? externalConversations.filter((item) => item.provider === agentRuntime)
+      : [],
   );
+  const displayName = $derived.by(() => {
+    if (agentRuntime === "medousa") return resolveModelDisplayLabel(chatModel.provider, chatModel.model);
+    if (isProviderConversationRuntime(agentRuntime)) {
+      return providerChoices.find((item) => item.id === externalConversationId)?.label ??
+        (agentRuntime === "muse" ? "Choose Muse session" : "Choose Grok bot");
+    }
+    return agentModelDisplayLabel(agentRuntime, agentConfigOptions);
+  });
   const externalModelOption = $derived(agentModelConfigOption(agentConfigOptions));
   const activeKey = $derived(modelPickKey(chatModel.provider, chatModel.model));
   const filtered = $derived(filterChatModelOptions(options, search));
@@ -353,6 +370,8 @@
         await tick();
         updateProviderScrollState();
         searchInputEl?.focus();
+      } else if (isProviderConversationRuntime(agentRuntime)) {
+        void onExternalConversationsRefresh?.();
       }
     }
   }
@@ -459,6 +478,8 @@
         await tick();
         updateProviderScrollState();
         searchInputEl?.focus();
+      } else if (isProviderConversationRuntime(agentRuntime)) {
+        void onExternalConversationsRefresh?.();
       }
     }
   }
@@ -685,6 +706,22 @@
               {/each}
             {/if}
           </ul>
+        {:else if isProviderConversationRuntime(agentRuntime)}
+          <ul class="composer-model-list" role="listbox">
+            {#if providerChoices.length === 0}
+              <li class="composer-model-list-empty">Set up {agentRuntime === "muse" ? "a Muse session" : "a Grok bot"} in External Agents.</li>
+            {:else}
+              {#each providerChoices as choice (choice.id)}
+                {@const selected = choice.id === externalConversationId}
+                <li>
+                  <button type="button" class="composer-model-list-item {selected ? 'composer-model-list-item-active' : ''}" role="option" aria-selected={selected} onclick={() => { onExternalConversationChange?.(choice.id); open = false; }}>
+                    <span class="composer-model-row-copy"><span class="composer-model-row-name">{choice.label}</span></span>
+                    {#if selected}<Check size={15} strokeWidth={2.5} class="composer-model-list-check" />{/if}
+                  </button>
+                </li>
+              {/each}
+            {/if}
+          </ul>
         {:else}
           <ul class="composer-model-list" role="listbox">
             {#if agentRuntimePending}
@@ -738,6 +775,10 @@
             ? "Open Models"
             : agentRuntime === "medousa"
               ? "Manage models and providers"
+              : agentRuntime === "muse"
+                ? "Manage Muse sessions"
+                : agentRuntime === "grok_bot"
+                  ? "Manage Grok bots"
               : "Manage external agent"}</span>
         <ArrowUpRight size={14} />
       </button>

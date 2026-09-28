@@ -57,6 +57,18 @@ Diagram: [medousa-client-transport.mmd](../../architecture/medousa-client-transp
 
 ---
 
+## CLI provider callbacks
+
+`medousa-cli daemon-external-event --iroh-ticket <ticket>` uses the shared
+`medousa-iroh-http` client directly. `MEDOUSA_BRIDGE_IROH_TICKET` or `--worker`
+can also select this transport. It sends the paired bearer and conversation
+callback key over `medousa-http/1`, with no direct HTTP probe or fallback.
+This explicit routing differs from `WorkshopTransport`'s LAN-first policy.
+See the [provider conversation guide](../guides/provider-conversations.md)
+for raw-ticket and saved-worker examples.
+
+---
+
 ## Custom `Transport`
 
 Implement `Transport` for mocks or corporate proxies:

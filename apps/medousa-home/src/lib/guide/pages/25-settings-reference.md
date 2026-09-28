@@ -12,7 +12,7 @@ Related: [How Medousa fits together](guide:architecture) · [Desktop, web, and p
 | **Medousa Agent** | This workshop’s answers, provider access, and models | Editable wherever the selected workshop grants control |
 | **Runtime Controls** | Tool safety and advanced engine options | Same as Agent |
 | **Sharing** | Phone, peers, Shared seats, channels | QR and Shared host controls on desktop |
-| **External Agents** | Codex, Cursor, and Hermes runtime sign-in | Desktop workshop hosts |
+| **External Agents** | Codex, Cursor, Hermes, Muse, and Grok Bot setup | Connected workshop |
 | **Packages** | Optional software on this computer | Desktop app only |
 | **MCP** | External tool servers | Desktop app only |
 | **Connection** | Which workshop you’re in, restart, updates | Address everywhere; file paths on desktop |
@@ -51,7 +51,7 @@ Advanced: which tools are allowed, shell access, network limits, and optional no
 ## Sharing / External Agents / Packages / MCP / Connection
 
 - **Sharing** — phone QR, peers, Shared mode, messaging channels.
-- **External Agents** — install and sign in to **Codex**, **Cursor**, and **Hermes** as independent runtimes on desktop workshop hosts. Missing CLIs install from the same screen using vendor installers. Signed-out routes show a sign-in prompt in the chat runtime picker.
+- **External Agents** — install and sign in to **Codex**, **Cursor**, and **Hermes** as independent runtimes on desktop workshop hosts. Connect **Muse** sessions and **Grok Bot** webhooks on the connected workshop. In Chat, choose the runtime, then use the model picker to choose a registered Muse session or Grok bot.
 - **Packages** — optional Offline brain and helpers (desktop).
 - **MCP** — connect external tools (desktop).
 - **Connection** — switch workshop, restart engine, app updates, **Files & diagnostics** paths on desktop.

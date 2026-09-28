@@ -8,6 +8,7 @@ import postcss from "postcss";
  *
  * Group those tagged rules back into the cascade declared in app.postcss.
  */
+/** @type {Record<string, string>} */
 const PUBLIC_LAYER = {
   defaults: "base",
   base: "base",
@@ -16,11 +17,12 @@ const PUBLIC_LAYER = {
   user: "utilities",
 };
 
+/** @param {import("postcss").ChildNode} node */
 function publicLayer(node) {
-  const raw = node.raws?.tailwind;
+  const raw = /** @type {{ layer?: string, parentLayer?: string } | undefined} */ (node.raws?.tailwind);
   if (!raw?.layer) return null;
   if (raw.layer === "variants") {
-    return PUBLIC_LAYER[raw.parentLayer] ?? "utilities";
+    return PUBLIC_LAYER[raw.parentLayer ?? ""] ?? "utilities";
   }
   return PUBLIC_LAYER[raw.layer] ?? null;
 }
@@ -28,6 +30,7 @@ function publicLayer(node) {
 export default function restoreCascadeLayers() {
   return {
     postcssPlugin: "medousa-cascade-layers",
+    /** @param {import("postcss").Root} root */
     OnceExit(root) {
       let bucket = null;
       for (const node of [...root.nodes]) {

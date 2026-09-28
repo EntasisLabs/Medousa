@@ -48,7 +48,7 @@ export function agentModelConfigOption(
 }
 
 export function agentModelDisplayLabel(
-  runtime: Exclude<ChatAgentRuntime, "medousa">,
+  runtime: "cursor" | "codex" | "hermes",
   options: AgentSessionConfigOption[],
 ): string {
   const option = agentModelConfigOption(options);
@@ -72,6 +72,10 @@ export function modelSourceLabel(runtime: ChatAgentRuntime): string {
       return "Cursor";
     case "hermes":
       return "Hermes";
+    case "muse":
+      return "Muse";
+    case "grok_bot":
+      return "Grok Bot";
     default:
       return "Medousa";
   }

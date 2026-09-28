@@ -218,6 +218,30 @@ pub enum DaemonOperation {
     EnvironmentStatusGet,
     #[serde(rename = "execution_targets.get")]
     ExecutionTargetsGet,
+    #[serde(rename = "external_conversations.by_id.callback_key.rotate.post")]
+    ExternalConversationsByIdCallbackKeyRotatePost,
+    #[serde(rename = "external_conversations.by_id.delete")]
+    ExternalConversationsByIdDelete,
+    #[serde(rename = "external_conversations.by_id.events.post")]
+    ExternalConversationsByIdEventsPost,
+    #[serde(rename = "external_conversations.by_id.get")]
+    ExternalConversationsByIdGet,
+    #[serde(rename = "external_conversations.by_id.messages.post")]
+    ExternalConversationsByIdMessagesPost,
+    #[serde(rename = "external_conversations.get")]
+    ExternalConversationsGet,
+    #[serde(rename = "external_conversations.muse.discovery.get")]
+    ExternalConversationsMuseDiscoveryGet,
+    #[serde(rename = "external_conversations.muse.discovery.post")]
+    ExternalConversationsMuseDiscoveryPost,
+    #[serde(rename = "external_conversations.post")]
+    ExternalConversationsPost,
+    #[serde(rename = "external_conversations.whatsapp.inbound.post")]
+    ExternalConversationsWhatsappInboundPost,
+    #[serde(rename = "external_conversations.whatsapp.pairing.get")]
+    ExternalConversationsWhatsappPairingGet,
+    #[serde(rename = "external_conversations.whatsapp.pairing.post")]
+    ExternalConversationsWhatsappPairingPost,
     #[serde(rename = "feeds.by_feed_id.latest_good.get")]
     FeedsByFeedIdLatestGoodGet,
     #[serde(rename = "feeds.by_feed_id.read.post")]
@@ -1040,6 +1064,18 @@ impl DaemonOperation {
             Self::EnvironmentSpecValidatePost => "environment.spec.validate.post",
             Self::EnvironmentStatusGet => "environment.status.get",
             Self::ExecutionTargetsGet => "execution_targets.get",
+            Self::ExternalConversationsByIdCallbackKeyRotatePost => "external_conversations.by_id.callback_key.rotate.post",
+            Self::ExternalConversationsByIdDelete => "external_conversations.by_id.delete",
+            Self::ExternalConversationsByIdEventsPost => "external_conversations.by_id.events.post",
+            Self::ExternalConversationsByIdGet => "external_conversations.by_id.get",
+            Self::ExternalConversationsByIdMessagesPost => "external_conversations.by_id.messages.post",
+            Self::ExternalConversationsGet => "external_conversations.get",
+            Self::ExternalConversationsMuseDiscoveryGet => "external_conversations.muse.discovery.get",
+            Self::ExternalConversationsMuseDiscoveryPost => "external_conversations.muse.discovery.post",
+            Self::ExternalConversationsPost => "external_conversations.post",
+            Self::ExternalConversationsWhatsappInboundPost => "external_conversations.whatsapp.inbound.post",
+            Self::ExternalConversationsWhatsappPairingGet => "external_conversations.whatsapp.pairing.get",
+            Self::ExternalConversationsWhatsappPairingPost => "external_conversations.whatsapp.pairing.post",
             Self::FeedsByFeedIdLatestGoodGet => "feeds.by_feed_id.latest_good.get",
             Self::FeedsByFeedIdReadPost => "feeds.by_feed_id.read.post",
             Self::FeedsByFeedIdTailGet => "feeds.by_feed_id.tail.get",

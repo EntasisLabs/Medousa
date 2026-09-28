@@ -2189,6 +2189,57 @@
         "title": "CreateBotRequest",
         "type": "object"
       },
+      "CreateExternalConversationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/ExternalProvider"
+          },
+          "target": {
+            "type": "string"
+          },
+          "webhook_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "webhook_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "label",
+          "provider",
+          "target"
+        ],
+        "title": "CreateExternalConversationRequest",
+        "type": "object"
+      },
+      "CreateExternalConversationResponse": {
+        "properties": {
+          "callback_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "conversation": {
+            "$ref": "#/components/schemas/ExternalConversationView"
+          }
+        },
+        "required": [
+          "conversation"
+        ],
+        "title": "CreateExternalConversationResponse",
+        "type": "object"
+      },
       "CreatePromptStashRequest": {
         "properties": {
           "context_manifest_id": {
@@ -2688,6 +2739,18 @@
           "deployment_target",
           "product_version"
         ],
+        "type": "object"
+      },
+      "DeleteExternalConversationResponse": {
+        "properties": {
+          "deleted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deleted"
+        ],
+        "title": "DeleteExternalConversationResponse",
         "type": "object"
       },
       "DeletePromptStashResponse": {
@@ -3436,6 +3499,165 @@
           }
         ]
       },
+      "ExternalConversationEvent": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ExternalEventKind"
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sequence": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "created_at",
+          "event_id",
+          "kind",
+          "sequence",
+          "text"
+        ],
+        "type": "object"
+      },
+      "ExternalConversationListResponse": {
+        "properties": {
+          "conversations": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalConversationView"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "conversations"
+        ],
+        "title": "ExternalConversationListResponse",
+        "type": "object"
+      },
+      "ExternalConversationSendRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "text"
+        ],
+        "title": "ExternalConversationSendRequest",
+        "type": "object"
+      },
+      "ExternalConversationView": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalConversationEvent"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/ExternalProvider"
+          },
+          "target": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "created_at",
+          "events",
+          "id",
+          "label",
+          "provider",
+          "target",
+          "updated_at"
+        ],
+        "title": "ExternalConversationView",
+        "type": "object"
+      },
+      "ExternalEventKind": {
+        "enum": [
+          "user_message",
+          "transport_pending",
+          "transport_accepted",
+          "transport_failed",
+          "transport_uncertain",
+          "provider_message",
+          "progress",
+          "question",
+          "completed",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "ExternalInboundClaimResponse": {
+        "properties": {
+          "claimed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "claimed"
+        ],
+        "title": "ExternalInboundClaimResponse",
+        "type": "object"
+      },
+      "ExternalMuseDiscoveryStatus": {
+        "properties": {
+          "challenge": {
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "observed_chat_jid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "challenge",
+          "expires_at"
+        ],
+        "title": "ExternalMuseDiscoveryStatus",
+        "type": "object"
+      },
       "ExternalPeerAssignmentBinding": {
         "description": "Stable correlation returned by an admitted external execution.",
         "properties": {
@@ -3583,6 +3805,124 @@
           "execution_runtime_id",
           "runtime"
         ],
+        "type": "object"
+      },
+      "ExternalProvider": {
+        "enum": [
+          "muse",
+          "grok_bot"
+        ],
+        "type": "string"
+      },
+      "ExternalProviderEventRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ExternalEventKind"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "kind",
+          "request_id",
+          "text"
+        ],
+        "title": "ExternalProviderEventRequest",
+        "type": "object"
+      },
+      "ExternalWhatsAppInboundRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "chat_jid": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "sender_jid": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "chat_jid",
+          "message_id",
+          "sender_jid",
+          "text"
+        ],
+        "title": "ExternalWhatsAppInboundRequest",
+        "type": "object"
+      },
+      "ExternalWhatsAppPairingState": {
+        "enum": [
+          "waiting",
+          "qr_ready",
+          "connected",
+          "logged_out"
+        ],
+        "type": "string"
+      },
+      "ExternalWhatsAppPairingStatus": {
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "qr_svg": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/ExternalWhatsAppPairingState"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "ExternalWhatsAppPairingStatus",
+        "type": "object"
+      },
+      "ExternalWhatsAppPairingUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_in_seconds": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "qr_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/ExternalWhatsAppPairingState"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "ExternalWhatsAppPairingUpdateRequest",
         "type": "object"
       },
       "FeedEvent": {
@@ -5578,6 +5918,18 @@
           "selection",
           "selection_digest"
         ],
+        "type": "object"
+      },
+      "RotateExternalCallbackResponse": {
+        "properties": {
+          "callback_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "callback_key"
+        ],
+        "title": "RotateExternalCallbackResponse",
         "type": "object"
       },
       "SessionAgentModeResponse": {
@@ -17049,6 +17401,693 @@
           "credential_scheme": "bearer",
           "feature_profile": "core",
           "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/external-conversations": {
+      "get": {
+        "operationId": "external_conversations.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalConversationListResponse"
+                }
+              }
+            },
+            "description": "external_conversations.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      },
+      "post": {
+        "operationId": "external_conversations.post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateExternalConversationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateExternalConversationResponse"
+                }
+              }
+            },
+            "description": "external_conversations.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 20480,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/external-conversations/muse/discovery": {
+      "get": {
+        "operationId": "external_conversations.muse.discovery.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalMuseDiscoveryStatus"
+                }
+              }
+            },
+            "description": "external_conversations.muse.discovery.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.muse.discovery.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.muse.discovery.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      },
+      "post": {
+        "operationId": "external_conversations.muse.discovery.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalMuseDiscoveryStatus"
+                }
+              }
+            },
+            "description": "external_conversations.muse.discovery.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.muse.discovery.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.muse.discovery.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/external-conversations/whatsapp/inbound": {
+      "post": {
+        "operationId": "external_conversations.whatsapp.inbound.post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExternalWhatsAppInboundRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalInboundClaimResponse"
+                }
+              }
+            },
+            "description": "external_conversations.whatsapp.inbound.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.whatsapp.inbound.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.whatsapp.inbound.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 20480,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/external-conversations/whatsapp/pairing": {
+      "get": {
+        "operationId": "external_conversations.whatsapp.pairing.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalWhatsAppPairingStatus"
+                }
+              }
+            },
+            "description": "external_conversations.whatsapp.pairing.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.whatsapp.pairing.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.whatsapp.pairing.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      },
+      "post": {
+        "operationId": "external_conversations.whatsapp.pairing.post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExternalWhatsAppPairingUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalWhatsAppPairingStatus"
+                }
+              }
+            },
+            "description": "external_conversations.whatsapp.pairing.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.whatsapp.pairing.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.whatsapp.pairing.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 4096,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/external-conversations/{id}": {
+      "delete": {
+        "operationId": "external_conversations.by_id.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteExternalConversationResponse"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.delete"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.delete"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.delete"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      },
+      "get": {
+        "operationId": "external_conversations.by_id.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalConversationView"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/external-conversations/{id}/callback-key/rotate": {
+      "post": {
+        "operationId": "external_conversations.by_id.callback_key.rotate.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RotateExternalCallbackResponse"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.callback_key.rotate.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.callback_key.rotate.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.callback_key.rotate.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/external-conversations/{id}/events": {
+      "post": {
+        "operationId": "external_conversations.by_id.events.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExternalProviderEventRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalConversationView"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.events.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.events.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.events.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 20480,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/external-conversations/{id}/messages": {
+      "post": {
+        "operationId": "external_conversations.by_id.messages.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExternalConversationSendRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalConversationView"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.messages.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.messages.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.messages.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 20480,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
           "trust_group": "portal"
         }
       }

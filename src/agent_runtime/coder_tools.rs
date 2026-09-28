@@ -814,7 +814,10 @@ impl PortableCoderToolRegistry {
         })?;
         match tool_name {
             crate::public_api::COGNITION_STORE_READ => {
-                let action = map.get("action").and_then(Value::as_str).unwrap_or_default();
+                let action = map
+                    .get("action")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
                 if !matches!(action, "code.read" | "code.search") {
                     return Err(StasisError::PortFailure(
                         "portable Coder store reads are limited to code.read and code.search"
@@ -3847,10 +3850,10 @@ mod tests {
     fn authority_named(fixture: &Fixture, session_id: &str, turn_id: u64) -> Arc<CoderTurnLease> {
         let (_, lease) = fixture
             .forge
-            .begin_attempt(
+            .begin_collaborative_workspace_attempt(
                 &medousa_forge::model::WorkId::from(fixture.entry.work_id.clone()),
                 ExecutorDescriptor {
-                    kind: "test-coder".into(),
+                    kind: "medousa-coder".into(),
                     detail: Value::Null,
                 },
                 None,

@@ -463,7 +463,7 @@ fn body_text(state: &WizardState) -> Text<'static> {
             lines.push(Line::from(""));
             lines.push(input_line("Deliver bind", &state.whatsapp_deliver_bind));
             lines.push(Line::from(
-                "Default 127.0.0.1:7422 — POST /v1/deliver for outbound messages.",
+                "Default 127.0.0.1:7423 — POST /v1/deliver for outbound messages.",
             ));
         }
         WizardStep::WhatsAppAllowUserIds => {

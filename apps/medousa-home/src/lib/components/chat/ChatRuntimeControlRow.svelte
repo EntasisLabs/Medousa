@@ -4,7 +4,7 @@
   import ChatRuntimePicker from "$lib/components/chat/ChatRuntimePicker.svelte";
   import ComposerTurnControls from "$lib/components/chat/ComposerTurnControls.svelte";
   import type { AgentSessionConfigOption } from "$lib/daemon";
-  import type { ChatAgentRuntime } from "$lib/utils/sessionAgentRuntime";
+  import { isExternalAgentRuntime, isProviderConversationRuntime, type ChatAgentRuntime } from "$lib/utils/sessionAgentRuntime";
 
   interface Props {
     sessionId: string;
@@ -36,11 +36,11 @@
       <ChatAgentModePicker {sessionId} disabled={switchingDisabled} />
     {/if}
   </div>
-  <ComposerTurnControls {sessionId} disabled={switchingDisabled} showNativeControls={value === "medousa"}>
+  {#if !isProviderConversationRuntime(value)}<ComposerTurnControls {sessionId} disabled={switchingDisabled} showNativeControls={value === "medousa"}>
     {#snippet agentSettings()}
-      {#if value !== "medousa"}
+      {#if isExternalAgentRuntime(value)}
         <AgentSessionControls inline options={configOptions} includeModel={false} disabled={switchingDisabled} onChange={onConfigChange} />
       {/if}
     {/snippet}
-  </ComposerTurnControls>
+  </ComposerTurnControls>{/if}
 </div>

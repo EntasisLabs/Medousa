@@ -62,6 +62,7 @@ Shipped product features: [artifacts](../docs/engine/artifacts.md), [mobile shel
 
 | Doc | Topic |
 |-----|--------|
+| [agent-conversation-bridges-plan.md](agent-conversation-bridges-plan.md) | **External agent conversations** — Muse over WhatsApp and Grok Bot over webhook routines, with daemon-owned state and scoped workshop access |
 | [expressive-chat-media-ink-liquid-epic.md](expressive-chat-media-ink-liquid-epic.md) | **Expressive Chat** — pressure-first ink, drawing in chat, generated media, and durable interactive Liquid recipes/timers |
 | [hardening/README.md](hardening/README.md) | **Repo-wide hardening** — authority containment, trustworthy state, bounded hot paths, and enforced architecture |
 | [sttp-native-prompt-and-chronological-turn-plan.md](sttp-native-prompt-and-chronological-turn-plan.md) | **STTP + chronological turns** — compact compiled policy, explicit completion, ordered streaming/persistence/client presentation |
