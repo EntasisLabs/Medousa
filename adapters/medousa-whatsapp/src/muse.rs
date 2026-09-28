@@ -21,6 +21,7 @@ use wacore::libsignal::crypto::{aes_256_cbc_decrypt_into, aes_256_gcm_encrypt};
 use wacore::messages::MessageUtils;
 use wacore::msg_secret::OriginalMessageResolver;
 use wacore::proto_helpers::MessageExt;
+use wacore::types::message::{BotEditType, MsgBotInfo};
 use wacore_binary::builder::NodeBuilder;
 use wacore_binary::{Jid, NodeContent};
 use waproto::whatsapp as wa;
@@ -66,7 +67,24 @@ pub fn is_muse(jid: &Jid) -> bool {
     jid.to_non_ad().to_string() == MUSE_JID
 }
 
-pub fn message_text(message: &wa::Message) -> Option<String> {
+/// The daemon's inbound route is an idempotent message journal, not a token
+/// stream. Only publish the final replacement: storing the first preview makes
+/// its message ID immutable and can freeze the conversation at that fragment.
+/// Use the protocol's terminal marker, never an inactivity timeout.
+pub fn completed_message_text(message: &wa::Message, bot: Option<&MsgBotInfo>) -> Option<String> {
+    if matches!(
+        bot.and_then(|b| b.edit_type),
+        Some(BotEditType::First | BotEditType::Inner)
+    ) {
+        return None;
+    }
+    message_text(message)
+}
+
+fn message_text(message: &wa::Message) -> Option<String> {
+    // Streaming replacements arrive inside ProtocolMessage.editedMessage.
+    // wacore's get_base_message only peels the separate FutureProof wrapper.
+    let message = reply_body(message)?;
     if let Some(text) = message.text_content() {
         return Some(text.to_string());
     }
@@ -86,6 +104,20 @@ pub fn message_text(message: &wa::Message) -> Option<String> {
         .filter(|text| !text.trim().is_empty())
         .collect::<Vec<_>>();
     (!parts.is_empty()).then(|| parts.join("\n\n"))
+}
+
+fn reply_body(mut message: &wa::Message) -> Option<&wa::Message> {
+    for _ in 0..8 {
+        message = message.get_base_message();
+        let Some(protocol) = message.protocol_message.as_option() else {
+            return Some(message);
+        };
+        if protocol.r#type != Some(wa::message::protocol_message::Type::MESSAGE_EDIT) {
+            return None;
+        }
+        message = protocol.edited_message.as_option()?;
+    }
+    None
 }
 
 /// Mirrors getPlainTextFromUnifiedResponse's explicit layout/primitive allowlist.
@@ -877,6 +909,92 @@ mod tests {
         );
         assert!(unified_response_text(b"not json").is_none());
         assert!(unified_response_text(br#"{"text":"not a displayed primitive"}"#).is_none());
+    }
+
+    #[test]
+    fn streaming_protocol_edit_extracts_the_complete_rich_reply() {
+        let text = format!("{}END-OF-REPLY", "A complete paragraph.\n\n".repeat(240));
+        let data = serde_json::json!({"sections": [{"view_model": {
+            "__typename": "GenAISingleLayoutViewModel", "primitive": {
+                "__typename": "GenAIMarkdownTextUXPrimitive", "text": text
+            }
+        }}]});
+        let message = wa::Message {
+            edited_message: MessageField::some(wa::message::FutureProofMessage {
+                message: MessageField::some(wa::Message {
+                    protocol_message: MessageField::some(wa::message::ProtocolMessage {
+                        r#type: Some(wa::message::protocol_message::Type::MESSAGE_EDIT),
+                        edited_message: MessageField::some(wa::Message {
+                            rich_response_message: MessageField::some(wa::AIRichResponseMessage {
+                                unified_response: MessageField::some(
+                                    wa::AIRichResponseUnifiedResponse {
+                                        data: Some(serde_json::to_vec(&data).unwrap()),
+                                    },
+                                ),
+                                ..Default::default()
+                            }),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+            }),
+            ..Default::default()
+        };
+        assert_eq!(message_text(&message).as_deref(), Some(text.as_str()));
+    }
+
+    #[test]
+    fn streaming_previews_wait_for_explicit_last_without_a_timeout() {
+        let preview = wa::Message {
+            conversation: Some("A partial".into()),
+            ..Default::default()
+        };
+        let final_message = wa::Message {
+            protocol_message: MessageField::some(wa::message::ProtocolMessage {
+                r#type: Some(wa::message::protocol_message::Type::MESSAGE_EDIT),
+                edited_message: MessageField::some(wa::Message {
+                    conversation: Some("A complete reply, including its final sentence.".into()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let bot = |edit_type| MsgBotInfo {
+            edit_type: Some(edit_type),
+            edit_target_id: Some("synthetic-original-reply".into()),
+            edit_sender_timestamp_ms: None,
+        };
+        assert!(completed_message_text(&preview, Some(&bot(BotEditType::First))).is_none());
+        assert!(completed_message_text(&final_message, Some(&bot(BotEditType::Inner))).is_none());
+        // No first/inner state is required: a final arriving after reconnect
+        // still carries a complete replacement and must be displayed.
+        assert_eq!(
+            completed_message_text(&final_message, Some(&bot(BotEditType::Last))).as_deref(),
+            Some("A complete reply, including its final sentence.")
+        );
+        assert_eq!(
+            completed_message_text(&preview, None).as_deref(),
+            Some("A partial")
+        );
+    }
+
+    #[test]
+    fn unrelated_protocol_messages_are_not_displayed_as_reply_text() {
+        let message = wa::Message {
+            protocol_message: MessageField::some(wa::message::ProtocolMessage {
+                r#type: Some(wa::message::protocol_message::Type::REVOKE),
+                edited_message: MessageField::some(wa::Message {
+                    conversation: Some("not a reply".into()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert!(message_text(&message).is_none());
     }
 
     #[test]

@@ -28,6 +28,12 @@ If the callback key is lost or exposed, use **Rotate callback key** in External 
 
 Muse uses an additional encrypted envelope beyond ordinary WhatsApp messages. The adapter obtains Muse's pairing secret from authenticated WhatsApp device sync, wraps outgoing text for Muse, and decrypts and extracts text from Muse's rich replies. It supports text conversations; images and other rich content are not imported. If the adapter reports that the Muse pairing secret is unavailable, keep your phone connected so linked-device sync can finish, and verify that Muse is connected in WhatsApp before retrying.
 
+For streamed replies, Medousa waits for Muse's explicit final update and then
+shows the complete text. Intermediate previews are not saved as completed
+messages. A pause in generation does not finish the reply, and a final update
+can still be received after the adapter reconnects. The phone does not need an
+app update when the workshop's WhatsApp adapter is updated.
+
 WhatsApp delivery or **Read** status still does not verify that Muse received a request: older adapter builds could produce a visible, read message without reaching Muse. Verify a round trip with a harmless test in your own session. Discovery expiring without observing your outgoing code means the adapter has not seen the chat. The linked-device WhatsApp adapter remains experimental. If a send is uncertain, check Muse's app before sending the same request again.
 
 If the adapter connects in a terminal but Medousa keeps showing **Waiting for the workshop’s WhatsApp pairing QR**, check which `medousa_whatsapp` binary the launcher used. Older adapter builds can pair in the terminal but do not publish QR or connected status to the workshop. Update the adapter package and restart it; an already-paired session reconnects from its session database.

@@ -237,10 +237,7 @@ async fn deliver_whatsapp_text(
 ) -> Result<()> {
     let jid = parse_whatsapp_chat_jid(channel_id)?;
     if muse::is_muse(&jid) {
-        return state
-            .muse
-            .send_text(&state.client, truncate_for_whatsapp(text))
-            .await;
+        return state.muse.send_text(&state.client, text.to_owned()).await;
     }
     let message = wa::Message {
         conversation: Some(truncate_for_whatsapp(text)),
@@ -316,10 +313,13 @@ async fn handle_event(
                     && (muse::is_muse(&info.source.chat) || muse::is_muse(&info.source.sender))
                 {
                     eprintln!(
-                        "medousa_whatsapp protocol: muse-event from_me={} text={} rich={}",
+                        "medousa_whatsapp protocol: muse-event from_me={} text={} rich={} protocol={} edited={} edit={:?}",
                         info.source.is_from_me,
                         msg.text_content().is_some(),
-                        msg.rich_response_message.is_set()
+                        msg.rich_response_message.is_set(),
+                        msg.protocol_message.is_set(),
+                        msg.edited_message.is_set(),
+                        info.bot_info.as_ref().and_then(|bot| bot.edit_type)
                     );
                     if let Some(rich) = msg.rich_response_message.as_option() {
                         eprintln!(
@@ -334,7 +334,7 @@ async fn handle_event(
                     }
                 }
                 let extracted = if muse::is_muse(&info.source.chat) {
-                    muse::message_text(msg)
+                    muse::completed_message_text(msg, info.bot_info.as_ref())
                 } else {
                     msg.text_content().map(str::to_owned)
                 };
