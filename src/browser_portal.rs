@@ -1,8 +1,9 @@
 //! Browser portal: pair with a full daemon over an Iroh invite and send its HTTP API.
 //!
 //! The tab keeps a Personal workshop in IndexedDB. A `medousa://pair/2.0` invite
-//! adds a separate portal. Chat and daemon calls for that workshop go through
-//! `medousa-http/1`, the same relay client the phone uses.
+//! adds a separate portal. Chat and daemon calls for that workshop use the
+//! daemon HTTP API. A loopback invite stays on `fetch`. A remote invite uses
+//! `medousa-http/1`.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
@@ -339,23 +340,25 @@ pub async fn open_stream(
     if !(200..300).contains(&status) {
         let message = read_body_text(&mut body).await?;
         return Err(format!(
-            "workshop returned HTTP {status} over iroh for GET {path}: {message}"
+            "workshop returned HTTP {status} for GET {path}: {message}"
         ));
     }
     let mut parser = SseParser::default();
     loop {
         if *cancel.borrow() {
+            body.cancel();
             return Ok(());
         }
         let mut cancel_wait = cancel.clone();
         tokio::select! {
             changed = cancel_wait.changed() => {
                 if changed.is_err() || *cancel.borrow() {
+                    body.cancel();
                     return Ok(());
                 }
             }
             chunk = body.read_chunk() => {
-                match chunk.map_err(|err| err.to_string())? {
+                match chunk? {
                     None => return Ok(()),
                     Some(bytes) => {
                         for frame in parser.push(&bytes) {
@@ -395,11 +398,31 @@ fn arm_stream(kind: &str) -> watch::Receiver<bool> {
     receiver
 }
 
+enum PortalBody {
+    Iroh(medousa_iroh_http::IrohHttpBody),
+    Fetch(web_sys::ReadableStreamDefaultReader),
+}
+
+impl PortalBody {
+    fn cancel(&self) {
+        if let Self::Fetch(reader) = self {
+            let _ = reader.cancel();
+        }
+    }
+
+    async fn read_chunk(&mut self) -> Result<Option<Vec<u8>>, String> {
+        match self {
+            Self::Iroh(body) => body.read_chunk().await.map_err(|err| err.to_string()),
+            Self::Fetch(reader) => read_fetch_chunk(reader).await,
+        }
+    }
+}
+
 async fn open_stream_response(
     record: &PortalRecord,
     path: &str,
     accept: &str,
-) -> Result<(u16, medousa_iroh_http::IrohHttpBody), String> {
+) -> Result<(u16, PortalBody), String> {
     let accept = accept.trim();
     let mut headers = vec![(
         "Authorization".to_string(),
@@ -412,11 +435,18 @@ async fn open_stream_response(
         .iter()
         .map(|(name, value)| (name.as_str(), value.as_str()))
         .collect();
+    // Loopback portals already have an HTTP listener. Opening the Iroh
+    // endpoint here starts relay `/ping`, which closes in a hermetic setup
+    // and spams the console after the workshop has switched.
+    if let Some(base) = crate::browser_portal_parse::loopback_http_origin(&record.daemon_url) {
+        let (status, reader) = browser_stream(&base, path, &header_refs).await?;
+        return Ok((status, PortalBody::Fetch(reader)));
+    }
     let response =
         medousa_iroh_http::iroh_http_request(&record.iroh_ticket, "GET", path, &header_refs, None)
             .await
             .map_err(|err| format!("Cannot reach workshop over Iroh: {err}"))?;
-    Ok((response.status, response.body))
+    Ok((response.status, PortalBody::Iroh(response.body)))
 }
 
 async fn authed_exchange(
@@ -455,9 +485,10 @@ fn exchange_json(status: u16, body: &str) -> Result<String, String> {
     Ok(serde_json::json!({ "status": status, "body": body }).to_string())
 }
 
-/// Loopback invites talk to the daemon's own HTTP listener. A closed Iroh
-/// relay then cannot leave the join parked on "Joining…". Remote invites
-/// still dial the ticket, and that dial is bounded.
+/// Loopback invites talk only to the daemon's HTTP listener. Falling back to
+/// the ticket would bind an Iroh endpoint and keep pinging a relay that is
+/// closed in this setup. Remote invites still dial the ticket, and that dial
+/// is bounded.
 async fn reach_text(
     ticket: &str,
     http_base: Option<&str>,
@@ -467,16 +498,7 @@ async fn reach_text(
     body: Option<&[u8]>,
 ) -> Result<(u16, String), String> {
     if let Some(base) = http_base.and_then(crate::browser_portal_parse::loopback_http_origin) {
-        match browser_http(&base, method, path, headers, body).await {
-            Ok(response) => return Ok(response),
-            Err(http_err) => {
-                let iroh = iroh_text(ticket, method, path, headers, body).await;
-                return match iroh {
-                    Ok(response) => Ok(response),
-                    Err(iroh_err) => Err(format!("{http_err} ({iroh_err})")),
-                };
-            }
-        }
+        return browser_http(&base, method, path, headers, body).await;
     }
     iroh_text(ticket, method, path, headers, body).await
 }
@@ -488,10 +510,11 @@ async fn iroh_text(
     headers: &[(&str, &str)],
     body: Option<&[u8]>,
 ) -> Result<(u16, String), String> {
-    let mut response = medousa_iroh_http::iroh_http_request(ticket, method, path, headers, body)
+    let response = medousa_iroh_http::iroh_http_request(ticket, method, path, headers, body)
         .await
         .map_err(|err| format!("Cannot reach workshop over Iroh: {err}"))?;
-    let text = read_body_text(&mut response.body).await?;
+    let mut body = PortalBody::Iroh(response.body);
+    let text = read_body_text(&mut body).await?;
     Ok((response.status, text))
 }
 
@@ -502,6 +525,46 @@ async fn browser_http(
     headers: &[(&str, &str)],
     body: Option<&[u8]>,
 ) -> Result<(u16, String), String> {
+    use wasm_bindgen_futures::JsFuture;
+
+    let response = browser_fetch(base, method, path, headers, body).await?;
+    let status = response.status();
+    let text = JsFuture::from(
+        response
+            .text()
+            .map_err(|_| "workshop body was unreadable".to_string())?,
+    )
+    .await
+    .map_err(|_| "workshop body read failed".to_string())?;
+    Ok((status, text.as_string().unwrap_or_default()))
+}
+
+async fn browser_stream(
+    base: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+) -> Result<(u16, web_sys::ReadableStreamDefaultReader), String> {
+    use wasm_bindgen::JsCast;
+
+    let response = browser_fetch(base, "GET", path, headers, None).await?;
+    let status = response.status();
+    let body = response
+        .body()
+        .ok_or_else(|| "workshop stream has no body".to_string())?;
+    let reader = body
+        .get_reader()
+        .dyn_into::<web_sys::ReadableStreamDefaultReader>()
+        .map_err(|_| "workshop stream reader was unavailable".to_string())?;
+    Ok((status, reader))
+}
+
+async fn browser_fetch(
+    base: &str,
+    method: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: Option<&[u8]>,
+) -> Result<web_sys::Response, String> {
     use wasm_bindgen::JsCast;
     use wasm_bindgen::JsValue;
     use wasm_bindgen_futures::JsFuture;
@@ -532,23 +595,36 @@ async fn browser_http(
     let response = JsFuture::from(window.fetch_with_request(&request))
         .await
         .map_err(|_| format!("Cannot reach workshop at {url}"))?;
-    let response: web_sys::Response = response
+    response
         .dyn_into()
-        .map_err(|_| "workshop response was not a Response".to_string())?;
-    let status = response.status();
-    let text = JsFuture::from(
-        response
-            .text()
-            .map_err(|_| "workshop body was unreadable".to_string())?,
-    )
-    .await
-    .map_err(|_| "workshop body read failed".to_string())?;
-    Ok((status, text.as_string().unwrap_or_default()))
+        .map_err(|_| "workshop response was not a Response".to_string())
 }
 
-async fn read_body_text(body: &mut medousa_iroh_http::IrohHttpBody) -> Result<String, String> {
+async fn read_fetch_chunk(
+    reader: &web_sys::ReadableStreamDefaultReader,
+) -> Result<Option<Vec<u8>>, String> {
+    use wasm_bindgen_futures::JsFuture;
+
+    let value = JsFuture::from(reader.read())
+        .await
+        .map_err(|_| "workshop stream read failed".to_string())?;
+    let result = web_sys::ReadableStreamReadResult::from(value);
+    if result.get_done().unwrap_or(false) {
+        return Ok(None);
+    }
+    let chunk = result.get_value();
+    if chunk.is_undefined() || chunk.is_null() {
+        return Ok(Some(Vec::new()));
+    }
+    let array = js_sys::Uint8Array::new(&chunk);
+    let mut bytes = vec![0u8; array.length() as usize];
+    array.copy_to(&mut bytes);
+    Ok(Some(bytes))
+}
+
+async fn read_body_text(body: &mut PortalBody) -> Result<String, String> {
     let mut bytes = Vec::new();
-    while let Some(chunk) = body.read_chunk().await.map_err(|err| err.to_string())? {
+    while let Some(chunk) = body.read_chunk().await? {
         bytes.extend_from_slice(&chunk);
     }
     Ok(String::from_utf8_lossy(&bytes).into_owned())
@@ -584,7 +660,7 @@ async fn iroh_json<T: for<'de> Deserialize<'de>>(
             "Workshop returned HTTP {status} for {method} {path}: {text}"
         ));
     }
-    serde_json::from_str(&text).map_err(|err| format!("Invalid workshop response over Iroh: {err}"))
+    serde_json::from_str(&text).map_err(|err| format!("Invalid workshop response: {err}"))
 }
 
 fn active_record() -> Result<PortalRecord, String> {
