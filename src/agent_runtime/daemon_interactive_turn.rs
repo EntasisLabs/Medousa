@@ -1518,15 +1518,30 @@ async fn run_agent_turn_inner(
                     reason: "Coder mode contract changed since the checkpoint".into(),
                 };
             }
+            if forge
+                .load(&work_id)
+                .is_ok_and(|item| item.state == medousa_forge::model::WorkState::AwaitingReview)
+                && let Err(err) = forge.reopen_for_changes(
+                    &work_id,
+                    "Continue the undertaking from chat",
+                    &medousa_forge::forge::Forge::system_actor(),
+                )
+            {
+                sink.agent_error(
+                    1,
+                    format!("cannot resume reviewed Coder work: {err}"),
+                )
+                .await;
+                return;
+            }
             let source_attempt = recovery_plan.exact_checkpoint().map(|checkpoint| {
                 medousa_forge::model::AttemptId::from(checkpoint.forge.attempt_id.clone())
             });
             let can_rebind_source = source_attempt.as_ref().is_some_and(|source| {
                 forge.load(&work_id).is_ok_and(|item| {
                     !item.has_active_attempts()
-                        && item.attempt(source).is_some_and(|attempt| {
-                            attempt.environment.is_some() || item.uses_attached_checkout()
-                        })
+                        && item.attempt(source).is_some()
+                        && item.environment_for_attempt(source).is_some()
                 })
             });
             if source_attempt.is_some()

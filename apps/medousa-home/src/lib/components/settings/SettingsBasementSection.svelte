@@ -22,6 +22,7 @@
   import SettingsAppUpdateCard from "$lib/components/settings/SettingsAppUpdateCard.svelte";
   import SettingsLocalBrainPanel from "$lib/components/settings/SettingsLocalBrainPanel.svelte";
   import SettingsWorkshopsSection from "$lib/components/settings/SettingsWorkshopsSection.svelte";
+  import SettingsRemoteWorkersSection from "$lib/components/settings/SettingsRemoteWorkersSection.svelte";
   import { isTauri } from "$lib/window";
   import { isTauriDesktop, isTauriIos } from "$lib/platform";
   import { settingsNav } from "$lib/stores/settingsNav.svelte";
@@ -269,6 +270,10 @@
   </header>
 
   <SettingsWorkshopsSection {onDaemonHealth} {mobile} lead />
+
+  {#if isTauriDesktop()}
+    <SettingsRemoteWorkersSection />
+  {/if}
 
   <div class="prefs-band">
     <SettingsAppUpdateCard />

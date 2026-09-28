@@ -46,6 +46,7 @@ pub mod context_usage;
 pub mod continuation;
 pub mod heartbeat_turn;
 pub mod host_context;
+pub mod laya_system_one;
 pub mod modes;
 pub mod perception_governor;
 pub mod presentation;
@@ -56,6 +57,7 @@ pub mod prompt_prep;
 pub mod runtime;
 pub mod settings;
 pub mod sttp;
+pub mod system_one_evaluation;
 pub mod system_prompt;
 pub mod tool_observation_hydration;
 pub mod tool_stream;
@@ -177,7 +179,8 @@ pub use turn_orchestrator::{
     HOT_WINDOW_CHAR_BUDGET, IntentClassification, LocalTurnExecutionParams, MAX_COLD_WINDOW_TURNS,
     MAX_HOT_WINDOW_TURNS, MAX_PRIOR_TOTAL_CHARS, MAX_SINGLE_PRIOR_MESSAGE_CHARS,
     MIN_COLD_WINDOW_TURNS, MIN_HOT_WINDOW_TURNS, PrepareTurnPromptParams, PreparedTurnPrompt,
-    apply_intent_classifier_override, assemble_local_turn, classify_turn_intent_with_model,
+    apply_intent_classifier_override, assemble_local_turn, classify_turn_intent_with_engine,
+    classify_turn_intent_with_model,
     execute_local_turn, prepare_turn_prompt, retryable_runtime_reason,
     should_invoke_intent_classifier,
 };

@@ -16,28 +16,12 @@ use crate::catalog::{CatalogPage, ForgeCatalog, SlugReservationJournal};
 use crate::compaction;
 use crate::error::{ForgeError, Result};
 
-fn executor_session_id(executor: &ExecutorDescriptor) -> Option<&str> {
-    executor
-        .detail
-        .get("session_id")
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-}
-
-fn attached_coder_collaboration_allowed(item: &WorkItem, incoming: &ExecutorDescriptor) -> bool {
-    if incoming.kind != "medousa-coder" {
-        return false;
-    }
-    let Some(session_id) = executor_session_id(incoming) else {
-        return false;
-    };
-    item.active_attempt_ids().into_iter().all(|attempt_id| {
-        item.attempt(attempt_id).is_some_and(|attempt| {
-            attempt.executor.kind == "medousa-coder"
-                && executor_session_id(&attempt.executor) == Some(session_id)
+fn coder_collaboration_allowed(item: &WorkItem, incoming: &ExecutorDescriptor) -> bool {
+    incoming.kind == "medousa-coder"
+        && item.active_attempt_ids().into_iter().all(|attempt_id| {
+            item.attempt(attempt_id)
+                .is_some_and(|attempt| attempt.executor.kind == "medousa-coder")
         })
-    })
 }
 use crate::events::{EventPayload, OperationKind, SideEffect, TransitionEvent};
 use crate::execution::ForgeExecutionService;
@@ -989,6 +973,36 @@ impl Forge {
         Ok(())
     }
 
+    fn verify_durable_workspace(&self, item: &WorkItem, environment: &GovernedEnv) -> Result<()> {
+        if environment.kind == crate::model::EnvironmentKind::AttachedCheckout {
+            return self.verify_attached_checkout(item, environment);
+        }
+        if !environment.worktree.exists() {
+            return Err(ForgeError::EnvironmentDrift(format!(
+                "undertaking worktree is missing: {}",
+                environment.worktree.display()
+            )));
+        }
+        let expected_root = std::fs::canonicalize(&environment.worktree)?;
+        let actual_root = std::fs::canonicalize(self.git.worktree_root(&environment.worktree)?)?;
+        if actual_root != expected_root {
+            return Err(ForgeError::EnvironmentDrift(format!(
+                "undertaking worktree root changed: expected {}, found {}",
+                expected_root.display(),
+                actual_root.display()
+            )));
+        }
+        let branch = self.git.current_branch(&environment.worktree)?;
+        if branch.as_deref() != Some(environment.branch.as_str()) {
+            return Err(ForgeError::EnvironmentDrift(format!(
+                "undertaking branch changed: expected {}, found {}",
+                environment.branch,
+                branch.as_deref().unwrap_or("detached HEAD")
+            )));
+        }
+        Ok(())
+    }
+
     pub(crate) fn verify_attached_checkout(
         &self,
         item: &WorkItem,
@@ -1066,10 +1080,46 @@ impl Forge {
     ) -> Result<()> {
         let _lock = self.store.lock_item(work_id)?;
         let item = self.load(work_id)?;
-        let target = git_target(&item)?;
+        self.record_review_commit_locked(&item, expected, head, branch, actor)
+    }
+
+    fn record_review_commit_locked(
+        &self,
+        item: &WorkItem,
+        expected: &GitOid,
+        head: &GitOid,
+        branch: &str,
+        actor: &ActorRef,
+    ) -> Result<()> {
+        let target = git_target(item)?;
         let env = item
             .workspace_environment()
             .ok_or_else(|| ForgeError::EnvironmentDrift("missing workspace".into()))?;
+        let root = std::fs::canonicalize(self.git.worktree_root(&env.worktree)?)?;
+        let expected_root = std::fs::canonicalize(&env.worktree)?;
+        if root != expected_root {
+            return Err(ForgeError::EnvironmentDrift(format!(
+                "attached checkout root changed: expected {}, found {}",
+                expected_root.display(),
+                root.display()
+            )));
+        }
+        if self.git.repo_identity(&root)?.common_dir != env.repo.common_dir {
+            return Err(ForgeError::EnvironmentDrift(
+                "attached checkout now belongs to a different repository".into(),
+            ));
+        }
+        if self.git.merge_in_progress(&root)
+            || self
+                .git
+                .status_porcelain(&root)?
+                .iter()
+                .any(|entry| entry.kind == crate::git::PorcelainKind::Unmerged)
+        {
+            return Err(ForgeError::EnvironmentDrift(
+                "attached checkout entered a merge, rebase, or conflicted state".into(),
+            ));
+        }
         if !item.uses_attached_checkout()
             || &target.base_oid != expected
             || &self.git.head_oid(&env.worktree)? != head
@@ -1081,10 +1131,10 @@ impl Forge {
         }
         let index = self.git.index_tree_oid_via_temporary_index(
             &env.worktree,
-            &self.attached_index_path(work_id),
+            &self.attached_index_path(&item.id),
         )?;
         self.commit_event(
-            work_id,
+            &item.id,
             actor,
             EventPayload::ReviewCommitRecorded {
                 head: head.clone(),
@@ -1093,6 +1143,53 @@ impl Forge {
             },
         )?;
         Ok(())
+    }
+
+    /// Adopt an ordinary principal commit made during or between attached-checkout
+    /// executions. A same-branch fast-forward is expected user activity, not
+    /// environment drift. History rewrites and branch switches still require
+    /// an explicit reattachment so stale authority cannot silently move.
+    fn refresh_attached_checkout_after_commit_locked(
+        &self,
+        item: &WorkItem,
+        actor: &ActorRef,
+    ) -> Result<WorkItem> {
+        if !item.uses_attached_checkout() {
+            return Ok(item.clone());
+        }
+        let target = git_target(item)?;
+        let env = item
+            .workspace_environment()
+            .ok_or_else(|| ForgeError::EnvironmentDrift("missing workspace".into()))?;
+        let head = self.git.head_oid(&env.worktree)?;
+        if head == target.base_oid {
+            return Ok(item.clone());
+        }
+        let branch = self.git.current_branch(&env.worktree)?.ok_or_else(|| {
+            ForgeError::EnvironmentDrift("attached checkout is now detached".into())
+        })?;
+        if branch != env.branch {
+            return Err(ForgeError::EnvironmentDrift(format!(
+                "attached checkout switched branches: expected {}, found {branch}",
+                env.branch
+            )));
+        }
+        if !self
+            .git
+            .is_ancestor(&env.worktree, &target.base_oid, &head)?
+        {
+            return Err(ForgeError::EnvironmentDrift(format!(
+                "attached checkout HEAD changed non-fast-forward: expected descendant of {}, found {}",
+                target.base_oid, head
+            )));
+        }
+        self.record_review_commit_locked(item, &target.base_oid, &head, &branch, actor)?;
+        let refreshed = self.load(&item.id)?;
+        let environment = refreshed
+            .workspace_environment()
+            .ok_or_else(|| ForgeError::EnvironmentDrift("missing workspace".into()))?;
+        self.verify_attached_checkout(&refreshed, environment)?;
+        Ok(refreshed)
     }
 
     /// Revalidate the durable workspace boundary before a lease-backed tool
@@ -1162,9 +1259,10 @@ impl Forge {
         self.begin_attempt_inner(work_id, executor, pid, actor, false, None, false)
     }
 
-    /// Begin an attempt with a private worktree that preserves the staging
-    /// worktree's current dirty state. Integrations migrate to this entry point
-    /// in Slice 5C.
+    /// Begin an explicit candidate attempt in a private worktree. Normal
+    /// execution should use [`Self::begin_workspace_attempt`], which keeps the
+    /// undertaking's single durable workspace. This API exists for deliberate
+    /// parallel experiments and review candidates.
     pub fn begin_isolated_attempt(
         &self,
         work_id: &WorkId,
@@ -1175,8 +1273,9 @@ impl Forge {
         self.begin_attempt_inner(work_id, executor, pid, actor, true, None, false)
     }
 
-    /// Resume work from one exact preserved attempt environment. Used when a
-    /// reviewer selects an older concurrent candidate for another pass.
+    /// Resume one exact explicit candidate environment. Attempts that used the
+    /// undertaking workspace should instead resume through
+    /// [`Self::begin_workspace_attempt_from`].
     pub fn begin_isolated_attempt_from(
         &self,
         work_id: &WorkId,
@@ -1196,9 +1295,9 @@ impl Forge {
         )
     }
 
-    /// Begin an attempt using the placement selected when the item was
-    /// registered. Callers use this instead of branching on environment kind
-    /// throughout the daemon.
+    /// Begin an execution lease in the undertaking's durable workspace.
+    /// Workspace placement is selected once when the item is provisioned;
+    /// ordinary attempts never create another branch or worktree.
     pub fn begin_workspace_attempt(
         &self,
         work_id: &WorkId,
@@ -1206,18 +1305,13 @@ impl Forge {
         pid: Option<u32>,
         actor: &ActorRef,
     ) -> Result<(WorkItem, ExecutionLease)> {
-        let item = self.load(work_id)?;
-        if item.uses_attached_checkout() {
-            self.begin_attempt(work_id, executor, pid, actor)
-        } else {
-            self.begin_isolated_attempt(work_id, executor, pid, actor)
-        }
+        self.begin_attempt(work_id, executor, pid, actor)
     }
 
-    /// Begin a Medousa Coder attempt while another Coder from the same chat is
-    /// still using an attached checkout. Forge continues to fence each attempt;
-    /// the Coder shared-space claim layer arbitrates overlapping mutations.
-    /// Other executors and other sessions retain exclusive attached custody.
+    /// Begin a Medousa Coder lease while other Coders are using the undertaking
+    /// workspace. Forge fences each execution record; the work-scoped Coder
+    /// shared-space claim layer arbitrates overlapping mutations across chats
+    /// and workers. Executors outside that protocol retain exclusive custody.
     pub fn begin_collaborative_workspace_attempt(
         &self,
         work_id: &WorkId,
@@ -1225,12 +1319,7 @@ impl Forge {
         pid: Option<u32>,
         actor: &ActorRef,
     ) -> Result<(WorkItem, ExecutionLease)> {
-        let item = self.load(work_id)?;
-        if item.uses_attached_checkout() {
-            self.begin_attempt_inner(work_id, executor, pid, actor, false, None, true)
-        } else {
-            self.begin_isolated_attempt(work_id, executor, pid, actor)
-        }
+        self.begin_attempt_inner(work_id, executor, pid, actor, false, None, true)
     }
 
     pub fn begin_workspace_attempt_from(
@@ -1242,17 +1331,20 @@ impl Forge {
         actor: &ActorRef,
     ) -> Result<(WorkItem, ExecutionLease)> {
         let item = self.load(work_id)?;
-        if item.uses_attached_checkout() {
-            if item.attempt(source_attempt_id).is_none() {
-                return Err(ForgeError::AttemptNotFound(source_attempt_id.clone()));
-            }
-            self.begin_attempt(work_id, executor, pid, actor)
-        } else {
+        let source = item
+            .attempt(source_attempt_id)
+            .ok_or_else(|| ForgeError::AttemptNotFound(source_attempt_id.clone()))?;
+        if source.environment.is_some() {
             self.begin_isolated_attempt_from(work_id, source_attempt_id, executor, pid, actor)
+        } else {
+            self.begin_attempt(work_id, executor, pid, actor)
         }
     }
 
-    #[expect(clippy::too_many_arguments, reason = "shared admission boundary keeps the caller's exact executor, revision, and collaboration policy together")]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "shared admission boundary keeps the caller's exact executor, revision, and collaboration policy together"
+    )]
     fn begin_attempt_inner(
         &self,
         work_id: &WorkId,
@@ -1277,24 +1369,24 @@ impl Forge {
                 action: "begin attempt",
             });
         }
-        if item.uses_attached_checkout() {
-            if isolated {
-                return Err(ForgeError::EnvironmentDrift(
-                    "attached checkouts cannot be forked into an isolated attempt".into(),
-                ));
-            }
+        if item.uses_attached_checkout() && isolated {
+            return Err(ForgeError::EnvironmentDrift(
+                "attached checkouts cannot be forked into an isolated attempt".into(),
+            ));
+        }
+        if !isolated {
+            item = self.refresh_attached_checkout_after_commit_locked(&item, actor)?;
             if item.has_active_attempts()
-                && !(allow_coder_collaboration
-                    && attached_coder_collaboration_allowed(&item, &executor))
+                && !(allow_coder_collaboration && coder_collaboration_allowed(&item, &executor))
             {
-                return Err(ForgeError::EnvironmentDrift(
-                    "the attached checkout already has an active executor".into(),
+                return Err(ForgeError::WorkspaceBusy(
+                    "the undertaking workspace is held by an executor outside Coder shared-space coordination".into(),
                 ));
             }
             let environment = item.environment.as_ref().ok_or_else(|| {
-                ForgeError::EnvironmentDrift("attached checkout is not provisioned".into())
+                ForgeError::EnvironmentDrift("undertaking workspace is not provisioned".into())
             })?;
-            self.verify_attached_checkout(&item, environment)?;
+            self.verify_durable_workspace(&item, environment)?;
         }
         let attempt_id = crate::model::AttemptId::new();
         let attempt_seq = item.next_attempt_seq();
@@ -2270,7 +2362,7 @@ impl Forge {
         // must acknowledge cancellation before Forge releases the boundary;
         // otherwise a live process could keep editing after the item closes.
         if item.uses_attached_checkout() && item.has_active_attempts() {
-            return Err(ForgeError::EnvironmentDrift(
+            return Err(ForgeError::WorkspaceBusy(
                 "current checkout still has an active executor; stop it before closing the project"
                     .into(),
             ));
@@ -3299,6 +3391,89 @@ mod tests {
     }
 
     #[test]
+    fn attached_checkout_follow_up_adopts_principal_fast_forward_commit() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let item = forge
+            .register_with_workspace_mode(
+                "Keep helping after a commit",
+                "continue in the current checkout",
+                &fx.repo,
+                "main",
+                "user-1",
+                WorkspaceMode::AttachedCheckout,
+                &actor(),
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &actor()).unwrap();
+        let original_baseline = item.environment.as_ref().unwrap().baseline_oid.clone();
+        let (_, lease) = forge
+            .begin_workspace_attempt(&item.id, script_executor(), None, &actor())
+            .unwrap();
+        fs::write(fx.repo.join("app.txt"), "first pass\n").unwrap();
+        let reviewed = forge
+            .complete_attempt(&lease, &SealOptions::default(), &actor())
+            .unwrap();
+        forge
+            .reopen_for_changes(&reviewed.id, "follow up", &actor())
+            .unwrap();
+
+        fx.git.run(&fx.repo, &["add", "app.txt"]).unwrap();
+        fx.git
+            .commit_checkpoint(&fx.repo, "save first pass", &CheckpointAuthor::default())
+            .unwrap();
+        let committed_head = fx.git.head_oid(&fx.repo).unwrap();
+
+        let (continued, next_lease) = forge
+            .begin_workspace_attempt(&item.id, script_executor(), None, &actor())
+            .expect("a normal same-branch commit must not invalidate the next turn");
+        assert_eq!(git_target(&continued).unwrap().base_oid, committed_head);
+        assert_eq!(
+            continued.environment.as_ref().unwrap().baseline_oid,
+            original_baseline,
+            "refreshing checkout custody must not rewrite the evidence baseline"
+        );
+        assert!(reviewed.attempts.last().unwrap().evidence_id.is_some());
+        forge
+            .interrupt_attempt(&next_lease, RecoveryDisposition::RestartAllowed, &actor())
+            .unwrap();
+    }
+
+    #[test]
+    fn attached_checkout_follow_up_rejects_rewritten_history() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let item = forge
+            .register_with_workspace_mode(
+                "Do not follow rewritten history",
+                "keep checkout authority fenced",
+                &fx.repo,
+                "main",
+                "user-1",
+                WorkspaceMode::AttachedCheckout,
+                &actor(),
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &actor()).unwrap();
+        let tree = fx.git.run(&fx.repo, &["write-tree"]).unwrap();
+        let tree = tree.trim().to_owned();
+        let rewritten = fx
+            .git
+            .run(&fx.repo, &["commit-tree", &tree, "-m", "rewritten root"])
+            .unwrap();
+        let rewritten = rewritten.trim().to_owned();
+        fx.git
+            .run(&fx.repo, &["reset", "--hard", &rewritten])
+            .unwrap();
+
+        assert!(matches!(
+            forge.begin_workspace_attempt(&item.id, script_executor(), None, &actor()),
+            Err(ForgeError::EnvironmentDrift(message))
+                if message.contains("non-fast-forward")
+        ));
+    }
+
+    #[test]
     fn attached_checkout_reviews_only_changes_made_after_attachment() {
         let fx = fixture();
         let forge = Forge::open(&fx.forge_root).unwrap();
@@ -3457,7 +3632,7 @@ mod tests {
     }
 
     #[test]
-    fn attached_checkout_allows_same_chat_coder_collaboration_only() {
+    fn attached_checkout_allows_cross_session_coder_collaboration_only() {
         let fx = fixture();
         let forge = Forge::open(&fx.forge_root).unwrap();
         let item = forge
@@ -3489,18 +3664,30 @@ mod tests {
             )
             .unwrap();
 
-        assert!(matches!(
-            forge.begin_collaborative_workspace_attempt(
+        fs::write(
+            fx.repo.join("owner-commit.txt"),
+            "committed while Coder is active\n",
+        )
+        .unwrap();
+        fx.git.run(&fx.repo, &["add", "-A"]).unwrap();
+        let committed_head = fx
+            .git
+            .commit_checkpoint(&fx.repo, "principal commit", &CheckpointAuthor::default())
+            .unwrap();
+
+        let (item, third) = forge
+            .begin_collaborative_workspace_attempt(
                 &item.id,
                 medousa_coder_executor("session-b", "turn-c"),
                 None,
                 &actor(),
-            ),
-            Err(ForgeError::EnvironmentDrift(message)) if message.contains("active executor")
-        ));
+            )
+            .unwrap();
+        assert_eq!(git_target(&item).unwrap().base_oid, committed_head);
         assert!(matches!(
             forge.begin_workspace_attempt(&item.id, script_executor(), None, &actor()),
-            Err(ForgeError::EnvironmentDrift(message)) if message.contains("active executor")
+            Err(ForgeError::WorkspaceBusy(message))
+                if message.contains("outside Coder shared-space coordination")
         ));
 
         forge
@@ -3509,6 +3696,10 @@ mod tests {
         assert!(forge.load(&item.id).unwrap().has_active_attempts());
         forge
             .interrupt_attempt(&second, RecoveryDisposition::RestartAllowed, &actor())
+            .unwrap();
+        assert!(forge.load(&item.id).unwrap().has_active_attempts());
+        forge
+            .interrupt_attempt(&third, RecoveryDisposition::RestartAllowed, &actor())
             .unwrap();
         assert!(!forge.load(&item.id).unwrap().has_active_attempts());
     }
@@ -3541,7 +3732,7 @@ mod tests {
 
         assert!(matches!(
             forge.discard(&item.id, &actor()),
-            Err(ForgeError::EnvironmentDrift(message)) if message.contains("active executor")
+            Err(ForgeError::WorkspaceBusy(message)) if message.contains("active executor")
         ));
         assert_eq!(
             fs::read_to_string(fx.repo.join("coder.txt")).unwrap(),
@@ -3855,6 +4046,81 @@ mod tests {
                 .unwrap()
                 .flatten()
                 .all(|entry| entry.path().extension().and_then(|ext| ext.to_str()) != Some("gz"))
+        );
+    }
+
+    #[test]
+    fn workspace_attempts_reuse_the_undertaking_worktree_across_restarts() {
+        let fx = fixture();
+        let forge = Forge::open(&fx.forge_root).unwrap();
+        let item = forge
+            .register(
+                "durable",
+                "one workspace",
+                &fx.repo,
+                "main",
+                "user-1",
+                &actor(),
+            )
+            .unwrap();
+        let item = forge.provision(&item.id, &actor()).unwrap();
+        let workspace = item.environment.clone().unwrap();
+        let worktree_count = fx.git.worktree_list(&fx.repo).unwrap().len();
+
+        let (item, first) = forge
+            .begin_workspace_attempt(&item.id, script_executor(), None, &actor())
+            .unwrap();
+        assert!(
+            item.attempt(&first.attempt_id)
+                .unwrap()
+                .environment
+                .is_none()
+        );
+        assert_eq!(
+            item.environment_for_attempt(&first.attempt_id),
+            Some(&workspace)
+        );
+        assert_eq!(
+            fx.git.worktree_list(&fx.repo).unwrap().len(),
+            worktree_count
+        );
+        fs::write(workspace.worktree.join("unfinished.txt"), "still here\n").unwrap();
+
+        assert!(matches!(
+            forge.begin_workspace_attempt(&item.id, script_executor(), None, &actor()),
+            Err(ForgeError::WorkspaceBusy(message))
+                if message.contains("outside Coder shared-space coordination")
+        ));
+        forge
+            .interrupt_attempt(&first, RecoveryDisposition::RestartAllowed, &actor())
+            .unwrap();
+
+        let (item, second) = forge
+            .begin_workspace_attempt_from(
+                &item.id,
+                &first.attempt_id,
+                script_executor(),
+                None,
+                &actor(),
+            )
+            .unwrap();
+        assert!(
+            item.attempt(&second.attempt_id)
+                .unwrap()
+                .environment
+                .is_none()
+        );
+        assert_eq!(
+            item.environment_for_attempt(&second.attempt_id),
+            Some(&workspace)
+        );
+        assert_eq!(
+            fx.git.worktree_list(&fx.repo).unwrap().len(),
+            worktree_count
+        );
+        assert_eq!(
+            fs::read_to_string(workspace.worktree.join("unfinished.txt")).unwrap(),
+            "still here\n"
         );
     }
 

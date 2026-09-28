@@ -71,6 +71,17 @@ Medousa resolves LLM settings in order: **saved defaults → env → built-in de
 | `MEDOUSA_DEV_HOST` | Dev Vite host → daemon URL hint | unset |
 | `MEDOUSA_MEDOUSA_DAEMON_BIN` | Explicit path to `medousa_daemon` | Tauri sidecar or PATH |
 | `MEDOUSA_PROJECT_ROOT` | Vault / project root override | unset |
+| `MEDOUSA_SYSTEM_ONE_MODE` | Turn-perception rollout mode: `shadow`, `active`, or `disabled` | `shadow`; records typed recommendations without changing execution |
+| `MEDOUSA_SYSTEM_ONE_EVALUATION` | Local System 1 comparison-record collection; set `disabled`, `off`, `false`, or `0` to opt out | enabled; bounded classifier inputs and weak heuristic labels append to `{data_dir}/system_one/evaluations.jsonl` |
+| `MEDOUSA_SYSTEM_ONE_ENGINE` | System 1 decision engine: `host` or `laya`; Laya failures fall back to the host engine and then the existing heuristic | `host` |
+| `MEDOUSA_LAYA_BASE_URL` | Base URL for a local `laya-serve` process or compatible Laya Studio endpoint; `/v1/systemone` is appended when absent | `http://127.0.0.1:8000` |
+| `MEDOUSA_LAYA_API_KEY` | Optional bearer token for the configured Laya endpoint | unset |
+| `MEDOUSA_LAYA_MODEL` | Laya model selector sent with typed decision requests; use a Medousa-tuned checkpoint only after calibration | `english` |
+| `MEDOUSA_LAYA_TIMEOUT_MS` | Laya request timeout in milliseconds, clamped to 100–10,000 | `2000` |
+| `MEDOUSA_LAYA_SERVE_BIN` | Explicit path to a packaged local `laya-serve` binary | sibling, `{dataDir}/bin`, then PATH |
+| `MEDOUSA_LAYA_MANAGED` | Let Medousa supervise installed Laya on loopback; disable with `0`, `false`, `off`, or `no` | enabled when `laya-serve` is installed |
+
+Laya remains perception, not authority: the adapter uses the typed `choice` response and calibrated `answer_confidence`, ignores Laya's action recommendation, and leaves admission, permissions, and tool policy with Medousa. Installing **Laya System One** from Settings → Packages starts the English checkpoint on `127.0.0.1:7422` with shadow mode; an explicitly configured endpoint remains supported. Keep `MEDOUSA_SYSTEM_ONE_MODE=shadow` while calibrating a checkpoint for Medousa's labels. The generic `typed-decisions` checkpoint targets unrelated workflows and is not the default.
 
 There is no `no_auth` or loopback bypass setting. Except for constant liveness,
 an active pairing ceremony, and scoped preview URLs, daemon routes require a

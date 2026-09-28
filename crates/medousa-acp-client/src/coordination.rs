@@ -721,7 +721,10 @@ mod tests {
         };
         proposal.proposal_id = store::proposals::proposal_identity(&proposal).unwrap();
         store
-            .record_proposal_with_source_sessions(&proposal, std::slice::from_ref(&source_session_id))
+            .record_proposal_with_source_sessions(
+                &proposal,
+                std::slice::from_ref(&source_session_id),
+            )
             .unwrap();
 
         let rows = store

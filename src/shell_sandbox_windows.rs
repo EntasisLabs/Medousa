@@ -155,34 +155,37 @@ fn run_with_appcontainer(request: &ShellRunRequest, cwd: &Path) -> Result<ShellR
     // Drop stdin so the child isn't blocked waiting for input.
     drop(launched.stdin.take());
 
+    // Keep the guard alive through output drain. rappct's JobGuard is windows 0.62;
+    // Win32 calls in this crate go through windows 0.61, so copy the raw pointer.
     let job_guard = launched
         .job_guard
-        .as_ref()
+        .take()
         .ok_or_else(|| "AppContainer launch omitted its process job".to_string())?;
+    let job_handle = HANDLE(job_guard.as_handle().0);
     let started = Instant::now();
     let mut timed_out = false;
     let mut cancelled = false;
     let exit_code = loop {
         if crate::shell_grapheme::workflow_cancellation_requested() {
-            let _ = unsafe { TerminateJobObject(job_guard.as_handle(), 1) };
+            let _ = unsafe { TerminateJobObject(job_handle, 1) };
             cancelled = true;
-            break launched.wait(Some(Duration::from_secs(2))).unwrap_or(-1) as i32;
+            break container_exit_code(launched.wait(Some(Duration::from_secs(2))));
         }
         if request
             .profile
             .timeout_ms
             .is_some_and(|timeout_ms| started.elapsed() >= Duration::from_millis(timeout_ms))
         {
-            let _ = unsafe { TerminateJobObject(job_guard.as_handle(), 1) };
+            let _ = unsafe { TerminateJobObject(job_handle, 1) };
             timed_out = true;
-            break launched.wait(Some(Duration::from_secs(2))).unwrap_or(-1) as i32;
+            break container_exit_code(launched.wait(Some(Duration::from_secs(2))));
         }
-        let wait = unsafe { WaitForSingleObject(job_guard.as_handle(), 20) };
+        let wait = unsafe { WaitForSingleObject(job_handle, 20) };
         if wait == WAIT_OBJECT_0 {
-            break launched.wait(Some(Duration::ZERO)).unwrap_or(-1) as i32;
+            break container_exit_code(launched.wait(Some(Duration::ZERO)));
         }
         if wait != WAIT_TIMEOUT {
-            let _ = unsafe { TerminateJobObject(job_guard.as_handle(), 1) };
+            let _ = unsafe { TerminateJobObject(job_handle, 1) };
             return Err("waiting for AppContainer process job failed".into());
         }
     };
@@ -195,7 +198,7 @@ fn run_with_appcontainer(request: &ShellRunRequest, cwd: &Path) -> Result<ShellR
             .is_some_and(|handle| !handle.is_finished())
     {
         if crate::shell_grapheme::workflow_cancellation_requested() {
-            let _ = unsafe { TerminateJobObject(job_guard.as_handle(), 1) };
+            let _ = unsafe { TerminateJobObject(job_handle, 1) };
             cancelled = true;
             break;
         }
@@ -204,7 +207,7 @@ fn run_with_appcontainer(request: &ShellRunRequest, cwd: &Path) -> Result<ShellR
             .timeout_ms
             .is_some_and(|timeout_ms| started.elapsed() >= Duration::from_millis(timeout_ms))
         {
-            let _ = unsafe { TerminateJobObject(job_guard.as_handle(), 1) };
+            let _ = unsafe { TerminateJobObject(job_handle, 1) };
             timed_out = true;
             break;
         }
@@ -251,6 +254,10 @@ fn run_with_appcontainer(request: &ShellRunRequest, cwd: &Path) -> Result<ShellR
         duration_ms: started.elapsed().as_millis() as u64,
         warning: None,
     })
+}
+
+fn container_exit_code(wait: rappct::Result<u32>) -> i32 {
+    wait.map(|code| code as i32).unwrap_or(-1)
 }
 
 fn grant_profile_paths(

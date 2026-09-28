@@ -668,8 +668,9 @@ pub struct WorkItem {
     pub environment: Option<GovernedEnv>,
     #[serde(default)]
     pub attempts: Vec<Attempt>,
-    /// Canonical set of running attempts. Every active attempt owns a fenced,
-    /// attempt-scoped mutation environment.
+    /// Canonical set of running execution records. Leases are attempt-scoped;
+    /// normal mutation happens in the undertaking environment. An attempt only
+    /// carries its own environment when explicitly created as a candidate fork.
     #[serde(default)]
     pub active_attempts: Vec<AttemptId>,
     /// Legacy projection retained while existing snapshots and clients migrate.
@@ -784,9 +785,9 @@ impl WorkItem {
             .map(|(_, environment)| environment)
     }
 
-    /// The worktree users and tools should see between attempts. Once an
-    /// isolated attempt exists, its preserved environment carries continuity;
-    /// the original undertaking environment remains the staging anchor.
+    /// The worktree users and tools should see. Normal attempts resolve to the
+    /// undertaking environment; an explicit candidate fork becomes visible
+    /// while selected or preserved for review.
     pub fn workspace_environment(&self) -> Option<&GovernedEnv> {
         if self.state == WorkState::Discarded {
             return None;

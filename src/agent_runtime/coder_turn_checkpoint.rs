@@ -631,9 +631,9 @@ pub fn plan_coder_recovery(
             attempt.state
         )));
     }
-    let Some(environment) = attempt.environment.as_ref() else {
+    let Some(environment) = item.environment_for_attempt(&source_attempt_id) else {
         return Ok(semantic(
-            "checkpoint attempt has no preserved Forge environment".into(),
+            "checkpoint attempt has no available Forge environment".into(),
         ));
     };
     let observed = match observe_environment(forge, environment, work_id, &source_attempt_id, None)
@@ -1571,7 +1571,7 @@ mod tests {
             .expect("provision");
         let work_id = item.id.clone();
         let (item, lease) = forge
-            .begin_isolated_attempt(
+            .begin_workspace_attempt(
                 &work_id,
                 ExecutorDescriptor {
                     kind: "medousa-coder".into(),

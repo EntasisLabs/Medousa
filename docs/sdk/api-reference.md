@@ -60,6 +60,13 @@ redacted focused-window frame and `control` to take or return a generation-fence
 human lease; neither route talks to the sidecar directly.
 See [Native computer drivers](../engine/http-api.md#native-computer-drivers).
 
+Daemon worker pairing uses generated operations `workers.get`,
+`workers.pair.post`, `workers.by_id.put`, `workers.default.put`, and
+`workers.by_id.delete`. These
+local-admin operations intentionally have no typed SDK accessor yet; native
+hosts may call them through `http()` while keeping pairing credentials inside
+the daemon. Home portal pairing is a separate identity and transport.
+
 Daemon delegation uses the generated native-only operation
 `mesh.tasks.post`. Application clients should not construct it directly: the
 daemon owns Stasis turn identity, bounded context, retries, and provenance,

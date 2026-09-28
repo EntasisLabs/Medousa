@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { stripComposerNavigationGlyphs } from "$lib/utils/composerKeyboard";
   interface Props {
     value?: string;
     placeholder?: string;
@@ -57,6 +58,19 @@
   }
 
   function handleInput(event: Event) {
+    if (element) {
+      const raw = element.value;
+      const clean = stripComposerNavigationGlyphs(raw);
+      if (clean !== raw) {
+        const start = element.selectionStart;
+        const end = element.selectionEnd;
+        const cleanStart = stripComposerNavigationGlyphs(raw.slice(0, start)).length;
+        const cleanEnd = stripComposerNavigationGlyphs(raw.slice(0, end)).length;
+        element.value = clean;
+        value = clean;
+        element.setSelectionRange(cleanStart, cleanEnd, element.selectionDirection);
+      }
+    }
     scheduleResize();
     oninput?.(event);
   }

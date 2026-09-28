@@ -125,6 +125,18 @@ pub fn package_catalog() -> Vec<PackageCatalogEntry> {
             false,
         ),
         entry(
+            "system-one-laya",
+            "Laya System One",
+            &["engine"],
+            &["laya-serve"],
+            PackageCategory::Core,
+            "Gauge",
+            &[],
+            1024 * 1024 * 1024,
+            true,
+            false,
+        ),
+        entry(
             "adapter-telegram",
             "Telegram",
             &["engine"],
@@ -412,6 +424,7 @@ pub fn is_home_packages_package(package_id: &str) -> bool {
     matches!(
         package_id,
         "local-brain"
+            | "system-one-laya"
             | "mcp-gateway"
             | "adapter-telegram"
             | "adapter-discord"
@@ -443,6 +456,7 @@ pub fn package_short_hint(package_id: &str) -> &'static str {
     match package_id {
         "engine" => "Launcher, daemon, CLI, and TUI.",
         "local-brain" => "On-device inference binary for offline Gemma.",
+        "system-one-laya" => "Local typed-decision engine for fast System One routing.",
         "mcp-gateway" => "Connect MCP servers to Medousa.",
         "adapter-telegram" => "Telegram channel adapter.",
         "adapter-discord" => "Discord channel adapter.",
@@ -478,6 +492,7 @@ pub fn resolve_package_alias(name: &str) -> Option<&'static str> {
             Some("computer-driver")
         }
         "local-brain" | "brain" | "local_brain" => Some("local-brain"),
+        "system-one-laya" | "laya" | "laya-serve" | "system-one" => Some("system-one-laya"),
         "desktop" => Some("desktop"),
         other => catalog_entry(other).map(|entry| entry.id),
     }
@@ -542,6 +557,13 @@ pub fn package_composition() -> Vec<PackageComposition> {
             workspace_crates: &["medousa-local-inference"],
             cargo_features: &[],
             binaries: &["medousa_local"],
+            in_default_engine_link: false,
+        },
+        PackageComposition {
+            package_id: "system-one-laya",
+            workspace_crates: &[],
+            cargo_features: &[],
+            binaries: &["laya-serve"],
             in_default_engine_link: false,
         },
         PackageComposition {
@@ -668,6 +690,7 @@ mod tests {
         assert_eq!(resolve_package_alias("mcp"), Some("mcp-gateway"));
         assert_eq!(resolve_package_alias("telegram"), Some("adapter-telegram"));
         assert_eq!(resolve_package_alias("brain"), Some("local-brain"));
+        assert_eq!(resolve_package_alias("laya"), Some("system-one-laya"));
         assert_eq!(resolve_package_alias("computer"), Some("computer-driver"));
     }
 
@@ -683,6 +706,7 @@ mod tests {
     fn home_packages_excludes_cli() {
         assert!(!is_home_packages_package("cli"));
         assert!(is_home_packages_package("mcp-gateway"));
+        assert!(is_home_packages_package("system-one-laya"));
         assert!(is_home_packages_package("computer-driver"));
     }
 

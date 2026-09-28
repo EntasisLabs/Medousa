@@ -88,17 +88,21 @@ Medousa stops with that state instead of silently running on the Home device.
   existing uncommitted changes outside the project. **Current checkout** takes
   an immutable starting snapshot of those files, then shows and reviews only
   changes made after Coder attached. It requires the currently checked-out
-  local branch; branch switches, commits, merges, rebases, and concurrent
-  attached projects make Forge refuse the next guarded mutation or review
+  local branch. Ordinary same-branch fast-forward commits—including commits
+  created while another Coder turn is winding down—advance the custody boundary
+  and keep the project attached. Branch switches, detached `HEAD`, conflicts,
+  rebases, resets, amended commits, and other rewritten history remain blocked
   instead of silently changing scope.
 - If existing checkout changes include excluded, oversized, or secret-like
   content, Medousa refuses to attach before making the snapshot. Clean those
   paths or use **Isolated copy**.
-- The checked-out branch, `HEAD`, and real Git index stay principal-owned and
-  pinned for the attachment. Fetch remains available; generic Pull, Push, and
-  Sync stay disabled. The explicit **Commit** and **Create PR** actions in chat
-  can advance the checkout boundary while preserving the original review baseline.
-  External branch switches or commits still require reattaching the project.
+- The checked-out branch, `HEAD`, and real Git index stay principal-owned. Fetch
+  remains available; generic Pull, Push, and Sync stay disabled. The explicit
+  **Commit** and **Create PR** actions in chat, and ordinary external commits on
+  the attached branch, advance the custody boundary while preserving the
+  original review baseline. Coder turns bound to the same project coordinate in
+  that workspace across conversations, so a follow-up does not fail merely
+  because the previous turn is still releasing its executor lease.
 - If active Medousa work already targets the repository, choose **Continue**
   that project or explicitly **Start another change**.
 - Manual path entry remains under the advanced disclosure for unusual mounts.

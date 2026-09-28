@@ -34224,6 +34224,277 @@
         }
       }
     },
+    "/v1/workers": {
+      "get": {
+        "operationId": "workers.get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "WORKERS_GETResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "workers.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "workers.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "workers.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/workers/default": {
+      "put": {
+        "operationId": "workers.default.put",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "WORKERS_DEFAULT_PUTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "workers.default.put"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "workers.default.put"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "workers.default.put"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/workers/pair": {
+      "post": {
+        "operationId": "workers.pair.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "WORKERS_PAIR_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "workers.pair.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "workers.pair.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "workers.pair.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 65536,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
+    "/v1/workers/{id}": {
+      "delete": {
+        "operationId": "workers.by_id.delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "WORKERS_BY_ID_DELETEResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "workers.by_id.delete"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "workers.by_id.delete"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "workers.by_id.delete"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      },
+      "put": {
+        "operationId": "workers.by_id.put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "WORKERS_BY_ID_PUTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "workers.by_id.put"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "workers.by_id.put"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "workers.by_id.put"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 16384,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.runtime"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
     "/v1/workflows": {
       "get": {
         "operationId": "workflows.get",

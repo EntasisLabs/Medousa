@@ -130,11 +130,45 @@ pub async fn execution_target_inventory_for_state(
     );
     let candidate =
         crate::workshop_contract::ExecutionTargetCandidate::local(runtime_id.clone(), capabilities);
+    let mut targets = vec![candidate.inventory_entry()];
+    if let Some(service) = state.platform.delegation_service()
+        && let Ok(remote_targets) = service.authorized_targets().await
+    {
+        targets.extend(
+            remote_targets
+                .into_iter()
+                .map(|target| target.candidate.inventory_entry())
+                .filter(|target| target.user_selectable),
+        );
+    }
+    targets.sort_by(|left, right| {
+        (left.runtime_id != runtime_id)
+            .cmp(&(right.runtime_id != runtime_id))
+            .then(
+                left.label
+                    .to_ascii_lowercase()
+                    .cmp(&right.label.to_ascii_lowercase()),
+            )
+            .then(left.runtime_id.cmp(&right.runtime_id))
+    });
+    targets.dedup_by(|left, right| left.runtime_id == right.runtime_id);
+    let default_runtime_id = if let Some(service) = state.platform.delegation_service() {
+        service
+            .binding()
+            .await
+            .ok()
+            .flatten()
+            .map(|binding| binding.target.peer_device_id)
+            .filter(|selected| targets.iter().any(|target| target.runtime_id == *selected))
+            .or_else(|| Some(runtime_id.clone()))
+    } else {
+        Some(runtime_id.clone())
+    };
     crate::workshop_contract::ExecutionTargetInventory {
         schema_version: crate::workshop_contract::EXECUTION_TARGET_INVENTORY_SCHEMA_VERSION,
-        parent_runtime_id: runtime_id.clone(),
-        default_runtime_id: Some(runtime_id),
-        targets: vec![candidate.inventory_entry()],
+        parent_runtime_id: runtime_id,
+        default_runtime_id,
+        targets,
     }
 }
 

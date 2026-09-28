@@ -2991,6 +2991,41 @@ pub const VAULT_TRASH_RESTORE_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const WORKERS_BY_ID_DELETE: Operation = Operation {
+    id: "workers.by_id.delete",
+    method: "DELETE",
+    path: "/v1/workers/{id}",
+    streaming: false,
+};
+
+pub const WORKERS_BY_ID_PUT: Operation = Operation {
+    id: "workers.by_id.put",
+    method: "PUT",
+    path: "/v1/workers/{id}",
+    streaming: false,
+};
+
+pub const WORKERS_DEFAULT_PUT: Operation = Operation {
+    id: "workers.default.put",
+    method: "PUT",
+    path: "/v1/workers/default",
+    streaming: false,
+};
+
+pub const WORKERS_GET: Operation = Operation {
+    id: "workers.get",
+    method: "GET",
+    path: "/v1/workers",
+    streaming: false,
+};
+
+pub const WORKERS_PAIR_POST: Operation = Operation {
+    id: "workers.pair.post",
+    method: "POST",
+    path: "/v1/workers/pair",
+    streaming: false,
+};
+
 pub const WORKFLOWS_BY_WORKFLOW_ID_GET: Operation = Operation {
     id: "workflows.by_workflow_id.get",
     method: "GET",
@@ -3635,6 +3670,11 @@ pub static ALL: &[Operation] = &[
     VAULT_TAGS_GET,
     VAULT_TRASH_GET,
     VAULT_TRASH_RESTORE_POST,
+    WORKERS_BY_ID_DELETE,
+    WORKERS_BY_ID_PUT,
+    WORKERS_DEFAULT_PUT,
+    WORKERS_GET,
+    WORKERS_PAIR_POST,
     WORKFLOWS_BY_WORKFLOW_ID_GET,
     WORKFLOWS_BY_WORKFLOW_ID_RUNS_GET,
     WORKFLOWS_FROM_SLICE_POST,

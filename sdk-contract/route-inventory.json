@@ -6783,6 +6783,86 @@
       "bootstrap_public": false,
       "browser_policy": "native_only",
       "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "workers.get",
+      "path": "/v1/workers",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 16384,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "PUT",
+      "operation_id": "workers.default.put",
+      "path": "/v1/workers/default",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 65536,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "workers.pair.post",
+      "path": "/v1/workers/pair",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "DELETE",
+      "operation_id": "workers.by_id.delete",
+      "path": "/v1/workers/{id}",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 16384,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.runtime"
+      ],
+      "feature_profile": "core",
+      "method": "PUT",
+      "operation_id": "workers.by_id.put",
+      "path": "/v1/workers/{id}",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
         "workshop.read"
       ],
       "feature_profile": "core",

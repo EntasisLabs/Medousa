@@ -20,22 +20,18 @@
   import type { DepthMode } from "$lib/types/runtime";
 
   const reasoning = $derived(composerReasoning());
-  type View = "main" | "voice" | "depth" | "reasoning" | "agent" | "drafts";
+  type View = "main" | "voice" | "depth" | "reasoning" | "agent";
   interface Props {
     disabled?: boolean;
     sessionId: string;
     showNativeControls?: boolean;
-    runtimeLabel: string;
     agentSettings: Snippet;
-    drafts: Snippet<[() => void]>;
   }
   let {
     disabled = false,
     sessionId,
     showNativeControls = true,
-    runtimeLabel,
     agentSettings,
-    drafts,
   }: Props = $props();
   let open = $state(false);
   let view = $state<View>("main");
@@ -47,12 +43,11 @@
     DEPTH_CHARTER_OPTIONS.find((option) => option.id === runtime.depthMode)?.label ?? "Standard",
   );
   const titles: Record<View, string> = {
-    main: "Turn settings",
+    main: "Behavior",
     voice: "Response style",
     depth: "Response depth",
     reasoning: "Reasoning",
     agent: "Agent runtime",
-    drafts: "Saved drafts",
   };
   const title = $derived(titles[view]);
   const choices = $derived(
@@ -143,7 +138,7 @@
 </script>
 
 <button bind:this={triggerEl} type="button" class="chat-runtime-trigger composer-settings-trigger"
-  aria-label="Turn settings" title="Turn settings" aria-haspopup="dialog" aria-expanded={open}
+  aria-label="Behavior" title="Reasoning and response behavior" aria-haspopup="dialog" aria-expanded={open}
   disabled={pickerDisabled}
   onclick={async () => {
     open = !open;
@@ -152,7 +147,7 @@
   }}
 >
   <SlidersHorizontal size={14} strokeWidth={1.8} />
-  <span>Settings</span>
+  <span>Behavior</span>
 </button>
 
 {#snippet settingRow(label: string, value: string, next: View)}
@@ -168,12 +163,12 @@
     <div bind:this={menuEl} class="composer-anchored-menu composer-settings-menu" role="dialog" tabindex="-1" aria-label={title} onkeydown={handleKeydown}>
       <header class="composer-settings-header">
         {#if view !== "main"}
-          <button type="button" aria-label="Back to turn settings" onclick={() => void navigate("main")}>
+          <button type="button" aria-label="Back to behavior" onclick={() => void navigate("main")}>
             <ArrowLeft size={15} />
           </button>
         {/if}
         <h2>{title}</h2>
-        <button type="button" aria-label="Close turn settings" onclick={close}><X size={15} /></button>
+        <button type="button" aria-label="Close behavior" onclick={close}><X size={15} /></button>
       </header>
       <div class="composer-anchored-menu-body">
         {#if view === "main"}
@@ -186,13 +181,12 @@
             <span>Read replies aloud</span>
             <ChatNarrationToggle />
           </div>
-          <div class="composer-settings-divider"></div>
-          {@render settingRow("Agent runtime", runtimeLabel, "agent")}
-          {@render settingRow("Saved drafts", "", "drafts")}
+          {#if !showNativeControls}
+            <div class="composer-settings-divider"></div>
+            {@render settingRow("Runtime options", "", "agent")}
+          {/if}
         {:else if view === "agent"}
           {@render agentSettings()}
-        {:else if view === "drafts"}
-          {@render drafts(close)}
         {:else if view === "reasoning"}
           <ReasoningOptions {...reasoning} disabled={pickerDisabled} onchange={(value) => { selectComposerReasoning(value); void navigate("main"); }} />
         {:else}

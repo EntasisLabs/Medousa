@@ -318,6 +318,27 @@ pub enum PairCommand {
         #[arg(long = "daemon-url")]
         daemon_url: Option<String>,
     },
+    /// Pair this local daemon as a worker of another workshop.
+    Join {
+        pairing_url: String,
+        #[arg(long = "worker-url")]
+        worker_url: Option<String>,
+        #[arg(long)]
+        label: Option<String>,
+    },
+    /// List daemon-owned outbound worker connections.
+    Workers,
+    /// Remove a daemon-owned outbound worker connection.
+    WorkerRemove {
+        worker_id: String,
+    },
+    /// List local and paired execution targets.
+    Targets,
+    /// Select the default execution target.
+    Target {
+        #[command(subcommand)]
+        action: PairTargetAction,
+    },
     Lan {
         #[command(subcommand)]
         action: PairLanAction,
@@ -327,6 +348,12 @@ pub enum PairCommand {
         #[command(subcommand)]
         action: PairPermissionsAction,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PairTargetAction {
+    Use { runtime_id: String },
+    Local,
 }
 
 #[derive(Debug, Subcommand)]
@@ -681,6 +708,32 @@ impl PairArgs {
                 out.insert(0, "remove".into());
                 out.push(pairing_id.clone());
                 push_opt(&mut out, "--daemon-url", daemon_url.as_deref());
+            }
+            Some(PairCommand::Join {
+                pairing_url,
+                worker_url,
+                label,
+            }) => {
+                out.insert(0, "join".into());
+                out.push(pairing_url.clone());
+                push_opt(&mut out, "--worker-url", worker_url.as_deref());
+                push_opt(&mut out, "--label", label.as_deref());
+            }
+            Some(PairCommand::Workers) => out.insert(0, "workers".into()),
+            Some(PairCommand::WorkerRemove { worker_id }) => {
+                out.insert(0, "worker-remove".into());
+                out.push(worker_id.clone());
+            }
+            Some(PairCommand::Targets) => out.insert(0, "targets".into()),
+            Some(PairCommand::Target { action }) => {
+                out.insert(0, "target".into());
+                match action {
+                    PairTargetAction::Use { runtime_id } => {
+                        out.push("use".into());
+                        out.push(runtime_id.clone());
+                    }
+                    PairTargetAction::Local => out.push("local".into()),
+                }
             }
             Some(PairCommand::Lan { action }) => {
                 out.insert(0, "lan".into());

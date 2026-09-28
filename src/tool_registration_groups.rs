@@ -123,6 +123,11 @@ pub fn register_portable_interactive_tools(
         registry,
         bindings.delegation_service.clone(),
     )?;
+    // Portable/mobile compositions use the bound-remote adapter for the
+    // canonical workshop tools. Full daemons register their own workshop
+    // tools in `register_shared_interactive_tools`; registering both adapters
+    // here gives the same tool ids two owners.
+    #[cfg(not(feature = "full-daemon"))]
     if let Some(service) = &bindings.delegation_service {
         crate::delegation_tools::register_remote_workshop_tools(registry, service.clone())?;
         crate::remote_peer_tools::register_remote_peer_tools(registry, service.clone())?;

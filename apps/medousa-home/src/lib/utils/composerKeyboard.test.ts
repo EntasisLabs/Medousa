@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shouldSubmitComposerKey } from "$lib/utils/composerKeyboard";
+import { shouldSubmitComposerKey, stripComposerNavigationGlyphs } from "$lib/utils/composerKeyboard";
 
 function keyEvent(
   overrides: Partial<Pick<KeyboardEvent, "key" | "shiftKey" | "isComposing">> = {},
@@ -28,5 +28,20 @@ describe("shouldSubmitComposerKey", () => {
     expect(
       shouldSubmitComposerKey(keyEvent({ isComposing: true }), false),
     ).toBe(false);
+  });
+});
+
+
+describe("stripComposerNavigationGlyphs", () => {
+  it("removes AppKit arrow and text-navigation key glyphs", () => {
+    expect(stripComposerNavigationGlyphs(`before\uF702middle\uF703after`)).toBe(
+      "beforemiddleafter",
+    );
+    expect(stripComposerNavigationGlyphs(`up\uF700down\uF701`)).toBe("updown");
+  });
+
+  it("preserves ordinary text, emoji, and typographic arrows", () => {
+    const text = "hello → world 👋";
+    expect(stripComposerNavigationGlyphs(text)).toBe(text);
   });
 });

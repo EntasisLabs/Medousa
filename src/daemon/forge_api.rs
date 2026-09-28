@@ -549,6 +549,7 @@ fn map_err(err: ForgeError) -> ApiError {
         | ForgeError::DecisionInvalid { .. }
         | ForgeError::EvidenceMismatch { .. }
         | ForgeError::EnvironmentDrift(_) => (StatusCode::CONFLICT, Some("conflict")),
+        ForgeError::WorkspaceBusy(_) => (StatusCode::CONFLICT, Some("workspace_busy")),
         ForgeError::PolicyViolation(_) | ForgeError::CaptureBlocked(_) => {
             (StatusCode::UNPROCESSABLE_ENTITY, Some("policy"))
         }

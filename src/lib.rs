@@ -14,6 +14,9 @@ pub(crate) mod portable_grapheme_engine;
 pub mod active_work_tools;
 
 #[cfg(feature = "full-daemon")]
+pub mod daemon_worker;
+
+#[cfg(feature = "full-daemon")]
 include!("full_daemon.rs");
 
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]

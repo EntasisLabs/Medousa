@@ -92,21 +92,29 @@ if ($Target) {
     $cargoBuildArgs += @("--target", $Target)
 }
 
+# Root package bins only. Adapter bins live in their own packages; passing them
+# here makes cargo look in the default package and fail with
+# "no bin target named `medousa_telegram` in default-run packages".
 Write-MedousaLog "phase 1/2: cargo build (root workspace, release)..."
 Invoke-MedousaCargo @cargoBuildArgs `
     --bin medousa `
     --bin medousa_cli `
     --bin medousa_daemon `
-    --bin medousa_tui `
-    --bin medousa_telegram `
-    --bin medousa_discord `
-    --bin medousa_slack `
-    --bin medousa_mcp_gateway
+    --bin medousa_tui
 
-Write-MedousaLog "cargo build (medousa_whatsapp)..."
-$waBuildArgs = @("build", "--release", "--manifest-path", $MEDOUSA_WHATSAPP_MANIFEST)
-if ($Target) { $waBuildArgs += @("--target", $Target) }
-Invoke-MedousaCargo @waBuildArgs
+$adapterManifests = @(
+    @{ Label = "medousa_telegram"; Manifest = $MEDOUSA_TELEGRAM_MANIFEST },
+    @{ Label = "medousa_discord"; Manifest = $MEDOUSA_DISCORD_MANIFEST },
+    @{ Label = "medousa_slack"; Manifest = $MEDOUSA_SLACK_MANIFEST },
+    @{ Label = "medousa_mcp_gateway"; Manifest = $MEDOUSA_MCP_GATEWAY_MANIFEST },
+    @{ Label = "medousa_whatsapp"; Manifest = $MEDOUSA_WHATSAPP_MANIFEST }
+)
+foreach ($adapter in $adapterManifests) {
+    Write-MedousaLog "cargo build ($($adapter.Label))..."
+    $adapterArgs = @("build", "--release", "--manifest-path", $adapter.Manifest)
+    if ($Target) { $adapterArgs += @("--target", $Target) }
+    Invoke-MedousaCargo @adapterArgs
+}
 
 Write-MedousaLog "cargo build (medousa-code)..."
 $codeBuildArgs = @("build", "--release", "-p", "medousa-code", "--bin", "medousa-code")

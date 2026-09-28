@@ -336,7 +336,6 @@
     });
   });
 </script>
-
 {#if isTauri()}
   <div class="ws-band" class:ws-band-lead={lead}>
     <div class="ws-band-head" class:ws-band-head-mobile={mobile}>

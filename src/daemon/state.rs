@@ -51,6 +51,8 @@ impl AgentTurnJobRecord {
 #[derive(Clone)]
 pub struct AppState {
     pub platform: Arc<MedousaPlatformRuntime>,
+    /// Daemon-owned outbound worker identities and credentials.
+    pub daemon_workers: Arc<crate::daemon_worker::DaemonWorkerPairing>,
     pub daemon_base_url: String,
     pub interactive_turn_streams: TurnStreamRegistry,
     pub active_ingest_jobs: Arc<RwLock<HashMap<String, session_mapping::ActiveIngestJob>>>,

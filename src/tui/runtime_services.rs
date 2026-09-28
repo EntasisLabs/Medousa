@@ -187,7 +187,7 @@ pub(crate) async fn assemble_tui_runtime(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn assemble_tui_runtime_with_delegation(
+pub(crate) async fn assemble_tui_runtime_with_delegation(
     runtime: Arc<stasis::prelude::RuntimeComposition>,
     identity_memory_store: Arc<MedousaIdentityMemoryStore>,
     memory_reader: Arc<dyn MemoryContextReader>,
@@ -253,7 +253,7 @@ async fn assemble_tui_runtime_with_delegation(
         worker_scheduler: worker_scheduler.clone(),
         capability_registry: capability_registry.clone(),
         mcp_gateway_client: mcp_gateway_client.clone(),
-        delegation_service: None,
+        delegation_service: delegation_service.clone(),
     };
     crate::tool_registration_groups::register_portable_foundation_tools(
         &mut tool_registry,

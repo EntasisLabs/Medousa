@@ -52,6 +52,11 @@ pub enum ForgeError {
     #[error("environment drifted after seal: {0}")]
     EnvironmentDrift(String),
 
+    /// The governed workspace is healthy but is currently held by an executor
+    /// that does not participate in the requested collaboration protocol.
+    #[error("workspace busy: {0}")]
+    WorkspaceBusy(String),
+
     #[error("policy violation requires acknowledgment: {0}")]
     PolicyViolation(String),
 

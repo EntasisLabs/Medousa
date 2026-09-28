@@ -38,6 +38,10 @@ function Get-MedousaRepoRoot {
 }
 
 $script:MEDOUSA_ROOT = Get-MedousaRepoRoot
+$script:MEDOUSA_TELEGRAM_MANIFEST = "adapters/medousa-telegram/Cargo.toml"
+$script:MEDOUSA_DISCORD_MANIFEST = "adapters/medousa-discord/Cargo.toml"
+$script:MEDOUSA_SLACK_MANIFEST = "adapters/medousa-slack/Cargo.toml"
+$script:MEDOUSA_MCP_GATEWAY_MANIFEST = "adapters/medousa-mcp-gateway/Cargo.toml"
 $script:MEDOUSA_WHATSAPP_MANIFEST = "adapters/medousa-whatsapp/Cargo.toml"
 
 function Get-MedousaParseCargoVersion([string]$TomlPath) {

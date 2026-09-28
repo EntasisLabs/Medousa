@@ -589,6 +589,26 @@ pub fn build_workshop_surface() -> DeclaredRouter<AppState> {
     use crate::request_principal::Capability;
 
     DeclaredRouter::default()
+        .route(
+            workshop_admin_policy(axum::http::Method::GET, "/v1/workers", 1024),
+            get(crate::daemon_worker::list_daemon_workers),
+        )
+        .route(
+            workshop_admin_policy(axum::http::Method::POST, "/v1/workers/pair", 64 * 1024),
+            post(crate::daemon_worker::pair_daemon_worker),
+        )
+        .route(
+            workshop_admin_policy(axum::http::Method::PUT, "/v1/workers/default", 16 * 1024),
+            put(crate::daemon_worker::select_daemon_worker),
+        )
+        .route(
+            workshop_admin_policy(axum::http::Method::DELETE, "/v1/workers/{id}", 1024),
+            delete(crate::daemon_worker::remove_daemon_worker),
+        )
+        .route(
+            workshop_admin_policy(axum::http::Method::PUT, "/v1/workers/{id}", 16 * 1024),
+            put(crate::daemon_worker::rename_daemon_worker),
+        )
         .merge(crate::live_handlers::surface())
         .route(workshop_read_policy("/v1/health"), get(health))
         .route(workshop_read_policy("/v1/stats"), get(stats))
