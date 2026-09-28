@@ -7920,6 +7920,7 @@ dependencies = [
  "iroh-tickets",
  "n0-future",
  "tokio",
+ "url",
 ]
 
 [[package]]
