@@ -7,6 +7,8 @@ use clap::Parser;
 
 #[path = "medousa_cli/cli.rs"]
 mod cli;
+#[path = "medousa_cli/external_event.rs"]
+mod external_event;
 use medousa::engine_context::{
     EngineExecutionLane, compile_default_lane_prompt, default_policy_profile_for_lane,
 };
@@ -20,7 +22,6 @@ use medousa::{
     wait_for_ask_delivery,
 };
 use reqwest::Client;
-use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use serde_json::{Value, json};
 use stasis::application::orchestration::runtime_job_payloads::{
     AgentSessionJobPayload, AgentSessionParticipantPayload, AgentToolCallMode, PromptJobPayload,
@@ -44,43 +45,6 @@ fn with_cmd(cmd: &str, rest: Vec<String>) -> Vec<String> {
 
 fn cli_daemon_client(daemon_url: &str) -> Result<Client> {
     medousa::local_daemon_auth::async_client(daemon_url, medousa_local_credential::CLI_LOCAL_NAME)
-}
-
-async fn run_daemon_external_event(
-    daemon_url: &str,
-    args: cli::DaemonExternalEventArgs,
-) -> Result<()> {
-    let conversation_id = uuid::Uuid::parse_str(&args.conversation_id)
-        .map_err(|_| anyhow!("invalid conversation ID"))?;
-    let bearer = std::env::var("MEDOUSA_BRIDGE_BEARER")
-        .map_err(|_| anyhow!("MEDOUSA_BRIDGE_BEARER must contain a paired workshop bearer"))?;
-    let callback_key = std::env::var("MEDOUSA_BRIDGE_KEY")
-        .map_err(|_| anyhow!("MEDOUSA_BRIDGE_KEY must contain this conversation's callback key"))?;
-    let mut headers = HeaderMap::new();
-    let mut authorization = HeaderValue::from_str(&format!("Bearer {bearer}"))?;
-    authorization.set_sensitive(true);
-    headers.insert(AUTHORIZATION, authorization);
-    let mut bridge_key = HeaderValue::from_str(&callback_key)?;
-    bridge_key.set_sensitive(true);
-    headers.insert("x-medousa-bridge-key", bridge_key);
-    let client = Client::builder().default_headers(headers).build()?;
-    client
-        .post(format!(
-            "{}/v1/external-conversations/{}/events",
-            daemon_url.trim_end_matches('/'),
-            conversation_id
-        ))
-        .json(&json!({
-            "event_id": args.event_id,
-            "request_id": args.request_id,
-            "kind": args.kind,
-            "text": args.text,
-        }))
-        .send()
-        .await?
-        .error_for_status()?;
-    println!("event accepted");
-    Ok(())
 }
 
 #[tokio::main]
@@ -157,10 +121,7 @@ async fn main() -> Result<()> {
             let prompt = args.prompt.join(" ");
             run_daemon_watch_add(&daemon_url, &args.cron_expr, &args.tz, &prompt).await
         }
-        cli::Commands::DaemonExternalEvent(args) => {
-            let daemon_url = resolve_daemon_url(args.daemon_url.as_deref());
-            run_daemon_external_event(&daemon_url, args).await
-        }
+        cli::Commands::DaemonExternalEvent(args) => external_event::run(args).await,
         cli::Commands::DaemonIdentityContext(args) => {
             let daemon_url = resolve_daemon_url(args.daemon_url.as_deref());
             let legacy = with_cmd("daemon-identity-context", args.to_legacy());
@@ -1714,7 +1675,7 @@ fn print_usage() {
     );
     println!("  medousa-cli daemon-job-report <job_id> [--daemon-url <url>]");
     println!(
-        "  medousa-cli daemon-external-event <conversation_id> <event_id> <kind> <text> --request-id <id> [--daemon-url <url>] (uses MEDOUSA_BRIDGE_BEARER and MEDOUSA_BRIDGE_KEY)"
+        "  medousa-cli daemon-external-event <conversation_id> <event_id> <kind> <text> --request-id <id> [--iroh-ticket <ticket> | --worker <id|label> | --daemon-url <url>] (uses MEDOUSA_BRIDGE_KEY; explicit tickets also use MEDOUSA_BRIDGE_BEARER)"
     );
     println!(
         "  medousa-cli daemon-watch-add <cron_expr> <prompt> [--tz <timezone>] [--daemon-url <url>]"

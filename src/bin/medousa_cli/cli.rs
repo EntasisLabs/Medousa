@@ -85,6 +85,13 @@ pub struct DaemonExternalEventArgs {
     pub request_id: String,
     #[arg(long = "daemon-url")]
     pub daemon_url: Option<String>,
+    /// Send over Iroh without probing or falling back to the daemon URL.
+    /// Also accepts MEDOUSA_BRIDGE_IROH_TICKET from the private environment.
+    #[arg(long = "iroh-ticket", conflicts_with = "worker")]
+    pub iroh_ticket: Option<String>,
+    /// Read the Iroh ticket and bearer from a saved `medousa pair join` worker.
+    #[arg(long, conflicts_with = "daemon_url")]
+    pub worker: Option<String>,
 }
 
 #[derive(Debug, Args)]

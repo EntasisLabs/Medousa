@@ -9,14 +9,25 @@ Medousa can show conversations with agents that run on their own computers. Set 
 3. Save the callback key shown once. The Bot VM needs a separately paired Medousa workshop credential and must report events to the conversation's `/events` route with `x-medousa-bridge-key`. The webhook key and callback key serve different directions. The VM can use `medousa-cli daemon-external-event` with `MEDOUSA_BRIDGE_BEARER` and `MEDOUSA_BRIDGE_KEY` set in its private environment.
 4. In Chat, choose **Grok Bot** and the registered bot, then send a message. An accepted webhook means the routine started; the conversation shows a result only when a callback arrives.
 
-The routine receives JSON with `schema_version`, `request_id`, `conversation_id`, and `message`. Keep the IDs from that request when reporting progress or the result. For example, after configuring `MEDOUSA_BRIDGE_BEARER` and `MEDOUSA_BRIDGE_KEY` privately on the VM:
+The routine receives JSON with `schema_version`, `request_id`, `conversation_id`, and `message`. Keep the IDs from that request when reporting progress or the result. For a VM paired using `medousa pair join`, list its saved workshop connections with `medousa pair workers`, then select the connection's ID:
 
 ```sh
 medousa-cli daemon-external-event "$CONVERSATION_ID" "$EVENT_ID" completed "$RESULT" \
-  --request-id "$REQUEST_ID" --daemon-url "$WORKSHOP_URL"
+  --request-id "$REQUEST_ID" --worker "$WORKER_ID"
 ```
 
-Use a new event ID for each report. The workshop URL must be reachable from the VM through an authenticated Medousa connection.
+Set `MEDOUSA_BRIDGE_KEY` privately on the VM. `--worker` reads the Iroh ticket and workshop bearer together from that VM's `delegation/workers.json`; it does not use the record's LAN URL or require a named portal connection. It also accepts a unique saved connection label, which you can check with `pair workers`.
+
+If your routine already stores the ticket and bearer separately, keep `MEDOUSA_BRIDGE_BEARER` and `MEDOUSA_BRIDGE_KEY` in its private environment and use:
+
+```sh
+medousa-cli daemon-external-event "$CONVERSATION_ID" "$EVENT_ID" completed "$RESULT" \
+  --request-id "$REQUEST_ID" --iroh-ticket "$IROH_TICKET"
+```
+
+Alternatively, set `MEDOUSA_BRIDGE_IROH_TICKET` privately and omit `--iroh-ticket`. An explicit ticket takes precedence over this environment variable. `--worker` always uses its own saved ticket and bearer. Both Iroh forms skip direct HTTP, even when a LAN URL is available, and fail without HTTP fallback. A CLI built without Iroh support reports an error; source builds need `cargo build --release --features iroh-transport --bin medousa_cli` (the resulting binary is named `medousa_cli`).
+
+Without a ticket or `--worker`, the command uses HTTP and accepts `--daemon-url "$WORKSHOP_URL"`. Use a new event ID for each new report, but reuse the same ID when retrying an uncertain delivery so the workshop can deduplicate it. A 401 response means the paired workshop bearer needs renewal; callback delivery does not renew it automatically. A 403 means to check the pairing's portal permissions and the callback key.
 
 If the callback key is lost or exposed, use **Rotate callback key** in External Agents and update the VM's private configuration. **Remove** deletes its transcript from this workshop and revokes its stored keys.
 
