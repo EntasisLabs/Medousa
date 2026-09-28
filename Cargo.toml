@@ -34,6 +34,7 @@ members = [
     "crates/medousa-secrets",
     "crates/medousa-mcp-server",
     "crates/medousa-acp-client",
+    "crates/medousa-browser",
     "crates/medousa-adapter-common",
     "crates/medousa-forge",
     "crates/medousa-code",
@@ -76,7 +77,7 @@ path = "examples/p06_vault_backend.rs"
 required-features = ["full-daemon"]
 
 [dependencies]
-tempfile = "3"
+tempfile = { version = "3", optional = true }
 medousa-types = { path = "crates/medousa-types" }
 medousa-api-contract = { path = "crates/medousa-api-contract", optional = true }
 medousa-tool-macros = { path = "crates/medousa-tool-macros", optional = true }
@@ -85,10 +86,10 @@ medousa-mcp-gateway = { path = "adapters/medousa-mcp-gateway", optional = true }
 medousa-install-support = { path = "crates/medousa-install-support", optional = true }
 medousa-local-credential = { path = "crates/medousa-local-credential", optional = true }
 medousa-secrets = { path = "crates/medousa-secrets", optional = true }
-medousa-engine = { path = "crates/medousa-engine" }
-medousa-runtime = { path = "crates/medousa-runtime" }
+medousa-engine = { path = "crates/medousa-engine", optional = true }
+medousa-runtime = { path = "crates/medousa-runtime", optional = true }
 medousa-host = { path = "crates/medousa-host", optional = true }
-medousa-store = { path = "crates/medousa-store" }
+medousa-store = { path = "crates/medousa-store", optional = true }
 medousa-sdk = { path = "crates/medousa-sdk", optional = true }
 medousa-acp-client = { path = "crates/medousa-acp-client", optional = true }
 medousa-forge = { path = "crates/medousa-forge", optional = true }
@@ -106,7 +107,7 @@ clap = { version = "4", features = ["derive"], optional = true }
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = { version = "0.10", optional = true }
 icalendar = { version = "0.17", default-features = true, features = ["chrono-tz"], optional = true }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "signal", "sync", "fs", "io-util"] }
+# Tokio features are target-split below. wasm32 cannot use rt-multi-thread, signal, or fs.
 tokio-util = { version = "0.7", features = ["rt"] }
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
@@ -122,19 +123,20 @@ ratatui-image = { version = "11.0.2", default-features = false, features = ["cro
 image = { version = "0.25.6", default-features = false, features = ["jpeg", "png", "webp", "gif"], optional = true }
 crossterm = { version = "0.28", features = ["event-stream"], optional = true }
 futures-util = { version = "0.3", optional = true }
-stasis-rs = { version = "0.13.0", default-features = false, features = ["llm-genai"] }
+stasis-rs = { version = "0.13.0", default-features = false }
 grapheme-sdk = { version = "0.7.1", default-features = false, features = ["host"], optional = true }
+grapheme-wasm = { version = "0.7.1", optional = true }
 grapheme-compiler = { version = "0.7.1", default-features = false, optional = true }
 grapheme-runtime = { version = "0.7.1", default-features = false, optional = true }
 grapheme-lsp = { version = "0.7.1", optional = true }
 schemars = { version = "0.8", optional = true }
-genai = "0.6.5"
+genai = { version = "0.6.5", optional = true }
 locus-core-rs = { version = "0.5.1", default-features = false }
 locus-sdk = { version = "=0.5.0", default-features = false, optional = true }
 keyring = { version = "2.3", optional = true }
 once_cell = "1"
 surrealdb-types = { version = "3.1.5" }
-surrealdb = { version = "3.1.5", default-features = false, features = ["kv-surrealkv", "rustls"] }
+surrealdb = { version = "3.1.5", default-features = false }
 toml = { version = "0.8", optional = true }
 serde_yaml = { version = "0.9", optional = true }
 libc = { version = "0.2", optional = true }
@@ -186,10 +188,49 @@ windows = { version = "0.61", features = [
 ], optional = true }
 rappct = { version = "0.13.3", optional = true }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "signal", "sync", "fs", "io-util"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+uuid = { version = "1", features = ["v4", "js"] }
+getrandom = { version = "0.2", features = ["js"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "Window",
+    "Navigator",
+    "StorageManager",
+    "Storage",
+    "console",
+    "Request",
+    "RequestInit",
+    "RequestMode",
+    "Response",
+    "Headers",
+    "FileSystemDirectoryHandle",
+    "FileSystemFileHandle",
+    "FileSystemGetFileOptions",
+    "FileSystemGetDirectoryOptions",
+    "FileSystemCreateWritableOptions",
+    "FileSystemWritableFileStream",
+    "File",
+    "Blob",
+] }
+
 [features]
 default = ["full-daemon"]
 full-daemon = [
     "medousa-types/json-schema",
+    "stasis-rs/llm-genai",
+    "surrealdb/kv-surrealkv",
+    "surrealdb/rustls",
+    "dep:medousa-engine",
+    "dep:medousa-runtime",
+    "dep:medousa-store",
+    "dep:genai",
+    "dep:tempfile",
     "stasis-rs/dashboard",
     "stasis-rs/locus-persist",
     "stasis-rs/otel",
@@ -266,6 +307,14 @@ full-daemon = [
 ]
 embedded-daemon = [
     "medousa-types/json-schema",
+    "stasis-rs/llm-genai",
+    "surrealdb/kv-surrealkv",
+    "surrealdb/rustls",
+    "dep:medousa-engine",
+    "dep:medousa-runtime",
+    "dep:medousa-store",
+    "dep:genai",
+    "dep:tempfile",
     "stasis-rs/grapheme-host",
     "stasis-rs/locus-persist",
     "stasis-rs/surreal-native",
@@ -304,7 +353,23 @@ otel-export = [
     "dep:opentelemetry_sdk",
     "dep:opentelemetry-otlp",
 ]
+# Native daemon listener. The browser profile depends on the client crates
+# directly so it does not pull full-daemon, Forge, or Axum.
 iroh-transport = ["full-daemon", "dep:iroh", "dep:iroh-tickets", "dep:httparse", "dep:medousa-iroh-http"]
+wasm-daemon = [
+    "stasis-rs/surreal",
+    "stasis-rs/grapheme",
+    "stasis-rs/locus-persist",
+    "surrealdb/kv-indxdb",
+    "dep:grapheme-wasm",
+    "dep:grapheme-compiler",
+    "dep:grapheme-runtime",
+    "dep:futures-util",
+    "dep:iroh",
+    "dep:iroh-tickets",
+    "dep:httparse",
+    "dep:medousa-iroh-http",
+]
 
 [dev-dependencies]
 medousa-mcp-server = { path = "crates/medousa-mcp-server" }

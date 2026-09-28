@@ -60,7 +60,7 @@ pub async fn ensure_stasis_runtime_schema(runtime: &RuntimeComposition) -> anyho
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "wasm-daemon")))]
 mod tests {
     use super::*;
     use stasis::prelude::{RuntimeBackend, RuntimeComposition, RuntimeFactory};

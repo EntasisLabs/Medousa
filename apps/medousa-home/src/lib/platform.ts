@@ -48,9 +48,17 @@ export function usesUnifiedTitlebar(): boolean {
   return titlebarMode() !== "none";
 }
 
+/**
+ * The page hosts the wasm daemon. Host folder pickers stay on the Tauri app.
+ * False during SSR, before `window` exists.
+ */
+export function isBrowserWorkshop(): boolean {
+  return typeof window !== "undefined" && !isTauri();
+}
+
 /** Channel surface tag sent to the daemon for interactive turns from Medousa. */
 export function homeChannelSurface(): string {
-  if (!isTauri() || typeof navigator === "undefined") return "home-desktop";
+  if (typeof navigator === "undefined" || !isTauri()) return "home-browser";
   const ua = navigator.userAgent;
   if (/iPhone|iPad|iPod/i.test(ua)) return "home-ios";
   if (/Android/i.test(ua)) return "home-android";
@@ -63,7 +71,7 @@ export function isMobileViewport(): boolean {
 }
 
 export function shouldUseMobileShell(): boolean {
-  return isTauriMobilePlatform() || isMobileViewport();
+  return isBrowserWorkshop() || isTauriMobilePlatform() || isMobileViewport();
 }
 
 export function watchMobileViewport(onChange: (mobile: boolean) => void): () => void {

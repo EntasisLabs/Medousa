@@ -18,7 +18,7 @@
   import ExternalConversationSettingsCard from "$lib/components/settings/ExternalConversationSettingsCard.svelte";
   import { accountConnections } from "$lib/stores/accountConnections.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
-  import { isTauriDesktop } from "$lib/platform";
+  import { isBrowserWorkshop, isTauriDesktop } from "$lib/platform";
   import {
     authStatusLabel,
     beginChatgptDeviceLogin,
@@ -301,9 +301,11 @@
     </p>
   {/if}
   <div class="connections-cards mt-3">
-    <ExternalConversationSettingsCard provider="muse" />
+    {#if !isBrowserWorkshop()}
+      <ExternalConversationSettingsCard provider="muse" />
+      <ExternalConversationSettingsCard provider="instinct" />
+    {/if}
     <ExternalConversationSettingsCard provider="grok_bot" />
-    <ExternalConversationSettingsCard provider="instinct" />
   </div>
 </section>
 

@@ -9,7 +9,7 @@
   import { chatStreamPool } from "$lib/chat/chatStreamPool.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
   import { workspace } from "$lib/stores/workspace.svelte";
-  import { usesUnifiedTitlebar } from "$lib/platform";
+  import { isBrowserWorkshop, usesUnifiedTitlebar } from "$lib/platform";
   import type { DaemonHealth } from "$lib/daemon";
   import { refreshDaemonHealth } from "$lib/workshopConnection";
   import {
@@ -203,6 +203,12 @@
         />
       {/if}
     {:else if activeTab?.kind === "terminal"}
+      {#if isBrowserWorkshop()}
+        <EmptyState
+          title="Terminal stays on the desktop app"
+          description="This workshop runs in the page. Shell sessions stay on a native Medousa host."
+        />
+      {:else}
       {#key activeTab.sessionId}
         <LazyFeatureView
           loader={loadTerminalPane}
@@ -212,6 +218,7 @@
           title={activeTab.title}
         />
       {/key}
+      {/if}
     {:else if showLme}
       <LazyFeatureView
         loader={loadLmePanel}

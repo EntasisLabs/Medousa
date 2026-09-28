@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import { isBrowserWorkshop } from "$lib/platform";
+import { runBrowserGrapheme } from "$lib/wasm/browserDaemon";
 import { OPERATIONS, type OperationId } from "./generatedOps";
 
 export { OPERATIONS, type OperationId } from "./generatedOps";
@@ -13,6 +15,13 @@ export async function daemonUnary<T>(
   const operation = OPERATIONS[id];
   if (operation.streaming) {
     throw new Error(`use daemonStreamStart for ${id}`);
+  }
+  if (isBrowserWorkshop() && id === "grapheme.run.post") {
+    const source =
+      body && typeof body === "object" && "source" in body
+        ? String((body as { source?: unknown }).source ?? "")
+        : "";
+    return runBrowserGrapheme(source) as Promise<T>;
   }
   return invoke<T>("daemon_unary", {
     operation: id,

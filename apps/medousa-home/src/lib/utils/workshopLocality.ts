@@ -1,6 +1,6 @@
 /** Whether Home and the active workshop daemon share this machine’s disk. */
 
-import { isTauri } from "$lib/platform";
+import { isBrowserWorkshop, isTauri } from "$lib/platform";
 
 let kindPort: () => string | undefined = () => undefined;
 let idPort: () => string | undefined = () => undefined;
@@ -30,7 +30,9 @@ export function workshopScopedStorageKey(prefix: string, workshopId?: string): s
  */
 export function isCoLocatedWorkshop(): boolean {
   if (!isTauri()) {
-    // Browser shell never has the daemon’s filesystem.
+    // The browser workshop is co-located with origin-private storage, not the
+    // OS disk. Folder pickers and Reveal stay unavailable; vault I/O goes
+    // through the wasm daemon.
     return false;
   }
   // Unknown kind is treated as remote — assuming local hands Home paths to a
@@ -38,7 +40,15 @@ export function isCoLocatedWorkshop(): boolean {
   return kindPort() === "local";
 }
 
+/** Browser Personal stores the vault in the wasm daemon's OPFS root. */
+export function usesOriginPrivateDaemonStorage(): boolean {
+  return isBrowserWorkshop();
+}
+
 export function vaultHostSideHint(): string {
+  if (usesOriginPrivateDaemonStorage()) {
+    return "This workshop keeps files in the browser. Folder pickers and Reveal stay on the desktop app.";
+  }
   return "Available on the workshop machine — open Medousa there to pin folders or preview local files.";
 }
 

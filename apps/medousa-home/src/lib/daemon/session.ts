@@ -35,6 +35,13 @@ import type {
 } from "$lib/types/media";
 import type { StageRoutingMatrix } from "$lib/types/runtime";
 import { invokePlain, type StreamErrorPayload } from "./client";
+import { isBrowserWorkshop } from "$lib/platform";
+import {
+  createBrowserSession,
+  listBrowserSessions,
+  sendBrowserInteractiveTurn,
+  subscribeBrowserTurnEvents,
+} from "$lib/wasm/browserDaemon";
 
 export interface InteractiveTurnAccepted {
   turn_id: string;
@@ -63,6 +70,7 @@ export async function listSessions(
     typeof limitOrOptions === "number"
       ? { limit: limitOrOptions }
       : (limitOrOptions ?? {});
+  if (isBrowserWorkshop()) return listBrowserSessions(options.limit);
   return invoke<ListSessionsResponse>("session_list", {
     limit: options.limit,
     includeVerification: options.includeVerification ?? false,
@@ -81,6 +89,7 @@ export interface CreateSessionOptions {
 export async function createSession(
   options?: CreateSessionOptions,
 ): Promise<CreateSessionResponse> {
+  if (isBrowserWorkshop()) return createBrowserSession(options?.displayName);
   return invoke<CreateSessionResponse>("session_create", {
     catalog: options?.catalog,
     memberProfileIds: options?.memberProfileIds,
@@ -513,6 +522,7 @@ export async function sendInteractiveTurn(
   prompt: string,
   options?: InteractiveTurnOptions & { mediaRefs?: MediaRef[] },
 ): Promise<InteractiveTurnAccepted> {
+  if (isBrowserWorkshop()) return sendBrowserInteractiveTurn(sessionId, prompt);
   return invoke<InteractiveTurnAccepted>("interactive_turn_send", {
     sessionId,
     prompt,
@@ -594,6 +604,7 @@ function base64ToBytes(value: string): Uint8Array {
 }
 
 export async function startInteractiveStream(streamUrl: string): Promise<void> {
+  if (isBrowserWorkshop()) return;
   return invoke("interactive_stream_start", { streamUrl });
 }
 
@@ -608,6 +619,13 @@ export async function stopInteractiveStreamTurn(turnId: string): Promise<void> {
 export function onInteractiveEvent<T>(
   handler: (payload: T) => void,
 ): Promise<UnlistenFn> {
+  if (isBrowserWorkshop()) {
+    return Promise.resolve(
+      subscribeBrowserTurnEvents((event) => {
+        handler(event as T);
+      }),
+    );
+  }
   return listen<T>("interactive://event", (event) => {
     handler(event.payload);
   });

@@ -6,6 +6,7 @@
   import MobileProjectTerminal from "$lib/components/mobile/code/MobileProjectTerminal.svelte";
   import MobileProjectChanges from "$lib/components/mobile/code/MobileProjectChanges.svelte";
   import { mobileCodeWorkspaceState } from "$lib/stores/mobileCodeWorkspaceState.svelte";
+  import { isBrowserWorkshop } from "$lib/platform";
 
   interface Props {
     workId: string;
@@ -23,7 +24,7 @@
   <div class="min-h-0 flex-1 overflow-hidden">
     {#if surface === "editor"}
       <MobileCodeEditor {workId} />
-    {:else if surface === "terminal"}
+    {:else if surface === "terminal" && !isBrowserWorkshop()}
       <MobileProjectTerminal {workId} />
     {:else if surface === "changes"}
       <MobileProjectChanges {workId} />

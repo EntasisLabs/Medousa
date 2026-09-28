@@ -6,6 +6,8 @@
   import { settings } from "$lib/stores/settings.svelte";
   import { installCspViolationDiagnostics } from "$lib/security/cspDiagnostics";
   import { dismissBootstrapSplash } from "$lib/runtime/bootstrapSplash";
+  import { isBrowserWorkshop } from "$lib/platform";
+  import { bootBrowserWorkshop, registerBrowserWorkshopWorker } from "$lib/wasm/browserDaemon";
 
   initializeStores();
   settings.applyTheme();
@@ -14,6 +16,12 @@
 
   onMount(() => {
     installCspViolationDiagnostics();
+    if (isBrowserWorkshop()) {
+      registerBrowserWorkshopWorker();
+      void bootBrowserWorkshop().catch(() => {
+        // Session and turn calls boot again and report a wasm load failure.
+      });
+    }
     // AppShell dismisses the root splash only once its destination has mounted.
     // Utility/pop-out routes do not mount AppShell, so hand those off here.
     if (window.location.pathname !== "/") dismissBootstrapSplash();

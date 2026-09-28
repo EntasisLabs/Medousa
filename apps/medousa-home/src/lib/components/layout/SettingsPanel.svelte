@@ -14,7 +14,7 @@
   import { peerUnreadCount } from "$lib/utils/lanShareApi";
   import { appUpdate } from "$lib/stores/appUpdate.svelte";
   import { isTauri } from "$lib/window";
-  import { isTauriDesktop } from "$lib/platform";
+  import { isBrowserWorkshop, isTauriDesktop } from "$lib/platform";
   import type { SettingsSectionId } from "$lib/types/settings";
   import {
     loadSettingsAgentSection,
@@ -50,8 +50,9 @@
   const activeSection = $derived(settingsNav.activeSection);
   const shellNav = $derived(!mobile && !embedded);
   const nativeWorkloads = $derived(
-    health?.runtime?.advertised_capabilities.includes("deployment.native-workloads") ??
-      isTauriDesktop(),
+    !isBrowserWorkshop() &&
+      (health?.runtime?.advertised_capabilities.includes("deployment.native-workloads") ??
+        isTauriDesktop()),
   );
   const chatGptAccountAuth = $derived(
     health?.runtime?.advertised_capabilities.includes("auth.chatgpt-account") ??

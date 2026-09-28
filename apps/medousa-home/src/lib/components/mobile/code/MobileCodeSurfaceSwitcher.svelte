@@ -1,6 +1,7 @@
 <script lang="ts">
   import { FolderGit2, GitBranch, SquareTerminal, FileCode2 } from "@lucide/svelte";
   import { haptic } from "$lib/haptics";
+  import { isBrowserWorkshop } from "$lib/platform";
   import { mobileCodeWorkspaceState } from "$lib/stores/mobileCodeWorkspaceState.svelte";
   import type { MobileCodeSurface } from "$lib/utils/mobileCodeLanding";
 
@@ -14,7 +15,9 @@
   const rooms: Array<{ id: MobileCodeSurface; label: string; icon: typeof FileCode2 }> = [
     { id: "files", label: "Files", icon: FolderGit2 },
     { id: "editor", label: "Editor", icon: FileCode2 },
-    { id: "terminal", label: "Terminal", icon: SquareTerminal },
+    ...(isBrowserWorkshop()
+      ? []
+      : [{ id: "terminal" as const, label: "Terminal", icon: SquareTerminal }]),
     { id: "changes", label: "Changes", icon: GitBranch },
   ];
 
@@ -53,7 +56,7 @@
 <style>
   .mobile-code-switcher {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
     flex-shrink: 0;
     border-top: 1px solid rgb(var(--color-surface-500) / 0.35);
     background: rgb(var(--color-surface-900) / 0.92);

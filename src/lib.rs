@@ -86,6 +86,7 @@ pub mod openai_codex_chat_client;
 pub mod pairing_role;
 #[cfg(any(feature = "full-daemon", feature = "embedded-daemon"))]
 pub mod peer_completion_delivery;
+#[cfg(any(feature = "full-daemon", feature = "embedded-daemon"))]
 pub mod peer_coordination_mesh;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod peer_execution_policy;
@@ -98,6 +99,7 @@ pub mod portable_coder;
 pub mod reasoning_effort;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod recurring_schedule;
+#[cfg(any(feature = "full-daemon", feature = "embedded-daemon"))]
 pub mod remote_peer_tools;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod request_principal;
@@ -114,7 +116,15 @@ pub mod session_storage;
 pub mod session_store;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod sse_turn_projection;
-#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+#[cfg(any(
+    all(feature = "embedded-daemon", not(feature = "full-daemon")),
+    all(
+        feature = "wasm-daemon",
+        target_arch = "wasm32",
+        not(feature = "full-daemon"),
+        not(feature = "embedded-daemon")
+    )
+))]
 #[path = "runtime/stasis_surreal_schema.rs"]
 pub mod stasis_surreal_schema;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
@@ -156,7 +166,15 @@ pub mod work_environment_job;
 pub mod work_environment_parallel;
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
 pub mod workshop_api;
-#[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
+#[cfg(any(
+    all(feature = "embedded-daemon", not(feature = "full-daemon")),
+    all(
+        feature = "wasm-daemon",
+        target_arch = "wasm32",
+        not(feature = "full-daemon"),
+        not(feature = "embedded-daemon")
+    )
+))]
 pub mod workshop_authority;
 
 #[cfg(all(feature = "embedded-daemon", not(feature = "full-daemon")))]
@@ -224,5 +242,17 @@ pub fn resolve_llm_base_url(
         .or_else(|| std::env::var("STASIS_LLM_BASE_URL").ok())
 }
 
-#[cfg(not(any(feature = "full-daemon", feature = "embedded-daemon")))]
-compile_error!("enable either the `full-daemon` or `embedded-daemon` feature");
+#[cfg(all(
+    feature = "wasm-daemon",
+    target_arch = "wasm32",
+    not(feature = "full-daemon"),
+    not(feature = "embedded-daemon")
+))]
+pub mod wasm_daemon;
+
+#[cfg(not(any(
+    feature = "full-daemon",
+    feature = "embedded-daemon",
+    all(feature = "wasm-daemon", target_arch = "wasm32")
+)))]
+compile_error!("enable the `full-daemon`, `embedded-daemon`, or wasm32 `wasm-daemon` feature");
