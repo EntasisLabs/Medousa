@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { isTauri } from "$lib/window";
 import type { DaemonRuntimeDescriptor } from "$lib/types/generated/daemon_api";
 
 export type { DaemonRuntimeDescriptor };
@@ -18,10 +19,12 @@ export interface DaemonHealth {
 }
 
 export async function getDaemonUrl(): Promise<string> {
+  if (!isTauri()) return "";
   return invoke<string>("daemon_url");
 }
 
 export async function setDaemonUrl(url: string): Promise<void> {
+  if (!isTauri()) return;
   return invoke("set_daemon_url", { url });
 }
 
@@ -30,6 +33,7 @@ export async function setDaemonUrl(url: string): Promise<void> {
  * handoff that happened while backgrounded forces a fresh LAN-vs-Iroh probe.
  */
 export async function invalidateRouteCaches(): Promise<void> {
+  if (!isTauri()) return;
   return invoke("invalidate_route_caches");
 }
 

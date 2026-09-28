@@ -88,6 +88,24 @@ jobs:
         env:
           MEDOUSA_IOS_TARGETS: ${{ matrix.target }}
 
+  wasm-daemon:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> .cache/cargo-target
+          cache-workspace-crates: true
+          cache-on-failure: true
+          prefix-key: wasm-daemon
+      - name: Check browser wasm daemon
+        run: ./scripts/ci/check-wasm-daemon.sh
+
   tauri-ubuntu:
     runs-on: ubuntu-latest
     steps:

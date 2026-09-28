@@ -7,6 +7,7 @@ import {
   setActiveWorkshop,
   updateWorkshopBranding,
   updateWorkshopClientState,
+  upsertBrowserPortalWorkshop,
 } from "$lib/workshops";
 import { requestWorkshopReconnect } from "$lib/runtime/workshopReconnectPort";
 import { workshopSwitchPorts } from "$lib/runtime/workshopSwitchPorts";
@@ -23,10 +24,11 @@ import {
   type WorkshopServer,
 } from "$lib/types/workshopRegistry";
 import { isColorThemeId, type ColorThemeId } from "$lib/types/colorThemes";
-import { isTauri } from "$lib/platform";
+import { isBrowserWorkshop, isTauri } from "$lib/platform";
 import { toast } from "$lib/runtime/toast.svelte";
 import { completePairingFromQr, type PairCompleteFromQrResult } from "$lib/utils/pairingClient";
 import { parsePairQrUrl } from "$lib/utils/pairingUrl";
+import { activateBrowserPortal, pairBrowserFromInvite } from "$lib/wasm/browserPortal";
 
 export class WorkshopsStore {
   registry = $state<WorkshopRegistry>(defaultWorkshopRegistry());
@@ -61,7 +63,7 @@ export class WorkshopsStore {
   });
 
   async load() {
-    if (!isTauri()) {
+    if (!isTauri() && !isBrowserWorkshop()) {
       this.registry = defaultWorkshopRegistry();
       return;
     }
@@ -73,9 +75,14 @@ export class WorkshopsStore {
         syncSiriWorkshopSnapshot(),
       );
       workshopSwitchPorts().activateWorkshopScope(this.activeWorkshopId);
-      const url = (await getDaemonUrl()).trim();
+      const url = isBrowserWorkshop()
+        ? (this.activeWorkshop?.url ?? "").trim()
+        : (await getDaemonUrl()).trim();
       if (url) workshopSwitchPorts().setDaemonUrl(url);
       this.applyThemeForActiveWorkshop();
+      if (isBrowserWorkshop()) {
+        await activateBrowserPortal(this.activeWorkshopId).catch(() => undefined);
+      }
       const { shellTabs } = await import("$lib/stores/shellTabs.svelte");
       await shellTabs.switchWorkspaceScope(this.activeWorkshopId);
     } catch (err) {
@@ -128,6 +135,9 @@ export class WorkshopsStore {
     qrUrl: string,
     options?: { daemonUrl?: string; phoneName?: string },
   ): Promise<PairCompleteFromQrResult> {
+    if (isBrowserWorkshop()) {
+      return this.joinBrowserPortal(qrUrl, options?.phoneName);
+    }
     if (!isTauri()) {
       throw new Error("Joining workshops requires the Medousa app");
     }
@@ -170,6 +180,63 @@ export class WorkshopsStore {
     }
   }
 
+  async joinBrowserPortal(qrUrl: string, phoneName?: string): Promise<PairCompleteFromQrResult> {
+    const trimmed = qrUrl.trim();
+    const parsed = parsePairQrUrl(trimmed);
+    if (!parsed) {
+      throw new Error("Paste a valid medousa:// pairing link");
+    }
+    if (!parsed.irohTicket) {
+      throw new Error(
+        "Paste a full Iroh invite (medousa://pair/2.0). Compact LAN links stay on the Medousa app.",
+      );
+    }
+    if (this.registry.workshops.length >= MAX_WORKSHOPS) {
+      const existingId = `paired-${parsed.deviceId}`;
+      if (!this.registry.workshops.some((workshop) => workshop.id === existingId)) {
+        throw new Error(`Maximum of ${MAX_WORKSHOPS} workshops — remove one in Settings first.`);
+      }
+    }
+    this.joinBusy = true;
+    this.joinError = null;
+    try {
+      const paired = await pairBrowserFromInvite(trimmed, phoneName?.trim() || "Medousa");
+      const now = new Date().toISOString();
+      this.registry = upsertBrowserPortalWorkshop(this.registry, {
+        id: paired.workshopId,
+        label: paired.workshopPeerName,
+        kind: "portal",
+        url: paired.daemonUrl,
+        icon: "building",
+        createdAt: now,
+        updatedAt: now,
+        pairing: {
+          pairingId: paired.pairingId,
+          phoneId: paired.phoneId,
+          workshopDeviceId: paired.workshopDeviceId,
+          pairedAt: now,
+          hasIrohTicket: true,
+          workshopPeerName: paired.workshopPeerName,
+        },
+      });
+      const result: PairCompleteFromQrResult = {
+        pairingId: paired.pairingId,
+        phoneId: paired.phoneId,
+        workshopDeviceId: paired.workshopDeviceId,
+        workshopId: paired.workshopId,
+        workshopPeerName: paired.workshopPeerName,
+        daemonUrl: paired.daemonUrl,
+      };
+      await this.onPairComplete(result);
+      return result;
+    } catch (err) {
+      this.joinError = err instanceof Error ? err.message : String(err);
+      throw err;
+    } finally {
+      this.joinBusy = false;
+    }
+  }
+
   async selectWorkshop(
     workshopId: string,
     options?: {
@@ -177,7 +244,7 @@ export class WorkshopsStore {
       onHealthChange?: (health: import("$lib/daemon").DaemonHealth | null) => void;
     },
   ) {
-    if (!isTauri()) return;
+    if (!isTauri() && !isBrowserWorkshop()) return;
     if (workshopId === this.activeWorkshopId) return;
     if (this.switching) return;
     if (!options?.force && this.needsSwitchConfirm()) {
@@ -203,7 +270,9 @@ export class WorkshopsStore {
       selectionCommitted = true;
       ports.activateWorkshopScope(this.activeWorkshopId);
       await shellTabs.switchWorkspaceScope(this.activeWorkshopId);
-      const url = (await getDaemonUrl()).trim();
+      const url = isBrowserWorkshop()
+        ? (this.activeWorkshop?.url ?? "").trim()
+        : (await getDaemonUrl()).trim();
       if (url) ports.setDaemonUrl(url);
       await requestWorkshopReconnect((health) => {
         options?.onHealthChange?.(health);
@@ -227,7 +296,7 @@ export class WorkshopsStore {
   }
 
   async saveActiveSession(sessionId: string) {
-    if (!isTauri()) return;
+    if (!isTauri() && !isBrowserWorkshop()) return;
     const trimmed = sessionId.trim();
     if (!trimmed || trimmed === this.activeWorkshop?.clientState?.lastSessionId) return;
     try {
@@ -250,7 +319,7 @@ export class WorkshopsStore {
   }
 
   async saveColorTheme(themeId: ColorThemeId) {
-    if (!isTauri()) return;
+    if (!isTauri() && !isBrowserWorkshop()) return;
     try {
       this.registry = await updateWorkshopClientState(this.activeWorkshopId, {
         colorThemeId: themeId,

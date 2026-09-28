@@ -18,7 +18,7 @@
   import { automations } from "$lib/stores/automations.svelte";
   import { lmeWorkspace } from "$lib/stores/lmeWorkspace.svelte";
   import { shellTabs } from "$lib/stores/shellTabs.svelte";
-  import { isTauri } from "$lib/platform";
+  import { isBrowserWorkshop, isTauri } from "$lib/platform";
   import { appUpdate } from "$lib/stores/appUpdate.svelte";
   import { toast } from "$lib/runtime/toast.svelte";
   import { updateTrayBlockedCount } from "$lib/window";
@@ -89,13 +89,14 @@
       });
     }
     const detachViewport = layout.attachViewportTracking();
-    const detachWorkshop = isTauri()
-      ? connectWorkshop({
-          onHealthChange: (health) => {
-            daemonHealth = health;
-          },
-        })
-      : () => {};
+    const detachWorkshop =
+      isTauri() || isBrowserWorkshop()
+        ? connectWorkshop({
+            onHealthChange: (health) => {
+              daemonHealth = health;
+            },
+          })
+        : () => {};
     const detachBrowserContext = browserContext.attachListeners();
     return () => {
       if (peersUnreadTimer) clearInterval(peersUnreadTimer);

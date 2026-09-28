@@ -2,8 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { chat } from "$lib/stores/chat.svelte";
 import { prepareInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
 import { syncSiriPreferences } from "$lib/config/siriPreferences";
+import { isTauri } from "$lib/window";
 
 export async function syncSiriWorkshopSnapshot(): Promise<void> {
+  if (!isTauri()) return;
   try {
     await invoke("siri_sync_workshop_snapshot");
   } catch (error) {
@@ -14,6 +16,7 @@ export async function syncSiriWorkshopSnapshot(): Promise<void> {
 }
 
 export async function syncSiriExecutionContext(): Promise<void> {
+  if (!isTauri()) return;
   if (!chat.sessionId.trim() || !chat.workshopScopeId) return;
   try {
     const options = await prepareInteractiveTurnOptions(chat);

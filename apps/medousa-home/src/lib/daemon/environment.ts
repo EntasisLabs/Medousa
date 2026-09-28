@@ -1,5 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { isBrowserWorkshop } from "$lib/platform";
+import {
+  browserPortalActive,
+  openPortalStream,
+  stopPortalStreams,
+  subscribePortalStream,
+  subscribePortalStreamError,
+} from "$lib/wasm/browserPortal";
 import type { StreamErrorPayload } from "./client";
 
 export async function getEnvironmentStatus(
@@ -48,10 +56,23 @@ export async function startEnvironmentStream(
   sinceRevision?: number,
   profileId?: string,
 ): Promise<void> {
+  if (browserPortalActive()) {
+    const query = new URLSearchParams();
+    if (sinceRevision !== undefined) query.set("since_revision", String(sinceRevision));
+    if (profileId?.trim()) query.set("profile_id", profileId.trim());
+    const suffix = query.size ? `?${query}` : "";
+    await openPortalStream("environment", `/v1/environment/spec/stream${suffix}`);
+    return;
+  }
+  if (isBrowserWorkshop()) return;
   return invoke("environment_stream_start", { sinceRevision, profileId });
 }
 
 export async function stopEnvironmentStream(): Promise<void> {
+  if (browserPortalActive() || isBrowserWorkshop()) {
+    stopPortalStreams("environment");
+    return;
+  }
   return invoke("environment_stream_stop");
 }
 
@@ -172,6 +193,13 @@ export async function componentRuntimeCompleteProbe(
 export function onEnvironmentEvent<T>(
   handler: (payload: T) => void,
 ): Promise<UnlistenFn> {
+  if (isBrowserWorkshop()) {
+    return Promise.resolve(
+      subscribePortalStream<T>("environment", (event) => {
+        if (browserPortalActive()) handler(event);
+      }),
+    );
+  }
   return listen<T>("environment://event", (event) => {
     handler(event.payload);
   });
@@ -180,6 +208,13 @@ export function onEnvironmentEvent<T>(
 export function onEnvironmentError(
   handler: (error: StreamErrorPayload) => void,
 ): Promise<UnlistenFn> {
+  if (isBrowserWorkshop()) {
+    return Promise.resolve(
+      subscribePortalStreamError("environment", (message) => {
+        if (browserPortalActive()) handler({ message, recoverable: true, transport: "iroh" });
+      }),
+    );
+  }
   return listen<StreamErrorPayload>("environment://error", (event) => {
     handler(event.payload);
   });

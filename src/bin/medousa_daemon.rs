@@ -1251,13 +1251,20 @@ async fn start_daemon() -> Result<()> {
     // storm. The semaphore is shared across all cloned per-connection services.
     let max_concurrency = resolve_max_concurrency();
     let app = app
+        .layer(axum::middleware::from_fn(
+            medousa::daemon::request_boundary::answer_browser_preflight,
+        ))
         .layer(tower::limit::GlobalConcurrencyLimitLayer::new(
             max_concurrency,
         ))
         .layer(axum::middleware::from_fn_with_state(
             request_boundary,
             medousa::daemon::request_boundary::enforce_host,
-        ));
+        ))
+        // Unmatched OPTIONS is a 405 inside the method router. That response
+        // never picks up per-method CORS middleware, so `/pair/init` preflight
+        // has to be answered by the method fallback itself.
+        .method_not_allowed_fallback(medousa::daemon::request_boundary::browser_method_not_allowed);
     tracing::info!(max_concurrency, "max in-flight request concurrency");
 
     axum::serve(

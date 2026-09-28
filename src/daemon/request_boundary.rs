@@ -145,15 +145,12 @@ pub async fn enforce_compatibility_origin(
 }
 
 pub async fn enforce_declared_browser_policy(
-    State(policy): State<BrowserPolicy>,
+    State(_policy): State<BrowserPolicy>,
     request: Request<Body>,
     next: Next,
 ) -> Response {
     if request.headers().get(ORIGIN).is_none() {
         return next.run(request).await;
-    }
-    if matches!(policy, BrowserPolicy::NativeOnly) {
-        return StatusCode::FORBIDDEN.into_response();
     }
     let Some(boundary) = INSTALLED_BOUNDARY.get() else {
         return StatusCode::FORBIDDEN.into_response();
@@ -163,6 +160,9 @@ pub async fn enforce_declared_browser_policy(
         Ok(None) => return next.run(request).await,
         Err(status) => return status.into_response(),
     };
+    // `NativeOnly` still rejects every origin that is not an allowed Home
+    // origin. The browser workshop is served from those origins and dials a
+    // loopback daemon directly when the Iroh relay socket closes.
     let mut response = next.run(request).await;
     response
         .headers_mut()
@@ -170,6 +170,77 @@ pub async fn enforce_declared_browser_policy(
     response
         .headers_mut()
         .append(VARY, HeaderValue::from_static("Origin"));
+    response
+}
+
+/// Answer CORS preflight for an allowed Home origin without entering the route.
+pub async fn answer_browser_preflight(request: Request<Body>, next: Next) -> Response {
+    if request.method() != axum::http::Method::OPTIONS {
+        return next.run(request).await;
+    }
+    match home_preflight(request.headers()) {
+        Preflight::Allow(response) => response,
+        Preflight::Deny => StatusCode::FORBIDDEN.into_response(),
+        // No browser Origin. Leave ordinary method handling alone.
+        Preflight::NotCors => next.run(request).await,
+    }
+}
+
+/// Method fallback for routes that only register POST/GET.
+///
+/// Axum answers an unmatched OPTIONS with 405 before per-method middleware
+/// runs, and that 405 has no `Access-Control-Allow-Origin`. Browsers then
+/// refuse the preflight for `/pair/init` even though `GET /health` is allowed.
+/// This fallback is that 405, so the preflight is answered here.
+pub async fn browser_method_not_allowed(request: Request<Body>) -> Response {
+    if request.method() == axum::http::Method::OPTIONS {
+        match home_preflight(request.headers()) {
+            Preflight::Allow(response) => return response,
+            Preflight::Deny => return StatusCode::FORBIDDEN.into_response(),
+            Preflight::NotCors => {}
+        }
+    }
+    StatusCode::METHOD_NOT_ALLOWED.into_response()
+}
+
+enum Preflight {
+    Allow(Response),
+    Deny,
+    NotCors,
+}
+
+fn home_preflight(headers: &HeaderMap) -> Preflight {
+    let Some(boundary) = INSTALLED_BOUNDARY.get() else {
+        return if headers.get(ORIGIN).is_some() {
+            Preflight::Deny
+        } else {
+            Preflight::NotCors
+        };
+    };
+    match boundary.permits_origin(headers) {
+        Ok(Some(origin)) => Preflight::Allow(preflight_response(origin)),
+        Ok(None) => Preflight::NotCors,
+        Err(_) => Preflight::Deny,
+    }
+}
+
+fn preflight_response(origin: HeaderValue) -> Response {
+    let mut response = StatusCode::NO_CONTENT.into_response();
+    let headers = response.headers_mut();
+    headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, origin);
+    headers.insert(
+        axum::http::header::ACCESS_CONTROL_ALLOW_METHODS,
+        HeaderValue::from_static("GET,POST,PUT,PATCH,DELETE,OPTIONS"),
+    );
+    headers.insert(
+        axum::http::header::ACCESS_CONTROL_ALLOW_HEADERS,
+        HeaderValue::from_static("authorization,content-type,accept"),
+    );
+    headers.insert(
+        axum::http::header::ACCESS_CONTROL_MAX_AGE,
+        HeaderValue::from_static("600"),
+    );
+    headers.append(VARY, HeaderValue::from_static("Origin"));
     response
 }
 
@@ -407,5 +478,120 @@ mod tests {
             allowed.headers().get(ACCESS_CONTROL_ALLOW_ORIGIN),
             Some(&HeaderValue::from_static("http://localhost:1420"))
         );
+    }
+
+    #[tokio::test]
+    async fn native_only_allows_the_home_origin_and_rejects_other_browsers() {
+        RequestBoundary::for_listener("127.0.0.1:7419".parse().unwrap())
+            .unwrap()
+            .install();
+        let app = Router::new()
+            .route("/", get(|| async { StatusCode::NO_CONTENT }))
+            .layer(axum::middleware::from_fn_with_state(
+                BrowserPolicy::NativeOnly,
+                enforce_declared_browser_policy,
+            ));
+        let denied = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/")
+                    .header(ORIGIN, "https://attacker.example")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+
+        let allowed = app
+            .oneshot(
+                Request::builder()
+                    .uri("/")
+                    .header(ORIGIN, "http://127.0.0.1:1420")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(allowed.status(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            allowed.headers().get(ACCESS_CONTROL_ALLOW_ORIGIN),
+            Some(&HeaderValue::from_static("http://127.0.0.1:1420"))
+        );
+    }
+
+    #[tokio::test]
+    async fn post_only_route_preflight_answers_before_method_not_allowed() {
+        RequestBoundary::for_listener("127.0.0.1:7419".parse().unwrap())
+            .unwrap()
+            .install();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let handler_hits = hits.clone();
+        // Same order as the daemon: per-route layers first, then the method
+        // fallback that replaces Axum's bare 405.
+        let app = Router::new()
+            .route(
+                "/pair/init",
+                axum::routing::post(move || {
+                    let handler_hits = handler_hits.clone();
+                    async move {
+                        handler_hits.fetch_add(1, Ordering::Relaxed);
+                        StatusCode::OK
+                    }
+                }),
+            )
+            .layer(axum::middleware::from_fn_with_state(
+                BrowserPolicy::Public,
+                enforce_declared_browser_policy,
+            ))
+            .method_not_allowed_fallback(browser_method_not_allowed);
+
+        let preflight = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(axum::http::Method::OPTIONS)
+                    .uri("/pair/init")
+                    .header(ORIGIN, "http://127.0.0.1:1420")
+                    .header(HOST, "127.0.0.1:7419")
+                    .header(axum::http::header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                    .header(
+                        axum::http::header::ACCESS_CONTROL_REQUEST_HEADERS,
+                        "content-type",
+                    )
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(preflight.status(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            preflight.headers().get(ACCESS_CONTROL_ALLOW_ORIGIN),
+            Some(&HeaderValue::from_static("http://127.0.0.1:1420"))
+        );
+        assert!(
+            preflight
+                .headers()
+                .get(axum::http::header::ACCESS_CONTROL_ALLOW_HEADERS)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| value.contains("content-type"))
+        );
+        assert_eq!(hits.load(Ordering::Relaxed), 0);
+
+        let denied = app
+            .oneshot(
+                Request::builder()
+                    .method(axum::http::Method::OPTIONS)
+                    .uri("/pair/init")
+                    .header(ORIGIN, "https://attacker.example")
+                    .header(axum::http::header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+        assert!(denied.headers().get(ACCESS_CONTROL_ALLOW_ORIGIN).is_none());
     }
 }

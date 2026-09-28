@@ -1,4 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
+import { isBrowserWorkshop } from "$lib/platform";
+import {
+  browserPortalActive,
+  openPortalStream,
+  stopPortalStreams,
+  subscribePortalStream,
+  subscribePortalStreamError,
+} from "$lib/wasm/browserPortal";
 import { getCoderExecutionTransport } from "$lib/executionAuthority";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { WorkCardDetail } from "$lib/types/card";
@@ -120,16 +128,34 @@ export async function importManuscripts(
 }
 
 export async function startWorkspaceStream(sinceRevision?: number): Promise<void> {
+  if (browserPortalActive()) {
+    const query =
+      sinceRevision === undefined ? "" : `?since_revision=${encodeURIComponent(String(sinceRevision))}`;
+    await openPortalStream("workspace", `/v1/workspace/stream${query}`);
+    return;
+  }
+  if (isBrowserWorkshop()) return;
   return invoke("workspace_stream_start", { sinceRevision });
 }
 
 export async function stopWorkspaceStream(): Promise<void> {
+  if (browserPortalActive() || isBrowserWorkshop()) {
+    stopPortalStreams("workspace");
+    return;
+  }
   return invoke("workspace_stream_stop");
 }
 
 export function onWorkspaceEvent<T>(
   handler: (payload: T) => void,
 ): Promise<UnlistenFn> {
+  if (isBrowserWorkshop()) {
+    return Promise.resolve(
+      subscribePortalStream<T>("workspace", (event) => {
+        if (browserPortalActive()) handler(event);
+      }),
+    );
+  }
   return listen<T>("workspace://event", (event) => {
     handler(event.payload);
   });
@@ -138,6 +164,13 @@ export function onWorkspaceEvent<T>(
 export function onWorkspaceError(
   handler: (error: StreamErrorPayload) => void,
 ): Promise<UnlistenFn> {
+  if (isBrowserWorkshop()) {
+    return Promise.resolve(
+      subscribePortalStreamError("workspace", (message) => {
+        if (browserPortalActive()) handler({ message, recoverable: true, transport: "iroh" });
+      }),
+    );
+  }
   return listen<StreamErrorPayload>("workspace://error", (event) => {
     handler(event.payload);
   });

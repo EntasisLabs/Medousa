@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { isBrowserWorkshop } from "$lib/platform";
 import type {
   VaultBacklinksResponse,
   VaultFileContentResponse,
@@ -19,6 +20,7 @@ export async function listVaultNotes(options?: {
   cursor?: string;
   generation?: number;
 }): Promise<VaultNotesListResponse> {
+  if (isBrowserWorkshop()) return { notes: [] };
   const tags =
     options?.tags?.map((tag) => tag.trim()).filter(Boolean).join(",") || undefined;
   return invoke<VaultNotesListResponse>("vault_list_notes", {
@@ -36,6 +38,9 @@ export async function listVaultChanges(options?: {
   cursor?: string;
   limit?: number;
 }): Promise<VaultChangesResponse> {
+  if (isBrowserWorkshop()) {
+    return { vault_generation: 0, changes: [], reset_required: false };
+  }
   return invoke<VaultChangesResponse>("vault_list_changes", {
     sinceGeneration: options?.sinceGeneration,
     cursor: options?.cursor,
@@ -47,6 +52,7 @@ export async function listVaultTags(options?: {
   prefix?: string;
   limit?: number;
 }): Promise<VaultTagsListResponse> {
+  if (isBrowserWorkshop()) return { tags: [], count: 0 };
   return invoke<VaultTagsListResponse>("vault_list_tags", {
     prefix: options?.prefix,
     limit: options?.limit,
@@ -126,6 +132,20 @@ export async function getVaultBacklinks(
 }
 
 export async function listVaultRoots(): Promise<VaultRootsResponse> {
+  if (isBrowserWorkshop()) {
+    return {
+      activeRootId: "personal",
+      roots: [
+        {
+          id: "personal",
+          label: "Personal",
+          path: "",
+          isDefault: true,
+          active: true,
+        },
+      ],
+    };
+  }
   return invoke<VaultRootsResponse>("vault_list_roots");
 }
 

@@ -184,6 +184,7 @@ WASM is not an iOS acceptance gate. After iOS parity is proven and the needed
 Stasis releases land, the next effort gates or replaces native listener,
 filesystem, timer, and networking hosts such as Axum/Mio. It reuses the same
 daemon logic and contracts; it does not begin another slim-daemon architecture.
+That follow-on is [browser-wasm-pwa-epic.md](browser-wasm-pwa-epic.md).
 
 ## Compile and module boundary rule
 

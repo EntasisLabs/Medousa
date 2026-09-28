@@ -10,4 +10,8 @@ anyhow = "1"
 httparse = "1"
 iroh = "1.0"
 iroh-tickets = "1.0"
-tokio = { version = "1", features = ["sync"] }
+tokio = { version = "1", features = ["sync", "time"] }
+url = "2.5"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+n0-future = "0.3"

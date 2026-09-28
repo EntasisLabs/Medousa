@@ -7,7 +7,7 @@
   import StatusDesktopStrip from "$lib/components/layout/StatusDesktopStrip.svelte";
   import EnvironmentPresetSwitcher from "$lib/components/environment/EnvironmentPresetSwitcher.svelte";
   import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
-  import { formatShortcut } from "$lib/platform";
+  import { formatShortcut, isBrowserWorkshop } from "$lib/platform";
   import { titleWithShortcut } from "$lib/utils/keyboardShortcutsCatalog";
   import { environment } from "$lib/stores/environment.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
@@ -56,8 +56,11 @@
     onOpenSpotlight,
   }: Props = $props();
 
-  /** Only when there’s somewhere to switch — otherwise it’s jewelry. */
-  const showWorkshopSwitcher = $derived(workshops.hasMultipleWorkshops);
+  /** Only when there’s somewhere to switch — otherwise it’s jewelry.
+   *  A browser tab starts with Personal alone and still needs Add a workshop. */
+  const showWorkshopSwitcher = $derived(
+    workshops.hasMultipleWorkshops || isBrowserWorkshop(),
+  );
   const showLayoutSwitcher = $derived(
     (environment.spec?.layoutPresets?.length ?? 0) > 1,
   );
@@ -172,7 +175,7 @@
       </span>
     {/if}
     {#if showWorkshopSwitcher}
-      <WorkshopSwitcherCompact variant="status" />
+      <WorkshopSwitcherCompact variant="status" hideWhenSingle={!isBrowserWorkshop()} />
     {/if}
     {#if showLayoutSwitcher}
       <EnvironmentPresetSwitcher variant="status" />

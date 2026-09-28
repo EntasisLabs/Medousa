@@ -1,4 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
+import { isBrowserWorkshop } from "$lib/platform";
+import { runBrowserGrapheme } from "$lib/wasm/browserDaemon";
+import { browserPortalActive, portalOperation } from "$lib/wasm/browserPortal";
 import { OPERATIONS, type OperationId } from "./generatedOps";
 
 export { OPERATIONS, type OperationId } from "./generatedOps";
@@ -13,6 +16,19 @@ export async function daemonUnary<T>(
   const operation = OPERATIONS[id];
   if (operation.streaming) {
     throw new Error(`use daemonStreamStart for ${id}`);
+  }
+  if (isBrowserWorkshop() && browserPortalActive()) {
+    return portalOperation<T>(id, pathParams, body, query);
+  }
+  if (isBrowserWorkshop() && id === "grapheme.run.post") {
+    const source =
+      body && typeof body === "object" && "source" in body
+        ? String((body as { source?: unknown }).source ?? "")
+        : "";
+    return runBrowserGrapheme(source) as Promise<T>;
+  }
+  if (isBrowserWorkshop()) {
+    throw new Error(`${id} is not available in the browser workshop`);
   }
   return invoke<T>("daemon_unary", {
     operation: id,
@@ -30,6 +46,9 @@ export async function daemonStreamStart(
   clientHandle?: string,
   executionRuntimeId?: string | null,
 ): Promise<string> {
+  if (isBrowserWorkshop()) {
+    throw new Error(`${id} is not available in the browser workshop`);
+  }
   return invoke<string>("daemon_stream_start", {
     operation: id,
     pathParams,
@@ -40,5 +59,6 @@ export async function daemonStreamStart(
 }
 
 export async function daemonStreamCancel(handle: string): Promise<void> {
+  if (isBrowserWorkshop()) return;
   return invoke("daemon_stream_cancel", { handle });
 }

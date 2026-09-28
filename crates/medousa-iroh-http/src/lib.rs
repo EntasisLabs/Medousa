@@ -1,12 +1,13 @@
 //! HTTP/1.1 client tunneled over Iroh (`medousa-http/1` ALPN).
 
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 use anyhow::{Context, Result, bail};
 use httparse::{EMPTY_HEADER, Response, Status};
-use iroh::{Endpoint, endpoint::presets};
+use iroh::{Endpoint, EndpointAddr, RelayMode, RelayUrl, TransportAddr, endpoint::presets};
 use iroh_tickets::endpoint::EndpointTicket;
-use tokio::sync::OnceCell;
+use tokio::sync::Mutex;
 
 /// Application-layer protocol identifier for Medousa HTTP tunneling.
 pub const ALPN: &[u8] = b"medousa-http/1";
@@ -14,7 +15,12 @@ pub const ALPN: &[u8] = b"medousa-http/1";
 const MAX_HEADER_BYTES: usize = 64 * 1024;
 const MAX_BODY_CHUNK: usize = 64 * 1024;
 
-static WORKSHOP_CLIENT: OnceCell<Endpoint> = OnceCell::const_new();
+struct CachedEndpoint {
+    key: String,
+    endpoint: Endpoint,
+}
+
+static WORKSHOP_CLIENT: OnceLock<Mutex<Option<CachedEndpoint>>> = OnceLock::new();
 
 pub struct IrohHttpResponse {
     pub status: u16,
@@ -56,16 +62,108 @@ impl IrohHttpBody {
     }
 }
 
-async fn shared_client_endpoint() -> Result<&'static Endpoint> {
-    WORKSHOP_CLIENT
-        .get_or_try_init(|| async {
-            let endpoint = Endpoint::bind(presets::N0)
-                .await
-                .context("bind iroh client endpoint")?;
-            endpoint.online().await;
-            Ok(endpoint)
+fn client_slot() -> &'static Mutex<Option<CachedEndpoint>> {
+    WORKSHOP_CLIENT.get_or_init(|| Mutex::new(None))
+}
+
+/// Bind one client for this ticket's relays.
+///
+/// `Endpoint::bind(presets::N0)` probes every public n0 relay. In a browser
+/// those hostnames end in `.`, and `GET /ping` then fails closed and keeps
+/// retrying. Urspace dials only the relays named in the ticket, with that
+/// trailing dot removed, so the probe hits a host the browser can open.
+async fn endpoint_for_relays(relays: &[RelayUrl]) -> Result<Endpoint> {
+    let key = if relays.is_empty() {
+        "default".to_string()
+    } else {
+        relays
+            .iter()
+            .map(|url| url.as_str().to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let mut guard = client_slot().lock().await;
+    if let Some(cached) = guard.as_ref()
+        && cached.key == key
+    {
+        return Ok(cached.endpoint.clone());
+    }
+    let endpoint = bind_client(relays).await?;
+    if let Some(previous) = guard.take() {
+        previous.endpoint.close().await;
+    }
+    *guard = Some(CachedEndpoint {
+        key,
+        endpoint: endpoint.clone(),
+    });
+    Ok(endpoint)
+}
+
+async fn bind_client(relays: &[RelayUrl]) -> Result<Endpoint> {
+    let mut builder = Endpoint::builder(presets::N0);
+    if !relays.is_empty() {
+        builder = builder.relay_mode(RelayMode::custom(relays.iter().cloned()));
+    }
+    builder.bind().await.context("bind iroh client endpoint")
+}
+
+fn dial_target(ticket: &str) -> Result<(EndpointAddr, Vec<RelayUrl>)> {
+    let ticket = EndpointTicket::from_str(ticket).map_err(|err| anyhow::anyhow!("{err}"))?;
+    let addr = normalize_relay_hosts(ticket.endpoint_addr())?;
+    let relays: Vec<RelayUrl> = addr.relay_urls().cloned().collect();
+    Ok((addr, relays))
+}
+
+fn normalize_relay_hosts(endpoint_addr: &EndpointAddr) -> Result<EndpointAddr> {
+    let addrs = endpoint_addr
+        .addrs
+        .iter()
+        .map(|addr| match addr {
+            TransportAddr::Relay(relay_url) => {
+                normalize_relay_host(relay_url).map(TransportAddr::Relay)
+            }
+            addr => Ok(addr.clone()),
         })
-        .await
+        .collect::<Result<Vec<_>>>()?;
+    Ok(EndpointAddr::from_parts(endpoint_addr.id, addrs))
+}
+
+fn normalize_relay_host(relay_url: &RelayUrl) -> Result<RelayUrl> {
+    let mut url: url::Url = relay_url.clone().into();
+    let Some(host) = url.host_str().map(ToOwned::to_owned) else {
+        return Ok(relay_url.clone());
+    };
+    let normalized = host.trim_end_matches('.');
+    if normalized == host {
+        return Ok(relay_url.clone());
+    }
+    if normalized.is_empty() {
+        bail!("relay hostname is empty after normalization");
+    }
+    url.set_host(Some(normalized))
+        .map_err(|_| anyhow::anyhow!("relay hostname could not be normalized"))?;
+    Ok(RelayUrl::from(url))
+}
+
+/// `Endpoint::online` waits until a relay socket is up, and if that watcher
+/// drops it parks forever. A browser relay that closes (`ERR_CONNECTION_CLOSED`)
+/// would leave the portal join on "Joining…" with no error.
+async fn wait_for_relay(endpoint: &Endpoint) -> Result<()> {
+    let online = endpoint.online();
+    #[cfg(target_arch = "wasm32")]
+    {
+        n0_future::time::timeout(std::time::Duration::from_secs(8), online)
+            .await
+            .map_err(|_| anyhow::anyhow!("Iroh relay connection closed"))?;
+        return Ok(());
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        tokio::time::timeout(std::time::Duration::from_secs(8), online)
+            .await
+            .map_err(|_| anyhow::anyhow!("Iroh relay connection closed"))?;
+        Ok(())
+    }
 }
 
 pub async fn iroh_http_request(
@@ -75,12 +173,24 @@ pub async fn iroh_http_request(
     headers: &[(&str, &str)],
     body: Option<&[u8]>,
 ) -> Result<IrohHttpResponse> {
-    let ticket = EndpointTicket::from_str(ticket).map_err(|err| anyhow::anyhow!("{err}"))?;
-    let endpoint = shared_client_endpoint().await?;
+    let (addr, relays) = dial_target(ticket)?;
+    #[cfg(target_arch = "wasm32")]
+    if relays.is_empty() {
+        bail!("invitation does not contain a browser relay");
+    }
+    let endpoint = endpoint_for_relays(&relays).await?;
+    wait_for_relay(&endpoint).await?;
 
-    let conn = endpoint
-        .connect(ticket.endpoint_addr().clone(), ALPN)
+    let dial = endpoint.connect(addr, ALPN);
+    #[cfg(target_arch = "wasm32")]
+    let conn = n0_future::time::timeout(std::time::Duration::from_secs(12), dial)
         .await
+        .map_err(|_| anyhow::anyhow!("Iroh relay connection closed"))?
+        .context("connect to workshop over iroh")?;
+    #[cfg(not(target_arch = "wasm32"))]
+    let conn = tokio::time::timeout(std::time::Duration::from_secs(12), dial)
+        .await
+        .map_err(|_| anyhow::anyhow!("Iroh relay connection closed"))?
         .context("connect to workshop over iroh")?;
     let (mut send, mut recv) = conn.open_bi().await.context("open bi stream")?;
 
@@ -184,4 +294,29 @@ pub async fn iroh_http_get_text(ticket: &str, path: &str) -> Result<String> {
         body.extend_from_slice(&chunk);
     }
     Ok(String::from_utf8_lossy(&body).to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strips_terminal_dot_from_relay_hosts_for_the_browser() {
+        let relay: RelayUrl = "https://usw1-1.relay.n0.iroh.link./".parse().unwrap();
+        let endpoint = EndpointAddr::new(iroh::SecretKey::from_bytes(&[7_u8; 32]).public())
+            .with_relay_url(relay);
+
+        let normalized = normalize_relay_hosts(&endpoint).unwrap();
+
+        assert_eq!(
+            normalized.relay_urls().next().unwrap().to_string(),
+            "https://usw1-1.relay.n0.iroh.link/"
+        );
+    }
+
+    #[test]
+    fn leaves_already_normalized_relay_hosts_unchanged() {
+        let relay: RelayUrl = "https://relay.example.com/".parse().unwrap();
+        assert_eq!(normalize_relay_host(&relay).unwrap(), relay);
+    }
 }
