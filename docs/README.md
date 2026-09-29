@@ -70,6 +70,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Integrate without the app](cookbook/integrate-without-the-app.md) | HTTP-only, jobs, ingest, MCP, corp patterns |
 | [Mobile & LAN](cookbook/mobile-and-lan.md) | Phone pairing, iOS dev, workshop transport |
 | [Peers, portals, and LAN sharing](cookbook/lan-discovery-and-sharing.md) | Portal vs peer, Iroh, Nearby toggle |
+| [Wasmer workshop guest](cookbook/wasmer-workshop.md) | `wasmer run` package, Portal env, what stays on the daemon |
 | [Custom chat UI](cookbook/custom-chat-ui.md) | Sessions, streaming, artifacts |
 | [Artifacts](cookbook/artifacts-and-presentations.md) | HTML artifacts, Artifacts door, list-ui API |
 | [Custom views & canvas](cookbook/custom-views-and-canvas.md) | Pinned dashboards Medousa builds for you |
