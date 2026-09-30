@@ -17,6 +17,7 @@ Product overview: [README](../../README.md) → download **Medousa**.
 | [Integrate without the app](integrate-without-the-app.md) | HTTP, MCP, corp patterns |
 | [Mobile & LAN](mobile-and-lan.md) | Pairing, iOS dev, workshop transport |
 | [Peers, portals, and LAN sharing](lan-discovery-and-sharing.md) | Portal vs peer, Iroh, Nearby |
+| [Wasmer workshop guest](wasmer-workshop.md) | Build `workshop.wasm`, `wasmer run`, Portal `MEDOUSA_WASMER_*` |
 | [Custom chat UI](custom-chat-ui.md) | Streaming client, artifacts |
 | [Artifacts](artifacts-and-presentations.md) | HTML artifacts, Artifacts door |
 | [Custom views & canvas](custom-views-and-canvas.md) | Pinned dashboards, Settings → Canvas, My views |

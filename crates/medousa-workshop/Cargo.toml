@@ -1,0 +1,11 @@
+[package]
+name = "medousa-workshop"
+version = "0.11.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Wasmer workshop guest Portal supervises with wasmer run"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

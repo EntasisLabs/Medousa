@@ -353,6 +353,28 @@ Comms/gateway pooling and circuit breakers are internal (`src/comms/`, `src/iroh
 
 ---
 
+## Wasmer workshop guest
+
+Read by `medousa-workshop` (`wasmer run` / `workshop.wasm`). Portal’s `MEDOUSA_WASMER_PACKAGE` and `MEDOUSA_WASMER_ARGS` are host command-line settings and are not read inside the guest. Full behavior: [cookbook/wasmer-workshop.md](cookbook/wasmer-workshop.md).
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `MEDOUSA_SANDBOX_ID` | Sandbox id copied into the ready line | unset (JSON null) |
+| `MEDOUSA_KIND` | Must be `workshop` when set | `workshop` |
+| `MEDOUSA_CONNECT_URL` | `http://` daemon origin, `https://` origin (reported unsupported), or `medousa://` invite (Iroh stays on the host) | unset |
+| `MEDOUSA_VCPU_MILLI` | Shape hint echoed to the supervisor. Does not apply a CPU quota | unset |
+| `MEDOUSA_MEMORY_MIB` | Shape hint echoed to the supervisor. Does not apply a memory quota | unset |
+| `MEDOUSA_SESSION_TOKEN` | Optional bearer for `GET /pair/heartbeat` only. Not sent on `GET /health` | unset |
+| `MEDOUSA_WORKSHOP_ONCE` | Exit after the ready line (`1`, `true`, `yes`, `on`) | off |
+| `MEDOUSA_WORKSHOP_REQUIRE_CONNECT` | Exit 1 when the connect attempt does not succeed | off |
+
+Recommended host settings for Portal:
+
+```text
+MEDOUSA_WASMER_PACKAGE=/opt/medousa/workshop.wasm
+MEDOUSA_WASMER_ARGS=--net --no-tty
+```
+
 ## Stasis legacy prefix
 
 Many variables accept **`STASIS_*`** as an alias for **`MEDOUSA_*`**. New deployments should prefer `MEDOUSA_*`. `workshop_env.rs` mirrors provider keys into both prefixes when loading secrets.
@@ -363,5 +385,6 @@ Many variables accept **`STASIS_*`** as an alias for **`MEDOUSA_*`**. New deploy
 
 | Date | Change |
 |------|--------|
+| 2026-09-29 | Wasmer workshop guest env (`MEDOUSA_SANDBOX_ID`, connect URL, shape hints) |
 | 2026-08-15 | H06 Forge/Coder caps (admission, observation, P04/P05 harness env) |
 | 2026-06-07 | Initial catalog — grouped from codebase grep + cookbook |

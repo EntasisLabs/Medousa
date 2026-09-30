@@ -1,0 +1,19 @@
+# Local package manifest. `scripts/build-workshop-wasm.sh` writes dist/workshop.wasm.
+# Publishing medousa/workshop to the Wasmer registry is a follow-up; Portal can
+# point MEDOUSA_WASMER_PACKAGE at the wasm file or at this directory.
+
+[package]
+name = "medousa/workshop"
+version = "0.11.0"
+description = "Medousa workshop guest for wasmer run"
+license = "MIT OR Apache-2.0"
+
+[[module]]
+name = "workshop"
+source = "dist/workshop.wasm"
+abi = "wasi"
+
+[[command]]
+name = "workshop"
+module = "workshop"
+runner = "wasi"
