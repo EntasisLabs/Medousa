@@ -73,7 +73,7 @@ impl ExternalConversationStore {
         let (id, _) = token.strip_prefix(TOKEN_PREFIX)?.split_once('.')?;
         let document = self.document.lock().await;
         let record = document.conversations.get(id)?;
-        if record.provider != Provider::Instinct {
+        if !matches!(record.provider, Provider::Instinct | Provider::Dots) {
             return None;
         }
         let grant = record.api_access.as_ref()?;
@@ -109,11 +109,11 @@ impl ExternalConversationStore {
         let record = current
             .conversations
             .get(id)
-            .filter(|record| record.owner_id == owner_id && record.provider == Provider::Instinct)
-            .ok_or((
-                StatusCode::NOT_FOUND,
-                "Instinct conversation not found".into(),
-            ))?;
+            .filter(|record| {
+                record.owner_id == owner_id
+                    && matches!(record.provider, Provider::Instinct | Provider::Dots)
+            })
+            .ok_or((StatusCode::NOT_FOUND, "agent conversation not found".into()))?;
         let mut random = [0u8; 32];
         rand::rngs::OsRng.fill_bytes(&mut random);
         let token = format!(
@@ -149,11 +149,11 @@ impl ExternalConversationStore {
         let record = next
             .conversations
             .get_mut(id)
-            .filter(|record| record.owner_id == owner_id && record.provider == Provider::Instinct)
-            .ok_or((
-                StatusCode::NOT_FOUND,
-                "Instinct conversation not found".into(),
-            ))?;
+            .filter(|record| {
+                record.owner_id == owner_id
+                    && matches!(record.provider, Provider::Instinct | Provider::Dots)
+            })
+            .ok_or((StatusCode::NOT_FOUND, "agent conversation not found".into()))?;
         record.api_access = None;
         let view = ConversationView::from(&*record);
         self.persist(&next).await.map_err(internal)?;
@@ -222,6 +222,8 @@ mod tests {
                     target: normalize_instinct_phone("+1 (555) 123-4567").unwrap(),
                     webhook_url: None,
                     webhook_key: None,
+                    slack_user_token: None,
+                    dot_user_id: None,
                 },
             )
             .await
@@ -485,6 +487,8 @@ mod tests {
                         target: "15551234567@s.whatsapp.net".into(),
                         webhook_url: None,
                         webhook_key: None,
+                        slack_user_token: None,
+                        dot_user_id: None,
                     }
                 )
                 .await

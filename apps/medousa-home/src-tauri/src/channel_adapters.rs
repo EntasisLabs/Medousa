@@ -298,6 +298,22 @@ fn start_adapter(
             command.arg("--token").arg(token);
         }
         "slack" => {
+            let url = reqwest::Url::parse(daemon_url).map_err(|error| error.to_string())?;
+            let local = url.host_str().is_some_and(|host| {
+                host == "localhost"
+                    || host
+                        .parse::<std::net::IpAddr>()
+                        .is_ok_and(|ip| ip.is_loopback())
+            });
+            if !local {
+                return Err("Slack must run on the connected workshop host".to_string());
+            }
+            let credential = medousa_local_credential::load_named_secret(
+                &crate::paths::medousa_data_dir(),
+                medousa_local_credential::CLI_LOCAL_NAME,
+            )
+            .map_err(|error| format!("load workshop adapter credential: {error}"))?;
+            command.env("MEDOUSA_DAEMON_BEARER", credential.token());
             let bot_token = integration_secrets::load_bot_token("slack")
                 .ok_or_else(|| "Slack bot token is missing.".to_string())?;
             let app_token = integration_secrets::load_app_token("slack")

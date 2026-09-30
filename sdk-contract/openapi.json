@@ -2237,11 +2237,25 @@
       "CreateExternalConversationRequest": {
         "additionalProperties": false,
         "properties": {
+          "dot_user_id": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "label": {
             "type": "string"
           },
           "provider": {
             "$ref": "#/components/schemas/ExternalProvider"
+          },
+          "slack_user_token": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "target": {
             "type": "string"
@@ -3664,6 +3678,12 @@
             "format": "date-time",
             "type": "string"
           },
+          "dot_user_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "events": {
             "items": {
               "$ref": "#/components/schemas/ExternalConversationEvent"
@@ -3902,7 +3922,8 @@
         "enum": [
           "muse",
           "grok_bot",
-          "instinct"
+          "instinct",
+          "dots"
         ],
         "type": "string"
       },
@@ -3939,6 +3960,37 @@
           "text"
         ],
         "title": "ExternalProviderEventRequest",
+        "type": "object"
+      },
+      "ExternalSlackInboundRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "bot_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "channel_id": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "sender_id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel_id",
+          "message_id",
+          "sender_id",
+          "text"
+        ],
+        "title": "ExternalSlackInboundRequest",
         "type": "object"
       },
       "ExternalWhatsAppInboundRequest": {
@@ -17778,6 +17830,66 @@
           "browser_policy": "native_only",
           "capabilities": [
             "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/external-conversations/slack/inbound": {
+      "post": {
+        "operationId": "external_conversations.slack.inbound.post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExternalSlackInboundRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalInboundClaimResponse"
+                }
+              }
+            },
+            "description": "external_conversations.slack.inbound.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.slack.inbound.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.slack.inbound.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 20480,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
           ],
           "credential_scheme": "bearer",
           "feature_profile": "core",

@@ -127,6 +127,7 @@ export const OPERATIONS = {
   "external_conversations.muse.discovery.get": { id: "external_conversations.muse.discovery.get", method: "GET", path: "/v1/external-conversations/muse/discovery", streaming: false },
   "external_conversations.muse.discovery.post": { id: "external_conversations.muse.discovery.post", method: "POST", path: "/v1/external-conversations/muse/discovery", streaming: false },
   "external_conversations.post": { id: "external_conversations.post", method: "POST", path: "/v1/external-conversations", streaming: false },
+  "external_conversations.slack.inbound.post": { id: "external_conversations.slack.inbound.post", method: "POST", path: "/v1/external-conversations/slack/inbound", streaming: false },
   "external_conversations.whatsapp.inbound.post": { id: "external_conversations.whatsapp.inbound.post", method: "POST", path: "/v1/external-conversations/whatsapp/inbound", streaming: false },
   "external_conversations.whatsapp.pairing.get": { id: "external_conversations.whatsapp.pairing.get", method: "GET", path: "/v1/external-conversations/whatsapp/pairing", streaming: false },
   "external_conversations.whatsapp.pairing.post": { id: "external_conversations.whatsapp.pairing.post", method: "POST", path: "/v1/external-conversations/whatsapp/pairing", streaming: false },

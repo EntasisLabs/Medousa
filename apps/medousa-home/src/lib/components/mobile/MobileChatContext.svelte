@@ -24,7 +24,7 @@
   let mode = $state("General");
   const providerConversation = $derived(isProviderConversationRuntime(agentSession.sessionRuntime));
   const runtimeLabel = $derived(agentRuntimeLabel(agentSession.sessionRuntime));
-  const sessionLabel = $derived(agentSession.sessionRuntime === "muse" ? "Muse session" : agentSession.sessionRuntime === "instinct" ? "Instinct agent" : "Grok bot");
+  const sessionLabel = $derived(agentSession.sessionRuntime === "muse" ? "Muse session" : agentSession.sessionRuntime === "instinct" ? "Instinct agent" : agentSession.sessionRuntime === "dots" ? "Dot" : "Grok bot");
   const active = $derived(undertakings.forChat(chat.sessionId));
   const project = $derived(active?.worktree?.split(/[\\/]/).filter(Boolean).at(-1) || active?.title);
   const worker = $derived(executionTargets.selectionFor(chat.sessionId));
@@ -84,7 +84,7 @@
     {#if externalConversation.loading}
       <p role="status" class="flex items-center gap-2 py-4"><LoaderCircle size={18} class="animate-spin"/> Loading…</p>
     {:else if externalConversation.choices.length === 0}
-      <p class="workshop-faint py-4 text-sm">No {agentSession.sessionRuntime === "muse" ? "Muse sessions" : agentSession.sessionRuntime === "instinct" ? "Instinct agents" : "Grok bots"} on this workshop. Choose the workshop hosting your connection, or set one up in External Agents.</p>
+      <p class="workshop-faint py-4 text-sm">No {agentSession.sessionRuntime === "muse" ? "Muse sessions" : agentSession.sessionRuntime === "instinct" ? "Instinct agents" : agentSession.sessionRuntime === "dots" ? "dots" : "Grok bots"} on this workshop. Choose the workshop hosting your connection, or set one up in External Agents.</p>
     {:else}
       <div role="group" aria-label={sessionLabel}>
         {#each externalConversation.choices as choice (choice.id)}

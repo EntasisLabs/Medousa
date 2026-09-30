@@ -38,6 +38,7 @@
     { id: "grok_bot", hint: "Registered Grok bots" },
     { id: "muse", hint: "Registered Muse sessions" },
     { id: "instinct", hint: "WhatsApp + remote API" },
+    { id: "dots", hint: "Slack + remote API" },
   ];
 
   onMount(() => {

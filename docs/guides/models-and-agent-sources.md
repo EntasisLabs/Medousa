@@ -2,7 +2,7 @@
 
 The composer keeps the active mode and model visible. On desktop, open
 **Settings → Agent runtime** below the composer to choose **Medousa**, **Codex**,
-**Cursor**, **Hermes**, **Muse**, or **Grok Bot**. When an external runtime is active, its name replaces
+**Cursor**, **Hermes**, **Muse**, **Dots**, or **Grok Bot**. When an external runtime is active, its name replaces
 the native mode control.
 
 ## Choose a runtime
@@ -18,15 +18,16 @@ Open **Settings → Agent runtime** below the desktop composer:
 - **Hermes** uses the configured Hermes Agent CLI through ACP and the providers
   advertised by that runtime.
 - **Muse** uses a registered WhatsApp session on the connected workshop.
+- **Dots** uses a registered Slack channel on the connected workshop.
 - **Grok Bot** uses a registered webhook bot on the connected workshop.
 
 If Codex, Cursor, or Hermes is not ready, its runtime option opens **Settings →
 External Agents** for installation or sign-in. Hermes can also be prepared from the
 terminal with `hermes acp --setup`.
 
-For Muse and Grok Bot, configure the connection in **Settings → External Agents**,
+For Muse, Dots, and Grok Bot, configure the connection in **Settings → External Agents**,
 then use the desktop model picker to choose the registered session or bot. On
-mobile, open **Chat context → Runtime**, select Muse or Grok Bot, and choose the
+mobile, open **Chat context → Runtime**, select Muse, Dots, or Grok Bot, and choose the
 session or bot in the same sheet. Runtime appears above Mode. Their messages
 appear in the chat view for the selected runtime.
 

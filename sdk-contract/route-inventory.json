@@ -2031,6 +2031,22 @@
       ],
       "feature_profile": "core",
       "method": "POST",
+      "operation_id": "external_conversations.slack.inbound.post",
+      "path": "/v1/external-conversations/slack/inbound",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 20480,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
       "operation_id": "external_conversations.whatsapp.inbound.post",
       "path": "/v1/external-conversations/whatsapp/inbound",
       "rate_limit_class": "mutation",

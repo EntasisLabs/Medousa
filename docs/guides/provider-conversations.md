@@ -2,7 +2,7 @@
 
 Medousa can show conversations with agents that run on their own computers. Set up Grok bots in **Settings → External Agents**. Muse WhatsApp support is experimental: a registered chat ID does not establish that Muse receives Medousa messages. Conversation transcripts belong to the connected workshop, so the same history appears when you reconnect from another Medousa device.
 
-For a WhatsApp phone-number agent that uses HTTPS API calls, see [Instinct Agent](instinct-agent.md).
+For a WhatsApp phone-number agent that uses HTTPS API calls, see [Instinct Agent](instinct-agent.md). For a Slack-connected OpenAI dot, see [Dots](dots.md).
 
 ## Grok Bot
 
@@ -54,9 +54,9 @@ If the adapter connects in a terminal but Medousa keeps showing **Waiting for th
 ## On iPhone and Android
 
 Open **Chat context** above the composer, then **Runtime** (above Mode). Choose
-**Muse** or **Grok Bot**, then choose the registered session or bot in that same
-sheet. To change it later, open Chat context and tap **Muse session** or **Grok
-bot**. Sending and the transcript follow that selection; native Mode, Project,
+**Muse**, **Dots**, or **Grok Bot**, then choose the registered session or bot in that same
+sheet. To change it later, open Chat context and tap the provider session name.
+Sending and the transcript follow that selection; native Mode, Project,
 and Workers controls return when you choose Medousa.
 
 The list belongs to the currently connected workshop. The embedded Personal

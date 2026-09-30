@@ -985,6 +985,16 @@ fn run_slack(args: &[String]) -> Result<()> {
     let adapter = resolve_component_command("medousa_slack")?;
     let mut command = Command::new(&adapter.program);
     command.args(&adapter.pre_args);
+    if let Some(header) = medousa::local_daemon_auth::authorization_header(
+        &daemon_url,
+        medousa_local_credential::CLI_LOCAL_NAME,
+    )? {
+        let token = header
+            .to_str()?
+            .strip_prefix("Bearer ")
+            .ok_or_else(|| anyhow!("invalid local workshop authorization header"))?;
+        command.env("MEDOUSA_DAEMON_BEARER", token);
+    }
     command.arg("--daemon-url").arg(daemon_url);
     command.arg("--bot-token").arg(bot_token);
     command.arg("--app-token").arg(app_token);

@@ -304,6 +304,7 @@
     {#if !isBrowserWorkshop()}
       <ExternalConversationSettingsCard provider="muse" />
       <ExternalConversationSettingsCard provider="instinct" />
+      <ExternalConversationSettingsCard provider="dots" />
     {/if}
     <ExternalConversationSettingsCard provider="grok_bot" />
   </div>

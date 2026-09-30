@@ -38,6 +38,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Channels](guides/channels.md) | Telegram, Discord, Slack, WhatsApp |
 | [External agent conversations](guides/provider-conversations.md) | Chat with provider-hosted agents through WhatsApp or a webhook |
 | [Instinct Agent](guides/instinct-agent.md) | WhatsApp conversations and scoped HTTPS API access |
+| [Dots](guides/dots.md) | Slack conversations and scoped workshop access |
 | [VS Code](guides/vscode.md) | Medousa chat, editor context, and workshop sessions in VS Code |
 | [Neovim](guides/neovim.md) | Keyboard-first coding room with contextual chat and safe code application |
 | [Obsidian](guides/obsidian.md) | Vault-native Medousa chat and bounded note context |
@@ -95,7 +96,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Workspace](engine/workspace.md) | Work board, feed, SSE |
 | [Forge](engine/forge.md) | Undertaking custody (`/v1/forge`), leases, review |
 | [Coordination](engine/coordination.md) | Owner-scoped native delegation approval and dispatch |
-| [External agent conversations](engine/external-conversations.md) | Muse, Grok Bot, and Instinct bridge HTTP contract |
+| [External agent conversations](engine/external-conversations.md) | Muse, Grok Bot, Instinct, and Dots bridge HTTP contract |
 | [Coding engine](engine/coding-engine.md) | Language servers, project intelligence, safe edits |
 | [Agent tools](engine/agent-tools.md) | Host/worker lanes, discover domains |
 | [Runtime config](engine/runtime-config.md) | Inference profiles, stage routing |

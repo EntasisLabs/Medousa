@@ -21,6 +21,7 @@ Operator evaluation: [Benchmark Coder with Terminal-Bench](terminal-bench.md).
 | [Channels](channels.md) | Telegram, Discord, Slack, WhatsApp from the app |
 | [External agent conversations](provider-conversations.md) | Connect provider-hosted agents and replay their messages |
 | [Instinct Agent](instinct-agent.md) | WhatsApp conversations and scoped HTTPS API access |
+| [Dots](dots.md) | Slack conversations and scoped workshop access |
 | [VS Code](vscode.md) | Use Medousa chat beside your editor |
 | [Neovim](neovim.md) | Use the keyboard-first Medousa coding room |
 | [Obsidian](obsidian.md) | Use the vault-native Medousa companion |

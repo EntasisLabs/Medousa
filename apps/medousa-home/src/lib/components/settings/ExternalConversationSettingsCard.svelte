@@ -28,6 +28,8 @@
   let target = $state("");
   let webhookUrl = $state("");
   let webhookKey = $state("");
+  let slackUserToken = $state("");
+  let dotUserId = $state("");
   let callbackKey = $state<string | null>(null);
   let callbackConversationId = $state<string | null>(null);
   let confirmDeleteId = $state<string | null>(null);
@@ -38,7 +40,7 @@
   let adapterError = $state<string | null>(null);
   let adapterBusy = $state(false);
   let pairingBusy = false;
-  const title = $derived(provider === "muse" ? "Muse" : provider === "instinct" ? "Instinct Agent" : "Grok Bot");
+  const title = $derived(provider === "muse" ? "Muse" : provider === "instinct" ? "Instinct Agent" : provider === "dots" ? "Dots" : "Grok Bot");
   const registered = $derived(conversations.filter((item) => item.provider === provider));
   const canStartAdapter = $derived(isTauriDesktop() && isCoLocatedWorkshop());
 
@@ -94,7 +96,7 @@
   onMount(() => {
     void refresh();
     const timer = window.setInterval(() => {
-      if (document.visibilityState !== "visible" || !creating || provider === "grok_bot") return;
+      if (document.visibilityState !== "visible" || !creating || provider === "grok_bot" || provider === "dots") return;
       void refreshPairing();
       if (busy || provider !== "muse" || !discovery) return;
       void checkMuseDiscovery();
@@ -150,6 +152,7 @@
         ...(provider === "grok_bot"
           ? { webhook_url: webhookUrl.trim(), webhook_key: webhookKey.trim() }
           : {}),
+        ...(provider === "dots" ? { dot_user_id: dotUserId.trim(), slack_user_token: slackUserToken.trim() } : {}),
       });
       conversations = [result.conversation, ...conversations];
       callbackKey = result.callback_key ?? null;
@@ -158,6 +161,8 @@
       label = "";
       target = "";
       webhookUrl = "";
+      slackUserToken = "";
+      dotUserId = "";
       discovery = null;
       creating = false;
       changed();
@@ -212,7 +217,7 @@
     <span class="connections-card-icon" aria-hidden="true">{title[0]}</span>
     <div class="min-w-0 flex-1">
       <p class="connections-card-title">{title}</p>
-      <p class="connections-card-sub workshop-faint">{provider === "grok_bot" ? "Webhook bots and routines" : "WhatsApp sessions"}</p>
+      <p class="connections-card-sub workshop-faint">{provider === "grok_bot" ? "Webhook bots and routines" : provider === "dots" ? "Slack conversations" : "WhatsApp sessions"}</p>
     </div>
     <span class="connections-status" class:connections-status--in={provider === "grok_bot" && registered.length > 0}>
       {#if provider === "grok_bot" && registered.length > 0}<Check size={12} strokeWidth={2.5} />{/if}
@@ -239,8 +244,8 @@
       {#each registered as conversation (conversation.id)}
         <div class="rounded-lg bg-surface-800 p-3">
           <p class="text-sm font-medium text-surface-50">{conversation.label}</p>
-          <p class="workshop-faint mt-1 text-xs">{provider === "muse" ? "Session" : provider === "instinct" ? "WhatsApp · +" + conversation.target.split("@")[0] : "Bot · " + conversation.target}</p>
-          {#if provider === "instinct"}
+          <p class="workshop-faint mt-1 text-xs">{provider === "muse" ? "Session" : provider === "instinct" ? "WhatsApp · +" + conversation.target.split("@")[0] : provider === "dots" ? "Slack · " + conversation.target : "Bot · " + conversation.target}</p>
+          {#if provider === "instinct" || provider === "dots"}
             <ExternalAgentAccessControls {conversation} onchange={(updated) => { conversations = conversations.map((item) => item.id === updated.id ? updated : item); }} />
           {/if}
           <div class="mt-2 flex flex-wrap gap-3 text-xs">
@@ -260,7 +265,18 @@
       <label class="block text-sm">{provider === "grok_bot" ? "Bot label" : "Session name"}
         <input class="mt-1 w-full rounded-md bg-surface-800 p-2" bind:value={label} required maxlength="120" />
       </label>
-      {#if provider === "grok_bot"}
+      {#if provider === "dots"}
+        <p class="workshop-faint text-xs">Add your dot and the Medousa Slack app to a dedicated channel. The outgoing user token must belong to the dot’s owner and have chat:write access. Install the Slack adapter in Settings → Packages and configure it in Settings → Sharing → Channels.</p>
+        <label class="block text-sm">Slack channel ID
+          <input class="mt-1 w-full rounded-md bg-surface-800 p-2" bind:value={target} placeholder="C0123456789" required maxlength="32" />
+        </label>
+        <label class="block text-sm">Dot Slack member or bot ID
+          <input class="mt-1 w-full rounded-md bg-surface-800 p-2" bind:value={dotUserId} placeholder="U0123456789" required maxlength="32" />
+        </label>
+        <label class="block text-sm">Your Slack user token
+          <input class="mt-1 w-full rounded-md bg-surface-800 p-2" type="password" bind:value={slackUserToken} required autocomplete="off" />
+        </label>
+      {:else if provider === "grok_bot"}
         <label class="block text-sm">Bot name
           <input class="mt-1 w-full rounded-md bg-surface-800 p-2" bind:value={target} required maxlength="256" />
         </label>
@@ -316,7 +332,7 @@
     </form>
   {:else}
     <div class="connections-card-actions">
-      <button type="button" class="btn btn-sm variant-filled-primary" onclick={() => { if (provider !== "grok_bot") void openWhatsAppSetup(); else creating = true; }}><Plus size={13} strokeWidth={2} /> {provider === "grok_bot" ? "Add bot" : "Add session"}</button>
+      <button type="button" class="btn btn-sm variant-filled-primary" onclick={() => { if (provider === "muse" || provider === "instinct") void openWhatsAppSetup(); else creating = true; }}><Plus size={13} strokeWidth={2} /> {provider === "grok_bot" ? "Add bot" : "Add session"}</button>
       <button type="button" class="btn btn-sm variant-soft-surface" disabled={busy} onclick={() => void refresh()}><RefreshCw size={13} strokeWidth={2} /> Refresh</button>
     </div>
   {/if}
