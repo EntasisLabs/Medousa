@@ -7,13 +7,18 @@ import { createTurnTicket, promptAgentSession } from "$lib/daemon";
 import type { TurnTicketResponse } from "$lib/types/session";
 import { prepareInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
 import { chat } from "$lib/stores/chat.svelte";
+import { bots } from "$lib/stores/bots.svelte";
+import { getSessionBot } from "$lib/daemon/bot";
 import { executionTargets } from "$lib/stores/executionTargets.svelte";
 import { chatInteractions } from "$lib/liquid/surfaces/chat/chatInteractions";
 import { recordLiquidMetric, recordLiquidPresentationOpportunity } from "$lib/liquid/observability";
 import { userProfiles } from "$lib/stores/userProfiles.svelte";
 import { voicePresets } from "$lib/stores/voicePresets.svelte";
 import { activeCodeContext } from "$lib/utils/undertakingWorkspace";
+import { promptWithConversationContext } from "$lib/utils/agentConversationContext";
 import {
+  agentConversationContextSeeded,
+  markAgentConversationContextSeeded,
   agentSessionStreamUrl,
   clearSessionAgentSessionId,
   getSessionAgentRuntime,
@@ -39,49 +44,60 @@ export async function submitChatTurn(input: {
   responseVoiceAppendix?: string;
 }): Promise<void> {
   const workshopEpoch = chat.workshopEpoch;
+  const sessionId = chat.focusedSessionId || chat.sessionId;
+  const current = () => chat.workshopEpoch === workshopEpoch && (chat.focusedSessionId || chat.sessionId) === sessionId;
   if (!chat.workshopScopeId) {
     throw new Error("Workshop is switching; wait for it to reconnect");
   }
   const identityUserId = userProfiles.turnIdentityUserId();
   const codeProjectSetupAuthorized = input.codeProjectSetupAuthorized ?? false;
-  const runtime = getSessionAgentRuntime(chat.sessionId);
+  let runtime = bots.forSession(sessionId) ? "medousa" : getSessionAgentRuntime(sessionId);
+  if (isExternalAgentRuntime(runtime)) {
+    const result = await getSessionBot(sessionId);
+    if (!current()) throw new Error("Conversation changed while checking the session identity");
+    if (result.binding) runtime = "medousa";
+  }
   if (isProviderConversationRuntime(runtime)) {
     throw new Error("Provider conversations must use the selected session or bot.");
   }
   if (isExternalAgentRuntime(runtime) && input.mode === "interactive" && !codeProjectSetupAuthorized) {
-    const prepared = await input.synchronizeAgentSession(chat.sessionId, runtime, {
+    const prepared = await input.synchronizeAgentSession(sessionId, runtime, {
       openChooserWhenMissing: true,
     });
     if (!prepared) throw new Error("Choose a project before starting a coding agent.");
     const { agentSessionId, streamUrl, streamReady, acceptedAt } = prepared;
+    const prompt = agentConversationContextSeeded(sessionId, agentSessionId)
+      ? input.prompt
+      : promptWithConversationContext(input.prompt, chat.messagesFor(sessionId));
 
     const ticket: TurnTicketResponse = {
       turn_id: agentSessionId,
-      session_id: chat.sessionId,
+      session_id: sessionId,
       mode: "interactive",
       phase: "accepted" as TurnTicketResponse["phase"],
       accepted_at_utc: acceptedAt,
       stream_url: streamUrl || agentSessionStreamUrl(agentSessionId),
       stream_ready: streamReady,
     };
-    if (chat.workshopEpoch !== workshopEpoch) {
-      throw new Error("Workshop changed while the turn was being admitted");
+    if (!current()) {
+      throw new Error("Conversation changed while the turn was being admitted");
     }
     chat.beginTurn(input.userContent, ticket, [], identityUserId);
     input.onAccepted?.(ticket);
     chat.clearPendingMedia();
     input.scrollToLatest(true);
     await chat.startTurnStream(ticket.turn_id, ticket.session_id, ticket.stream_url);
-    if (chat.workshopEpoch !== workshopEpoch) {
-      throw new Error("Workshop changed before the agent prompt was sent");
+    if (!current()) {
+      throw new Error("Conversation changed before the agent prompt was sent");
     }
     try {
-      await promptAgentSession(agentSessionId, input.prompt, activeCodeContext(chat.sessionId));
+      await promptAgentSession(agentSessionId, prompt, activeCodeContext(sessionId));
+      if (chat.workshopEpoch === workshopEpoch) markAgentConversationContextSeeded(sessionId, agentSessionId);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (/unknown agent session|not found|404/i.test(message)) {
-        clearSessionAgentSessionId(chat.sessionId);
-        setSessionAgentConfigOptions(chat.sessionId, []);
+        clearSessionAgentSessionId(sessionId);
+        setSessionAgentConfigOptions(sessionId, []);
         input.onAgentSessionLost();
       }
       throw err;
@@ -90,18 +106,19 @@ export async function submitChatTurn(input: {
   }
 
   const opts = await prepareInteractiveTurnOptions(chat);
+  if (!current()) throw new Error("Conversation changed while preparing the turn");
   const mediaRefs = [...chat.pendingMediaRefs];
   const voice = voicePresets.turnVoiceFields();
-  const codeContext = activeCodeContext(chat.sessionId);
-  const liquidInteractions = chatInteractions.envelopes(chat.sessionId);
+  const codeContext = activeCodeContext(sessionId);
+  const liquidInteractions = chatInteractions.envelopes(sessionId);
   recordLiquidPresentationOpportunity(input.prompt);
   const accepted = await createTurnTicket({
-    sessionId: chat.sessionId,
+    sessionId,
     prompt: input.prompt,
     mode: input.mode,
     codeContext,
     codeProjectSetupAuthorized,
-    workerExecutionTarget: executionTargets.turnSelection(chat.sessionId),
+    workerExecutionTarget: executionTargets.turnSelection(sessionId),
     provider: opts.provider,
     model: opts.model,
     responseDepthMode: opts.responseDepthMode,
@@ -116,10 +133,10 @@ export async function submitChatTurn(input: {
     voiceAppendix: [voice.voiceAppendix, input.responseVoiceAppendix].filter(Boolean).join("\n") || undefined,
     identityUserId: opts.identityUserId,
   });
-  if (chat.workshopEpoch !== workshopEpoch) {
+  if (!current()) {
     throw new Error("Workshop changed while the turn was being admitted");
   }
-  chatInteractions.ack(chat.sessionId, liquidInteractions.length);
+  chatInteractions.ack(sessionId, liquidInteractions.length);
   recordLiquidMetric("interactionsDelivered", liquidInteractions.length);
   chat.beginTurn(
     input.userContent,

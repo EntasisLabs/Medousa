@@ -1,48 +1,52 @@
 # Models, providers, and runtimes
 
-The composer keeps the active mode and model visible. On desktop, open
-**Settings → Agent runtime** below the composer to choose **Medousa**, **Codex**,
-**Cursor**, **Hermes**, **Muse**, **Dots**, or **Grok Bot**. When an external agent is active, its name replaces
-the native mode control.
+An ordinary chat keeps its model and execution runtime in the composer. Bots
+and connected agents keep their identity attached to their conversation and
+open from **Sessions**.
 
 ## Choose a runtime
 
-Open **Settings → Agent runtime** below the desktop composer:
+Use **Runtime** below the desktop composer, or **Chat context → Runtime** on
+mobile, to choose how an ordinary chat runs:
 
 - **Medousa** uses Medousa's native agent loop with a configured model provider
   or local model.
-- **Codex** uses the connected ChatGPT account through the Codex runtime, which
-  owns that agent loop.
-- **Cursor** uses the connected Cursor account and the models advertised by its
-  session.
-- **Hermes** uses the configured Hermes Agent CLI through ACP and the providers
-  advertised by that runtime.
-- **Muse** uses a registered WhatsApp conversation bridge on the connected workshop.
-- **Dots** uses a registered Slack conversation bridge on the connected workshop.
-- **Grok Bot** uses a registered webhook conversation bridge on the connected workshop.
+- **Codex** uses the connected ChatGPT account through the Codex runtime.
+- **Cursor** uses the connected Cursor account and models advertised by its session.
+- **Hermes** uses the configured Hermes Agent CLI through ACP and its supported providers.
 
-Codex, Cursor, and Hermes run executable agent loops. Muse, Dots, and Grok Bot
-connect conversations to agents elsewhere; choosing them does not install an
-agent runtime on your device. Their connection and transcript belong to the
-selected workshop. When that workshop is offline, its registered sessions are
-unavailable until it reconnects.
+Switching retains the Medousa conversation. A newly created coding runtime receives
+recent textual conversation history with its first prompt. The runtime's private
+state and tools are not transferred. Its model picker shows the choices advertised
+by that runtime.
 
 If Codex, Cursor, or Hermes is not ready, its runtime option opens **Settings →
 External Agents** for installation or sign-in. Hermes can also be prepared from the
 terminal with `hermes acp --setup`.
 
-For Muse, Dots, and Grok Bot, configure the connection in **Settings → External Agents**,
-then use the desktop model picker to choose the registered session or bot. On
-mobile, open **Chat context → Runtime**, select Muse, Dots, or Grok Bot, and choose the
-session or bot in the same sheet. Runtime appears above Mode. Their messages
-appear in the chat view for the selected runtime.
+## Open a Bot or connected agent
+
+Open a named Medousa Bot under **Sessions → Bots**. Its companion and name appear
+in the conversation header; select them to view or edit its profile. The runtime
+picker is hidden because this conversation belongs to the Bot. Model, mode, and
+behavior controls remain available where supported.
+
+Configure Muse, Dots, Instinct, and Grok Bot in **Settings → External Agents**,
+then open the named conversation under **Sessions → Connected agents** on desktop
+or mobile. Each entry opens that agent's own transcript. To talk to another agent,
+open its entry in Sessions. Connected conversations do not have a runtime or model
+picker. Selecting the header opens connection details and a management action.
+
+The connection and transcript belong to the selected workshop. When that workshop
+is offline, its conversations are unavailable until it reconnects. Removing a
+connection does not silently switch an open chat to a different agent.
 
 ## Composer controls
 
-On desktop, the **Settings** control below the composer contains **Response
-style**, **Response depth**, **Reasoning**, automatic narration, the agent runtime,
-and saved drafts. External agents expose their supported reasoning controls in
-**Agent runtime**. On mobile, tap the model name to open turn settings.
+On desktop, **Behavior** below the composer contains **Response style**,
+**Response depth**, **Reasoning**, and automatic narration. Coding runtimes expose
+their supported reasoning controls there. Runtime remains a separate control in
+ordinary chats. On mobile, tap the model name to open turn settings.
 
 **Response style** changes how Medousa writes. **Response depth** controls answer
 detail; **Reasoning** controls how much the model thinks. **Read replies aloud**
@@ -134,7 +138,7 @@ the successful provider/model route observed by the daemon after fallback, so
 it can differ from the model that was initially requested.
 
 When Codex, Cursor, or Hermes owns the loop, the model picker contains only the
-choices advertised by that runtime. Runtime selection lives in the desktop composer settings,
+choices advertised by that runtime. Runtime selection lives below the desktop composer,
 so it is not duplicated inside the model picker.
 
 ## Run a private model on iPhone or iPad

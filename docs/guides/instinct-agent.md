@@ -10,8 +10,8 @@ files, tools, and long-running work.
 2. Link the workshop's WhatsApp adapter if it is not already connected.
 3. Enter a session name and Instinct's international phone number, including
    `+` and the country code, then choose **Connect**.
-4. In Chat, choose **Instinct Agent** and that session. On mobile, open
-   **Chat context → Runtime → Instinct Agent**.
+4. Open **Sessions → Connected agents** and choose the named Instinct session
+   on desktop or mobile.
 
 Replies belong to this workshop's transcript. When WhatsApp supplies a linked
 ID instead of a phone number, the adapter uses WhatsApp's phone mapping to route

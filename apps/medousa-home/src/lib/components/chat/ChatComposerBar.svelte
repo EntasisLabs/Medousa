@@ -15,6 +15,7 @@
   import MobileComposerTurnSettings from "$lib/components/mobile/MobileComposerTurnSettings.svelte";
   import ProfileSwitcherCompact from "$lib/components/mobile/ProfileSwitcherCompact.svelte";
   import WorkshopSwitcherCompact from "$lib/components/workshops/WorkshopSwitcherCompact.svelte";
+  import { bots } from "$lib/stores/bots.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { runtime } from "$lib/stores/runtime.svelte";
   import { settings } from "$lib/stores/settings.svelte";
@@ -89,14 +90,17 @@
     element = $bindable<HTMLTextAreaElement | null>(null),
   }: Props = $props();
 
+  const activeBot = $derived(bots.forSession(chat.focusedSessionId));
   const showModelPicker = $derived(
     !quietChrome &&
       modelPickerEnabled &&
-      (settings.showChatModelPicker || onAgentRuntimeChange !== undefined),
+      (Boolean(activeBot) || settings.showChatModelPicker || onAgentRuntimeChange !== undefined),
   );
   const placeholder = $derived(
     isProviderConversationRuntime(agentRuntime)
-      ? `Message ${agentRuntimeLabel(agentRuntime)}…`
+      ? `Message ${externalConversations.find((item) => item.id === externalConversationId)?.label ?? agentRuntimeLabel(agentRuntime)}…`
+      : activeBot
+      ? `Message ${activeBot.display_name}…`
       : chat.hasWorkshopHandoff()
       ? "Steer the handoff…"
       : quietChrome
@@ -451,7 +455,7 @@
       />
 
       <div class="mobile-composer-dock-toolbar">
-        {#if onAgentRuntimeChange}
+        {#if onAgentRuntimeChange && !activeBot && !providerConversation}
           <ChatRuntimePicker value={agentRuntime} disabled={blocked} onChange={onAgentRuntimeChange} />
         {/if}
         {#if !providerConversation}
@@ -467,7 +471,7 @@
               agentOpen = false;
               profileOpen = true;
             }}
-            onAgent={() => {
+            onAgent={activeBot ? undefined : () => {
               profileOpen = false;
               agentOpen = true;
             }}
@@ -484,7 +488,7 @@
           bind:open={profileOpen}
           anchorEl={plusAnchorEl}
         />
-        <ComposerAgentChip showChip bind:open={agentOpen} anchorEl={plusAnchorEl} />
+        {#if !activeBot}<ComposerAgentChip showChip bind:open={agentOpen} anchorEl={plusAnchorEl} />{/if}
         <WorkshopSwitcherCompact
           variant="mobile"
           hideWhenSingle={false}
@@ -493,7 +497,7 @@
         />
         {/if}
 
-        {#if showModelPicker}
+        {#if showModelPicker && !providerConversation}
           {#if isTauriMobilePlatform() && agentRuntime === "medousa"}
             <MobileComposerTurnSettings disabled={blocked} quiet />
           {:else}
@@ -611,7 +615,7 @@
             agentOpen = false;
             profileOpen = true;
           }}
-          onAgent={() => {
+          onAgent={activeBot ? undefined : () => {
             profileOpen = false;
             agentOpen = true;
           }}
@@ -623,10 +627,10 @@
         bind:open={profileOpen}
         anchorEl={plusAnchorEl}
       />
-      <ComposerAgentChip showChip bind:open={agentOpen} anchorEl={plusAnchorEl} />
+      {#if !activeBot}<ComposerAgentChip showChip bind:open={agentOpen} anchorEl={plusAnchorEl} />{/if}
       {/if}
 
-      {#if showModelPicker}
+      {#if showModelPicker && !providerConversation}
         <ChatModelPicker
           disabled={blocked}
           quiet

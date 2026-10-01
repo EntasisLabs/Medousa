@@ -2,9 +2,10 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
 import type { createAgentSessionController } from "$lib/chat/agentSessionController.svelte";
-import type { createExternalConversationController } from "$lib/chat/externalConversationController.svelte";
 import type { ChatAgentRuntime } from "$lib/utils/sessionAgentRuntime";
 
+const botState = vi.hoisted(() => ({ active: false }));
+vi.mock("$lib/stores/bots.svelte", () => ({ bots: { forSession: () => botState.active ? { display_name: "Ada" } : null } }));
 vi.mock("$lib/stores/chat.svelte", () => ({ chat: { sessionId: "main", workshopScopeId: "mac" } }));
 vi.mock("$lib/stores/undertakings.svelte", () => ({ undertakings: { forChat: () => null } }));
 vi.mock("$lib/stores/executionTargets.svelte", () => ({ executionTargets: { selectionFor: () => null, selectionLabel: () => "Auto", selectionUnavailable: () => false } }));
@@ -32,39 +33,33 @@ function click(label: string) {
   flushSync();
 }
 
-it.each([
-  { provider: "muse", runtimeLabel: "Muse", selectionLabel: "Muse session" },
-  { provider: "instinct", runtimeLabel: "Instinct Agent", selectionLabel: "Instinct agent" },
-] as const)("selects and reselects a $provider conversation in Chat context", ({ provider, runtimeLabel, selectionLabel }) => {
-  const state = $state({ runtime: "medousa" as ChatAgentRuntime, selectedId: null as string | null });
-  const choices = [{ id: "personal", provider, label: "Personal Muse" }, { id: "work", provider, label: "Work Muse" }];
+function render(bot = false) {
+  botState.active = bot;
+  const state = $state({ runtime: "medousa" as ChatAgentRuntime });
   const change = vi.fn((value: ChatAgentRuntime) => { state.runtime = value; });
-  const select = vi.fn((id: string) => { state.selectedId = id; });
   const agentSession = { get sessionRuntime() { return state.runtime; }, onRuntimeChange: change } as unknown as ReturnType<typeof createAgentSessionController>;
-  const externalConversation = {
-    choices, loading: false, error: null, refresh: vi.fn(), select,
-    get selectedId() { return state.selectedId; },
-    get selected() { return choices.find((item) => item.id === state.selectedId) ?? null; },
-  } as unknown as ReturnType<typeof createExternalConversationController>;
   const target = document.createElement("div"); document.body.append(target);
-  component = mount(MobileChatContext, { target, props: { agentSession, externalConversation } });
+  component = mount(MobileChatContext, { target, props: { agentSession } });
   flushSync();
+  return { state, change };
+}
+
+it("offers only swappable execution runtimes in an ordinary mobile chat", () => {
+  const { state, change } = render();
   click("Chat context");
   expect([...document.querySelectorAll(".context-row")].filter((row) => !row.closest("[hidden]")).map((row) => row.firstElementChild?.textContent)).toEqual(["Runtime", "Mode", "Project", "Workers"]);
   click("Runtime");
-  click(runtimeLabel);
-  expect(document.querySelector("dialog")?.getAttribute("aria-label")).toBe(selectionLabel);
-  click("Work Muse");
-  expect(select).toHaveBeenLastCalledWith("work");
+  expect([...document.querySelectorAll(".chat-runtime-option-title")].map((item) => item.textContent?.trim())).toEqual(["Medousa", "Cursor", "ChatGPT / Codex", "Hermes"]);
+  click("Hermes");
+  expect(state.runtime).toBe("hermes");
+  expect(change).toHaveBeenCalledWith("hermes");
   expect(document.querySelector("dialog")?.getAttribute("aria-label")).toBe("Chat context");
-  expect(document.querySelector(".context-summary")?.textContent).toContain("Work Muse");
-  click("Runtime");
-  click(runtimeLabel); // Already-selected runtime must still let us choose another session.
-  click("Personal Muse");
-  expect(select).toHaveBeenLastCalledWith("personal");
-  expect(change).toHaveBeenCalledTimes(1);
-  click("Runtime");
-  click("Medousa");
-  expect(state.runtime).toBe("medousa");
-  expect([...document.querySelectorAll(".context-row")].filter((row) => !row.closest("[hidden]")).map((row) => row.firstElementChild?.textContent)).toContain("Mode");
+});
+
+it("keeps mode, project, and workers available without a runtime picker in a Bot chat", () => {
+  const { change } = render(true);
+  click("Chat context");
+  expect([...document.querySelectorAll(".context-row")].filter((row) => !row.closest("[hidden]")).map((row) => row.firstElementChild?.textContent)).toEqual(["Mode", "Project", "Workers"]);
+  expect(document.querySelector(".chat-runtime-option")).toBeNull();
+  expect(change).not.toHaveBeenCalled();
 });

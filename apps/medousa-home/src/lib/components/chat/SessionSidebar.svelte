@@ -2,6 +2,8 @@
   import "$lib/styles/chat.postcss";
   import { onMount, untrack } from "svelte";
   import { ChevronDown, ChevronRight, Plus, Search, Users, X } from "@lucide/svelte";
+  import ConnectedAgentList from "./ConnectedAgentList.svelte";
+  import { getSessionAgentRuntime, isProviderConversationRuntime } from "$lib/utils/sessionAgentRuntime";
   import BotEditor from "$lib/components/chat/BotEditor.svelte";
   import { DEFAULT_BOT_AVATAR } from "$lib/utils/botAvatar";
   import BotRow from "$lib/components/chat/BotRow.svelte";
@@ -140,6 +142,7 @@
     chat.sessions.filter(
       (session) =>
         !botSessionIds.has(session.session_id) &&
+        !isProviderConversationRuntime(getSessionAgentRuntime(session.session_id)) &&
         chat.isPinned(session.session_id) &&
         matchesQuery(session),
     ),
@@ -149,6 +152,7 @@
     chat.sessions.filter(
       (session) =>
         !botSessionIds.has(session.session_id) &&
+        !isProviderConversationRuntime(getSessionAgentRuntime(session.session_id)) &&
         !chat.isPinned(session.session_id) &&
         matchesQuery(session),
     ),
@@ -174,10 +178,10 @@
     bots.bots.filter((bot) => bot.archived && matchesBotQuery(bot)),
   );
 
-  async function selectSession(sessionId: string) {
+  async function selectSession(sessionId: string, title?: string) {
     // Shell tabs own visible chat selection. Activating through the shell also
     // switches/hydrates the chat store, without relying on its async mirror.
-    const tabId = shellTabs.openChat(sessionId, { activate: true });
+    const tabId = shellTabs.openChat(sessionId, { activate: true, title });
     if (!tabId) await chat.switchSession(sessionId);
     onPick?.();
     if (variant === "drawer" || variant === "sheet") {
@@ -581,7 +585,7 @@
                 <BotRow
                   {bot}
                   specialistLabel={specialistLabel(bot)}
-                  selected={bot.primary_session_id === chat.sessionId}
+                  selected={bots.forSession(chat.focusedSessionId)?.bot_id === bot.bot_id}
                   alwaysShowActions={touchActions}
                   onSelect={() => void selectBot(bot)}
                   onEdit={() => openEditBot(bot)}
@@ -605,6 +609,8 @@
           </div>
         {/if}
       </li>
+
+      <ConnectedAgentList {open} {query} onSelect={(sessionId, title) => void selectSession(sessionId, title)} />
 
       {#if archivedBots.length > 0}
         <li class="session-sidebar-section">

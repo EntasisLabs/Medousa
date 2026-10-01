@@ -3,6 +3,7 @@ import {
   duplicateBot,
   listBots,
   openBot,
+  getSessionBot,
   setBotArchived,
   updateBot,
 } from "$lib/daemon/bot";
@@ -13,6 +14,7 @@ import type {
   CreateBotRequest,
   DuplicateBotRequest,
   SetBotArchivedRequest,
+  SessionBotResponse,
   UpdateBotRequest,
 } from "$lib/types/generated/daemon_api";
 import { activeWorkshopId } from "$lib/utils/workshopLocality";
@@ -24,6 +26,7 @@ export interface BotStoreApi {
   setArchived(botId: string, request: SetBotArchivedRequest): Promise<BotProfile>;
   duplicate(botId: string, request?: DuplicateBotRequest): Promise<BotOpenResponse>;
   open(botId: string): Promise<BotOpenResponse>;
+  session?(sessionId: string): Promise<SessionBotResponse>;
 }
 
 const defaultApi: BotStoreApi = {
@@ -33,16 +36,19 @@ const defaultApi: BotStoreApi = {
   setArchived: setBotArchived,
   duplicate: duplicateBot,
   open: openBot,
+  session: getSessionBot,
 };
 
 export class BotStore {
   bots = $state<BotProfile[]>([]);
   loading = $state(false);
   error = $state<string | null>(null);
+  sessionBotIds = $state(new Map<string, string | null>());
   workshopScopeId = activeWorkshopId();
   private epoch = 0;
   private loaded = false;
   private refreshInFlight: Promise<void> | null = null;
+  private sessionRequests = new Map<string, Promise<void>>();
 
   constructor(private readonly api: BotStoreApi = defaultApi) {}
 
@@ -50,6 +56,8 @@ export class BotStore {
     this.epoch += 1;
     this.workshopScopeId = "";
     this.bots = [];
+    this.sessionBotIds = new Map();
+    this.sessionRequests.clear();
     this.error = null;
     this.loading = false;
     this.loaded = false;
@@ -94,7 +102,26 @@ export class BotStore {
   forSession(sessionId: string): BotProfile | null {
     const id = sessionId.trim();
     if (!id) return null;
+    const botId = this.sessionBotIds.get(id);
+    if (this.sessionBotIds.has(id)) return this.bots.find((bot) => bot.bot_id === botId) ?? null;
     return this.bots.find((bot) => bot.primary_session_id === id) ?? null;
+  }
+
+  async refreshSessionBinding(sessionId: string): Promise<void> {
+    const id = sessionId.trim();
+    if (!id || !this.api.session || this.sessionBotIds.has(id)) return;
+    const pending = this.sessionRequests.get(id);
+    if (pending) return pending;
+    const epoch = this.epoch;
+    const request = this.api.session(id).then((response) => {
+      if (epoch !== this.epoch) return;
+      this.sessionBotIds = new Map([...this.sessionBotIds, [id, response.binding?.bot_id ?? null]]);
+      if (response.bot) this.upsert(response.bot);
+    }).finally(() => {
+      if (epoch === this.epoch) this.sessionRequests.delete(id);
+    });
+    this.sessionRequests.set(id, request);
+    return request;
   }
 
   async create(request: CreateBotRequest): Promise<BotOpenResponse> {
@@ -104,11 +131,12 @@ export class BotStore {
   }
 
   async update(bot: BotProfile, request: Omit<UpdateBotRequest, "expected_revision">) {
+    const epoch = this.epoch;
     const updated = await this.api.update(bot.bot_id, {
       ...request,
       expected_revision: bot.revision,
     });
-    this.upsert(updated);
+    if (epoch === this.epoch) this.upsert(updated);
     return updated;
   }
 

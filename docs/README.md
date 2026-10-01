@@ -26,7 +26,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 |-------|----------------|
 | [Getting started](guides/getting-started.md) | Download → welcome → first chat |
 | [Models and agent sources](guides/models-and-agent-sources.md) | Choose runtimes, models, Teacher learning actions, and reply narration in chat |
-| [Bots](guides/bots.md) | Create durable named teammates with their own memory and conversation |
+| [Bots](guides/bots.md) | Create named teammates, edit their profiles from chat, and continue their memory |
 | [Packages](guides/packages.md) | Optional computer, coding, model, channel, and MCP capabilities |
 | [Workshop & Automations](guides/workshop-and-automations.md) | Flows, schedules, specialists |
 | [Phone pairing](guides/phone-pairing.md) | Add another computer as an optional portal, including from a browser |
@@ -36,7 +36,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Peers & Nearby](guides/peers-and-nearby.md) | LAN / tunnel workshops |
 | [Memory & identity](guides/memory-and-identity.md) | Teach who you are |
 | [Channels](guides/channels.md) | Telegram, Discord, Slack, WhatsApp |
-| [External agent conversations](guides/provider-conversations.md) | Chat with provider-hosted agents through WhatsApp or a webhook |
+| [External agent conversations](guides/provider-conversations.md) | Open named connected agents from Sessions through WhatsApp, Slack, or a webhook |
 | [Instinct Agent](guides/instinct-agent.md) | WhatsApp conversations and scoped HTTPS API access |
 | [Dots](guides/dots.md) | Slack conversations and scoped workshop access |
 | [VS Code](guides/vscode.md) | Medousa chat, editor context, and workshop sessions in VS Code |

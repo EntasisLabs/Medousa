@@ -17,8 +17,8 @@ computer can access workshop content separately through a scoped API token.
    (`U…`, `W…`, or `B…`), and the owner's user token (`xoxp-…`). These values are visible in
    Slack's channel and member details. Medousa stores the token in the workshop
    credential store, not the transcript.
-4. In Chat, choose **Dots** and that session. On iPhone, open **Chat context →
-   Runtime → Dots**. Send a harmless test request and confirm that it appears
+4. Open **Sessions → Connected agents** and choose the named Dots session on
+   desktop or iPhone. Send a harmless test request and confirm that it appears
    in Slack and the dot's reply appears in Medousa. A Slack send receipt alone
    does not prove the dot received or acted on a message.
 

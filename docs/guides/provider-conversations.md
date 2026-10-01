@@ -9,7 +9,7 @@ For a WhatsApp phone-number agent that uses HTTPS API calls, see [Instinct Agent
 1. Create a webhook-triggered routine for the Bot you want to contact. Copy its POST URL and sender key.
 2. In **Settings → External Agents → Grok Bot**, choose **Add bot** and enter a label, Bot name, URL, and key. Medousa stores the key in the workshop credential store.
 3. Save the callback key shown once. The Bot VM needs a separately paired Medousa workshop credential and must report events to the conversation's `/events` route with `x-medousa-bridge-key`. The webhook key and callback key serve different directions. The VM can use `medousa-cli daemon-external-event` with `MEDOUSA_BRIDGE_BEARER` and `MEDOUSA_BRIDGE_KEY` set in its private environment.
-4. In Chat, choose **Grok Bot** and the registered bot, then send a message. An accepted webhook means the routine started; the conversation shows a result only when a callback arrives.
+4. Open **Sessions → Connected agents**, choose the named Grok Bot conversation, and send a message. An accepted webhook means the routine started; the conversation shows a result only when a callback arrives.
 
 The routine receives JSON with `schema_version`, `request_id`, `conversation_id`, and `message`. Keep the IDs from that request when reporting progress or the result. For a VM paired using `medousa pair join`, list its saved workshop connections with `medousa pair workers`, then select the connection's ID:
 
@@ -53,13 +53,13 @@ WhatsApp delivery or **Read** status does not verify a Muse reply. Confirm readi
 
 If the adapter connects in a terminal but Medousa keeps showing **Waiting for the workshop’s WhatsApp pairing QR**, check which `medousa_whatsapp` binary the launcher used. Older adapter builds can pair in the terminal but do not publish QR or connected status to the workshop. Update the adapter package and restart it; an already-paired session reconnects from its session database.
 
-## On iPhone and Android
+## Open a connected conversation on desktop, iPhone, and Android
 
-Open **Chat context** above the composer, then **Runtime** (above Mode). Choose
-**Muse**, **Dots**, or **Grok Bot**, then choose the registered session or bot in that same
-sheet. To change it later, open Chat context and tap the provider session name.
-Sending and the transcript follow that selection; native Mode, Project,
-and Workers controls return when you choose Medousa.
+Open **Sessions → Connected agents** and select the named Muse, Dots, Instinct,
+or Grok Bot conversation. Its name appears in the header and composer. Sending
+and the transcript stay attached to that entry. Open a different entry in Sessions
+to change agents, or open an ordinary chat to use the runtime picker. Select the
+conversation header to view its connection details or manage it in Settings.
 
 The list belongs to the currently connected workshop. The embedded Personal
 workshop on your phone has its own list. To use a Muse session already running

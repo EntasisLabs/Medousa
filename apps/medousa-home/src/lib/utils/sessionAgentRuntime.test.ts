@@ -8,7 +8,10 @@ import {
   setSessionAgentRuntime,
   setSessionAgentSessionId,
   setSessionAgentWorkId,
+  agentConversationContextSeeded,
+  markAgentConversationContextSeeded,
 } from "./sessionAgentRuntime";
+import { externalConversationSessionId } from "./externalConversationSession";
 
 describe("session agent workspace metadata", () => {
   beforeEach(() => {
@@ -41,6 +44,21 @@ describe("session agent workspace metadata", () => {
     expect(isProviderConversationRuntime(getSessionAgentRuntime("chat-1"))).toBe(true);
     expect(isExternalAgentRuntime(getSessionAgentRuntime("chat-1"))).toBe(false);
     setSessionAgentRuntime("chat-1", "grok_bot");
-    expect(getSessionAgentRuntime("chat-1")).toBe("grok_bot");
+    expect(getSessionAgentRuntime("chat-1")).toBe("muse");
+  });
+
+  it("locks a connected conversation on reopen even with a stale runtime preference", () => {
+    const sessionId = externalConversationSessionId("dots", "dot-a");
+    setSessionAgentRuntime(sessionId, "codex");
+    expect(getSessionAgentRuntime(sessionId)).toBe("dots");
+  });
+
+  it("seeds each new runtime process once while keeping ordinary chats swappable", () => {
+    setSessionAgentRuntime("chat-1", "codex");
+    markAgentConversationContextSeeded("chat-1", "agent-codex");
+    expect(agentConversationContextSeeded("chat-1", "agent-codex")).toBe(true);
+    setSessionAgentRuntime("chat-1", "cursor");
+    expect(getSessionAgentRuntime("chat-1")).toBe("cursor");
+    expect(agentConversationContextSeeded("chat-1", "agent-cursor")).toBe(false);
   });
 });

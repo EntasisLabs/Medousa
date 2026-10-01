@@ -11,10 +11,13 @@
 import { operationPath } from "$lib/daemon/opPath";
 import { workshopScopedStorageKey } from "$lib/utils/workshopLocality";
 
+import { externalConversationBinding } from "$lib/utils/externalConversationSession";
+
 const STORAGE_KEY = "medousa-home-agent-runtime-v1";
 const AGENT_SESSION_KEY = "medousa-home-agent-session-v1";
 const AGENT_CONFIG_KEY = "medousa-home-agent-config-v1";
 const AGENT_WORK_KEY = "medousa-home-agent-work-v1";
+const AGENT_CONTEXT_KEY = "medousa-home-agent-context-v1";
 
 function scopedKey(key: string): string {
   return workshopScopedStorageKey(key);
@@ -100,7 +103,7 @@ function saveAgentWorkMap(map: Record<string, string | null>) {
 export function getSessionAgentRuntime(sessionId: string): ChatAgentRuntime {
   const trimmed = sessionId.trim();
   if (!trimmed) return "medousa";
-  return loadMap()[trimmed] ?? "medousa";
+  return externalConversationBinding(trimmed)?.provider ?? loadMap()[trimmed] ?? "medousa";
 }
 
 /** Active agents session for this chat (create once, prompt thereafter). */
@@ -153,6 +156,22 @@ export function clearSessionAgentSessionId(sessionId: string) {
   clearSessionAgentWorkId(sessionId);
 }
 
+export function agentConversationContextSeeded(sessionId: string, agentSessionId: string): boolean {
+  if (typeof localStorage === "undefined") return false;
+  try {
+    return JSON.parse(localStorage.getItem(scopedKey(AGENT_CONTEXT_KEY)) ?? "{}")[sessionId.trim()] === agentSessionId;
+  } catch { return false; }
+}
+
+export function markAgentConversationContextSeeded(sessionId: string, agentSessionId: string) {
+  if (typeof localStorage === "undefined") return;
+  try {
+    const map = JSON.parse(localStorage.getItem(scopedKey(AGENT_CONTEXT_KEY)) ?? "{}");
+    map[sessionId.trim()] = agentSessionId;
+    localStorage.setItem(scopedKey(AGENT_CONTEXT_KEY), JSON.stringify(map));
+  } catch { /* A cache failure only means the next prompt may repeat context. */ }
+}
+
 export function getSessionAgentConfigOptions(sessionId: string): unknown[] {
   if (typeof localStorage === "undefined") return [];
   try {
@@ -188,8 +207,10 @@ export function setSessionAgentRuntime(
 ) {
   const trimmed = sessionId.trim();
   if (!trimmed) return;
+  if (externalConversationBinding(trimmed)) return;
   const map = loadMap();
   const previous = map[trimmed] ?? "medousa";
+  if (isProviderConversationRuntime(previous) && previous !== runtime) return;
   if (runtime === "medousa") {
     delete map[trimmed];
   } else {

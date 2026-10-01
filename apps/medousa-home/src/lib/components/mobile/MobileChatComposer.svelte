@@ -252,7 +252,7 @@
   {/if}
   <div class="flex min-w-0 items-center justify-between gap-2">
   <div class="min-w-0 flex-1">
-    <MobileChatContext {agentSession} {externalConversation} disabled={connection.offline || blocked}/>
+    {#if !providerRuntime}<MobileChatContext {agentSession} disabled={connection.offline || blocked}/>{/if}
   </div>
   {#if agentSession.sessionRuntime === "medousa" && isTauriIos() && !$liveVoiceState.active}
     <button

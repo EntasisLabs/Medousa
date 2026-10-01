@@ -4,9 +4,10 @@
   import { ExternalLink, LoaderCircle } from "@lucide/svelte";
   import { createExternalConversationController } from "$lib/chat/externalConversationController.svelte";
   import ExternalConversationTranscript from "$lib/components/chat/ExternalConversationTranscript.svelte";
-  import { externalConversationStatus } from "$lib/utils/externalConversationMessages";
   import { chatTurnNavigationItems } from "$lib/utils/chatTurnNavigation";
   import { agentRuntimeLabel, isExternalAgentRuntime, isProviderConversationRuntime } from "$lib/utils/sessionAgentRuntime";
+  import SessionIdentity from "./SessionIdentity.svelte";
+  import BotAvatar from "./BotAvatar.svelte";
   import ChatAsyncToolsHint from "$lib/components/chat/ChatAsyncToolsHint.svelte";
   import ChatChangeReceipt from "$lib/components/chat/ChatChangeReceipt.svelte";
   import ChatMessageList from "$lib/components/chat/ChatMessageList.svelte";
@@ -225,7 +226,7 @@
   const useMobileChatLayout = $derived(mobile);
   /** The centered new-chat state exists only after an explicit New action. */
   const showChatEmptyState = $derived(
-    !providerRuntime && chat.sessionPristine && chatMessages.length === 0 && subagentRows.length === 0,
+    !providerRuntime && !chat.historyLoadingFor(panelSessionId) && (chat.sessionPristine || Boolean(panelBot)) && chatMessages.length === 0 && subagentRows.length === 0,
   );
 
   /** Don't treat "history still loading" as empty Presence — that centers the dock on cold start. */
@@ -236,6 +237,7 @@
   /** Presence — the quiet, centered landing for a genuinely empty main chat. */
   const showPresenceEmpty = $derived(
     showChatEmptyState &&
+      !panelBot &&
       !historyPending &&
       !workshop &&
       !scriptWorkbench &&
@@ -380,6 +382,7 @@
   }
   const sessionLabel = $derived.by(() => {
     if (providerRuntime) return externalConversation.selected?.label ?? agentRuntimeLabel(providerRuntime);
+    if (panelBot) return panelBot.display_name;
     // Presence empty: always the time-of-day room title — don't keep a stale preview.
     if (showPresenceEmpty) return presenceRoomTitle();
     const session = chat.sessions.find((entry) => entry.session_id === panelSessionId);
@@ -419,38 +422,6 @@
       return streamingMessage.tools.map((tool) => formatToolName(tool)).join(" · ");
     }
     return "Working…";
-  });
-
-  const mobileChatTitle = $derived.by(() => {
-    if (!mobile) return "Medousa";
-    if (providerRuntime) return externalConversation.selected?.label ?? agentRuntimeLabel(providerRuntime);
-    if (chat.backgroundActivity > 0) {
-      return chat.backgroundActivity === 1
-        ? "Working in background"
-        : `${chat.backgroundActivity} turns active`;
-    }
-    return panelBot?.display_name ?? "Medousa";
-  });
-
-  const mobileChatSubtitle = $derived.by(() => {
-    if (!mobile) return sessionLabel;
-    if (providerRuntime) return externalConversationStatus(externalConversation.selected) ?? agentRuntimeLabel(providerRuntime);
-    if (chat.liveStreamActive && phaseLine) return phaseLine;
-    if (chat.liveStreamActive) return "Thinking…";
-    if (chat.backgroundActivity > 0) return "Background work · see Work";
-    if (showChatEmptyState) return panelBot?.role_description?.trim() || presenceAsk;
-    if (chat.historyLoadingFor(panelSessionId) && panelMessages.length === 0) {
-      return "Opening thread…";
-    }
-    const last = [...panelMessages].reverse().find((message) => message.content.trim());
-    if (last?.content) {
-      const line = last.content.trim().split("\n")[0];
-      if (/^done\s*[—–-]\s*vault/i.test(line)) {
-        return "Saved to Vault";
-      }
-      return line.length > 56 ? `${line.slice(0, 55)}…` : line;
-    }
-    return "Ready when you are";
   });
 
   const showScrollFab = $derived(
@@ -604,8 +575,11 @@
     if (connection.offline || runtime.savingControls || chat.pendingMediaUploading) return;
     if (providerRuntime) {
       if (!chat.draft.trim() || externalConversation.busy) return;
-      await externalConversation.send(chat.draft.trim(), chat.pendingMediaRefs.length > 0 || chatAttachments.skillIds.length > 0 || chatAttachments.toolIds.length > 0)
-        .then(() => { chat.clearComposerDraft(); scrollToLatest(true); }).catch(() => {});
+      const draft = chat.draft;
+      const sessionId = panelSessionId;
+      const scope = chat.workshopScopeId;
+      await externalConversation.send(draft.trim(), chat.pendingMediaRefs.length > 0 || chatAttachments.skillIds.length > 0 || chatAttachments.toolIds.length > 0)
+        .then(() => { if (panelSessionId === sessionId && chat.workshopScopeId === scope && chat.draft === draft) chat.clearComposerDraft(); scrollToLatest(true); }).catch(() => {});
       return;
     }
     const scopeForSend = chat.vaultNoteContext;
@@ -790,6 +764,9 @@
     <div class="flex w-full min-w-0 items-center gap-2">
       {#if !mobile}
         <ShellSidebarExpandButton label="Show sessions" />
+        {#if panelBot || providerRuntime}
+          <SessionIdentity sessionId={panelSessionId} conversation={externalConversation.selected} provider={providerRuntime} />
+        {:else}
         <button
           type="button"
           class="min-w-0 text-left"
@@ -801,6 +778,7 @@
         >
           <h1 class="truncate text-sm font-semibold text-surface-50">{sessionLabel}</h1>
         </button>
+        {/if}
       {/if}
       {#if !mobile && !popout && isTauri()}
         <button
@@ -993,7 +971,9 @@
           onStopSubagent={stopWorker}
         />
       {:else if showChatEmptyState}
-        {#if scriptWorkbench && chat.scriptWorkbenchContext}
+        {#if panelBot}
+          <div class="flex min-h-[240px] flex-col items-center justify-center gap-3 px-6 py-10 text-center"><BotAvatar reference={panelBot.avatar_ref} size={76} /><h2 class="text-xl font-semibold">{panelBot.display_name}</h2><p class="max-w-md text-sm leading-relaxed text-content-secondary">{panelBot.role_description || "Start a conversation. Your Bot will remember your work together."}</p></div>
+        {:else if scriptWorkbench && chat.scriptWorkbenchContext}
         <div
           class="flex min-h-[120px] flex-col justify-center {embedded ? 'px-3 py-2' : mobile ? 'px-1 pb-4' : 'px-2'}"
         >
@@ -1144,7 +1124,7 @@
         agentRuntime={agentSession.sessionRuntime}
         agentConfigOptions={agentSession.agentConfigOptions}
         agentRuntimePending={agentSession.preparingAgent}
-        onAgentRuntimeChange={agentSession.onRuntimeChange}
+        onAgentRuntimeChange={panelBot || providerRuntime ? undefined : agentSession.onRuntimeChange}
         onAgentConfigChange={agentSession.updateAgentConfig}
         externalConversations={externalConversation.conversations}
         externalConversationId={externalConversation.selectedId}
@@ -1154,13 +1134,14 @@
         onkeydown={handleKeydown}
         onCursorChange={(cursor) => (draftCursor = cursor)}
       />
-      {#if !workshop && !embedded}
+      {#if !workshop && !embedded && !providerRuntime}
         <ChatRuntimeControlRow
           sessionId={panelSessionId}
           value={agentSession.sessionRuntime}
           configOptions={agentSession.agentConfigOptions}
           pending={agentSession.preparingAgent}
           disabled={connection.offline || chat.composerBlocked || externalConversation.busy}
+          runtimeLocked={Boolean(panelBot)}
           onChange={agentSession.onRuntimeChange}
           onConfigChange={agentSession.updateAgentConfig}
         />

@@ -38,6 +38,7 @@ import { loadDraftForSession } from "$lib/chat/draftPersistence";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
 import { sessionModelSelections } from "./sessionModelSelection.svelte";
 import type { ChatStoreHost } from "$lib/chat/chatStoreHost";
+import { externalConversationBinding } from "$lib/utils/externalConversationSession";
 import { workshopScopedStorageKey } from "$lib/utils/workshopLocality";
 
 export const SESSION_KEY = "medousa-home-session-id";
@@ -483,7 +484,7 @@ export function scheduleSessionsRefresh(host: ChatStoreHost) {
 export async function warmBackgroundSession(host: ChatStoreHost, sessionId: string) {
   const workshopEpoch = host.workshopEpoch;
   const trimmed = sessionId.trim();
-  if (!trimmed || trimmed === host.sessionId) return;
+  if (!trimmed || trimmed === host.sessionId || externalConversationBinding(trimmed)) return;
 
   const existing = host.sessionRuntimes.get(trimmed);
   if (existing && (existing.messages.length > 0 || existing.historyLoading)) {
@@ -648,6 +649,7 @@ export async function ensureSessionHydrated(
     await host.sessionBootstrapInFlight;
     return;
   }
+  if (externalConversationBinding(host.sessionId)) return;
   if (host.historyLoading) return;
   if (host.sessionPristine) return;
   if (host.messages.length === 0) {
@@ -665,7 +667,7 @@ export async function reconcileOnResume(
 ) {
   const workshopEpoch = host.workshopEpoch;
   const sessionId = host.sessionId.trim();
-  if (!sessionId) return;
+  if (!sessionId || externalConversationBinding(sessionId)) return;
 
   const epoch = host.transcriptEpoch;
   const stillSameSession = () =>
@@ -706,7 +708,7 @@ export async function reloadCurrentSession(
 ) {
   const workshopEpoch = host.workshopEpoch;
   const sessionId = host.sessionId.trim();
-  if (!sessionId) return;
+  if (!sessionId || externalConversationBinding(sessionId)) return;
 
   const epoch = host.transcriptEpoch;
   const stillSameSession = () =>
@@ -858,6 +860,14 @@ export async function switchSession(host: ChatStoreHost, sessionId: string) {
   );
   chatScenes.reset();
   chatInteractions.reset();
+  if (externalConversationBinding(trimmed)) {
+    host.historyLoading = false;
+    host.stashFocusedRuntime();
+    mirrorShellChat();
+    const { workshops } = await import("$lib/stores/workshops.svelte");
+    if (host.workshopEpoch === workshopEpoch && host.sessionId === trimmed) void workshops.saveActiveSession(trimmed);
+    return;
+  }
   try {
     const history = await getSessionHistory(trimmed, { limit: TRANSCRIPT_PAGE_SIZE });
     if (

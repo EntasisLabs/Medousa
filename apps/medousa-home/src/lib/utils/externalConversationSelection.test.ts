@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getExternalConversationSelection, setExternalConversationSelection } from "./externalConversationSelection";
+import { externalConversationSessionId } from "./externalConversationSession";
 
 describe("external conversation selection", () => {
   beforeEach(() => {
@@ -18,5 +19,12 @@ describe("external conversation selection", () => {
     expect(getExternalConversationSelection("chat-1", "muse")).toBe("muse-a");
     expect(getExternalConversationSelection("chat-1", "grok_bot")).toBe("grok-a");
     expect(getExternalConversationSelection("chat-2", "muse")).toBe("muse-b");
+  });
+
+  it("cannot retarget a dedicated conversation or bind it to another provider", () => {
+    const session = externalConversationSessionId("muse", "muse-a");
+    setExternalConversationSelection(session, "muse", "muse-b");
+    expect(getExternalConversationSelection(session, "muse")).toBe("muse-a");
+    expect(getExternalConversationSelection(session, "grok_bot")).toBeNull();
   });
 });

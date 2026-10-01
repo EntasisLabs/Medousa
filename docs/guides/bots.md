@@ -30,8 +30,10 @@ Medousa opens the Bot's primary conversation. Opening that Bot later—from the
 same app, your phone, or another Medousa client connected to the workshop—opens
 the same conversation and Bot memory.
 
-The Bot chip under the composer tells you when the conversation belongs to a
-Bot. The mode control remains separate.
+The conversation header shows your Bot’s companion and name. Select it to view
+the Bot’s purpose and archetype, or choose **Edit Bot**. The composer addresses
+your Bot by name. Its runtime stays attached to the Bot; the model, mode, and
+behavior controls remain available where supported.
 
 Bot creation opens in a centered dialog on desktop and a bottom sheet on mobile.
 **More options** contains browser continuity when a persistent browser is available.
@@ -42,7 +44,8 @@ Existing emoji avatars are preserved until you choose another avatar.
 
 ## Edit, duplicate, and archive
 
-Use the quiet actions on a Bot row in Sessions:
+Select the Bot’s name in the conversation header to view its profile and edit it.
+You can also use the quiet actions on a Bot row in Sessions:
 
 - **Edit** changes its name, purpose, avatar, or archetype. Existing transcript
   history is not rewritten.
