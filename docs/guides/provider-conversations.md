@@ -41,6 +41,8 @@ If the callback key is lost or exposed, use **Rotate callback key** in External 
 
 Muse uses an additional encrypted envelope beyond ordinary WhatsApp messages. The adapter obtains Muse's pairing secret from authenticated WhatsApp device sync, wraps outgoing text for Muse, and decrypts and extracts text from Muse's rich replies. It supports text conversations; images and other rich content are not imported. If the adapter reports that the Muse pairing secret is unavailable, keep your phone connected so linked-device sync can finish, and verify that Muse is connected in WhatsApp before retrying.
 
+The linked WhatsApp account still receives your ordinary personal chats. Muse-bound chats go to Muse; senders outside the configured WhatsApp Bot allowlist are ignored by Medousa without an automatic reply.
+
 For streamed replies, Medousa waits for Muse's explicit final update and then
 shows the complete text. Intermediate previews are not saved as completed
 messages. A pause in generation does not finish the reply, and a final update
