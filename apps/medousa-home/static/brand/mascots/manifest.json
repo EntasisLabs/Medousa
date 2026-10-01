@@ -1,0 +1,287 @@
+{
+  "name": "Medousa Mascot Assets",
+  "version": "0.1.0",
+  "source": "character sheet supplied in ChatGPT conversation",
+  "states": [
+    "default",
+    "happy",
+    "chill",
+    "sweet",
+    "focus",
+    "sus"
+  ],
+  "bodies": {
+    "medousa": {
+      "role": "main",
+      "assets": {
+        "default": {
+          "clean": {
+            "64": "png/clean/64/medousa/default.png",
+            "128": "png/clean/128/medousa/default.png",
+            "192": "png/clean/192/medousa/default.png",
+            "256": "png/clean/256/medousa/default.png"
+          },
+          "fx": {
+            "64": "png/fx/64/medousa/default.png",
+            "128": "png/fx/128/medousa/default.png",
+            "192": "png/fx/192/medousa/default.png",
+            "256": "png/fx/256/medousa/default.png"
+          }
+        },
+        "happy": {
+          "clean": {
+            "64": "png/clean/64/medousa/happy.png",
+            "128": "png/clean/128/medousa/happy.png",
+            "192": "png/clean/192/medousa/happy.png",
+            "256": "png/clean/256/medousa/happy.png"
+          },
+          "fx": {
+            "64": "png/fx/64/medousa/happy.png",
+            "128": "png/fx/128/medousa/happy.png",
+            "192": "png/fx/192/medousa/happy.png",
+            "256": "png/fx/256/medousa/happy.png"
+          }
+        },
+        "chill": {
+          "clean": {
+            "64": "png/clean/64/medousa/chill.png",
+            "128": "png/clean/128/medousa/chill.png",
+            "192": "png/clean/192/medousa/chill.png",
+            "256": "png/clean/256/medousa/chill.png"
+          },
+          "fx": {
+            "64": "png/fx/64/medousa/chill.png",
+            "128": "png/fx/128/medousa/chill.png",
+            "192": "png/fx/192/medousa/chill.png",
+            "256": "png/fx/256/medousa/chill.png"
+          }
+        },
+        "sweet": {
+          "clean": {
+            "64": "png/clean/64/medousa/sweet.png",
+            "128": "png/clean/128/medousa/sweet.png",
+            "192": "png/clean/192/medousa/sweet.png",
+            "256": "png/clean/256/medousa/sweet.png"
+          },
+          "fx": {
+            "64": "png/fx/64/medousa/sweet.png",
+            "128": "png/fx/128/medousa/sweet.png",
+            "192": "png/fx/192/medousa/sweet.png",
+            "256": "png/fx/256/medousa/sweet.png"
+          }
+        },
+        "focus": {
+          "clean": {
+            "64": "png/clean/64/medousa/focus.png",
+            "128": "png/clean/128/medousa/focus.png",
+            "192": "png/clean/192/medousa/focus.png",
+            "256": "png/clean/256/medousa/focus.png"
+          },
+          "fx": {
+            "64": "png/fx/64/medousa/focus.png",
+            "128": "png/fx/128/medousa/focus.png",
+            "192": "png/fx/192/medousa/focus.png",
+            "256": "png/fx/256/medousa/focus.png"
+          }
+        },
+        "sus": {
+          "clean": {
+            "64": "png/clean/64/medousa/sus.png",
+            "128": "png/clean/128/medousa/sus.png",
+            "192": "png/clean/192/medousa/sus.png",
+            "256": "png/clean/256/medousa/sus.png"
+          },
+          "fx": {
+            "64": "png/fx/64/medousa/sus.png",
+            "128": "png/fx/128/medousa/sus.png",
+            "192": "png/fx/192/medousa/sus.png",
+            "256": "png/fx/256/medousa/sus.png"
+          }
+        }
+      }
+    },
+    "seahorse": {
+      "role": "support",
+      "assets": {
+        "default": {
+          "clean": {
+            "64": "png/clean/64/seahorse/default.png",
+            "128": "png/clean/128/seahorse/default.png",
+            "192": "png/clean/192/seahorse/default.png",
+            "256": "png/clean/256/seahorse/default.png"
+          },
+          "fx": {
+            "64": "png/fx/64/seahorse/default.png",
+            "128": "png/fx/128/seahorse/default.png",
+            "192": "png/fx/192/seahorse/default.png",
+            "256": "png/fx/256/seahorse/default.png"
+          }
+        },
+        "happy": {
+          "clean": {
+            "64": "png/clean/64/seahorse/happy.png",
+            "128": "png/clean/128/seahorse/happy.png",
+            "192": "png/clean/192/seahorse/happy.png",
+            "256": "png/clean/256/seahorse/happy.png"
+          },
+          "fx": {
+            "64": "png/fx/64/seahorse/happy.png",
+            "128": "png/fx/128/seahorse/happy.png",
+            "192": "png/fx/192/seahorse/happy.png",
+            "256": "png/fx/256/seahorse/happy.png"
+          }
+        },
+        "chill": {
+          "clean": {
+            "64": "png/clean/64/seahorse/chill.png",
+            "128": "png/clean/128/seahorse/chill.png",
+            "192": "png/clean/192/seahorse/chill.png",
+            "256": "png/clean/256/seahorse/chill.png"
+          },
+          "fx": {
+            "64": "png/fx/64/seahorse/chill.png",
+            "128": "png/fx/128/seahorse/chill.png",
+            "192": "png/fx/192/seahorse/chill.png",
+            "256": "png/fx/256/seahorse/chill.png"
+          }
+        },
+        "sweet": {
+          "clean": {
+            "64": "png/clean/64/seahorse/sweet.png",
+            "128": "png/clean/128/seahorse/sweet.png",
+            "192": "png/clean/192/seahorse/sweet.png",
+            "256": "png/clean/256/seahorse/sweet.png"
+          },
+          "fx": {
+            "64": "png/fx/64/seahorse/sweet.png",
+            "128": "png/fx/128/seahorse/sweet.png",
+            "192": "png/fx/192/seahorse/sweet.png",
+            "256": "png/fx/256/seahorse/sweet.png"
+          }
+        },
+        "focus": {
+          "clean": {
+            "64": "png/clean/64/seahorse/focus.png",
+            "128": "png/clean/128/seahorse/focus.png",
+            "192": "png/clean/192/seahorse/focus.png",
+            "256": "png/clean/256/seahorse/focus.png"
+          },
+          "fx": {
+            "64": "png/fx/64/seahorse/focus.png",
+            "128": "png/fx/128/seahorse/focus.png",
+            "192": "png/fx/192/seahorse/focus.png",
+            "256": "png/fx/256/seahorse/focus.png"
+          }
+        },
+        "sus": {
+          "clean": {
+            "64": "png/clean/64/seahorse/sus.png",
+            "128": "png/clean/128/seahorse/sus.png",
+            "192": "png/clean/192/seahorse/sus.png",
+            "256": "png/clean/256/seahorse/sus.png"
+          },
+          "fx": {
+            "64": "png/fx/64/seahorse/sus.png",
+            "128": "png/fx/128/seahorse/sus.png",
+            "192": "png/fx/192/seahorse/sus.png",
+            "256": "png/fx/256/seahorse/sus.png"
+          }
+        }
+      }
+    },
+    "starfish": {
+      "role": "save-vibes",
+      "assets": {
+        "default": {
+          "clean": {
+            "64": "png/clean/64/starfish/default.png",
+            "128": "png/clean/128/starfish/default.png",
+            "192": "png/clean/192/starfish/default.png",
+            "256": "png/clean/256/starfish/default.png"
+          },
+          "fx": {
+            "64": "png/fx/64/starfish/default.png",
+            "128": "png/fx/128/starfish/default.png",
+            "192": "png/fx/192/starfish/default.png",
+            "256": "png/fx/256/starfish/default.png"
+          }
+        },
+        "happy": {
+          "clean": {
+            "64": "png/clean/64/starfish/happy.png",
+            "128": "png/clean/128/starfish/happy.png",
+            "192": "png/clean/192/starfish/happy.png",
+            "256": "png/clean/256/starfish/happy.png"
+          },
+          "fx": {
+            "64": "png/fx/64/starfish/happy.png",
+            "128": "png/fx/128/starfish/happy.png",
+            "192": "png/fx/192/starfish/happy.png",
+            "256": "png/fx/256/starfish/happy.png"
+          }
+        },
+        "chill": {
+          "clean": {
+            "64": "png/clean/64/starfish/chill.png",
+            "128": "png/clean/128/starfish/chill.png",
+            "192": "png/clean/192/starfish/chill.png",
+            "256": "png/clean/256/starfish/chill.png"
+          },
+          "fx": {
+            "64": "png/fx/64/starfish/chill.png",
+            "128": "png/fx/128/starfish/chill.png",
+            "192": "png/fx/192/starfish/chill.png",
+            "256": "png/fx/256/starfish/chill.png"
+          }
+        },
+        "sweet": {
+          "clean": {
+            "64": "png/clean/64/starfish/sweet.png",
+            "128": "png/clean/128/starfish/sweet.png",
+            "192": "png/clean/192/starfish/sweet.png",
+            "256": "png/clean/256/starfish/sweet.png"
+          },
+          "fx": {
+            "64": "png/fx/64/starfish/sweet.png",
+            "128": "png/fx/128/starfish/sweet.png",
+            "192": "png/fx/192/starfish/sweet.png",
+            "256": "png/fx/256/starfish/sweet.png"
+          }
+        },
+        "focus": {
+          "clean": {
+            "64": "png/clean/64/starfish/focus.png",
+            "128": "png/clean/128/starfish/focus.png",
+            "192": "png/clean/192/starfish/focus.png",
+            "256": "png/clean/256/starfish/focus.png"
+          },
+          "fx": {
+            "64": "png/fx/64/starfish/focus.png",
+            "128": "png/fx/128/starfish/focus.png",
+            "192": "png/fx/192/starfish/focus.png",
+            "256": "png/fx/256/starfish/focus.png"
+          }
+        },
+        "sus": {
+          "clean": {
+            "64": "png/clean/64/starfish/sus.png",
+            "128": "png/clean/128/starfish/sus.png",
+            "192": "png/clean/192/starfish/sus.png",
+            "256": "png/clean/256/starfish/sus.png"
+          },
+          "fx": {
+            "64": "png/fx/64/starfish/sus.png",
+            "128": "png/fx/128/starfish/sus.png",
+            "192": "png/fx/192/starfish/sus.png",
+            "256": "png/fx/256/starfish/sus.png"
+          }
+        }
+      }
+    }
+  },
+  "notes": {
+    "clean": "Main character only; transparent background, detached sparkles removed.",
+    "fx": "Character plus detached pixel accents from the source sheet.",
+    "scaling": "Nearest-neighbor resizing used to preserve the pixel-art look."
+  }
+}

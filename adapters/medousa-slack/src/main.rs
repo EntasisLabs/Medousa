@@ -1,5 +1,7 @@
 //! Thin Slack adapter — Socket Mode via slack-morphism, forwards to daemon ingester.
 
+mod inbox;
+
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
@@ -22,6 +24,7 @@ struct SlackAdapterState {
     slack_client: Client,
     daemon_url: String,
     bot_token: String,
+    inbox: Arc<inbox::SlackInbox>,
 }
 
 #[tokio::main]
@@ -41,6 +44,29 @@ async fn main() -> Result<()> {
         slack_client: Client::new(),
         daemon_url,
         bot_token,
+        inbox: Arc::new(inbox::SlackInbox::for_workshop()?),
+    });
+
+    let worker = state.clone();
+    tokio::spawn(async move {
+        loop {
+            let delivery_state = worker.clone();
+            if let Err(error) = worker
+                .inbox
+                .drain_once(|raw| {
+                    let state = delivery_state.clone();
+                    async move {
+                        let event =
+                            serde_json::from_value(raw).context("decode stored Slack event")?;
+                        handle_push_event(state, event).await
+                    }
+                })
+                .await
+            {
+                eprintln!("medousa_slack durable intake retry: {error:#}");
+            }
+            worker.inbox.wait_for_work().await;
+        }
     });
 
     println!(
@@ -83,12 +109,15 @@ async fn slack_push_events_callback(
         guard.get_user_state::<SlackAdapterState>().cloned()
     };
 
-    if let Some(state) = state {
-        tokio::spawn(async move {
-            if let Err(err) = handle_push_event(Arc::new(state), event).await {
-                eprintln!("medousa_slack event handling error: {err:#}");
-            }
-        });
+    let Some(state) = state else {
+        return Err(std::io::Error::other("Slack adapter state unavailable").into());
+    };
+    if matches!(&event.event, SlackEventCallbackBody::Message(_)) {
+        state
+            .inbox
+            .record(event.event_id.to_string(), serde_json::to_value(&event)?)
+            .await
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
     }
 
     Ok(())

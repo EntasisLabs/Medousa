@@ -8,7 +8,6 @@
  */
 import {
   invoke as tauriInvoke,
-  convertFileSrc as tauriConvertFileSrc,
   Channel,
   PluginListener,
   Resource,
@@ -38,11 +37,6 @@ export async function invoke<T>(
     return browserCommand(cmd) as T;
   }
   return tauriInvoke<T>(cmd, args, options);
-}
-
-export function convertFileSrc(filePath: string, protocol = "asset"): string {
-  if (!tauriInternalsPresent()) return filePath;
-  return tauriConvertFileSrc(filePath, protocol);
 }
 
 function browserCommand(cmd: string): unknown {

@@ -671,6 +671,7 @@ async fn mock_transport_routes_jobs_enqueue_ask() {
         .jobs()
         .enqueue_ask(&medousa_types::EnqueueAskRequest {
             prompt: "hello".to_string(),
+            idempotency_key: None,
             policy_profile: None,
             model_hint: None,
             max_turns: None,

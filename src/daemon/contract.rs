@@ -381,12 +381,12 @@ mod tests {
     fn production_profiles_match_declared_counts() {
         let without_pairing = production_registry(false);
         let with_pairing = production_registry(true);
-        assert_eq!(without_pairing.len(), 457);
-        assert_eq!(with_pairing.len(), 476);
+        assert_eq!(without_pairing.len(), 458);
+        assert_eq!(with_pairing.len(), 477);
         let artifacts = artifacts(&with_pairing);
         let inventory: serde_json::Value =
             serde_json::from_str(&artifacts.route_inventory_json).unwrap();
-        assert_eq!(inventory["operations"].as_array().unwrap().len(), 476);
+        assert_eq!(inventory["operations"].as_array().unwrap().len(), 477);
         assert!(artifacts.openapi_json.contains("\"openapi\": \"3.2.0\""));
     }
 

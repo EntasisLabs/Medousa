@@ -89,7 +89,7 @@
           {#if avatarsOpen}
             <div class="avatars" role="group" aria-label="Bot avatar">
               {#each BOT_AVATARS as option}
-                <button type="button" aria-label={`${option.label} Medousa avatar`} aria-pressed={avatar === option.id} disabled={busy} onclick={() => { avatar = option.id; avatarsOpen = false; }}><BotAvatar reference={option.id} size={38} /></button>
+                <button type="button" aria-label={`${option.label} avatar`} aria-pressed={avatar === option.id} disabled={busy} onclick={() => { avatar = option.id; avatarsOpen = false; }}><BotAvatar reference={option.id} size={38} /></button>
               {/each}
             </div>
           {/if}

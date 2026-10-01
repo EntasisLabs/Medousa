@@ -583,30 +583,38 @@ async fn flush_mesh_outbox_item(
         return Err((StatusCode::BAD_GATEWAY, msg));
     }
 
-    if let Some(raw) = response
+    let receipt = response
         .headers()
         .get("x-medousa-mesh-receipt")
         .and_then(|value| value.to_str().ok())
-        && let Ok(receipt) = serde_json::from_str::<MeshReceipt>(raw)
-    {
-        let _ = receipts::store_received(&receipt);
-        let item = outbox::mark_acked(&item.id, &receipt).map_err(internal)?;
-        return Ok(Json(item));
-    }
-
-    // Soft-ack when the peer accepted the POST but did not return a receipt header.
-    let soft = MeshReceipt {
-        id: format!("mrc_soft_{}", item.id),
-        version: receipts::MESH_RECEIPT_VERSION,
-        sender_device_id: item.peer_device_id.clone(),
-        recipient_device_id: state.local_device_id.clone(),
-        ack_seq: item.seq,
-        payload_hash: item.envelope.payload_hash.clone(),
-        status: receipts::MeshReceiptStatus::Delivered,
-        issued_at: chrono::Utc::now(),
-        signature: "soft".to_string(),
-    };
-    let item = outbox::mark_acked(&item.id, &soft).map_err(internal)?;
+        .ok_or_else(|| "peer response missing mesh receipt".to_string())
+        .and_then(|raw| serde_json::from_str::<MeshReceipt>(raw).map_err(|err| err.to_string()))
+        .and_then(|receipt| {
+            outbox::verify_receipt_for_item(
+                &item,
+                &receipt,
+                &peer.public_key_b64,
+                &state.local_device_id,
+            )
+            .map_err(|err| err.to_string())?;
+            receipts::store_received(&receipt).map_err(|err| err.to_string())?;
+            outbox::mark_acked(
+                &item.id,
+                &receipt,
+                &peer.public_key_b64,
+                &state.local_device_id,
+            )
+            .map(|acked| (receipt, acked))
+            .map_err(|err| err.to_string())
+        })
+        .map_err(|err| {
+            let _ = outbox::mark_failed(&item.id, &err);
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("peer deliver receipt invalid: {err}"),
+            )
+        })?;
+    let item = receipt.1;
     Ok(Json(item))
 }
 
@@ -1681,20 +1689,44 @@ async fn list_mesh_receipts(
 }
 
 async fn post_mesh_receipt(
-    State(_state): State<MeshApiState>,
+    State(state): State<MeshApiState>,
     Extension(principal): Extension<RequestPrincipal>,
     Json(receipt): Json<MeshReceipt>,
 ) -> Result<Json<MeshReceipt>, (StatusCode, String)> {
-    if principal.transport() != TransportClass::Loopback {
-        let _record = authorize_remote_peer(&_state, &principal)?;
-    }
-    receipts::store_received(&receipt).map_err(internal)?;
+    let peer_public_key = if principal.transport() == TransportClass::Loopback {
+        registry::get_peer(&receipt.sender_device_id)
+            .map_err(internal)?
+            .ok_or_else(|| {
+                (
+                    StatusCode::NOT_FOUND,
+                    "mesh peer not registered".to_string(),
+                )
+            })?
+            .public_key_b64
+    } else {
+        let record = authorize_remote_peer(&state, &principal)?;
+        if record.phone_id != receipt.sender_device_id {
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                "mesh receipt caller mismatch".to_string(),
+            ));
+        }
+        record.phone_public_key
+    };
     // Receipt.sender = remote host that received our delivery; that host is our outbox peer.
-    if let Some(item) =
-        outbox::find_by_peer_seq(&receipt.sender_device_id, receipt.ack_seq).map_err(internal)?
-    {
-        let _ = outbox::mark_acked(&item.id, &receipt);
-    }
+    let item = outbox::find_by_peer_seq(&receipt.sender_device_id, receipt.ack_seq)
+        .map_err(internal)?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                "matching mesh delivery not found".to_string(),
+            )
+        })?;
+    outbox::verify_receipt_for_item(&item, &receipt, &peer_public_key, &state.local_device_id)
+        .map_err(|err| (StatusCode::UNAUTHORIZED, err.to_string()))?;
+    receipts::store_received(&receipt).map_err(internal)?;
+    outbox::mark_acked(&item.id, &receipt, &peer_public_key, &state.local_device_id)
+        .map_err(|err| (StatusCode::UNAUTHORIZED, err.to_string()))?;
     Ok(Json(receipt))
 }
 

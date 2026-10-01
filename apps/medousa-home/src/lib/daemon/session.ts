@@ -51,6 +51,7 @@ import {
   subscribePortalStream,
   subscribePortalStreamError,
 } from "$lib/wasm/browserPortal";
+import { operationPath } from "./opPath";
 
 function useBrowserPortal(): boolean {
   return isBrowserWorkshop() && browserPortalActive();
@@ -90,7 +91,7 @@ export async function listSessions(
     };
     if (options.q?.trim()) query.q = options.q.trim();
     if (options.cursor?.trim()) query.cursor = options.cursor.trim();
-    return portalRequest<ListSessionsResponse>("GET", `/v1/sessions?${new URLSearchParams(query)}`);
+    return portalRequest<ListSessionsResponse>("GET", `${operationPath("sessions.get")}?${new URLSearchParams(query)}`);
   }
   if (isBrowserWorkshop()) return listBrowserSessions(options.limit);
   return invoke<ListSessionsResponse>("session_list", {
@@ -112,7 +113,7 @@ export async function createSession(
   options?: CreateSessionOptions,
 ): Promise<CreateSessionResponse> {
   if (useBrowserPortal()) {
-    return portalRequest<CreateSessionResponse>("POST", "/v1/sessions", {
+    return portalRequest<CreateSessionResponse>("POST", operationPath("sessions.post"), {
       catalog: options?.catalog,
       member_profile_ids: options?.memberProfileIds,
       agent_profile_id: options?.agentProfileId,
@@ -191,7 +192,7 @@ export async function getSessionHistory(
     const suffix = query.size ? `?${query}` : "";
     return portalRequest<SessionHistoryResponse>(
       "GET",
-      `/v1/sessions/${encodeURIComponent(sessionId)}/history${suffix}`,
+      `${operationPath("sessions.by_session_id.history.get", { session_id: sessionId })}${suffix}`,
     );
   }
   if (isBrowserWorkshop()) {
@@ -327,7 +328,7 @@ export async function getActiveSessionTurn(
   if (useBrowserPortal()) {
     return portalRequest<ActiveSessionTurnResponse>(
       "GET",
-      `/v1/sessions/${encodeURIComponent(sessionId)}/active-turn`,
+      operationPath("sessions.by_session_id.active_turn.get", { session_id: sessionId }),
     );
   }
   if (isBrowserWorkshop()) return { active: false };
@@ -342,7 +343,7 @@ export async function cancelActiveSessionTurn(
   if (useBrowserPortal()) {
     return portalRequest<CancelActiveSessionTurnResponse>(
       "POST",
-      `/v1/sessions/${encodeURIComponent(sessionId)}/active-turn`,
+      operationPath("sessions.by_session_id.active_turn.post", { session_id: sessionId }),
     );
   }
   return invoke<CancelActiveSessionTurnResponse>("session_cancel_active_turn", {
@@ -363,7 +364,7 @@ export async function createTurnTicket(
 ): Promise<import("$lib/types/session").TurnTicketResponse> {
   if (useBrowserPortal()) {
     const channelSurface = request.channelSurface?.trim() || homeChannelSurface();
-    return portalRequest<import("$lib/types/session").TurnTicketResponse>("POST", "/v1/turns", {
+    return portalRequest<import("$lib/types/session").TurnTicketResponse>("POST", operationPath("turns.post"), {
       session_id: request.sessionId,
       prompt: request.prompt,
       agent_mode: request.agentMode ?? null,
@@ -591,7 +592,7 @@ export async function listSessionTurns(
     const active = activeOnly ? "true" : "false";
     return portalRequest<import("$lib/types/session").SessionTurnsResponse>(
       "GET",
-      `/v1/sessions/${encodeURIComponent(sessionId)}/turns?active=${active}`,
+      `${operationPath("sessions.by_session_id.turns.get", { session_id: sessionId })}?active=${active}`,
     );
   }
   if (isBrowserWorkshop()) return { session_id: sessionId, turns: [] };

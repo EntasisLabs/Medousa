@@ -1,5 +1,7 @@
 <script lang="ts">
   import {
+    mascotForMark,
+    mascotImage,
     medousaMarkOption,
     type MedousaMarkId,
   } from "$lib/theme/medousaMarks";
@@ -21,6 +23,7 @@
   }: Props = $props();
 
   const option = $derived(medousaMarkOption(markId));
+  const mascot = $derived(mascotForMark(markId));
   const asset = $derived(
     markId === "aurora"
       ? simplified
@@ -39,7 +42,9 @@
   aria-label={decorative ? undefined : label}
   aria-hidden={decorative}
 >
-  {#if markId === "aurora"}
+  {#if mascot}
+    <img class="medousa-mark-image mascot-image" src={mascotImage(mascot)} alt="" aria-hidden="true" />
+  {:else if markId === "aurora"}
     <img
       class="medousa-mark-image"
       style="width: 100%; height: 100%; max-width: 100%; max-height: 100%; object-fit: contain"
@@ -73,6 +78,10 @@
 
   .medousa-mark-image {
     object-fit: contain;
+  }
+
+  .mascot-image {
+    image-rendering: pixelated;
   }
 
   .medousa-mark-mask {

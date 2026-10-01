@@ -4,6 +4,7 @@ import { BOT_AVATARS, botAvatar, DEFAULT_BOT_AVATAR } from "./botAvatar";
 describe("Bot avatars", () => {
   it("resolves saved marks and keeps legacy emoji avatars", () => {
     for (const avatar of BOT_AVATARS) expect(botAvatar(avatar.id)).toMatchObject(avatar);
+    expect(botAvatar("mascot:seahorse").mascot).toBe("seahorse");
     expect(botAvatar("🧭").legacy).toBe("🧭");
     expect(botAvatar("🛠️").legacy).toBe("🛠️");
   });

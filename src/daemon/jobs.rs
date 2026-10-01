@@ -8,6 +8,7 @@ use axum::extract::{Extension, Path as AxumPath, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{delete, get, patch, post};
 use chrono::Utc;
+use once_cell::sync::Lazy;
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
 use uuid::Uuid;
@@ -53,6 +54,51 @@ use crate::recurring_schedule::RecurringScheduleSpec;
 
 const DAEMON_REPORT_SESSION_ID: &str = "medousa-daemon-reports";
 const MAX_REPORT_CITATIONS: usize = 24;
+static ASK_IDEMPOTENCY_LOCK: Lazy<tokio::sync::Mutex<()>> =
+    Lazy::new(|| tokio::sync::Mutex::new(()));
+
+fn ask_idempotency_identity(
+    request: &EnqueueAskRequest,
+    profile_id: &str,
+) -> Result<Option<(String, String)>, (StatusCode, String)> {
+    let Some(key) = request.idempotency_key.as_deref() else {
+        return Ok(None);
+    };
+    let key = key.trim();
+    if key.is_empty() || key.len() > 256 || key.chars().any(char::is_control) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "invalid idempotency key".to_string(),
+        ));
+    }
+    let mut identity = Sha256::new();
+    identity.update(profile_id.as_bytes());
+    identity.update([0]);
+    identity.update(key.as_bytes());
+    let job_id = format!("medousa-daemon-ask-{:x}", identity.finalize());
+    let mut normalized = request.clone();
+    normalized.idempotency_key = Some(key.to_string());
+    let payload = serde_json::to_vec(&normalized).map_err(internal_error)?;
+    let fingerprint = format!("{:x}", Sha256::digest(payload));
+    Ok(Some((job_id, fingerprint)))
+}
+
+fn replay_ask_response(
+    record: &crate::workspace::ask_job_store::AskJobRecord,
+    fingerprint: &str,
+) -> Result<EnqueueResponse, (StatusCode, String)> {
+    if record.request_fingerprint.as_deref() != Some(fingerprint) {
+        return Err((
+            StatusCode::CONFLICT,
+            "idempotency key reused with different request".to_string(),
+        ));
+    }
+    Ok(EnqueueResponse {
+        job_id: record.job_id.clone(),
+        queue: "turn-ticket".to_string(),
+        accepted_at_utc: record.created_at_utc,
+    })
+}
 
 pub fn recurring_surface() -> DeclaredRouter<AppState> {
     DeclaredRouter::default()
@@ -297,6 +343,21 @@ pub async fn enqueue_ask(
     Extension(principal): Extension<crate::request_principal::RequestPrincipal>,
     Json(request): Json<EnqueueAskRequest>,
 ) -> Result<Json<EnqueueResponse>, (StatusCode, String)> {
+    let profile_id = principal
+        .profile_id()
+        .map(str::to_string)
+        .unwrap_or_else(|| state.workshop_identity_user_id());
+    let idempotency = ask_idempotency_identity(&request, &profile_id)?;
+    let _admission_guard = if idempotency.is_some() {
+        Some(ASK_IDEMPOTENCY_LOCK.lock().await)
+    } else {
+        None
+    };
+    if let Some((job_id, fingerprint)) = idempotency.as_ref()
+        && let Some(record) = crate::workspace::ask_job_store::ask_job_store().get(job_id)
+    {
+        return replay_ask_response(&record, fingerprint).map(Json);
+    }
     let manuscript_ids = normalize_ask_manuscript_ids(
         request.manuscript_id.as_deref(),
         request.additional_manuscript_ids.as_deref(),
@@ -326,8 +387,10 @@ pub async fn enqueue_ask(
     )
     .await?;
 
-    let now = Utc::now();
-    let job_id = format!("medousa-daemon-ask-{}", now.timestamp_millis());
+    let job_id = idempotency
+        .as_ref()
+        .map(|(job_id, _)| job_id.clone())
+        .unwrap_or_else(|| format!("medousa-daemon-ask-{}", Uuid::new_v4().simple()));
     let session_id = crate::workspace::ask_job_store::ask_job_session_id(&job_id);
     let (provider, model) =
         resolve_api_model_routing(request.model_hint.as_deref(), &state.default_runtime_config);
@@ -391,6 +454,7 @@ pub async fn enqueue_ask(
         crate::turn_ticket::TurnTicketMode::Background,
         interactive_request,
         Some(job_id.clone()),
+        idempotency.map(|(_, fingerprint)| fingerprint),
     )
     .await?;
 
@@ -1220,6 +1284,85 @@ pub fn enforce_lane_safety(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ask_idempotency_is_principal_scoped_and_payload_bound() {
+        let mut request = EnqueueAskRequest {
+            prompt: "Summarize status".into(),
+            idempotency_key: Some(" retry-1 ".into()),
+            policy_profile: Some("interactive".into()),
+            model_hint: None,
+            max_turns: None,
+            identity_user_id: None,
+            identity_persona_id: None,
+            identity_channel_id: None,
+            manuscript_id: None,
+            additional_manuscript_ids: None,
+            suggested_capability_ids: None,
+        };
+        let original = ask_idempotency_identity(&request, "profile-a")
+            .unwrap()
+            .unwrap();
+        crate::session_storage::SessionId::parse(
+            crate::workspace::ask_job_store::ask_job_session_id(&original.0),
+        )
+        .expect("retry-safe job session id must be valid");
+        request.idempotency_key = Some("retry-1".into());
+        assert_eq!(
+            ask_idempotency_identity(&request, "profile-a")
+                .unwrap()
+                .unwrap(),
+            original
+        );
+        let other_profile = ask_idempotency_identity(&request, "profile-b")
+            .unwrap()
+            .unwrap();
+        assert_ne!(other_profile.0, original.0);
+        request.prompt = "Different work".into();
+        let changed = ask_idempotency_identity(&request, "profile-a")
+            .unwrap()
+            .unwrap();
+        assert_eq!(changed.0, original.0);
+        assert_ne!(changed.1, original.1);
+        request.idempotency_key = Some(" ".into());
+        assert!(ask_idempotency_identity(&request, "profile-a").is_err());
+    }
+
+    #[test]
+    fn replay_returns_original_admission_and_rejects_mismatch() {
+        let created_at_utc = Utc::now();
+        let record = crate::workspace::ask_job_store::AskJobRecord {
+            job_id: "medousa-daemon-ask-retry".into(),
+            request_fingerprint: Some("same-payload".into()),
+            prompt: "Summarize status".into(),
+            status: crate::workspace::ask_job_store::AskJobStatus::Running,
+            output_text: None,
+            interim_text: None,
+            error: None,
+            session_id: "medousa-ask-retry".into(),
+            manuscript_id: None,
+            additional_manuscript_ids: None,
+            suggested_capability_ids: None,
+            model_hint: None,
+            created_at_utc,
+            updated_at_utc: created_at_utc,
+            finished_at_utc: None,
+            archived: false,
+            journal_path: None,
+            notified_channel: None,
+        };
+        let restored: crate::workspace::ask_job_store::AskJobRecord =
+            serde_json::from_slice(&serde_json::to_vec(&record).unwrap()).unwrap();
+        let response = replay_ask_response(&restored, "same-payload").unwrap();
+        assert_eq!(response.job_id, record.job_id);
+        assert_eq!(response.accepted_at_utc, created_at_utc);
+        assert_eq!(
+            replay_ask_response(&restored, "different-payload")
+                .unwrap_err()
+                .0,
+            StatusCode::CONFLICT
+        );
+    }
 
     #[test]
     fn recurring_inventory_separates_reads_from_administration() {

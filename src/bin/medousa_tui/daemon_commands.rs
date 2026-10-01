@@ -188,6 +188,7 @@ pub(crate) async fn daemon_health(daemon_url: &str) -> Result<HealthResponse> {
 pub(crate) async fn daemon_enqueue_ask(daemon_url: &str, prompt: &str) -> Result<EnqueueResponse> {
     let request = EnqueueAskRequest {
         prompt: prompt.to_string(),
+        idempotency_key: None,
         policy_profile: Some("interactive".to_string()),
         model_hint: None,
         max_turns: Some(1),

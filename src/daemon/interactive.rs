@@ -106,6 +106,7 @@ pub async fn spawn_turn_ticket(
     mode: crate::turn_ticket::TurnTicketMode,
     mut interactive_request: InteractiveTurnRequest,
     workspace_card_id: Option<String>,
+    request_fingerprint: Option<String>,
 ) -> Result<TurnTicketResponse, (StatusCode, String)> {
     // Every admission path, including background jobs, must carry the bound
     // profile into runtime identity and durable continuations.
@@ -304,6 +305,7 @@ pub async fn spawn_turn_ticket(
         let persisted = async {
             store.try_register_pending(crate::workspace::ask_job_store::AskJobRecord {
                 job_id: job_id.to_string(),
+                request_fingerprint,
                 prompt: interactive_request.prompt.clone(),
                 status: crate::workspace::ask_job_store::AskJobStatus::Pending,
                 output_text: None,
@@ -499,8 +501,7 @@ pub async fn create_turn_ticket(
             (format!("daemon-turn-{}", Uuid::new_v4().simple()), None)
         }
         crate::turn_ticket::TurnTicketMode::Background => {
-            let now = Utc::now();
-            let job_id = format!("medousa-daemon-ask-{}", now.timestamp_millis());
+            let job_id = format!("medousa-daemon-ask-{}", Uuid::new_v4().simple());
             (job_id.clone(), Some(job_id))
         }
     };
@@ -519,6 +520,7 @@ pub async fn create_turn_ticket(
         request.mode,
         interactive_request,
         workspace_card_id,
+        None,
     )
     .await
     .map(Json)
@@ -613,6 +615,7 @@ pub async fn start_interactive_turn(
         turn_id,
         crate::turn_ticket::TurnTicketMode::Interactive,
         interactive_request,
+        None,
         None,
     )
     .await?;

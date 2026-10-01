@@ -18,7 +18,7 @@ pub fn ask_job_store() -> &'static AskJobStore {
 
 /// Isolated session ledger for one ask job — concurrent asks do not share transcript.
 pub fn ask_job_session_id(job_id: &str) -> String {
-    format!("medousa-ask:{}", job_id.trim())
+    format!("medousa-ask-{}", job_id.trim())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,6 +34,8 @@ pub enum AskJobStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AskJobRecord {
     pub job_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_fingerprint: Option<String>,
     pub prompt: String,
     pub status: AskJobStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -524,6 +526,7 @@ mod tests {
     fn test_record(job_id: &str, status: AskJobStatus) -> AskJobRecord {
         AskJobRecord {
             job_id: job_id.to_string(),
+            request_fingerprint: None,
             prompt: "research openclaw".to_string(),
             status,
             output_text: None,
@@ -551,8 +554,10 @@ mod tests {
     fn ask_job_session_id_is_isolated_per_job() {
         assert_eq!(
             ask_job_session_id("medousa-daemon-ask-123"),
-            "medousa-ask:medousa-daemon-ask-123"
+            "medousa-ask-medousa-daemon-ask-123"
         );
+        crate::session_storage::SessionId::parse(ask_job_session_id("medousa-daemon-ask-123"))
+            .expect("ask job session id must be accepted by turn admission");
     }
 
     #[test]

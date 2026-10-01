@@ -22,7 +22,7 @@ collaborate in General, or work in Coder while keeping the same relationship.
 
 1. Open **Sessions** from Chat.
 2. Under **Bots**, choose **+** or **Create a Bot**.
-3. Enter a name and purpose. Tap the avatar to choose a colored Medousa mark.
+3. Enter a name and purpose. Tap the avatar to choose Medousa, Seahorse, Starfish, or a colored Medousa mark.
 4. Choose an **Archetype**, or select **Create archetype…** to define reusable expertise and an optional approach. Your Bot draft is preserved while you do this.
 5. Choose **Create Bot**.
 
@@ -38,7 +38,7 @@ Bot creation opens in a centered dialog on desktop and a bottom sheet on mobile.
 
 Archetypes use the same reusable definitions called Specialists elsewhere in Medousa.
 Creating one here makes it available to other Bots and the existing specialist editor.
-Existing emoji avatars are preserved until you choose a Medousa avatar.
+Existing emoji avatars are preserved until you choose another avatar.
 
 ## Edit, duplicate, and archive
 

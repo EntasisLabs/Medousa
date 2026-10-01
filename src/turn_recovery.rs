@@ -29,11 +29,24 @@ impl TurnStorePort for SessionStoreTurnStore {
         turn_id: &str,
         turn: ConversationTurn,
     ) -> Result<UpsertOutcome, StoreError> {
-        if self.turn_exists(session_id, turn_id).await? {
-            return Ok(UpsertOutcome::AlreadyPresent);
-        }
         let session_id =
             SessionId::parse(session_id).map_err(|error| StoreError(error.to_string()))?;
+        let digest = crate::session_store::transcript_content_digest(&turn)
+            .map_err(|error| StoreError(error.to_string()))?;
+        if self
+            .store
+            .load_transcript_entries(&session_id)
+            .iter()
+            .any(|entry| {
+                entry.content_digest == digest
+                    && entry.caused_by.as_ref().is_some_and(|execution| {
+                        execution.session_id == session_id
+                            && execution.execution_id.as_str() == turn_id
+                    })
+            })
+        {
+            return Ok(UpsertOutcome::AlreadyPresent);
+        }
         let caused_by = crate::workshop_authority::execution_ref(session_id.as_str(), turn_id)
             .map_err(StoreError)?;
         self.store
@@ -110,6 +123,7 @@ pub async fn recover_journal_item(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
     use medousa_engine::{Principal, TurnEnvelope};
 
     struct UnexpectedStore;
@@ -144,5 +158,78 @@ mod tests {
             .await
             .expect_err("sessionless journal recovery");
         assert!(error.to_string().contains("has no session identity"));
+    }
+
+    #[tokio::test]
+    async fn real_session_store_recovers_remaining_entries_after_restart() {
+        let installation = medousa_types::secrets::InstallationId::parse(
+            crate::workshop_authority::TEST_INSTALLATION_ID,
+        )
+        .unwrap();
+        crate::workshop_authority::initialize(&installation).unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let history_path = root.path().join("history");
+        let session_id = SessionId::parse("session-recovery-prefix").unwrap();
+        let first = ConversationTurn {
+            role: "assistant".into(),
+            content: "checkpoint".into(),
+            timestamp: Utc::now(),
+            tool_names: vec![],
+            answer_state: Some("checkpoint".into()),
+            parts: None,
+            slice_summary: None,
+            speaker_profile_id: None,
+            reactions: vec![],
+        };
+        let second = ConversationTurn {
+            content: "final answer".into(),
+            answer_state: None,
+            ..first.clone()
+        };
+        let store = crate::session_store::test_file_session_store_at(history_path.clone());
+        let caused_by =
+            crate::workshop_authority::execution_ref(session_id.as_str(), "turn-recovery-prefix")
+                .unwrap();
+        store
+            .append_transcript_batch(
+                &session_id,
+                &[TranscriptAppend::native(first.clone(), Some(caused_by))],
+            )
+            .await
+            .unwrap();
+        drop(store);
+
+        let reopened = crate::session_store::test_file_session_store_at(history_path.clone());
+        let recovery = SessionStoreTurnStore::new(reopened.clone());
+        assert_eq!(
+            recovery
+                .upsert_turn(session_id.as_str(), "turn-recovery-prefix", first.clone())
+                .await
+                .unwrap(),
+            UpsertOutcome::AlreadyPresent
+        );
+        assert_eq!(
+            recovery
+                .upsert_turn(session_id.as_str(), "turn-recovery-prefix", second.clone())
+                .await
+                .unwrap(),
+            UpsertOutcome::Inserted
+        );
+        drop(recovery);
+        drop(reopened);
+
+        let restarted = crate::session_store::test_file_session_store_at(history_path);
+        let recovery = SessionStoreTurnStore::new(restarted.clone());
+        assert_eq!(
+            recovery
+                .upsert_turn(session_id.as_str(), "turn-recovery-prefix", second)
+                .await
+                .unwrap(),
+            UpsertOutcome::AlreadyPresent
+        );
+        let entries = restarted.load_transcript_entries(&session_id);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].turn.content, "checkpoint");
+        assert_eq!(entries[1].turn.content, "final answer");
     }
 }

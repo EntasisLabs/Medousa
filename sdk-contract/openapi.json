@@ -2978,6 +2978,14 @@
               "null"
             ]
           },
+          "idempotency_key": {
+            "default": null,
+            "description": "Reuse this key when retrying the same admission after an uncertain response.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "identity_channel_id": {
             "type": [
               "string",

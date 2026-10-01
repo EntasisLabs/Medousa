@@ -1756,7 +1756,7 @@
     {
       "registry": "coder_bound",
       "name": "cognition_memory_query",
-      "description": "Read Locus memory: schema, AVEC context, list, natural-language recall, tags, or mood presets. memory.recall accepts a question; omit session_id for the current turn or pass null for cross-session retrieval. Fetch action fields with cognition_schema types=[...].",
+      "description": "Read Locus memory: schema, AVEC context, list, natural-language recall, tags, mood presets, or a memory reflex. memory.recall accepts a question. memory.reflex asks System 1 whether to recall, find, persist, ignore, or escalate and does not touch the store. Omit session_id for the current turn or pass null for cross-session retrieval. Fetch action fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
@@ -1766,6 +1766,7 @@
               "memory.list",
               "memory.moods",
               "memory.recall",
+              "memory.reflex",
               "memory.schema",
               "memory.tags"
             ],
@@ -1934,6 +1935,7 @@
                 "memory.list",
                 "memory.moods",
                 "memory.recall",
+                "memory.reflex",
                 "memory.schema",
                 "memory.store",
                 "memory.tags",
@@ -4893,7 +4895,7 @@
     {
       "registry": "general_runtime",
       "name": "cognition_memory_query",
-      "description": "Read Locus memory: schema, AVEC context, list, natural-language recall, tags, or mood presets. memory.recall accepts a question; omit session_id for the current turn or pass null for cross-session retrieval. Fetch action fields with cognition_schema types=[...].",
+      "description": "Read Locus memory: schema, AVEC context, list, natural-language recall, tags, mood presets, or a memory reflex. memory.recall accepts a question. memory.reflex asks System 1 whether to recall, find, persist, ignore, or escalate and does not touch the store. Omit session_id for the current turn or pass null for cross-session retrieval. Fetch action fields with cognition_schema types=[...].",
       "input_schema": {
         "additionalProperties": true,
         "properties": {
@@ -4903,6 +4905,7 @@
               "memory.list",
               "memory.moods",
               "memory.recall",
+              "memory.reflex",
               "memory.schema",
               "memory.tags"
             ],
@@ -5338,6 +5341,7 @@
                 "memory.list",
                 "memory.moods",
                 "memory.recall",
+                "memory.reflex",
                 "memory.schema",
                 "memory.store",
                 "memory.tags",

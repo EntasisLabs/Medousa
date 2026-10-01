@@ -112,6 +112,16 @@ pub fn store_issued(receipt: &MeshReceipt) -> Result<()> {
     let _guard = MESH_IO_LOCK.lock().expect("mesh io lock");
     let path = receipts_path();
     let mut file: MeshReceiptsFile = read_json_default(&path)?;
+    if let Some(existing) = file
+        .receipts
+        .iter()
+        .find(|existing| existing.id == receipt.id)
+    {
+        if existing == receipt {
+            return Ok(());
+        }
+        bail!("mesh receipt ID collision");
+    }
     file.receipts.push(receipt.clone());
     if file.receipts.len() > RECEIPTS_CAP {
         let drop = file.receipts.len() - RECEIPTS_CAP;

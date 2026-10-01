@@ -139,6 +139,11 @@ obtains fresh admission at the destination.
 | `complete_actions(job_id, request)` | `POST .../complete-actions` | `AskJobCompleteActionsRequest` |
 | `archive(job_id, request)` | `POST .../archive` | `ArchiveAskJobRequest` |
 
+Set `EnqueueAskRequest.idempotency_key` and reuse it for retries of the same
+request. A matching retry returns the original job ID while its record is
+retained; a changed request with the same key returns `409 Conflict`. The key is
+scoped to the authenticated principal on the connected workshop.
+
 ---
 
 ## `recurring()`

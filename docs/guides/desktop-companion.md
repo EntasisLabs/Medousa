@@ -23,6 +23,6 @@ The companion is another client of the workshop daemon. Conversations, active tu
 
 ## Choose your companion
 
-Go to **Settings → Preferences → Look → Desktop companion**. The animated preview you choose is the pet that appears on the desktop, including its exact color. An already-open companion updates immediately.
+Go to **Settings → Preferences → Look → Desktop companion**. Choose Medousa, Seahorse, or Starfish to use one of the new pixel-art characters. Their expressions respond to activity, success, and attention. The colored Medousa mark choices remain available. An already-open companion updates immediately.
 
 The companion follows the system's reduced-motion preference.

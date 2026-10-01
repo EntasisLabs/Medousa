@@ -3046,6 +3046,10 @@ class EnqueueAskRequest(MedousaModel):
     additional_manuscript_ids: list[str] | None = Field(
         None, description='Extra manuscript specialties beyond `manuscript_id`.'
     )
+    idempotency_key: str | None = Field(
+        None,
+        description='Reuse this key when retrying the same admission after an uncertain response.',
+    )
     identity_channel_id: str | None = None
     identity_persona_id: str | None = None
     identity_user_id: str | None = None

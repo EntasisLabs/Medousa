@@ -6938,6 +6938,14 @@
           "type": "string"
         }
       },
+      "idempotency_key": {
+        "description": "Reuse this key when retrying the same admission after an uncertain response.",
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "identity_channel_id": {
         "type": [
           "string",

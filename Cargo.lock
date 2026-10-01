@@ -8112,10 +8112,12 @@ name = "medousa-slack"
 version = "0.11.0"
 dependencies = [
  "anyhow",
+ "dirs 6.0.0",
  "medousa-adapter-common",
  "medousa-sdk",
  "medousa-types",
  "reqwest 0.12.28",
+ "serde",
  "serde_json",
  "slack-morphism",
  "tokio",

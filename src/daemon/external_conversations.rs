@@ -1061,7 +1061,7 @@ pub async fn whatsapp_inbound(
         return Ok(Json(InboundClaimResponse { claimed: false }));
     };
     let event_id = format!("whatsapp:{}", input.message_id);
-    let recorded = if let Some(reaction) = input.reaction {
+    if let Some(reaction) = input.reaction {
         state
             .external_conversations
             .record_reaction(
@@ -1086,9 +1086,7 @@ pub async fn whatsapp_inbound(
             .await
     }
     .map_err(internal)?;
-    Ok(Json(InboundClaimResponse {
-        claimed: recorded.is_some(),
-    }))
+    Ok(Json(InboundClaimResponse { claimed: true }))
 }
 
 pub async fn slack_inbound(
@@ -1128,7 +1126,7 @@ pub async fn slack_inbound(
     ) {
         return Ok(Json(InboundClaimResponse { claimed: true }));
     }
-    let recorded = state
+    state
         .external_conversations
         .record(
             &binding.id,
@@ -1139,9 +1137,7 @@ pub async fn slack_inbound(
         )
         .await
         .map_err(internal)?;
-    Ok(Json(InboundClaimResponse {
-        claimed: recorded.is_some(),
-    }))
+    Ok(Json(InboundClaimResponse { claimed: true }))
 }
 
 pub async fn get_whatsapp_pairing(

@@ -68,6 +68,7 @@ import type {
   WorkflowFromSliceResponse,
 } from "$lib/types/toolHistory";
 import { invokePlain, type StreamErrorPayload } from "./client";
+import { operationPath } from "./opPath";
 
 export async function listManuscripts(options?: {
   prefix?: string;
@@ -131,7 +132,7 @@ export async function startWorkspaceStream(sinceRevision?: number): Promise<void
   if (browserPortalActive()) {
     const query =
       sinceRevision === undefined ? "" : `?since_revision=${encodeURIComponent(String(sinceRevision))}`;
-    await openPortalStream("workspace", `/v1/workspace/stream${query}`);
+    await openPortalStream("workspace", `${operationPath("workspace.stream.get")}${query}`);
     return;
   }
   if (isBrowserWorkshop()) return;

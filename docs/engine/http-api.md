@@ -297,6 +297,13 @@ turns and other session-owned mutations.
 | GET | `/v1/recurring/{recurring_id}/runs` | runs | `http().get` |
 | GET | `/v1/recurring/{recurring_id}/delivery` | delivery status | `http().get` |
 
+For retry-safe `POST /v1/jobs/ask` admission, set `idempotency_key` to a stable
+value for one intended request. The workshop scopes it to the authenticated
+principal and returns the same job ID after a lost response or restart while the
+job record is retained.
+Reusing the key with different request content returns `409 Conflict`. Without
+a key, each admission receives a new unique job ID.
+
 ---
 
 ## Runtime commands & artifacts

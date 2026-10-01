@@ -10,7 +10,26 @@ export type MedousaMarkId =
   | "violet"
   | "deep-blue"
   | "jade"
-  | "aurora";
+  | "aurora"
+  | "mascot-medousa"
+  | "mascot-seahorse"
+  | "mascot-starfish";
+
+export type MascotBody = "medousa" | "seahorse" | "starfish";
+export type MascotExpression = "default" | "happy" | "chill" | "sweet" | "focus" | "sus";
+
+export function mascotForMark(id: MedousaMarkId | undefined): MascotBody | null {
+  switch (id) {
+    case "mascot-medousa": return "medousa";
+    case "mascot-seahorse": return "seahorse";
+    case "mascot-starfish": return "starfish";
+    default: return null;
+  }
+}
+
+export function mascotImage(body: MascotBody, expression: MascotExpression = "default"): string {
+  return `/brand/mascots/png/clean/256/${body}/${expression}.png`;
+}
 
 export interface MedousaMarkOption {
   id: MedousaMarkId;
@@ -26,6 +45,42 @@ export interface MedousaMarkOption {
 }
 
 export const MEDOUSA_MARK_OPTIONS: MedousaMarkOption[] = [
+  {
+    id: "mascot-medousa",
+    label: "Medousa",
+    tagline: "Curious · bright · playful",
+    darkColor: "#38BDF8",
+    lightColor: "#0878B8",
+    lightPreviewBackground: "#DDEDF4",
+    darkPreviewBackground: "#20333A",
+    lightPreviewForeground: "#1C1B1A",
+    darkPreviewForeground: "#F2EFE6",
+    pairedThemeId: "mark-ocean-blue",
+  },
+  {
+    id: "mascot-seahorse",
+    label: "Seahorse",
+    tagline: "Steady · thoughtful · kind",
+    darkColor: "#2DD4BF",
+    lightColor: "#0F9B7C",
+    lightPreviewBackground: "#DCEBE5",
+    darkPreviewBackground: "#1D3934",
+    lightPreviewForeground: "#1C1B1A",
+    darkPreviewForeground: "#F2EFE6",
+    pairedThemeId: "mark-abyss-teal",
+  },
+  {
+    id: "mascot-starfish",
+    label: "Starfish",
+    tagline: "Warm · cheerful · ready",
+    darkColor: "#F5B841",
+    lightColor: "#B45309",
+    lightPreviewBackground: "#F3E5C8",
+    darkPreviewBackground: "#3A2D1B",
+    lightPreviewForeground: "#1C1B1A",
+    darkPreviewForeground: "#F2EFE6",
+    pairedThemeId: "mark-amber-gold",
+  },
   {
     id: "monochrome",
     label: "Monochrome",
@@ -172,7 +227,7 @@ export function medousaMarkSpriteFill(id: MedousaMarkId, darkMode: boolean): str
 }
 
 export function markForTheme(themeId: ColorThemeId): MedousaMarkId {
-  const exact = MEDOUSA_MARK_OPTIONS.find((option) => option.pairedThemeId === themeId);
+  const exact = MEDOUSA_MARK_OPTIONS.find((option) => !mascotForMark(option.id) && option.pairedThemeId === themeId);
   if (exact) return exact.id;
   switch (themeId) {
     case "black-lily":
