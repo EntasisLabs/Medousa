@@ -12,6 +12,7 @@ pub enum ExternalProvider {
     Muse,
     GrokBot,
     Instinct,
+    Dots,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -80,6 +81,8 @@ pub struct ExternalConversationView {
     pub provider: ExternalProvider,
     pub label: String,
     pub target: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dot_user_id: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub events: Vec<ExternalConversationEvent>,
@@ -96,6 +99,10 @@ pub struct CreateExternalConversationRequest {
     pub target: String,
     pub webhook_url: Option<String>,
     pub webhook_key: Option<String>,
+    #[serde(default)]
+    pub slack_user_token: Option<String>,
+    #[serde(default)]
+    pub dot_user_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -141,6 +148,18 @@ pub struct ExternalWhatsAppInboundRequest {
     pub text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reaction: Option<MessageReaction>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ExternalSlackInboundRequest {
+    pub channel_id: String,
+    pub sender_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot_id: Option<String>,
+    pub message_id: String,
+    pub text: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

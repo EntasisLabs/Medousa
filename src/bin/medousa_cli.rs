@@ -47,6 +47,55 @@ fn cli_daemon_client(daemon_url: &str) -> Result<Client> {
     medousa::local_daemon_auth::async_client(daemon_url, medousa_local_credential::CLI_LOCAL_NAME)
 }
 
+async fn run_daemon_agent_api(args: cli::DaemonAgentApiArgs) -> Result<()> {
+    let base = args
+        .daemon_url
+        .or_else(|| std::env::var("MEDOUSA_API_URL").ok())
+        .ok_or_else(|| anyhow!("set MEDOUSA_API_URL or pass --daemon-url"))?;
+    let base = reqwest::Url::parse(base.trim_end_matches('/'))?;
+    if base.scheme() != "https"
+        && !(base.scheme() == "http"
+            && base
+                .host_str()
+                .is_some_and(|host| host == "localhost" || host == "127.0.0.1" || host == "[::1]"))
+    {
+        return Err(anyhow!("agent API requires HTTPS or a loopback URL"));
+    }
+    if !args.path.starts_with("/v1/") || args.path.contains("//") || args.path.contains('#') {
+        return Err(anyhow!("use an absolute /v1/ API path"));
+    }
+    let token = std::env::var("MEDOUSA_API_TOKEN")
+        .map_err(|_| anyhow!("set MEDOUSA_API_TOKEN privately"))?;
+    if token.trim().is_empty() {
+        return Err(anyhow!("MEDOUSA_API_TOKEN is empty"));
+    }
+    let url = base.join(&args.path)?;
+    let client = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
+    let request = match args.method.to_ascii_uppercase().as_str() {
+        "GET" if args.body_json.is_none() => client.get(url),
+        "POST" => {
+            let body = args
+                .body_json
+                .as_deref()
+                .ok_or_else(|| anyhow!("POST requires --body-json"))?;
+            let body: serde_json::Value = serde_json::from_str(body)?;
+            client.post(url).json(&body)
+        }
+        _ => return Err(anyhow!("use GET without a body or POST with --body-json")),
+    };
+    let response = request.bearer_auth(token).send().await?;
+    let status = response.status();
+    let body = response.text().await?;
+    if !status.is_success() {
+        return Err(anyhow!("workshop returned {status}: {body}"));
+    }
+    println!("{body}");
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let parsed = cli::Cli::parse();
@@ -111,6 +160,7 @@ async fn main() -> Result<()> {
             let daemon_url = resolve_daemon_url(args.daemon_url.as_deref());
             run_daemon_job_report(&daemon_url, &args.job_id).await
         }
+        cli::Commands::DaemonAgentApi(args) => run_daemon_agent_api(args).await,
         cli::Commands::DaemonWatchAdd(args) => {
             let daemon_url = resolve_daemon_url(args.daemon_url.as_deref());
             if args.prompt.is_empty() {
@@ -1675,6 +1725,9 @@ fn print_usage() {
         "  medousa-cli daemon-report <query> [--policy-profile <profile>] [--model-hint <model>] [--max-turns <n>] [--poll-timeout-ms <n>] [--poll-interval-ms <n>] [--identity-user-id <id>] [--identity-persona-id <id>] [--identity-channel-id <id>] [--daemon-url <url>]"
     );
     println!("  medousa-cli daemon-job-report <job_id> [--daemon-url <url>]");
+    println!(
+        "  medousa-cli daemon-agent-api GET|POST /v1/<path> [--body-json <json>] [--daemon-url <https-url>] (uses MEDOUSA_API_TOKEN)"
+    );
     println!(
         "  medousa-cli daemon-external-event <conversation_id> <event_id> <kind> <text> --request-id <id> [--iroh-ticket <ticket> | --worker <id|label> | --daemon-url <url>] (uses MEDOUSA_BRIDGE_KEY; explicit tickets also use MEDOUSA_BRIDGE_BEARER)"
     );

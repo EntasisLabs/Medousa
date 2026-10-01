@@ -5571,12 +5571,14 @@ dependencies = [
  "dirs 5.0.1",
  "futures-util",
  "genai",
+ "getrandom 0.2.17",
  "grapheme-compiler",
  "grapheme-runtime",
  "grapheme-sdk",
  "hmac",
  "icalendar",
  "image",
+ "js-sys",
  "locus-core-rs",
  "medousa-browser-bridge",
  "medousa-browser-lite",
@@ -5609,6 +5611,9 @@ dependencies = [
  "unicode-normalization",
  "urlencoding",
  "uuid",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
  "zeroize",
 ]
 
@@ -5791,7 +5796,9 @@ dependencies = [
  "httparse",
  "iroh",
  "iroh-tickets",
+ "n0-future",
  "tokio",
+ "url",
 ]
 
 [[package]]

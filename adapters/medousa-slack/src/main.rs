@@ -19,6 +19,7 @@ use slack_morphism::socket_mode::SlackSocketModeListenerCallbacks;
 #[derive(Clone)]
 struct SlackAdapterState {
     http_client: Client,
+    slack_client: Client,
     daemon_url: String,
     bot_token: String,
 }
@@ -36,7 +37,8 @@ async fn main() -> Result<()> {
     let daemon_url = resolve_daemon_url(find_arg_value(&args, "--daemon-url"));
 
     let state = Arc::new(SlackAdapterState {
-        http_client: Client::new(),
+        http_client: daemon_http_client()?,
+        slack_client: Client::new(),
         daemon_url,
         bot_token,
     });
@@ -100,10 +102,6 @@ async fn handle_push_event(
         return Ok(());
     };
 
-    if message.subtype.is_some() || message.sender.bot_id.is_some() {
-        return Ok(());
-    }
-
     let Some(content) = message.content.as_ref() else {
         return Ok(());
     };
@@ -120,6 +118,42 @@ async fn handle_push_event(
         .as_ref()
         .map(|channel| channel.to_string())
         .context("slack message missing channel")?;
+    if let Some(sender_id) = message
+        .sender
+        .user
+        .as_ref()
+        .map(ToString::to_string)
+        .or_else(|| message.sender.bot_id.as_ref().map(ToString::to_string))
+    {
+        let daemon_url = state.daemon_url.trim_end_matches('/');
+        let response = state
+            .http_client
+            .post(format!(
+                "{daemon_url}/v1/external-conversations/slack/inbound"
+            ))
+            .json(&serde_json::json!({
+                "channel_id": channel_id,
+                "sender_id": sender_id,
+                "bot_id": message.sender.bot_id.as_ref().map(ToString::to_string),
+                "message_id": message.origin.ts.to_string(),
+                "text": text,
+            }))
+            .send()
+            .await
+            .context("dots inbound request failed")?;
+        if response.status() != reqwest::StatusCode::NOT_FOUND {
+            if !response.status().is_success() {
+                return Err(anyhow!("dots inbound returned {}", response.status()));
+            }
+            let claim: serde_json::Value = response.json().await.context("decode dots claim")?;
+            if claim.get("claimed").and_then(|value| value.as_bool()) == Some(true) {
+                return Ok(());
+            }
+        }
+    }
+    if message.subtype.is_some() || message.sender.bot_id.is_some() {
+        return Ok(());
+    }
     let user_id = message
         .sender
         .user
@@ -137,7 +171,10 @@ async fn handle_push_event(
     };
 
     let daemon_url = state.daemon_url.trim_end_matches('/');
-    let sdk = MedousaClient::with_transport(Arc::new(HttpTransport::new()), daemon_url);
+    let sdk = MedousaClient::with_transport(
+        Arc::new(HttpTransport::with_client(state.http_client.clone())),
+        daemon_url,
+    );
     let response = sdk
         .ingest()
         .post(&request)
@@ -184,7 +221,7 @@ async fn handle_push_event(
 
 async fn post_slack_message(state: &SlackAdapterState, channel: &str, text: &str) -> Result<()> {
     let response = state
-        .http_client
+        .slack_client
         .post("https://slack.com/api/chat.postMessage")
         .bearer_auth(&state.bot_token)
         .json(&serde_json::json!({
@@ -227,6 +264,16 @@ fn resolve_slack_bot_token(explicit: Option<&str>) -> Result<String> {
         })
 }
 
+fn daemon_http_client() -> Result<Client> {
+    let bearer = non_empty_env("MEDOUSA_DAEMON_BEARER")
+        .context("Slack adapter requires MEDOUSA_DAEMON_BEARER from its workshop launcher")?;
+    let mut authorization = reqwest::header::HeaderValue::from_str(&format!("Bearer {bearer}"))?;
+    authorization.set_sensitive(true);
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(reqwest::header::AUTHORIZATION, authorization);
+    Ok(Client::builder().default_headers(headers).build()?)
+}
+
 fn resolve_slack_app_token(explicit: Option<&str>) -> Result<String> {
     explicit
         .map(str::trim)
@@ -267,4 +314,5 @@ fn print_usage() {
     println!("ENV:");
     println!("  MEDOUSA_SLACK_BOT_TOKEN / SLACK_BOT_TOKEN");
     println!("  MEDOUSA_SLACK_APP_TOKEN / SLACK_APP_TOKEN");
+    println!("  MEDOUSA_DAEMON_BEARER (provided by the workshop launcher)");
 }

@@ -28,10 +28,11 @@ use medousa_types::{
     ExternalInboundClaimResponse as InboundClaimResponse,
     ExternalMuseDiscoveryStatus as MuseDiscoveryStatus, ExternalProvider as Provider,
     ExternalProviderEventRequest as ProviderEventRequest,
-    MessageReaction,
+    ExternalSlackInboundRequest as SlackInboundRequest,
     ExternalWhatsAppInboundRequest as WhatsAppInboundRequest,
     ExternalWhatsAppPairingState as PairingState, ExternalWhatsAppPairingStatus as PairingStatus,
-    ExternalWhatsAppPairingUpdateRequest as PairingUpdateRequest, RotateExternalCallbackResponse,
+    ExternalWhatsAppPairingUpdateRequest as PairingUpdateRequest, MessageReaction,
+    RotateExternalCallbackResponse,
 };
 use reqwest::redirect::Policy;
 use serde::{Deserialize, Serialize};
@@ -52,6 +53,8 @@ struct ConversationRecord {
     provider: Provider,
     label: String,
     target: String,
+    #[serde(default)]
+    dot_user_id: Option<String>,
     webhook_url: Option<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -67,6 +70,7 @@ impl From<&ConversationRecord> for ConversationView {
             provider: record.provider,
             label: record.label.clone(),
             target: record.target.clone(),
+            dot_user_id: record.dot_user_id.clone(),
             created_at: record.created_at,
             updated_at: record.updated_at,
             events: record.events.clone(),
@@ -190,6 +194,13 @@ impl ExternalConversationStore {
         {
             anyhow::bail!("WhatsApp chat is already bound to a conversation");
         }
+        if input.provider == Provider::Dots
+            && current.conversations.values().any(|record| {
+                record.provider == Provider::Dots && record.target == input.target.trim()
+            })
+        {
+            anyhow::bail!("Slack channel is already bound to a dot conversation");
+        }
         let mut next = current.clone();
         let now = Utc::now();
         let record = ConversationRecord {
@@ -198,6 +209,7 @@ impl ExternalConversationStore {
             provider: input.provider,
             label: input.label.trim().to_string(),
             target: input.target.trim().to_string(),
+            dot_user_id: input.dot_user_id.clone(),
             webhook_url: input.webhook_url.clone(),
             created_at: now,
             updated_at: now,
@@ -300,6 +312,16 @@ impl ExternalConversationStore {
                 matches!(record.provider, Provider::Muse | Provider::Instinct)
                     && record.target == jid
             })
+            .cloned()
+    }
+
+    async fn dots_binding(&self, channel_id: &str) -> Option<ConversationRecord> {
+        self.document
+            .lock()
+            .await
+            .conversations
+            .values()
+            .find(|record| record.provider == Provider::Dots && record.target == channel_id)
             .cloned()
     }
 
@@ -480,6 +502,19 @@ fn normalize_instinct_phone(raw: &str) -> Result<String, HttpError> {
     Ok(format!("{digits}@s.whatsapp.net"))
 }
 
+fn valid_slack_id(value: &str, prefixes: &[u8]) -> bool {
+    value.len() >= 9
+        && value.len() <= 32
+        && prefixes.contains(&value.as_bytes()[0])
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
+}
+
+fn sender_matches_dot(dot_id: Option<&str>, sender_id: &str, bot_id: Option<&str>) -> bool {
+    dot_id.is_some_and(|dot_id| dot_id == sender_id || Some(dot_id) == bot_id)
+}
+
 pub async fn create(
     State(state): State<AppState>,
     Extension(principal): Extension<RequestPrincipal>,
@@ -492,6 +527,11 @@ pub async fn create(
         || input.target.len() > 256
     {
         return Err(bad_request("invalid label or target"));
+    }
+    if input.provider != Provider::Dots
+        && (input.slack_user_token.is_some() || input.dot_user_id.is_some())
+    {
+        return Err(bad_request("Slack settings are only for Dots"));
     }
     match input.provider {
         Provider::Muse => {
@@ -517,6 +557,24 @@ pub async fn create(
             }
             input.target = normalize_instinct_phone(&input.target)?;
         }
+        Provider::Dots => {
+            if input.webhook_url.is_some() || input.webhook_key.is_some() {
+                return Err(bad_request("Dots uses Slack, not a webhook"));
+            }
+            let channel = input.target.trim();
+            let dot = input.dot_user_id.as_deref().unwrap_or("").trim();
+            let token = input.slack_user_token.as_deref().unwrap_or("").trim();
+            if !valid_slack_id(channel, b"CG") || !valid_slack_id(dot, b"UWB") {
+                return Err(bad_request("Enter a Slack channel ID and dot member ID"));
+            }
+            if !token.starts_with("xoxp-") || token.len() < 20 {
+                return Err(bad_request(
+                    "Enter a Slack user token with chat:write access",
+                ));
+            }
+            input.target = channel.to_string();
+            input.dot_user_id = Some(dot.to_string());
+        }
         Provider::GrokBot => {
             validate_webhook_url(
                 input
@@ -541,11 +599,17 @@ pub async fn create(
             .await
             .map_err(internal)?;
     }
+    if let Some(token) = input.slack_user_token.clone() {
+        save_secret(id.clone(), IntegrationSecretSlot::BotToken, token)
+            .await
+            .map_err(internal)?;
+    }
     if let Some(key) = callback_key.as_ref()
         && let Err(error) =
             save_secret(id.clone(), IntegrationSecretSlot::AppToken, key.clone()).await
     {
         let _ = delete_secret(id.clone(), IntegrationSecretSlot::AuthKey).await;
+        let _ = delete_secret(id.clone(), IntegrationSecretSlot::BotToken).await;
         return Err(internal(error));
     }
     let created = state
@@ -556,6 +620,7 @@ pub async fn create(
         Ok(conversation) => conversation,
         Err(error) => {
             let _ = delete_secret(id.clone(), IntegrationSecretSlot::AuthKey).await;
+            let _ = delete_secret(id.clone(), IntegrationSecretSlot::BotToken).await;
             let _ = delete_secret(id, IntegrationSecretSlot::AppToken).await;
             return Err(internal(error));
         }
@@ -666,6 +731,9 @@ pub async fn remove(
     delete_secret(id.clone(), IntegrationSecretSlot::AuthKey)
         .await
         .map_err(internal)?;
+    delete_secret(id.clone(), IntegrationSecretSlot::BotToken)
+        .await
+        .map_err(internal)?;
     delete_secret(id, IntegrationSecretSlot::AppToken)
         .await
         .map_err(internal)?;
@@ -717,6 +785,19 @@ pub async fn send(
     } else {
         None
     };
+    let dots_token = if binding.provider == Provider::Dots {
+        Some(
+            load_secret(id.clone(), IntegrationSecretSlot::BotToken)
+                .await
+                .map_err(internal)?
+                .ok_or((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Dots Slack user token missing".into(),
+                ))?,
+        )
+    } else {
+        None
+    };
     state
         .external_conversations
         .record(
@@ -760,6 +841,46 @@ pub async fn send(
                     "WhatsApp adapter could not confirm delivery; check the native chat".into(),
                 )
             })
+        }
+        Provider::Dots => {
+            let token = dots_token.expect("Dots token checked before journal commit");
+            let dot = binding.dot_user_id.as_deref().unwrap_or_default();
+            let response = state
+                .channel_dispatch_client
+                .post("https://slack.com/api/chat.postMessage")
+                .bearer_auth(token)
+                .json(&serde_json::json!({
+                    "channel": binding.target,
+                    "text": format!("<@{dot}> {}", input.text),
+                    "unfurl_links": false,
+                    "unfurl_media": false,
+                }))
+                .send()
+                .await;
+            match response {
+                Ok(response) => match response.json::<serde_json::Value>().await {
+                    Ok(body) if body.get("ok").and_then(|value| value.as_bool()) == Some(true) => {
+                        Ok(())
+                    }
+                    Ok(body) => Err((
+                        EventKind::TransportFailed,
+                        format!(
+                            "Slack rejected the message: {}",
+                            body.get("error")
+                                .and_then(|value| value.as_str())
+                                .unwrap_or("unknown")
+                        ),
+                    )),
+                    Err(_) => Err((
+                        EventKind::TransportUncertain,
+                        "Slack response could not be read; check the channel".into(),
+                    )),
+                },
+                Err(_) => Err((
+                    EventKind::TransportUncertain,
+                    "Slack delivery is uncertain; check the channel".into(),
+                )),
+            }
         }
         Provider::GrokBot => {
             let (url, key) =
@@ -880,11 +1001,16 @@ pub async fn provider_event(
     } else {
         state
             .external_conversations
-            .record(&id, event_id, Some(input.request_id), input.kind, input.text)
+            .record(
+                &id,
+                event_id,
+                Some(input.request_id),
+                input.kind,
+                input.text,
+            )
             .await
     };
-    view
-        .map_err(internal)?
+    view.map_err(internal)?
         .map(Json)
         .ok_or((StatusCode::NOT_FOUND, "conversation not found".into()))
 }
@@ -959,6 +1085,59 @@ pub async fn whatsapp_inbound(
             )
             .await
     }
+    .map_err(internal)?;
+    Ok(Json(InboundClaimResponse {
+        claimed: recorded.is_some(),
+    }))
+}
+
+pub async fn slack_inbound(
+    State(state): State<AppState>,
+    ConnectInfo(source): ConnectInfo<SocketAddr>,
+    Json(input): Json<SlackInboundRequest>,
+) -> Result<Json<InboundClaimResponse>, HttpError> {
+    if !source.ip().is_loopback() {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Slack adapter must connect locally".into(),
+        ));
+    }
+    if !valid_slack_id(&input.channel_id, b"CG")
+        || !valid_slack_id(&input.sender_id, b"UWB")
+        || input
+            .bot_id
+            .as_deref()
+            .is_some_and(|bot_id| !valid_slack_id(bot_id, b"B"))
+        || input.message_id.is_empty()
+        || input.message_id.len() > 128
+        || input.text.len() > 16 * 1024
+    {
+        return Err(bad_request("invalid Slack message"));
+    }
+    let Some(binding) = state
+        .external_conversations
+        .dots_binding(&input.channel_id)
+        .await
+    else {
+        return Ok(Json(InboundClaimResponse { claimed: false }));
+    };
+    if !sender_matches_dot(
+        binding.dot_user_id.as_deref(),
+        &input.sender_id,
+        input.bot_id.as_deref(),
+    ) {
+        return Ok(Json(InboundClaimResponse { claimed: true }));
+    }
+    let recorded = state
+        .external_conversations
+        .record(
+            &binding.id,
+            format!("slack:{}:{}", input.channel_id, input.message_id),
+            None,
+            EventKind::ProviderMessage,
+            input.text,
+        )
+        .await
         .map_err(internal)?;
     Ok(Json(InboundClaimResponse {
         claimed: recorded.is_some(),
@@ -1146,6 +1325,15 @@ pub fn surface() -> DeclaredRouter<AppState> {
             ),
             post(whatsapp_inbound),
         )
+        .route(
+            policy(
+                Method::POST,
+                "/v1/external-conversations/slack/inbound",
+                Capability::WorkshopInteract,
+                20 * 1024,
+            ),
+            post(slack_inbound),
+        )
 }
 
 #[cfg(test)]
@@ -1163,6 +1351,8 @@ mod tests {
             target: "123@s.whatsapp.net".into(),
             webhook_url: None,
             webhook_key: None,
+            slack_user_token: None,
+            dot_user_id: None,
         };
         let created = store
             .create(uuid::Uuid::new_v4().to_string(), "owner".into(), &input)
@@ -1219,6 +1409,52 @@ mod tests {
         assert!(reopened.remove("owner", &created.id).await.unwrap());
         assert!(reopened.get("owner", &created.id).await.is_none());
         let _ = tokio::fs::remove_file(path).await;
+    }
+
+    #[tokio::test]
+    async fn dots_binding_reserves_only_its_channel() {
+        let path = std::env::temp_dir().join(format!("medousa-dots-{}.json", uuid::Uuid::new_v4()));
+        let store = ExternalConversationStore::open(path.clone()).await.unwrap();
+        let input = CreateConversationRequest {
+            provider: Provider::Dots,
+            label: "Dot".into(),
+            target: "C123456789".into(),
+            webhook_url: None,
+            webhook_key: None,
+            slack_user_token: None,
+            dot_user_id: Some("U123456789".into()),
+        };
+        let created = store
+            .create(uuid::Uuid::new_v4().to_string(), "owner".into(), &input)
+            .await
+            .unwrap();
+        assert!(store.dots_binding("C999999999").await.is_none());
+        assert_eq!(
+            store.dots_binding("C123456789").await.unwrap().id,
+            created.id
+        );
+        assert!(
+            store
+                .create(uuid::Uuid::new_v4().to_string(), "other".into(), &input)
+                .await
+                .is_err()
+        );
+        let _ = tokio::fs::remove_file(path).await;
+    }
+
+    #[test]
+    fn dots_reply_matches_slack_member_or_bot_identity() {
+        assert!(sender_matches_dot(Some("U123456789"), "U123456789", None));
+        assert!(sender_matches_dot(
+            Some("B123456789"),
+            "U999999999",
+            Some("B123456789")
+        ));
+        assert!(!sender_matches_dot(
+            Some("B123456789"),
+            "U999999999",
+            Some("B999999999")
+        ));
     }
 
     #[test]

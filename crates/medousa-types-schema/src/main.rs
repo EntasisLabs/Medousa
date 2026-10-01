@@ -107,6 +107,11 @@ fn main() {
     );
     export_type!(
         schemas,
+        ExternalSlackInboundRequest,
+        "ExternalSlackInboundRequest"
+    );
+    export_type!(
+        schemas,
         ExternalInboundClaimResponse,
         "ExternalInboundClaimResponse"
     );

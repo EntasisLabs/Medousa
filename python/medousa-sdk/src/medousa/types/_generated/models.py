@@ -432,6 +432,7 @@ class ExternalProvider(Enum):
     muse = 'muse'
     grok_bot = 'grok_bot'
     instinct = 'instinct'
+    dots = 'dots'
 
 
 class ExternalEventKind(Enum):
@@ -2963,8 +2964,10 @@ class CreateExternalConversationRequest(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
+    dot_user_id: str | None = None
     label: str
     provider: ExternalProvider
+    slack_user_token: str | None = None
     target: str
     webhook_key: str | None = None
     webhook_url: str | None = None
@@ -3110,6 +3113,17 @@ class ExternalMuseDiscoveryStatus(MedousaModel):
     challenge: str
     expires_at: AwareDatetime
     observed_chat_jid: str | None = None
+
+
+class ExternalSlackInboundRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    bot_id: str | None = None
+    channel_id: str
+    message_id: str
+    sender_id: str
+    text: str
 
 
 class ExternalWhatsAppPairingStatus(MedousaModel):
@@ -4793,6 +4807,7 @@ class ExternalConversationEvent(MedousaModel):
 class ExternalConversationView(MedousaModel):
     api_access: ExternalAgentAccessStatus | None = None
     created_at: AwareDatetime
+    dot_user_id: str | None = None
     events: list[ExternalConversationEvent]
     id: str
     label: str

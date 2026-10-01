@@ -48,7 +48,7 @@
 
 <div class="mt-3 space-y-2 border-t border-surface-600 pt-3 text-xs">
   <p class="font-medium">API access</p>
-  <p class="workshop-faint">Instinct uses your workshop’s HTTPS address and this token for curl requests. WhatsApp carries the conversation.</p>
+  <p class="workshop-faint">{conversation.provider === "dots" ? "Your dot can use this token with the Medousa CLI on its computer. Slack carries the conversation." : "Instinct uses your workshop’s HTTPS address and this token for curl requests. WhatsApp carries the conversation."}</p>
   {#if conversation.api_access}
     <p>Permissions: {conversation.api_access.scopes.join(", ")} · Expires {new Date(conversation.api_access.expires_at).toLocaleString()}</p>
   {/if}
@@ -61,7 +61,7 @@
   </div>
   {#if token}
     <div class="rounded border border-content-warning p-3">
-      <p>Save this token in Instinct’s private credential storage. It is shown once. Replacing it invalidates the previous token.</p>
+      <p>Save this token in {conversation.provider === "dots" ? "your dot’s private credential storage" : "Instinct’s private credential storage"}. It is shown once. Replacing it invalidates the previous token.</p>
       <code class="my-2 block break-all select-all">{token}</code>
       <button type="button" class="text-content-link" onclick={() => token = null}>Done</button>
     </div>

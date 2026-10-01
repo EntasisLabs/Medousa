@@ -5101,11 +5101,25 @@
       "target"
     ],
     "properties": {
+      "dot_user_id": {
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "label": {
         "type": "string"
       },
       "provider": {
         "$ref": "#/definitions/ExternalProvider"
+      },
+      "slack_user_token": {
+        "default": null,
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "target": {
         "type": "string"
@@ -5130,7 +5144,8 @@
         "enum": [
           "muse",
           "grok_bot",
-          "instinct"
+          "instinct",
+          "dots"
         ]
       }
     }
@@ -5252,6 +5267,12 @@
             "type": "string",
             "format": "date-time"
           },
+          "dot_user_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "events": {
             "type": "array",
             "items": {
@@ -5296,7 +5317,8 @@
         "enum": [
           "muse",
           "grok_bot",
-          "instinct"
+          "instinct",
+          "dots"
         ]
       },
       "MessageReaction": {
@@ -13088,6 +13110,12 @@
             "type": "string",
             "format": "date-time"
           },
+          "dot_user_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "events": {
             "type": "array",
             "items": {
@@ -13132,7 +13160,8 @@
         "enum": [
           "muse",
           "grok_bot",
-          "instinct"
+          "instinct",
+          "dots"
         ]
       },
       "MessageReaction": {
@@ -13224,6 +13253,12 @@
       "created_at": {
         "type": "string",
         "format": "date-time"
+      },
+      "dot_user_id": {
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "events": {
         "type": "array",
@@ -13341,7 +13376,8 @@
         "enum": [
           "muse",
           "grok_bot",
-          "instinct"
+          "instinct",
+          "dots"
         ]
       },
       "MessageReaction": {
@@ -13449,7 +13485,8 @@
     "enum": [
       "muse",
       "grok_bot",
-      "instinct"
+      "instinct",
+      "dots"
     ]
   },
   "ExternalProviderEventRequest": {
@@ -13546,6 +13583,38 @@
         ]
       }
     }
+  },
+  "ExternalSlackInboundRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExternalSlackInboundRequest",
+    "type": "object",
+    "required": [
+      "channel_id",
+      "message_id",
+      "sender_id",
+      "text"
+    ],
+    "properties": {
+      "bot_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "channel_id": {
+        "type": "string"
+      },
+      "message_id": {
+        "type": "string"
+      },
+      "sender_id": {
+        "type": "string"
+      },
+      "text": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
   },
   "ExternalWhatsAppInboundRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",

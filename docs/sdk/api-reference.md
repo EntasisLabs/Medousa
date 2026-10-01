@@ -541,6 +541,7 @@ See [python.md](python.md).
 ## Remaining gaps (use `http()`)
 
 - WhatsApp pairing QR status for Muse setup (`external_conversations.whatsapp.pairing.get`, requires `admin.execute`). The local adapter publishes updates through the corresponding POST operation; client apps only read the short-lived status.
+- Dots Slack inbound claim (`external_conversations.slack.inbound.post`, local adapter only). The SDK operation is generated for the adapter; ordinary clients use `external_conversations.post` and `external_conversations.by_id.messages.post` to register and message a dot.
 - Runtime worker capacity (`GET/PUT /v1/runtime/workers`)
 - Identity, grapheme, workflows (full surface)
 - Ingest SSE stream

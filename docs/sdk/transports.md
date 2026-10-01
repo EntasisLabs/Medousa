@@ -97,10 +97,10 @@ projection.
 
 ## Lightweight external agents
 
-Instinct can use a scoped external-agent bearer over an ordinary HTTPS gateway.
+Instinct and Dots can use a scoped external-agent bearer over an ordinary HTTPS gateway.
 Alternatively, the [Node 22 example](../../examples/instinct-urspace/client.mjs)
 uses Urspace's WASM SDK and a saved private session identity to carry requests
 over Iroh. This requires an Urspace host proxying the daemon; a Medousa Iroh
-ticket cannot be passed to the Urspace SDK. See the [Instinct guide](../guides/instinct-agent.md)
-and [credential API](../engine/external-conversations.md#instinct-api-credentials).
+ticket cannot be passed to the Urspace SDK. See the [Instinct guide](../guides/instinct-agent.md),
+[Dots guide](../guides/dots.md), and [credential API](../engine/external-conversations.md#instinct-and-dots-api-credentials).
 The gateway must preserve Authorization and JSON request/response bodies.

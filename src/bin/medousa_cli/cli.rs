@@ -36,6 +36,8 @@ pub enum Commands {
     DaemonWatchAdd(DaemonWatchAddArgs),
     #[command(name = "daemon-external-event")]
     DaemonExternalEvent(DaemonExternalEventArgs),
+    #[command(name = "daemon-agent-api")]
+    DaemonAgentApi(DaemonAgentApiArgs),
     #[command(name = "daemon-identity-context")]
     DaemonIdentityContext(IdentityCommonArgs),
     #[command(name = "daemon-identity-inspect")]
@@ -92,6 +94,18 @@ pub struct DaemonExternalEventArgs {
     /// Read the Iroh ticket and bearer from a saved `medousa pair join` worker.
     #[arg(long, conflicts_with = "daemon_url")]
     pub worker: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct DaemonAgentApiArgs {
+    /// GET or POST; the workshop enforces the token's read/work scope.
+    pub method: String,
+    /// An API path such as /v1/vault/notes or /v1/jobs/ask.
+    pub path: String,
+    #[arg(long = "body-json")]
+    pub body_json: Option<String>,
+    #[arg(long = "daemon-url")]
+    pub daemon_url: Option<String>,
 }
 
 #[derive(Debug, Args)]

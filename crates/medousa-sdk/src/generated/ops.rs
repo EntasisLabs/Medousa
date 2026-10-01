@@ -835,6 +835,13 @@ pub const EXTERNAL_CONVERSATIONS_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const EXTERNAL_CONVERSATIONS_SLACK_INBOUND_POST: Operation = Operation {
+    id: "external_conversations.slack.inbound.post",
+    method: "POST",
+    path: "/v1/external-conversations/slack/inbound",
+    streaming: false,
+};
+
 pub const EXTERNAL_CONVERSATIONS_WHATSAPP_INBOUND_POST: Operation = Operation {
     id: "external_conversations.whatsapp.inbound.post",
     method: "POST",
@@ -3460,6 +3467,7 @@ pub static ALL: &[Operation] = &[
     EXTERNAL_CONVERSATIONS_MUSE_DISCOVERY_GET,
     EXTERNAL_CONVERSATIONS_MUSE_DISCOVERY_POST,
     EXTERNAL_CONVERSATIONS_POST,
+    EXTERNAL_CONVERSATIONS_SLACK_INBOUND_POST,
     EXTERNAL_CONVERSATIONS_WHATSAPP_INBOUND_POST,
     EXTERNAL_CONVERSATIONS_WHATSAPP_PAIRING_GET,
     EXTERNAL_CONVERSATIONS_WHATSAPP_PAIRING_POST,

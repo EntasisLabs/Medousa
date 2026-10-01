@@ -74,6 +74,8 @@ export function modelSourceLabel(runtime: ChatAgentRuntime): string {
       return "Hermes";
     case "instinct":
       return "Instinct Agent";
+    case "dots":
+      return "Dots";
     case "muse":
       return "Muse";
     case "grok_bot":

@@ -118,7 +118,7 @@
     if (agentRuntime === "medousa") return resolveModelDisplayLabel(chatModel.provider, chatModel.model);
     if (isProviderConversationRuntime(agentRuntime)) {
       return providerChoices.find((item) => item.id === externalConversationId)?.label ??
-        (agentRuntime === "muse" ? "Choose Muse session" : agentRuntime === "instinct" ? "Choose Instinct agent" : "Choose Grok bot");
+        (agentRuntime === "muse" ? "Choose Muse session" : agentRuntime === "instinct" ? "Choose Instinct agent" : agentRuntime === "dots" ? "Choose dot" : "Choose Grok bot");
     }
     return agentModelDisplayLabel(agentRuntime, agentConfigOptions);
   });
@@ -709,7 +709,7 @@
         {:else if isProviderConversationRuntime(agentRuntime)}
           <ul class="composer-model-list" role="listbox">
             {#if providerChoices.length === 0}
-              <li class="composer-model-list-empty">Set up {agentRuntime === "muse" ? "a Muse session" : agentRuntime === "instinct" ? "an Instinct agent" : "a Grok bot"} in External Agents.</li>
+              <li class="composer-model-list-empty">Set up {agentRuntime === "muse" ? "a Muse session" : agentRuntime === "instinct" ? "an Instinct agent" : agentRuntime === "dots" ? "a dot" : "a Grok bot"} in External Agents.</li>
             {:else}
               {#each providerChoices as choice (choice.id)}
                 {@const selected = choice.id === externalConversationId}
@@ -779,6 +779,8 @@
                 ? "Manage Muse sessions"
                 : agentRuntime === "instinct"
                   ? "Manage Instinct agents"
+                : agentRuntime === "dots"
+                  ? "Manage dots"
                 : agentRuntime === "grok_bot"
                   ? "Manage Grok bots"
               : "Manage external agent"}</span>

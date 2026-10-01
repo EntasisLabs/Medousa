@@ -130,6 +130,7 @@ OPERATIONS: dict[str, Operation] = {
     "external_conversations.muse.discovery.get": Operation("external_conversations.muse.discovery.get", "GET", "/v1/external-conversations/muse/discovery", False),
     "external_conversations.muse.discovery.post": Operation("external_conversations.muse.discovery.post", "POST", "/v1/external-conversations/muse/discovery", False),
     "external_conversations.post": Operation("external_conversations.post", "POST", "/v1/external-conversations", False),
+    "external_conversations.slack.inbound.post": Operation("external_conversations.slack.inbound.post", "POST", "/v1/external-conversations/slack/inbound", False),
     "external_conversations.whatsapp.inbound.post": Operation("external_conversations.whatsapp.inbound.post", "POST", "/v1/external-conversations/whatsapp/inbound", False),
     "external_conversations.whatsapp.pairing.get": Operation("external_conversations.whatsapp.pairing.get", "GET", "/v1/external-conversations/whatsapp/pairing", False),
     "external_conversations.whatsapp.pairing.post": Operation("external_conversations.whatsapp.pairing.post", "POST", "/v1/external-conversations/whatsapp/pairing", False),

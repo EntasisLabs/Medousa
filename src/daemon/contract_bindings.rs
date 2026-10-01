@@ -100,6 +100,10 @@ pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
             request: Some("ExternalWhatsAppInboundRequest"),
             response: "ExternalInboundClaimResponse",
         },
+        "external_conversations.slack.inbound.post" => WireBinding {
+            request: Some("ExternalSlackInboundRequest"),
+            response: "ExternalInboundClaimResponse",
+        },
         "coordination.proposals.get" => WireBinding {
             request: None,
             response: "PeerProposalInboxResponse",

@@ -240,6 +240,8 @@ pub enum DaemonOperation {
     ExternalConversationsMuseDiscoveryPost,
     #[serde(rename = "external_conversations.post")]
     ExternalConversationsPost,
+    #[serde(rename = "external_conversations.slack.inbound.post")]
+    ExternalConversationsSlackInboundPost,
     #[serde(rename = "external_conversations.whatsapp.inbound.post")]
     ExternalConversationsWhatsappInboundPost,
     #[serde(rename = "external_conversations.whatsapp.pairing.get")]
@@ -1079,6 +1081,7 @@ impl DaemonOperation {
             Self::ExternalConversationsMuseDiscoveryGet => "external_conversations.muse.discovery.get",
             Self::ExternalConversationsMuseDiscoveryPost => "external_conversations.muse.discovery.post",
             Self::ExternalConversationsPost => "external_conversations.post",
+            Self::ExternalConversationsSlackInboundPost => "external_conversations.slack.inbound.post",
             Self::ExternalConversationsWhatsappInboundPost => "external_conversations.whatsapp.inbound.post",
             Self::ExternalConversationsWhatsappPairingGet => "external_conversations.whatsapp.pairing.get",
             Self::ExternalConversationsWhatsappPairingPost => "external_conversations.whatsapp.pairing.post",

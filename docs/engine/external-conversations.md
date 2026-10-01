@@ -1,11 +1,11 @@
 # External agent conversations
 
-The workshop daemon owns persistent conversations with provider-hosted agents. Medousa sends Muse and Instinct messages through its local WhatsApp adapter and Grok Bot requests through a webhook routine. These are separate from local ACP sessions.
+The workshop daemon owns persistent conversations with provider-hosted agents. Medousa sends Muse and Instinct messages through its local WhatsApp adapter, Dots messages through Slack, and Grok Bot requests through a webhook routine. These are separate from local ACP sessions.
 
 | Route | Capability | Purpose |
 | --- | --- | --- |
 | `GET /v1/external-conversations` | `workshop.read` | List the principal's conversations and events |
-| `POST /v1/external-conversations` | `admin.execute` | Create a Muse, Grok Bot, or Instinct binding |
+| `POST /v1/external-conversations` | `admin.execute` | Create a Muse, Grok Bot, Instinct, or Dots binding |
 | `POST /v1/external-conversations/muse/discovery` | `admin.execute` | Start a five-minute Muse chat challenge |
 | `GET /v1/external-conversations/muse/discovery` | `workshop.read` | Poll for the linked adapter's observed chat ID |
 | `GET /v1/external-conversations/whatsapp/pairing` | `admin.execute` | Read the current short-lived WhatsApp pairing QR for display in Medousa |
@@ -13,13 +13,14 @@ The workshop daemon owns persistent conversations with provider-hosted agents. M
 | `GET /v1/external-conversations/{id}` | `workshop.read` | Replay one conversation |
 | `DELETE /v1/external-conversations/{id}` | `admin.execute` | Remove a conversation and revoke its stored keys |
 | `POST /v1/external-conversations/{id}/callback-key/rotate` | `admin.execute` | Replace the Grok Bot callback key and show the new value once |
-| `POST /v1/external-conversations/{id}/api-token` | `admin.execute` | Issue or replace an Instinct API token and show it once |
-| `DELETE /v1/external-conversations/{id}/api-token` | `admin.execute` | Revoke an Instinct API token |
+| `POST /v1/external-conversations/{id}/api-token` | `admin.execute` | Issue or replace an Instinct or Dots API token and show it once |
+| `DELETE /v1/external-conversations/{id}/api-token` | `admin.execute` | Revoke an Instinct or Dots API token |
 | `POST /v1/external-conversations/{id}/messages` | `workshop.interact` | Commit and send a user message |
 | `POST /v1/external-conversations/{id}/events` | `workshop.interact` plus callback key | Ingest a Grok Bot VM event |
 | `POST /v1/external-conversations/whatsapp/inbound` | `workshop.interact`, loopback | Route an inbound message or claim an outgoing Muse discovery code |
+| `POST /v1/external-conversations/slack/inbound` | `workshop.interact`, loopback | Reserve a dot channel and record replies from its bound dot |
 
-Create body: `provider` (`muse`, `grok_bot`, or `instinct`), `label`, `target`, and for Grok Bot `webhook_url` and `webhook_key`. A Muse `target` must match the chat ID observed during a live discovery challenge; clients cannot guess or enter a phone number. An Instinct `target` is its WhatsApp phone number, including `+` and the country code. Grok Bot creation returns one `callback_key`; store it in the provider VM's secret store. Grok Bot URLs must use HTTPS under `cursor.com` or `cursor.sh`. Grok Bot credentials are kept in the workshop credential store, outside the conversation journal.
+Create body: `provider` (`muse`, `grok_bot`, `instinct`, or `dots`), `label`, `target`, and provider-specific fields. A Muse `target` must match the chat ID observed during a live discovery challenge; clients cannot guess or enter a phone number. An Instinct `target` is its WhatsApp phone number, including `+` and the country code. Dots requires a Slack channel ID as `target`, the dot's Slack member ID as `dot_user_id`, and its owner's `xoxp-` Slack user token with `chat:write` as `slack_user_token`. One channel can bind one dot. The token is kept in the workshop credential store, outside the conversation journal. Grok Bot requires `webhook_url` and `webhook_key` and returns one `callback_key`; store it in the provider VM's secret store. Grok Bot URLs must use HTTPS under `cursor.com` or `cursor.sh`.
 
 The send body is `{ "request_id": "stable-id", "text": "..." }`. Keep the request ID stable while reconciling an uncertain send. Reusing it returns a conflict. The daemon commits the user message and `transport_pending` attempt before network I/O. A successful response contains the durable conversation and final transport status. `transport_accepted` does not mean the provider completed the task. A pending attempt after daemon restart or `transport_uncertain` means the request may have reached the provider; inspect its native history before submitting another request.
 
@@ -31,11 +32,15 @@ The WhatsApp adapter routes an exact one-time Muse code sent by the user from th
 
 The adapter posts a pairing QR payload to the daemon over loopback with its workshop credential. The daemon renders SVG in memory, returns it only to an `admin.execute` client, and stops returning it when its WhatsApp expiry passes or the adapter reports a new state. The QR is never written to the conversation journal. Home polls this status while Muse setup is open, so remote Home clients can scan the workshop's QR from the desktop app. Agent reactions observed on the linked WhatsApp account are recorded as typed provider events and appear in Home without being converted into assistant prose.
 
-## Instinct API credentials
+## Instinct and Dots API credentials
 
 Instinct binds an international `+` phone number, normalized to a WhatsApp PN
 JID. It uses the WhatsApp adapter for sends and replies. A phone chat can belong
-to only one external conversation, including across owners/providers.
+to only one external conversation, including across owners/providers. Dots uses
+a dedicated Slack channel. Medousa posts as the dot's owner with the saved user
+token and mentions the selected dot. The Slack adapter reserves that channel
+from normal channel ingest and records messages only from the selected dot
+member or bot ID.
 
 `POST /v1/external-conversations/{id}/api-token` requires `admin.execute` and
 conversation ownership. Body: `{ "scopes": ["read", "work"], "expires_in_days": 30 }`.
@@ -60,4 +65,4 @@ All other routes fail closed, including on loopback. Scopes authorize workshop
 resources, not individual notes or projects. Background work receives member
 capabilities and remains governed by existing workshop admission. Token
 revocation blocks new HTTP requests but does not cancel admitted jobs.
-See the [Instinct guide](../guides/instinct-agent.md) for HTTPS requirements and curl examples.
+See the [Instinct guide](../guides/instinct-agent.md) and [Dots guide](../guides/dots.md) for HTTPS requirements and command examples.
