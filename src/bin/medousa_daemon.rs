@@ -1042,21 +1042,22 @@ async fn start_daemon() -> Result<()> {
             .with_external_agents(state.external_conversations.clone())
             .with_credential_lifecycle(credential_lifecycle)
             .with_mcp_policy_token(Some(mcp_policy_token));
+    let local_delegated_executor: std::sync::Arc<dyn medousa::mesh::DelegatedTaskExecutor> =
+        std::sync::Arc::new(medousa::mesh::DaemonDelegatedTaskExecutor::new(
+            std::sync::Arc::new(state.composition().clone()),
+            state.clone(),
+            peer_message_state.local_device_id.clone(),
+            state.default_runtime_config.draft_provider.clone(),
+            state.default_runtime_config.draft_model.clone(),
+            state.default_runtime_config.response_depth_mode.clone(),
+            10,
+        ));
+    medousa::daemon_worker::register_local_delegated_executor(local_delegated_executor.clone());
     let mesh_api_state = medousa::mesh::MeshApiState {
         pairing: peer_message_state.pairing.clone(),
         local_device_id: peer_message_state.local_device_id.clone(),
         execution_policies: peer_execution_policies.clone(),
-        delegated_task_executor: Some(std::sync::Arc::new(
-            medousa::mesh::DaemonDelegatedTaskExecutor::new(
-                std::sync::Arc::new(state.composition().clone()),
-                state.clone(),
-                peer_message_state.local_device_id.clone(),
-                state.default_runtime_config.draft_provider.clone(),
-                state.default_runtime_config.draft_model.clone(),
-                state.default_runtime_config.response_depth_mode.clone(),
-                10,
-            ),
-        )),
+        delegated_task_executor: Some(local_delegated_executor),
         computer_drivers: state.computer_drivers.clone(),
         isolated_browser_available: true,
     };

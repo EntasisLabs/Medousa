@@ -195,6 +195,9 @@ bindings; it does not grant tools, credentials, or execution authority.
 | GET | `/v1/sessions/{session_id}/bot` | `SessionBotResponse` | `bots().session` |
 | PUT | `/v1/sessions/{session_id}/bot` | `SetSessionBotRequest` -> `SessionBotResponse` | `bots().bind_session` |
 | DELETE | `/v1/sessions/{session_id}/bot` | `SessionBotResponse` | `bots().unbind_session` |
+| POST | `/v1/bots/ask` | `{prompt, request_id, bot? , agent?, workshop?}` -> `{request_id, ticket}` | CLI `medousa ask` |
+| GET | `/v1/bots/ask/{job_id}` | durable status, result, destination, runtime, Forge IDs, terminal evidence | CLI `medousa ask --resume` |
+| POST | `/v1/bots/ask/{job_id}/cancel` | explicit owner-scoped cancellation | CLI `medousa ask --cancel` |
 
 All operations are scoped to the authenticated workshop profile. Create and
 duplicate allocate a fresh primary conversation on the daemon. Duplicate copies
@@ -726,6 +729,7 @@ Custody of intentional work episodes over a git target (vault or any repo). Dist
 |--------|------|---------|
 | POST | `/v1/forge/items` | Register |
 | POST | `/v1/forge/items/start` | Register and provision in one operation |
+| POST | `/v1/forge/projects` | Create and provision a blank or existing-repository project without binding a chat session; accepts `StartSessionCodeProjectRequest`, returns a Forge item projection. Local execution administration required. |
 | POST | `/v1/forge/repositories/inspect` | Inspect a repository path, commit readiness, and starting branch (`has_commits`, nullable `suggested_base_ref`) |
 | GET, PUT | `/v1/forge/repositories` | Workshop repository recents and pins |
 | GET | `/v1/forge/repositories/browse?path=…` | Scoped workshop directory/repository browser |

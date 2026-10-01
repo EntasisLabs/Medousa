@@ -52,6 +52,12 @@ pub enum DaemonOperation {
     AuthChatgptModelsGet,
     #[serde(rename = "auth.chatgpt.refresh.post")]
     AuthChatgptRefreshPost,
+    #[serde(rename = "bots.ask.by_job_id.cancel.post")]
+    BotsAskByJobIdCancelPost,
+    #[serde(rename = "bots.ask.by_job_id.get")]
+    BotsAskByJobIdGet,
+    #[serde(rename = "bots.ask.post")]
+    BotsAskPost,
     #[serde(rename = "bots.by_bot_id.archive.put")]
     BotsByBotIdArchivePut,
     #[serde(rename = "bots.by_bot_id.duplicate.post")]
@@ -426,6 +432,8 @@ pub enum DaemonOperation {
     ForgePreviewByTokenPost,
     #[serde(rename = "forge.preview.by_token.put")]
     ForgePreviewByTokenPut,
+    #[serde(rename = "forge.projects.post")]
+    ForgeProjectsPost,
     #[serde(rename = "forge.repositories.browse.get")]
     ForgeRepositoriesBrowseGet,
     #[serde(rename = "forge.repositories.get")]
@@ -987,6 +995,9 @@ impl DaemonOperation {
             Self::AuthChatgptGet => "auth.chatgpt.get",
             Self::AuthChatgptModelsGet => "auth.chatgpt.models.get",
             Self::AuthChatgptRefreshPost => "auth.chatgpt.refresh.post",
+            Self::BotsAskByJobIdCancelPost => "bots.ask.by_job_id.cancel.post",
+            Self::BotsAskByJobIdGet => "bots.ask.by_job_id.get",
+            Self::BotsAskPost => "bots.ask.post",
             Self::BotsByBotIdArchivePut => "bots.by_bot_id.archive.put",
             Self::BotsByBotIdDuplicatePost => "bots.by_bot_id.duplicate.post",
             Self::BotsByBotIdGet => "bots.by_bot_id.get",
@@ -1174,6 +1185,7 @@ impl DaemonOperation {
             Self::ForgePreviewByTokenPatch => "forge.preview.by_token.patch",
             Self::ForgePreviewByTokenPost => "forge.preview.by_token.post",
             Self::ForgePreviewByTokenPut => "forge.preview.by_token.put",
+            Self::ForgeProjectsPost => "forge.projects.post",
             Self::ForgeRepositoriesBrowseGet => "forge.repositories.browse.get",
             Self::ForgeRepositoriesGet => "forge.repositories.get",
             Self::ForgeRepositoriesInspectPost => "forge.repositories.inspect.post",

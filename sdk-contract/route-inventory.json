@@ -663,6 +663,54 @@
       "trust_group": "portal"
     },
     {
+      "body_limit": 131072,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "bots.ask.post",
+      "path": "/v1/bots/ask",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.read"
+      ],
+      "feature_profile": "core",
+      "method": "GET",
+      "operation_id": "bots.ask.by_job_id.get",
+      "path": "/v1/bots/ask/{job_id}",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1024,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "workshop.interact"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "bots.ask.by_job_id.cancel.post",
+      "path": "/v1/bots/ask/{job_id}/cancel",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
       "body_limit": 1024,
       "bootstrap_public": false,
       "browser_policy": "native_only",
@@ -3593,6 +3641,22 @@
       "stream_transport": null,
       "streaming": false,
       "trust_group": "preview"
+    },
+    {
+      "body_limit": 1048576,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "forge.projects.post",
+      "path": "/v1/forge/projects",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
     },
     {
       "body_limit": 1024,

@@ -50,8 +50,14 @@ mod peer_cli;
 #[path = "medousa/iroh_cli.rs"]
 mod iroh_cli;
 
+#[path = "medousa/ask_cli.rs"]
+mod ask_cli;
+#[path = "medousa/bot_cli.rs"]
+mod bot_cli;
 #[path = "medousa/packages_cli.rs"]
 mod packages_cli;
+#[path = "medousa/project_cli.rs"]
+mod project_cli;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct OnboardProfile {
@@ -69,6 +75,9 @@ struct ComponentCommand {
 fn main() -> Result<()> {
     let cli = cli::Cli::parse();
     match cli.command {
+        Some(cli::Commands::Ask(args)) => ask_cli::run_ask(args),
+        Some(cli::Commands::Bot(args)) => bot_cli::run_bot(args),
+        Some(cli::Commands::Project(args)) => project_cli::run_project(args),
         None => {
             print_help();
             Ok(())

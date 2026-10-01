@@ -5,9 +5,34 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::authority_id::IdentifierError;
+use crate::coordination::ExternalPeerRuntime;
 use crate::daemon_api::AgentModeId;
 
-pub const BOT_PROFILE_SCHEMA_VERSION: u32 = 2;
+pub const BOT_PROFILE_SCHEMA_VERSION: u32 = 3;
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum ExternalAgentSessionContract {
+    FreshPerJob,
+}
+
+/// Owner-pinned execution authority for an external-agent Bot. `forge_work_id`
+/// is resolved on the home workshop; caller-supplied host paths are forbidden.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ExternalAgentExecutor {
+    /// Installed ACP runtime, distinct from an inference provider.
+    pub runtime: ExternalPeerRuntime,
+    pub home_workshop_id: String,
+    pub forge_work_id: String,
+    pub forge_repo_id: String,
+    pub session_contract: ExternalAgentSessionContract,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allowed_tools: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allowed_capabilities: Vec<String>,
+}
 
 /// Stable daemon-issued identity for one durable Bot profile.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -132,6 +157,10 @@ pub struct BotProfile {
     pub primary_session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub world_binding: Option<BotWorldBinding>,
+    /// Configuration only. Each execution still requires placement, pairing,
+    /// destination policy, and runtime admission.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_agent: Option<ExternalAgentExecutor>,
     #[serde(default)]
     pub archived: bool,
     pub revision: u64,
@@ -165,6 +194,8 @@ pub struct CreateBotRequest {
     /// Opt-in durable world continuity. Omission grants no world.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub world_binding: Option<BotWorldBinding>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_agent: Option<ExternalAgentExecutor>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -189,6 +220,11 @@ pub struct UpdateBotRequest {
     /// `world_binding`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub clear_world_binding: bool,
+    /// Omission preserves the current executor for older clients.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_agent: Option<ExternalAgentExecutor>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub clear_external_agent: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -250,5 +286,36 @@ mod tests {
         assert_eq!(BotId::parse(valid).unwrap().as_str(), valid);
         assert!(BotId::parse("bot_ABCDEF0123456789abcdef0123456789").is_err());
         assert!(BotId::parse("session_0123456789abcdef0123456789abcdef").is_err());
+    }
+
+    #[test]
+    fn external_executor_is_an_installed_runtime_with_pinned_authority() {
+        let executor = ExternalAgentExecutor {
+            runtime: ExternalPeerRuntime::Codex,
+            home_workshop_id: "workshop-mini".into(),
+            forge_work_id: "work-project".into(),
+            forge_repo_id: "repo-project".into(),
+            session_contract: ExternalAgentSessionContract::FreshPerJob,
+            allowed_tools: vec!["code".into()],
+            allowed_capabilities: vec!["forge".into()],
+        };
+        let value = serde_json::to_value(&executor).unwrap();
+        assert_eq!(value["runtime"], "codex");
+        assert_eq!(value["home_workshop_id"], "workshop-mini");
+        assert_eq!(value["session_contract"], "fresh_per_job");
+        assert!(
+            serde_json::from_value::<ExternalAgentExecutor>(serde_json::json!({
+                "runtime": "openai-codex",
+                "home_workshop_id": "workshop-mini",
+            "forge_work_id": "work-project",
+            "forge_repo_id": "repo-project",
+                "session_contract": "fresh_per_job"
+            }))
+            .is_err()
+        );
+        assert_eq!(
+            serde_json::from_value::<ExternalAgentExecutor>(value).unwrap(),
+            executor
+        );
     }
 }

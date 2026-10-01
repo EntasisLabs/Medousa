@@ -704,6 +704,7 @@ mod tests {
             default_mode: Some(medousa_types::AgentModeId::Teacher),
             primary_session_id: Some("session-a".to_string()),
             world_binding: None,
+            external_agent: None,
             archived: false,
             revision: 7,
             created_at: Utc::now(),

@@ -213,6 +213,10 @@ pub struct WorkerSpawnSpec {
     pub manuscript_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub manuscript: Option<WorkerManuscriptSpec>,
+    /// Exact external executor selected by a registered Bot. ACP owns its
+    /// tool permissions; this snapshot binds runtime and Forge placement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_agent: Option<medousa_types::ExternalAgentExecutor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stage_role: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -534,6 +538,22 @@ pub fn validate_worker_spawn_spec(spec: &WorkerSpawnSpec) -> Result<(), Delegate
     }
     let intent = crate::agent_runtime::turn_worker::TurnWorkerIntent::parse(&spec.intent)
         .ok_or_else(|| DelegatedTaskError::invalid("delegated worker intent is unsupported"))?;
+    if let Some(external) = spec.external_agent.as_ref()
+        && (external.runtime != medousa_types::coordination::ExternalPeerRuntime::Codex
+            || external.home_workshop_id != spec.execution_placement.resolved_runtime_id
+            || intent != crate::agent_runtime::turn_worker::TurnWorkerIntent::Coder
+            || spec.parent.bot.is_none()
+            || spec.code_project.as_ref().is_none_or(|project| {
+                project.runtime_id != external.home_workshop_id
+                    || project.work_id != external.forge_work_id
+                    || project.repo_id != external.forge_repo_id
+            })
+            || spec.code_project_setup.is_some())
+    {
+        return Err(DelegatedTaskError::invalid(
+            "external-agent Bot must pin Codex, Bot identity, and destination Forge project",
+        ));
+    }
     validate_worker_text("task", &spec.task, MAX_DELEGATED_PROMPT_CHARS)?;
     validate_worker_text("acknowledgement", &spec.user_ack, 4_096)?;
     validate_worker_text(
@@ -635,6 +655,15 @@ pub fn validate_worker_spawn_spec(spec: &WorkerSpawnSpec) -> Result<(), Delegate
     }
     if let Some(bot) = &spec.parent.bot {
         validate_worker_text("Bot id", &bot.bot_id, 256)?;
+        if spec.external_agent.is_some()
+            && (medousa_types::BotId::parse(&bot.bot_id).is_err()
+                || bot.profile_revision == 0
+                || bot.memory_scope_id != bot.bot_id)
+        {
+            return Err(DelegatedTaskError::invalid(
+                "external-agent Bot identity is invalid",
+            ));
+        }
         validate_worker_text("Bot memory scope", &bot.memory_scope_id, 256)?;
         if bot.prompt_appendix.chars().count() > 4_096 {
             return Err(DelegatedTaskError::invalid(
@@ -1449,6 +1478,7 @@ mod tests {
             user_ack: "I’m on it.".to_string(),
             manuscript_ids: Vec::new(),
             manuscript: None,
+            external_agent: None,
             stage_role: None,
             model_hint: None,
             parent: WorkerParentSpec {

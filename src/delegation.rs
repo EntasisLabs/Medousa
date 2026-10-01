@@ -11,6 +11,7 @@ use std::time::Duration;
 use anyhow::{Result, anyhow, bail};
 use chrono::{DateTime, Utc};
 use medousa_types::session::{AuthorityId, ConversationTurn, TranscriptEntryId};
+use medousa_types::{BotProfile, SessionId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -53,6 +54,8 @@ const DELEGATION_TURN_PREFIX: &str = "delegation-turn-";
 const DELEGATION_WAIT_SIGNAL_TYPE: &str = "medousa.delegated_turn";
 const DELEGATION_JOB_TYPE: &str = "workflow.medousa.delegation";
 const DELEGATION_TRANSPORT_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(15);
+static OPERATOR_ASK_ADMISSION: once_cell::sync::Lazy<tokio::sync::Mutex<()>> =
+    once_cell::sync::Lazy::new(|| tokio::sync::Mutex::new(()));
 
 /// Maps Stasis' agent-turn wait contract onto its existing runtime-owned
 /// durable wait store. Medousa owns only the record shape and identity mapping.
@@ -280,6 +283,12 @@ struct DelegationJobPayload {
     work_id: String,
     target: DelegationTarget,
     request: DelegatedTaskRequest,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    operator_profile_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    operator_request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    operator_request_fingerprint: Option<String>,
     #[serde(default)]
     intent: String,
     #[serde(default)]
@@ -358,6 +367,9 @@ impl PendingDelegationSpawn {
             work_id: self.work_id.clone(),
             target: checkpoint.target,
             request,
+            operator_profile_id: None,
+            operator_request_id: None,
+            operator_request_fingerprint: None,
             intent: self.spawn.intent.clone(),
             user_ack: self.spawn.user_ack.clone(),
             deadline_at: self.deadline_at,
@@ -1158,6 +1170,17 @@ impl DelegationJobHandler {
         .await
         {
             Ok(Ok(observation)) => observation,
+            Ok(Err(error))
+                if matches!(
+                    error.kind,
+                    crate::delegated_task::DelegatedTaskErrorKind::Invalid
+                        | crate::delegated_task::DelegatedTaskErrorKind::Conflict
+                ) =>
+            {
+                return self
+                    .complete_failure(&payload, turn_id, TurnWaitStatus::Failed, error.to_string())
+                    .await;
+            }
             Ok(Err(error)) => {
                 return Ok(Self::deferred(
                     &payload,
@@ -1231,6 +1254,368 @@ pub struct DelegationService {
 }
 
 impl DelegationService {
+    pub async fn operator_bot_replay(
+        self: &Arc<Self>,
+        profile_id: &str,
+        request_id: &str,
+        request_fingerprint: &str,
+    ) -> StasisResult<Option<DelegationTicket>> {
+        let identity = deterministic_identity(
+            "",
+            &[
+                b"operator-bot-ask",
+                profile_id.as_bytes(),
+                request_id.as_bytes(),
+            ],
+        );
+        let job_id = format!("{DELEGATION_JOB_PREFIX}{identity}");
+        let Some(job) = self.runtime.get_job(&job_id).await? else {
+            return Ok(None);
+        };
+        let StoredDelegationPayload::Resolved(payload) = StoredDelegationPayload::parse(&job)?
+        else {
+            return Err(port_failure(
+                "operator request identity conflicts with queued work",
+            ));
+        };
+        if payload.operator_profile_id.as_deref() != Some(profile_id)
+            || payload.operator_request_fingerprint.as_deref() != Some(request_fingerprint)
+        {
+            return Err(port_failure("request ID reused with different Bot request"));
+        }
+        let turn_id = format!("{DELEGATION_TURN_PREFIX}{identity}");
+        self.start_driver(job_id.clone(), turn_id.clone());
+        Ok(Some(DelegationTicket {
+            work_id: payload.work_id,
+            job_id,
+            turn_id,
+            status: "existing",
+            parent_runtime_id: payload.request.parent_runtime_id.clone(),
+            execution_placement: payload.request.execution_placement.clone(),
+        }))
+    }
+    /// Admit an explicit operator Bot request through the same durable Stasis
+    /// job and signed mesh transport used by turn-originated delegation.
+    /// A retry with the same principal and request ID observes the original
+    /// payload; it never appends a second source turn or changes destination.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "durable operator admission binds every caller and destination input explicitly"
+    )]
+    pub async fn submit_operator_bot(
+        self: &Arc<Self>,
+        profile_id: &str,
+        request_id: &str,
+        request_fingerprint: &str,
+        prompt: &str,
+        bot: &BotProfile,
+        target: DelegationTarget,
+        parent_runtime_id: &str,
+    ) -> StasisResult<DelegationTicket> {
+        let request_id = request_id.trim();
+        let prompt = prompt.trim();
+        if request_id.is_empty()
+            || request_id.len() > 256
+            || request_id.chars().any(char::is_control)
+            || prompt.is_empty()
+            || prompt.chars().count() > crate::delegated_task::MAX_DELEGATED_PROMPT_CHARS
+            || profile_id.trim().is_empty()
+            || bot.owner_profile_id != profile_id
+            || bot.archived
+        {
+            return Err(port_failure("invalid operator Bot request"));
+        }
+        let external = bot
+            .external_agent
+            .as_ref()
+            .ok_or_else(|| port_failure("Bot has no enrolled external executor"))?;
+        if external.home_workshop_id != target.peer_device_id {
+            return Err(port_failure(
+                "Bot home workshop does not match exact target",
+            ));
+        }
+        target.validate().map_err(port_failure)?;
+        let _admission = OPERATOR_ASK_ADMISSION.lock().await;
+        let identity = deterministic_identity(
+            "",
+            &[
+                b"operator-bot-ask",
+                profile_id.as_bytes(),
+                request_id.as_bytes(),
+            ],
+        );
+        let job_id = format!("{DELEGATION_JOB_PREFIX}{identity}");
+        let turn_id = format!("{DELEGATION_TURN_PREFIX}{identity}");
+        let work_id = format!("work-delegation-{identity}");
+        if let Some(job) = self.runtime.get_job(&job_id).await? {
+            let StoredDelegationPayload::Resolved(payload) = StoredDelegationPayload::parse(&job)?
+            else {
+                return Err(port_failure(
+                    "operator request identity conflicts with queued work",
+                ));
+            };
+            if payload.operator_profile_id.as_deref() != Some(profile_id)
+                || payload.operator_request_fingerprint.as_deref() != Some(request_fingerprint)
+            {
+                return Err(port_failure("request ID reused with different Bot request"));
+            }
+            self.start_driver(job_id.clone(), turn_id.clone());
+            return Ok(DelegationTicket {
+                work_id,
+                job_id,
+                turn_id,
+                status: "existing",
+                parent_runtime_id: payload.request.parent_runtime_id.clone(),
+                execution_placement: payload.request.execution_placement.clone(),
+            });
+        }
+        let placement = ExecutionPlacementResolution::resolved(
+            crate::workshop_contract::ExecutionTargetSelection::Exact {
+                runtime_id: external.home_workshop_id.clone(),
+            },
+            external.home_workshop_id.clone(),
+            crate::workshop_contract::ExecutionResolutionReason::ExactTarget,
+        );
+        let worker = crate::delegated_task::WorkerSpawnSpec {
+            schema_version: crate::delegated_task::WORKER_SPAWN_SPEC_SCHEMA_VERSION,
+            intent: "coder".to_string(),
+            task: prompt.to_string(),
+            user_ack: "Delegated to the Bot.".to_string(),
+            manuscript_ids: Vec::new(),
+            manuscript: None,
+            external_agent: Some(external.clone()),
+            stage_role: None,
+            model_hint: None,
+            parent: crate::delegated_task::WorkerParentSpec {
+                stream_turn_id: 0,
+                turn_correlation_id: format!("bot-ask-{identity}"),
+                agent_mode: Some("coder".to_string()),
+                original_user_prompt: prompt.to_string(),
+                provider: "external-agent".to_string(),
+                model: "codex-cli".to_string(),
+                response_depth_mode: "standard".to_string(),
+                code_work_id: None,
+                bot: Some(crate::delegated_task::WorkerBotSpec {
+                    bot_id: bot.bot_id.to_string(),
+                    profile_revision: bot.revision,
+                    memory_scope_id: bot.memory_scope_id.clone(),
+                    prompt_appendix: bot.role_description.clone().unwrap_or_default(),
+                }),
+                supports_ui_artifacts: false,
+                supports_liquid_markdown: false,
+                supports_browser_host: false,
+            },
+            code_project: Some(crate::delegated_task::WorkerCodeProjectRef {
+                runtime_id: external.home_workshop_id.clone(),
+                work_id: external.forge_work_id.clone(),
+                repo_id: external.forge_repo_id.clone(),
+            }),
+            code_project_setup: None,
+            execution_placement: placement.clone(),
+            world_ids: Vec::new(),
+            max_tool_rounds: 1,
+            // This is the mesh admission tool domain. ACP tools and their
+            // permissions remain the external supervisor's responsibility.
+            tools: crate::delegated_task::WorkerToolRequest {
+                names: vec!["cognition_turn".to_string()],
+            },
+        };
+        crate::delegated_task::validate_worker_spawn_spec(&worker).map_err(port_failure)?;
+        let source_session = SessionId::parse(format!("ses_botask_{identity}"))
+            .map_err(|error| port_failure(error.to_string()))?;
+        let source_execution = medousa_types::ExecutionRef {
+            authority_id: self.authority_id.clone(),
+            session_id: source_session.clone(),
+            execution_id: medousa_types::ExecutionId::parse(format!("exec_botask_{identity}"))
+                .map_err(|error| port_failure(error.to_string()))?,
+        };
+        let entries = self.session_store.load_transcript_entries(&source_session);
+        if entries.is_empty() {
+            let now = Utc::now();
+            self.session_store
+                .append_transcript_batch(
+                    &source_session,
+                    &[
+                        TranscriptAppend::native(
+                            ConversationTurn::plain(
+                                "user",
+                                prompt.to_string(),
+                                now,
+                                Vec::new(),
+                                None,
+                            ),
+                            None,
+                        ),
+                        TranscriptAppend::native(
+                            ConversationTurn::plain(
+                                "assistant",
+                                "Delegated to the Bot.".to_string(),
+                                now,
+                                Vec::new(),
+                                None,
+                            ),
+                            Some(source_execution.clone()),
+                        ),
+                    ],
+                )
+                .await
+                .map_err(port_failure)?;
+        } else if entries.len() != 2
+            || entries[0].turn.role != "user"
+            || entries[0].turn.content != prompt
+            || entries[1].caused_by.as_ref() != Some(&source_execution)
+        {
+            return Err(port_failure(
+                "request ID source transcript conflicts with payload",
+            ));
+        }
+        let now = Utc::now();
+        let grant = AgentEnvelope {
+            schema_version: AGENT_ENVELOPE_SCHEMA_VERSION_V1,
+            kind: AgentEnvelopeKind::TurnGranted,
+            envelope_id: format!("grant-{turn_id}"),
+            session_id: source_session.to_string(),
+            thread_id: Some(format!("bot-ask-{identity}")),
+            turn_id: Some(turn_id.clone()),
+            job_id: Some(job_id.clone()),
+            correlation_id: format!("bot-ask-{identity}"),
+            causation_id: source_execution.execution_id.to_string(),
+            participant_id: Some("paired-medousa-daemon".to_string()),
+            occurred_at: now,
+            payload: json!({ "user_prompt": prompt, "system_prompt": null }),
+        };
+        let context = build_bounded_context_grant(
+            self.session_store.as_ref(),
+            &self.authority_id,
+            &source_session,
+            &format!("operator:{profile_id}"),
+            &turn_id,
+            now,
+        )
+        .map_err(port_failure)?;
+        let payload = DelegationJobPayload {
+            work_id: work_id.clone(),
+            target,
+            request: DelegatedTaskRequest {
+                schema_version: DELEGATED_TASK_SCHEMA_VERSION,
+                grant,
+                source_execution: source_execution.clone(),
+                parent_runtime_id: parent_runtime_id.to_string(),
+                execution_placement: placement.clone(),
+                worker: Some(worker),
+                context,
+            },
+            operator_profile_id: Some(profile_id.to_string()),
+            operator_request_id: Some(request_id.to_string()),
+            operator_request_fingerprint: Some(request_fingerprint.to_string()),
+            intent: "coder".to_string(),
+            user_ack: "Delegated to the Bot.".to_string(),
+            deadline_at: None,
+            lifetime_policy_version: 1,
+            poll_interval_seconds: 1,
+        };
+        crate::delegated_task::validate_task_request(&payload.request).map_err(port_failure)?;
+        self.runtime
+            .enqueue_job(NewJob {
+                id: job_id.clone(),
+                queue: "default".to_string(),
+                job_type: DELEGATION_JOB_TYPE.to_string(),
+                payload_ref: serde_json::to_string(&payload).map_err(port_failure)?,
+                priority: 100,
+                max_attempts: 3,
+                idempotency_key: format!("bot-ask:{identity}"),
+                correlation_id: format!("bot-ask-{identity}"),
+                causation_id: source_execution.execution_id.to_string(),
+                trace_id: format!("bot-ask-{identity}"),
+                input_provenance: None,
+                placement: stasis::domain::runtime::placement::PlacementConstraints::unrestricted(),
+                scheduled_at: now,
+                backoff_policy: BackoffPolicy::default(),
+            })
+            .await?;
+        self.start_driver(job_id.clone(), turn_id.clone());
+        Ok(DelegationTicket {
+            work_id,
+            job_id,
+            turn_id,
+            status: "pending",
+            parent_runtime_id: parent_runtime_id.to_string(),
+            execution_placement: placement,
+        })
+    }
+
+    pub async fn operator_bot_status(
+        &self,
+        profile_id: &str,
+        job_id: &str,
+    ) -> StasisResult<Option<Value>> {
+        let Some(job) = self.runtime.get_job(job_id).await? else {
+            return Ok(None);
+        };
+        if job.job_type != DELEGATION_JOB_TYPE {
+            return Ok(None);
+        }
+        let StoredDelegationPayload::Resolved(payload) = StoredDelegationPayload::parse(&job)?
+        else {
+            return Ok(None);
+        };
+        if payload.operator_profile_id.as_deref() != Some(profile_id) {
+            return Ok(None);
+        }
+        let turn_id = payload.request.grant.turn_id.as_deref().unwrap_or_default();
+        let wait = self.waits.get(turn_id).await?;
+        let terminal_status = wait
+            .as_ref()
+            .filter(|record| record.status != TurnWaitStatus::Pending)
+            .map(|record| wait_status_name(record.status.clone()));
+        let progress = job
+            .progress_json
+            .as_deref()
+            .and_then(|raw| serde_json::from_str::<Value>(raw).ok());
+        let remote_status = progress
+            .as_ref()
+            .and_then(|value| value.get("remote_status"))
+            .and_then(Value::as_str);
+        let status = terminal_status.unwrap_or(match job.state {
+            JobState::Failed | JobState::DeadLetter => "failed",
+            JobState::Canceled => "cancelled",
+            _ => match remote_status {
+                Some("pending") => "destination_admitted",
+                Some("running") => "running",
+                _ => "transport_pending",
+            },
+        });
+        let source_entries = self
+            .session_store
+            .load_transcript_entries(&payload.request.source_execution.session_id);
+        let result = source_entries
+            .iter()
+            .rev()
+            .find(|entry| {
+                entry.turn.role == "assistant"
+                    && entry.turn.content != payload.user_ack
+                    && entry.source.is_none()
+            })
+            .map(|entry| entry.turn.content.clone());
+        Ok(Some(json!({
+            "job_id": job_id,
+            "work_id": payload.work_id,
+            "status": status,
+            "retryable": status == "transport_pending",
+            "admission_uncertain": status == "transport_pending" && job.last_error.is_some(),
+            "result": result,
+            "error": wait.as_ref().and_then(|record| record.error_message.as_ref()).or(job.last_error.as_ref()),
+            "last_attempt": job.last_error,
+            "destination_runtime_id": payload.request.execution_placement.resolved_runtime_id,
+            "bot_id": payload.request.worker.as_ref().and_then(|worker| worker.parent.bot.as_ref()).map(|bot| bot.bot_id.as_str()),
+            "runtime": payload.request.worker.as_ref().and_then(|worker| worker.external_agent.as_ref()).map(|executor| executor.runtime),
+            "forge_work_id": payload.request.worker.as_ref().and_then(|worker| worker.external_agent.as_ref()).map(|executor| executor.forge_work_id.as_str()),
+            "forge_repo_id": payload.request.worker.as_ref().and_then(|worker| worker.external_agent.as_ref()).map(|executor| executor.forge_repo_id.as_str()),
+            "terminal_payload": wait.as_ref().and_then(|record| record.result_payload.as_ref()),
+            "request_id": payload.operator_request_id,
+        })))
+    }
+
     /// Commit the immutable request and its parent context before any transport
     /// work. Discovery and dispatch belong to the Stasis job, never this turn.
     pub(crate) async fn enqueue_spawn(
@@ -1575,6 +1960,9 @@ impl DelegationService {
                     worker: Some(worker.clone()),
                     context,
                 },
+                operator_profile_id: None,
+                operator_request_id: None,
+                operator_request_fingerprint: None,
                 intent: worker.intent.clone(),
                 user_ack: user_ack.to_string(),
                 deadline_at: None,
@@ -1733,15 +2121,43 @@ impl DelegationService {
                 "workshop cancellation requires an admitted daemon turn".to_string(),
             )
         })?;
+        self.cancel_owned(work_id, execution.session_id()).await
+    }
+
+    pub async fn cancel_operator_bot(&self, profile_id: &str, job_id: &str) -> StasisResult<Value> {
+        let job = self
+            .runtime
+            .get_job(job_id)
+            .await?
+            .ok_or_else(|| port_failure("operator Bot job not found"))?;
+        let StoredDelegationPayload::Resolved(payload) = StoredDelegationPayload::parse(&job)?
+        else {
+            return Err(port_failure("operator Bot job is not admitted"));
+        };
+        if payload.operator_profile_id.as_deref() != Some(profile_id) {
+            return Err(port_failure("operator Bot job not found"));
+        }
+        self.cancel_owned(
+            &payload.work_id,
+            &payload.request.source_execution.session_id,
+        )
+        .await
+    }
+
+    async fn cancel_owned(
+        &self,
+        work_id: &str,
+        source_session_id: &SessionId,
+    ) -> StasisResult<Value> {
         for listed in self.all_delegation_jobs().await? {
             let owns_request = match StoredDelegationPayload::parse(&listed)? {
                 StoredDelegationPayload::Pending(pending) => {
                     pending.work_id == work_id
-                        && pending.source_execution.session_id == *execution.session_id()
+                        && pending.source_execution.session_id == *source_session_id
                 }
                 StoredDelegationPayload::Resolved(payload) => {
                     payload.work_id == work_id
-                        && payload.request.source_execution.session_id == *execution.session_id()
+                        && payload.request.source_execution.session_id == *source_session_id
                 }
             };
             if !owns_request {
@@ -1757,7 +2173,7 @@ impl DelegationService {
                 StoredDelegationPayload::Resolved(payload) => payload,
                 StoredDelegationPayload::Pending(pending) => {
                     if pending.work_id != work_id
-                        || pending.source_execution.session_id != *execution.session_id()
+                        || pending.source_execution.session_id != *source_session_id
                     {
                         continue;
                     }
@@ -1784,7 +2200,7 @@ impl DelegationService {
                 }
             };
             if payload.work_id != work_id
-                || payload.request.source_execution.session_id != *execution.session_id()
+                || payload.request.source_execution.session_id != *source_session_id
             {
                 continue;
             }
@@ -2176,9 +2592,10 @@ mod tests {
             let mut stores = self.entries.lock().expect("memory transcripts");
             let entries = stores.entry(session_id.clone()).or_default();
             for append in appends {
-                let entry_id = append.existing_entry_id.clone().ok_or_else(|| {
-                    StoreError::InvalidInput("test append requires an entry id".to_string())
-                })?;
+                let entry_id = append.existing_entry_id.clone().unwrap_or_else(|| {
+                    TranscriptEntryId::parse(format!("ent_{:032x}", entries.len() + 1))
+                        .expect("generated test entry id")
+                });
                 if entries.iter().any(|entry| entry.entry_id == entry_id) {
                     continue;
                 }
@@ -2411,6 +2828,9 @@ mod tests {
                 label: None,
             },
             request: request.clone(),
+            operator_profile_id: None,
+            operator_request_id: None,
+            operator_request_fingerprint: None,
             intent: "research".to_string(),
             user_ack: "Working on it.".to_string(),
             deadline_at: None,
@@ -2500,6 +2920,150 @@ mod tests {
         )
     }
 
+    struct UnavailableOperatorTransport;
+
+    #[async_trait::async_trait]
+    impl DelegatedTaskTransport for UnavailableOperatorTransport {
+        async fn submit_or_observe(
+            &self,
+            _target: &DelegationTarget,
+            _request: DelegatedTaskRequest,
+        ) -> Result<DelegatedTaskObservation, DelegatedTaskError> {
+            Err(DelegatedTaskError::transport("destination offline"))
+        }
+    }
+
+    #[tokio::test]
+    async fn operator_request_id_replays_one_durable_job_after_response_loss() {
+        use medousa_types::bot::{ExternalAgentExecutor, ExternalAgentSessionContract};
+        use medousa_types::coordination::ExternalPeerRuntime;
+        let runtime = Arc::new(RuntimeComposition::InMemory(InMemoryRuntime::new()));
+        let authority = AuthorityId::parse(format!("auth_{}", "c".repeat(64))).unwrap();
+        let store = Arc::new(MemorySessionStore::default());
+        let service = install_delegation_runtime(
+            runtime.clone(),
+            authority,
+            store,
+            Arc::new(UnavailableOperatorTransport),
+        )
+        .unwrap();
+        let bot = BotProfile {
+            schema_version: medousa_types::bot::BOT_PROFILE_SCHEMA_VERSION,
+            bot_id: medousa_types::BotId::parse(format!("bot_{}", "a".repeat(32))).unwrap(),
+            owner_profile_id: "user:alice".into(),
+            display_name: "codex-mini".into(),
+            role_description: Some("Fix Rust tests".into()),
+            avatar_ref: None,
+            primary_manuscript_id: "default".into(),
+            additional_manuscript_ids: Vec::new(),
+            memory_scope_id: format!("bot_{}", "a".repeat(32)),
+            default_mode: None,
+            primary_session_id: None,
+            world_binding: None,
+            external_agent: Some(ExternalAgentExecutor {
+                runtime: ExternalPeerRuntime::Codex,
+                home_workshop_id: "mini-workshop".into(),
+                forge_work_id: "work_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                forge_repo_id: "repo_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                session_contract: ExternalAgentSessionContract::FreshPerJob,
+                allowed_tools: Vec::new(),
+                allowed_capabilities: Vec::new(),
+            }),
+            archived: false,
+            revision: 1,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let target = DelegationTarget {
+            route_ref: "paired-mini".into(),
+            peer_device_id: "mini-workshop".into(),
+            label: Some("Mac Mini".into()),
+        };
+        let first = service
+            .submit_operator_bot(
+                "user:alice",
+                "incident-42",
+                "fingerprint-a",
+                "fix this test",
+                &bot,
+                target.clone(),
+                "prox-workshop",
+            )
+            .await
+            .unwrap();
+        let retry = service
+            .submit_operator_bot(
+                "user:alice",
+                "incident-42",
+                "fingerprint-a",
+                "fix this test",
+                &bot,
+                target.clone(),
+                "prox-workshop",
+            )
+            .await
+            .unwrap();
+        assert_eq!(first.job_id, retry.job_id);
+        assert_eq!(retry.status, "existing");
+        assert!(
+            service
+                .submit_operator_bot(
+                    "user:alice",
+                    "incident-42",
+                    "fingerprint-b",
+                    "different task",
+                    &bot,
+                    target,
+                    "prox-workshop"
+                )
+                .await
+                .is_err()
+        );
+        assert!(
+            service
+                .operator_bot_status("user:bob", &first.job_id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            service
+                .operator_bot_status("user:alice", &first.job_id)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        let mut local_bot = bot.clone();
+        local_bot.external_agent.as_mut().unwrap().home_workshop_id = "prox-workshop".into();
+        let local = service
+            .submit_operator_bot(
+                "user:alice",
+                "local-43",
+                "fingerprint-local",
+                "fix this locally",
+                &local_bot,
+                DelegationTarget {
+                    route_ref: "local".into(),
+                    peer_device_id: "prox-workshop".into(),
+                    label: Some("This workshop".into()),
+                },
+                "prox-workshop",
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            local.execution_placement.resolved_runtime_id,
+            "prox-workshop"
+        );
+        let stored = runtime.get_job(&local.job_id).await.unwrap().unwrap();
+        let StoredDelegationPayload::Resolved(payload) =
+            StoredDelegationPayload::parse(&stored).unwrap()
+        else {
+            panic!("operator payload must be resolved")
+        };
+        assert_eq!(payload.target.route_ref, "local");
+    }
+
     #[tokio::test]
     async fn explicit_delegation_survives_cleared_default_and_transport_interruption() {
         let runtime = RuntimeComposition::InMemory(InMemoryRuntime::new());
@@ -2534,6 +3098,9 @@ mod tests {
             lifetime_policy_version: 1,
             poll_interval_seconds: 1,
             request,
+            operator_profile_id: None,
+            operator_request_id: None,
+            operator_request_fingerprint: None,
         };
         let job = NewJob {
             id: "delegation-job-recovery".to_string(),

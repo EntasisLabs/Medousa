@@ -8,7 +8,8 @@ use chrono::Utc;
 use medousa_types::{
     BOT_PROFILE_SCHEMA_VERSION, BotId, BotOpenResponse, BotProfile, BotSessionBinding,
     BotSessionKind, BotWorldBinding, BotWorldBindingKind, CreateBotRequest, DuplicateBotRequest,
-    SessionBotResponse, SetBotArchivedRequest, SetSessionBotRequest, UpdateBotRequest,
+    ExternalAgentExecutor, SessionBotResponse, SetBotArchivedRequest, SetSessionBotRequest,
+    UpdateBotRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -70,7 +71,7 @@ impl BotProfileStore {
             }
             Err(error) => return Err(format!("read Bot profiles: {error}")),
         };
-        if file.schema_version == 1 {
+        if file.schema_version == 1 || file.schema_version == 2 {
             file.schema_version = BOT_PROFILE_SCHEMA_VERSION;
             for bot in &mut file.bots {
                 bot.schema_version = BOT_PROFILE_SCHEMA_VERSION;
@@ -120,6 +121,52 @@ impl BotProfileStore {
         owned_bot(&file, owner_profile_id, bot_id).cloned()
     }
 
+    /// Resolve an operator's explicit Bot target. IDs and exact names share
+    /// one owner-scoped registry; runtime/workshop filters never create Bots.
+    pub fn resolve_external(
+        &self,
+        owner_profile_id: &str,
+        bot_name_or_id: Option<&str>,
+        runtime: Option<medousa_types::coordination::ExternalPeerRuntime>,
+        workshop_id: Option<&str>,
+    ) -> Result<BotProfile, String> {
+        let selector = bot_name_or_id
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        if selector.is_none() && runtime.is_none() {
+            return Err("Bot name or external-agent runtime is required".to_string());
+        }
+        let mut matches = self
+            .list(owner_profile_id)?
+            .into_iter()
+            .filter(|bot| !bot.archived)
+            .filter(|bot| {
+                bot.external_agent.as_ref().is_some_and(|executor| {
+                    runtime.is_none_or(|runtime| executor.runtime == runtime)
+                        && workshop_id.is_none_or(|id| executor.home_workshop_id == id)
+                })
+            })
+            .filter(|bot| {
+                selector.is_none_or(|value| {
+                    bot.bot_id.as_str() == value || bot.display_name.eq_ignore_ascii_case(value)
+                })
+            })
+            .collect::<Vec<_>>();
+        matches.sort_by(|left, right| left.bot_id.as_str().cmp(right.bot_id.as_str()));
+        match matches.len() {
+            1 => Ok(matches.remove(0)),
+            0 => Err("external-agent Bot not found".to_string()),
+            _ => Err(format!(
+                "ambiguous external-agent Bot; candidates: {}",
+                matches
+                    .iter()
+                    .map(|bot| format!("{} ({})", bot.display_name, bot.bot_id))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+        }
+    }
+
     pub fn create(
         &self,
         owner_profile_id: &str,
@@ -148,6 +195,7 @@ impl BotProfileStore {
             default_mode: request.default_mode,
             primary_session_id: Some(primary_session_id.clone()),
             world_binding: request.world_binding,
+            external_agent: request.external_agent,
             archived: false,
             revision: 1,
             created_at: now,
@@ -189,6 +237,11 @@ impl BotProfileStore {
         } else if request.world_binding.is_some() {
             bot.world_binding = request.world_binding;
         }
+        if request.clear_external_agent {
+            bot.external_agent = None;
+        } else if request.external_agent.is_some() {
+            bot.external_agent = request.external_agent;
+        }
         bot.revision = bot.revision.saturating_add(1);
         bot.updated_at = Utc::now();
         let updated = bot.clone();
@@ -225,11 +278,8 @@ impl BotProfileStore {
         mut request: DuplicateBotRequest,
     ) -> Result<BotOpenResponse, String> {
         let owner_profile_id = validate_owner(owner_profile_id)?.to_string();
-        request.display_name = normalize_optional(
-            request.display_name,
-            MAX_DISPLAY_NAME_CHARS,
-            "display_name",
-        )?;
+        request.display_name =
+            normalize_optional(request.display_name, MAX_DISPLAY_NAME_CHARS, "display_name")?;
         let primary_session_id = validate_session(primary_session_id)?;
         let _guard = lock_store()?;
         let mut file = self.load()?;
@@ -254,6 +304,9 @@ impl BotProfileStore {
             // A duplicate gets a fresh identity and never silently inherits a
             // durable world authority decision from the source Bot.
             world_binding: None,
+            // Duplicating a Bot never duplicates authority to run an external
+            // process on another workshop.
+            external_agent: None,
             archived: false,
             revision: 1,
             created_at: now,
@@ -289,9 +342,11 @@ impl BotProfileStore {
             return Err("archived Bot must be restored before opening it".to_string());
         }
 
-        if let Some(binding) = file.bindings.iter().find(|binding| {
-            binding.bot_id == *bot_id && binding.kind == BotSessionKind::Primary
-        }) {
+        if let Some(binding) = file
+            .bindings
+            .iter()
+            .find(|binding| binding.bot_id == *bot_id && binding.kind == BotSessionKind::Primary)
+        {
             return Ok(BotOpenResponse {
                 bot: file.bots[bot_index].clone(),
                 binding: binding.clone(),
@@ -457,7 +512,10 @@ impl BotProfileStore {
         };
         let binding = file.bindings.remove(binding_index);
         if binding.kind == BotSessionKind::Primary
-            && let Some(bot) = file.bots.iter_mut().find(|bot| bot.bot_id == binding.bot_id)
+            && let Some(bot) = file
+                .bots
+                .iter_mut()
+                .find(|bot| bot.bot_id == binding.bot_id)
         {
             bot.primary_session_id = None;
             bot.revision = bot.revision.saturating_add(1);
@@ -481,7 +539,9 @@ fn ensure_capacity(file: &BotProfileFile, owner_profile_id: &str) -> Result<(), 
         .count()
         >= MAX_BOTS_PER_PROFILE
     {
-        return Err(format!("Bot profile limit reached ({MAX_BOTS_PER_PROFILE})"));
+        return Err(format!(
+            "Bot profile limit reached ({MAX_BOTS_PER_PROFILE})"
+        ));
     }
     Ok(())
 }
@@ -563,12 +623,16 @@ fn validate_create_request(request: &mut CreateBotRequest) -> Result<(), String>
         &mut request.primary_manuscript_id,
         &mut request.additional_manuscript_ids,
     )?;
-    normalize_world_binding(&mut request.world_binding)
+    normalize_world_binding(&mut request.world_binding)?;
+    normalize_external_agent(&mut request.external_agent)
 }
 
 fn validate_update_request(request: &mut UpdateBotRequest) -> Result<(), String> {
     if request.world_binding.is_some() && request.clear_world_binding {
         return Err("world_binding cannot be set and cleared together".to_string());
+    }
+    if request.external_agent.is_some() && request.clear_external_agent {
+        return Err("external_agent cannot be set and cleared together".to_string());
     }
     request.display_name = normalize_required(
         std::mem::take(&mut request.display_name),
@@ -589,7 +653,59 @@ fn validate_update_request(request: &mut UpdateBotRequest) -> Result<(), String>
         &mut request.primary_manuscript_id,
         &mut request.additional_manuscript_ids,
     )?;
-    normalize_world_binding(&mut request.world_binding)
+    normalize_world_binding(&mut request.world_binding)?;
+    normalize_external_agent(&mut request.external_agent)
+}
+
+fn normalize_external_agent(executor: &mut Option<ExternalAgentExecutor>) -> Result<(), String> {
+    let Some(executor) = executor.as_mut() else {
+        return Ok(());
+    };
+    if executor.runtime != medousa_types::coordination::ExternalPeerRuntime::Codex {
+        return Err("only the Codex external-agent runtime is enrolled".to_string());
+    }
+    executor.home_workshop_id = normalize_opaque(
+        std::mem::take(&mut executor.home_workshop_id),
+        MAX_RUNTIME_ID_BYTES,
+        "home_workshop_id",
+    )?;
+    executor.forge_work_id = normalize_opaque(
+        std::mem::take(&mut executor.forge_work_id),
+        128,
+        "forge_work_id",
+    )?;
+    medousa_forge::model::WorkId::parse_storage(&executor.forge_work_id)
+        .map_err(|_| "forge_work_id is invalid".to_string())?;
+    executor.forge_repo_id = normalize_opaque(
+        std::mem::take(&mut executor.forge_repo_id),
+        128,
+        "forge_repo_id",
+    )?;
+    medousa_forge::model::RepoId::parse_storage(&executor.forge_repo_id)
+        .map_err(|_| "forge_repo_id is invalid".to_string())?;
+    for (field, values) in [
+        ("allowed_tools", &mut executor.allowed_tools),
+        ("allowed_capabilities", &mut executor.allowed_capabilities),
+    ] {
+        if values.len() > 64 {
+            return Err(format!("{field} exceeds 64 entries"));
+        }
+        let mut normalized = Vec::with_capacity(values.len());
+        for value in std::mem::take(values) {
+            let value = normalize_opaque(value, 160, field)?;
+            if !value.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.' | b':')
+            }) {
+                return Err(format!("{field} contains an invalid pin"));
+            }
+            if normalized.contains(&value) {
+                return Err(format!("{field} contains a duplicate"));
+            }
+            normalized.push(value);
+        }
+        *values = normalized;
+    }
+    Ok(())
 }
 
 fn normalize_world_binding(binding: &mut Option<BotWorldBinding>) -> Result<(), String> {
@@ -695,6 +811,7 @@ mod tests {
             additional_manuscript_ids: vec!["specialist-rust".to_string()],
             default_mode: Some(medousa_types::AgentModeId::Teacher),
             world_binding: None,
+            external_agent: None,
         }
     }
 
@@ -717,7 +834,110 @@ mod tests {
             default_mode: Some(medousa_types::AgentModeId::Teacher),
             world_binding: None,
             clear_world_binding: false,
+            external_agent: None,
+            clear_external_agent: false,
         }
+    }
+
+    fn codex_executor(workshop: &str) -> ExternalAgentExecutor {
+        ExternalAgentExecutor {
+            runtime: medousa_types::coordination::ExternalPeerRuntime::Codex,
+            home_workshop_id: workshop.to_string(),
+            forge_work_id: "work-project".to_string(),
+            forge_repo_id: "repo-project".to_string(),
+            session_contract: medousa_types::ExternalAgentSessionContract::FreshPerJob,
+            allowed_tools: vec!["code".to_string()],
+            allowed_capabilities: vec!["forge".to_string()],
+        }
+    }
+
+    #[test]
+    fn external_bot_resolution_is_scoped_exact_and_never_guesses() {
+        let temp = tempfile::tempdir().unwrap();
+        let bots = store(temp.path());
+        let mut first = create_request("codex-mini");
+        first.external_agent = Some(codex_executor("workshop-mini"));
+        let first = bots.create("user:alice", "session-first", first).unwrap();
+        let mut second = create_request("codex-mini");
+        second.external_agent = Some(codex_executor("workshop-prox"));
+        let second = bots.create("user:alice", "session-second", second).unwrap();
+        assert!(
+            bots.resolve_external("user:bob", Some("codex-mini"), None, None)
+                .is_err()
+        );
+        let ambiguous = bots
+            .resolve_external("user:alice", Some("codex-mini"), None, None)
+            .unwrap_err();
+        assert!(ambiguous.contains(first.bot.bot_id.as_str()));
+        assert!(ambiguous.contains(second.bot.bot_id.as_str()));
+        assert_eq!(
+            bots.resolve_external(
+                "user:alice",
+                None,
+                Some(medousa_types::coordination::ExternalPeerRuntime::Codex),
+                Some("workshop-mini"),
+            )
+            .unwrap()
+            .bot_id,
+            first.bot.bot_id
+        );
+        assert!(
+            bots.resolve_external(
+                "user:alice",
+                Some("codex-mini"),
+                None,
+                Some("unpaired-workshop"),
+            )
+            .is_err()
+        );
+        let copy = bots
+            .duplicate(
+                "user:alice",
+                &first.bot.bot_id,
+                "session-copy",
+                DuplicateBotRequest::default(),
+            )
+            .unwrap();
+        assert!(copy.bot.external_agent.is_none());
+    }
+
+    #[test]
+    fn external_executor_is_revisioned_and_does_not_change_on_legacy_update() {
+        let temp = tempfile::tempdir().unwrap();
+        let bots = store(temp.path());
+        let created = bots
+            .create("user:alice", "session-external", create_request("Codex"))
+            .unwrap();
+        let mut set = update_request(created.bot.revision);
+        set.external_agent = Some(codex_executor("workshop-mini"));
+        let configured = bots.update("user:alice", &created.bot.bot_id, set).unwrap();
+        assert_eq!(
+            configured.external_agent,
+            Some(codex_executor("workshop-mini"))
+        );
+        let preserved = bots
+            .update(
+                "user:alice",
+                &created.bot.bot_id,
+                update_request(configured.revision),
+            )
+            .unwrap();
+        assert_eq!(preserved.external_agent, configured.external_agent);
+        let mut invalid = update_request(preserved.revision);
+        invalid.external_agent = Some(codex_executor("workshop-mini"));
+        invalid.clear_external_agent = true;
+        assert!(
+            bots.update("user:alice", &created.bot.bot_id, invalid)
+                .is_err()
+        );
+        let mut clear = update_request(preserved.revision);
+        clear.clear_external_agent = true;
+        assert!(
+            bots.update("user:alice", &created.bot.bot_id, clear)
+                .unwrap()
+                .external_agent
+                .is_none()
+        );
     }
 
     #[test]
@@ -761,7 +981,10 @@ mod tests {
 
         assert_ne!(duplicate.bot.bot_id, original.bot_id);
         assert_ne!(duplicate.bot.memory_scope_id, original.memory_scope_id);
-        assert_ne!(duplicate.bot.primary_session_id, original.primary_session_id);
+        assert_ne!(
+            duplicate.bot.primary_session_id,
+            original.primary_session_id
+        );
         assert_eq!(
             duplicate.bot.primary_manuscript_id,
             original.primary_manuscript_id
@@ -780,9 +1003,7 @@ mod tests {
 
         let mut set = update_request(created.bot.revision);
         set.world_binding = Some(world_binding());
-        let bound = bots
-            .update("user:alice", &created.bot.bot_id, set)
-            .unwrap();
+        let bound = bots.update("user:alice", &created.bot.bot_id, set).unwrap();
         assert_eq!(bound.world_binding, Some(world_binding()));
 
         let mut clear = update_request(bound.revision);
@@ -795,24 +1016,33 @@ mod tests {
     }
 
     #[test]
-    fn v1_profiles_migrate_without_implicit_world_authority() {
-        let temp = tempfile::tempdir().unwrap();
-        let bots = store(temp.path());
-        bots.create("user:alice", "session-original", create_request("Ada"))
-            .unwrap();
-        let mut raw: serde_json::Value =
-            serde_json::from_slice(&fs::read(&bots.path).unwrap()).unwrap();
-        raw["schema_version"] = serde_json::json!(1);
-        raw["bots"][0]["schema_version"] = serde_json::json!(1);
-        raw["bots"][0]
-            .as_object_mut()
-            .unwrap()
-            .remove("world_binding");
-        fs::write(&bots.path, serde_json::to_vec_pretty(&raw).unwrap()).unwrap();
+    fn legacy_profiles_migrate_without_implicit_external_authority() {
+        for version in [1, 2] {
+            let temp = tempfile::tempdir().unwrap();
+            let bots = store(temp.path());
+            bots.create("user:alice", "session-original", create_request("Ada"))
+                .unwrap();
+            let mut raw: serde_json::Value =
+                serde_json::from_slice(&fs::read(&bots.path).unwrap()).unwrap();
+            raw["schema_version"] = serde_json::json!(version);
+            raw["bots"][0]["schema_version"] = serde_json::json!(version);
+            raw["bots"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove("external_agent");
+            if version == 1 {
+                raw["bots"][0]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("world_binding");
+            }
+            fs::write(&bots.path, serde_json::to_vec_pretty(&raw).unwrap()).unwrap();
 
-        let migrated = bots.list("user:alice").unwrap();
-        assert_eq!(migrated[0].schema_version, BOT_PROFILE_SCHEMA_VERSION);
-        assert!(migrated[0].world_binding.is_none());
+            let migrated = bots.list("user:alice").unwrap();
+            assert_eq!(migrated[0].schema_version, BOT_PROFILE_SCHEMA_VERSION);
+            assert!(migrated[0].world_binding.is_none());
+            assert!(migrated[0].external_agent.is_none());
+        }
     }
 
     #[test]

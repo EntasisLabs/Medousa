@@ -43,6 +43,10 @@ Forge undertaking custody and governed source/workspace operations currently use
 this generic HTTP client rather than a dedicated typed SDK accessor. See the
 [Forge engine guide](../engine/forge.md) and the
 [HTTP route index](../engine/http-api.md#forge-undertakings).
+`POST /v1/forge/projects` creates and provisions a blank or existing-repository
+project without a chat session. `GET /v1/forge/items` and
+`GET /v1/forge/items/{work_id}` list and inspect projects. The product CLI
+exposes these as `medousa project create|list|inspect` on the workshop daemon.
 
 Native computer-driver discovery, observation, and semantic actions also
 use this generic client for now. Call `GET /v1/computer/drivers`, preflight the
@@ -231,6 +235,13 @@ The accessor is available on Rust async and blocking clients and on Python
 async and sync clients. Bot updates and archive transitions require the current
 profile revision. `open` returns the durable primary conversation, creating a
 replacement only when the previous primary binding was explicitly removed.
+
+The operator-only external-agent Bot path is currently exposed by the
+product CLI: `medousa ask "prompt" --bot NAME`. Its local daemon endpoints are
+`POST /v1/bots/ask`, `GET /v1/bots/ask/{job_id}`, and
+`POST /v1/bots/ask/{job_id}/cancel`; the SDK `bots()` accessor does not wrap
+this job workflow. `request_id` is scoped to the authenticated profile, and a
+retry with the same ID must carry the same payload.
 
 ---
 

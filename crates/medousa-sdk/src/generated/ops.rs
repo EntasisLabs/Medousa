@@ -177,6 +177,27 @@ pub const AUTH_CHATGPT_REFRESH_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const BOTS_ASK_BY_JOB_ID_CANCEL_POST: Operation = Operation {
+    id: "bots.ask.by_job_id.cancel.post",
+    method: "POST",
+    path: "/v1/bots/ask/{job_id}/cancel",
+    streaming: false,
+};
+
+pub const BOTS_ASK_BY_JOB_ID_GET: Operation = Operation {
+    id: "bots.ask.by_job_id.get",
+    method: "GET",
+    path: "/v1/bots/ask/{job_id}",
+    streaming: false,
+};
+
+pub const BOTS_ASK_POST: Operation = Operation {
+    id: "bots.ask.post",
+    method: "POST",
+    path: "/v1/bots/ask",
+    streaming: false,
+};
+
 pub const BOTS_BY_BOT_ID_ARCHIVE_PUT: Operation = Operation {
     id: "bots.by_bot_id.archive.put",
     method: "PUT",
@@ -1483,6 +1504,13 @@ pub const FORGE_PREVIEW_BY_TOKEN_PUT: Operation = Operation {
     id: "forge.preview.by_token.put",
     method: "PUT",
     path: "/v1/forge/preview/{token}",
+    streaming: false,
+};
+
+pub const FORGE_PROJECTS_POST: Operation = Operation {
+    id: "forge.projects.post",
+    method: "POST",
+    path: "/v1/forge/projects",
     streaming: false,
 };
 
@@ -3373,6 +3401,9 @@ pub static ALL: &[Operation] = &[
     AUTH_CHATGPT_GET,
     AUTH_CHATGPT_MODELS_GET,
     AUTH_CHATGPT_REFRESH_POST,
+    BOTS_ASK_BY_JOB_ID_CANCEL_POST,
+    BOTS_ASK_BY_JOB_ID_GET,
+    BOTS_ASK_POST,
     BOTS_BY_BOT_ID_ARCHIVE_PUT,
     BOTS_BY_BOT_ID_DUPLICATE_POST,
     BOTS_BY_BOT_ID_GET,
@@ -3560,6 +3591,7 @@ pub static ALL: &[Operation] = &[
     FORGE_PREVIEW_BY_TOKEN_PATCH,
     FORGE_PREVIEW_BY_TOKEN_POST,
     FORGE_PREVIEW_BY_TOKEN_PUT,
+    FORGE_PROJECTS_POST,
     FORGE_REPOSITORIES_BROWSE_GET,
     FORGE_REPOSITORIES_GET,
     FORGE_REPOSITORIES_INSPECT_POST,

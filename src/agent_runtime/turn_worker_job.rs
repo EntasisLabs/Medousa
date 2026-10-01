@@ -113,6 +113,24 @@ pub async fn reconcile_durable_turn_workers(
     );
 
     for record in incomplete {
+        if record
+            .worker_spawn_spec
+            .as_ref()
+            .is_some_and(|spec| spec.external_agent.is_some())
+        {
+            if matches!(record.status, TurnWorkStatus::Pending | TurnWorkStatus::Running) {
+                let _ = store.try_update(&record.work_id, |current| {
+                    current.status = TurnWorkStatus::Failed;
+                    current.error = Some(
+                        "external agent was interrupted by daemon restart; the request will not be spawned again"
+                            .to_string(),
+                    );
+                    current.termination_reason = Some("daemon_restart".to_string());
+                });
+                let _ = crate::workspace::flush_persist_writer().await;
+            }
+            continue;
+        }
         match record.status {
             TurnWorkStatus::Pending | TurnWorkStatus::Running => {
                 if job_needs_enqueue(composition, &record.work_id).await {
@@ -222,6 +240,15 @@ impl JobHandler for TurnWorkerJobHandler {
                 payload.work_id
             )));
         };
+        if record
+            .worker_spawn_spec
+            .as_ref()
+            .is_some_and(|spec| spec.external_agent.is_some())
+        {
+            return Ok(fatal_outcome(
+                "external-agent work cannot enter the native turn worker".to_string(),
+            ));
+        }
 
         if record.synthesis_delivered {
             return Ok(success_outcome(format!(

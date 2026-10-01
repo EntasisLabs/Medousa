@@ -12977,6 +12977,177 @@
         }
       }
     },
+    "/v1/bots/ask": {
+      "post": {
+        "operationId": "bots.ask.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "BOTS_ASK_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "bots.ask.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.ask.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.ask.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 131072,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/bots/ask/{job_id}": {
+      "get": {
+        "operationId": "bots.ask.by_job_id.get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "BOTS_ASK_BY_JOB_ID_GETResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "bots.ask.by_job_id.get"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.ask.by_job_id.get"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.ask.by_job_id.get"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.read"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "read",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/bots/ask/{job_id}/cancel": {
+      "post": {
+        "operationId": "bots.ask.by_job_id.cancel.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "BOTS_ASK_BY_JOB_ID_CANCEL_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "bots.ask.by_job_id.cancel.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.ask.by_job_id.cancel.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "bots.ask.by_job_id.cancel.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1024,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
     "/v1/bots/{bot_id}": {
       "get": {
         "operationId": "bots.by_bot_id.get",
@@ -23879,6 +24050,57 @@
           "feature_profile": "preview",
           "rate_limit_class": "mutation",
           "trust_group": "preview"
+        }
+      }
+    },
+    "/v1/forge/projects": {
+      "post": {
+        "operationId": "forge.projects.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "FORGE_PROJECTS_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "forge.projects.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "forge.projects.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "forge.projects.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 1048576,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
         }
       }
     },

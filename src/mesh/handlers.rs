@@ -674,6 +674,17 @@ async fn exchange_mesh_task(
     let work_id = delegated_work_id(&record.phone_id, turn_id);
     let task_execution_grant = resolve_task_execution_grant(&state, &record, &payload, &work_id)?;
 
+    let executor = state.delegated_task_executor.as_ref().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "delegated task execution is not configured".to_string(),
+        )
+    })?;
+    executor
+        .preflight(&record, &payload, &task_execution_grant)
+        .await
+        .map_err(map_delegated_task_error)?;
+
     let payload_hash =
         payload_hash_hex(&payload).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     let pairing = state.pairing.as_ref().ok_or_else(|| {
@@ -692,12 +703,6 @@ async fn exchange_mesh_task(
     delivery::bind_delivery_local_ref(&accepted.inbox_id, &work_id, &accepted.receipt.id)
         .map_err(internal)?;
 
-    let executor = state.delegated_task_executor.as_ref().ok_or_else(|| {
-        (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "delegated task execution is not configured".to_string(),
-        )
-    })?;
     let observation: DelegatedTaskObservation = executor
         .submit_or_observe(&record, &payload, &task_execution_grant)
         .await
@@ -1441,6 +1446,15 @@ async fn control_mesh_task(
                 .map_err(map_delegated_control_error)?
         }
     };
+    if request.action == DelegatedTaskControlAction::Cancel
+        && let Some(agent_session_id) = current.external_agent_session_id.as_deref()
+        && let Some(executor) = state.delegated_task_executor.as_ref()
+    {
+        executor
+            .cancel_external(agent_session_id)
+            .await
+            .map_err(map_delegated_task_error)?;
+    }
     let observation = DelegatedTaskControlObservation {
         schema_version: crate::delegated_task::DELEGATED_TASK_SCHEMA_VERSION,
         action: request.action,
@@ -1631,6 +1645,15 @@ fn resolve_task_execution_grant(
         .iter()
         .map(|name| execution_tool_domain(name).to_string())
         .collect::<std::collections::BTreeSet<_>>();
+    if request
+        .worker
+        .as_ref()
+        .is_some_and(|worker| worker.external_agent.is_some())
+    {
+        // ACP owns concrete tools, but destination Coder policy still gates
+        // access to the pinned Forge project and code execution domain.
+        requested_tool_domain_values.insert("code".to_string());
+    }
     if !requested_world_ids.is_empty() {
         requested_tool_domain_values.insert("world".to_string());
     }

@@ -128,6 +128,10 @@ pub fn forge_surface() -> DeclaredRouter<AppState> {
             post(start_session_code_project),
         )
         .route(
+            forge_mutation_policy(axum::http::Method::POST, "/v1/forge/projects", 1024 * 1024),
+            post(create_code_project),
+        )
+        .route(
             forge_post_policy("/v1/forge/repositories/inspect"),
             post(inspect_repository),
         )
@@ -1794,6 +1798,28 @@ async fn start_session_code_project(
     .await
 }
 
+async fn create_code_project(
+    State(state): State<AppState>,
+    Json(body): Json<StartSessionCodeProjectRequest>,
+) -> ApiResult<Json<ItemProjection>> {
+    admit_forge(
+        &state,
+        medousa_forge::execution::ExecutionClass::LocalMutation,
+        256 * 1024,
+        {
+            let state = state.clone();
+            move || {
+                let context = WorkerCodeProjectSetupContext::from_app_state(&state);
+                let command = StartCodeProjectCommand::new(None, body)
+                    .map_err(|error| request_error(StatusCode::BAD_REQUEST, error))?;
+                let (item, _, _) = create_code_project_with_context(&context, &command)?;
+                Ok(Json(project_item(item)))
+            }
+        },
+    )
+    .await
+}
+
 pub(crate) fn start_code_project_for_session(
     state: &AppState,
     session_id: &str,
@@ -2155,7 +2181,7 @@ fn worker_repository_base_ref(
 
 #[derive(Debug)]
 struct StartCodeProjectCommand {
-    session_id: TrimmedText,
+    session_id: Option<TrimmedText>,
     title: TrimmedText,
     brief: TrimmedText,
     source: CodeProjectSource,
@@ -2164,7 +2190,10 @@ struct StartCodeProjectCommand {
 }
 
 impl StartCodeProjectCommand {
-    fn new(session_id: &str, input: StartSessionCodeProjectRequest) -> Result<Self, String> {
+    fn new(
+        session_id: Option<&str>,
+        input: StartSessionCodeProjectRequest,
+    ) -> Result<Self, String> {
         let StartSessionCodeProjectRequest {
             title,
             brief,
@@ -2172,14 +2201,17 @@ impl StartCodeProjectCommand {
             repo_path,
             base_ref,
         } = input;
-        let (session_id, title, brief) = match (
-            TrimmedText::new(session_id.to_string()),
-            TrimmedText::new(title),
-            TrimmedText::new(brief),
-        ) {
-            (Ok(session_id), Ok(title), Ok(brief)) => (session_id, title, brief),
-            _ => return Err("session_id, title, and brief are required".to_string()),
+        let required = if session_id.is_some() {
+            "session_id, title, and brief are required"
+        } else {
+            "title and brief are required"
         };
+        let session_id = session_id
+            .map(|value| TrimmedText::new(value.to_string()))
+            .transpose()
+            .map_err(|_| required.to_string())?;
+        let title = TrimmedText::new(title).map_err(|_| required.to_string())?;
+        let brief = TrimmedText::new(brief).map_err(|_| required.to_string())?;
         let repo_path = repo_path.and_then(|value| TrimmedText::new(value).ok());
         if source == CodeProjectSource::Repository && repo_path.is_none() {
             return Err("repo_path is required for an existing repository".to_string());
@@ -2212,9 +2244,47 @@ fn start_code_project_for_session_with_context(
     session_id: &str,
     body: StartSessionCodeProjectRequest,
 ) -> ApiResult<SessionCodeProjectResponse> {
-    let command = StartCodeProjectCommand::new(session_id, body)
+    let command = StartCodeProjectCommand::new(Some(session_id), body)
         .map_err(|error| request_error(StatusCode::BAD_REQUEST, error))?;
-    let session_id = command.session_id.as_str();
+    let session_id = command.session_id.as_ref().expect("session bound").as_str();
+    let (item, repo_path, created_repository) =
+        create_code_project_with_context(context, &command)?;
+    let worktree = item
+        .workspace_environment()
+        .expect("project creation provisioned a governed worktree")
+        .worktree
+        .to_string_lossy()
+        .into_owned();
+    if let Err(err) =
+        crate::agent_mode_state::set_session_code_binding(session_id, item.id.as_str())
+    {
+        let _ = context.forge.discard(&item.id, &context.actor());
+        publish_item_to_events(&context.forge_events, &item, "start_failed_released");
+        if created_repository {
+            let _ = std::fs::remove_dir_all(&repo_path);
+        }
+        return Err(request_error(StatusCode::INTERNAL_SERVER_ERROR, err));
+    }
+
+    let WorkTarget::Git(target) = &item.target;
+    Ok(SessionCodeProjectResponse {
+        session_id: session_id.to_string(),
+        work_id: item.id.to_string(),
+        title: item.title,
+        brief: item.brief,
+        state: item.state.to_string(),
+        human_phase: crate::daemon::forge_projections::human_phase(item.state).to_string(),
+        repo_path: target.repo_path.to_string_lossy().into_owned(),
+        worktree,
+        base_ref: target.base_ref.clone(),
+        created_repository,
+    })
+}
+
+fn create_code_project_with_context(
+    context: &WorkerCodeProjectSetupContext,
+    command: &StartCodeProjectCommand,
+) -> ApiResult<(WorkItem, PathBuf, bool)> {
     let title = command.title.as_str();
     let brief = command.brief.as_str();
     let base_ref = command.base_ref.as_str().to_string();
@@ -2249,45 +2319,18 @@ fn start_code_project_for_session_with_context(
             return Err(err);
         }
     };
-    let worktree = match item.workspace_environment() {
-        Some(environment) => environment.worktree.to_string_lossy().into_owned(),
-        None => {
-            let _ = context.forge.discard(&item.id, &context.actor());
-            publish_item_to_events(&context.forge_events, &item, "start_failed_released");
-            if created_repository {
-                let _ = std::fs::remove_dir_all(&repo_path);
-            }
-            return Err(request_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Forge did not provision a governed worktree",
-            ));
-        }
-    };
-    if let Err(err) =
-        crate::agent_mode_state::set_session_code_binding(session_id, item.id.as_str())
-    {
+    if item.workspace_environment().is_none() {
         let _ = context.forge.discard(&item.id, &context.actor());
         publish_item_to_events(&context.forge_events, &item, "start_failed_released");
         if created_repository {
             let _ = std::fs::remove_dir_all(&repo_path);
         }
-        return Err(request_error(StatusCode::INTERNAL_SERVER_ERROR, err));
+        return Err(request_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Forge did not provision a governed worktree",
+        ));
     }
-
-    let WorkTarget::Git(target) = &item.target;
-    let response = SessionCodeProjectResponse {
-        session_id: session_id.to_string(),
-        work_id: item.id.to_string(),
-        title: item.title,
-        brief: item.brief,
-        state: item.state.to_string(),
-        human_phase: crate::daemon::forge_projections::human_phase(item.state).to_string(),
-        repo_path: target.repo_path.to_string_lossy().into_owned(),
-        worktree,
-        base_ref: target.base_ref.clone(),
-        created_repository,
-    };
-    Ok(response)
+    Ok((item, repo_path, created_repository))
 }
 
 fn create_blank_repository(title: &str, base_ref: &str) -> ApiResult<PathBuf> {
@@ -11581,7 +11624,7 @@ mod source_tests {
     #[test]
     fn start_code_project_command_normalizes_request_fields() {
         let command = StartCodeProjectCommand::new(
-            " session-a ",
+            Some(" session-a "),
             StartSessionCodeProjectRequest {
                 title: " Project ".into(),
                 brief: " Brief ".into(),
@@ -11592,7 +11635,7 @@ mod source_tests {
         )
         .expect("valid project request");
 
-        assert_eq!(command.session_id.as_str(), "session-a");
+        assert_eq!(command.session_id.as_ref().unwrap().as_str(), "session-a");
         assert_eq!(command.title.as_str(), "Project");
         assert_eq!(command.brief.as_str(), "Brief");
         assert_eq!(
@@ -11603,9 +11646,37 @@ mod source_tests {
     }
 
     #[test]
+    fn operator_project_creation_does_not_require_a_chat_session() {
+        let command = StartCodeProjectCommand::new(
+            None,
+            StartSessionCodeProjectRequest {
+                title: "Project".into(),
+                brief: "Maintain the repo".into(),
+                source: CodeProjectSource::Blank,
+                repo_path: None,
+                base_ref: None,
+            },
+        )
+        .expect("operator project request");
+        assert!(command.session_id.is_none());
+        let invalid = StartCodeProjectCommand::new(
+            None,
+            StartSessionCodeProjectRequest {
+                title: " ".into(),
+                brief: "Maintain the repo".into(),
+                source: CodeProjectSource::Blank,
+                repo_path: None,
+                base_ref: None,
+            },
+        )
+        .expect_err("operator project needs a title");
+        assert_eq!(invalid, "title and brief are required");
+    }
+
+    #[test]
     fn start_code_project_command_rejects_missing_required_values() {
         let missing_repo = StartCodeProjectCommand::new(
-            "session-a",
+            Some("session-a"),
             StartSessionCodeProjectRequest {
                 title: "Project".into(),
                 brief: "Brief".into(),
@@ -11621,7 +11692,7 @@ mod source_tests {
         );
 
         let missing_title = StartCodeProjectCommand::new(
-            "session-a",
+            Some("session-a"),
             StartSessionCodeProjectRequest {
                 title: " \n\t".into(),
                 brief: "Brief".into(),
