@@ -16,6 +16,13 @@ Assistant ownership queries and signed paired-workshop completion retrieval:
 query requires the exact saved proposal association and signed mesh envelopes;
 an ordinary bearer-only SDK request does not supply that authority.
 
+Project Markdown images use `forge.items.by_work_id.source.get` with query
+`path=<project-relative-image>&image=true`. The JSON response is
+`{path,mime,bytes_base64}` instead of the text source response. PNG, JPEG, GIF,
+WebP, SVG, and AVIF reads are capped at 2 MiB and remain scoped to the governed
+workshop working copy, including symlink and `.git` restrictions. Omitting
+`image` preserves the existing source response. See [Forge routes](../engine/forge.md).
+
 ## Packages
 
 | Package | Role |

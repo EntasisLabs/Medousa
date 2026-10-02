@@ -4,6 +4,7 @@
   import { LoaderCircle, Sparkles } from "@lucide/svelte";
   import type { LSPClient } from "@codemirror/lsp-client";
   import CodeMirrorHost from "$lib/components/code/CodeMirrorHost.svelte";
+  import CodeMarkdownDocument from "$lib/components/code/CodeMarkdownDocument.svelte";
   import CodeWorkspaceSearch from "$lib/components/code/CodeWorkspaceSearch.svelte";
   import CodeChangesPanel from "$lib/components/code/CodeChangesPanel.svelte";
   import CodeContextSidePanel from "$lib/components/code/CodeContextSidePanel.svelte";
@@ -210,8 +211,8 @@
 
   <div class="flex min-h-0 flex-1 overflow-hidden">
     <div class="relative min-h-0 min-w-0 flex-1">
-      {#if editorSelection?.text && onHandoffToAgent && !agentHasControl && !findState?.open}
-        <div class="absolute right-3 top-2 z-20 flex max-w-[calc(100%-1.5rem)] items-center gap-1 overflow-x-auto rounded-md border border-primary-500/30 bg-surface-950/95 px-1.5 py-1 shadow-xl" aria-label="Selected code actions">
+      {#if editorSelection?.text && onHandoffToAgent && !agentHasControl && !findState?.open && (!activeTab.markdownMode || activeTab.markdownMode === "source" || activeTab.markdownMode === "split")}
+        <div class="absolute right-3 {activeTab.language === 'markdown' && !activeTab.preview ? 'top-12' : 'top-2'} z-20 flex max-w-[calc(100%-1.5rem)] items-center gap-1 overflow-x-auto rounded-md border border-primary-500/30 bg-surface-950/95 px-1.5 py-1 shadow-xl" aria-label="Selected code actions">
           <span class="mr-1 flex shrink-0 items-center gap-1 text-chrome-xs text-primary-200/80"><Sparkles size={10} />Selection</span>
           <button type="button" class="code-intent-action" disabled={busy} onclick={() => void save.handoffToAgent("Help me understand the selected code and answer my questions about it.")}>Ask</button>
           <button type="button" class="code-intent-action" disabled={busy} onclick={() => void save.handoffToAgent("Change the selected code. Ask only if the intended change is ambiguous.")}>Change</button>
@@ -230,28 +231,32 @@
       {#if !activeTab.loading && activeTab.digest}
         {@const editorTab = activeTab}
         {#key `${editorTab.tabId}:${editorPrefsEpoch}`}
-          <CodeMirrorHost
-            bind:this={editor}
-            {findState}
-            value={editorTab.draft}
-            languageId={editorTab.encoding === "binary" ? "plaintext" : editorTab.language}
-            {documentUri}
-            lspLanguageId={editorTab.preview ? null : codeEditorLspLanguageId(editorTab.language)}
-            client={editorTab.preview ? null : lspClient}
-            readOnly={!bufferInteractive || editorTab.preview}
-            contentSyncKey={editorTab.syncKey}
-            changedLines={reviewChangedLines}
-            conventionIndentStyle={editorConventions.indent_style ?? null}
-            conventionTabSize={Number.parseInt(editorConventions.indent_size ?? editorConventions.tab_width ?? "", 10) || null}
-            {wordWrap}
-            {showLineNumbers}
-            onchange={(value) => void save.onDraftChanged(editorTab.tabId, value)}
-            onCursorChanged={(cursor) => onCursorChanged(editorTab, cursor)}
-            onSelectionChanged={(selection) => (editorSelection = selection.text ? selection : null)}
-            onProblemsChanged={onProblemsChanged}
-            onContextMenu={onContextMenu}
-            onLanguageNavigationRequested={(kind) => void onLanguageNavigation(kind)}
-          />
+          <CodeMarkdownDocument tab={editorTab} {editor} {findState} readOnly={!bufferInteractive || !!editorTab.preview} onchange={(value) => void save.onDraftChanged(editorTab.tabId, value)} {onOpenLocation}>
+            {#snippet source()}
+              <CodeMirrorHost
+                bind:this={editor}
+                {findState}
+                value={editorTab.draft}
+                languageId={editorTab.encoding === "binary" ? "plaintext" : editorTab.language}
+                {documentUri}
+                lspLanguageId={editorTab.preview ? null : codeEditorLspLanguageId(editorTab.language)}
+                client={editorTab.preview ? null : lspClient}
+                readOnly={!bufferInteractive || editorTab.preview}
+                contentSyncKey={editorTab.syncKey}
+                changedLines={reviewChangedLines}
+                conventionIndentStyle={editorConventions.indent_style ?? null}
+                conventionTabSize={Number.parseInt(editorConventions.indent_size ?? editorConventions.tab_width ?? "", 10) || null}
+                {wordWrap}
+                {showLineNumbers}
+                onchange={(value) => void save.onDraftChanged(editorTab.tabId, value)}
+                onCursorChanged={(cursor) => onCursorChanged(editorTab, cursor)}
+                onSelectionChanged={(selection) => (editorSelection = selection.text ? selection : null)}
+                onProblemsChanged={onProblemsChanged}
+                onContextMenu={onContextMenu}
+                onLanguageNavigationRequested={(kind) => void onLanguageNavigation(kind)}
+              />
+            {/snippet}
+          </CodeMarkdownDocument>
         {/key}
       {:else if !activeTab.loading}
         <div class="flex h-full min-h-48 items-center justify-center p-6 text-xs text-content-quiet">

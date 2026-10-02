@@ -89,6 +89,18 @@
       "specifier": "$lib/styles/editor-find.postcss"
     },
     {
+      "from": "src/lib/components/code/CodeMarkdownPreview.svelte",
+      "specifier": "$lib/styles/markdown-content.postcss"
+    },
+    {
+      "from": "src/lib/components/code/CodeMarkdownWriter.svelte",
+      "specifier": "$lib/styles/vault-editor.postcss"
+    },
+    {
+      "from": "src/lib/components/code/CodeMarkdownWriter.svelte",
+      "specifier": "$lib/styles/vault-live.postcss"
+    },
+    {
       "from": "src/lib/components/code/CodeMirrorHost.svelte",
       "specifier": "$lib/styles/editor-host.postcss"
     },

@@ -536,6 +536,21 @@
     return view?.state.doc.toString() ?? value;
   }
 
+  /** A second document surface edits the same buffer, including its undo history. */
+  export function replaceValue(next: string) {
+    flushChange();
+    if (!view) return;
+    const previous = view.state.doc.toString();
+    if (previous === next) return;
+    let from = 0;
+    while (from < previous.length && from < next.length && previous[from] === next[from]) from++;
+    let oldEnd = previous.length, newEnd = next.length;
+    while (oldEnd > from && newEnd > from && previous[oldEnd - 1] === next[newEnd - 1]) { oldEnd--; newEnd--; }
+    applyingExternal = true;
+    try { view.dispatch({ changes: { from, to: oldEnd, insert: next.slice(from, newEnd) } }); }
+    finally { applyingExternal = false; }
+  }
+
   export function flushChanges() {
     flushChange();
   }
@@ -797,9 +812,13 @@
 
 <style>
   :global(.code-codemirror-host .cm-editor),
-  :global(.code-codemirror-host .cm-scroller),
-  :global(.code-codemirror-host .cm-content) {
+  :global(.code-codemirror-host .cm-scroller) {
     background-color: var(--code-syntax-bg) !important;
+    color: var(--code-syntax-fg);
+  }
+
+  :global(.code-codemirror-host .cm-content) {
+    background-color: transparent !important;
     color: var(--code-syntax-fg);
   }
 

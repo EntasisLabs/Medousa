@@ -201,6 +201,18 @@ a private Code IDE chrome.
   second autosave, save-all or require-clean run preflight, and whether failed
   task matchers open Problems. The selected primary task remains scoped to the
   project and is changed from the Code command bar.
+- Markdown files offer **Source**, **Markdown**, **Preview**, and **Split** in
+  the same tab. Markdown opens a writing editor with the Notes formatting
+  controls; Preview renders the current draft, and Split keeps source beside
+  its live preview. Switching views keeps the same project file, draft, and
+  guarded save. Opening the writing editor does not rewrite the file. Edits
+  preserve untouched blocks and frontmatter; HTML, reference definitions, and
+  constructs outside the rich schema remain editable source blocks. Relative
+  links open project files, and relative images come from the workshop working
+  copy (PNG, JPEG, GIF, WebP, SVG, AVIF; up to 2 MiB per image). These views do
+  not import files into Notes. Find in the writing or preview view opens the
+  file's floating Source search. Binary, truncated, and lossy previews stay
+  read-only and do not offer the writing modes.
 - Open files become project-scoped shell tabs with independent unsaved drafts.
   Cursor targets and protected draft recovery survive view changes and app
   restarts. If the file changed outside Medousa, the recovered draft remains

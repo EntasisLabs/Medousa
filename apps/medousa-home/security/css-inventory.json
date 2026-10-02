@@ -116,7 +116,7 @@
       "id": "vault-editor",
       "class": "feature",
       "path": "src/lib/styles/vault-editor.postcss",
-      "loadedBy": "VaultEditor.svelte"
+      "loadedBy": "VaultEditor.svelte / CodeMarkdownWriter.svelte"
     },
     {
       "id": "editor-host",
@@ -130,7 +130,7 @@
       "id": "vault-live",
       "class": "feature",
       "path": "src/lib/styles/vault-live.postcss",
-      "loadedBy": "VaultLiveEditor.svelte"
+      "loadedBy": "VaultLiveEditor.svelte / CodeMarkdownWriter.svelte"
     },
     {
       "id": "vault-live-properties",
@@ -208,7 +208,7 @@
       "id": "markdown-content",
       "class": "feature",
       "path": "src/lib/styles/markdown-content.postcss",
-      "loadedBy": "MarkdownContent.svelte / VaultMarkdownPreview.svelte / MarkdownViewHost.svelte / Prose.svelte / Whisper.svelte"
+      "loadedBy": "MarkdownContent.svelte / VaultMarkdownPreview.svelte / MarkdownViewHost.svelte / Prose.svelte / Whisper.svelte / CodeMarkdownPreview.svelte"
     },
     {
       "id": "lme",

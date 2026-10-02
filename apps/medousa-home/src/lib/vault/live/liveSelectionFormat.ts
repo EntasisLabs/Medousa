@@ -111,10 +111,11 @@ export function applyLiveFormatAction(
   editor: Editor,
   action: MarkdownFormatAction,
   range?: { from: number; to: number } | null,
+  allowCaret = false,
 ): boolean {
   if (range && range.from !== range.to) {
     restoreLiveSelection(editor, range.from, range.to);
-  } else if (!liveSelectionHasText(editor)) {
+  } else if (!allowCaret && !liveSelectionHasText(editor)) {
     return false;
   }
 

@@ -29,6 +29,9 @@ export type LiveExtensionOptions = {
   fence?: FenceBlockOptions;
   embed?: EmbedBlockOptions;
   hideMarkdownSyntax?: () => boolean;
+  headingLevels?: Array<1 | 2 | 3 | 4 | 5 | 6>;
+  placeholder?: string;
+  trailingNode?: boolean;
 };
 
 export function createLiveExtensions(
@@ -36,6 +39,7 @@ export function createLiveExtensions(
 ): AnyExtension[] {
   return [
     StarterKit.configure({
+      trailingNode: options.trailingNode === false ? false : undefined,
       // Fences are organism hosts; no editable code blocks in Live.
       codeBlock: false,
       link: false,
@@ -46,7 +50,7 @@ export function createLiveExtensions(
       paragraph: false,
     }),
     LiveParagraph,
-    LiveHeading.configure({ levels: [1, 2, 3] }),
+    LiveHeading.configure({ levels: options.headingLevels ?? [1, 2, 3] }),
     // No LiveBlockIdChips — widget decorations on the type path reflowed the
     // doc and fought scroll anchoring. Attrs + serialize still round-trip ^id.
     LiveHorizontalRule,
@@ -78,7 +82,7 @@ export function createLiveExtensions(
       },
     }),
     Placeholder.configure({
-      placeholder: "Type / to add a chart, callout, or note",
+      placeholder: options.placeholder ?? "Type / to add a chart, callout, or note",
       emptyEditorClass: "is-editor-empty",
       emptyNodeClass: "is-empty",
       showOnlyWhenEditable: true,

@@ -7,6 +7,7 @@ import {
 import { resolveCodeEditorLanguage } from "$lib/code/codeEditorLanguageRegistry";
 import { codeWorkbenchState } from "$lib/code/codeWorkbenchState.svelte";
 import { invalidateCodeWorkshopContext } from "$lib/code/codeWorkspaceContext.svelte";
+import type { CodeMarkdownMode } from "$lib/code/codeMarkdownDocument";
 
 export type CodeDocumentTab = ForgeSourceFile & {
   tabId: string;
@@ -17,6 +18,7 @@ export type CodeDocumentTab = ForgeSourceFile & {
   error: string | null;
   syncKey: number;
   line: number | null;
+  markdownMode?: CodeMarkdownMode;
 };
 
 export type CodeLocation = {

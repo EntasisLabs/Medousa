@@ -2500,6 +2500,65 @@ async fn get_item(
 #[derive(Debug, Deserialize)]
 struct SourceQuery {
     path: String,
+    /// Bounded image bytes for project Markdown, through the same workspace authority.
+    #[serde(default)]
+    image: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct SourceImageResponse {
+    path: String,
+    mime: &'static str,
+    bytes_base64: String,
+}
+
+fn read_source_image(root: &FsPath, raw: &str) -> ApiResult<SourceImageResponse> {
+    let (path, relative) = resolve_source_path(root, raw)?;
+    let extension = path
+        .extension()
+        .and_then(OsStr::to_str)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let mime = match extension.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "avif" => "image/avif",
+        _ => {
+            return Err(request_error(
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "unsupported project image type",
+            ));
+        }
+    };
+    let file = std::fs::File::open(path).map_err(|err| {
+        request_error(
+            StatusCode::NOT_FOUND,
+            format!("could not read project image: {err}"),
+        )
+    })?;
+    let mut bytes = Vec::new();
+    file.take((MAX_SOURCE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|err| {
+            request_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("could not read project image: {err}"),
+            )
+        })?;
+    if bytes.len() > MAX_SOURCE_BYTES {
+        return Err(request_error(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "project image exceeds the 2 MiB preview limit",
+        ));
+    }
+    Ok(SourceImageResponse {
+        path: relative,
+        mime,
+        bytes_base64: base64::engine::general_purpose::STANDARD.encode(bytes),
+    })
 }
 
 #[derive(Debug, Serialize)]
@@ -3454,7 +3513,8 @@ async fn read_source(
     State(state): State<AppState>,
     Path(work_id): Path<String>,
     Query(query): Query<SourceQuery>,
-) -> ApiResult<Json<SourceResponse>> {
+) -> ApiResult<axum::response::Response> {
+    use axum::response::IntoResponse;
     admit_forge(
         &state,
         medousa_forge::execution::ExecutionClass::Observation,
@@ -3470,11 +3530,16 @@ async fn read_source(
                         "prepare the governed workspace before opening source files",
                     )
                 })?;
+                if query.image {
+                    return Ok(Json(read_source_image(&environment.worktree, &query.path)?)
+                        .into_response());
+                }
                 Ok(Json(read_source_response(
                     &id,
                     &environment.worktree,
                     &query.path,
-                )?))
+                )?)
+                .into_response())
             }
         },
     )
@@ -12210,6 +12275,43 @@ mod source_tests {
         assert!(resolve_new_source_path(root.path(), ".git/hooks/new-hook").is_err());
         std::fs::write(root.path().join("src/existing.rs"), "fn existing() {}\n").unwrap();
         assert!(resolve_new_source_path(root.path(), "src/existing.rs").is_err());
+    }
+
+    #[test]
+    fn source_image_reads_are_bounded_and_workspace_scoped() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("image.png"), b"image bytes").unwrap();
+        let image = read_source_image(root.path(), "image.png").unwrap();
+        assert_eq!(image.mime, "image/png");
+        assert_eq!(image.path, "image.png");
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD
+                .decode(image.bytes_base64)
+                .unwrap(),
+            b"image bytes"
+        );
+        assert!(read_source_image(root.path(), "../image.png").is_err());
+        std::fs::create_dir(root.path().join(".git")).unwrap();
+        std::fs::write(root.path().join(".git/private.png"), b"private").unwrap();
+        assert!(read_source_image(root.path(), ".git/private.png").is_err());
+        std::fs::write(root.path().join("script.html"), b"<script>bad</script>").unwrap();
+        assert!(read_source_image(root.path(), "script.html").is_err());
+        std::fs::write(root.path().join("large.png"), vec![0; MAX_SOURCE_BYTES + 1]).unwrap();
+        assert!(read_source_image(root.path(), "large.png").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn source_image_reads_reject_symlinks_outside_the_workspace() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("private.png"), b"private").unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("private.png"),
+            root.path().join("image.png"),
+        )
+        .unwrap();
+        assert!(read_source_image(root.path(), "image.png").is_err());
     }
 
     #[test]

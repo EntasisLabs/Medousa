@@ -104,7 +104,8 @@ function defineEditorTheme(canvas: CanvasPalette, dark: boolean): Extension {
           ".cm-content": {
             caretColor: canvas.caret,
             color: canvas.foreground,
-            backgroundColor: canvas.background,
+            // drawSelection paints below the content layer.
+            backgroundColor: "transparent",
           },
           ".cm-cursor, .cm-dropCursor": {
             borderLeftColor: canvas.caret,
@@ -119,7 +120,8 @@ function defineEditorTheme(canvas: CanvasPalette, dark: boolean): Extension {
             backgroundColor: canvas.selectionMatch,
           },
           ".cm-activeLine": {
-            backgroundColor: canvas.activeLine,
+            backgroundColor: "transparent",
+            boxShadow: `inset 0 0 0 1px ${canvas.activeLine}`,
           },
           ".cm-gutters": {
             backgroundColor: canvas.background,
