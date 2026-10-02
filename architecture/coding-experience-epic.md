@@ -113,8 +113,18 @@ before fixing the final component design.
 
 ## Delivery slices
 
-All slices start **not implemented under this epic**. Existing foundations can
-be reused, but acceptance must be demonstrated against these requirements.
+CE0 implementation has started. Other slices are **not implemented under this
+epic**. Existing foundations can be reused, but acceptance must be demonstrated
+against these requirements.
+
+**CE0 progress (2026-10-01):** Removed automatic provider, root-discovery,
+matrix-discovery, and aggregate-diagnostics compatibility fallbacks in Home.
+Initialization retains provider identity and rejects an announced Grapheme
+service for another language. Disconnected editor markers are cleared while
+drafts remain editable. Added routing, initialization, discovery, pooled-session,
+and editor lifecycle regression coverage. Final local/remote workshop journeys
+and the unavailable-engine incident investigation remain required; CE0 is not
+closed by automated checks alone. Workshop-switch isolation continues in CE1.
 
 | Slice | Priority | User outcome | Dependency |
 |-------|----------|--------------|------------|

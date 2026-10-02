@@ -101,6 +101,17 @@ describe("unusableLanguageError", () => {
   });
 });
 
+const usableMatrix = ["rust", "typescript"].map((language) => ({
+  language,
+  command: `${language}-server`,
+  binaryAvailable: true,
+  usable: true,
+  packageId: null,
+  rootMarkers: [],
+  extensions: [],
+  args: [],
+}));
+
 function mockLease(overrides?: Partial<CodeWorkspaceLspLease>): CodeWorkspaceLspLease {
   const listeners = new Set<(status: CodeWorkspaceLspStatus) => void>();
   return {
@@ -121,6 +132,55 @@ function mockLease(overrides?: Partial<CodeWorkspaceLspLease>): CodeWorkspaceLsp
 describe("CodeLspSession", () => {
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it.each(["HTTP 404 Not Found", "discovery transport down"])(
+    "never acquires a language client after matrix discovery fails: %s",
+    async (detail) => {
+      const acquire = vi.fn(async () => mockLease());
+      const session = new CodeLspSession({
+        getMatrix: async () => { throw new Error(detail); },
+        acquire,
+        deferWork: (fn) => { fn(); return () => {}; },
+      });
+      session.connect({
+        workId: "w1",
+        workspaceRoot: "/repo",
+        language: "rust",
+        languageLabel: "rust",
+        documentUri: "file:///repo/main.rs",
+        bridge: {},
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(acquire).not.toHaveBeenCalled();
+      expect(session.client).toBeNull();
+      expect(session.status.phase).not.toBe("ready");
+      expect(session.languageMatrixError).toBe(detail);
+      session.dispose();
+    },
+  );
+
+  it("does not guess a provider when the language is absent from the matrix", async () => {
+    const acquire = vi.fn(async () => mockLease());
+    const session = new CodeLspSession({
+      getMatrix: async () => [],
+      acquire,
+      deferWork: (fn) => { fn(); return () => {}; },
+    });
+    session.connect({
+      workId: "w1",
+      workspaceRoot: "/repo",
+      language: "typescript",
+      languageLabel: "typescript",
+      documentUri: "file:///repo/main.ts",
+      bridge: {},
+    });
+    await Promise.resolve();
+    expect(acquire).not.toHaveBeenCalled();
+    expect(session.status.phase).toBe("failed");
+    expect(session.error).toContain("No language server is registered");
+    session.dispose();
   });
 
   it("fails permanently when the language matrix entry is unusable", async () => {
@@ -173,7 +233,7 @@ describe("CodeLspSession", () => {
     });
 
     const session = new CodeLspSession({
-      getMatrix: async () => [],
+      getMatrix: async () => usableMatrix,
       acquire,
       reconnectDelay: (n) => (n <= 2 ? 10 * n : null),
       maxReconnectAttempts: 2,
@@ -233,7 +293,7 @@ describe("CodeLspSession", () => {
       );
     });
     const session = new CodeLspSession({
-      getMatrix: async () => [],
+      getMatrix: async () => usableMatrix,
       acquire,
       reconnectDelay: () => 10,
       maxReconnectAttempts: 3,
@@ -275,7 +335,7 @@ describe("CodeLspSession", () => {
     );
 
     const session = new CodeLspSession({
-      getMatrix: async () => [],
+      getMatrix: async () => usableMatrix,
       acquire,
       deferWork: (fn) => {
         fn();

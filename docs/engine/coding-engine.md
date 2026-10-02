@@ -63,9 +63,16 @@ and pooling identity, while the daemon independently forwards the active
 document and authoritative project root to the coding engine. The coding engine
 revalidates both and rewrites initialize root fields before launching the server
 in that directory. Nested monorepo packages therefore get distinct sessions;
-files under the same language root reuse one Home client. With an older coding
-engine that lacks the discovery route, Home explicitly falls back to the whole
-project root for rolling-upgrade compatibility.
+files under the same language root reuse one Home client. Home requires the
+language-root discovery contract. Missing, failed, or invalid discovery leaves
+language assistance unavailable; Home never substitutes the project root.
+
+All editor languages, including Grapheme, use `/v1/code/lsp`. Home does not
+switch to the daemon's Grapheme endpoint when the coding engine is unavailable,
+incompatible, or fails to initialize. The engine's failure reason is retained.
+An announced `grapheme-lsp` identity is rejected for a different requested
+language. Optional server identity is retained for diagnosis; servers that omit
+`serverInfo` remain supported through the explicit engine route and registry.
 
 ## Session lifecycle and configuration
 
@@ -79,10 +86,12 @@ document before selecting records. Logs are memory-bounded diagnostic history,
 not an unbounded project file.
 
 The editor WebSocket terminates when the underlying language server exits or
-its protocol stream fails. Home removes the dead client, keeps the source
-buffer editable, and retries at 250 ms, 750 ms, and 1.5 seconds. A visible
-degraded banner then retains **Restart**, **Logs**, and package **Repair**
-actions. Manual restart replaces only the matching project/language-root client;
+its protocol stream fails. Home removes the dead client and its editor markers,
+keeps the source buffer editable, and retries the same service at 250 ms, 750 ms,
+and 1.5 seconds. Missing tools and unsupported discovery contracts fail without
+reconnect loops. The editor status reports the failure reason and provides
+**Restart**, **Logs**, and **Repair** actions. Manual restart replaces only the
+matching project/language-root client;
 it does not close the project or another nested package's server.
 
 On the editor channel the coding engine rewrites `initialize` to advertise
@@ -102,6 +111,8 @@ its command, file extensions, root markers, optional package id, and a
 uses this before treating a language as supported and for **Repair language
 support**, which installs `coding-engine` plus the row's exact `package_id`
 when one exists. Registry membership alone never means the language is usable.
+Missing or malformed matrix responses leave language assistance unavailable;
+Home does not infer usability or attempt a connection without the registry row.
 
 ## Workspace diagnostics
 
@@ -112,10 +123,11 @@ language ids, and documents with their URI, language, optional version, and
 complete LSP diagnostic payload. An empty aggregate request does not start a
 placeholder language server.
 
-Supplying `language=…` preserves the earlier per-language behavior and may
-initialize that language's pooled agent session. This is also the rolling-
-upgrade fallback used by Home when an older coding engine does not advertise
-the aggregate scope. Home's Problems panel groups the result by project file,
+Supplying `language=…` may initialize that language's pooled agent session for
+explicit API callers. Home requires the aggregate `active_sessions` contract;
+it reports unsupported or failed diagnostics instead of starting per-language
+sessions as a compatibility fallback. Home's Problems panel groups the result
+by project file,
 filters by severity or text, and can open an unopened diagnostic target. It
 refreshes while visible and reconciles when resumable
 `GET /v1/forge/items/{work_id}/project-events` reports source changes. Home

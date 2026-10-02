@@ -66,6 +66,18 @@ is older than the project tools — rebuild and restart `medousa_daemon` from th
 checkout rather than showing a fake-ready empty editor. If the project has no
 workspace yet, **Set up project** is the primary action in the center and rail.
 
+## Language assistance
+
+Syntax highlighting and typing remain available when a language service cannot
+start. Medousa reports the failure in the editor status; it never switches to a
+different language service or analyses your file under a different project root.
+
+Open the language issue in the status bar to inspect the reason, restart the
+service, or view its logs. If a tool is missing, use **Settings → Packages** on
+the workshop that owns the project. If the workshop is too old for language
+discovery, update its coding engine and daemon together, then restart the service.
+The file and your draft remain open while you recover language assistance.
+
 ## Choose a repository
 
 Repository discovery always follows the workshop selected for the project. A

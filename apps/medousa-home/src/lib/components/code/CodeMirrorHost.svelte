@@ -39,7 +39,7 @@
     completionKeymap,
     autocompletion,
   } from "@codemirror/autocomplete";
-  import { forEachDiagnostic, lintKeymap } from "@codemirror/lint";
+  import { forEachDiagnostic, lintKeymap, setDiagnostics } from "@codemirror/lint";
   import {
     bracketMatching,
     defaultHighlightStyle,
@@ -720,7 +720,12 @@
 
   $effect(() => {
     if (!view) return;
-    view.dispatch({ effects: lspCompartment.reconfigure(lspExtensions()) });
+    const extensions = lspExtensions();
+    // Lint state outlives the LSP compartment. Discard the old service's
+    // markers when it disconnects or the document/client scope changes.
+    view.dispatch(setDiagnostics(view.state, []), {
+      effects: lspCompartment.reconfigure(extensions),
+    });
   });
 
   $effect(() => {

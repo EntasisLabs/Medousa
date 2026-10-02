@@ -58,6 +58,7 @@ export function unusableLanguageError(
   entry: CodeLanguageMatrixEntry,
   language: string,
 ): string {
+  if (entry.binaryAvailable) return `${language} language service is unavailable on this workshop`;
   const missing = entry.command ?? language;
   return entry.packageId
     ? `${missing} is not installed on this workshop`
@@ -226,19 +227,20 @@ export class CodeLspSession {
         this.languageMatrix = matrix;
         this.languageMatrixError = null;
         const entry = this.#deps.findMatrixEntry(matrix, request.language);
-        if (entry && !entry.usable) {
-          const detail = unusableLanguageError(entry, request.language);
+        if (!entry || !entry.usable) {
+          const detail = entry
+            ? unusableLanguageError(entry, request.language)
+            : `No language server is registered for ${request.language} on this workshop`;
           this.connecting = false;
           this.error = detail;
           this.status = { phase: "failed", detail, progress: null, notice: null };
           return;
         }
       } catch (err) {
-        // Older coding engines omit the matrix; keep attempting the LSP.
-        if (alive()) {
-          this.languageMatrixError =
-            err instanceof Error ? err.message : String(err);
-        }
+        if (!alive()) return;
+        this.languageMatrix = [];
+        this.languageMatrixError = err instanceof Error ? err.message : String(err);
+        throw err;
       }
 
       const lease = await this.#deps.acquire({

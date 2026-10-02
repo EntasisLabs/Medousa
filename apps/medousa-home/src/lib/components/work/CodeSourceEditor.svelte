@@ -1788,15 +1788,7 @@
         : tasks.result
           ? `${tasks.result.task.label} · ${tasks.result.success ? "passed" : "failed"}`
           : null,
-      languageState: lspStatus.phase === "failed"
-        ? "failed"
-        : lspStatus.phase === "reconnecting"
-          ? "reconnecting"
-          : lspConnecting
-            ? "connecting"
-            : lspError
-              ? "editing-only"
-              : "ready",
+      languageState: lspStatus.phase === "stopped" ? "editing-only" : lspStatus.phase,
       languageDetail: (() => {
         if (lspStatus.progress) {
           const pct =

@@ -55,7 +55,7 @@
 
   let lspClient = $state<LSPClient | null>(null);
   let lspError = $state<string | null>(null);
-  let lspVia = $state<"orchestrator" | "grapheme" | null>(null);
+  let lspVia = $state<"orchestrator" | null>(null);
   let codeMirror = $state<CodeMirrorHost | undefined>();
   let flowError = $state<string | null>(null);
   let showAdvancedActions = $state(false);
@@ -166,12 +166,26 @@
 
   $effect(() => {
     const lang = activeLanguage.id;
+    lspClient = null;
+    lspVia = null;
+    lspError = null;
+    graphemeScriptEditor.lspReady = false;
     if (!languageSupportsLsp(lang)) {
       return;
     }
     let cancelled = false;
+    let disconnect: (() => void) | null = null;
     void connectCodeLspClient(lang === "grapheme" ? "grapheme" : lang)
-      .then(({ client, workspace, via }) => {
+      .then(async ({ client, workspace, via, ready, close }) => {
+        disconnect = () => {
+          client.disconnect();
+          close();
+        };
+        if (cancelled) {
+          disconnect();
+          return;
+        }
+        await ready;
         if (cancelled) return;
         lspClient = client;
         lspVia = via;
@@ -185,6 +199,7 @@
       });
     return () => {
       cancelled = true;
+      disconnect?.();
     };
   });
 
