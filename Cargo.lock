@@ -7636,6 +7636,7 @@ dependencies = [
  "medousa-store",
  "medousa-tool-macros",
  "medousa-types",
+ "medousa-work",
  "medousa-world",
  "notify",
  "once_cell",
@@ -8187,6 +8188,20 @@ dependencies = [
  "medousa-types",
  "schemars 0.8.22",
  "serde_json",
+]
+
+[[package]]
+name = "medousa-work"
+version = "0.11.0"
+dependencies = [
+ "chrono",
+ "fs2",
+ "medousa-store",
+ "medousa-types",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
 ]
 
 [[package]]

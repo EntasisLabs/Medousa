@@ -1117,6 +1117,14 @@ async fn start_daemon() -> Result<()> {
     let _mdns_advertiser = mdns_advertiser;
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    if let Err(error) = medousa::daemon::work_units::compose_work_unit_host(
+        state.forge_execution.clone(),
+        medousa::paths::medousa_data_dir().join("work_units"),
+    )
+    .await
+    {
+        tracing::warn!(%error, "work domain registry unavailable; chat remains active");
+    }
     let _coordination_host = match medousa::daemon::coordination::start_local_coordination_host(
         state.clone(),
         local_runtime_node_id.clone(),

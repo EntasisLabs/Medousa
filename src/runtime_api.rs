@@ -16,6 +16,8 @@ use crate::bridge_tools::{BridgeObject, CognitionMcpPromoteToJobTool, McpPromote
 use crate::daemon::coordination::assignments::{
     AssignmentEventsQuery, AssignmentGetQuery, AssignmentListQuery, OwnerEventsQuery,
 };
+#[cfg(feature = "full-daemon")]
+use crate::daemon::work_units::{WorkGraphMutateInput, WorkUnitGetQuery};
 use crate::events::TuiEvent;
 use crate::public_api::{COGNITION_RUNTIME_MUTATE, COGNITION_RUNTIME_QUERY};
 use crate::recurring_delivery::RecurringDeliverySpec;
@@ -48,6 +50,8 @@ use crate::typed_tools::{
     CompatOption, ExternalJson, ToolId, TypedTool, medousa_tool, serialize_output,
 };
 use crate::workflow::WorkflowRegistry;
+#[cfg(feature = "full-daemon")]
+use medousa_types::work_unit::WorkGraphQuery;
 use stasis::prelude::RuntimeComposition;
 
 const QUERY_ID: ToolId = ToolId::new(COGNITION_RUNTIME_QUERY);
@@ -64,6 +68,12 @@ enum RuntimeFrom {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action")]
 pub enum RuntimeQueryAction {
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "work.graph")]
+    WorkGraph(WorkGraphQuery),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "work.get")]
+    WorkGet(WorkUnitGetQuery),
     #[cfg(feature = "full-daemon")]
     #[serde(rename = "assignment.list")]
     AssignmentList(AssignmentListQuery),
@@ -95,6 +105,9 @@ pub enum RuntimeQueryAction {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action")]
 pub enum RuntimeMutateAction {
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "work.record")]
+    WorkRecord(WorkGraphMutateInput),
     #[serde(rename = "job.enqueue")]
     JobEnqueue(JobEnqueue),
     #[serde(rename = "job.cancel")]
@@ -341,6 +354,8 @@ impl JsonSchema for RuntimeQueryAction {
             .splice(
                 0..0,
                 [
+                    "work.graph",
+                    "work.get",
                     "assignment.list",
                     "assignment.get",
                     "assignment.events",
@@ -358,21 +373,22 @@ impl JsonSchema for RuntimeMutateAction {
     }
 
     fn json_schema(_: &mut schemars::r#gen::SchemaGenerator) -> Schema {
-        advertised_object_schema(&[(
-            "action",
-            string_enum_schema(&[
-                "job.enqueue",
-                "job.cancel",
-                "recurring.register",
-                "recurring.pause",
-                "recurring.cancel",
-                "workflow.run",
-                "workflow.schedule",
-                "workflow.cancel",
-                "workflow.plan",
-            ]),
-            true,
-        )])
+        let actions = [
+            "job.enqueue",
+            "job.cancel",
+            "recurring.register",
+            "recurring.pause",
+            "recurring.cancel",
+            "workflow.run",
+            "workflow.schedule",
+            "workflow.cancel",
+            "workflow.plan",
+        ];
+        #[cfg(feature = "full-daemon")]
+        let actions = std::iter::once("work.record")
+            .chain(actions)
+            .collect::<Vec<_>>();
+        advertised_object_schema(&[("action", string_enum_schema(&actions), true)])
     }
 }
 
@@ -450,6 +466,21 @@ pub fn runtime_type_schemas() -> Vec<TypedActionSchema> {
     #[cfg(feature = "full-daemon")]
     {
         let mut assignment_schemas = vec![
+            typed_action_schema::<WorkGraphQuery>(
+                QUERY_ID,
+                "work.graph",
+                "Inspect your saved resource relationships, work scopes, or intent events on this workshop",
+            ),
+            typed_action_schema::<WorkUnitGetQuery>(
+                QUERY_ID,
+                "work.get",
+                "Inspect a session-independent work unit by exact identity",
+            ),
+            typed_action_schema::<WorkGraphMutateInput>(
+                MUTATE_ID,
+                "work.record",
+                "Record intent, explicit scope, relationships, or contact preference; this does not launch, schedule, cancel, or contact native executors",
+            ),
             typed_action_schema::<AssignmentListQuery>(
                 QUERY_ID,
                 "assignment.list",
@@ -513,7 +544,7 @@ pub fn register_runtime_api_tools(
 
 #[medousa_tool(id = QUERY_ID)]
 impl CognitionRuntimeQueryTool {
-    /// Inspect owned assignments, jobs, recurring, workflows, or delivery. action is a typed name (job.list, workflow.status, …). Fetch fields with cognition_schema types=[...].
+    /// Inspect saved work scopes and relationships, owned assignments, jobs, recurring, workflows, or delivery. action is a typed name (work.graph, job.list, …). Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(
         &self,
         action: RuntimeQueryAction,
@@ -524,7 +555,7 @@ impl CognitionRuntimeQueryTool {
 
 #[medousa_tool(id = MUTATE_ID)]
 impl CognitionRuntimeMutateTool {
-    /// Mutate durable runtime work. action is a typed name (job.enqueue, workflow.run, …). Fetch fields with cognition_schema types=[...].
+    /// Mutate durable runtime work. work.record saves session-independent intent without launching execution; job.enqueue and workflow.run execute through their native admission. Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(
         &self,
         action: RuntimeMutateAction,
@@ -550,11 +581,33 @@ fn admitted_assignment_query() -> stasis::prelude::Result<(
     Ok((host, turn))
 }
 
+#[cfg(feature = "full-daemon")]
+fn admitted_work_access() -> stasis::prelude::Result<(
+    Arc<crate::daemon::work_units::WorkUnitHost>,
+    Arc<crate::agent_runtime::execution_context::TurnExecutionContext>,
+)> {
+    let turn = crate::agent_runtime::execution_context::active_turn_execution_context()
+        .ok_or_else(|| runtime_error("work domain access requires an admitted owner turn"))?;
+    let host = crate::daemon::work_units::local_work_unit_host()
+        .ok_or_else(|| runtime_error("work domain registry is not available on this workshop"))?;
+    Ok((host, turn))
+}
+
 async fn dispatch_query(
     tool: &CognitionRuntimeQueryTool,
     action: RuntimeQueryAction,
 ) -> stasis::prelude::Result<Value> {
     match action {
+        #[cfg(feature = "full-daemon")]
+        RuntimeQueryAction::WorkGraph(params) => {
+            let (host, turn) = admitted_work_access()?;
+            host.graph(&turn, params).await.map_err(runtime_error)
+        }
+        #[cfg(feature = "full-daemon")]
+        RuntimeQueryAction::WorkGet(params) => {
+            let (host, turn) = admitted_work_access()?;
+            host.get(&turn, params).await.map_err(runtime_error)
+        }
         #[cfg(feature = "full-daemon")]
         RuntimeQueryAction::AssignmentList(params) => {
             let (host, turn) = admitted_assignment_query()?;
@@ -598,6 +651,11 @@ async fn dispatch_mutate(
     action: RuntimeMutateAction,
 ) -> stasis::prelude::Result<Value> {
     match action {
+        #[cfg(feature = "full-daemon")]
+        RuntimeMutateAction::WorkRecord(params) => {
+            let (host, turn) = admitted_work_access()?;
+            host.record(&turn, params).await.map_err(runtime_error)
+        }
         RuntimeMutateAction::JobEnqueue(params) => params.execute(tool).await,
         RuntimeMutateAction::JobCancel(params) => params.execute(tool).await,
         RuntimeMutateAction::RecurringRegister(params) => params.execute(tool).await,
@@ -946,6 +1004,52 @@ mod tests {
 
     #[cfg(feature = "full-daemon")]
     #[test]
+    fn work_actions_are_typed_and_cannot_override_the_admitted_owner() {
+        for action in ["work.graph", "work.get"] {
+            assert!(
+                serde_json::from_value::<RuntimeQueryAction>(json!({
+                    "action": action, "user_id": "user:other", "work_unit_id": "work-1"
+                }))
+                .is_err()
+            );
+        }
+        assert!(matches!(
+            serde_json::from_value::<RuntimeQueryAction>(json!({
+                "action": "work.graph", "collection": "work_units", "limit": 10
+            }))
+            .unwrap(),
+            RuntimeQueryAction::WorkGraph(_)
+        ));
+        let accepted = json!({
+            "action": "work.record", "command": {
+                "command_id": "accept-work-1", "expected_revision": 0,
+                "mutation": { "operation": "accept_work", "work_unit_id": "work-1",
+                    "intent": "Keep documentation current", "kind": "maintenance",
+                    "scope": {}, "completion_condition": "Matches accepted code changes" }
+            }
+        });
+        assert!(matches!(
+            serde_json::from_value::<RuntimeMutateAction>(accepted.clone()).unwrap(),
+            RuntimeMutateAction::WorkRecord(_)
+        ));
+        let mut spoofed = accepted.clone();
+        spoofed["command"]["user_id"] = json!("user:other");
+        assert!(serde_json::from_value::<RuntimeMutateAction>(spoofed).is_err());
+        let mut unknown = accepted;
+        unknown["command"]["mutation"]["operation"] = json!("launch_agent");
+        assert!(serde_json::from_value::<RuntimeMutateAction>(unknown).is_err());
+        assert!(admitted_work_access().is_err());
+        for name in ["work.graph", "work.get", "work.record"] {
+            assert!(
+                runtime_type_schemas()
+                    .iter()
+                    .any(|entry| entry.name == name)
+            );
+        }
+    }
+
+    #[cfg(feature = "full-daemon")]
+    #[test]
     fn assignment_queries_do_not_accept_model_supplied_owners() {
         assert!(
             serde_json::from_value::<RuntimeQueryAction>(json!({
@@ -985,6 +1089,8 @@ mod tests {
     #[test]
     fn embedded_runtime_does_not_advertise_workshop_assignment_queries() {
         for action in [
+            "work.graph",
+            "work.get",
             "assignment.list",
             "assignment.get",
             "assignment.events",
@@ -999,6 +1105,15 @@ mod tests {
                     .any(|entry| entry.name == action)
             );
         }
+        assert!(
+            serde_json::from_value::<RuntimeMutateAction>(json!({"action": "work.record"}))
+                .is_err()
+        );
+        assert!(
+            !runtime_type_schemas()
+                .iter()
+                .any(|entry| entry.name == "work.record")
+        );
     }
 
     #[test]

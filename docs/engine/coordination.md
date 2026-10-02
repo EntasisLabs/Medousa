@@ -36,6 +36,11 @@ a grant nor starts or adopts work; native execution admission still applies.
 
 ## Assignment inspection
 
+Session-independent intent and resource relationships use the separate
+[work-domain registry](work-units.md). Its storage foundation does not change
+the execution, approval, source-session visibility, or owner-inbox behavior
+described here.
+
 On a full workshop daemon, `cognition_runtime_query` exposes `assignment.list`,
 `assignment.get`, `assignment.events`, and `owner.events`. The admitted turn supplies the
 principal; these actions do not accept an owner or principal override. Every

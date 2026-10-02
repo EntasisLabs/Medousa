@@ -38,5 +38,6 @@ pub mod turn_event_channel;
 pub mod turn_stream_registry;
 pub mod work_environment_host;
 pub mod work_environment_publication_host;
+pub mod work_units;
 pub mod worker_host;
 pub mod workshop_steer;
