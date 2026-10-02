@@ -1,6 +1,6 @@
 # Medousa coding experience epic
 
-**Status:** Draft for implementation planning (2026-10-01)
+**Status:** Implementation train in review; runtime recovery and workflow acceptance remain open (2026-10-01)
 
 **Scope:** Desktop Code, workshop language services, project commands, Terminal,
 Search, Problems, Tests, and the transitions between Code and other Medousa surfaces.
@@ -113,9 +113,11 @@ before fixing the final component design.
 
 ## Delivery slices
 
-CE0 and CE1 implementation have started. Other slices are **not implemented
-under this epic**. Existing foundations can be reused, but acceptance must be demonstrated
-against these requirements.
+CE0–CE7 have implementation work under this epic. The train below is ready for
+review and manual use; it does not close the acceptance gate. Dedicated checkout
+reattachment and local/remote journey proof
+remain open. Existing foundations are reused without substituting UI state for
+runtime authority.
 
 **CE0 progress (2026-10-01):** Removed automatic provider, root-discovery,
 matrix-discovery, and aggregate-diagnostics compatibility fallbacks in Home.
@@ -135,9 +137,78 @@ actions check their original scope before continuing. Changing documents within
 one checkout preserves explicit task selection and active run identity. Existing
 draft buffers remain owned by the document store. Language refactors now require
 the Forge transaction contract without a source-batch compatibility downgrade.
-Runtime cause translation,
-contextual package suggestions, complete checkout recovery, and local/remote
-workflow proof remain open; this is the scope-isolation foundation, not CE1 closure.
+Runtime cause translation and contextual package suggestions land in the
+subsequent slices below. Dedicated checkout recovery and local/remote workflow
+proof remain open; scope isolation alone does not close CE1.
+
+**CE2–CE7 implementation progress (2026-10-01):**
+
+- Terminal reveal does not start an editing session. Shell creation is explicit;
+  failures stay in the dock with a readable cause and raw Details. Branch drift
+  names expected/current branches and preserves drafts. Existing project flows
+  can release and attach a checkout; a dedicated in-place recovery command with
+  draft/process reconciliation is still required for CE2 closure.
+- Run uses a bounded, searchable picker grouped by command kind and the deepest
+  discovered package. Explicit selections and original runs stay stable. Equal
+  recommendations ask for a choice; removed pinned commands require reselection.
+  Output leads with state, original package, invocation time, preview, and exact
+  rerun actions.
+- Search debounces queries, groups and highlights results, reveals replacement
+  and filters on demand, and captures an explicitly selected package scope.
+  Query/scope changes discard old results and invalidate replacement previews.
+  Apply uses the frozen review inputs after editing-control waits. The runtime
+  accepts one-character searches with a 50-line page cap and intersects changed
+  scope with pathspec filters.
+- Problems retain precise ranges, provider, code, related information, and version
+  through the actual CodeMirror notification adapter. Mismatched-version or
+  unsynchronized-buffer publications are ignored; editing clears old markers.
+  Aggregate coverage is labelled as observed sessions, with unversioned and
+  recorded-version observations distinguished. Language information uses actual
+  editor connection state and places session machinery/logs behind Details.
+  Package repair opens Settings → Packages and never silently installs a tool.
+- Tests have file groups, name/provider filtering, file/package/project scopes,
+  prior-failed-invocation filtering, bounded initial rendering, explicit file/test
+  targeting, and historical output/time. A successful aggregate command is never
+  expanded into invented individual passes. The 2,000-test discovery limit is
+  identified. Supported targets can run in a scoped sequential queue; file targets deduplicate
+  by task and path. Progress counts invocations, and failed-invocation filtering
+  can queue exact supported targets again. Cancelling the pending queue retains
+  the current daemon-owned process; context changes prevent any next submission.
+- Frequent toolbar actions gain names at desktop widths. Search, feedback, and
+  language/structure panels resize with pointer or keyboard, remember dimensions
+  by workshop/project, expand, and return focus on closing. Search and replacement
+  receive keyboard navigation and preview focus containment.
+
+Regression fixtures exercise 3,000 commands and 2,000 tests with bounded rendered
+rows, actual keyboard command selection, resize restoration, delayed searches,
+replacement input invalidation, and the real CodeMirror diagnostic adapter.
+The guide describes shipped behavior. Real workshop visual/latency review,
+missing-service incident evidence, and CE8 journeys are still required; this
+status is intentionally not a claim of epic completion.
+
+**Review train and automated evidence:** `a180e5d0` separates Terminal reveal
+from shell creation; `4eb1bd18` curates commands; `0f7f9a9e` integrates the
+remaining search/diagnostic/test/panel work; `be7494d4` ensures current editor
+observations take precedence over older aggregate diagnostic snapshots.
+These follow the CE0/CE1 commits
+`9b6147c6` and `054f20c0`.
+
+- Final frontend suite: 359 files, 1,803 tests passed; Svelte check has zero errors
+  and zero warnings. Runtime graph and browser capability checks pass.
+- Runtime Clippy with workspace/all-targets and warnings denied passes. Both
+  hermetic passes report 1,875 passed and 3 ignored. Workspace library tests
+  report 2,636 passed and 4 ignored across 32 suite results.
+- The first workspace test link ran out of disk space. Cleaning this package's
+  generated Cargo artifacts and retrying with `CARGO_INCREMENTAL=0` completed
+  the same workspace test scope; no source, test, or authority checks were bypassed.
+- Strict documentation verification and diff whitespace checks pass. Production
+  frontend builds pass. Existing test-theme fetch noise and dependency/toolchain
+  build notices remain outside this epic's changes.
+
+Manual review must use a rebuilt workshop daemon for the new one-character
+search contract, together with the current app frontend. No release/deployment,
+remote push, local/remote workshop dogfood, or screenshot-based visual acceptance
+is implied by these checks. CE8 remains the explicit user-review gate.
 
 | Slice | Priority | User outcome | Dependency |
 |-------|----------|--------------|------------|
