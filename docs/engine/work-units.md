@@ -5,8 +5,9 @@ relationships and session-independent work intent. It uses the existing
 `cognition_runtime_query`, `cognition_runtime_mutate`, and `cognition_schema`
 tools. It adds no app navigation or required Goals workflow.
 
-This is the storage and intent foundation, with exact native user-vault note and
-folder observations. Other native resource adapters, execution subscriptions,
+This is the storage and intent foundation, with native user-vault and governed
+overlay observations, repository identities, and Forge lifecycle metadata. Other
+native resource adapters, execution subscriptions,
 autonomous coordination, provider federation, and contact delivery are subsequent
 implementation steps. Recording a responsibility does not launch an executor or
 register a schedule.
@@ -32,6 +33,8 @@ establish stable identity. The initial agent-facing registration records
 unresolved claims. Models cannot assert native availability, native revisions,
 or deletion; those facts require an authoritative adapter. `work.resolve` issues
 and refreshes authoritative references for exact user-vault notes and folders.
+`work.resolve_project` resolves owned Forge repository groups, work threads, and
+notes/folders in a pinned governed overlay.
 
 ## Native vault resolution
 
@@ -93,8 +96,9 @@ owner for ordinary content reads; identity operations still fail until repair.
 
 Observations are explicit, not background subscriptions. `work.get` does not
 refresh native content; refresh relevant resources before using a checkpoint for
-new work. Project overlays, projects, artifacts, feeds, execution identities, and
-cross-workshop resolution are not covered by this adapter.
+new work. Resolve projects and governed overlays with `work.resolve_project`.
+Artifacts, feeds, execution identities, and cross-workshop resolution remain
+outside these adapters.
 
 ## Native reconciliation
 
@@ -156,6 +160,80 @@ works. Compaction remains future work. Corrupt or changed archives/journals and
 copied namespace metadata fail closed rather than granting arbitrary reattachment.
 Reconciliation is native metadata repair, not execution completion, lifecycle
 cancellation, automatic background scanning, or cross-workshop federation.
+
+## Native projects and governed overlays
+
+`work.resolve_project` requires mutation permissions and an exact native Forge
+`work_id` owned by the admitted user. It uses the daemon's already-composed Forge
+host and bounded execution admission. A model cannot supply a repository path,
+owner, native revision, actor, or availability override. It changes no app UI.
+
+Resolve the repository group or work thread separately:
+
+```json
+{"action":"work.resolve_project","work_id":"work-…","target":{"kind":"project"}}
+{"action":"work.resolve_project","work_id":"work-…","target":{"kind":"forge_work"}}
+```
+
+A repository group is a `project` resource. Several Forge work threads against the
+same physical Git common directory resolve to one project reference. Each thread
+is a distinct `forge_work` resource. Resolve an issued reference with
+`target: {"kind":"reference","reference":...}` and an owned work ID pointing at
+that repository or exact thread. A project from another repository, foreign
+workshop, or native store cannot retarget that request. Relationships and work
+scope remain explicit `work.record` operations; observation creates no goal,
+execution, or inferred user-intent relationship.
+
+`{dataDir}/forge/resource-projects.json` retains the workshop-issued namespace and
+UUID repository IDs under a nonblocking cross-process lock. References use
+`forge:<namespace>:project:<uuid>` and `forge:<namespace>:work:<work-id>`. Git common
+directory paths, remotes, titles, and matching commits are evidence or locators,
+not semantic IDs. Verified physical relocation retains an issued project ID.
+Missing registered repositories become unavailable; physically different
+repositories at a reused locator receive new IDs, with previous availability
+retired and previous links retained. Copied/corrupt registries fail without a
+namespace reset. Registry loss issues a new namespace, preventing old references
+from silently retargeting. Filesystem identifier reuse retains the same platform
+limits as native vault identity.
+
+Repository observations cover **identity and availability metadata**. Forge work
+revisions cover **durable lifecycle metadata**, including native environment and
+attempt changes. Neither proves live repository file contents, a clean checkout,
+review acceptance, or a completed work unit. A discarded thread remains an
+addressable lifecycle record; this does not tombstone its repository. An unchanged
+observation replays its graph receipt without a new event. Native identity facts
+are synced before graph publication; retrying after a graph failure projects
+current facts and retires all retained replacements at the selected locator.
+
+For an existing project overlay, pin both the native environment generation and
+branch. Forge candidate checkouts can share a generation; the pair selects the
+current governed environment without using a selected project or daemon cwd:
+
+```json
+{"action":"work.resolve_project","work_id":"work-…","target":{"kind":"overlay","environment_generation":1,"environment_branch":"main","target":{"kind":"note","path":"notes/design.md"}}}
+```
+
+The target is a note, folder, or exact reference inside that environment's existing
+`.medousa/vault` directory. There is no fallback to the user vault and no creation
+of a missing overlay. Workspace/root and branch checks precede a no-follow child
+capability; symlink escapes and stale environment pins fail. Overlay references
+use `vault:<namespace>:project:<resource-id>`, independently of user-vault
+references, with the native vault sidecar relative to that physical overlay.
+Note bodies remain native; hashing and folder metadata have the same bounded
+coverage as user-vault observations. External replacement does not preserve an
+old note ID. The existing user-vault reconciliation action does not repair an
+overlay; external overlay moves and ambiguous journals remain explicit failures.
+
+Responses include `resource`, `graph_revision`, a graph receipt, and
+`file_effects_replayed: false`. Coverage distinguishes
+`forge_repository_identity_metadata`, `forge_work_lifecycle_metadata`, and
+`forge_project_overlay_exact_resource`. Project responses also include
+`affected_resources`; overlay responses identify the work and environment pins.
+The project registry holds at most 256 identities, eight physical identities per
+locator, and 1 MiB. Capacity exhaustion preserves history and denies new identity
+admission; compaction remains future work. Automatic subscriptions, artifact/feed
+adapters, executor admission, federation, and contact delivery remain subsequent
+milestones.
 
 ## Query actions
 

@@ -816,6 +816,18 @@ impl StoreRoot {
         self.open_directory_chain(path.segments(), false, "open_dir_capability")
     }
 
+    /// Retain an existing child root without creating it or following links.
+    pub fn open_subroot(&self, path: &impl StoreRootPath) -> Result<Self, StoreRootError> {
+        let dir = self.open_directory_chain(path.segments(), false, "open_subroot")?;
+        Ok(Self {
+            dir,
+            #[cfg(windows)]
+            _ancestor_guards: Vec::new(),
+            #[cfg(windows)]
+            process_path_pinned: false,
+        })
+    }
+
     /// Derive a new store root beneath this already-opened capability.
     ///
     /// Mobile sandboxes may authorize an app container while refusing ambient
@@ -1690,6 +1702,12 @@ mod tests {
         let held = root.open_dir_capability(&path("held")).unwrap();
         assert_eq!(held.read("value.txt").unwrap(), b"inside");
         assert!(held.read("../outside.txt").is_err());
+
+        let existing = root.open_subroot(&path("held")).unwrap();
+        assert_eq!(existing.read(&path("value.txt")).unwrap(), b"inside");
+        assert!(existing.read(&path("outside.txt")).is_err());
+        assert!(root.open_subroot(&path("missing/child")).is_err());
+        assert!(!temp.path().join("missing").exists());
     }
 
     #[test]
@@ -1721,6 +1739,7 @@ mod tests {
         symlink(outside.path(), temp.path().join("vault")).unwrap();
         let root = StoreRoot::open(temp.path()).unwrap();
 
+        assert!(root.open_subroot(&path("vault")).is_err());
         let error = match root.open_or_create_subroot(&path("vault")) {
             Ok(_) => panic!("symbolic-link subroot must fail"),
             Err(error) => error,

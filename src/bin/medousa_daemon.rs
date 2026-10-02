@@ -1120,6 +1120,7 @@ async fn start_daemon() -> Result<()> {
     if let Err(error) = medousa::daemon::work_units::compose_work_unit_host(
         state.forge_execution.clone(),
         medousa::paths::medousa_data_dir().join("work_units"),
+        state.forge.clone(),
     )
     .await
     {

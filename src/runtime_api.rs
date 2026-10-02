@@ -18,7 +18,8 @@ use crate::daemon::coordination::assignments::{
 };
 #[cfg(feature = "full-daemon")]
 use crate::daemon::work_units::{
-    WorkGraphMutateInput, WorkNativeReconcileInput, WorkNativeResolveInput, WorkUnitGetQuery,
+    WorkGraphMutateInput, WorkNativeReconcileInput, WorkNativeResolveInput,
+    WorkProjectResolveInput, WorkUnitGetQuery,
 };
 use crate::events::TuiEvent;
 use crate::public_api::{COGNITION_RUNTIME_MUTATE, COGNITION_RUNTIME_QUERY};
@@ -116,6 +117,9 @@ pub enum RuntimeMutateAction {
     #[cfg(feature = "full-daemon")]
     #[serde(rename = "work.reconcile")]
     WorkReconcile(WorkNativeReconcileInput),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "work.resolve_project")]
+    WorkResolveProject(WorkProjectResolveInput),
     #[serde(rename = "job.enqueue")]
     JobEnqueue(JobEnqueue),
     #[serde(rename = "job.cancel")]
@@ -393,10 +397,15 @@ impl JsonSchema for RuntimeMutateAction {
             "workflow.plan",
         ];
         #[cfg(feature = "full-daemon")]
-        let actions = ["work.record", "work.resolve", "work.reconcile"]
-            .into_iter()
-            .chain(actions)
-            .collect::<Vec<_>>();
+        let actions = [
+            "work.record",
+            "work.resolve",
+            "work.reconcile",
+            "work.resolve_project",
+        ]
+        .into_iter()
+        .chain(actions)
+        .collect::<Vec<_>>();
         advertised_object_schema(&[("action", string_enum_schema(&actions), true)])
     }
 }
@@ -495,6 +504,11 @@ pub fn runtime_type_schemas() -> Vec<TypedActionSchema> {
                 "work.resolve",
                 "Resolve an exact user-vault note, folder, or stable reference on an explicit vault root; records bounded native metadata without reading note bodies into the response",
             ),
+            typed_action_schema::<WorkProjectResolveInput>(
+                MUTATE_ID,
+                "work.resolve_project",
+                "Observe the repository identity, lifecycle of an exact owned Forge work, or a note/folder in its pinned governed overlay; metadata only, no execution or file effect replay",
+            ),
             typed_action_schema::<WorkNativeReconcileInput>(
                 MUTATE_ID,
                 "work.reconcile",
@@ -574,7 +588,7 @@ impl CognitionRuntimeQueryTool {
 
 #[medousa_tool(id = MUTATE_ID)]
 impl CognitionRuntimeMutateTool {
-    /// Mutate durable runtime work. work.record saves session-independent intent; work.resolve refreshes exact native vault metadata; work.reconcile inspects and repairs native identity metadata without retrying file effects. job.enqueue and workflow.run execute through their native admission. Fetch fields with cognition_schema types=[...].
+    /// Mutate durable runtime work. work.record saves session-independent intent; work.resolve refreshes exact native vault metadata; work.reconcile repairs vault identity metadata; work.resolve_project observes owned Forge projects, work, and pinned overlays without executing work. job.enqueue and workflow.run execute through their native admission. Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(
         &self,
         action: RuntimeMutateAction,
@@ -686,6 +700,13 @@ async fn dispatch_mutate(
         RuntimeMutateAction::WorkReconcile(params) => {
             let (host, turn) = admitted_work_access()?;
             host.reconcile_native(&turn, params)
+                .await
+                .map_err(runtime_error)
+        }
+        #[cfg(feature = "full-daemon")]
+        RuntimeMutateAction::WorkResolveProject(params) => {
+            let (host, turn) = admitted_work_access()?;
+            host.resolve_project(&turn, params)
                 .await
                 .map_err(runtime_error)
         }
@@ -1091,12 +1112,23 @@ mod tests {
         let mut spoofed_command = repair;
         spoofed_command["command"]["owner_id"] = json!("other");
         assert!(serde_json::from_value::<RuntimeMutateAction>(spoofed_command).is_err());
+        let project = json!({"action":"work.resolve_project","work_id":"work-test","target":{"kind":"project"}});
+        assert!(matches!(
+            serde_json::from_value::<RuntimeMutateAction>(project.clone()).unwrap(),
+            RuntimeMutateAction::WorkResolveProject(_)
+        ));
+        for field in ["owner_id", "repo_path", "native_revision"] {
+            let mut spoofed = project.clone();
+            spoofed["target"][field] = json!("spoofed");
+            assert!(serde_json::from_value::<RuntimeMutateAction>(spoofed).is_err());
+        }
         for name in [
             "work.graph",
             "work.get",
             "work.record",
             "work.resolve",
             "work.reconcile",
+            "work.resolve_project",
         ] {
             assert!(
                 runtime_type_schemas()
@@ -1163,7 +1195,12 @@ mod tests {
                     .any(|entry| entry.name == action)
             );
         }
-        for action in ["work.record", "work.resolve", "work.reconcile"] {
+        for action in [
+            "work.record",
+            "work.resolve",
+            "work.reconcile",
+            "work.resolve_project",
+        ] {
             assert!(
                 serde_json::from_value::<RuntimeMutateAction>(json!({"action": action})).is_err()
             );

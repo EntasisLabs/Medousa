@@ -17,12 +17,16 @@ use crate::{
 
 static HOST: OnceLock<Arc<WorkUnitHost>> = OnceLock::new();
 
+mod native_graph;
+mod native_project;
 mod native_vault;
+pub use native_project::WorkProjectResolveInput;
 pub use native_vault::{WorkNativeReconcileInput, WorkNativeResolveInput};
 
 pub struct WorkUnitHost {
     store: Arc<WorkGraphStore>,
     execution: Arc<ForgeExecutionService>,
+    forge: Arc<medousa_forge::forge::Forge>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -44,6 +48,7 @@ pub fn local_work_unit_host() -> Option<Arc<WorkUnitHost>> {
 pub async fn compose_work_unit_host(
     execution: Arc<ForgeExecutionService>,
     root: PathBuf,
+    forge: Arc<medousa_forge::forge::Forge>,
 ) -> Result<()> {
     let store = execution
         .run(ExecutionClass::StoreIo, MAX_SNAPSHOT_BYTES, move || {
@@ -53,6 +58,7 @@ pub async fn compose_work_unit_host(
     HOST.set(Arc::new(WorkUnitHost {
         store: Arc::new(store),
         execution,
+        forge,
     }))
     .map_err(|_| anyhow::anyhow!("work unit host already composed"))?;
     Ok(())
@@ -229,7 +235,7 @@ mod tests {
     use super::*;
     use crate::request_principal::TransportClass;
 
-    fn turn(owner: &str, session: &str) -> TurnExecutionContext {
+    pub(super) fn turn(owner: &str, session: &str) -> TurnExecutionContext {
         let scope = crate::turn_continuation::TurnContinuationScope {
             turn_correlation_id: format!("turn-{session}"),
             session_id: session.into(),
@@ -268,16 +274,19 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
         let execution = Arc::new(ForgeExecutionService::new());
-        let store = execution
+        let (store, forge) = execution
             .run(ExecutionClass::StoreIo, MAX_SNAPSHOT_BYTES, move || {
-                Ok(WorkGraphStore::open(&root))
+                Ok((
+                    WorkGraphStore::open(&root),
+                    medousa_forge::forge::Forge::open(root.join("forge")),
+                ))
             })
             .await
-            .unwrap()
             .unwrap();
         let host = WorkUnitHost {
-            store: Arc::new(store),
+            store: Arc::new(store.unwrap()),
             execution,
+            forge: Arc::new(forge.unwrap()),
         };
         let first = turn("user:a", "work-origin");
         let later = turn("user:a", "work-later");

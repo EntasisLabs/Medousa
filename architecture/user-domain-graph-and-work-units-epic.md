@@ -754,6 +754,65 @@ invalidation, and replay after later native moves. Full workspace/hermetic CI,
 frontend CI, and Windows/wasm qualification remain outstanding; no frontend files
 changed and no PR has been opened.
 
+### Native project and governed overlay milestone — 2026-10-02
+
+`work.resolve_project` now resolves an exact owned Forge work into separate
+repository-group and work-thread references, or observes an exact note/folder in
+its current governed overlay. The daemon host supplies Forge authority through
+bounded execution admission; requests cannot select a raw repository path or
+assert an owner, native revision, actor, or availability. Existing app UI and
+Coder project/thread behavior stay in place.
+
+Repository groups receive UUID identities in a synced, capability-confined Forge
+sidecar. The native Git common-directory path and physical object are evidence,
+not the graph ID. Several work threads share a repository reference; each keeps
+its own Forge work reference. Verified physical relocation retains identity,
+while a physically replaced repository at the same locator gets a different ID.
+Retained unavailable predecessors invalidate old readiness and preserve links.
+Copied or corrupt registries cannot silently issue replacement identities.
+
+The adapter pins overlays to both environment branch and generation: Forge
+candidate checkouts can share a generation. It opens only the existing overlay
+below the governed workspace through a no-follow child capability, with no user
+vault or cwd fallback. Overlay notes/folders retain independent native UUIDs and
+`project` source references. Stale pins, wrong source/kind/root, and escapes fail
+without granting scope or repeating file effects. External overlay move/journal
+reconciliation remains a subsequent extension of the repair adapter.
+
+Project observations prove repository identity metadata, and Forge work revisions
+prove native lifecycle metadata. Neither is a live checkout content digest or an
+execution/review/completion decision. Graph writes keep native custody through
+publication, replay unchanged receipts, and repair projection after interruption.
+They create no work unit or inferred intent relationship. Existing `work.record`
+relationships support real note → several projects and project → several folders
+links, including inverse queries after restart.
+
+- [x] Workshop-owned repository IDs distinct from paths and Forge work IDs
+- [x] Owner-bound native project and Forge lifecycle observations
+- [x] Exact governed overlay note/folder observations with branch/generation pins
+- [x] Restart replay, retained replacement availability, and real cross-resource links
+- [ ] Artifact/feed and execution identity adapters
+- [ ] Overlay reconciliation, subscriptions, and live checkout revision coverage
+- [ ] Project registry compaction and cross-platform qualification
+
+The registry retains at most 256 project identities, eight physical identities per
+locator, and 1 MiB. It does not evict history to admit a new resource. This closes
+the project/overlay observation milestone; the full Phase 1 gate and autonomous
+executor/reviewer coordination remain open.
+
+Validation: 21 work-unit/native-adapter tests, 6 runtime action/schema tests, and
+25 shared persistence/confinement tests passed. The work-unit suite ran with
+`--test-threads=1` after a parallel sweep encountered retryable vault custody
+overload; parallel qualification remains outstanding. Strict clippy over all
+targets of `medousa`, `medousa-store`, `medousa-work`, and `medousa-types`, strict
+docs verification, and diff whitespace checks passed. The embedded library
+compile check passed with its existing feature warnings. Fixtures cover actual
+repositories, many-to-many links and inverse queries, readiness invalidation,
+physical replacement, retained relocation/history, interrupted graph publication,
+owner/read-only admission, stale environment pins, and confinement. Full workspace
+CI, frontend CI, and Windows/wasm qualification have not run; no frontend files
+changed and no PR has been opened.
+
 ### Phase exit gates
 
 - [ ] Phase 0 — contract and source audit
