@@ -17,9 +17,11 @@ use crate::{
 
 static HOST: OnceLock<Arc<WorkUnitHost>> = OnceLock::new();
 
+mod native_content;
 mod native_graph;
 mod native_project;
 mod native_vault;
+pub use native_content::WorkContentResolveInput;
 pub use native_project::WorkProjectResolveInput;
 pub use native_vault::{WorkNativeReconcileInput, WorkNativeResolveInput};
 

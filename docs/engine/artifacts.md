@@ -51,6 +51,13 @@ SDK: `runtime().artifact_fetch`, `artifact_write`, `artifact_delete`, `artifact_
 
 Store: `src/artifact_store.rs`
 
+For session-independent work scopes, `cognition_runtime_mutate` action
+`work.resolve_content` observes an **exact** source-session/artifact pair without
+returning its body or following the latest revision. Artifact payloads remain
+distinct from environment components and profile-owned feed streams. See
+[work scopes and native content observations](work-units.md#native-artifacts-components-and-feeds)
+for identities, binding metadata, ownership, and revision coverage.
+
 ---
 
 ## Presentation modes

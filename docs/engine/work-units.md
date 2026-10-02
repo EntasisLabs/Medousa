@@ -6,8 +6,8 @@ relationships and session-independent work intent. It uses the existing
 tools. It adds no app navigation or required Goals workflow.
 
 This is the storage and intent foundation, with native user-vault and governed
-overlay observations, repository identities, and Forge lifecycle metadata. Other
-native resource adapters, execution subscriptions,
+overlay observations, repository identities, Forge lifecycle metadata, and exact
+artifact/component/feed observations. Execution subscriptions,
 autonomous coordination, provider federation, and contact delivery are subsequent
 implementation steps. Recording a responsibility does not launch an executor or
 register a schedule.
@@ -34,7 +34,8 @@ unresolved claims. Models cannot assert native availability, native revisions,
 or deletion; those facts require an authoritative adapter. `work.resolve` issues
 and refreshes authoritative references for exact user-vault notes and folders.
 `work.resolve_project` resolves owned Forge repository groups, work threads, and
-notes/folders in a pinned governed overlay.
+notes/folders in a pinned governed overlay. `work.resolve_content` observes exact
+artifact payloads, environment components, and retained feed streams.
 
 ## Native vault resolution
 
@@ -97,8 +98,8 @@ owner for ordinary content reads; identity operations still fail until repair.
 Observations are explicit, not background subscriptions. `work.get` does not
 refresh native content; refresh relevant resources before using a checkpoint for
 new work. Resolve projects and governed overlays with `work.resolve_project`.
-Artifacts, feeds, execution identities, and cross-workshop resolution remain
-outside these adapters.
+Resolve artifacts, components, and feeds with `work.resolve_content`. Execution
+identities and cross-workshop resolution remain outside these adapters.
 
 ## Native reconciliation
 
@@ -231,9 +232,79 @@ Responses include `resource`, `graph_revision`, a graph receipt, and
 `affected_resources`; overlay responses identify the work and environment pins.
 The project registry holds at most 256 identities, eight physical identities per
 locator, and 1 MiB. Capacity exhaustion preserves history and denies new identity
-admission; compaction remains future work. Automatic subscriptions, artifact/feed
-adapters, executor admission, federation, and contact delivery remain subsequent
+admission; compaction remains future work. Automatic subscriptions,
+executor admission, federation, and contact delivery remain subsequent
 milestones.
+
+## Native artifacts, components, and feeds
+
+`work.resolve_content` projects existing native metadata into the admitted owner's
+work graph. It requires the same mutation permissions as other resolvers. It
+accepts no caller-selected profile, owner, path, revision, availability, or payload.
+The artifact source chat must remain visible to that owner, including native
+shared-chat membership checks. Components and feeds use the admitted profile;
+the currently selected app profile does not override it.
+
+```json
+{"action":"work.resolve_content","target":{"kind":"artifact","session_id":"source-chat","artifact_id":"art:exact-native-id"}}
+{"action":"work.resolve_content","target":{"kind":"component","component_id":"dashboard"}}
+{"action":"work.resolve_content","target":{"kind":"feed","feed_id":"digest"}}
+```
+
+Refresh a previously observed resource using
+`target: {"kind":"reference","reference":...}` and the returned
+`resource.reference`. The graph must contain a native observation for that exact
+reference in this owner's domain; an inferred locator cannot authorize resolution.
+Wrong authorities, resource kinds, owners, and reference/locator combinations fail.
+
+These are three distinct native kinds. Artifact references identify an exact
+payload revision using the **full** source-session ID and artifact ID: legacy
+artifact IDs include only a short session prefix. Resolution never follows an
+alias, prefix match, latest-revision chain, or another session's payload. Component
+and feed references identify their existing logical profile-scoped IDs. References
+use `content-v1:<digest>` qualified by authority and kind; the digest encodes the
+native key and owner, rather than treating content bytes as identity. Native
+component/feed ID reuse retains the logical reference; these stores do not yet
+provide physical-incarnation or historical deletion identities.
+
+Responses include the resource, graph revision, receipt, `bindings`, coverage,
+and `file_effects_replayed: false`. Available means observed at this native
+boundary; it does not prove execution, rendered correctness, review, or completion:
+
+| Coverage | Observation and revision |
+| --- | --- |
+| `artifact_index_and_payload_presence` | Exact index metadata plus native payload-file presence; revision hashes the record, without reading or validating HTML/binary content. |
+| `environment_component_configuration` | Exact existing component configuration; revision hashes that component rather than a process-local environment revision counter. No default environment is installed by observation. |
+| `daemon_retained_feed_stream` | The daemon's retained feed state; revision includes event generation, next sequence, and last-event digest. Read-cursor changes do not invalidate it. An empty stream resolves unavailable. |
+
+Artifact bindings report source-chat lineage. Component bindings return exact
+profile-scoped feed references, even if those feeds have no events yet. A configured
+artifact ID or alias is reported as **unresolved** until an exact source chat and
+artifact are supplied; configuration alone cannot prove that binding. Feed event
+refs are producer hints and are not promoted into verified resource relationships.
+Bindings describe the current native observation; they do not create graph edges.
+Use existing `work.record` relationships to save intended links among the returned
+resources, vault notes, projects, or work scopes. Saved links survive resource loss
+and restart. A native binding change invalidates pinned component readiness on
+refresh, without silently rewriting an explicit intent relationship.
+
+Graph publication retains native writer custody: artifact payload/index writes,
+maintenance and deletion share daemon custody; component observations exclude native
+`put`; feeds retain their append/cursor mutex. Unchanged observations replay their
+receipt. Interrupted graph publication can be retried after restart without
+republishing HTML, appending events, or reapplying file effects. Missing native
+resources refresh as unavailable. Native read, parse, custody, or size errors fail
+instead of being reported as absence. The file artifact index scan is capped at
+4 MiB; component specs retain their 4 MiB bound and feed logs their 16 MiB bound.
+Component binding responses admit at most 128 feed references and 256 bytes per
+configured artifact ID.
+
+The adapters expose no artifact bodies, component config bodies, feed payloads,
+or event summaries. They retain existing native stores and UI. Feed coverage is the
+in-process owner's retained state, not an external-writer or complete-history
+snapshot; native file tampering, multi-process content writers, subscriptions,
+physical-incarnation tracking, artifact alias reconciliation, automatic maintenance,
+executor/reviewer coordination, and contact delivery remain subsequent work.
 
 ## Query actions
 

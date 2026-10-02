@@ -813,6 +813,70 @@ owner/read-only admission, stale environment pins, and confinement. Full workspa
 CI, frontend CI, and Windows/wasm qualification have not run; no frontend files
 changed and no PR has been opened.
 
+### Native artifact, component, and feed milestone — 2026-10-02
+
+`work.resolve_content` now observes existing artifact payload revisions,
+profile-owned environment components, retained feed streams, and previously
+observed exact references. Admission derives the domain from the frozen turn;
+requests cannot supply a profile, owner, native revision, availability, path,
+or payload. Artifact sources retain native chat visibility checks. Work lifetime
+remains independent of the chat used to ask for an observation.
+
+References preserve three distinct native kinds. Artifact identity includes the
+full source session and exact native artifact ID, avoiding legacy short-session
+collisions. The adapter does not follow aliases, prefixes, latest chains, or
+cross-session fallbacks. Component/feed identity preserves each native logical
+profile-scoped key, without inventing a physical-incarnation guarantee. Missing
+resources refresh unavailable; metadata changes invalidate pinned readiness.
+Artifact coverage proves index metadata and file presence, component coverage
+proves configuration, and feed coverage proves the daemon's retained stream.
+None proves rendered correctness, execution, review, or completion.
+
+Component observations expose exact feed references and report configured artifact
+IDs/aliases as unresolved until the source session is known. Artifact observations
+expose source-chat lineage. Native bindings are current metadata, not automatically
+inferred intent edges. Existing `work.record` links connect these resources with
+vaults, projects, and work units, and remain queryable after restart or native loss.
+Feed producer refs do not silently become verified graph relationships.
+
+Publication holds daemon native custody through the graph commit. Unchanged facts
+replay the original receipt; post-publication interruption recovers without
+republishing HTML, appending feed events, or repeating file effects. Native read or
+parse errors fail closed. File artifact scans are bounded at 4 MiB, component specs
+at 4 MiB, and feed logs at 16 MiB; component binding responses cap feed references
+at 128. Responses exclude HTML, binary bodies, component config bodies, feed payloads,
+and summaries. Native `user:…` feed profiles now use their canonical opaque storage
+keys even when no legacy filesystem path can represent that profile.
+
+- [x] Separate native artifact, component, and feed graph identities
+- [x] Exact owner-bound observation with revision/readiness checks
+- [x] Native binding metadata without guessed cross-session artifact edges
+- [x] Restart replay, publication custody, and durable cross-resource relationships
+- [ ] Native execution identity/admission and executor → reviewer coordination
+- [ ] Alias reconciliation, subscriptions, and automatic maintenance propagation
+- [ ] Physical-incarnation/deletion history and multi-process content writer custody
+- [ ] Full workspace, parallel, and cross-platform qualification
+
+This closes the artifact/component/feed observation milestone. The Phase 1 exit
+gate and autonomous coordination remain open; existing UI and native stores stay
+in place. A runtime observation does not create a work unit, schedule, executor,
+reviewer, or contact delivery.
+
+Validation: 31 work-unit/native-adapter tests, 6 runtime action/schema tests,
+14 artifact-store tests, 8 feed-store tests, and 3 environment-store tests passed
+(62 distinct tests). Work-unit qualification used `--test-threads=1`; full parallel
+qualification remains outstanding. Strict clippy over all targets of `medousa`,
+`medousa-store`, `medousa-work`, and `medousa-types`, strict docs verification, and
+diff whitespace checks passed. The embedded library compile check passed with its
+32 existing feature warnings. The final component-reader change was rechecked by
+strict clippy and the work-unit suite, including corrupt/oversized persisted specs
+with a warm native cache. Fixtures also cover real native stores, legacy ID
+collisions, source-session and owner isolation, cross-resource links after restart,
+readiness invalidation, append/put publication custody, and post-commit replay.
+Full workspace/hermetic CI, frontend CI, Windows/wasm, and live Surreal-backed
+artifact observation qualification remain outstanding; no frontend files changed
+and no PR has been opened.
+
 ### Phase exit gates
 
 - [ ] Phase 0 — contract and source audit

@@ -18,8 +18,8 @@ use crate::daemon::coordination::assignments::{
 };
 #[cfg(feature = "full-daemon")]
 use crate::daemon::work_units::{
-    WorkGraphMutateInput, WorkNativeReconcileInput, WorkNativeResolveInput,
-    WorkProjectResolveInput, WorkUnitGetQuery,
+    WorkContentResolveInput, WorkGraphMutateInput, WorkNativeReconcileInput,
+    WorkNativeResolveInput, WorkProjectResolveInput, WorkUnitGetQuery,
 };
 use crate::events::TuiEvent;
 use crate::public_api::{COGNITION_RUNTIME_MUTATE, COGNITION_RUNTIME_QUERY};
@@ -120,6 +120,9 @@ pub enum RuntimeMutateAction {
     #[cfg(feature = "full-daemon")]
     #[serde(rename = "work.resolve_project")]
     WorkResolveProject(WorkProjectResolveInput),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "work.resolve_content")]
+    WorkResolveContent(WorkContentResolveInput),
     #[serde(rename = "job.enqueue")]
     JobEnqueue(JobEnqueue),
     #[serde(rename = "job.cancel")]
@@ -402,6 +405,7 @@ impl JsonSchema for RuntimeMutateAction {
             "work.resolve",
             "work.reconcile",
             "work.resolve_project",
+            "work.resolve_content",
         ]
         .into_iter()
         .chain(actions)
@@ -509,6 +513,11 @@ pub fn runtime_type_schemas() -> Vec<TypedActionSchema> {
                 "work.resolve_project",
                 "Observe the repository identity, lifecycle of an exact owned Forge work, or a note/folder in its pinned governed overlay; metadata only, no execution or file effect replay",
             ),
+            typed_action_schema::<WorkContentResolveInput>(
+                MUTATE_ID,
+                "work.resolve_content",
+                "Observe an exact visible artifact payload, your environment component, retained feed stream, or previously observed content reference; metadata only, without scheduling or publishing content",
+            ),
             typed_action_schema::<WorkNativeReconcileInput>(
                 MUTATE_ID,
                 "work.reconcile",
@@ -588,7 +597,7 @@ impl CognitionRuntimeQueryTool {
 
 #[medousa_tool(id = MUTATE_ID)]
 impl CognitionRuntimeMutateTool {
-    /// Mutate durable runtime work. work.record saves session-independent intent; work.resolve refreshes exact native vault metadata; work.reconcile repairs vault identity metadata; work.resolve_project observes owned Forge projects, work, and pinned overlays without executing work. job.enqueue and workflow.run execute through their native admission. Fetch fields with cognition_schema types=[...].
+    /// Mutate durable runtime work. work.record saves session-independent intent; work.resolve refreshes exact native vault metadata; work.reconcile repairs vault identity metadata; work.resolve_project observes owned Forge projects, work, and pinned overlays; work.resolve_content observes artifacts, components, and feeds without executing work. job.enqueue and workflow.run execute through their native admission. Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(
         &self,
         action: RuntimeMutateAction,
@@ -707,6 +716,13 @@ async fn dispatch_mutate(
         RuntimeMutateAction::WorkResolveProject(params) => {
             let (host, turn) = admitted_work_access()?;
             host.resolve_project(&turn, params)
+                .await
+                .map_err(runtime_error)
+        }
+        #[cfg(feature = "full-daemon")]
+        RuntimeMutateAction::WorkResolveContent(params) => {
+            let (host, turn) = admitted_work_access()?;
+            host.resolve_content(&turn, params)
                 .await
                 .map_err(runtime_error)
         }
@@ -1122,6 +1138,31 @@ mod tests {
             spoofed["target"][field] = json!("spoofed");
             assert!(serde_json::from_value::<RuntimeMutateAction>(spoofed).is_err());
         }
+        for target in [
+            json!({"kind":"artifact","session_id":"session-test","artifact_id":"art:test"}),
+            json!({"kind":"component","component_id":"dashboard"}),
+            json!({"kind":"feed","feed_id":"digest"}),
+        ] {
+            let content = json!({"action":"work.resolve_content","target":target});
+            assert!(matches!(
+                serde_json::from_value::<RuntimeMutateAction>(content.clone()).unwrap(),
+                RuntimeMutateAction::WorkResolveContent(_)
+            ));
+            for field in [
+                "owner_id",
+                "profile_id",
+                "native_revision",
+                "resolution",
+                "payload_path",
+            ] {
+                let mut spoofed = content.clone();
+                spoofed["target"][field] = json!("spoofed");
+                assert!(serde_json::from_value::<RuntimeMutateAction>(spoofed).is_err());
+                let mut outer = content.clone();
+                outer[field] = json!("spoofed");
+                assert!(serde_json::from_value::<RuntimeMutateAction>(outer).is_err());
+            }
+        }
         for name in [
             "work.graph",
             "work.get",
@@ -1129,6 +1170,7 @@ mod tests {
             "work.resolve",
             "work.reconcile",
             "work.resolve_project",
+            "work.resolve_content",
         ] {
             assert!(
                 runtime_type_schemas()
@@ -1200,6 +1242,7 @@ mod tests {
             "work.resolve",
             "work.reconcile",
             "work.resolve_project",
+            "work.resolve_content",
         ] {
             assert!(
                 serde_json::from_value::<RuntimeMutateAction>(json!({"action": action})).is_err()
