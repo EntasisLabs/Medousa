@@ -62,6 +62,7 @@ Shipped product features: [artifacts](../docs/engine/artifacts.md), [mobile shel
 
 | Doc | Topic |
 |-----|--------|
+| [coding-experience-epic.md](coding-experience-epic.md) | **Coding experience** — truthful language services, shared context, Terminal recovery, contextual commands, and complete workflow quality |
 | [agent-conversation-bridges-plan.md](agent-conversation-bridges-plan.md) | **External agent conversations** — Muse over WhatsApp and Grok Bot over webhook routines, with daemon-owned state and scoped workshop access |
 | [expressive-chat-media-ink-liquid-epic.md](expressive-chat-media-ink-liquid-epic.md) | **Expressive Chat** — pressure-first ink, drawing in chat, generated media, and durable interactive Liquid recipes/timers |
 | [hardening/README.md](hardening/README.md) | **Repo-wide hardening** — authority containment, trustworthy state, bounded hot paths, and enforced architecture |
