@@ -252,6 +252,21 @@ pub fn ensure_owner_for_active_root() -> Result<Arc<VaultIndexOwner>, VaultMutat
 pub fn ensure_owner_for_root(
     root_path: std::path::PathBuf,
 ) -> Result<Arc<VaultIndexOwner>, VaultMutationError> {
+    ensure_owner_for_root_inner(root_path, true)
+}
+
+/// Repair must be able to inspect a root whose startup recovery is ambiguous.
+#[cfg(feature = "full-daemon")]
+pub(crate) fn ensure_owner_for_root_for_repair(
+    root_path: std::path::PathBuf,
+) -> Result<Arc<VaultIndexOwner>, VaultMutationError> {
+    ensure_owner_for_root_inner(root_path, false)
+}
+
+fn ensure_owner_for_root_inner(
+    root_path: std::path::PathBuf,
+    recover: bool,
+) -> Result<Arc<VaultIndexOwner>, VaultMutationError> {
     let root_key = root_path.display().to_string();
     if let Some(existing) = vault_registry().get(&root_key) {
         return Ok(existing);
@@ -259,7 +274,16 @@ pub fn ensure_owner_for_root(
     let files = crate::vault::path::vault_capability_for_root(root_path)
         .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
     let owner = VaultIndexOwner::new(VaultRootId::new(root_key), files);
-    crate::vault::mutation::recover_all_pending_writes(&owner)?;
+    if recover {
+        match crate::vault::mutation::recover_all_pending_writes(&owner) {
+            Ok(_) => {}
+            // Uncertain identity custody blocks writes/resolution in the
+            // identity transaction, not ordinary reads of native note bytes.
+            #[cfg(feature = "full-daemon")]
+            Err(VaultMutationError::ExternallyAmbiguous(_)) => {}
+            Err(error) => return Err(error),
+        }
+    }
     vault_registry().insert(Arc::clone(&owner));
     Ok(owner)
 }

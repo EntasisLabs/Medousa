@@ -214,16 +214,20 @@ pub fn recover_all_pending_writes(
     if !owner.files.is_dir(&intent_root).unwrap_or(false) {
         return Ok(Vec::new());
     }
-    let mut recovered = Vec::new();
-    for entry in owner
+    #[cfg(feature = "full-daemon")]
+    let operation_ids = {
+        let _repair = crate::vault::identity::VaultIdentityTransaction::begin(owner, true)?;
+        crate::vault::identity::VaultIdentityTransaction::pending_journal_ids(owner)?
+    };
+    #[cfg(not(feature = "full-daemon"))]
+    let operation_ids: Vec<String> = owner
         .files
-        .list_directory_utf8(&intent_root)
-        .map_err(VaultMutationError::from)?
-    {
-        if !entry.name.ends_with(".json") {
-            continue;
-        }
-        let operation_id = entry.name.trim_end_matches(".json");
+        .list_directory_utf8(&intent_root)?
+        .into_iter()
+        .filter_map(|entry| entry.name.strip_suffix(".json").map(str::to_string))
+        .collect();
+    let mut recovered = Vec::new();
+    for operation_id in &operation_ids {
         let intent_path = intent_store_path(operation_id)?;
         let peek = owner
             .files

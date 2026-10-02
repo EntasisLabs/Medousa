@@ -88,13 +88,74 @@ rejects concurrent identity custody as overloaded; retry after the owner release
 it. When a write published without a durable physical publication witness,
 recovery retains an ambiguous intent instead of guessing from equal content.
 Identity resolution and further native mutations remain blocked until explicit
-reconciliation; that repair workflow has not yet been implemented. Ordinary native
-content reads remain available.
+reconciliation through `work.reconcile`. An ambiguous startup retains the native
+owner for ordinary content reads; identity operations still fail until repair.
 
 Observations are explicit, not background subscriptions. `work.get` does not
 refresh native content; refresh relevant resources before using a checkpoint for
 new work. Project overlays, projects, artifacts, feeds, execution identities, and
 cross-workshop resolution are not covered by this adapter.
+
+## Native reconciliation
+
+`work.reconcile` uses the same admitted owner, mutation permissions, explicit
+configured `root_id`, and daemon filesystem authority as `work.resolve`. It adds
+no user-managed Goals workflow or new app UI. The runtime validates evidence;
+the reasoning agent cannot override native availability or use equal bytes to
+assert identity. Fetch its typed schema through `cognition_schema`.
+
+Inspect and attempt ordinary journal recovery first:
+
+```json
+{"action":"work.reconcile","root_id":"personal","command":{"operation":"inspect"}}
+```
+
+Inspection returns a bounded `pending_journals` list with exact operation IDs,
+intent digests, locators, and witness/receipt flags, plus a bounded recovery
+diagnostic. It contains no note bodies or original journal payloads. Inspection
+can open a root whose ordinary startup recovery is ambiguous. Directory inspection
+is capped at 128 entries and each journal at 64 KiB; larger or malformed metadata
+fails without resetting identity. Ordinary recovery runs before repair and never
+repeats a file mutation.
+
+To adopt an external move, provide `command.operation: "adopt_move"`, a fresh
+`command_id`, the original local `reference`, its exact `expected_native_revision`
+from `work.resolve`, and the new public `path`. The runtime requires the same
+physical object and kind, an original locator that no longer owns it, and no
+competing identity for that object. A changed observation, tombstone, symlink,
+foreign authority/root, or equal-content copy cannot pass that check. The accepted
+move retains the reference and its graph links. Any replaced object already
+registered at the new locator becomes unavailable with its own ID retained.
+Folder adoption changes that folder only; reconcile known descendants separately.
+
+When publication cannot be proven, provide `command.operation:
+"quarantine_journal"`, a fresh `command_id`, and the inspected `operation_id` and
+`expected_intent_digest`. The runtime preserves the exact intent and any native
+receipt in `.medousa/vault/reconciliations/<operation-id>.json`, then atomically
+publishes its decision and unavailable identity facts in the sidecar before
+removing the active intent and syncing its parent. It changes no note bytes and
+never retries write/move/delete/restore effects. Permanent tombstones remain
+tombstones. An unproven publication does not bind the reserved or prior ID to the
+current file; resolve that file separately to issue an appropriate new reference.
+Quarantine reports `native_outcome: "unresolved"`, not completed work, and affected
+unavailable facts invalidate old readiness checkpoints when projected.
+
+Repair responses contain an immutable `reconciliation` receipt, affected current
+`resources`, a graph revision when resources were projected, and
+`file_effects_replayed: false`. Retry the exact request after uncertainty. Command
+keys bind to the admitted domain and full request; changed intent under the same
+key conflicts. Replays retain the receipt but publish current observations,
+without rolling a locator back after a later managed move. A decision published
+before intent cleanup is finished at owner restart or the next identity operation.
+Archive-before-decision failures leave the active intent in place. Graph projection
+failures remain retryable without repeating file effects.
+
+The sidecar retains at most 256 repair receipts within its existing 1 MiB bound.
+Exhaustion denies new reconciliation without evicting receipts; exact replay still
+works. Compaction remains future work. Corrupt or changed archives/journals and
+copied namespace metadata fail closed rather than granting arbitrary reattachment.
+Reconciliation is native metadata repair, not execution completion, lifecycle
+cancellation, automatic background scanning, or cross-workshop federation.
 
 ## Query actions
 

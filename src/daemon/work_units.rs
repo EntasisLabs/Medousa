@@ -18,7 +18,7 @@ use crate::{
 static HOST: OnceLock<Arc<WorkUnitHost>> = OnceLock::new();
 
 mod native_vault;
-pub use native_vault::WorkNativeResolveInput;
+pub use native_vault::{WorkNativeReconcileInput, WorkNativeResolveInput};
 
 pub struct WorkUnitHost {
     store: Arc<WorkGraphStore>,

@@ -701,6 +701,59 @@ replacement immediately after native create/replace. The full workspace/hermetic
 CI and frontend matrix have not been run; no frontend files changed and no PR
 has been opened. Windows/wasm qualification remains outstanding.
 
+### Native reconciliation milestone — 2026-10-02
+
+`work.reconcile` now exposes bounded inspection, evidence-based external move
+adoption, and conservative native journal quarantine through the existing runtime
+tools. It retains the admitted owner and explicit configured root; no Goals
+management screen, UI change, or user-managed repair ledger was introduced.
+
+An adoption checks an exact native revision, physical object, kind, and original
+locator custody. It preserves the reference and many-to-many graph links while
+retiring availability for a physically replaced destination resource. Folder
+adoption affects only the selected folder, not an inferred descendant scope.
+Copies with equal bytes, stale observations, tombstones, symlinks, and foreign
+authorities/namespaces cannot authorize a merge or reattachment.
+
+Quarantine retains the original intent and optional native receipt in a synced
+archive. A single sidecar publication retains the decision and affected identity
+facts before active-intent cleanup. Unproven IDs do not attach to current bytes;
+old readiness is invalidated by unavailable facts, and tombstones stay permanent.
+Quarantine reports an unresolved native outcome and replays no file effects.
+Ambiguous startup leaves native reads available while writes and identity
+resolution wait for repair.
+
+Domain-bound command keys and exact digests make retries attributable. A replay
+returns its saved decision and projects current facts rather than rolling back a
+later locator. Startup/identity admission completes receipt-committed cleanup;
+archive-before-snapshot failures preserve the active intent. A failed metadata
+transaction cannot use its uncommitted in-memory receipt to clear a journal.
+Changed or corrupt metadata remains explicit failure, not an identity reset.
+
+- [x] Native external move adoption from exact physical and revision evidence
+- [x] Bounded operational inspection and retained unresolved-publication archives
+- [x] Durable repair receipts, restart cleanup, and graph projection replay
+- [ ] Project/overlay, artifact, feed, and execution identity adapters
+- [ ] Native event subscriptions and automatic observation refresh
+- [ ] Repair history compaction and cross-platform qualification
+
+Inspection caps directory entries at 128 and journals at 64 KiB. The sidecar
+retains at most 256 repair receipts within its existing 1 MiB bound. Full history
+denies new reconciliation without evicting old decisions; exact replay remains
+available. The runtime has a repair path for ambiguity, not arbitrary root/store
+corruption or a globally portable filesystem identity guarantee. This closes the
+native ambiguity milestone, not the full Phase 1 gate or execution coordination.
+
+Validation: 86 vault/native-adapter tests, 4 admitted-host tests, and 6 runtime
+action/schema tests passed. Strict clippy over all targets of `medousa`,
+`medousa-store`, `medousa-work`, and `medousa-types`, strict docs verification, and
+diff whitespace checks passed. The embedded daemon library compile check passed
+with its existing feature warnings. Repair fixtures cover publication failure,
+restart cleanup, changed evidence, full receipt history, owner isolation, readiness
+invalidation, and replay after later native moves. Full workspace/hermetic CI,
+frontend CI, and Windows/wasm qualification remain outstanding; no frontend files
+changed and no PR has been opened.
+
 ### Phase exit gates
 
 - [ ] Phase 0 — contract and source audit

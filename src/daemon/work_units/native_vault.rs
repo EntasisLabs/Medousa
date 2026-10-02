@@ -7,6 +7,9 @@ use crate::vault::{
     path::VaultPath,
 };
 
+mod reconciliation;
+pub use reconciliation::WorkNativeReconcileInput;
+
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct WorkNativeResolveInput {
@@ -69,7 +72,15 @@ pub(super) fn resolve(
             record
         }
     };
-    let vault_id = identities.vault_id();
+    project(store, domain, identities.vault_id(), record)
+}
+
+fn project(
+    store: &WorkGraphStore,
+    domain: &UserDomainRef,
+    vault_id: &str,
+    record: crate::vault::identity::VaultResourceIdentity,
+) -> Result<serde_json::Value> {
     let reference = ResourceRef {
         authority_id: domain.authority_id.clone(),
         kind: match record.kind {
@@ -205,7 +216,7 @@ mod tests {
     };
     use medousa_store::StoreRoot;
 
-    fn fixture() -> (
+    pub(super) fn fixture() -> (
         tempfile::TempDir,
         Arc<VaultIndexOwner>,
         WorkGraphStore,
@@ -223,7 +234,7 @@ mod tests {
         };
         (dir, owner, graph, domain)
     }
-    fn write(owner: &Arc<VaultIndexOwner>, path: &str, body: &str) {
+    pub(super) fn write(owner: &Arc<VaultIndexOwner>, path: &str, body: &str) {
         commit_write(
             owner,
             WriteMutation {
@@ -235,10 +246,14 @@ mod tests {
         )
         .unwrap();
     }
-    fn native(value: &serde_json::Value) -> ResourceRecord {
+    pub(super) fn native(value: &serde_json::Value) -> ResourceRecord {
         serde_json::from_value(value["resource"].clone()).unwrap()
     }
-    fn mutate(store: &WorkGraphStore, domain: &UserDomainRef, mutation: WorkGraphMutation) {
+    pub(super) fn mutate(
+        store: &WorkGraphStore,
+        domain: &UserDomainRef,
+        mutation: WorkGraphMutation,
+    ) {
         let revision = store
             .query(domain, WorkGraphQuery::default())
             .unwrap()

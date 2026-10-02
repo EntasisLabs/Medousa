@@ -1,7 +1,7 @@
 //! Stable user-vault identities. Paths and filesystem identities are evidence,
 //! not semantic IDs. Native journals retain the bindings until projection sync.
 
-use std::{collections::BTreeMap, fs::File, sync::atomic::Ordering};
+use std::{cell::Cell, collections::BTreeMap, fs::File, sync::atomic::Ordering};
 
 use fs2::FileExt;
 use medousa_store::{FileTransaction, StoreEntryKind, StoreMetadata, StorePath};
@@ -13,6 +13,11 @@ use super::{
     contracts::{VaultFileIdentity, VaultIdentityBinding, VaultMutationError},
     owner::VaultIndexOwner,
     path::VaultPath,
+};
+
+mod reconciliation;
+pub(crate) use reconciliation::{
+    ReconciliationDisposition, VaultReconciliationKey, VaultReconciliationReceipt,
 };
 
 pub const MAX_IDENTITY_BYTES: usize = 1024 * 1024;
@@ -40,7 +45,7 @@ pub struct VaultResourceIdentity {
     pub revision: u64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct IdentitySnapshot {
     schema_version: u16,
@@ -48,6 +53,8 @@ struct IdentitySnapshot {
     root_file: VaultFileIdentity,
     revision: u64,
     resources: BTreeMap<String, VaultResourceIdentity>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    reconciliations: BTreeMap<String, VaultReconciliationReceipt>,
 }
 
 /// Held across native publication and metadata repair. Cross-process admission
@@ -56,6 +63,7 @@ pub(crate) struct VaultIdentityTransaction<'a> {
     owner: &'a VaultIndexOwner,
     _lock: File,
     snapshot: IdentitySnapshot,
+    publication_failed: Cell<bool>,
 }
 
 fn store_path(name: &str) -> Result<StorePath, VaultMutationError> {
@@ -116,17 +124,6 @@ impl<'a> VaultIdentityTransaction<'a> {
                 VaultMutationError::Persistence(e.to_string())
             }
         })?;
-        if !recovery {
-            let intents = StorePath::parse(".medousa/vault/intents")?;
-            match owner.files.list_directory_utf8(&intents) {
-                Ok(entries) if entries.iter().any(|e| e.name.ends_with(".json")) => {
-                    return Err(VaultMutationError::ExternallyAmbiguous("native journal repair is pending; identity cannot be resolved or reassigned".into()));
-                }
-                Err(e) if e.is_not_found() => {}
-                Err(e) => return Err(e.into()),
-                _ => {}
-            }
-        }
         let root_file = VaultFileIdentity::from(owner.files.root_metadata()?);
         let (snapshot, fresh) = match owner
             .files
@@ -145,6 +142,7 @@ impl<'a> VaultIdentityTransaction<'a> {
                     root_file: root_file.clone(),
                     revision: 0,
                     resources: BTreeMap::new(),
+                    reconciliations: BTreeMap::new(),
                 },
                 true,
             ),
@@ -175,22 +173,75 @@ impl<'a> VaultIdentityTransaction<'a> {
             }
             VaultPath::parse(&record.path)?;
         }
+        reconciliation::validate_receipts(&snapshot)?;
         let transaction = Self {
             owner,
             _lock: lock,
             snapshot,
+            publication_failed: Cell::new(false),
         };
         if fresh {
             transaction.persist()?;
         }
+        transaction.finish_recorded_quarantines()?;
+        if !recovery && !reconciliation::pending_ids(owner)?.is_empty() {
+            return Err(VaultMutationError::ExternallyAmbiguous(
+                "native journal repair is pending; identity cannot be resolved or reassigned"
+                    .into(),
+            ));
+        }
         Ok(transaction)
+    }
+
+    pub(crate) fn pending_journal_ids(
+        owner: &VaultIndexOwner,
+    ) -> Result<Vec<String>, VaultMutationError> {
+        reconciliation::pending_ids(owner)
     }
 
     pub(crate) fn vault_id(&self) -> &str {
         &self.snapshot.vault_id
     }
 
+    pub(crate) fn current_revision(&self) -> u64 {
+        self.snapshot.revision
+    }
+
+    pub(crate) fn retained_resource(
+        &self,
+        id: &str,
+    ) -> Result<VaultResourceIdentity, VaultMutationError> {
+        self.ensure_usable()?;
+        self.snapshot
+            .resources
+            .get(id)
+            .cloned()
+            .ok_or_else(|| VaultMutationError::Invalid("unknown vault resource identity".into()))
+    }
+
+    pub(crate) fn resource_kind(&self, id: &str) -> Result<VaultResourceKind, VaultMutationError> {
+        Ok(self.retained_resource(id)?.kind)
+    }
+
+    fn ensure_usable(&self) -> Result<(), VaultMutationError> {
+        if self.publication_failed.get() {
+            return Err(VaultMutationError::Persistence(
+                "identity transaction must be reopened after a failed metadata publication".into(),
+            ));
+        }
+        Ok(())
+    }
+
     fn persist(&self) -> Result<(), VaultMutationError> {
+        self.ensure_usable()?;
+        let result = self.persist_snapshot();
+        if result.is_err() {
+            self.publication_failed.set(true);
+        }
+        result
+    }
+
+    fn persist_snapshot(&self) -> Result<(), VaultMutationError> {
         if self.owner.identity_persist_fault.load(Ordering::Acquire) {
             return Err(VaultMutationError::Persistence(
                 "injected vault identity projection failure".into(),
@@ -209,6 +260,7 @@ impl<'a> VaultIdentityTransaction<'a> {
     }
 
     fn admit_native_projection(&self, new_identity: bool) -> Result<(), VaultMutationError> {
+        self.ensure_usable()?;
         if (new_identity && self.snapshot.resources.len() >= MAX_IDENTITIES)
             || serde_json::to_vec(&self.snapshot)
                 .map_err(|e| VaultMutationError::Persistence(e.to_string()))?
@@ -222,8 +274,23 @@ impl<'a> VaultIdentityTransaction<'a> {
 
     fn put(
         &mut self,
-        mut record: VaultResourceIdentity,
+        record: VaultResourceIdentity,
     ) -> Result<VaultResourceIdentity, VaultMutationError> {
+        let (record, changed) = self.update_record(record)?;
+        if changed {
+            self.persist()?;
+        } else {
+            // Finish a prior publication's interrupted parent fence on replay.
+            self.owner.files.sync_parent_of(&store_path("json")?)?;
+        }
+        Ok(record)
+    }
+
+    fn update_record(
+        &mut self,
+        mut record: VaultResourceIdentity,
+    ) -> Result<(VaultResourceIdentity, bool), VaultMutationError> {
+        self.ensure_usable()?;
         if let Some(previous) = self.snapshot.resources.get(&record.resource_id) {
             if previous.kind != record.kind
                 || (previous.resolution == ResourceResolution::Tombstoned
@@ -238,10 +305,7 @@ impl<'a> VaultIdentityTransaction<'a> {
                 && previous.resolution == record.resolution
                 && previous.observation == record.observation
             {
-                // A prior replace may have published but failed its parent
-                // fence. Finish that fence before journal cleanup on replay.
-                self.owner.files.sync_parent_of(&store_path("json")?)?;
-                return Ok(previous.clone());
+                return Ok((previous.clone(), false));
             }
         } else if self.snapshot.resources.len() >= MAX_IDENTITIES {
             return Err(VaultMutationError::Overloaded);
@@ -255,8 +319,7 @@ impl<'a> VaultIdentityTransaction<'a> {
         self.snapshot
             .resources
             .insert(record.resource_id.clone(), record.clone());
-        self.persist()?;
-        Ok(record)
+        Ok((record, true))
     }
 
     fn bind_existing(
@@ -360,6 +423,7 @@ impl<'a> VaultIdentityTransaction<'a> {
         &mut self,
         id: &str,
     ) -> Result<VaultResourceIdentity, VaultMutationError> {
+        self.ensure_usable()?;
         let mut record =
             self.snapshot.resources.get(id).cloned().ok_or_else(|| {
                 VaultMutationError::Invalid("unknown vault resource identity".into())
@@ -513,7 +577,7 @@ mod tests {
         atomic::{AtomicBool, Ordering},
     };
 
-    fn fixture() -> (tempfile::TempDir, Arc<VaultIndexOwner>) {
+    pub(super) fn fixture() -> (tempfile::TempDir, Arc<VaultIndexOwner>) {
         let dir = tempfile::tempdir().unwrap();
         let files = Arc::new(
             StoreRoot::open_or_create_nofollow(&dir.path().canonicalize().unwrap()).unwrap(),
@@ -521,7 +585,7 @@ mod tests {
         let owner = VaultIndexOwner::new(VaultRootId::new("test"), files);
         (dir, owner)
     }
-    fn write(owner: &Arc<VaultIndexOwner>, path: &str, body: &str) {
+    pub(super) fn write(owner: &Arc<VaultIndexOwner>, path: &str, body: &str) {
         commit_write(
             owner,
             WriteMutation {
@@ -533,13 +597,13 @@ mod tests {
         )
         .unwrap();
     }
-    fn note(owner: &VaultIndexOwner, path: &str) -> VaultResourceIdentity {
+    pub(super) fn note(owner: &VaultIndexOwner, path: &str) -> VaultResourceIdentity {
         VaultIdentityTransaction::begin(owner, false)
             .unwrap()
             .observe_path(&VaultPath::parse(path).unwrap(), VaultResourceKind::Note)
             .unwrap()
     }
-    fn by_id(owner: &VaultIndexOwner, id: &str) -> VaultResourceIdentity {
+    pub(super) fn by_id(owner: &VaultIndexOwner, id: &str) -> VaultResourceIdentity {
         VaultIdentityTransaction::begin(owner, false)
             .unwrap()
             .observe_id(id)
