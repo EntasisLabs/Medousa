@@ -84,6 +84,9 @@
   let error = $state<string | null>(null);
   let connecting = $state(true);
   let sessions = $state<TerminalSessionSummary[]>([]);
+  const currentSession = $derived(sessions.find((session) => session.session_id === (boundSessionId || sessionId)));
+  const workspaceContext = $derived(currentSession?.workspace_context);
+  const branchChanged = $derived(Boolean(workspaceContext?.attached_branch && workspaceContext.attached_branch !== workspaceContext.current_branch));
   let sessionHostAvailable = $state(true);
   let hostMessage = $state("");
   let terminalHost = $state<HTMLDivElement | null>(null);
@@ -105,6 +108,8 @@
   let resizeUnlisten: UnlistenFn | null = null;
   let errorUnlisten: UnlistenFn | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  let sessionRefreshTimer: ReturnType<typeof setInterval> | null = null;
+  let sessionListEpoch = 0;
   let geometryTimer: ReturnType<typeof setTimeout> | null = null;
   let resizeObserver: ResizeObserver | null = null;
   let resizeFrame: number | null = null;
@@ -427,10 +432,13 @@
   }
 
   async function refreshSessionList() {
+    const epoch = ++sessionListEpoch;
+    const generation = connectGeneration;
     try {
-      sessions = await terminalSessions(executionRuntimeId);
+      const next = await terminalSessions(executionRuntimeId);
+      if (epoch === sessionListEpoch && generation === connectGeneration) sessions = next;
     } catch {
-      sessions = [];
+      if (epoch === sessionListEpoch && generation === connectGeneration) sessions = [];
     }
   }
 
@@ -484,11 +492,11 @@
     try {
       let sid = (boundSessionId || sessionId).trim();
       if (!sid) {
-        const leaseId = undertakings.active?.leaseId ?? null;
+        const projectId = workId?.trim() || null;
         const created = (await terminalCreate({
-          work_id: workId ?? undertakings.active?.workId ?? null,
+          work_id: projectId,
           cwd: null,
-          lease_id: leaseId,
+          workspace_shell: Boolean(projectId),
           cols: terminalCols || 80,
           rows: terminalRows || 24,
         }, executionRuntimeId)) as { session_id?: string };
@@ -576,6 +584,7 @@
   }
 
   async function sendHeartbeat() {
+    if (currentSession?.root_kind !== "forge") return;
     const active = undertakings.active;
     if (!active?.leaseId || active.leaseGeneration == null) return;
     if (workId && active.workId !== workId) return;
@@ -607,6 +616,8 @@
     initializeTerminal();
     unregisterInput = registerTerminalInputHandler({
       workId: workId ?? null,
+      sessionId: () => boundSessionId || sessionId,
+      ready: () => connected && attachId != null,
       write: (text) => queueInput(text),
     });
     const onFind = () => toggleFind(true);
@@ -657,6 +668,9 @@
     })();
 
     if (!compact) heartbeatTimer = setInterval(() => void sendHeartbeat(), 30_000);
+    sessionRefreshTimer = setInterval(() => {
+      if (connected && workId && document.visibilityState === "visible" && terminalHost?.getClientRects().length) void refreshSessionList();
+    }, 5_000);
     if (terminalHost && typeof ResizeObserver !== "undefined") {
       resizeObserver = new ResizeObserver(scheduleFit);
       resizeObserver.observe(terminalHost);
@@ -670,6 +684,8 @@
   });
 
   onDestroy(() => {
+    sessionListEpoch++;
+    if (sessionRefreshTimer) clearInterval(sessionRefreshTimer);
     connectGeneration += 1;
     unregisterInput?.();
     unregisterInput = null;
@@ -811,6 +827,14 @@
       {/if}
     </div>
   </div>
+  {/if}
+
+  {#if branchChanged && workspaceContext}
+    <div class="shrink-0 border-b border-white/10 bg-white/5 px-3 py-1.5 text-chrome-sm text-content-secondary" role="status">
+      Now on <strong>{workspaceContext.current_branch ?? "detached HEAD"}</strong>.
+      This project was attached to {workspaceContext.attached_branch}.
+      The terminal uses the current working folder.
+    </div>
   {/if}
 
   {#if findOpen && !mobile}

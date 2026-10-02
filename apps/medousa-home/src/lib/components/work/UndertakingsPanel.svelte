@@ -50,7 +50,7 @@
     closeUndertaking,
     interruptTrackedAgent,
     landCodeWorkingSet,
-    openTrackedTerminal,
+    openProjectTerminal,
     reclaimTrackedHuman,
     startTrackedAgent,
     undertakingWorkspaceCopy,
@@ -215,7 +215,7 @@
     const d = detail;
     if (!d) return;
     await run(async () => {
-      await openTrackedTerminal(d);
+      await openProjectTerminal(d);
       await undertakings.refreshDetail();
     });
   }

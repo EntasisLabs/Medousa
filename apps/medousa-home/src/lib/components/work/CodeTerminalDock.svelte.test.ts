@@ -5,12 +5,12 @@ vi.mock("$lib/components/terminal/TerminalPane.svelte", () => ({ default: () => 
 import CodeTerminalDock from "./CodeTerminalDock.svelte";
 let component: ReturnType<typeof mount>;
 afterEach(async () => { if (component) await unmount(component); document.body.replaceChildren(); });
-it("opening an empty dock requires an explicit shell action", () => {
+it("offers retry without requiring editing control", () => {
   const create = vi.fn();
   component = mount(CodeTerminalDock, { target: document.body, props: { open: true, workId: "work", sessionId: null, canCreateTerminal: true, onCreate: create, onClose: vi.fn() } });
   flushSync();
   expect(create).not.toHaveBeenCalled();
-  const button = Array.from(document.querySelectorAll("button")).find((el) => el.textContent?.includes("Create shell"))!;
+  const button = Array.from(document.querySelectorAll("button")).find((el) => el.textContent?.includes("Open terminal"))!;
   button.click();
   expect(create).toHaveBeenCalledOnce();
 });

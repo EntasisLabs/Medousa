@@ -44,6 +44,15 @@ const MAX_COMPACT_EVIDENCE_RECEIPTS: usize = 512;
 const MAX_COMPACT_EVIDENCE_OBJECT_BYTES: u64 = 8 * 1024 * 1024;
 static ATTACHED_INDEX_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
+/// Current folder context for an explicitly requested human shell. This is
+/// folder access, not authority to resume an earlier Forge attempt.
+#[derive(Debug, serde::Serialize)]
+pub struct WorkspaceShellContext {
+    pub cwd: PathBuf,
+    pub current_branch: Option<String>,
+    pub attached_branch: Option<String>,
+}
+
 fn compact_evidence_receipts(
     commands: &[u8],
     work_id: &WorkId,
@@ -1200,6 +1209,46 @@ impl Forge {
             .environment_for_attempt(attempt_id)
             .ok_or_else(|| ForgeError::EnvironmentDrift("no governed environment".into()))?;
         self.verify_attached_checkout(item, environment)
+    }
+
+    /// Admit a human shell in this project's actual folder without adopting its
+    /// current branch, HEAD, or index as a new execution/evidence baseline.
+    pub fn workspace_shell_context(
+        &self,
+        work_id: &WorkId,
+        cwd: Option<&Path>,
+    ) -> Result<WorkspaceShellContext> {
+        let item = self.load(work_id)?;
+        if item.state.is_terminal() {
+            return Err(ForgeError::EnvironmentDrift(
+                "the project is closed; its folder no longer admits new project shells".into(),
+            ));
+        }
+        let environment = item.workspace_environment().ok_or_else(|| {
+            ForgeError::EnvironmentDrift("the project has no working folder yet".into())
+        })?;
+        let root = environment.worktree.canonicalize()?;
+        let actual_root = self.git.worktree_root(&root)?.canonicalize()?;
+        if root != actual_root
+            || self.git.repo_identity(&root)?.common_dir != environment.repo.common_dir
+        {
+            return Err(ForgeError::EnvironmentDrift(
+                "the project folder now belongs to a different checkout or repository".into(),
+            ));
+        }
+        let cwd = cwd.unwrap_or(&root).canonicalize()?;
+        if !cwd.is_dir() || !cwd.starts_with(&root) {
+            return Err(ForgeError::EnvironmentDrift(
+                "shell cwd escapes the project folder".into(),
+            ));
+        }
+        Ok(WorkspaceShellContext {
+            cwd,
+            current_branch: self.git.current_branch(&root)?,
+            attached_branch: item
+                .uses_attached_checkout()
+                .then(|| environment.branch.clone()),
+        })
     }
 
     /// Resolve a shell cwd outside the managed-worktree roots only for an open,

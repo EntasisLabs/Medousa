@@ -2830,6 +2830,13 @@ pub const SESSIONS_SHELL_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const SESSIONS_WORKSPACE_SHELL_POST: Operation = Operation {
+    id: "sessions.workspace_shell.post",
+    method: "POST",
+    path: "/v1/sessions/workspace-shell",
+    streaming: false,
+};
+
 pub const SHARE_CAPABILITIES_GET: Operation = Operation {
     id: "share.capabilities.get",
     method: "GET",
@@ -3780,6 +3787,7 @@ pub static ALL: &[Operation] = &[
     SESSIONS_SHELL_BY_ID_SIGNAL_POST,
     SESSIONS_SHELL_GET,
     SESSIONS_SHELL_POST,
+    SESSIONS_WORKSPACE_SHELL_POST,
     SHARE_CAPABILITIES_GET,
     SHARE_EXPORT_POST,
     SHARE_IMPORT_POST,

@@ -41,6 +41,7 @@ impl std::fmt::Display for SessionId {
 pub enum SessionRootKind {
     Scripts,
     Forge,
+    Workspace,
 }
 
 #[derive(Debug, Clone, Serialize)]

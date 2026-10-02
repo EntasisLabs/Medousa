@@ -113,6 +113,27 @@ before fixing the final component design.
 
 ## Delivery slices
 
+**CE2 follow-up (2026-10-02):** Human Terminal now opens directly in the
+project's actual workshop folder using a separate native-only workspace-shell
+admission. It creates no Forge attempt, takes no editing lease, and never
+substitutes an agent/task PTY. Folder containment and repository identity remain
+validated; branch/HEAD/index drift continues to fence earlier tracked execution.
+Current-versus-attached branch context is informational and refreshes while the
+human terminal is visible. Source checkout branch changes remain independent of
+an isolated worktree. Selected editor text targets the exact dock session,
+including when other panes exist for the same project. This supersedes the
+explicit "Create shell · edit here" flow in the initial train below. In-place
+reconciliation for continuing tracked work, draft/process migration, and real
+local/remote acceptance remain open.
+
+Follow-up validation: 359 frontend files / 1,811 tests pass; Svelte reports zero
+errors and warnings. Workspace library tests, both hermetic passes, workspace
+Clippy with warnings denied, production frontend build, strict docs, and the
+two native terminal transport tests pass. The real-PTY session regression
+demonstrates branch drift permitting a human shell while rejecting the earlier
+tracked attempt, preserving isolated-worktree independence, and rejecting
+escaped folders, closed projects, and lease/task fields on human shell requests.
+
 CE0–CE7 have implementation work under this epic. The train below is ready for
 review and manual use; it does not close the acceptance gate. Dedicated checkout
 reattachment and local/remote journey proof

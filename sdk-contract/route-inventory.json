@@ -6059,6 +6059,22 @@
       "trust_group": "administration"
     },
     {
+      "body_limit": 262144,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "admin.execute"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "sessions.workspace_shell.post",
+      "path": "/v1/sessions/workspace-shell",
+      "rate_limit_class": "administration",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "administration"
+    },
+    {
       "body_limit": 1024,
       "bootstrap_public": false,
       "browser_policy": "native_only",

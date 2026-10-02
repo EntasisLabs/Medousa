@@ -25,7 +25,7 @@
     busy = false,
     error = null,
     canCreateTerminal = false,
-    blockedReason = "Resume editing before creating a workshop shell.",
+    blockedReason = "This project needs an available working folder on the workshop.",
     onCreate,
     workId,
     worktreeRoot = null,
@@ -62,8 +62,8 @@
             {#if busy}<p role="status">Creating your workshop shell…</p>
             {:else}
               <p class="font-medium">{error ? "The shell could not be created." : "No shell is open for this project."}</p>
-              <p class="mt-1 text-content-quiet">{canCreateTerminal ? "Create a shell in this working copy. This uses your editing session; it does not stop another process." : blockedReason}</p>
-              {#if onCreate}<button type="button" class="mt-3 rounded bg-primary-500/20 px-3 py-1.5 text-primary-100 disabled:opacity-40" disabled={!canCreateTerminal} onclick={onCreate}>{error ? "Retry creating shell" : "Create shell · edit here"}</button>{/if}
+              <p class="mt-1 text-content-quiet">{canCreateTerminal ? "Open a shell in this project's working folder on the workshop." : blockedReason}</p>
+              {#if onCreate}<button type="button" class="mt-3 rounded bg-primary-500/20 px-3 py-1.5 text-primary-100 disabled:opacity-40" disabled={!canCreateTerminal} onclick={onCreate}>{error ? "Retry opening terminal" : "Open terminal"}</button>{/if}
             {/if}
           </div>
         </div>

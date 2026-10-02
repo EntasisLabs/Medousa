@@ -8,6 +8,23 @@ on the workshop machine.
 
 ## Daemon routes
 
+`POST /v1/sessions/workspace-shell` opens an interactive human project shell.
+It is native-only and requires `AdminExecute` on the selected workshop. The
+request has `work_id`, optional `cwd`, and optional `cols`/`rows` (80/24 default);
+lease, attempt, and task `argv` fields are rejected. The workshop admits the
+current project folder and repository identity, including canonical containment
+of a requested subdirectory, without adopting its branch/HEAD/index as a Forge
+execution baseline. Closed projects cannot admit new shells.
+
+These sessions report `root_kind: "workspace"` and `workspace_context` with
+`cwd`, `current_branch` (null for detached HEAD), and `attached_branch` (null for
+isolated projects). `GET /v1/sessions/shell` refreshes this context for workspace
+sessions; a failed refresh returns `workspace_context_error` without terminating
+an existing PTY. The response is folder context, not verification evidence.
+Tracked task/agent sessions retain their existing `/v1/sessions/shell` path and
+attachment validation. The session sidecar API revision is 6; older daemons or
+sidecars do not downgrade this request into a tracked attempt.
+
 `GET /v1/coding-engine` and `GET /v1/shell-sessions` report `available` and
 `starting`. When `starting: true`, the managed process is alive but has not
 answered a compatible health probe yet. Poll the same endpoint; the daemon

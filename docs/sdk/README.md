@@ -6,6 +6,11 @@ Shared client libraries for talking to **medousa_daemon** without duplicating HT
 
 Coder tool contracts and local diagnostics: [Usage attribution and batch edits](../engine/coder-efficiency.md).
 
+Human project shells use the native-only `sessions.workspace_shell.post`
+operation and the selected workshop's `AdminExecute` authority. Its folder
+context does not grant a Forge execution lease or produce sealed task evidence;
+see [Coding engine integration](../engine/coding-engine.md#daemon-routes).
+
 Assistant ownership queries and signed paired-workshop completion retrieval:
 [Coordination contracts](../engine/coordination.md). The peer-only completion
 query requires the exact saved proposal association and signed mesh envelopes;

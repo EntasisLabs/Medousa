@@ -1426,12 +1426,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 462);
-        assert_eq!(with_pairing.entries().len(), 481);
+        assert_eq!(without_pairing.entries().len(), 463);
+        assert_eq!(with_pairing.entries().len(), 482);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 481);
+        assert_eq!(rows.len(), 482);
         assert_eq!(rows[0]["path"], "/health");
         for method in ["POST", "DELETE"] {
             assert!(rows.iter().any(|row| {
@@ -1794,13 +1794,22 @@ mod tests {
             .chain(&world)
             .collect::<Vec<_>>();
 
-        assert_eq!(entries.len(), 29);
+        let human_shell = entries
+            .iter()
+            .find(|entry| entry.path == "/v1/sessions/workspace-shell")
+            .unwrap();
+        assert_eq!(human_shell.method, "POST");
+        assert_eq!(human_shell.required_capability, Some("admin.execute"));
+        assert_eq!(human_shell.browser_policy, super::BrowserPolicy::NativeOnly);
+        assert!(!human_shell.bootstrap_public);
+
+        assert_eq!(entries.len(), 30);
         assert_eq!(
             entries
                 .iter()
                 .filter(|entry| entry.required_capability == Some("admin.execute"))
                 .count(),
-            21
+            22
         );
         assert_eq!(
             entries

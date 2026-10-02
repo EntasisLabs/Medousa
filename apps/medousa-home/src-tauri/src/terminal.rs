@@ -48,6 +48,10 @@ pub struct TerminalSessionSummary {
     pub cwd: String,
     pub root_kind: String,
     pub work_id: Option<String>,
+    #[serde(default)]
+    pub workspace_context: Option<serde_json::Value>,
+    #[serde(default)]
+    pub workspace_context_error: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -99,6 +103,8 @@ pub struct TerminalCreateInput {
     pub lease_id: Option<String>,
     pub cols: Option<u16>,
     pub rows: Option<u16>,
+    #[serde(default)]
+    pub workspace_shell: bool,
 }
 
 fn ws_url_for(daemon_url: &str, path: &str) -> String {
@@ -250,6 +256,23 @@ pub async fn terminal_create(
     input: TerminalCreateInput,
     execution_runtime_id: Option<String>,
 ) -> Result<serde_json::Value, String> {
+    if input.workspace_shell {
+        if input.lease_id.is_some() {
+            return Err("Human workspace terminals do not accept a Forge lease".into());
+        }
+        return daemon_post(
+            &state,
+            "/v1/sessions/workspace-shell",
+            &serde_json::json!({
+                "work_id": input.work_id,
+                "cwd": input.cwd,
+                "cols": input.cols.unwrap_or(80),
+                "rows": input.rows.unwrap_or(24),
+            }),
+            execution_runtime_id.as_deref(),
+        )
+        .await;
+    }
     daemon_post(
         &state,
         "/v1/sessions/shell",
@@ -555,6 +578,17 @@ pub async fn terminal_detach(
 mod tests {
     use super::ws_request_with_bearer;
     use tokio_tungstenite::tungstenite::http::header::AUTHORIZATION;
+
+    #[test]
+    fn session_context_survives_the_native_transport() {
+        let session: super::TerminalSessionSummary = serde_json::from_value(serde_json::json!({
+            "session_id": "shell", "cwd": "/repo", "work_id": "work", "root_kind": "workspace",
+            "workspace_context": { "cwd": "/repo", "current_branch": "other", "attached_branch": "main" }
+        })).unwrap();
+        let frontend = serde_json::to_value(session).unwrap();
+        assert_eq!(frontend["workspace_context"]["current_branch"], "other");
+        assert_eq!(frontend["workspace_context"]["attached_branch"], "main");
+    }
 
     #[test]
     fn protected_websocket_credential_stays_in_the_authorization_header() {

@@ -16,7 +16,7 @@
   import { undertakings } from "$lib/stores/undertakings.svelte";
   import { setMobileComposerFocus } from "$lib/utils/mobileKeyboardViewport";
   import { openMobileCodeFile } from "$lib/utils/mobileCodeOpen";
-  import { openTrackedTerminal } from "$lib/utils/undertakingWorkspace";
+  import { openProjectTerminal } from "$lib/utils/undertakingWorkspace";
   import { terminalInterrupt } from "$lib/terminal";
 
   interface Props {
@@ -59,7 +59,7 @@
     creating = true;
     error = null;
     try {
-      const id = await openTrackedTerminal(detail, { activate: false });
+      const id = await openProjectTerminal(detail, { activate: false });
       if (id) mobileCodeWorkspaceState.setTerminalSessionId(id);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);

@@ -32337,6 +32337,57 @@
         }
       }
     },
+    "/v1/sessions/workspace-shell": {
+      "post": {
+        "operationId": "sessions.workspace_shell.post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "SESSIONS_WORKSPACE_SHELL_POSTResponse",
+                  "x-medousa-opaque": true
+                }
+              }
+            },
+            "description": "sessions.workspace_shell.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.workspace_shell.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "sessions.workspace_shell.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 262144,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "admin.execute"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "administration",
+          "trust_group": "administration"
+        }
+      }
+    },
     "/v1/sessions/{session_id}": {
       "delete": {
         "operationId": "sessions.by_session_id.delete",

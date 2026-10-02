@@ -810,6 +810,8 @@ pub enum DaemonOperation {
     SessionsShellGet,
     #[serde(rename = "sessions.shell.post")]
     SessionsShellPost,
+    #[serde(rename = "sessions.workspace_shell.post")]
+    SessionsWorkspaceShellPost,
     #[serde(rename = "share.capabilities.get")]
     ShareCapabilitiesGet,
     #[serde(rename = "share.export.post")]
@@ -1374,6 +1376,7 @@ impl DaemonOperation {
             Self::SessionsShellByIdSignalPost => "sessions.shell.by_id.signal.post",
             Self::SessionsShellGet => "sessions.shell.get",
             Self::SessionsShellPost => "sessions.shell.post",
+            Self::SessionsWorkspaceShellPost => "sessions.workspace_shell.post",
             Self::ShareCapabilitiesGet => "share.capabilities.get",
             Self::ShareExportPost => "share.export.post",
             Self::ShareImportPost => "share.import.post",

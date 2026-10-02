@@ -415,6 +415,7 @@ OPERATIONS: dict[str, Operation] = {
     "sessions.shell.by_id.signal.post": Operation("sessions.shell.by_id.signal.post", "POST", "/v1/sessions/shell/{id}/signal", False),
     "sessions.shell.get": Operation("sessions.shell.get", "GET", "/v1/sessions/shell", False),
     "sessions.shell.post": Operation("sessions.shell.post", "POST", "/v1/sessions/shell", False),
+    "sessions.workspace_shell.post": Operation("sessions.workspace_shell.post", "POST", "/v1/sessions/workspace-shell", False),
     "share.capabilities.get": Operation("share.capabilities.get", "GET", "/v1/share/capabilities", False),
     "share.export.post": Operation("share.export.post", "POST", "/v1/share/export", False),
     "share.import.post": Operation("share.import.post", "POST", "/v1/share/import", False),

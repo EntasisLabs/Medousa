@@ -9,7 +9,7 @@ import {
   usesAttachedCheckout,
   type ItemProjection,
 } from "$lib/forge";
-import { terminalCreate } from "$lib/terminal";
+import { terminalCreate, terminalSessions } from "$lib/terminal";
 import { undertakings } from "$lib/stores/undertakings.svelte";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
 import { chat } from "$lib/stores/chat.svelte";
@@ -99,7 +99,7 @@ export function activeCodeContext(sessionId: string): CodeIntentContext | null {
   };
 }
 
-export async function openTrackedTerminal(
+export async function openProjectTerminal(
   item: ItemProjection,
   options?: { activate?: boolean; create?: boolean },
 ): Promise<string | null> {
@@ -110,17 +110,20 @@ export async function openTrackedTerminal(
     undertakings.active?.baselineOid,
     undertakings.detail?.id === item.id ? undertakings.detail.environment : null,
   ]);
-  let current = captureCodeScope(terminalScope);
+  const current = captureCodeScope(terminalScope);
   const executionRuntimeId = undertakings.active?.executionRuntimeId ?? null;
 
-  const existing =
-    undertakings.active?.workId === item.id
-      ? undertakings.active.boundTerminalSessionIds[0]
-      : null;
+  const sessions = await terminalSessions(executionRuntimeId);
+  if (!current()) return null;
+  // Opening a human shell must not attach input to an agent/task process.
+  const existing = sessions.find((session) =>
+    session.work_id === item.id && session.root_kind === "workspace" && session.workspace_context
+  )?.session_id;
 
   const openShellTab = options?.activate !== false;
 
   if (existing) {
+    undertakings.bindTerminal(existing);
     if (openShellTab) {
       shellTabs.openTerminal(existing, {
         activate: true,
@@ -134,21 +137,8 @@ export async function openTrackedTerminal(
 
   if (options?.create === false) return null;
 
-  let leaseId = undertakings.active?.leaseId ?? null;
-  if (canStartHumanEditing(item.allowed_actions)) {
-    const begun = await startHumanEditingSession(item.id, item.allowed_actions);
-    if (!current()) return null;
-    leaseId = begun.lease.lease_id;
-    undertakings.setActiveFromItem(begun.item, {
-      leaseId,
-      leaseGeneration: begun.lease.generation,
-      executorKind: "human",
-    });
-    current = captureCodeScope(terminalScope);
-  }
-
   const created = await terminalCreate(
-    { work_id: item.id, lease_id: leaseId },
+    { work_id: item.id, workspace_shell: true },
     executionRuntimeId,
   );
   if (!current()) return null;

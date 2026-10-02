@@ -9,7 +9,7 @@
   import CodeEditorChrome from "$lib/components/code/CodeEditorChrome.svelte";
   import CodeEditorWorkspace from "$lib/components/code/CodeEditorWorkspace.svelte";
   import CodeEditorDialogs from "$lib/components/code/CodeEditorDialogs.svelte";
-  import { openTrackedTerminal } from "$lib/utils/undertakingWorkspace";
+  import { openProjectTerminal } from "$lib/utils/undertakingWorkspace";
   import { writeToTerminal } from "$lib/terminal/terminalInputBridge";
   import {
     findCodeLanguageMatrixEntry,
@@ -661,7 +661,7 @@
     });
   }
 
-  async function toggleTerminalDock(forceOpen?: boolean, create = false) {
+  async function toggleTerminalDock(forceOpen?: boolean, create = true) {
     const next = forceOpen === true ? true : forceOpen === false ? false : !terminalDockOpen;
     if (!next) {
       setFeedbackPanel(null);
@@ -672,18 +672,12 @@
       return;
     }
     setFeedbackPanel("terminal");
-    const runSessionId = tasks.run?.session_id?.trim();
-    if (runSessionId) {
-      dockSessionId = runSessionId;
-      undertakings.bindTerminal(runSessionId);
-      return;
-    }
     if (dockSessionId || dockBusy) return;
     const current = captureCodeScope(() => workspaceScope);
     dockBusy = true;
     dockError = null;
     try {
-      const sessionId = await openTrackedTerminal(detail, { activate: false, create });
+      const sessionId = await openProjectTerminal(detail, { activate: false, create });
       if (!current()) return;
       dockSessionId = sessionId;
       if (!sessionId && create) dockError = "Could not open a workshop shell for this project.";
@@ -696,6 +690,7 @@
   }
 
   async function runSelectedTextInTerminal() {
+    const current = captureCodeScope(() => workspaceScope);
     const text = editorSelection?.text?.trim();
     if (!text) {
       surfaceError = "Select text in the editor to run in the Terminal.";
@@ -703,25 +698,27 @@
     }
     await toggleTerminalDock(true);
     await tick();
-    if (!writeToTerminal(text, workId)) {
-      surfaceError = "Open the Terminal dock, then run the selection again.";
+    if (!current()) return;
+    if (!dockSessionId || !writeToTerminal(text, workId, dockSessionId)) {
+      surfaceError = "Wait for the Terminal to connect, then run the selection again.";
     }
   }
 
   async function popOutTerminal() {
     if (!detail) return;
-    const runSessionId = tasks.run?.session_id?.trim();
+    const sessionId = dockSessionId;
     setFeedbackPanel(null);
-    if (runSessionId) {
-      undertakings.bindTerminal(runSessionId);
-      shellTabs.openTerminal(runSessionId, {
+    if (sessionId) {
+      undertakings.bindTerminal(sessionId);
+      shellTabs.openTerminal(sessionId, {
         activate: true,
-        title: `Task · ${tasks.run?.task.label ?? detail.title}`,
+        title: `Terminal · ${detail.title}`,
         workId,
+        executionRuntimeId: context?.executionRuntimeId ?? null,
       });
       return;
     }
-    await openTrackedTerminal(detail, { activate: true });
+    await openProjectTerminal(detail, { activate: true });
   }
 
   function pathFromUri(
@@ -2090,8 +2087,8 @@
     {terminalAvailable}
     {dockBusy}
     {dockError}
-    canCreateTerminal={editable || canBeginEdit}
-    terminalBlockedReason={agentHasControl ? "The agent has editing control. Resume editing before creating a shell." : "This project needs an available working copy and editing control."}
+    canCreateTerminal={terminalAvailable}
+    terminalBlockedReason="This project needs an available working folder on the workshop."
     onCreateTerminal={() => void toggleTerminalDock(true, true)}
     onToggleTerminal={(forceOpen) => void toggleTerminalDock(forceOpen)}
     onPopOutTerminal={() => void popOutTerminal()}

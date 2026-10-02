@@ -37,7 +37,7 @@
   import type { AgentModeId } from "$lib/types/session";
   import {
     closeUndertaking,
-    openTrackedTerminal,
+    openProjectTerminal,
     startTrackedAgent,
     undertakingWorkspaceCopy,
   } from "$lib/utils/undertakingWorkspace";
@@ -252,7 +252,7 @@
     error = null;
     try {
       const item = await getUndertaking(active.workId);
-      if (action === "terminal") await openTrackedTerminal(item);
+      if (action === "terminal") await openProjectTerminal(item);
       else await startTrackedAgent(item, action);
       await undertakings.select(item.id);
     } catch (err) {

@@ -93,6 +93,25 @@ impl SessionHostState {
             .await
             .map_err(|error| error.to_string())
     }
+
+    async fn workspace_shell_context(
+        &self,
+        work_id: String,
+        cwd: Option<PathBuf>,
+    ) -> Result<medousa_forge::forge::WorkspaceShellContext, String> {
+        let forge_root = self.config.forge_root.clone();
+        self.forge_execution
+            .run(ExecutionClass::RepositoryMetadata, 16 * 1024, move || {
+                let forge_root = forge_root.ok_or_else(|| {
+                    medousa_forge::error::ForgeError::EnvironmentDrift(
+                        "project shells require the workshop's Forge store".into(),
+                    )
+                })?;
+                Forge::open(forge_root)?.workspace_shell_context(&work_id.into(), cwd.as_deref())
+            })
+            .await
+            .map_err(|error| error.to_string())
+    }
 }
 
 #[derive(Serialize)]
@@ -120,6 +139,17 @@ pub struct CreateSessionBody {
     pub cols: u16,
     #[serde(default = "default_rows")]
     pub rows: u16,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CreateWorkspaceSessionBody {
+    work_id: String,
+    cwd: Option<String>,
+    #[serde(default = "default_cols")]
+    cols: u16,
+    #[serde(default = "default_rows")]
+    rows: u16,
 }
 
 #[derive(Serialize)]
@@ -150,6 +180,10 @@ pub fn app(state: SessionHostState) -> Router {
         .route(
             "/v1/sessions/shell",
             get(list_sessions).post(create_session),
+        )
+        .route(
+            "/v1/sessions/workspace-shell",
+            post(create_workspace_session),
         )
         .route("/v1/sessions/shell/{id}", get(session_ws))
         .route("/v1/sessions/shell/{id}/signal", post(signal_session))
@@ -189,6 +223,7 @@ fn meta_json(m: &SessionMeta) -> Value {
         "root_kind": match m.root_kind {
             SessionRootKind::Scripts => "scripts",
             SessionRootKind::Forge => "forge",
+            SessionRootKind::Workspace => "workspace",
         },
         "work_id": m.work_id,
         "argv": m.argv,
@@ -196,8 +231,53 @@ fn meta_json(m: &SessionMeta) -> Value {
 }
 
 async fn list_sessions(State(state): State<Arc<SessionHostState>>) -> Json<Value> {
-    let sessions: Vec<Value> = state.manager.list().await.iter().map(meta_json).collect();
+    let mut sessions = Vec::new();
+    for meta in state.manager.list().await {
+        let mut value = meta_json(&meta);
+        if meta.root_kind == SessionRootKind::Workspace
+            && let Some(work_id) = meta.work_id.clone()
+        {
+            match state
+                .workspace_shell_context(work_id, Some(meta.cwd.clone()))
+                .await
+            {
+                Ok(context) => value["workspace_context"] = json!(context),
+                Err(error) => value["workspace_context_error"] = json!(error),
+            }
+        }
+        sessions.push(value);
+    }
     Json(json!({ "ok": true, "sessions": sessions }))
+}
+
+async fn create_workspace_session(
+    State(state): State<Arc<SessionHostState>>,
+    Json(body): Json<CreateWorkspaceSessionBody>,
+) -> Result<Json<Value>, (axum::http::StatusCode, String)> {
+    let context = state
+        .workspace_shell_context(body.work_id.clone(), body.cwd.map(PathBuf::from))
+        .await
+        .map_err(|error| (axum::http::StatusCode::FORBIDDEN, error))?;
+    let session = state
+        .manager
+        .create_with_size(
+            SessionRootKind::Workspace,
+            Some(context.cwd.clone()),
+            Some(body.work_id),
+            body.cols,
+            body.rows,
+        )
+        .await
+        .map_err(|error| {
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                error.to_string(),
+            )
+        })?;
+    let mut response = meta_json(&session.meta);
+    response["ok"] = json!(true);
+    response["workspace_context"] = json!(context);
+    Ok(Json(response))
 }
 
 async fn create_session(
@@ -251,6 +331,7 @@ async fn create_session(
         root_kind: match session.meta.root_kind {
             SessionRootKind::Scripts => "scripts".into(),
             SessionRootKind::Forge => "forge".into(),
+            SessionRootKind::Workspace => "workspace".into(),
         },
         work_id: session.meta.work_id.clone(),
         argv,
@@ -775,13 +856,135 @@ mod tests {
                 .await
                 .is_err()
         );
+        assert!(
+            std::process::Command::new(git.binary())
+                .args(["switch", "-c", "other"])
+                .current_dir(repo.path())
+                .output()
+                .unwrap()
+                .status
+                .success()
+        );
+        let context = state
+            .workspace_shell_context(item.id.to_string(), None)
+            .await
+            .unwrap();
+        assert_eq!(context.cwd, repo.path().canonicalize().unwrap());
+        assert_eq!(context.current_branch.as_deref(), Some("other"));
+        assert_eq!(context.attached_branch.as_deref(), Some("main"));
+        assert!(
+            forge
+                .load(&item.id)
+                .unwrap()
+                .active_attempt_ids()
+                .is_empty()
+        );
+        assert!(
+            forge
+                .begin_workspace_attempt(
+                    &item.id,
+                    medousa_forge::model::ExecutorDescriptor {
+                        kind: "human".into(),
+                        detail: serde_json::json!({}),
+                    },
+                    None,
+                    &actor
+                )
+                .is_err(),
+            "human shell access must not renew stale Forge authority"
+        );
+        let isolated_context = state
+            .workspace_shell_context(isolated.id.to_string(), None)
+            .await
+            .unwrap();
+        assert_eq!(isolated_context.cwd, isolated_root.canonicalize().unwrap());
+        assert_eq!(isolated_context.attached_branch, None);
+        assert!(
+            state
+                .workspace_shell_context(isolated.id.to_string(), Some(repo.path().to_owned()))
+                .await
+                .is_err()
+        );
+        assert!(
+            state
+                .workspace_shell_context(item.id.to_string(), Some(outside.path().to_owned()))
+                .await
+                .is_err()
+        );
+        #[cfg(unix)]
+        {
+            assert!(
+                state
+                    .workspace_shell_context(item.id.to_string(), Some(repo.path().join("escape")))
+                    .await
+                    .is_err()
+            );
+            let response = super::create_workspace_session(
+                axum::extract::State(std::sync::Arc::new(state.clone())),
+                axum::Json(super::CreateWorkspaceSessionBody {
+                    work_id: item.id.to_string(),
+                    cwd: None,
+                    cols: 80,
+                    rows: 24,
+                }),
+            )
+            .await
+            .unwrap()
+            .0;
+            assert_eq!(response["root_kind"], "workspace");
+            assert_eq!(response["workspace_context"]["current_branch"], "other");
+            assert!(
+                forge
+                    .load(&item.id)
+                    .unwrap()
+                    .active_attempt_ids()
+                    .is_empty()
+            );
+            let session_id = response["session_id"].as_str().unwrap().to_owned();
+            assert!(
+                std::process::Command::new(git.binary())
+                    .args(["switch", "main"])
+                    .current_dir(repo.path())
+                    .output()
+                    .unwrap()
+                    .status
+                    .success()
+            );
+            let listed =
+                super::list_sessions(axum::extract::State(std::sync::Arc::new(state.clone())))
+                    .await
+                    .0;
+            assert_eq!(
+                listed["sessions"][0]["workspace_context"]["current_branch"],
+                "main"
+            );
+            state
+                .manager
+                .destroy(&crate::session::SessionId(session_id))
+                .await;
+        }
         forge.discard(&item.id, &actor).unwrap();
+        assert!(
+            state
+                .workspace_shell_context(item.id.to_string(), None)
+                .await
+                .is_err()
+        );
         assert!(
             state
                 .resolve_session_cwd(repo.path().to_owned(), wid)
                 .await
                 .is_err()
         );
+    }
+
+    #[test]
+    fn human_shell_requests_cannot_carry_forge_authority_or_task_commands() {
+        for field in ["lease_id", "attempt_id", "argv"] {
+            let mut body = serde_json::json!({"work_id": "work"});
+            body[field] = serde_json::json!("not accepted");
+            assert!(serde_json::from_value::<super::CreateWorkspaceSessionBody>(body).is_err());
+        }
     }
 
     fn chunks(sequences: impl IntoIterator<Item = u64>) -> Vec<OutputChunk> {

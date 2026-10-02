@@ -412,6 +412,7 @@ export const OPERATIONS = {
   "sessions.shell.by_id.signal.post": { id: "sessions.shell.by_id.signal.post", method: "POST", path: "/v1/sessions/shell/{id}/signal", streaming: false },
   "sessions.shell.get": { id: "sessions.shell.get", method: "GET", path: "/v1/sessions/shell", streaming: false },
   "sessions.shell.post": { id: "sessions.shell.post", method: "POST", path: "/v1/sessions/shell", streaming: false },
+  "sessions.workspace_shell.post": { id: "sessions.workspace_shell.post", method: "POST", path: "/v1/sessions/workspace-shell", streaming: false },
   "share.capabilities.get": { id: "share.capabilities.get", method: "GET", path: "/v1/share/capabilities", streaming: false },
   "share.export.post": { id: "share.export.post", method: "POST", path: "/v1/share/export", streaming: false },
   "share.import.post": { id: "share.import.post", method: "POST", path: "/v1/share/import", streaming: false },

@@ -350,10 +350,13 @@ impact.”
 
 ## Terminal ownership
 
-- **Work in Terminal** begins a human attempt when needed and opens the PTY with
-  `work_id` + `lease_id` so commands can enter sealed evidence.
-- Tracked Terminal tabs retain their undertaking when restored and keep their
-  active lease fresh while open.
+- **Work in Terminal** opens a human shell in the project's actual working
+  folder on the workshop. It retains the project association without starting
+  an editing attempt, taking an agent's lease, or recording commands as sealed
+  evidence. Tracked Run commands keep their separate execution context.
+- Restored project terminals retain their workshop and folder. Opening Terminal
+  reuses a human shell; it never automatically sends input to an agent or task
+  process. You can still explicitly choose another session in the session menu.
 - The Code terminal dock supports **Find** (Mod+F while focused / Spotlight),
   clickable `path:line` links into Code, session switching, and **Run Selected
   Text in Terminal** from the editor. The default workshop shell profile uses
@@ -527,18 +530,20 @@ operations use the workshop's repository, including when you are on a phone.
 
 ### Opening a shell from Code
 
-Opening Terminal reveals an existing project shell or an empty panel. It does
-not start an editing session. Choose **Create shell · edit here** to explicitly
-create a shell using your editing control. If an agent owns the project, use
-**Resume editing** first. A failed shell stays visible with a readable explanation
-and **Details** for the workshop response.
+Opening Terminal reuses a human project shell or creates one directly in the
+project's working folder on the selected workshop. It does not require editing
+control, including while an agent is working. A failed connection stays visible
+with **Retry opening terminal** and **Details** for the workshop response.
 
-If the working copy changed branches externally, the explanation names the
-expected and current branches. Medousa does not switch branches automatically.
-Return to the expected branch on the workshop, or preserve your drafts, release
-the old project, and attach the current checkout as a new project. Language
-support package management opens **Settings → Packages**; editor repair never
-installs optional tools silently.
+If an attached checkout changed branches externally, an information line names
+the current branch and the branch used by the previous tracked work. The shell
+remains available. Opening it does not adopt a new Forge baseline: stale agent
+operations and tracked saves remain fenced. Continuing tracked work currently
+requires returning to its branch or preserving drafts and releasing/attaching
+the checkout again; in-place reconciliation is still pending. Switching the
+source checkout's branch does not affect an isolated project's working copy.
+Language support package management opens **Settings → Packages**; editor repair
+never installs optional tools silently.
 
 ### Choosing a project command
 

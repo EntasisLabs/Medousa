@@ -29,7 +29,7 @@ use crate::grapheme_script::store::GraphemeScriptStore;
 use crate::paths::medousa_data_dir;
 
 const DEFAULT_BIND: &str = "127.0.0.1:7862";
-const EXPECTED_API_REVISION: u32 = 5;
+const EXPECTED_API_REVISION: u32 = 6;
 /// Windows Defender / cold start often exceeds the old 1s probe window.
 const HEALTH_WAIT_ATTEMPTS: u32 = 100;
 const HEALTH_WAIT_INTERVAL_MS: u64 = 50;
@@ -335,6 +335,15 @@ pub fn shell_session_surface() -> DeclaredRouter<AppState> {
     DeclaredRouter::default()
         .route(
             shell_policy(
+                axum::http::Method::POST,
+                "/v1/sessions/workspace-shell",
+                256 * 1024,
+                RateLimitClass::Administration,
+            ),
+            post(create_workspace_session),
+        )
+        .route(
+            shell_policy(
                 axum::http::Method::GET,
                 "/v1/shell-sessions",
                 1024,
@@ -430,6 +439,31 @@ pub struct CreateSessionBody {
     pub cols: u16,
     #[serde(default = "default_terminal_rows")]
     pub rows: u16,
+}
+
+/// Human folder access has no lease, attempt, or hosted task command.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CreateWorkspaceSessionBody {
+    work_id: String,
+    cwd: Option<String>,
+    #[serde(default = "default_terminal_cols")]
+    cols: u16,
+    #[serde(default = "default_terminal_rows")]
+    rows: u16,
+}
+
+async fn create_workspace_session(
+    State(state): State<AppState>,
+    Json(body): Json<CreateWorkspaceSessionBody>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    proxy_http(
+        &state,
+        "POST",
+        "/v1/sessions/workspace-shell",
+        Some(serde_json::json!(body)),
+    )
+    .await
 }
 
 fn default_terminal_cols() -> u16 {
