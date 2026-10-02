@@ -608,6 +608,40 @@ and binary compile check, strict clippy over all targets of `medousa`,
 checks passed. The full workspace/hermetic CI matrix and frontend checks have not
 been run for this slice; no frontend files changed and no PR has been opened.
 
+### Composition and budget milestone — 2026-10-02
+
+The composition milestone now has exact local conversation attachments, separate
+scope revisions, and bounded maintenance checkpoints. Checkpoints pin current
+adapter-owned resource versions and observations; parent completion checks named
+requirements without terminating shared maintenance work. Scope/native changes,
+pauses, and expiry prevent stale checkpoints from completing another parent.
+Contact changes leave readiness intact. Legacy command digests remain replayable.
+
+- [x] Durable graph and accepted intent foundation
+- [x] Exact conversation joins and mixed finite/maintenance composition contracts
+- [x] Durable aggregate budget reservations and native-only custody accounting
+- [ ] Native identity/resolution adapters and durable projection repair
+- [ ] Native dispatch paths enforcing reservations and settling actual usage
+
+The bounded ledger charges shared executions once per aggregate, checks new
+scope additions, retains charges after removal, and preserves native overruns.
+Cancellation does not refund unknown custody; native not-started settlement does.
+Absolute deadlines survive restart. A model may save ceilings but cannot reserve
+or settle native execution custody. This is not yet an executor integration or
+aggregate wake/retry/review policy.
+
+The completed milestones are narrower than the phase exit gates below. Native
+readiness refresh and runtime execution admission are still required to demonstrate
+the full end-to-end Phase 2 fixture.
+
+Validation for this milestone: 19 storage tests, 56 shared-type tests, 4
+admitted-host tests, and the runtime action/schema checks passed. Strict clippy
+over all targets of `medousa`, `medousa-work`, and `medousa-types`, strict docs
+verification, and diff whitespace checks passed. Fixtures include native-custody
+publication faults, aggregate cost overflow, immutable settlement replay, stale
+maintenance checkpoints, and legacy snapshot/command compatibility. The full CI
+matrix has not been run; no frontend files changed and no PR has been opened.
+
 ### Phase exit gates
 
 - [ ] Phase 0 — contract and source audit

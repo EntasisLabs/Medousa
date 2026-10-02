@@ -66,6 +66,7 @@ fn accept(id: &str, scope: WorkScope) -> WorkGraphMutation {
         completion_condition: "Reviewed change and current documentation".into(),
         contact: WorkContactPreference::ReturnToOrigin,
         origin: None,
+        budget: None,
     }
 }
 
@@ -84,6 +85,655 @@ fn query(collection: WorkGraphCollection) -> WorkGraphQuery {
         collection,
         ..Default::default()
     }
+}
+
+fn next(store: &WorkGraphStore, mutation: WorkGraphMutation) -> WorkGraphReceipt {
+    let revision = store
+        .query(&domain("user:a"), WorkGraphQuery::default())
+        .unwrap()
+        .revision;
+    apply(store, revision, mutation)
+}
+
+fn reject(store: &WorkGraphStore, mutation: WorkGraphMutation) {
+    let revision = store
+        .query(&domain("user:a"), WorkGraphQuery::default())
+        .unwrap()
+        .revision;
+    assert!(
+        store
+            .apply(
+                &domain("user:a"),
+                command("rejected", revision, mutation),
+                provenance()
+            )
+            .is_err()
+    );
+    assert_eq!(
+        store
+            .query(&domain("user:a"), WorkGraphQuery::default())
+            .unwrap()
+            .revision,
+        revision
+    );
+}
+
+fn limits(cost: u64, concurrent: u16) -> WorkBudgetLimits {
+    WorkBudgetLimits {
+        cost_microusd: cost,
+        execution_count: 10,
+        concurrent_executions: concurrent,
+        deadline: chrono::Utc::now() + chrono::Duration::hours(1),
+    }
+}
+
+fn activate(store: &WorkGraphStore, id: &str) {
+    next(
+        store,
+        WorkGraphMutation::SetState {
+            work_unit_id: id.into(),
+            state: WorkUnitState::Active,
+            reason: "Admitted execution scope".into(),
+            evidence: vec![],
+        },
+    );
+}
+
+fn reserve(id: &str, unit: &str, execution: &str, cost: u64) -> WorkGraphMutation {
+    WorkGraphMutation::ReserveBudget {
+        reservation_id: id.into(),
+        work_unit_id: unit.into(),
+        execution: resource(ResourceKind::Assignment, execution),
+        reserved_cost_microusd: cost,
+    }
+}
+
+#[test]
+fn aggregate_budget_counts_shared_executions_once_and_keeps_removed_scope_charges() {
+    let dir = tempdir();
+    let store = WorkGraphStore::open(dir.path()).unwrap();
+    next(&store, accept("shared", WorkScope::default()));
+    for id in ["left", "right"] {
+        next(
+            &store,
+            accept(
+                id,
+                WorkScope {
+                    children: vec!["shared".into()],
+                    ..Default::default()
+                },
+            ),
+        );
+    }
+    next(
+        &store,
+        accept(
+            "root",
+            WorkScope {
+                children: vec!["left".into(), "right".into()],
+                ..Default::default()
+            },
+        ),
+    );
+    for id in ["shared", "left", "right", "root"] {
+        next(
+            &store,
+            WorkGraphMutation::SetBudget {
+                work_unit_id: id.into(),
+                limits: limits(100, 1),
+            },
+        );
+        activate(&store, id);
+    }
+    for id in ["execution-a", "execution-b"] {
+        next(
+            &store,
+            record(
+                resource(ResourceKind::Assignment, id),
+                "assignment",
+                ResourceResolution::Available,
+            ),
+        );
+    }
+    let receipt = next(&store, reserve("hold-a", "shared", "execution-a", 50));
+    let usage = store
+        .inspect_work_unit(&domain("user:a"), "root")
+        .unwrap()
+        .2;
+    assert_eq!(usage.cost_microusd, 50); // Both paths share one reservation.
+    assert_eq!(usage.concurrent_executions, 1);
+    assert_eq!(usage.execution_count, 1);
+    reject(&store, reserve("hold-b", "shared", "execution-b", 1));
+    reject(
+        &store,
+        reserve("duplicate-execution", "shared", "execution-a", 1),
+    );
+    reject(
+        &store,
+        WorkGraphMutation::SetState {
+            work_unit_id: "root".into(),
+            state: WorkUnitState::Satisfied,
+            reason: "Cannot finish uncertain custody".into(),
+            evidence: vec![resource(ResourceKind::Assignment, "execution-a")],
+        },
+    );
+    let settle = next(
+        &store,
+        WorkGraphMutation::SettleBudget {
+            reservation_id: "hold-a".into(),
+            disposition: WorkBudgetDisposition::Completed,
+            actual_cost_microusd: 40,
+        },
+    );
+    let restarted = WorkGraphStore::open(dir.path()).unwrap();
+    assert_eq!(
+        restarted
+            .inspect_work_unit(&domain("user:a"), "root")
+            .unwrap()
+            .2
+            .cost_microusd,
+        40
+    );
+    let replay = command(
+        &receipt.command_id,
+        receipt.revision - 1,
+        reserve("hold-a", "shared", "execution-a", 50),
+    );
+    assert!(
+        restarted
+            .apply(&domain("user:a"), replay, provenance())
+            .unwrap()
+            .replayed
+    );
+    next(
+        &restarted,
+        WorkGraphMutation::SetScope {
+            work_unit_id: "root".into(),
+            scope: WorkScope::default(),
+        },
+    );
+    assert_eq!(
+        restarted
+            .inspect_work_unit(&domain("user:a"), "root")
+            .unwrap()
+            .2
+            .cost_microusd,
+        40
+    );
+    next(&restarted, accept("new-parent", WorkScope::default()));
+    next(
+        &restarted,
+        WorkGraphMutation::SetBudget {
+            work_unit_id: "new-parent".into(),
+            limits: limits(30, 1),
+        },
+    );
+    let attach = WorkGraphMutation::SetScope {
+        work_unit_id: "new-parent".into(),
+        scope: WorkScope {
+            children: vec!["shared".into()],
+            ..Default::default()
+        },
+    };
+    reject(&restarted, attach.clone());
+    assert!(
+        restarted
+            .work_unit(&domain("user:a"), "new-parent")
+            .unwrap()
+            .scope
+            .children
+            .is_empty()
+    );
+    next(
+        &restarted,
+        WorkGraphMutation::SetBudget {
+            work_unit_id: "new-parent".into(),
+            limits: limits(100, 1),
+        },
+    );
+    next(&restarted, attach);
+    assert_eq!(
+        restarted
+            .inspect_work_unit(&domain("user:a"), "new-parent")
+            .unwrap()
+            .2
+            .cost_microusd,
+        40
+    );
+    reject(&restarted, reserve("hold-b", "shared", "execution-b", 61));
+    next(&restarted, reserve("hold-b", "shared", "execution-b", 60));
+    assert_eq!(
+        restarted
+            .inspect_work_unit(&domain("user:a"), "root")
+            .unwrap()
+            .2
+            .cost_microusd,
+        40
+    );
+    next(
+        &restarted,
+        WorkGraphMutation::SettleBudget {
+            reservation_id: "hold-b".into(),
+            disposition: WorkBudgetDisposition::Completed,
+            actual_cost_microusd: 120,
+        },
+    );
+    let usage = restarted
+        .inspect_work_unit(&domain("user:a"), "shared")
+        .unwrap()
+        .2;
+    assert_eq!(usage.cost_microusd, 160); // Preserve an executor's overrun.
+    assert_eq!(usage.execution_count, 2);
+    assert_eq!(usage.concurrent_executions, 0);
+    let original_settle = command(
+        &settle.command_id,
+        settle.revision - 1,
+        WorkGraphMutation::SettleBudget {
+            reservation_id: "hold-a".into(),
+            disposition: WorkBudgetDisposition::Completed,
+            actual_cost_microusd: 40,
+        },
+    );
+    assert!(
+        restarted
+            .apply(&domain("user:a"), original_settle, provenance())
+            .unwrap()
+            .replayed
+    );
+    reject(
+        &restarted,
+        WorkGraphMutation::SettleBudget {
+            reservation_id: "hold-a".into(),
+            disposition: WorkBudgetDisposition::NotStarted,
+            actual_cost_microusd: 0,
+        },
+    );
+    next(
+        &restarted,
+        record(
+            resource(ResourceKind::Assignment, "execution-c"),
+            "assignment",
+            ResourceResolution::Available,
+        ),
+    );
+    reject(&restarted, reserve("hold-c", "shared", "execution-c", 0));
+    assert_eq!(
+        restarted
+            .query(
+                &domain("user:a"),
+                WorkGraphQuery {
+                    collection: WorkGraphCollection::BudgetReservations,
+                    anchor: Some(resource(ResourceKind::WorkUnit, "root")),
+                    ..Default::default()
+                }
+            )
+            .unwrap()
+            .items
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn cancellation_does_not_refund_custody_and_only_native_not_started_settlement_releases_it() {
+    let dir = tempdir();
+    let store = WorkGraphStore::open(dir.path()).unwrap();
+    next(&store, accept("work", WorkScope::default()));
+    activate(&store, "work");
+    next(
+        &store,
+        record(
+            resource(ResourceKind::Assignment, "execution"),
+            "assignment",
+            ResourceResolution::Available,
+        ),
+    );
+    reject(&store, reserve("hold", "work", "execution", 1)); // No implicit budget.
+    let mut expired = limits(10, 1);
+    expired.deadline = chrono::Utc::now() - chrono::Duration::seconds(1);
+    next(
+        &store,
+        WorkGraphMutation::SetBudget {
+            work_unit_id: "work".into(),
+            limits: expired,
+        },
+    );
+    reject(&store, reserve("hold", "work", "execution", 1));
+    next(
+        &store,
+        WorkGraphMutation::SetBudget {
+            work_unit_id: "work".into(),
+            limits: limits(10, 1),
+        },
+    );
+    let model = RecordProvenance {
+        source: RecordSource::ModelInferred,
+        ..provenance()
+    };
+    let revision = store
+        .query(&domain("user:a"), WorkGraphQuery::default())
+        .unwrap()
+        .revision;
+    assert!(
+        store
+            .apply(
+                &domain("user:a"),
+                command(
+                    "model-hold",
+                    revision,
+                    reserve("hold", "work", "execution", 10)
+                ),
+                model.clone()
+            )
+            .is_err()
+    );
+    next(&store, reserve("hold", "work", "execution", 10));
+    reject(
+        &store,
+        WorkGraphMutation::SetBudget {
+            work_unit_id: "work".into(),
+            limits: limits(9, 1),
+        },
+    );
+    next(
+        &store,
+        WorkGraphMutation::SetState {
+            work_unit_id: "work".into(),
+            state: WorkUnitState::Cancelled,
+            reason: "User withdrew intent".into(),
+            evidence: vec![],
+        },
+    );
+    assert_eq!(
+        store
+            .inspect_work_unit(&domain("user:a"), "work")
+            .unwrap()
+            .2
+            .cost_microusd,
+        10
+    );
+    let release = WorkGraphMutation::SettleBudget {
+        reservation_id: "hold".into(),
+        disposition: WorkBudgetDisposition::NotStarted,
+        actual_cost_microusd: 0,
+    };
+    let revision = store
+        .query(&domain("user:a"), WorkGraphQuery::default())
+        .unwrap()
+        .revision;
+    assert!(
+        store
+            .apply(
+                &domain("user:a"),
+                command("model-release", revision, release.clone()),
+                model
+            )
+            .is_err()
+    );
+    reject(
+        &store,
+        WorkGraphMutation::SettleBudget {
+            reservation_id: "hold".into(),
+            disposition: WorkBudgetDisposition::NotStarted,
+            actual_cost_microusd: 1,
+        },
+    );
+    next(&store, release);
+    assert_eq!(
+        store
+            .inspect_work_unit(&domain("user:a"), "work")
+            .unwrap()
+            .2,
+        WorkBudgetUsage::default()
+    );
+    assert_eq!(
+        store.work_unit(&domain("user:a"), "work").unwrap().state,
+        WorkUnitState::Cancelled
+    );
+}
+
+#[test]
+fn exact_conversations_join_existing_work_and_legacy_commands_still_replay() {
+    let dir = tempdir();
+    let store = WorkGraphStore::open(dir.path()).unwrap();
+    let origin = medousa_types::SessionRef {
+        authority_id: domain("user:a").authority_id,
+        session_id: medousa_types::SessionId::parse("origin-session").unwrap(),
+    };
+    let mut mutation = accept("work", WorkScope::default());
+    if let WorkGraphMutation::AcceptWork { origin: field, .. } = &mut mutation {
+        *field = Some(origin.clone());
+    }
+    let request = command("legacy-accept", 0, mutation);
+    store
+        .apply(&domain("user:a"), request.clone(), provenance())
+        .unwrap();
+    // Model an on-disk foundation snapshot; adding fields must not invalidate
+    // its immutable command digest or change its accepted identity.
+    let path = dir.path().join(
+        super::WorkGraphStore::path(&domain("user:a"), "json")
+            .unwrap()
+            .to_string(),
+    );
+    let mut snapshot: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let unit = snapshot["work_units"]["work"].as_object_mut().unwrap();
+    for field in ["scope_revision", "readiness", "conversations", "budget"] {
+        unit.remove(field);
+    }
+    std::fs::write(&path, serde_json::to_vec(&snapshot).unwrap()).unwrap();
+    let restarted = WorkGraphStore::open(dir.path()).unwrap();
+    assert!(
+        restarted
+            .apply(&domain("user:a"), request.clone(), provenance())
+            .unwrap()
+            .replayed
+    );
+    let later = medousa_types::SessionRef {
+        session_id: medousa_types::SessionId::parse("later-session").unwrap(),
+        ..origin.clone()
+    };
+    let join = command(
+        "join",
+        1,
+        WorkGraphMutation::AttachConversation {
+            work_unit_id: "work".into(),
+            session: later.clone(),
+        },
+    );
+    restarted
+        .apply(&domain("user:a"), join.clone(), provenance())
+        .unwrap();
+    next(
+        &restarted,
+        WorkGraphMutation::SetContact {
+            work_unit_id: "work".into(),
+            contact: WorkContactPreference::Silent,
+        },
+    );
+    assert!(
+        restarted
+            .apply(&domain("user:a"), join, provenance())
+            .unwrap()
+            .replayed
+    );
+    assert!(
+        restarted
+            .apply(&domain("user:a"), request, provenance())
+            .unwrap()
+            .replayed
+    );
+    let unit = restarted.work_unit(&domain("user:a"), "work").unwrap();
+    assert_eq!(unit.conversations, vec![origin.clone(), later.clone()]);
+    assert_eq!(unit.origin, Some(origin));
+    assert_eq!(unit.scope_revision, 1);
+    assert_eq!(unit.state, WorkUnitState::Accepted);
+    let anchored = restarted
+        .query(
+            &domain("user:a"),
+            WorkGraphQuery {
+                collection: WorkGraphCollection::WorkUnits,
+                anchor: Some(resource(ResourceKind::Session, later.session_id.as_str())),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(anchored.items.len(), 1);
+    let mut foreign = later;
+    foreign.authority_id = AuthorityId::parse(format!("auth_{}", "b".repeat(64))).unwrap();
+    reject(
+        &restarted,
+        WorkGraphMutation::AttachConversation {
+            work_unit_id: "work".into(),
+            session: foreign,
+        },
+    );
+}
+
+#[test]
+fn maintenance_checkpoint_supports_finite_parents_without_ending_shared_work() {
+    let dir = tempdir();
+    let store = WorkGraphStore::open(dir.path()).unwrap();
+    let note = resource(ResourceKind::VaultNote, "note");
+    let native = |version: &str| WorkGraphMutation::RecordResource {
+        reference: note.clone(),
+        locator: Some("release.md".into()),
+        resolution: ResourceResolution::Available,
+        native_revision: Some(version.into()),
+    };
+    next(&store, native("v1"));
+    let scope = WorkScope {
+        resources: vec![note.clone()],
+        ..Default::default()
+    };
+    let mut maintenance = accept("docs", scope.clone());
+    if let WorkGraphMutation::AcceptWork { kind, .. } = &mut maintenance {
+        *kind = WorkUnitKind::Maintenance;
+    }
+    next(&store, maintenance);
+    for id in ["release-a", "release-b"] {
+        next(
+            &store,
+            accept(
+                id,
+                WorkScope {
+                    children: vec!["docs".into()],
+                    readiness: vec![WorkReadinessRequirement {
+                        work_unit_id: "docs".into(),
+                        condition: "Documentation current".into(),
+                    }],
+                    ..Default::default()
+                },
+            ),
+        );
+    }
+    let state = |id: &str, state| WorkGraphMutation::SetState {
+        work_unit_id: id.into(),
+        state,
+        reason: "Verified accepted release".into(),
+        evidence: vec![note.clone()],
+    };
+    let ready = |scope_revision, version: &str| WorkGraphMutation::RecordReadiness {
+        work_unit_id: "docs".into(),
+        expected_scope_revision: scope_revision,
+        condition: "Documentation current".into(),
+        evidence: vec![WorkRevisionEvidence {
+            reference: note.clone(),
+            native_revision: version.into(),
+        }],
+        valid_for_seconds: 3600,
+    };
+    reject(&store, ready(2, "v1")); // Accepted is not active.
+    next(&store, state("docs", WorkUnitState::Active));
+    reject(&store, ready(99, "v1"));
+    reject(&store, ready(2, "invented"));
+    reject(&store, state("release-a", WorkUnitState::Satisfied));
+    next(&store, ready(2, "v1"));
+    assert!(
+        store
+            .inspect_work_unit(&domain("user:a"), "docs")
+            .unwrap()
+            .1
+    );
+    next(
+        &store,
+        WorkGraphMutation::SetContact {
+            work_unit_id: "docs".into(),
+            contact: WorkContactPreference::Silent,
+        },
+    );
+    let restarted = WorkGraphStore::open(dir.path()).unwrap();
+    assert!(
+        restarted
+            .inspect_work_unit(&domain("user:a"), "docs")
+            .unwrap()
+            .1
+    );
+    let snapshot = restarted.load(&domain("user:a")).unwrap();
+    assert!(
+        !snapshot
+            .member_ready(
+                &snapshot.work_units["release-a"].scope,
+                "docs",
+                chrono::Utc::now() + chrono::Duration::hours(2)
+            )
+            .unwrap()
+    );
+    next(&restarted, state("release-a", WorkUnitState::Satisfied));
+    assert_eq!(
+        restarted
+            .work_unit(&domain("user:a"), "docs")
+            .unwrap()
+            .state,
+        WorkUnitState::Active
+    );
+    next(&restarted, native("v2"));
+    assert!(
+        !restarted
+            .inspect_work_unit(&domain("user:a"), "docs")
+            .unwrap()
+            .1
+    );
+    reject(&restarted, state("release-b", WorkUnitState::Satisfied));
+    reject(&restarted, ready(2, "v1"));
+    next(&restarted, ready(2, "v2"));
+    next(
+        &restarted,
+        WorkGraphMutation::SetScope {
+            work_unit_id: "docs".into(),
+            scope,
+        },
+    );
+    let changed = restarted.work_unit(&domain("user:a"), "docs").unwrap();
+    assert!(changed.readiness.is_none());
+    reject(&restarted, ready(2, "v2"));
+    next(&restarted, ready(changed.scope_revision, "v2"));
+    next(&restarted, state("docs", WorkUnitState::Paused));
+    reject(&restarted, state("release-b", WorkUnitState::Satisfied));
+    next(&restarted, state("docs", WorkUnitState::Active));
+    assert!(
+        restarted
+            .work_unit(&domain("user:a"), "docs")
+            .unwrap()
+            .readiness
+            .is_none()
+    );
+    next(&restarted, ready(changed.scope_revision, "v2"));
+    next(&restarted, state("release-b", WorkUnitState::Satisfied));
+    assert_eq!(
+        restarted
+            .work_unit(&domain("user:a"), "docs")
+            .unwrap()
+            .state,
+        WorkUnitState::Active
+    );
+    assert_eq!(
+        restarted
+            .work_unit(&domain("user:a"), "release-a")
+            .unwrap()
+            .state,
+        WorkUnitState::Satisfied
+    );
 }
 
 #[test]
@@ -606,6 +1256,103 @@ fn independent_store_handles_cannot_lose_writes_or_wait_on_busy_locks() {
 struct FailOnce {
     point: TransactionFaultPoint,
     fired: AtomicBool,
+}
+
+#[test]
+fn budget_publication_faults_and_cost_overflow_preserve_native_custody() {
+    for (point, published) in [
+        (TransactionFaultPoint::BeforeRenamePublish, false),
+        (TransactionFaultPoint::AfterRenamePublish, true),
+    ] {
+        let dir = tempdir();
+        let store = WorkGraphStore::open(dir.path()).unwrap();
+        let mut unit = accept("work", WorkScope::default());
+        if let WorkGraphMutation::AcceptWork { budget, .. } = &mut unit {
+            *budget = Some(limits(u64::MAX, 2));
+        }
+        next(&store, unit);
+        activate(&store, "work");
+        for id in ["execution-a", "execution-b", "execution-c"] {
+            next(
+                &store,
+                record(
+                    resource(ResourceKind::Assignment, id),
+                    "assignment",
+                    ResourceResolution::Available,
+                ),
+            );
+        }
+        let faulted = WorkGraphStore::with_faults(
+            dir.path(),
+            Arc::new(FailOnce {
+                point,
+                fired: AtomicBool::new(false),
+            }),
+        )
+        .unwrap();
+        let request = command(
+            "reserve-fault",
+            5,
+            reserve("hold-a", "work", "execution-a", 10),
+        );
+        assert!(
+            faulted
+                .apply(&domain("user:a"), request.clone(), provenance())
+                .is_err()
+        );
+        let restarted = WorkGraphStore::open(dir.path()).unwrap();
+        assert_eq!(
+            restarted
+                .inspect_work_unit(&domain("user:a"), "work")
+                .unwrap()
+                .2
+                .cost_microusd,
+            if published { 10 } else { 0 }
+        );
+        assert_eq!(
+            restarted
+                .apply(&domain("user:a"), request, provenance())
+                .unwrap()
+                .replayed,
+            published
+        );
+        next(
+            &restarted,
+            WorkGraphMutation::SettleBudget {
+                reservation_id: "hold-a".into(),
+                disposition: WorkBudgetDisposition::Completed,
+                actual_cost_microusd: u64::MAX,
+            },
+        );
+        next(&restarted, reserve("hold-b", "work", "execution-b", 0));
+        next(
+            &restarted,
+            WorkGraphMutation::SettleBudget {
+                reservation_id: "hold-b".into(),
+                disposition: WorkBudgetDisposition::Completed,
+                actual_cost_microusd: u64::MAX,
+            },
+        );
+        let usage = restarted
+            .inspect_work_unit(&domain("user:a"), "work")
+            .unwrap()
+            .2;
+        assert_eq!(usage.cost_microusd, u64::MAX);
+        assert!(usage.cost_overflowed);
+        reject(&restarted, reserve("hold-c", "work", "execution-c", 0));
+        assert_eq!(
+            WorkGraphStore::open(dir.path())
+                .unwrap()
+                .query(
+                    &domain("user:a"),
+                    query(WorkGraphCollection::BudgetReservations)
+                )
+                .unwrap()
+                .items
+                .len(),
+            2
+        );
+    }
 }
 
 impl TransactionFaults for FailOnce {

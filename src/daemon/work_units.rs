@@ -98,6 +98,12 @@ fn admitted_domain(turn: &TurnExecutionContext, write: bool) -> Result<UserDomai
 }
 
 fn validate_model_mutation(domain: &UserDomainRef, mutation: &WorkGraphMutation) -> Result<()> {
+    if matches!(
+        mutation,
+        WorkGraphMutation::ReserveBudget { .. } | WorkGraphMutation::SettleBudget { .. }
+    ) {
+        bail!("budget custody requires a native execution adapter");
+    }
     if let WorkGraphMutation::RecordResource {
         reference,
         resolution,
@@ -119,17 +125,19 @@ fn validate_model_mutation(domain: &UserDomainRef, mutation: &WorkGraphMutation)
             }
         }
     }
-    if let WorkGraphMutation::AcceptWork {
-        origin: Some(origin),
-        ..
-    } = mutation
-        && (origin.authority_id != domain.authority_id
+    let session = match mutation {
+        WorkGraphMutation::AcceptWork { origin, .. } => origin.as_ref(),
+        WorkGraphMutation::AttachConversation { session, .. } => Some(session),
+        _ => None,
+    };
+    if let Some(session) = session
+        && (session.authority_id != domain.authority_id
             || !crate::session_catalog::session_visible_to_profile(
-                origin.session_id.as_str(),
+                session.session_id.as_str(),
                 &domain.user_id,
             ))
     {
-        bail!("work origin is not visible to this owner");
+        bail!("work conversation is not visible to this owner");
     }
     Ok(())
 }
@@ -173,9 +181,12 @@ impl WorkUnitHost {
     ) -> Result<serde_json::Value> {
         let domain = admitted_domain(turn, false)?;
         self.with_store(move |store| {
-            bounded_response(serde_json::to_value(
-                store.work_unit(&domain, &query.work_unit_id)?,
-            )?)
+            let (unit, readiness_current, budget_usage) =
+                store.inspect_work_unit(&domain, &query.work_unit_id)?;
+            let mut value = serde_json::to_value(unit)?;
+            value["readiness_current"] = readiness_current.into();
+            value["budget_usage"] = serde_json::to_value(budget_usage)?;
+            bounded_response(value)
         })
         .await
     }
@@ -279,6 +290,7 @@ mod tests {
                 completion_condition: "Reflects accepted release changes".into(),
                 contact: WorkContactPreference::Silent,
                 origin: None,
+                budget: None,
             },
         };
         let receipt = host
@@ -389,5 +401,66 @@ mod tests {
             *native_revision = Some("invented".into());
         }
         assert!(validate_model_mutation(&domain, &mutation).is_err());
+        for mutation in [
+            WorkGraphMutation::ReserveBudget {
+                reservation_id: "hold".into(),
+                work_unit_id: "work".into(),
+                execution: ResourceRef {
+                    authority_id: domain.authority_id.clone(),
+                    kind: ResourceKind::Assignment,
+                    id: "execution".into(),
+                },
+                reserved_cost_microusd: 1,
+            },
+            WorkGraphMutation::SettleBudget {
+                reservation_id: "hold".into(),
+                disposition: WorkBudgetDisposition::NotStarted,
+                actual_cost_microusd: 0,
+            },
+        ] {
+            assert!(validate_model_mutation(&domain, &mutation).is_err());
+        }
+    }
+
+    #[test]
+    fn new_conversation_attachments_require_local_native_visibility() {
+        let domain = UserDomainRef {
+            authority_id: medousa_types::AuthorityId::parse(format!("auth_{}", "a".repeat(64)))
+                .unwrap(),
+            user_id: "user:test".into(),
+        };
+        let session = medousa_types::SessionRef {
+            authority_id: medousa_types::AuthorityId::parse(format!("auth_{}", "b".repeat(64)))
+                .unwrap(),
+            session_id: medousa_types::SessionId::parse("session-foreign").unwrap(),
+        };
+        assert!(
+            validate_model_mutation(
+                &domain,
+                &WorkGraphMutation::AttachConversation {
+                    work_unit_id: "work".into(),
+                    session,
+                }
+            )
+            .is_err()
+        );
+        let missing = medousa_types::SessionRef {
+            authority_id: domain.authority_id.clone(),
+            session_id: medousa_types::SessionId::parse(format!(
+                "missing-{}",
+                uuid::Uuid::new_v4().simple()
+            ))
+            .unwrap(),
+        };
+        assert!(
+            validate_model_mutation(
+                &domain,
+                &WorkGraphMutation::AttachConversation {
+                    work_unit_id: "work".into(),
+                    session: missing,
+                }
+            )
+            .is_err()
+        );
     }
 }

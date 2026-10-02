@@ -122,6 +122,86 @@ pub struct WorkScope {
     pub children: Vec<String>,
     #[serde(default)]
     pub depends_on: Vec<String>,
+    /// Explicit checkpoints for maintenance members. Omission requires a
+    /// terminal satisfied child, which an ongoing responsibility cannot supply.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub readiness: Vec<WorkReadinessRequirement>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct WorkReadinessRequirement {
+    pub work_unit_id: String,
+    pub condition: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct WorkRevisionEvidence {
+    pub reference: ResourceRef,
+    pub native_revision: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct WorkReadiness {
+    pub condition: String,
+    pub scope_revision: u64,
+    pub evidence: Vec<WorkRevisionEvidence>,
+    /// Registry revisions pin availability as well as native content versions.
+    pub resource_revisions: Vec<u64>,
+    pub observed_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct WorkBudgetLimits {
+    pub cost_microusd: u64,
+    pub execution_count: u32,
+    pub concurrent_executions: u16,
+    /// Absolute deadline survives process and conversation restarts.
+    pub deadline: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkBudgetUsage {
+    /// Outstanding reservations plus settled actual cost. An overrun is retained.
+    pub cost_microusd: u64,
+    /// Saturation never permits another reservation. Individual ledger records
+    /// retain actual overrun facts even when the aggregate exceeds u64.
+    pub cost_overflowed: bool,
+    pub execution_count: u32,
+    pub concurrent_executions: u16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum WorkBudgetDisposition {
+    Completed,
+    /// Native admission proves the execution never started; release its hold.
+    NotStarted,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkBudgetReservation {
+    pub reservation_id: String,
+    pub work_unit_id: String,
+    pub execution: ResourceRef,
+    pub reserved_cost_microusd: u64,
+    /// Sticky aggregate charges: removing a child cannot erase admitted usage.
+    pub charged_units: Vec<String>,
+    pub disposition: Option<WorkBudgetDisposition>,
+    pub actual_cost_microusd: Option<u64>,
+    pub revision: u64,
+    pub provenance: RecordProvenance,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -176,12 +256,24 @@ pub struct WorkUnit {
     pub kind: WorkUnitKind,
     /// Saved selection; graph adjacency never expands this automatically.
     pub scope: WorkScope,
+    /// Changes only when scope changes; contact and conversation updates do not
+    /// invalidate a checkpoint. Zero is the legacy snapshot representation.
+    #[serde(default)]
+    pub scope_revision: u64,
+    #[serde(default)]
+    pub readiness: Option<WorkReadiness>,
     pub completion_condition: String,
     pub state: WorkUnitState,
     pub state_reason: Option<String>,
     pub state_evidence: Vec<ResourceRef>,
     pub contact: WorkContactPreference,
     pub origin: Option<SessionRef>,
+    /// Exact local conversations attached to this responsibility. These are
+    /// associations, not grants or delivery targets.
+    #[serde(default)]
+    pub conversations: Vec<SessionRef>,
+    #[serde(default)]
+    pub budget: Option<WorkBudgetLimits>,
     pub revision: u64,
     pub provenance: RecordProvenance,
     pub created_at: DateTime<Utc>,
@@ -213,6 +305,8 @@ pub enum WorkGraphMutation {
         #[serde(default)]
         contact: WorkContactPreference,
         origin: Option<SessionRef>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        budget: Option<WorkBudgetLimits>,
     },
     SetScope {
         work_unit_id: String,
@@ -227,6 +321,35 @@ pub enum WorkGraphMutation {
     SetContact {
         work_unit_id: String,
         contact: WorkContactPreference,
+    },
+    AttachConversation {
+        work_unit_id: String,
+        session: SessionRef,
+    },
+    RecordReadiness {
+        work_unit_id: String,
+        expected_scope_revision: u64,
+        condition: String,
+        evidence: Vec<WorkRevisionEvidence>,
+        /// Checkpoints expire; the runtime does not infer continuing freshness.
+        valid_for_seconds: u32,
+    },
+    SetBudget {
+        work_unit_id: String,
+        limits: WorkBudgetLimits,
+    },
+    /// Runtime-only reservation; storing intent is not executor admission.
+    ReserveBudget {
+        reservation_id: String,
+        work_unit_id: String,
+        execution: ResourceRef,
+        reserved_cost_microusd: u64,
+    },
+    /// Runtime-only settlement against authoritative native custody.
+    SettleBudget {
+        reservation_id: String,
+        disposition: WorkBudgetDisposition,
+        actual_cost_microusd: u64,
     },
 }
 
@@ -265,6 +388,7 @@ pub enum WorkGraphCollection {
     Relationships,
     WorkUnits,
     Events,
+    BudgetReservations,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -297,6 +421,7 @@ pub enum WorkGraphItem {
     Relationship(RelationshipRecord),
     WorkUnit(WorkUnit),
     Event(WorkGraphEvent),
+    BudgetReservation(WorkBudgetReservation),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

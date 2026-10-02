@@ -38,7 +38,7 @@ issuance and managed-move projection are not yet connected to this registry.
 
 | Field | Meaning |
 |---|---|
-| `collection` | `resources` (default), `relationships`, `work_units`, or `events` |
+| `collection` | `resources` (default), `relationships`, `work_units`, `events`, or `budget_reservations` |
 | `anchor` | Optional exact resource reference; event history is domain-scoped and rejects an anchor |
 | `direction` | For relationship queries: `both` (default), `incoming`, or `outgoing` |
 | `limit` | 1–100, default 20 |
@@ -47,7 +47,8 @@ issuance and managed-move projection are not yet connected to this registry.
 Resource queries with an anchor return that exact record. Work-unit queries
 with an anchor return units explicitly containing that resource; a work-unit
 anchor also finds its record and units composing or depending on it. Semantic
-adjacency does not expand the saved scope.
+adjacency does not expand the saved scope. A session anchor also finds exact
+conversation attachments, independently of the unit's resource scope.
 
 Pages contain the domain, current `revision`, typed `items`, `next_cursor`, and
 `coverage: "current_workshop_domain_registry"`. Coverage does not claim a
@@ -59,6 +60,11 @@ and receipt.
 `work.get` accepts an exact `work_unit_id` and returns the saved unit. A unit has
 no required session. An optional, visible local `origin` session records its
 source; later sessions inspect the same unit by exact identity.
+The response includes `readiness_current`, evaluated from the same registry
+snapshot as the returned unit. This checks recorded adapter facts, scope revision,
+state, and expiry; it does not silently refresh native content.
+`budget_usage` reports the aggregate's reserved/settled cost, total admitted
+execution count, and outstanding execution count from that same snapshot.
 
 For example, inspect accepted work through the existing query tool:
 
@@ -80,6 +86,14 @@ for `work.record`. Supported mutation operations are:
 | `set_scope` | Revise a nonterminal unit's explicit resources, children, and dependencies |
 | `set_state` | Record a nonterminal unit's state, reason, and evidence |
 | `set_contact` | Revise contact preference independently of lifecycle |
+| `attach_conversation` | Associate an exact, visible local session with existing work without changing its scope or starting execution |
+| `record_readiness` | Save a bounded maintenance checkpoint against exact scope and adapter-owned native revisions |
+| `set_budget` | Set explicit aggregate ceilings and an absolute execution deadline |
+
+The command contract also defines `reserve_budget` and `settle_budget` for native
+execution adapters. The agent-facing host rejects both operations; a model
+cannot claim execution custody or refund its own cost. Native dispatch paths are
+not yet connected to the ledger.
 
 Scope members must already exist in this domain. Work-unit membership uses
 `children` or `depends_on`, rather than the resource list. Composition and
@@ -114,18 +128,80 @@ maintenance trigger. The receipt acknowledges storage, not active execution.
 States are `accepted`, `active`, `waiting`, `needs_attention`, `paused`,
 `satisfied`, `failed`, and `cancelled`. Terminal units cannot be implicitly
 reopened. A finite unit's satisfaction requires available adapter-resolved
-evidence and satisfied component/dependency units. An unresolved resource or
+evidence and satisfied finite component/dependency units. An unresolved resource or
 the unit itself cannot prove satisfaction. Maintenance units remain ongoing
-until explicitly terminated; the initial store rejects terminal satisfaction
-for them. Mixed maintenance/finite readiness evaluation is not yet implemented.
+until explicitly terminated; the store rejects terminal satisfaction for them.
+For an ongoing member, a parent must save a `scope.readiness` requirement with
+that member's exact `work_unit_id` and a named `condition`. A matching current
+checkpoint can satisfy that requirement while the maintenance unit stays active.
 Lifecycle records do not replace native executor status or validate the prose
 completion condition by themselves.
+
+`record_readiness` requires an active maintenance unit, its exact
+`expected_scope_revision`, a named `condition`, distinct local resources from its
+saved scope with their current `native_revision`, and `valid_for_seconds` in
+1–86,400. Every proof must match an available, adapter-owned resource record.
+The host stamps observation and expiry times; callers cannot backdate them.
+Native facts must already have been recorded by an adapter; model registration
+alone cannot produce a checkpoint.
+
+The saved checkpoint pins both native versions and registry revisions. A resource
+update, loss of availability, scope edit, pause, or expiry invalidates it for new
+parent completion. Scope edits and lifecycle transitions clear the checkpoint;
+contact changes and conversation attachments preserve it. Previously satisfied
+finite units retain their historical result. Native refresh and readiness
+reconciliation remain adapter work, so freshness is limited to observations
+already present in this registry.
+
+An accepted origin is also its first conversation attachment. A later session
+joins through `attach_conversation`, specifying the exact work identity and
+authority-qualified `session`; no title matching occurs. New attachments require
+current native session visibility. Exact command replay still returns its
+original receipt after that session is removed. Attaching a conversation changes
+neither scope nor contact policy, and does not reopen terminal work.
 
 Contact preferences are `silent`, `return_to_origin` (default), `participant`
 with a registered participant reference, or `channel` with a registered channel
 reference. They retain user intent without implying transport availability.
 Changing to silent neither cancels work nor erases results. This implementation
 does not send messages or voice invitations.
+
+## Aggregate budget custody
+
+`accept_work` may include `budget`, or `set_budget` can set it later. The limits
+are `cost_microusd`, `execution_count`, `concurrent_executions`, and an absolute
+UTC `deadline`. Zero is a real ceiling, not an unknown estimate. A new native
+reservation requires active work, an available adapter-owned local assignment
+or job identity, and explicit limits on every charged aggregate. Expired
+deadlines, paused aggregates, and exhausted ceilings deny new reservations.
+Limits describe accounting bounds and do not grant execution or spending authority.
+Wake/retry/review limits remain in native continuation admission; they are not
+yet aggregated by this work ledger.
+
+Each execution has one durable `reservation_id` in its owner domain. A held
+reservation counts its reserved cost and one outstanding execution; completion
+replaces the cost hold with actual cost and releases concurrency. Aggregate
+accounting follows composition `children`, counting a shared reservation once
+even through several paths. `depends_on` consumes another unit's result without
+automatically charging its execution to the consumer.
+
+Attaching already allocated children checks the new aggregate's limits and
+retains its charge. Removing them later does not erase admitted cost. Terminal
+parents receive no new child allocations; their historical charges remain.
+Satisfaction requires settled custody. Cancellation and failure do not refund
+held reservations or imply native execution cancellation. Only an adapter's
+`not_started` settlement releases a hold without cost or execution count.
+
+Native actual cost is retained even when it exceeds a reservation or ceiling;
+future admissions use that overrun. If aggregate cost exceeds `u64`, the reported
+cost saturates with `cost_overflowed: true`; individual ledger records retain the
+exact values and further reservations fail closed. Settlements are immutable;
+retry their exact command after an uncertain outcome.
+
+Query `budget_reservations` with an assignment/job anchor for exact custody, or
+a work-unit anchor for that aggregate's retained charges. This is durable
+accounting groundwork; it does not yet constrain native executors until their
+admission and settlement adapters are connected.
 
 ## Persistence and recovery
 

@@ -17,6 +17,8 @@ use medousa_types::work_unit::*;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+mod budget;
+
 #[cfg(test)]
 mod tests;
 
@@ -42,6 +44,8 @@ struct Snapshot {
     resources: BTreeMap<String, ResourceRecord>,
     relationships: BTreeMap<String, RelationshipRecord>,
     work_units: BTreeMap<String, WorkUnit>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    reservations: BTreeMap<String, WorkBudgetReservation>,
     commands: BTreeMap<String, CommittedCommand>,
 }
 
@@ -155,12 +159,13 @@ impl WorkGraphStore {
                     resources: BTreeMap::new(),
                     relationships: BTreeMap::new(),
                     work_units: BTreeMap::new(),
+                    reservations: BTreeMap::new(),
                     commands: BTreeMap::new(),
                 });
             }
             Err(e) => return Err(e.into()),
         };
-        let snapshot: Snapshot = serde_json::from_slice(&bytes).map_err(|e| {
+        let mut snapshot: Snapshot = serde_json::from_slice(&bytes).map_err(|e| {
             error(
                 PersistenceErrorKind::Corruption,
                 format!("work graph cannot be decoded: {e}"),
@@ -171,6 +176,18 @@ impl WorkGraphStore {
                 PersistenceErrorKind::Corruption,
                 "work graph schema or domain mismatch",
             ));
+        }
+        // Additive metadata does not rewrite old commands or their digests.
+        // Freeze legacy scope identity at its last stored unit revision.
+        for unit in snapshot.work_units.values_mut() {
+            if unit.scope_revision == 0 {
+                unit.scope_revision = unit.revision;
+                if let Some(origin) = &unit.origin
+                    && !unit.conversations.contains(origin)
+                {
+                    unit.conversations.push(origin.clone());
+                }
+            }
         }
         snapshot
             .validate()
@@ -292,11 +309,27 @@ impl WorkGraphStore {
     }
 
     pub fn work_unit(&self, domain: &UserDomainRef, id: &str) -> Result<WorkUnit> {
+        self.inspect_work_unit(domain, id).map(|(unit, _, _)| unit)
+    }
+
+    /// Freshness and the saved record are read from one snapshot. This is a
+    /// projection of recorded native facts, not an implicit native refresh.
+    pub fn inspect_work_unit(
+        &self,
+        domain: &UserDomainRef,
+        id: &str,
+    ) -> Result<(WorkUnit, bool, WorkBudgetUsage)> {
         identifier(id)?;
-        self.load(domain)?
+        let snapshot = self.load(domain)?;
+        let unit = snapshot
             .work_units
-            .remove(id)
-            .ok_or_else(|| invalid("work unit is not recorded in this domain"))
+            .get(id)
+            .ok_or_else(|| invalid("work unit is not recorded in this domain"))?;
+        Ok((
+            unit.clone(),
+            snapshot.readiness_current(unit, Utc::now())?,
+            snapshot.budget_usage(id),
+        ))
     }
 
     pub fn query(&self, domain: &UserDomainRef, query: WorkGraphQuery) -> Result<WorkGraphPage> {
@@ -355,6 +388,12 @@ impl WorkGraphStore {
                         unit.scope.resources.contains(a)
                             || &work_reference(domain, &unit.work_unit_id) == a
                             || (a.authority_id == domain.authority_id
+                                && a.kind == ResourceKind::Session
+                                && unit.conversations.iter().any(|session| {
+                                    session.authority_id == a.authority_id
+                                        && session.session_id.as_str() == a.id
+                                }))
+                            || (a.authority_id == domain.authority_id
                                 && a.kind == ResourceKind::WorkUnit
                                 && (unit.scope.children.contains(&a.id)
                                     || unit.scope.depends_on.contains(&a.id)))
@@ -385,6 +424,24 @@ impl WorkGraphStore {
                 events.sort_by(|a, b| a.0.cmp(&b.0));
                 events
             }
+            WorkGraphCollection::BudgetReservations => snapshot
+                .reservations
+                .iter()
+                .filter(|(_, reservation)| {
+                    query.anchor.as_ref().is_none_or(|anchor| {
+                        &reservation.execution == anchor
+                            || (anchor.authority_id == domain.authority_id
+                                && anchor.kind == ResourceKind::WorkUnit
+                                && reservation.charged_units.contains(&anchor.id))
+                    })
+                })
+                .map(|(id, reservation)| {
+                    (
+                        id.clone(),
+                        WorkGraphItem::BudgetReservation(reservation.clone()),
+                    )
+                })
+                .collect(),
         };
         rows.retain(|(k, _)| after.as_ref().is_none_or(|a| k > a));
         let has_more = rows.len() > limit;
@@ -428,7 +485,11 @@ impl Snapshot {
     }
 
     fn validate_scope(&self, id: &str, scope: &WorkScope, live: bool) -> Result<()> {
-        if scope.resources.len() + scope.children.len() + scope.depends_on.len() > MAX_SCOPE_MEMBERS
+        if scope.resources.len()
+            + scope.children.len()
+            + scope.depends_on.len()
+            + scope.readiness.len()
+            > MAX_SCOPE_MEMBERS
         {
             return Err(invalid("work scope exceeds 128 explicit members"));
         }
@@ -454,7 +515,84 @@ impl Snapshot {
                 }
             }
         }
+        for (i, requirement) in scope.readiness.iter().enumerate() {
+            text(&requirement.condition, 4096)?;
+            if !scope.children.contains(&requirement.work_unit_id)
+                && !scope.depends_on.contains(&requirement.work_unit_id)
+                || scope.readiness[..i]
+                    .iter()
+                    .any(|r| r.work_unit_id == requirement.work_unit_id)
+                || self
+                    .work_units
+                    .get(&requirement.work_unit_id)
+                    .is_none_or(|u| u.kind != WorkUnitKind::Maintenance)
+            {
+                return Err(invalid(
+                    "readiness requires a unique explicit maintenance member",
+                ));
+            }
+        }
         Ok(())
+    }
+
+    fn validate_session(&self, session: &medousa_types::SessionRef) -> Result<()> {
+        if session.authority_id != self.domain.authority_id {
+            return Err(invalid("conversation attachment requires local authority"));
+        }
+        Ok(())
+    }
+
+    fn readiness_current(&self, unit: &WorkUnit, now: chrono::DateTime<Utc>) -> Result<bool> {
+        let Some(checkpoint) = &unit.readiness else {
+            return Ok(false);
+        };
+        if unit.state != WorkUnitState::Active
+            || checkpoint.scope_revision != unit.scope_revision
+            || checkpoint.expires_at <= now
+        {
+            return Ok(false);
+        }
+        for (evidence, revision) in checkpoint
+            .evidence
+            .iter()
+            .zip(&checkpoint.resource_revisions)
+        {
+            if self
+                .resources
+                .get(&reference_key(&evidence.reference)?)
+                .is_none_or(|resource| {
+                    resource.resolution != ResourceResolution::Available
+                        || resource.revision != *revision
+                        || resource.native_revision.as_ref() != Some(&evidence.native_revision)
+                })
+            {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    fn member_ready(
+        &self,
+        scope: &WorkScope,
+        id: &str,
+        now: chrono::DateTime<Utc>,
+    ) -> Result<bool> {
+        let unit = self
+            .work_units
+            .get(id)
+            .ok_or_else(|| invalid("unknown component"))?;
+        if unit.kind == WorkUnitKind::Finite {
+            return Ok(unit.state == WorkUnitState::Satisfied);
+        }
+        let Some(requirement) = scope.readiness.iter().find(|r| r.work_unit_id == id) else {
+            return Ok(false);
+        };
+        Ok(unit
+            .readiness
+            .as_ref()
+            .is_some_and(|r| r.condition == requirement.condition)
+            && self.readiness_current(unit, now)?)
     }
 
     fn validate_contact(&self, contact: &WorkContactPreference) -> Result<()> {
@@ -557,6 +695,7 @@ impl Snapshot {
                 completion_condition,
                 contact,
                 origin,
+                budget,
             } => {
                 identifier(&work_unit_id)?;
                 text(&intent, 8192)?;
@@ -569,6 +708,9 @@ impl Snapshot {
                 }
                 self.validate_scope(&work_unit_id, &scope, true)?;
                 self.validate_contact(&contact)?;
+                if let Some(origin) = &origin {
+                    self.validate_session(origin)?;
+                }
                 let reference = work_reference(&self.domain, &work_unit_id);
                 self.resources.insert(
                     reference_key(&reference)?,
@@ -585,15 +727,19 @@ impl Snapshot {
                 self.work_units.insert(
                     work_unit_id.clone(),
                     WorkUnit {
-                        work_unit_id,
+                        work_unit_id: work_unit_id.clone(),
                         intent,
                         kind,
                         scope,
+                        scope_revision: self.revision,
+                        readiness: None,
                         completion_condition,
                         state: WorkUnitState::Accepted,
                         state_reason: None,
                         state_evidence: vec![],
                         contact,
+                        conversations: origin.iter().cloned().collect(),
+                        budget,
                         origin,
                         revision: self.revision,
                         provenance,
@@ -601,6 +747,7 @@ impl Snapshot {
                         updated_at: now,
                     },
                 );
+                self.extend_budget_charges(&work_unit_id)?;
             }
             WorkGraphMutation::SetScope {
                 work_unit_id,
@@ -610,9 +757,12 @@ impl Snapshot {
                 let revision = self.revision;
                 let unit = self.active_unit(&work_unit_id)?;
                 unit.scope = scope;
+                unit.scope_revision = revision;
+                unit.readiness = None;
                 unit.revision = revision;
                 unit.updated_at = now;
                 unit.provenance = provenance;
+                self.extend_budget_charges(&work_unit_id)?;
             }
             WorkGraphMutation::SetState {
                 work_unit_id,
@@ -635,26 +785,28 @@ impl Snapshot {
                     return Err(invalid("accepted state is established by admission"));
                 }
                 if state == WorkUnitState::Satisfied {
+                    if self.budget_usage(&work_unit_id).concurrent_executions != 0 {
+                        return Err(invalid("satisfaction requires settled execution custody"));
+                    }
                     if current.kind == WorkUnitKind::Maintenance {
                         return Err(invalid(
                             "maintenance responsibility cannot terminate as satisfied",
                         ));
                     }
-                    if evidence.is_empty()
-                        || current
-                            .scope
-                            .children
-                            .iter()
-                            .chain(&current.scope.depends_on)
-                            .any(|id| {
-                                self.work_units
-                                    .get(id)
-                                    .is_none_or(|u| u.state != WorkUnitState::Satisfied)
-                            })
+                    if evidence.is_empty() {
+                        return Err(invalid("satisfaction requires evidence"));
+                    }
+                    for id in current
+                        .scope
+                        .children
+                        .iter()
+                        .chain(&current.scope.depends_on)
                     {
-                        return Err(invalid(
-                            "satisfaction requires evidence and satisfied component/dependency units",
-                        ));
+                        if !self.member_ready(&current.scope, id, now)? {
+                            return Err(invalid(
+                                "satisfaction requires satisfied finite members or current explicit maintenance checkpoints",
+                            ));
+                        }
                     }
                     for reference in &evidence {
                         if self.resources[&reference_key(reference)?].resolution
@@ -681,6 +833,7 @@ impl Snapshot {
                 let revision = self.revision;
                 let unit = self.active_unit(&work_unit_id)?;
                 unit.state = state;
+                unit.readiness = None;
                 unit.state_reason = Some(reason);
                 unit.state_evidence = evidence;
                 unit.revision = revision;
@@ -700,6 +853,132 @@ impl Snapshot {
                 unit.revision = self.revision;
                 unit.updated_at = now;
                 unit.provenance = provenance;
+            }
+            WorkGraphMutation::AttachConversation {
+                work_unit_id,
+                session,
+            } => {
+                self.validate_session(&session)?;
+                let unit = self
+                    .work_units
+                    .get_mut(&work_unit_id)
+                    .ok_or_else(|| invalid("unknown work unit"))?;
+                if !unit.conversations.contains(&session) {
+                    if unit.conversations.len() >= MAX_SCOPE_MEMBERS {
+                        return Err(invalid("too many attached conversations"));
+                    }
+                    unit.conversations.push(session);
+                }
+                unit.revision = self.revision;
+                unit.updated_at = now;
+                unit.provenance = provenance;
+            }
+            WorkGraphMutation::RecordReadiness {
+                work_unit_id,
+                expected_scope_revision,
+                condition,
+                evidence,
+                valid_for_seconds,
+            } => {
+                text(&condition, 4096)?;
+                if !(1..=86400).contains(&valid_for_seconds)
+                    || evidence.is_empty()
+                    || evidence.len() > MAX_SCOPE_MEMBERS
+                {
+                    return Err(invalid(
+                        "readiness requires evidence and a lifetime of 1–86400 seconds",
+                    ));
+                }
+                let unit = self
+                    .work_units
+                    .get(&work_unit_id)
+                    .ok_or_else(|| invalid("unknown work unit"))?;
+                if unit.kind != WorkUnitKind::Maintenance
+                    || unit.state != WorkUnitState::Active
+                    || unit.scope_revision != expected_scope_revision
+                {
+                    return Err(error(
+                        PersistenceErrorKind::Conflict,
+                        "readiness requires an active maintenance unit at the exact scope revision",
+                    ));
+                }
+                let mut resource_revisions = Vec::with_capacity(evidence.len());
+                for (i, proof) in evidence.iter().enumerate() {
+                    text(&proof.native_revision, 1024)?;
+                    if !unit.scope.resources.contains(&proof.reference)
+                        || proof.reference.authority_id != self.domain.authority_id
+                        || evidence[..i].iter().any(|e| e.reference == proof.reference)
+                    {
+                        return Err(invalid(
+                            "readiness evidence must be distinct local resources in the saved scope",
+                        ));
+                    }
+                    let resource = self
+                        .resources
+                        .get(&reference_key(&proof.reference)?)
+                        .ok_or_else(|| invalid("unrecorded readiness resource"))?;
+                    if resource.resolution != ResourceResolution::Available
+                        || resource.provenance.source != RecordSource::SystemEvent
+                        || resource.native_revision.as_ref() != Some(&proof.native_revision)
+                    {
+                        return Err(invalid(
+                            "readiness evidence requires the current adapter-owned native revision",
+                        ));
+                    }
+                    resource_revisions.push(resource.revision);
+                }
+                let revision = self.revision;
+                let unit = self.active_unit(&work_unit_id)?;
+                unit.readiness = Some(WorkReadiness {
+                    condition,
+                    scope_revision: expected_scope_revision,
+                    evidence,
+                    resource_revisions,
+                    observed_at: now,
+                    expires_at: now + chrono::Duration::seconds(i64::from(valid_for_seconds)),
+                });
+                unit.revision = revision;
+                unit.updated_at = now;
+                unit.provenance = provenance;
+            }
+            WorkGraphMutation::SetBudget {
+                work_unit_id,
+                limits,
+            } => {
+                self.check_budget_limits(&limits, &self.budget_usage(&work_unit_id))?;
+                let revision = self.revision;
+                let unit = self.active_unit(&work_unit_id)?;
+                unit.budget = Some(limits);
+                unit.revision = revision;
+                unit.updated_at = now;
+                unit.provenance = provenance;
+            }
+            WorkGraphMutation::ReserveBudget {
+                reservation_id,
+                work_unit_id,
+                execution,
+                reserved_cost_microusd,
+            } => {
+                self.reserve_budget(
+                    reservation_id,
+                    work_unit_id,
+                    execution,
+                    reserved_cost_microusd,
+                    provenance,
+                    now,
+                )?;
+            }
+            WorkGraphMutation::SettleBudget {
+                reservation_id,
+                disposition,
+                actual_cost_microusd,
+            } => {
+                self.settle_budget(
+                    &reservation_id,
+                    disposition,
+                    actual_cost_microusd,
+                    provenance,
+                )?;
             }
         }
         Ok(())
@@ -729,6 +1008,7 @@ impl Snapshot {
             self.resources.len(),
             self.relationships.len(),
             self.work_units.len(),
+            self.reservations.len(),
             self.commands.len(),
         ]
         .iter()
@@ -758,12 +1038,66 @@ impl Snapshot {
             self.require_resource(&relationship.to, false)?;
         }
         for (id, unit) in &self.work_units {
-            if id != &unit.work_unit_id || unit.revision == 0 || unit.revision > self.revision {
+            if id != &unit.work_unit_id
+                || unit.revision == 0
+                || unit.revision > self.revision
+                || unit.scope_revision == 0
+                || unit.scope_revision > unit.revision
+            {
                 return Err(invalid("work unit index or revision mismatch"));
             }
             self.require_resource(&work_reference(&self.domain, id), true)?;
             self.validate_scope(id, &unit.scope, false)?;
             self.validate_contact(&unit.contact)?;
+            if unit.conversations.len() > MAX_SCOPE_MEMBERS {
+                return Err(invalid("too many attached conversations"));
+            }
+            for (i, session) in unit.conversations.iter().enumerate() {
+                self.validate_session(session)?;
+                if unit.conversations[..i].contains(session) {
+                    return Err(invalid("duplicate conversation attachment"));
+                }
+            }
+            if let Some(origin) = &unit.origin
+                && !unit.conversations.contains(origin)
+            {
+                return Err(invalid(
+                    "work origin is missing its conversation attachment",
+                ));
+            }
+            if let Some(checkpoint) = &unit.readiness {
+                text(&checkpoint.condition, 4096)?;
+                if unit.kind != WorkUnitKind::Maintenance
+                    || unit.state != WorkUnitState::Active
+                    || checkpoint.scope_revision != unit.scope_revision
+                    || checkpoint.evidence.is_empty()
+                    || checkpoint.evidence.len() > MAX_SCOPE_MEMBERS
+                    || checkpoint.evidence.len() != checkpoint.resource_revisions.len()
+                    || checkpoint.expires_at <= checkpoint.observed_at
+                    || checkpoint.expires_at - checkpoint.observed_at > chrono::Duration::days(1)
+                {
+                    return Err(invalid("invalid saved readiness checkpoint"));
+                }
+                for (i, (proof, revision)) in checkpoint
+                    .evidence
+                    .iter()
+                    .zip(&checkpoint.resource_revisions)
+                    .enumerate()
+                {
+                    text(&proof.native_revision, 1024)?;
+                    self.require_resource(&proof.reference, false)?;
+                    if !unit.scope.resources.contains(&proof.reference)
+                        || proof.reference.authority_id != self.domain.authority_id
+                        || checkpoint.evidence[..i]
+                            .iter()
+                            .any(|e| e.reference == proof.reference)
+                        || *revision == 0
+                        || *revision > unit.revision
+                    {
+                        return Err(invalid("invalid saved readiness evidence"));
+                    }
+                }
+            }
         }
         // Kahn's algorithm bounds work composition/dependency evaluation. The
         // ordinary semantic graph may contain cycles without this restriction.
@@ -811,6 +1145,7 @@ impl Snapshot {
                 return Err(invalid("invalid durable command receipt"));
             }
         }
+        self.validate_reservations()?;
         Ok(())
     }
 }
