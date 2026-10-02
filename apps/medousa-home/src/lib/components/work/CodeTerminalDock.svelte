@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { TerminalSessionSummary } from "$lib/terminal";
   import { SquareTerminal } from "@lucide/svelte";
   import CodeOperationNotice from "$lib/components/code/CodeOperationNotice.svelte";
   import TerminalPane from "$lib/components/terminal/TerminalPane.svelte";
@@ -15,6 +16,7 @@
     workId: string;
     worktreeRoot?: string | null;
     title?: string;
+    onTerminalContext?: (context: TerminalSessionSummary["workspace_context"]) => void;
     onClose: () => void;
     onPopOut?: () => void;
   }
@@ -30,6 +32,7 @@
     workId,
     worktreeRoot = null,
     title = "Terminal",
+    onTerminalContext,
     onClose,
     onPopOut,
   }: Props = $props();
@@ -46,6 +49,7 @@
             executionRuntimeId={undertakings.active?.executionRuntimeId ?? null}
             {title}
             {worktreeRoot}
+            onWorkspaceContext={onTerminalContext}
             compact
             onPopOut={onPopOut}
             onCollapse={onClose}

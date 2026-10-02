@@ -213,7 +213,11 @@ a private Code IDE chrome.
   and session ownership. Language failures stay compact there; select
   **Language issue** for the full message plus Problems, logs, restart, and
   repair actions. **View** toggles word wrap and line numbers. Saves whisper
-  `Saving…` / timed `Saved`.
+  `Saving…` / timed `Saved`. A blocked or failed save stays visible in the
+  status bar while the draft remains unsaved. Working-copy changes and analysis
+  failures also stay compact there; select the warning for its explanation and
+  collapsed technical details. A working Terminal does not display a duplicate
+  branch-warning strip.
 - File and folder create/rename/delete begin or reuse the editing session and
   remain inside the working copy; rename/delete refuse unsaved open drafts and
   use change-conflict protection.
@@ -584,8 +588,13 @@ inputs invalidates that preview. An external file edit prevents a stale write;
 review a new preview before retrying.
 
 Problems identify observed sessions rather than claiming the whole project is
-clean. They retain producer, code, precise range, and document version when
-supplied. Editor markers clear when the buffer changes; a new matching diagnostic
+clean. Observations refresh when diagnostic publications, project changes, or
+language connections change, and when you select Refresh. Opening Problems does
+not start a repeating poll. Background retries preserve rows, filters, and the
+existing failure state; failed requests back off, while explicit Refresh retries
+immediately. Unavailable analysis and stale observations remain distinguishable
+from zero reported problems. They retain producer, code, precise range, and
+document version when supplied. Editor markers clear when the buffer changes; a new matching diagnostic
 publication can restore them. Unversioned editor diagnostics are accepted only
 for a synchronized buffer and cleared on the next edit. Aggregate unversioned
 or older observations are labelled. Language information leads with this file’s

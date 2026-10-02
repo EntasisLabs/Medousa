@@ -186,6 +186,23 @@
     </button>
     <span class="status-contextual-sep" aria-hidden="true">·</span>
     <span class="status-contextual-item">{codeStatus.control}</span>
+    {#if codeStatus.issues.length > 0}
+      <span class="status-contextual-sep" aria-hidden="true">·</span>
+      <button
+        type="button"
+        class="status-contextual-action status-contextual-warning"
+        title={codeStatus.issues.map((issue) => issue.label).join(" · ")}
+        aria-expanded={codeStatusOpen}
+        aria-haspopup="dialog"
+        onclick={(event) => {
+          codeStatusTrigger = event.currentTarget;
+          codeStatusOpen = !codeStatusOpen;
+        }}
+      >
+        <CircleAlert size={11} strokeWidth={2} aria-hidden="true" />
+        <span>{codeStatus.issues[0].label}{#if codeStatus.issues.length > 1} · {codeStatus.issues.length}{/if}</span>
+      </button>
+    {/if}
     {#if codeStatus.execution}
       <span class="status-contextual-sep" aria-hidden="true">·</span>
       <button
@@ -197,7 +214,7 @@
     {/if}
     {#if codeStatus.saving || codeStatus.saveWhisper || codeStatus.dirty}
       <span class="status-contextual-sep" aria-hidden="true">·</span>
-      <span class="status-contextual-whisper">
+      <span class="status-contextual-whisper" class:status-contextual-whisper--failed={codeStatus.saveWhisper === "Save blocked" || codeStatus.saveWhisper === "Save failed"}>
         {codeStatus.saving
           ? "Saving…"
           : codeStatus.saveWhisper || "Unsaved"}
@@ -206,7 +223,6 @@
     {#if codeStatus.languageDetail || codeStatus.languageState !== "ready"}
       <span class="status-contextual-sep" aria-hidden="true">·</span>
       <button
-        bind:this={codeStatusTrigger}
         type="button"
         class="status-contextual-action status-contextual-language"
         class:text-content-warning={codeStatus.languageState === "editing-only" ||
@@ -222,7 +238,10 @@
                 : "Editing only")}
         aria-expanded={codeStatusOpen}
         aria-haspopup="dialog"
-        onclick={() => (codeStatusOpen = !codeStatusOpen)}
+        onclick={(event) => {
+          codeStatusTrigger = event.currentTarget;
+          codeStatusOpen = !codeStatusOpen;
+        }}
       >
         <CircleAlert size={11} strokeWidth={2} aria-hidden="true" />
         <span>
@@ -243,6 +262,7 @@
     status={codeStatus}
     onClose={() => (codeStatusOpen = false)}
     onShowProblems={showCodeProblems}
+    onRefreshProblems={() => dispatchCodeCommand("medousa.code.refreshProblems")}
     onShowLogs={() => dispatchCodeCommand("medousa.code.showLanguageLogs")}
     onRestart={() => dispatchCodeCommand("medousa.code.restartLanguageServer")}
     onRepair={() => dispatchCodeCommand("medousa.code.repairLanguageSupport")}
@@ -369,5 +389,16 @@
     flex-shrink: 0;
     color: rgb(var(--theme-text-tertiary));
     white-space: nowrap;
+  }
+
+  .status-contextual-warning {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    color: rgb(var(--theme-warning));
+  }
+
+  .status-contextual-whisper--failed {
+    color: rgb(var(--theme-warning));
   }
 </style>

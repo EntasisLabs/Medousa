@@ -1,7 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const diagnostics = vi.hoisted(() => vi.fn());
 vi.mock("$lib/code/codingEngineClient", () => ({ getAllCodeWorkspaceDiagnostics: diagnostics }));
 import { CodeProblemsController } from "./codeProblemsController.svelte";
+
+beforeEach(() => diagnostics.mockReset());
+afterEach(() => vi.useRealTimers());
 
 function controller() {
   return new CodeProblemsController({
@@ -105,4 +108,67 @@ it("keeps current editor observations ahead of an older aggregate snapshot", asy
   expect(problems.effective.map((problem) => problem.message)).toEqual(["other file", "current editor"]);
   problems.setDocumentProblems([]);
   expect(problems.effective.map((problem) => problem.message)).toEqual(["other file"]);
+});
+
+it("keeps failures steady during background retries and lets explicit retry recover", async () => {
+  vi.useFakeTimers();
+  const problems = controller();
+  problems.query = "borrow";
+  problems.severity = "warning";
+  problems.setDocumentProblems([{ message: "borrow issue", severity: "warning", line: 2 }]);
+  diagnostics.mockRejectedValueOnce(new Error("service unavailable"));
+  await problems.refresh();
+  expect(problems.error).toBe("service unavailable");
+  expect(problems.loaded).toBe(false);
+  await problems.refresh({ quiet: true });
+  expect(diagnostics).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(5_000);
+  let reject!: (error: Error) => void;
+  diagnostics.mockReturnValueOnce(new Promise((_, fail) => { reject = fail; }));
+  const retry = problems.refresh({ quiet: true });
+  expect(problems.loading).toBe(false);
+  expect(problems.refreshing).toBe(true);
+  expect(problems.error).toBe("service unavailable");
+  expect(problems.effective[0].message).toBe("borrow issue");
+  reject(new Error("still unavailable"));
+  await retry;
+  diagnostics.mockResolvedValueOnce({ documents: [], unavailableLanguages: [] });
+  await problems.refresh();
+  expect(diagnostics).toHaveBeenCalledTimes(3);
+  expect(problems.error).toBeNull();
+  expect(problems.loaded).toBe(true);
+  expect(problems.query).toBe("borrow");
+  expect(problems.severity).toBe("warning");
+});
+
+it("coalesces overlapping snapshot requests and preserves the last successful observations on failure", async () => {
+  const problems = controller();
+  diagnostics.mockResolvedValueOnce({ documents: [{ uri: "file:///work/project/src/other.rs", diagnostics: [{ message: "existing issue", severity: 1 }] }] });
+  await problems.refresh();
+  let reject!: (error: Error) => void;
+  diagnostics.mockReturnValueOnce(new Promise((_, fail) => { reject = fail; }));
+  const first = problems.refresh({ quiet: true });
+  const second = problems.refresh();
+  expect(second).toBe(first);
+  expect(diagnostics).toHaveBeenCalledTimes(2);
+  expect(problems.loading).toBe(false);
+  reject(new Error("failed"));
+  await first;
+  expect(problems.loaded).toBe(true);
+  expect(problems.effective[0].message).toBe("existing issue");
+  expect(problems.refreshing).toBe(false);
+});
+
+it("debounces publications and cancels a queued refresh when leaving the scope", async () => {
+  vi.useFakeTimers();
+  const problems = controller();
+  diagnostics.mockResolvedValue({ documents: [] });
+  problems.scheduleRefresh();
+  problems.scheduleRefresh();
+  await vi.advanceTimersByTimeAsync(350);
+  expect(diagnostics).toHaveBeenCalledTimes(1);
+  problems.scheduleRefresh();
+  problems.resetForScope();
+  await vi.advanceTimersByTimeAsync(350);
+  expect(diagnostics).toHaveBeenCalledTimes(1);
 });

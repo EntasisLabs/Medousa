@@ -1,3 +1,5 @@
+import type { CodeStatusIssue } from "$lib/code/codeStatusIssues";
+
 export type CodeEditorStatusSnapshot = {
   workId: string;
   path: string;
@@ -15,6 +17,8 @@ export type CodeEditorStatusSnapshot = {
   languageState: "ready" | "connecting" | "editing-only" | "reconnecting" | "failed";
   /** Quiet LSP progress / notices (scanning, server whispers). */
   languageDetail: string | null;
+  issues: CodeStatusIssue[];
+  analysis: "unobserved" | "observed" | "unavailable" | "stale" | "incomplete";
 };
 
 class CodeEditorStatusStore {

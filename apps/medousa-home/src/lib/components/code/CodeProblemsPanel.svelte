@@ -1,5 +1,4 @@
 <script lang="ts">
-  import CodeOperationNotice from "./CodeOperationNotice.svelte";
   import { CircleAlert, FileCode2, LoaderCircle, RotateCcw, Search } from "@lucide/svelte";
   import {
     PROBLEM_SEVERITY_OPTIONS,
@@ -25,23 +24,21 @@
   </div>
   <span class="text-chrome-xs text-rose-300" title="Errors">{problems.counts.errors}</span>
   <span class="text-chrome-xs text-amber-300" title="Warnings">{problems.counts.warnings}</span>
-  <button type="button" class="rounded p-0.5 text-content-quiet hover:bg-surface-800 hover:text-surface-200 disabled:opacity-50" aria-label="Refresh project problems" title="Refresh project problems" disabled={problems.loading} onclick={() => void problems.refresh()}><RotateCcw size={11} class={problems.loading ? "animate-spin" : ""} /></button>
+  <button type="button" class="rounded p-0.5 text-content-quiet hover:bg-surface-800 hover:text-surface-200 disabled:opacity-50" aria-label="Refresh project problems" title="Refresh project problems" disabled={problems.refreshing} onclick={() => void problems.refresh()}><RotateCcw size={11} class={problems.loading ? "animate-spin" : ""} /></button>
 </div>
 
-{#if problems.error}
-  <div class="flex items-start justify-between gap-3 border-b border-rose-400/20 bg-rose-500/5 px-3 py-2 text-chrome-sm text-rose-200">
-    <CodeOperationNotice message={problems.error} />
-    <button type="button" class="shrink-0 underline underline-offset-2" onclick={() => void problems.refresh()}>Retry</button>
-  </div>
-{/if}
-<p class="border-b border-surface-500/15 px-3 py-2 text-chrome-xs text-content-quiet">{problems.loaded ? `Observed language sessions · ${problems.observedDocuments} documents` : "Current file observations"} · task results keep their own run history.</p>
-{#if problems.unavailableLanguages.length > 0}
-  <p class="border-b border-amber-400/20 bg-amber-500/5 px-3 py-1.5 text-chrome-sm text-amber-200">Results are incomplete for {problems.unavailableLanguages.join(", ")}.</p>
-{/if}
-{#if problems.loading && !problems.loaded}
+<p class="border-b border-surface-500/15 px-3 py-1.5 text-chrome-xs text-content-quiet">
+  {problems.loaded ? `${problems.observedDocuments} observed documents` : "Current file observations"}
+  {#if problems.error}
+    <span class="text-content-warning"> · {problems.loaded ? "Results may be stale" : "Project analysis unavailable"}</span>
+  {:else if problems.unavailableLanguages.length > 0}
+    <span class="text-content-warning" title={`Unavailable: ${problems.unavailableLanguages.join(", ")}`}> · Analysis incomplete</span>
+  {/if}
+</p>
+{#if problems.loading && !problems.loaded && !problems.error && problems.counts.total === 0}
   <p class="flex items-center px-3 py-3 text-chrome-sm text-content-quiet"><LoaderCircle size={11} class="mr-1.5 animate-spin" />Loading project problems…</p>
 {:else if problems.counts.total === 0}
-  <p class="px-3 py-3 text-chrome-sm text-content-quiet">{problems.error ? "Analysis could not be refreshed. Existing observations may be stale." : problems.unavailableLanguages.length ? "No problems reported by available sessions. Analysis is incomplete." : problems.loaded ? "No problems reported by the observed sessions. Files without an active session have not been verified." : "No problems reported for the current file. Project analysis has not been observed."}</p>
+  <p class="px-3 py-3 text-chrome-sm text-content-quiet">No problems in the available observations.</p>
 {:else if problems.groups.length === 0}
   <p class="px-3 py-3 text-chrome-sm text-content-quiet">No problems match the current filters.</p>
 {:else}

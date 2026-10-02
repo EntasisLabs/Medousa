@@ -111,6 +111,7 @@ export class CodeProblemsController {
   workspaceScope = $state("");
   loaded = $state(false);
   loading = $state(false);
+  refreshing = $state(false);
   error = $state<string | null>(null);
   unavailableLanguages = $state<string[]>([]);
   observedDocuments = $state(0);
@@ -118,6 +119,10 @@ export class CodeProblemsController {
   query = $state("");
   severity = $state<CodeProblemSeverityFilter>("all");
   #requestEpoch = 0;
+  #inFlight: { key: string; promise: Promise<void> } | null = null;
+  #refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  #retryAfter = 0;
+  #failures = 0;
   #documentScope = "";
   #documentUri: string | null = null;
   #taskScope = "";
@@ -135,6 +140,11 @@ export class CodeProblemsController {
 
   resetForScope() {
     this.#requestEpoch += 1;
+    this.#inFlight = null;
+    if (this.#refreshTimer) clearTimeout(this.#refreshTimer);
+    this.#refreshTimer = null;
+    this.#retryAfter = 0;
+    this.#failures = 0;
     this.documentProblems = [];
     this.workspaceProblems = [];
     this.taskProblems = [];
@@ -142,6 +152,7 @@ export class CodeProblemsController {
     this.workspaceScope = "";
     this.loaded = false;
     this.loading = false;
+    this.refreshing = false;
     this.error = null;
     this.unavailableLanguages = [];
     this.observedDocuments = 0;
@@ -235,7 +246,34 @@ export class CodeProblemsController {
     }));
   }
 
-  async refresh(options?: { quiet?: boolean }) {
+  /** Coalesce diagnostic publications and filesystem events into one snapshot read. */
+  scheduleRefresh() {
+    if (this.#refreshTimer) clearTimeout(this.#refreshTimer);
+    this.#refreshTimer = setTimeout(() => {
+      this.#refreshTimer = null;
+      void this.refresh({ quiet: true });
+    }, 350);
+  }
+
+  dispose() {
+    this.resetForScope();
+  }
+
+  refresh(options?: { quiet?: boolean }): Promise<void> {
+    const key = JSON.stringify([this.scopeKey, this.#deps.getWorkspaceLanguages()]);
+    if (this.#inFlight?.key === key) return this.#inFlight.promise;
+    // Background invalidations must not hammer a failing service. Explicit Retry bypasses this.
+    if (options?.quiet && this.error && this.scopeKey && this.workspaceScope === this.scopeKey &&
+        Date.now() < this.#retryAfter) return Promise.resolve();
+    const request = { key, promise: this.#refresh(options) };
+    this.#inFlight = request;
+    void request.promise.finally(() => {
+      if (this.#inFlight === request) this.#inFlight = null;
+    });
+    return request.promise;
+  }
+
+  async #refresh(options?: { quiet?: boolean }) {
     const requestWorkId = this.#deps.getWorkId();
     const requestRoot = this.#deps.getWorkspaceRoot();
     const requestScope = this.scopeKey;
@@ -246,6 +284,7 @@ export class CodeProblemsController {
       this.workspaceScope = "";
       this.loaded = false;
       this.loading = false;
+      this.refreshing = false;
       this.error = null;
       this.unavailableLanguages = [];
       return;
@@ -254,10 +293,13 @@ export class CodeProblemsController {
       this.workspaceProblems = [];
       this.workspaceScope = requestScope;
       this.loaded = false;
+      this.error = null;
+      this.#retryAfter = 0;
+      this.#failures = 0;
       this.unavailableLanguages = [];
     }
-    if (!options?.quiet || !this.loaded) this.loading = true;
-    this.error = null;
+    this.refreshing = true;
+    this.loading = !options?.quiet || (!this.loaded && !this.error);
     try {
       const snapshot = await getAllCodeWorkspaceDiagnostics({
         workId: requestWorkId,
@@ -274,13 +316,20 @@ export class CodeProblemsController {
       this.analysisScope = snapshot.scope ?? null;
       this.unavailableLanguages = snapshot.unavailableLanguages ?? [];
       this.loaded = true;
+      this.error = null;
+      this.#failures = 0;
+      this.#retryAfter = 0;
     } catch (err) {
       if (requestEpoch !== this.#requestEpoch || this.scopeKey !== requestScope) {
         return;
       }
       this.error = err instanceof Error ? err.message : String(err);
+      this.#retryAfter = Date.now() + Math.min(60_000, 5_000 * 2 ** this.#failures++);
     } finally {
-      if (requestEpoch === this.#requestEpoch) this.loading = false;
+      if (requestEpoch === this.#requestEpoch) {
+        this.loading = false;
+        this.refreshing = false;
+      }
     }
   }
 

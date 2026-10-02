@@ -59,3 +59,23 @@ it("does not reactivate an old project when editing control arrives after switch
   expect(deps.refreshDetail).not.toHaveBeenCalled();
   expect(save.beginningEdit).toBe(false);
 });
+
+it("preserves the precise save failure and draft instead of replacing it with a generic message", async () => {
+  const message = "attached checkout switched branches: expected old, found new";
+  api.saveUndertakingSource.mockRejectedValueOnce(new Error(message));
+  const { save, deps, tab } = setup();
+  await save.save();
+  expect(save.saveWhisper).toBe("Save failed");
+  expect(deps.onError).toHaveBeenLastCalledWith(message);
+  expect(deps.setTabError).toHaveBeenLastCalledWith(tab.tabId, message);
+  expect(deps.acceptSaved).not.toHaveBeenCalled();
+  expect(tab.draft).toBe("unsaved");
+});
+
+it("marks a save rejected before writing as blocked", async () => {
+  api.saveUndertakingSource.mockClear();
+  const { save, tab } = setup({ getContext: () => null, getCanBeginEdit: () => false });
+  expect(await save.saveTab(tab)).toBe(false);
+  expect(save.saveWhisper).toBe("Save blocked");
+  expect(api.saveUndertakingSource).not.toHaveBeenCalled();
+});

@@ -90,6 +90,9 @@
   } from "$lib/config/codeEditorPreferences";
   import { readCodeWorkbenchPreferences } from "$lib/config/codeWorkbenchPreferences";
   import { codeEditorFind } from "$lib/stores/codeEditorFind.svelte";
+  import { codeStatusIssues } from "$lib/code/codeStatusIssues";
+  import { subscribeCodeDiagnostics } from "$lib/code/codeDiagnosticsEvents";
+  import type { TerminalSessionSummary } from "$lib/terminal";
   import { codeEditorStatus } from "$lib/stores/codeEditorStatus.svelte";
   interface Props {
     fill?: boolean;
@@ -142,6 +145,7 @@
   }: Props = $props();
 
   let surfaceError = $state<string | null>(null);
+  let terminalContext = $state<TerminalSessionSummary["workspace_context"]>(null);
   let wordWrap = $state(readCodeEditorWordWrap());
   let showLineNumbers = $state(readCodeEditorLineNumbers());
   let fontSize = $state<CodeEditorFontSize>(readCodeEditorFontSize());
@@ -979,6 +983,7 @@
   async function handleProjectEvent(event: ForgeProjectEvent) {
     if (!workId || event.work_id !== workId) return;
     notifyLanguageServerOfProjectEvent(event);
+    problems.scheduleRefresh();
     changes.scheduleRefresh();
     const plan = planOpenBufferAction(event);
     switch (plan.action) {
@@ -1487,6 +1492,7 @@
       refactorApplying = false;
       reviewChangedLines = [];
       surfaceError = null;
+      terminalContext = null;
     });
   });
 
@@ -1647,15 +1653,13 @@
       () => untrack(() => void problems.refresh({ quiet: !showingProblems })),
       showingProblems ? 0 : 350,
     );
-    if (!showingProblems) return () => clearTimeout(refreshTimer);
-    const pollingTimer = setInterval(
-      () => untrack(() => void problems.refresh({ quiet: true })),
-      2_000,
-    );
-    return () => {
-      clearTimeout(refreshTimer);
-      clearInterval(pollingTimer);
-    };
+    return () => clearTimeout(refreshTimer);
+  });
+
+  $effect(() => {
+    void workspaceScope;
+    if (!interactive || !workId) return;
+    return subscribeCodeDiagnostics(workId, () => problems.scheduleRefresh());
   });
 
   $effect(() => {
@@ -1756,6 +1760,17 @@
         : tasks.result
           ? `${tasks.result.task.label} · ${tasks.result.success ? "passed" : "failed"}`
           : null,
+      issues: codeStatusIssues({
+        messages: [activeTab.error, surfaceError, landError],
+        terminalContext,
+        analysisError: problems.error,
+        analysisLoaded: problems.loaded,
+        unavailableLanguages: problems.unavailableLanguages,
+      }),
+      analysis: problems.error
+        ? problems.loaded ? "stale" : "unavailable"
+        : problems.unavailableLanguages.length ? "incomplete"
+        : problems.loaded ? "observed" : "unobserved",
       languageState: lspStatus.phase === "stopped" ? "editing-only" : lspStatus.phase,
       languageDetail: (() => {
         if (lspStatus.progress) {
@@ -1786,6 +1801,9 @@
       const id = codeCommandIdFromEvent(event);
       if (!id) return;
       switch (id) {
+        case "medousa.code.refreshProblems":
+          void problems.refresh();
+          break;
         case "workbench.action.quickOpen":
           void quick.show();
           break;
@@ -1952,6 +1970,7 @@
     changes.dispose();
     tasks.dispose();
     save.dispose();
+    problems.dispose();
     codeEditorStatus.clear(statusOwnerId);
   });
 </script>
@@ -2022,6 +2041,7 @@
     {workId}
     {activeTab}
     {surfaceError}
+    onTerminalContext={(value) => { terminalContext = value; }}
     {landError}
     {needsProvision}
     attachedCheckout={detail?.workspace_mode === "attached_checkout" || detail?.environment?.kind === "attached_checkout"}

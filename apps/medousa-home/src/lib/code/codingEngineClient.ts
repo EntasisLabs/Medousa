@@ -3,7 +3,8 @@
  * All languages use the coding engine; unavailable services remain unavailable.
  */
 
-import { presentCodeDiagnostics } from "$lib/code/codeDiagnosticPresentation";
+import { quietShowMessageHandlers } from "$lib/code/codeDiagnosticPresentation";
+import { notifyCodeDiagnostics } from "$lib/code/codeDiagnosticsEvents";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
@@ -362,6 +363,7 @@ export async function connectOrchestratorLspClient(options: ConnectOrchestratorL
   const language = options.language?.trim().toLowerCase();
   if (!language) throw new Error("An explicit language is required for language assistance");
   const current = captureCodeScope(codeExecutionScopeKey);
+  const diagnosticScope = codeExecutionScopeKey();
   const assertCurrent = () => {
     if (!current()) throw new Error("The coding workshop changed while starting language assistance");
   };
@@ -408,7 +410,9 @@ export async function connectOrchestratorLspClient(options: ConnectOrchestratorL
     const client = new LSPClient({
       rootUri,
       timeout: 30_000,
-      notificationHandlers: quietShowMessageHandlers(options.onServerEvent),
+      notificationHandlers: quietShowMessageHandlers(options.onServerEvent, () => {
+        if (current() && options.workId) notifyCodeDiagnostics(diagnosticScope, options.workId);
+      }),
       extensions: [
         ...languageServerExtensions(),
         {
@@ -583,37 +587,6 @@ function applyWorkspaceServerEvent(
       notice: event.message,
     });
   }
-}
-
-/** Suppress CodeMirror's top OK dialog for window/showMessage; route via onServerEvent. */
-function quietShowMessageHandlers(
-  onServerEvent?: (event: CodeLanguageServerEvent) => void,
-): NonNullable<ConstructorParameters<typeof LSPClient>[0]>["notificationHandlers"] {
-  return {
-    "textDocument/publishDiagnostics": presentCodeDiagnostics,
-    "window/showMessage": (_client, params) => {
-      const message =
-        params && typeof (params as { message?: unknown }).message === "string"
-          ? (params as { message: string }).message
-          : "";
-      const type = (params as { type?: unknown } | null)?.type;
-      const level =
-        type === 1
-          ? "error"
-          : type === 2
-            ? "warning"
-            : type === 3
-              ? "info"
-              : "log";
-      if (message) {
-        // Info spam (e.g. rust-analyzer auto-reload) stays out of the chrome.
-        if (level === "info" || level === "log") return true;
-        if (/auto-reloading is disabled/i.test(message)) return true;
-        onServerEvent?.({ kind: "log", level, message });
-      }
-      return true;
-    },
-  };
 }
 
 function createWorkspaceClientEntry(

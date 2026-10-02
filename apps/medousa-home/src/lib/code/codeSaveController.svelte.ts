@@ -150,7 +150,12 @@ export class CodeSaveController {
   async saveTab(tab: CodeSaveTab | null): Promise<boolean> {
     const current = this.#captureScope();
     if (!tab) return true;
+    if (this.#deps.isDirty(tab) || tab.preview) {
+      if (this.#whisperTimer) clearTimeout(this.#whisperTimer);
+      this.#whisperTimer = null;
+    }
     if (tab.preview) {
+      this.saveWhisper = "Save blocked";
       this.#deps.onError(CODE_SAVE_PREVIEW_ERROR);
       return false;
     }
@@ -183,6 +188,7 @@ export class CodeSaveController {
       return decision.reason === "not-dirty" || decision.reason === "already-saving";
     }
     if (decision.action === "reject") {
+      this.saveWhisper = "Save blocked";
       this.#deps.onError(
         decision.reason === "preview" ? CODE_SAVE_PREVIEW_ERROR : CODE_SAVE_NO_LEASE_ERROR,
       );
@@ -194,6 +200,7 @@ export class CodeSaveController {
           await this.beginEditPromise;
         } catch (err) {
           if (!current()) return false;
+          this.saveWhisper = "Save blocked";
           this.#deps.onError(
             humanizeForgeMessage(err instanceof Error ? err.message : String(err)),
           );
@@ -205,6 +212,7 @@ export class CodeSaveController {
         await this.startEditing();
       } catch (err) {
         if (!current()) return false;
+        this.saveWhisper = "Save blocked";
         this.#deps.onError(
           humanizeForgeMessage(err instanceof Error ? err.message : String(err)),
         );
@@ -223,6 +231,7 @@ export class CodeSaveController {
         generation = lease.generation;
       } catch (err) {
         if (!current()) return false;
+        this.saveWhisper = "Save blocked";
         this.#deps.onError(
           humanizeForgeMessage(err instanceof Error ? err.message : String(err)),
         );
@@ -233,7 +242,10 @@ export class CodeSaveController {
       return !this.#deps.isDirty(tab);
     }
 
-    if (this.#deps.beforeSave && !(await this.#deps.beforeSave(tab))) return false;
+    if (this.#deps.beforeSave && !(await this.#deps.beforeSave(tab))) {
+      if (current()) this.saveWhisper = "Save blocked";
+      return false;
+    }
     if (!current()) return false;
     if (tab.tabId === this.#deps.getActiveTabId() && editor) {
       const transformedDraft = editor.getValue();
@@ -266,7 +278,7 @@ export class CodeSaveController {
       return true;
     } catch (err) {
       if (!current()) return false;
-      this.saveWhisper = null;
+      this.saveWhisper = "Save failed";
       const message = humanizeForgeMessage(
         err instanceof Error ? err.message : String(err),
       );
@@ -279,12 +291,8 @@ export class CodeSaveController {
   }
 
   async save() {
-    const current = this.#captureScope();
     const activeTab = this.#deps.getActiveTab();
-    const ok = await this.saveTab(activeTab);
-    if (current() && !ok && activeTab && this.#deps.isDirty(activeTab)) {
-      this.#deps.onError("Could not save the file.");
-    }
+    await this.saveTab(activeTab);
   }
 
   async saveAll(): Promise<boolean> {

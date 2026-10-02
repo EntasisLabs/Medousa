@@ -2,7 +2,7 @@
 import { LSPPlugin, type LSPClient } from "@codemirror/lsp-client";
 import { setDiagnostics, type Diagnostic } from "@codemirror/lint";
 import type { Text } from "@codemirror/state";
-import type { CodeWorkspaceDiagnostic } from "./codingEngineClient";
+import type { CodeLanguageServerEvent, CodeWorkspaceDiagnostic } from "./codingEngineClient";
 type RawDiagnostic = NonNullable<CodeWorkspaceDiagnostic["diagnostics"]>[number];
 const metadata = new WeakMap<Diagnostic, { raw: RawDiagnostic; version?: number; document: Text }>();
 export function diagnosticMetadata(diagnostic: Diagnostic) { return metadata.get(diagnostic); }
@@ -30,4 +30,41 @@ export function presentCodeDiagnostics(client: LSPClient, value: unknown): boole
   });
   view.dispatch(setDiagnostics(view.state, markers));
   return true;
+}
+
+/** Suppress CodeMirror's top OK dialog for window/showMessage; route via onServerEvent. */
+export function quietShowMessageHandlers(
+  onServerEvent?: (event: CodeLanguageServerEvent) => void,
+  onDiagnostics?: () => void,
+): NonNullable<ConstructorParameters<typeof LSPClient>[0]>["notificationHandlers"] {
+  return {
+    "textDocument/publishDiagnostics": (client, params) => {
+      const handled = presentCodeDiagnostics(client, params);
+      if (params && typeof (params as { uri?: unknown }).uri === "string" &&
+          Array.isArray((params as { diagnostics?: unknown }).diagnostics)) onDiagnostics?.();
+      return handled;
+    },
+    "window/showMessage": (_client, params) => {
+      const message =
+        params && typeof (params as { message?: unknown }).message === "string"
+          ? (params as { message: string }).message
+          : "";
+      const type = (params as { type?: unknown } | null)?.type;
+      const level =
+        type === 1
+          ? "error"
+          : type === 2
+            ? "warning"
+            : type === 3
+              ? "info"
+              : "log";
+      if (message) {
+        // Info spam (e.g. rust-analyzer auto-reload) stays out of the chrome.
+        if (level === "info" || level === "log") return true;
+        if (/auto-reloading is disabled/i.test(message)) return true;
+        onServerEvent?.({ kind: "log", level, message });
+      }
+      return true;
+    },
+  };
 }

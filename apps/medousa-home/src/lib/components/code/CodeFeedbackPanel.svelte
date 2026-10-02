@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { TerminalSessionSummary } from "$lib/terminal";
   import CodePanelFrame from "./CodePanelFrame.svelte";
   import { Copy, RotateCcw, SquareTerminal, Trash2, X } from "@lucide/svelte";
   import type { CodeBottomPanel } from "$lib/code/codeWorkbenchState.svelte";
@@ -22,6 +23,7 @@
     activePath: string;
     workspaceRoot: string | null;
     terminalTitle: string;
+    onTerminalContext?: (context: TerminalSessionSummary["workspace_context"]) => void;
     onSelect: (panel: Exclude<CodeBottomPanel, null>) => void | Promise<void>;
     onClose: () => void;
     onOpenLocation: (path: string, line: number) => void;
@@ -42,6 +44,7 @@
     activePath,
     workspaceRoot,
     terminalTitle,
+    onTerminalContext,
     onSelect,
     onClose,
     onOpenLocation,
@@ -93,7 +96,7 @@
       {:else if active === "tests"}
         <CodeTasksOutput {tasks} mode="tests" {activePath} {onOpenLocation} />
       {:else}
-        <CodeTerminalDock open={true} sessionId={terminalSessionId} busy={terminalBusy} error={terminalError} {canCreateTerminal} blockedReason={terminalBlockedReason} onCreate={onCreateTerminal} {workId} worktreeRoot={workspaceRoot} title={terminalTitle} onClose={onClose} onPopOut={() => void onPopOutTerminal()} />
+        <CodeTerminalDock open={true} sessionId={terminalSessionId} busy={terminalBusy} error={terminalError} {canCreateTerminal} blockedReason={terminalBlockedReason} onCreate={onCreateTerminal} {workId} worktreeRoot={workspaceRoot} title={terminalTitle} {onTerminalContext} onClose={onClose} onPopOut={() => void onPopOutTerminal()} />
       {/if}
     </div>
   </CodePanelFrame>

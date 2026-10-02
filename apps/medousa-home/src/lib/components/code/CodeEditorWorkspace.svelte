@@ -1,6 +1,6 @@
 <script lang="ts">
+  import type { TerminalSessionSummary } from "$lib/terminal";
   import { currentCommandRoot } from "$lib/code/codeCommandContext";
-  import CodeOperationNotice from "./CodeOperationNotice.svelte";
   import { LoaderCircle, Sparkles } from "@lucide/svelte";
   import type { LSPClient } from "@codemirror/lsp-client";
   import CodeMirrorHost from "$lib/components/code/CodeMirrorHost.svelte";
@@ -95,6 +95,7 @@
     dockSessionId: string | null;
     workspaceRoot: string | null;
     terminalTitle: string;
+    onTerminalContext?: (context: TerminalSessionSummary["workspace_context"]) => void;
     terminalAvailable: boolean;
     dockBusy: boolean;
     dockError: string | null;
@@ -168,6 +169,7 @@
     dockSessionId,
     workspaceRoot,
     terminalTitle,
+    onTerminalContext,
     terminalAvailable,
     dockBusy,
     dockError,
@@ -183,9 +185,6 @@
 </script>
 
 {#if activeTab}
-  {#if surfaceError || activeTab.error || codeWorkspace.workspaceErrorByWorkId[workId]}
-    <CodeOperationNotice message={surfaceError || activeTab.error || codeWorkspace.workspaceErrorByWorkId[workId] || ""} />
-  {/if}
   {#if activeTab.preview}
     <div class="flex shrink-0 items-center gap-2 border-b border-sky-500/25 bg-sky-950/20 px-2.5 py-1.5 text-chrome-sm text-sky-100/90" role="status">
       {#if activeTab.encoding === "binary"}
@@ -405,6 +404,7 @@
   {onCreateTerminal}
   {workspaceRoot}
   {terminalTitle}
+  {onTerminalContext}
   onSelect={onSelectFeedbackPanel}
   onClose={onCloseFeedbackPanel}
   onOpenLocation={(path, line) => void onOpenLocation(path, line)}

@@ -33,7 +33,7 @@ export function codeRuntimeIssue(message: string): { summary: string; guidance: 
   };
   if (/HTTP\s+|\{"|network|fetch failed|connection refused/i.test(cause)) return {
     summary: 'The workshop could not complete this action.',
-    guidance: 'Check the workshop connection and try again. Your drafts are preserved.', details,
+    guidance: 'Your drafts are preserved. Review the details before retrying the affected action.', details,
   };
   return { summary: cause, guidance: '', details };
 }

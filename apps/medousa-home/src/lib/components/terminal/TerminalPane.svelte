@@ -64,6 +64,7 @@
     onOpenPath?: (path: string, line: number | null) => void;
     /** Full-glass phone PTY: larger type and exported sendInput for the key row. */
     mobile?: boolean;
+    onWorkspaceContext?: (context: TerminalSessionSummary["workspace_context"]) => void;
   }
 
   let {
@@ -77,6 +78,7 @@
     onCollapse,
     onOpenPath,
     mobile = false,
+    onWorkspaceContext,
   }: Props = $props();
 
   let attachId = $state<number | null>(null);
@@ -87,6 +89,9 @@
   const currentSession = $derived(sessions.find((session) => session.session_id === (boundSessionId || sessionId)));
   const workspaceContext = $derived(currentSession?.workspace_context);
   const branchChanged = $derived(Boolean(workspaceContext?.attached_branch && workspaceContext.attached_branch !== workspaceContext.current_branch));
+  $effect(() => {
+    if (currentSession?.work_id === workId && workspaceContext) onWorkspaceContext?.(workspaceContext);
+  });
   let sessionHostAvailable = $state(true);
   let hostMessage = $state("");
   let terminalHost = $state<HTMLDivElement | null>(null);
@@ -772,6 +777,10 @@
           <p class="px-2 py-1 text-chrome-sm text-white/60">No other sessions</p>
         {/if}
         <div class="mt-1 border-t border-white/10 px-2 pt-1.5 text-chrome-xs text-white/55" role="note">
+          {#if branchChanged && workspaceContext}
+            <p class="mb-1 text-amber-200">Working copy changed · {workspaceContext.current_branch ?? "detached HEAD"}</p>
+            <p class="mb-1">Attached to {workspaceContext.attached_branch}. This shell uses the current working folder.</p>
+          {/if}
           <p class="truncate" title={sessionCwd || undefined}>
             {sessionCwd || "Shared with agents in this project"}
           </p>
@@ -829,13 +838,6 @@
   </div>
   {/if}
 
-  {#if branchChanged && workspaceContext}
-    <div class="shrink-0 border-b border-white/10 bg-white/5 px-3 py-1.5 text-chrome-sm text-content-secondary" role="status">
-      Now on <strong>{workspaceContext.current_branch ?? "detached HEAD"}</strong>.
-      This project was attached to {workspaceContext.attached_branch}.
-      The terminal uses the current working folder.
-    </div>
-  {/if}
 
   {#if findOpen && !mobile}
     <div class="flex shrink-0 items-center gap-1 border-b border-white/10 px-2 py-1">

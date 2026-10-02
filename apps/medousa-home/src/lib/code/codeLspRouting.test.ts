@@ -1,4 +1,5 @@
 import { setActiveWorkshopIdPort } from "$lib/utils/workshopLocality";
+import { subscribeCodeDiagnostics } from "./codeDiagnosticsEvents";
 import { invalidateCodeWorkshopContext } from "./codeWorkspaceContext.svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -347,4 +348,28 @@ describe("workshop language-service isolation", () => {
     await expect(pending).rejects.toThrow("workshop changed");
     expect(LanguageSocket.sockets).toHaveLength(0);
   });
+});
+
+it("invalidates project observations on wire diagnostics without crossing workshop or project scope", async () => {
+  let workshop = "workshop-a";
+  setActiveWorkshopIdPort(() => workshop);
+  const same = vi.fn();
+  const other = vi.fn();
+  const stopSame = subscribeCodeDiagnostics("project", same);
+  const stopOther = subscribeCodeDiagnostics("other-project", other);
+  const connection = await connectOrchestratorLspClient({ language: "rust", workId: "project", workspaceRoot: "/repo", languageRootUri: "file:///repo" });
+  await connection.ready;
+  const socket = LanguageSocket.sockets[0];
+  const publish = () => socket.onmessage?.({ data: JSON.stringify({ jsonrpc: "2.0", method: "textDocument/publishDiagnostics", params: { uri: "file:///repo/other.rs", diagnostics: [] } }) });
+  publish();
+  expect(same).toHaveBeenCalledTimes(1);
+  expect(other).not.toHaveBeenCalled();
+  workshop = "workshop-b";
+  const newWorkshop = vi.fn();
+  const stopNew = subscribeCodeDiagnostics("project", newWorkshop);
+  publish();
+  expect(same).toHaveBeenCalledTimes(1);
+  expect(newWorkshop).not.toHaveBeenCalled();
+  stopSame(); stopOther(); stopNew();
+  connection.close();
 });
