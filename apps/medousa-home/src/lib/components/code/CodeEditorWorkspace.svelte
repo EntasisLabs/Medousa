@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { currentCommandRoot } from "$lib/code/codeCommandContext";
   import CodeOperationNotice from "./CodeOperationNotice.svelte";
   import { LoaderCircle, Sparkles } from "@lucide/svelte";
   import type { LSPClient } from "@codemirror/lsp-client";
@@ -18,7 +19,7 @@
     humanizeForgeMessage,
     type ForgeSourceFile,
   } from "$lib/code/codeDocumentService";
-  import type { CodeDocumentSymbol, CodeLanguageMatrixEntry } from "$lib/code/codingEngineClient";
+  import type { CodeDocumentSymbol, CodeLanguageMatrixEntry, CodeWorkspaceLspStatus } from "$lib/code/codingEngineClient";
   import type { CodeLanguageNavigationKind } from "$lib/code/codeLanguageNavigation";
   import type { CodeBottomPanel } from "$lib/code/codeWorkbenchState.svelte";
   import { codeWorkspace, type CodeDocumentTab } from "$lib/stores/codeWorkspace.svelte";
@@ -44,6 +45,9 @@
     editorPrefsEpoch: number;
     documentUri: string | null;
     lspClient: LSPClient | null | undefined;
+    languageStatus: CodeWorkspaceLspStatus;
+    languageError: string | null;
+    onLanguagePackages: () => void;
     bufferInteractive: boolean;
     reviewChangedLines: Array<{ line: number; kind: string }>;
     editorConventions: { indent_style?: "space" | "tab"; indent_size?: string; tab_width?: string };
@@ -119,6 +123,9 @@
     editorPrefsEpoch,
     documentUri,
     lspClient,
+    languageStatus,
+    languageError,
+    onLanguagePackages,
     bufferInteractive,
     reviewChangedLines,
     editorConventions,
@@ -252,6 +259,10 @@
   </div>
 
   <CodeContextSidePanel
+    {workspaceScope}
+    {languageStatus}
+    {languageError}
+    {onLanguagePackages}
     {problems}
     {symbols}
     {symbolsLoading}
@@ -271,7 +282,7 @@
   />
   {#if searchOpen}
     {#key workspaceScope}
-    <CodeWorkspaceSearch
+    <CodeWorkspaceSearch packageRoot={currentCommandRoot(tasks.projectTasks, activeTab?.path ?? "")}
       {workspaceScope}
       {workId}
       onOpenHit={onOpenSearchHit}
@@ -385,6 +396,7 @@
   {problems}
   {tasks}
   {workId}
+  activePath={activeTab?.path ?? ""}
   terminalSessionId={dockSessionId}
   terminalBusy={dockBusy}
   terminalError={dockError}

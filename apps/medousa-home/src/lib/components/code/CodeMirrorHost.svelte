@@ -39,7 +39,8 @@
     completionKeymap,
     autocompletion,
   } from "@codemirror/autocomplete";
-  import { forEachDiagnostic, lintKeymap, setDiagnostics } from "@codemirror/lint";
+  import { diagnosticMetadata } from "$lib/code/codeDiagnosticPresentation";
+  import { forEachDiagnostic, lintKeymap, setDiagnostics, setDiagnosticsEffect } from "@codemirror/lint";
   import {
     bracketMatching,
     defaultHighlightStyle,
@@ -481,7 +482,7 @@
     if (!host) return;
     const baseState = EditorState.create({
       doc: value,
-      extensions: buildExtensions(),
+      extensions: [buildExtensions(), EditorState.transactionExtender.of((transaction) => transaction.docChanged ? { effects: setDiagnosticsEffect.of([]) } : null)],
     });
     const targetLine = initialLine && initialLine > 0
       ? baseState.doc.line(
@@ -603,6 +604,17 @@
     view.focus();
   }
 
+  export function revealProblemRange(range: { line: number; character: number; endLine: number; endCharacter: number }) {
+    if (!view) return;
+    const position = (lineNumber: number, character: number) => {
+      const line = view!.state.doc.line(Math.max(1, Math.min(lineNumber, view!.state.doc.lines)));
+      return Math.min(line.to, line.from + Math.max(0, character - 1));
+    };
+    const from = position(range.line, range.character), to = position(range.endLine, range.endCharacter);
+    view.dispatch({ selection: { anchor: from, head: Math.max(from, to) }, effects: EditorView.scrollIntoView(from, { y: "center" }) });
+    view.focus();
+  }
+
   export function applyLanguageEdits(edits: Array<{
     newText?: string;
     range?: {
@@ -631,28 +643,20 @@
     view.focus();
   }
 
-  export function getProblems(): Array<{
-    from: number;
-    to: number;
-    line: number;
-    severity: string;
-    message: string;
-  }> {
+  export function getProblems(): import("$lib/code/codeProblemsController.svelte").CodeEditorDocumentProblem[] {
     if (!view) return [];
-    const problems: Array<{
-      from: number;
-      to: number;
-      line: number;
-      severity: string;
-      message: string;
-    }> = [];
+    const problems: import("$lib/code/codeProblemsController.svelte").CodeEditorDocumentProblem[] = [];
     forEachDiagnostic(view.state, (diagnostic, from, to) => {
+      const provenance = diagnosticMetadata(diagnostic);
+      if (provenance && provenance.document !== view!.state.doc) return;
+      const start = view!.state.doc.lineAt(from), end = view!.state.doc.lineAt(to);
       problems.push({
-        from,
-        to,
-        line: view!.state.doc.lineAt(from).number,
-        severity: diagnostic.severity,
-        message: diagnostic.message,
+        line: start.number, character: from - start.from + 1,
+        endLine: end.number, endCharacter: to - end.from + 1,
+        severity: diagnostic.severity, message: diagnostic.message,
+        source: diagnostic.source, code: provenance?.raw.code,
+        tags: provenance?.raw.tags, relatedInformation: provenance?.raw.relatedInformation,
+        version: provenance?.version,
       });
     });
     return problems;

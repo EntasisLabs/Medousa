@@ -31,6 +31,7 @@ export type CodeProblem = {
   runId?: string;
   taskLabel?: string;
   fresh?: boolean;
+  documentVersion?: number;
 };
 
 export type CodeProblemCounts = {
@@ -154,6 +155,8 @@ export function normalizeCodeWorkspaceProblems(
             })
           : [],
         origin: "language",
+        documentVersion: document.version,
+        fresh: false,
       });
     }
   }

@@ -11,13 +11,21 @@ import {
   type CodeProblem,
   type CodeProblemSeverityFilter,
 } from "$lib/code/codeProblems";
-import { getAllCodeWorkspaceDiagnostics } from "$lib/code/codingEngineClient";
+import { getAllCodeWorkspaceDiagnostics, type CodeWorkspaceDiagnostic } from "$lib/code/codingEngineClient";
 import type { CodeContextPanel } from "$lib/code/codeWorkbenchState.svelte";
 
 export type CodeEditorDocumentProblem = {
   message: string;
   severity: "error" | "warning" | "info" | "hint" | string;
   line: number;
+  character?: number;
+  endLine?: number;
+  endCharacter?: number;
+  source?: string;
+  code?: NonNullable<CodeWorkspaceDiagnostic["diagnostics"]>[number]["code"];
+  tags?: number[];
+  relatedInformation?: NonNullable<CodeWorkspaceDiagnostic["diagnostics"]>[number]["relatedInformation"];
+  version?: number;
 };
 
 export const PROBLEM_SEVERITY_OPTIONS: Array<{
@@ -35,6 +43,7 @@ export type CodeProblemsControllerDeps = {
   getWorkId: () => string;
   getWorkspaceRoot: () => string | null;
   getDocumentUri: () => string | null;
+  getDocumentVersion?: () => number | null;
   getActiveLanguage: () => string;
   getWorkspaceLanguages: () => string[];
   persistPanel: (panel: CodeContextPanel) => void;
@@ -66,6 +75,7 @@ function editorProblemsToWorkspace(
     [
       {
         uri: documentUri,
+        version: problems[0]?.version,
         language,
         diagnostics: problems.map((problem) => {
           const severity =
@@ -78,10 +88,11 @@ function editorProblemsToWorkspace(
                   : 4;
           return {
             message: problem.message,
+            source: problem.source, code: problem.code, tags: problem.tags, relatedInformation: problem.relatedInformation,
             severity,
             range: {
-              start: { line: Math.max(0, problem.line - 1), character: 0 },
-              end: { line: Math.max(0, problem.line - 1), character: 0 },
+              start: { line: Math.max(0, problem.line - 1), character: Math.max(0, (problem.character ?? 1) - 1) },
+              end: { line: Math.max(0, (problem.endLine ?? problem.line) - 1), character: Math.max(0, (problem.endCharacter ?? problem.character ?? 1) - 1) },
             },
           };
         }),
@@ -102,6 +113,8 @@ export class CodeProblemsController {
   loading = $state(false);
   error = $state<string | null>(null);
   unavailableLanguages = $state<string[]>([]);
+  observedDocuments = $state(0);
+  analysisScope = $state<string | null>(null);
   query = $state("");
   severity = $state<CodeProblemSeverityFilter>("all");
   #requestEpoch = 0;
@@ -131,6 +144,8 @@ export class CodeProblemsController {
     this.loading = false;
     this.error = null;
     this.unavailableLanguages = [];
+    this.observedDocuments = 0;
+    this.analysisScope = null;
     this.#documentScope = "";
     this.#documentUri = null;
     this.#taskScope = "";
@@ -152,7 +167,10 @@ export class CodeProblemsController {
     const languageProblems = this.loaded && this.workspaceScope === this.scopeKey
       ? this.workspaceProblems
       : this.documentFallback;
-    return [...languageProblems, ...(this.#taskScope === this.scopeKey ? this.taskProblems : [])];
+    const uri = this.#deps.getDocumentUri();
+    const version = this.#deps.getDocumentVersion?.();
+    const observations = languageProblems.map((problem) => problem.uri === uri && version != null ? { ...problem, fresh: problem.documentVersion != null && problem.documentVersion === version } : problem);
+    return [...observations, ...(this.#taskScope === this.scopeKey ? this.taskProblems : [])];
   }
 
   get filtered(): CodeProblem[] {
@@ -251,6 +269,8 @@ export class CodeProblemsController {
         snapshot.documents,
         requestRoot,
       );
+      this.observedDocuments = snapshot.documents.length;
+      this.analysisScope = snapshot.scope ?? null;
       this.unavailableLanguages = snapshot.unavailableLanguages ?? [];
       this.loaded = true;
     } catch (err) {

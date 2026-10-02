@@ -1,4 +1,5 @@
 <script lang="ts">
+  import CodeOperationNotice from "./CodeOperationNotice.svelte";
   import { tick } from "svelte";
   import { ChevronDown, Search, X } from "@lucide/svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
@@ -39,7 +40,7 @@
     return () => window.removeEventListener("resize", place);
   });
 </script>
-<button bind:this={trigger} type="button" class="flex max-w-56 items-center gap-2 px-2 text-chrome-sm text-content-secondary hover:bg-primary-500/10" aria-haspopup="dialog" aria-expanded={open} aria-label="Choose project command" disabled={tasks.running || tasks.preparing} onclick={() => (open = !open)}>
+<button bind:this={trigger} type="button" class="flex max-w-56 items-center gap-2 px-2 text-chrome-sm text-content-secondary hover:bg-primary-500/10" aria-haspopup="dialog" aria-expanded={open} aria-label="Choose project command" disabled={tasks.running || tasks.preparing || tasks.testQueueActive} onclick={() => (open = !open)}>
   <span class="truncate">{selected?.label ?? "Choose command…"}{#if selected && commandRoot(selected) !== "."}<span class="ml-1 text-content-quiet">· {commandRoot(selected)}</span>{/if}</span><ChevronDown size={12} />
 </button>
 {#if open}
@@ -52,6 +53,7 @@
         <button type="button" class="rounded px-2 py-1 {all ? 'bg-primary-500/20 text-primary-100' : 'text-content-quiet'}" aria-pressed={all} onclick={() => { all = true; limit = 60; }}>Whole project</button>
         <span class="min-w-0 truncate text-content-quiet">{all ? "All discovered packages" : root === "." ? "Project root" : root}</span>
       </div>
+      {#if tasks.catalogError}<CodeOperationNotice message={tasks.catalogError} />{/if}
       <div class="min-h-0 flex-1 overflow-y-auto p-2">
         {#each visible as task, index (task.id)}
           {#if index === 0 || visible[index - 1].kind !== task.kind}<p class="px-2 pb-1 pt-2 text-chrome-xs font-medium text-content-quiet">{commandKindLabel(task.kind)}</p>{/if}

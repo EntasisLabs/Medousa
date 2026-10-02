@@ -1,4 +1,5 @@
 <script lang="ts">
+  import CodeTestsExplorer from "./CodeTestsExplorer.svelte";
   /**
    * Task output dock, last-run banner, and discovered tests list.
    */
@@ -6,20 +7,24 @@
 
   interface Props {
     tasks: CodeTasksController;
+    activePath?: string;
     onOpenLocation: (path: string, line: number) => void;
     mode?: "output" | "tests";
   }
 
-  let { tasks, onOpenLocation, mode = "output" }: Props = $props();
+  let { tasks, onOpenLocation, mode = "output", activePath = "" }: Props = $props();
 </script>
 
 {#if mode === "output"}
-  <div class="flex max-h-52 shrink-0 flex-col bg-surface-950/80">
+  <div class="flex min-h-0 flex-1 flex-col bg-surface-950/80">
     <div class="flex items-center justify-between gap-2 border-b border-surface-500/20 px-2.5 py-1">
       <span class="text-chrome-xs font-medium uppercase tracking-[0.06em] text-content-quiet">
-        {#if tasks.run}Task: {tasks.run.task.label}{:else}Output{/if}
+        {#if tasks.preparing}Saving before run…
+        {:else if tasks.run}{tasks.run.task.label}
+        {:else}Output{/if}
         {#if tasks.run?.state === "ready"}<span class="normal-case tracking-normal text-emerald-300/90"> · ready</span>
-        {:else if tasks.running}<span class="normal-case tracking-normal text-content-link"> · running</span>{/if}
+        {:else if tasks.running}<span class="normal-case tracking-normal text-content-link"> · {tasks.run?.state === "stopping" ? "stopping" : "running"}</span>
+        {:else if tasks.run}<span class="normal-case tracking-normal {tasks.run.state === 'failed' ? 'text-rose-200' : 'text-content-secondary'}"> · {tasks.run.state === "passed" ? "completed" : tasks.run.state === "failed" ? "needs attention" : tasks.run.state}</span>{/if}
         {#if tasks.outputTruncated}<span class="normal-case tracking-normal text-amber-200/80"> · truncated</span>{/if}
         {#if tasks.runHistoryTruncated}<span class="normal-case tracking-normal text-amber-200/80"> · more runs retained</span>{/if}
       </span>
@@ -29,7 +34,7 @@
             class="max-w-36 rounded border border-surface-500/30 bg-surface-900 px-1 py-0.5 text-chrome-xs text-content-secondary"
             aria-label="Recent project runs"
             value={tasks.run?.run_id ?? ""}
-            disabled={tasks.running}
+            disabled={tasks.running || tasks.preparing || tasks.testQueueActive}
             onchange={(event) => void tasks.openRun(event.currentTarget.value)}
           >
             {#each tasks.recentRuns as recent (recent.run_id)}
@@ -57,6 +62,11 @@
         <button type="button" class="rounded px-1.5 py-0.5 text-chrome-xs text-content-quiet hover:bg-surface-800 hover:text-content-secondary" onclick={() => tasks.toggleOutput(false)}>Hide</button>
       </div>
     </div>
+    {#if tasks.run}
+      <p class="shrink-0 border-b border-surface-500/15 px-3 py-2 text-chrome-sm text-content-secondary">{tasks.run.state === "ready" ? "Your application is ready. Open its workshop preview to continue." : tasks.running ? "This command stays attached to its original project, even when you change files." : tasks.run.state === "failed" ? "Review the reported locations and output, then rerun this exact command." : tasks.run.state === "cancelled" ? "This invocation was cancelled; it does not verify your current edits." : "This recorded invocation completed. Its result applies to the code it ran against."}
+        <span class="ml-2 text-chrome-xs text-content-quiet">{tasks.run.task.root ?? "."}{tasks.run.started_at ? ` · ${new Date(tasks.run.started_at).toLocaleString()}` : ""}</span>
+      </p>
+    {/if}
     {#if !tasks.liveStdout && !tasks.liveStderr && !tasks.running && !tasks.run}
       <p class="px-2.5 py-2 text-chrome-sm text-content-quiet">Run a project check to stream output here.</p>
     {:else}
@@ -89,24 +99,5 @@
   </div>
 {/if}
 {#if mode === "tests"}
-  <div class="max-h-44 shrink-0 overflow-y-auto bg-surface-950/90">
-    <div class="sticky top-0 flex items-center justify-between bg-surface-950 px-2.5 py-1 text-chrome-xs uppercase tracking-wider text-content-quiet"><span>Project tests</span><span>{tasks.projectTests.length}</span></div>
-    {#if tasks.projectTests.length === 0}
-      <p class="px-3 py-3 text-chrome-sm text-content-quiet">No individual tests were discovered. The project test command still works.</p>
-    {:else}
-      {#each tasks.projectTests as test (test.id)}
-        {@const recent = tasks.latestRunForTest(test.id)}
-        <div class="flex items-center border-t border-surface-500/15">
-          <button type="button" class="min-w-0 flex-1 truncate px-3 py-1.5 text-left text-chrome-sm text-content-secondary hover:bg-surface-800/60" onclick={() => onOpenLocation(test.path, test.line)}>{test.label}<span class="ml-2 font-mono text-chrome-xs text-content-faint">{test.provider ?? "test"} · {test.path}:{test.line}</span></button>
-          {#if recent}
-            <span
-              class="mr-1 text-chrome-xs {recent.state === 'passed' ? 'text-emerald-300/85' : recent.state === 'failed' ? 'text-rose-300/85' : 'text-content-quiet'}"
-              title={`Last run ${recent.started_at}`}
-            >{recent.state}</span>
-          {/if}
-          <button type="button" class="mr-2 rounded px-1.5 py-0.5 text-chrome-xs text-content-link hover:bg-surface-800 disabled:opacity-40" disabled={tasks.running} onclick={() => void tasks.runDetected(test)}>{recent ? "Rerun" : "Run"}</button>
-        </div>
-      {/each}
-    {/if}
-  </div>
+  <CodeTestsExplorer {tasks} {activePath} {onOpenLocation} />
 {/if}

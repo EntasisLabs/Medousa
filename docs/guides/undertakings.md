@@ -548,3 +548,50 @@ package. Commands are grouped into Run, Build, Test, and Check, with their worki
 directory and exact command visible before selection. Equal recommendations
 require a choice. Selecting a command pins it for this project; moving to another
 file does not retarget that choice, an active run, Stop, or Rerun.
+
+### Reading tests and resizing tools
+
+Tests are grouped by file and can be filtered by name, current file, current
+package, or prior failed invocation. Large catalogs show a bounded initial page;
+**Show more** keeps the remaining tests available. **Run file** runs the provider’s
+file target; **Run test** uses an individually addressable target. Providers that
+cannot target the selected test offer an explicit package command instead.
+Recorded results include their invocation time and output. A prior pass does not
+verify edits made afterwards.
+
+Drag the upper edge of Search or the feedback panel to resize it, or focus its
+resize control and use the arrow keys. **Expand** gives the tool more room;
+**Restore size** returns to the chosen height. Heights are remembered on this
+device by workshop and project.
+
+### Search and language observations
+
+Search responds as you type, groups matching lines by file, and highlights
+literal matches. **Replace** reveals replacement text; **Filters** reveals
+include/exclude patterns. Scope is visible: whole project, a selected discovered
+package, or changed files. One-character searches return bounded pages of up to
+50 matching lines. Escape closes Search; arrow-down moves from the query to the
+first match.
+
+Choose **Review replace…** before applying. The preview freezes the query,
+replacement, scope, selected paths, and expected file digests. Changing the
+inputs invalidates that preview. An external file edit prevents a stale write;
+review a new preview before retrying.
+
+Problems identify observed sessions rather than claiming the whole project is
+clean. They retain producer, code, precise range, and document version when
+supplied. Editor markers clear when the buffer changes; a new matching diagnostic
+publication can restore them. Unversioned editor diagnostics are accepted only
+for a synchronized buffer and cleared on the next edit. Aggregate unversioned
+or older observations are labelled. Language information leads with this file’s
+actual connection state; executable names and logs are under **Service details
+and logs**.
+
+**Run filtered targets** queues the reviewed supported test/file targets
+sequentially. Several names in one provider file target produce one invocation.
+The queue reports invocation progress and known pass/fail counts; it does not
+invent individual results from a file or package pass. **Failed invocations**
+can queue their supported targets again. **Clear remaining queue** cancels
+pending submissions while leaving the current process visible; Stop controls
+that process. Changing workshops or working copies prevents further queue
+submissions.

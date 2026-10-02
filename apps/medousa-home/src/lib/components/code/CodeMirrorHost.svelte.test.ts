@@ -41,3 +41,22 @@ it("clears a disconnected service's markers while preserving the editable draft"
   component.insertText("// still editable\n");
   expect(view.state.doc.toString()).toContain("// still editable");
 });
+
+it("preserves provider, code, and precise ranges and clears observations on editing", async () => {
+  const { presentCodeDiagnostics } = await import("$lib/code/codeDiagnosticPresentation");
+  const client = new LSPClient();
+  const uri = "file:///repo/precise.ts";
+  component = mount(CodeMirrorHost, { target: document.body, props: { value: "const wrong = 1;\n", languageId: "typescript", documentUri: uri, client } });
+  flushSync();
+  const file = client.workspace.getFile(uri)!;
+  expect(file).toBeTruthy();
+  presentCodeDiagnostics(client, { uri, version: file.version, diagnostics: [{ message: "Wrong name", source: "typescript", code: 42, severity: 2, range: { start: { line: 0, character: 6 }, end: { line: 0, character: 11 } } }] });
+  expect(component.getProblems()[0]).toMatchObject({ source: "typescript", code: 42, line: 1, character: 7, endLine: 1, endCharacter: 12 });
+  component.revealProblemRange({ line: 1, character: 7, endLine: 1, endCharacter: 12 });
+  const view = codeEditorViewRegistry.get(uri)!;
+  expect(view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to)).toBe("wrong");
+  component.insertText("right");
+  expect(component.getProblems()).toHaveLength(0);
+  presentCodeDiagnostics(client, { uri, version: file.version - 1, diagnostics: [{ message: "obsolete", range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } } }] });
+  expect(component.getProblems()).toHaveLength(0);
+});

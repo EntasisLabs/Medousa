@@ -528,3 +528,75 @@ it("follows a discovered package until an explicit command is selected", () => {
   controller.suggestForDocument("crates/engine/src/lib.rs");
   expect(controller.selectedTaskId).toBe("web");
 });
+
+it("keeps failed test discovery distinct from an empty test catalog", async () => {
+  const { controller } = createController();
+  api.getProjectTests.mockRejectedValueOnce(new Error("workshop disconnected"));
+  await controller.refreshTests();
+  expect(controller.testsLoaded).toBe(false);
+  expect(controller.testsError).toBe("workshop disconnected");
+  expect(controller.testsLoading).toBe(false);
+});
+
+it("does not silently replace an explicit command removed from discovery", async () => {
+  const { controller } = createController();
+  controller.restoreSelectedTask("removed-command");
+  const cleanup = controller.bindTaskList("work-1", true, true);
+  controller.restoreSelectedTask("removed-command");
+  await vi.waitFor(() => expect(controller.catalogError).toContain("no longer available"));
+  expect(controller.selectedTask).toBeNull();
+  cleanup(); controller.dispose();
+});
+
+it("queues supported targets once per file and counts actual invocations", async () => {
+  const { controller } = createController();
+  api.startProjectTaskRun.mockImplementation(async (_workId, _taskId, input) => ({ run_id: `run-${input.test_id}`, test_id: input.test_id, state: "passed", work_id: "work-1", task: checkTask }));
+  await controller.runTests([
+    { id: "a", task_id: checkTask.id, path: "a.ts", line: 1, label: "a", target_kind: "file" },
+    { id: "a-second", task_id: checkTask.id, path: "a.ts", line: 2, label: "a-second", target_kind: "file" },
+    { id: "b", task_id: checkTask.id, path: "b.ts", line: 1, label: "b", target_kind: "file" },
+  ]);
+  expect(api.startProjectTaskRun.mock.calls.map((call) => call[2].test_id)).toEqual(["a", "b"]);
+  expect(controller.testQueue).toMatchObject({ phase: "completed", total: 2, completed: 2, passed: 2 });
+  controller.dispose();
+});
+
+it("does not submit the next queued target after a scope change", async () => {
+  let scope = "workshop-a";
+  const { controller } = createController({ getScopeKey: () => scope });
+  api.startProjectTaskRun.mockImplementation(async (_workId, _taskId, input) => {
+    scope = "workshop-b";
+    return { run_id: `run-${input.test_id}`, test_id: input.test_id, state: "passed", work_id: "work-1", task: checkTask };
+  });
+  await controller.runTests([
+    { id: "a", task_id: checkTask.id, path: "a.rs", line: 1, label: "a", target_kind: "named", provider: "cargo" },
+    { id: "b", task_id: checkTask.id, path: "b.rs", line: 1, label: "b", target_kind: "named", provider: "cargo" },
+  ]);
+  expect(api.startProjectTaskRun).toHaveBeenCalledOnce();
+  controller.dispose();
+});
+
+it("does not count an old pass when queue save preflight is rejected", async () => {
+  const { controller } = createController({ prepareRun: async () => false });
+  controller.run = { run_id: "old", test_id: "a", state: "passed", work_id: "work-1", task: checkTask };
+  await controller.runTests([{ id: "a", task_id: checkTask.id, path: "a.rs", line: 1, label: "a", target_kind: "named", provider: "cargo" }]);
+  expect(api.startProjectTaskRun).not.toHaveBeenCalled();
+  expect(controller.testQueue).toMatchObject({ phase: "interrupted", completed: 0, passed: 0 });
+  controller.dispose();
+});
+
+it("clears pending tests without dropping the invocation already submitted", async () => {
+  const { controller } = createController();
+  api.startProjectTaskRun.mockImplementationOnce(async (_workId, _taskId, input) => {
+    controller.cancelTestQueue();
+    return { run_id: "submitted", test_id: input.test_id, state: "passed", work_id: "work-1", task: checkTask };
+  });
+  await controller.runTests([
+    { id: "a", task_id: checkTask.id, path: "a.rs", line: 1, label: "a", target_kind: "named", provider: "cargo" },
+    { id: "b", task_id: checkTask.id, path: "b.rs", line: 1, label: "b", target_kind: "named", provider: "cargo" },
+  ]);
+  expect(api.startProjectTaskRun).toHaveBeenCalledOnce();
+  expect(controller.run?.run_id).toBe("submitted");
+  expect(controller.testQueue?.phase).toBe("cancelled");
+  controller.dispose();
+});

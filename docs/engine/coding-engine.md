@@ -206,3 +206,15 @@ available from the editor menu for crash diagnosis.
 Co-located Home can install the optional `coding-engine` and `langservers`
 packages. Remote Home never installs binaries on the client while implying
 that it repaired the workshop.
+
+Code preserves diagnostic source, code, range, related information, and version
+through the CodeMirror adapter. Publications with a mismatched version or an
+unsynchronized buffer are ignored. Editing clears existing markers; unversioned
+publications are accepted for a synchronized buffer until its next edit.
+Workspace Problems describe active-session coverage, not a repository-wide
+verification result.
+
+Forge source search accepts 1–200 Unicode characters. One-character queries are
+capped at 50 matching lines per page; other queries retain the 500-line maximum.
+Include/exclude pathspecs intersect changed-file scope rather than broadening it.
+Replacement retains its reviewed digest preconditions and atomic application.

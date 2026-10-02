@@ -2,7 +2,10 @@
   /**
    * Shared Code context dock: Problems, language server, uses, and structure.
    */
-  import { untrack } from "svelte";
+  import CodePanelFrame from "./CodePanelFrame.svelte";
+  import CodeOperationNotice from "./CodeOperationNotice.svelte";
+  import { captureCodeScope } from "$lib/code/codeWorkspaceContext.svelte";
+  import { onDestroy, untrack } from "svelte";
   import {
     FileCode2,
     ListTree,
@@ -13,10 +16,10 @@
   import type { CodeProblemsController } from "$lib/code/codeProblemsController.svelte";
   import {
     getCodeLanguageSessions,
-    isPermanentLanguageServiceError,
     type CodeDocumentSymbol,
     type CodeLanguageMatrixEntry,
     type CodeLanguageSessionSnapshot,
+    type CodeWorkspaceLspStatus,
   } from "$lib/code/codingEngineClient";
   import { languageSupportsLsp } from "$lib/code/codeEditorLanguageRegistry";
 
@@ -28,6 +31,10 @@
     symbolsLoading?: boolean;
     references: ReferenceHit[];
     workId: string;
+    workspaceScope: string;
+    languageStatus: CodeWorkspaceLspStatus;
+    languageError: string | null;
+    onLanguagePackages: () => void;
     documentUri: string | null;
     languageId: string;
     lspLanguageId: string;
@@ -44,6 +51,10 @@
     symbolsLoading = false,
     references,
     workId,
+    workspaceScope,
+    languageStatus,
+    languageError,
+    onLanguagePackages,
     documentUri,
     languageId,
     lspLanguageId,
@@ -54,6 +65,9 @@
     onRestartLanguage,
   }: Props = $props();
 
+  let requestEpoch = 0;
+  let disposed = false;
+  onDestroy(() => { disposed = true; requestEpoch += 1; });
   let languageSessions = $state<CodeLanguageSessionSnapshot[]>([]);
   let languageSessionsLoading = $state(false);
   let languageSessionsError = $state<string | null>(null);
@@ -95,6 +109,8 @@
       languageSessionsError = null;
       return;
     }
+    const epoch = ++requestEpoch;
+    const current = captureCodeScope(() => JSON.stringify([workspaceScope, documentUri, lspLanguageId]));
     if (!options?.quiet) languageSessionsLoading = true;
     try {
       const snapshot = await getCodeLanguageSessions({
@@ -102,42 +118,35 @@
         uri: documentUri,
         language: lspLanguageId,
       });
+      if (disposed || !current() || epoch !== requestEpoch) return;
       languageSessions = snapshot.sessions;
       languageSessionsError = null;
     } catch (err) {
+      if (disposed || !current() || epoch !== requestEpoch) return;
       languageSessionsError = err instanceof Error ? err.message : String(err);
     } finally {
-      languageSessionsLoading = false;
+      if (!disposed && current() && epoch === requestEpoch) languageSessionsLoading = false;
     }
   }
 
   $effect(() => {
     const showingLanguage = problems.panel === "language";
-    const scope = `${workId}:${languageId}:${documentUri ?? ""}`;
-    void scope;
+    void workspaceScope; void languageId; void documentUri;
     if (!showingLanguage || !workId || !documentUri) return;
-    untrack(() => void refreshLanguageSessions());
-    if (
-      languageSessionsError &&
-      isPermanentLanguageServiceError(languageSessionsError)
-    ) {
-      return;
-    }
-    const timer = setInterval(
-      () => untrack(() => void refreshLanguageSessions({ quiet: true })),
-      1_500,
-    );
-    return () => clearInterval(timer);
+    untrack(() => { languageSessions = []; languageSessionsError = null; void refreshLanguageSessions(); });
+    return () => { requestEpoch += 1; };
+
   });
 </script>
 
 
 {#if contextPanelOpen()}
-  <div class="{problems.panel === 'language' ? 'max-h-72' : 'max-h-44'} shrink-0 overflow-y-auto border-t border-surface-500/30 bg-surface-950/80">
+  <CodePanelFrame {workId} name="Language and structure">
+  <div class="min-h-0 flex-1 overflow-y-auto">
     <div class="sticky top-0 z-10 flex items-center justify-between border-b border-surface-500/25 bg-surface-950 px-2 py-1">
       <div class="flex min-w-0 items-center gap-2">
         <span class="text-chrome-xs font-medium uppercase tracking-wider text-content-tertiary">
-          {problems.panel === "references" ? "Uses" : problems.panel === "language" ? "Language server" : "Structure"}
+          {problems.panel === "references" ? "Uses" : problems.panel === "language" ? "Language assistance" : "Structure"}
         </span>
       </div>
       <div class="flex items-center gap-0.5">
@@ -157,23 +166,14 @@
     {#if problems.panel === "language"}
       <div class="flex flex-wrap items-center gap-2 border-b border-surface-500/20 bg-surface-900/55 px-3 py-2 text-chrome-sm text-content-secondary">
         <span class="font-medium">{languageId}</span>
-        {#if languageMatrix}
-          <span class="rounded bg-surface-800 px-1.5 py-0.5 text-chrome-xs {languageMatrix.usable ? 'text-emerald-200' : 'text-rose-200'}">{languageMatrix.usable ? "usable" : "missing"}</span>
-          {#if languageMatrix.command}
-            <span class="font-mono text-chrome-xs text-content-quiet">{languageMatrix.command}</span>
-          {/if}
-          {#if languageMatrix.packageId}
-            <span class="rounded bg-surface-800 px-1.5 py-0.5 text-chrome-xs text-content-quiet">pkg:{languageMatrix.packageId}</span>
-          {/if}
-        {/if}
-        {#if latestSession}
-          <span class="rounded bg-surface-800 px-1.5 py-0.5 text-chrome-xs {latestSession.phase === 'failed' ? 'text-rose-200' : latestSession.phase === 'ready' ? 'text-emerald-200' : 'text-amber-200'}">{latestSession.phase}</span>
-          <span class="min-w-0 flex-1 truncate font-mono text-chrome-xs text-content-quiet" title={latestSession.language_root}>{latestSession.relative_root || "."}</span>
-        {:else}
-          <span class="min-w-0 flex-1 text-content-quiet">No workshop session snapshot yet</span>
-        {/if}
-        <button type="button" class="rounded bg-surface-800 px-1.5 py-0.5 text-chrome-xs hover:bg-surface-700" onclick={onRestartLanguage}>Restart</button>
+        <span class="rounded bg-surface-800 px-2 py-1 text-chrome-xs">{languageStatus.phase === "ready" ? "Ready for this file" : languageStatus.phase === "stopped" ? "Editing only" : languageStatus.phase}</span>
+        <button type="button" class="rounded bg-surface-800 px-2 py-1 text-chrome-xs" onclick={onRestartLanguage}>Restart this service</button>
+        <button type="button" class="rounded bg-surface-800 px-2 py-1 text-chrome-xs" onclick={onLanguagePackages}>Settings → Packages</button>
       </div>
+      <p class="px-3 py-2 text-chrome-sm text-content-secondary">{languageStatus.phase === "ready" ? "Language assistance is connected for this file. Other files may need their own language sessions." : "Your file remains editable with syntax highlighting. Language assistance is not ready for this file."}</p>
+      {#if languageError}<CodeOperationNotice message={languageError} />{/if}
+      <details class="border-t border-surface-500/20"><summary class="cursor-pointer px-3 py-2 text-chrome-sm text-content-quiet">Service details and logs</summary>
+        <p class="px-3 py-2 font-mono text-chrome-xs text-content-quiet">{languageStatus.detail}{languageMatrix?.command ? ` · ${languageMatrix.command}` : ""}{languageMatrix?.packageId ? ` · ${languageMatrix.packageId}` : ""}{latestSession ? ` · ${latestSession.language_root} · ${latestSession.phase}` : " · No workshop snapshot yet"}</p>
       {#if latestSession?.progress.some((progress) => !progress.done)}
         {#each latestSession.progress.filter((progress) => !progress.done) as progress (progress.token)}
           <div class="flex items-center gap-2 border-b border-sky-500/15 bg-sky-950/10 px-3 py-1.5 text-chrome-xs text-sky-100/80">
@@ -204,6 +204,7 @@
           {/each}
         </div>
       {/if}
+      </details>
     {:else if problems.panel === "references"}
       {#if references.length === 0}
         <p class="px-3 py-3 text-chrome-sm text-content-quiet">No other uses found.</p>
@@ -243,4 +244,5 @@
       {/each}
     {/if}
   </div>
+  </CodePanelFrame>
 {/if}

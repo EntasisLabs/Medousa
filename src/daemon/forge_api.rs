@@ -2763,10 +2763,10 @@ fn parse_csv_globs(value: Option<&str>) -> Vec<String> {
 
 fn source_search_options_from_query(query: &SourceSearchQuery) -> ApiResult<SourceSearchOptions> {
     let needle = query.query.trim().to_owned();
-    if needle.len() < 2 || needle.len() > 200 {
+    if needle.is_empty() || needle.chars().count() > 200 {
         return Err(request_error(
             StatusCode::BAD_REQUEST,
-            "repository search must be between 2 and 200 characters",
+            "repository search must be between 1 and 200 characters",
         ));
     }
     let mode = query
@@ -2801,7 +2801,8 @@ fn source_search_options_from_query(query: &SourceSearchQuery) -> ApiResult<Sour
             ));
         }
     };
-    let limit = query.limit.unwrap_or(100).clamp(1, 500) as usize;
+    let maximum = if needle.chars().count() == 1 { 50 } else { 500 };
+    let limit = query.limit.unwrap_or(100).clamp(1, maximum) as usize;
     let skip = query
         .cursor
         .as_deref()
@@ -2893,15 +2894,48 @@ fn run_repository_search(
 
     let mut pathspecs: Vec<String> = Vec::new();
     if options.changed_only {
-        let changed = changed_repository_paths(root)?;
+        let mut changed = changed_repository_paths(root)?;
+        if !options.include.is_empty() || !options.exclude.is_empty() {
+            // Git pathspecs are a union. Intersect the discovery scope with
+            // changed paths before grep so include globs cannot broaden it.
+            let mut command = background_command("git");
+            command.args(["ls-files", "--cached", "--others", "-z"]);
+            if !options.include_ignored {
+                command.arg("--exclude-standard");
+            }
+            command.arg("--").args(&options.include);
+            for exclude in &options.exclude {
+                command.arg(format!(":(exclude){exclude}"));
+            }
+            let output = command.current_dir(root).output().map_err(|err| {
+                request_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("could not filter changed files: {err}"),
+                )
+            })?;
+            if !output.status.success() {
+                return Err(request_error(
+                    StatusCode::BAD_REQUEST,
+                    "could not filter changed files",
+                ));
+            }
+            let allowed = output
+                .stdout
+                .split(|byte| *byte == 0)
+                .filter(|raw| !raw.is_empty())
+                .map(|raw| String::from_utf8_lossy(raw).replace('\\', "/"))
+                .collect::<std::collections::HashSet<_>>();
+            changed.retain(|path| allowed.contains(path));
+        }
         if changed.is_empty() {
             return Ok((Vec::new(), false, None));
         }
-        pathspecs.extend(changed);
-    }
-    pathspecs.extend(options.include.iter().cloned());
-    for exclude in &options.exclude {
-        pathspecs.push(format!(":(exclude){exclude}"));
+        pathspecs.extend(changed.into_iter().map(|path| format!(":(literal){path}")));
+    } else {
+        pathspecs.extend(options.include.iter().cloned());
+        for exclude in &options.exclude {
+            pathspecs.push(format!(":(exclude){exclude}"));
+        }
     }
     args.extend(pathspecs);
 
@@ -12561,6 +12595,58 @@ mod source_tests {
             Some("??"),
         );
         assert!(!tree.truncated);
+    }
+
+    #[test]
+    fn repository_search_accepts_bounded_single_character_queries() {
+        let query: SourceSearchQuery =
+            serde_json::from_value(serde_json::json!({"query": "x", "limit": 500})).unwrap();
+        let options = source_search_options_from_query(&query).unwrap();
+        assert_eq!(options.needle, "x");
+        assert_eq!(options.limit, 50);
+        let empty: SourceSearchQuery =
+            serde_json::from_value(serde_json::json!({"query": " "})).unwrap();
+        assert!(source_search_options_from_query(&empty).is_err());
+    }
+
+    #[test]
+    fn repository_search_intersects_changed_scope_with_include_paths() {
+        let root = tempfile::tempdir().unwrap();
+        let git = |args: &[&str]| {
+            assert!(
+                std::process::Command::new("git")
+                    .args(args)
+                    .current_dir(root.path())
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+        };
+        git(&["init", "-q"]);
+        std::fs::create_dir(root.path().join("app")).unwrap();
+        std::fs::write(root.path().join("app/unchanged.rs"), "needle\n").unwrap();
+        std::fs::write(root.path().join("app/changed.rs"), "before\n").unwrap();
+        std::fs::write(root.path().join("outside.rs"), "before\n").unwrap();
+        git(&["add", "."]);
+        git(&[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-qm",
+            "baseline",
+        ]);
+        std::fs::write(root.path().join("app/changed.rs"), "needle\n").unwrap();
+        std::fs::write(root.path().join("outside.rs"), "needle\n").unwrap();
+        let query: SourceSearchQuery = serde_json::from_value(
+            serde_json::json!({"query": "needle", "scope": "changed", "include": ":(literal)app"}),
+        )
+        .unwrap();
+        let options = source_search_options_from_query(&query).unwrap();
+        let (hits, _, _) = run_repository_search(root.path(), &options).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].path, "app/changed.rs");
     }
 
     #[test]

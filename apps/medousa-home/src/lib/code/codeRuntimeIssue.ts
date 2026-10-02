@@ -23,6 +23,10 @@ export function codeRuntimeIssue(message: string): { summary: string; guidance: 
     summary: 'Editing control is required.',
     guidance: 'Use Resume editing to request control, then try again. Existing processes remain with their original working copy.', details,
   };
+  if (/smart editing|language.service|language server/i.test(cause)) return {
+    summary: 'Language assistance is unavailable for this file.',
+    guidance: 'Review the service details, then restart the affected service or manage its tools in Settings → Packages. Syntax highlighting and your draft remain available.', details,
+  };
   if (/HTTP\s+(404|405)|unsupported|requires a newer|not support/i.test(cause)) return {
     summary: 'This workshop does not support this action.',
     guidance: 'Update the workshop software, then retry this action.', details,

@@ -391,6 +391,7 @@
     refreshDetail: () => undertakings.refreshDetail(),
   });
   const problems = new CodeProblemsController({
+    getDocumentVersion: () => documentUri ? lspClient?.workspace.getFile(documentUri)?.version ?? null : null,
     getScopeKey: () => workspaceScope,
     getWorkId: () => workId,
     getWorkspaceRoot: () => workspaceRoot,
@@ -403,7 +404,10 @@
       codeWorkspace.scheduleLayoutPersist(workId);
     },
     openProblem: async (problem) => {
+      const current = captureCodeScope(() => workspaceScope);
       await openTaskLocation(problem.path, problem.line);
+      await tick();
+      if (current() && activeTabPath === problem.path) editor?.revealProblemRange(problem);
     },
     onError: (message) => {
       surfaceError = message || null;
@@ -1532,6 +1536,10 @@
   });
 
   $effect(() => {
+    if (tasks.testsOpen && !tasks.testsLoaded && !tasks.testsLoading && !tasks.testsError) void tasks.refreshTests();
+  });
+
+  $effect(() => {
     void tasks.projectTasks;
     tasks.suggestForDocument(activeTabPath);
   });
@@ -2026,6 +2034,9 @@
     bind:editorSelection
     {editorPrefsEpoch}
     {documentUri}
+    languageStatus={lspStatus}
+    languageError={lspError}
+    onLanguagePackages={openLanguagePackages}
     {lspClient}
     {bufferInteractive}
     {reviewChangedLines}

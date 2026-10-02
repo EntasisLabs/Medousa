@@ -253,7 +253,7 @@
             <button
               type="button"
               class="code-run-button"
-              disabled={agentHasControl || busy || tasks.preparing || !tasks.selectedTask || !tasks.taskAvailable(tasks.selectedTask)}
+              disabled={agentHasControl || busy || tasks.preparing || tasks.testQueueActive || !tasks.selectedTask || !tasks.taskAvailable(tasks.selectedTask)}
               title={agentHasControl
                 ? `Resume editing before running ${tasks.selectedTask?.label ?? "this command"}`
                 : !tasks.taskAvailable(tasks.selectedTask)
@@ -551,6 +551,7 @@
     color: rgb(254 205 211);
   }
 
+  .code-editor-chrome-actions > button { display: inline-flex; align-items: center; }
   .code-action-label { margin-left: 0.25rem; font-size: 11px; }
   @media (max-width: 1100px) { .code-action-label { display: none; } }
 

@@ -3,6 +3,7 @@
  * All languages use the coding engine; unavailable services remain unavailable.
  */
 
+import { presentCodeDiagnostics } from "$lib/code/codeDiagnosticPresentation";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
@@ -589,6 +590,7 @@ function quietShowMessageHandlers(
   onServerEvent?: (event: CodeLanguageServerEvent) => void,
 ): NonNullable<ConstructorParameters<typeof LSPClient>[0]>["notificationHandlers"] {
   return {
+    "textDocument/publishDiagnostics": presentCodeDiagnostics,
     "window/showMessage": (_client, params) => {
       const message =
         params && typeof (params as { message?: unknown }).message === "string"
@@ -1116,7 +1118,7 @@ export async function getAllCodeWorkspaceDiagnostics(options: {
   if (snapshot.scope !== "active_sessions") {
     throw new Error("This coding engine does not support the required language-service diagnostics. Update it in Settings → Packages.");
   }
-  return snapshot;
+  return { ...snapshot, unavailableLanguages: options.languages.filter((language) => !snapshot.languages.includes(language)) };
 }
 
 export type CodeLanguageCapabilities = Record<string, unknown>;

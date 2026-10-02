@@ -104,7 +104,13 @@ export async function openTrackedTerminal(
   options?: { activate?: boolean; create?: boolean },
 ): Promise<string | null> {
   if (undertakings.active?.workId !== item.id) undertakings.setActiveFromItem(item);
-  const current = captureCodeScope(() => JSON.stringify([codeExecutionScopeKey(), undertakings.active?.workId]));
+  const terminalScope = () => JSON.stringify([
+    codeExecutionScopeKey(), undertakings.active?.workId,
+    undertakings.active?.executionRuntimeId, undertakings.active?.worktree,
+    undertakings.active?.baselineOid,
+    undertakings.detail?.id === item.id ? undertakings.detail.environment : null,
+  ]);
+  let current = captureCodeScope(terminalScope);
   const executionRuntimeId = undertakings.active?.executionRuntimeId ?? null;
 
   const existing =
@@ -138,6 +144,7 @@ export async function openTrackedTerminal(
       leaseGeneration: begun.lease.generation,
       executorKind: "human",
     });
+    current = captureCodeScope(terminalScope);
   }
 
   const created = await terminalCreate(

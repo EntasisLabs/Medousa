@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { onMount, onDestroy, tick } from "svelte";
+  import { activeWorkshopId } from "$lib/utils/workshopLocality";
+  import CodePanelFrame from "./CodePanelFrame.svelte";
+  import { onMount, onDestroy, tick, untrack } from "svelte";
   import { captureCodeScope, codeExecutionScopeKey } from "$lib/code/codeWorkspaceContext.svelte";
   import { LoaderCircle, Search, X } from "@lucide/svelte";
   import DiffStack from "$lib/components/diff/DiffStack.svelte";
@@ -19,19 +21,27 @@
   interface Props {
     workId: string;
     workspaceScope: string;
+    packageRoot?: string | null;
     onOpenHit?: (path: string, line: number) => void | Promise<void>;
     onClose?: () => void;
     onApplied?: () => void | Promise<void>;
   }
 
-  let { workId, workspaceScope, onOpenHit, onClose, onApplied }: Props = $props();
+  let { workId, workspaceScope, packageRoot = null, onOpenHit, onClose, onApplied }: Props = $props();
 
   let query = $state("");
   let replacement = $state("");
   let regex = $state(false);
   let caseSensitive = $state(true);
   let wholeWord = $state(false);
-  let changedOnly = $state(false);
+  let scope = $state("project");
+  let scopePackage = $state<string | null>(null);
+  let replaceOpen = $state(false);
+  let advancedOpen = $state(false);
+  let cancelled = $state(false);
+  let preferencesReady = $state(false);
+  let reviewedOptions: ReturnType<typeof searchOptions> & { replacement: string } | null = null;
+  let previewEpoch = 0;
   let include = $state("");
   let exclude = $state("");
   let loading = $state(false);
@@ -46,8 +56,15 @@
   let requestEpoch = 0;
   let disposed = false;
   let queryInput: HTMLInputElement | null = $state(null);
+  let resultsContainer = $state<HTMLDivElement | null>(null);
+  let replaceDialog = $state<HTMLDivElement | null>(null);
 
   const hits = $derived(result?.hits ?? []);
+  const groups = $derived.by(() => {
+    const grouped = new Map<string, typeof hits>();
+    for (const hit of hits) grouped.set(hit.path, [...(grouped.get(hit.path) ?? []), hit]);
+    return [...grouped].map(([path, rows]) => ({ path, rows }));
+  });
   const canLoadMore = $derived(Boolean(result?.next_cursor));
   const replaceFiles = $derived(
     (replacePlan?.files ?? []).filter((file) => !excludedPaths.has(file.path)),
@@ -62,9 +79,18 @@
   );
 
   onMount(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(`medousa:code-search:${activeWorkshopId()}:${workId}`) ?? "null");
+      if (saved && ["project", "changed", "package"].includes(saved.scope)) {
+        scope = saved.scope;
+        scopePackage = typeof saved.root === "string" ? saved.root : null;
+        if (scope === "package" && !scopePackage) scope = "project";
+      }
+    } catch { /* Search remains usable without saved preferences. */ }
+    preferencesReady = true;
     void tick().then(() => queryInput?.focus());
   });
-  onDestroy(() => { disposed = true; requestEpoch += 1; });
+  onDestroy(() => { disposed = true; requestEpoch += 1; previewEpoch += 1; });
 
   function captureScope() {
     const current = captureCodeScope(() => JSON.stringify([codeExecutionScopeKey(), workspaceScope, workId]));
@@ -77,21 +103,24 @@
       mode: (regex ? "regex" : "literal") as "regex" | "literal",
       caseSensitive,
       wholeWord,
-      include: include.trim() || undefined,
+      include: scope === "package" && scopePackage && scopePackage !== "."
+        ? include.trim() ? include.split(",").map((glob) => `${scopePackage}/${glob.trim()}`).join(",") : `:(literal)${scopePackage}`
+        : include.trim() || undefined,
       exclude: exclude.trim() || undefined,
-      scope: (changedOnly ? "changed" : "all") as "changed" | "all",
+      scope: (scope === "changed" ? "changed" : "all") as "changed" | "all",
     };
   }
 
   async function runSearch(options?: { append?: boolean }) {
     const current = captureScope();
     const needle = query.trim();
-    if (needle.length < 2) {
-      error = "Type at least 2 characters";
+    if (needle.length < 1) {
+      error = "Type a search query";
       return;
     }
     const append = options?.append === true;
     const epoch = ++requestEpoch;
+    cancelled = false;
     if (append) loadingMore = true;
     else {
       loading = true;
@@ -101,7 +130,7 @@
     try {
       const page = await searchUndertakingSource(workId, {
         ...searchOptions(),
-        limit: 100,
+        limit: needle.length === 1 ? 50 : 100,
         cursor: append ? result?.next_cursor : null,
       });
       if (!current() || epoch !== requestEpoch) return;
@@ -127,20 +156,22 @@
   async function previewReplace() {
     const current = captureScope();
     const needle = query.trim();
-    if (needle.length < 2) {
-      error = "Type at least 2 characters to replace";
+    if (needle.length < 1) {
+      error = "Type a search query to replace";
       return;
     }
+    const epoch = ++previewEpoch;
+    const reviewed = { ...searchOptions(), replacement };
     previewing = true;
     error = null;
     try {
       const plan = await replaceUndertakingSource(workId, {
-        ...searchOptions(),
-        replacement,
+        ...reviewed,
         dryRun: true,
         limit: 50,
       });
-      if (!current()) return;
+      if (!current() || epoch !== previewEpoch) return;
+      reviewedOptions = reviewed;
       excludedPaths = new Set();
       replacePlan = plan;
       if (plan.files.length === 0) {
@@ -148,17 +179,20 @@
         replacePlan = null;
       }
     } catch (err) {
-      if (!current()) return;
+      if (!current() || epoch !== previewEpoch) return;
       error = humanizeForgeMessage(err instanceof Error ? err.message : String(err));
     } finally {
-      if (current()) previewing = false;
+      if (current() && epoch === previewEpoch) previewing = false;
     }
   }
 
   async function applyReplace() {
     const current = captureScope();
     const plan = replacePlan;
-    if (!plan || applying || replaceFiles.length === 0) return;
+    const reviewed = reviewedOptions;
+    const selectedFiles = [...replaceFiles];
+    const previewCurrent = () => current() && replacePlan === plan && reviewedOptions === reviewed;
+    if (!plan || !reviewed || applying || selectedFiles.length === 0) return;
     applying = true;
     error = null;
     try {
@@ -178,7 +212,7 @@
           );
         }
         const begun = await startHumanEditingSession(workId, detail.allowed_actions);
-        if (!current()) return;
+        if (!previewCurrent()) return;
         undertakings.setActiveFromItem(begun.item, {
           leaseId: begun.lease.lease_id,
           leaseGeneration: begun.lease.generation,
@@ -188,11 +222,10 @@
         generation = begun.lease.generation;
       }
       await replaceUndertakingSource(workId, {
-        ...searchOptions(),
-        replacement,
+        ...reviewed,
         dryRun: false,
-        paths: replaceFiles.map((file) => file.path),
-        preconditions: replaceFiles.map((file) => ({
+        paths: selectedFiles.map((file) => file.path),
+        preconditions: selectedFiles.map((file) => ({
           path: file.path,
           expected_digest: file.expected_digest,
         })),
@@ -223,19 +256,63 @@
 
   function cancel() {
     requestEpoch += 1;
+    cancelled = true;
     loading = false;
     loadingMore = false;
   }
 
+  let debounce: ReturnType<typeof setTimeout> | null = null;
+  $effect(() => {
+    const signature = JSON.stringify(searchOptions());
+    void signature;
+    if (preferencesReady) try { localStorage.setItem(`medousa:code-search:${activeWorkshopId()}:${workId}`, JSON.stringify({ scope, root: scopePackage })); } catch { /* Preferences do not grant runtime authority. */ }
+    requestEpoch += 1; previewEpoch += 1;
+    result = null; replacePlan = null; reviewedOptions = null;
+    loading = false; loadingMore = false; previewing = false; cancelled = false; error = null;
+    if (debounce) clearTimeout(debounce);
+    if (query.trim()) debounce = setTimeout(() => untrack(() => void runSearch()), 250);
+    return () => { if (debounce) clearTimeout(debounce); };
+  });
+  $effect(() => {
+    void replacement; void JSON.stringify(searchOptions());
+    previewEpoch += 1; replacePlan = null; reviewedOptions = null; previewing = false;
+  });
+  $effect(() => {
+    if (replacePlan) void tick().then(() => replaceDialog?.focus());
+  });
+  function resultKeys(event: KeyboardEvent) {
+    if (event.key === "Escape") { event.preventDefault(); onClose?.(); return; }
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+    const rows = Array.from(resultsContainer?.querySelectorAll<HTMLButtonElement>("[data-search-hit]") ?? []);
+    const index = rows.indexOf(event.currentTarget as HTMLButtonElement);
+    if (event.key === "ArrowUp" && index === 0) queryInput?.focus();
+    else rows[Math.max(0, Math.min(rows.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)))]?.focus();
+  }
+  function dialogKeys(event: KeyboardEvent) {
+    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); if (!applying) { replacePlan = null; queryInput?.focus(); } return; }
+    if (event.key !== "Tab") return;
+    const controls = Array.from(replaceDialog?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), [tabindex="0"]') ?? []);
+    const index = controls.indexOf(document.activeElement as HTMLElement);
+    if (event.shiftKey && index <= 0) { event.preventDefault(); controls.at(-1)?.focus(); }
+    else if (!event.shiftKey && (index < 0 || index === controls.length - 1)) { event.preventDefault(); controls[0]?.focus(); }
+  }
+
   function onKeydown(event: KeyboardEvent) {
     if (event.key === "Enter") {
-      event.preventDefault();
-      void runSearch();
-    }
+      event.preventDefault(); if (debounce) clearTimeout(debounce); void runSearch();
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault(); resultsContainer?.querySelector<HTMLButtonElement>("[data-search-hit]")?.focus();
+    } else if (event.key === "Escape" && !replacePlan) { event.preventDefault(); onClose?.(); }
+  }
+  function highlight(preview: string) {
+    if (regex || !query.trim()) return { before: preview, match: "", after: "" };
+    const start = caseSensitive ? preview.indexOf(query.trim()) : preview.toLocaleLowerCase().indexOf(query.trim().toLocaleLowerCase());
+    return start < 0 ? { before: preview, match: "", after: "" } : { before: preview.slice(0, start), match: preview.slice(start, start + query.trim().length), after: preview.slice(start + query.trim().length) };
   }
 </script>
 
-<div class="flex max-h-80 min-h-[12rem] flex-col border-t border-surface-500/30 bg-surface-950/85">
+<CodePanelFrame {workId} name="Search">
   <header class="flex shrink-0 items-center gap-2 border-b border-surface-500/20 px-2 py-1.5">
     <Search size={12} class="shrink-0 text-content-quiet" />
     <span class="text-chrome-sm font-medium uppercase tracking-wide text-content-tertiary">Search</span>
@@ -262,21 +339,26 @@
     <input
       bind:this={queryInput}
       class="w-full rounded border border-surface-500/35 bg-surface-900/80 px-2 py-1 text-chrome-md text-content-secondary outline-none focus:border-primary-500/50"
+      aria-label="Search in project"
       placeholder="Search in project…"
       bind:value={query}
       onkeydown={onKeydown}
     />
+    {#if replaceOpen}
     <input
       class="w-full rounded border border-surface-500/35 bg-surface-900/80 px-2 py-1 text-chrome-md text-content-secondary outline-none focus:border-primary-500/50"
+      aria-label="Replacement text"
       placeholder="Replace with…"
       bind:value={replacement}
       onkeydown={onKeydown}
     />
+    {/if}
     <div class="flex flex-wrap items-center gap-1">
       <button
         type="button"
         class="rounded px-1.5 py-0.5 text-chrome-xs {caseSensitive ? 'bg-primary-500/20 text-primary-100' : 'text-content-quiet hover:bg-surface-800'}"
         title="Match case"
+        aria-label="Match case"
         aria-pressed={caseSensitive}
         onclick={() => (caseSensitive = !caseSensitive)}
       >Aa</button>
@@ -284,6 +366,7 @@
         type="button"
         class="rounded px-1.5 py-0.5 text-chrome-xs {wholeWord ? 'bg-primary-500/20 text-primary-100' : 'text-content-quiet hover:bg-surface-800'}"
         title="Whole word"
+        aria-label="Whole word"
         aria-pressed={wholeWord}
         onclick={() => (wholeWord = !wholeWord)}
       >W</button>
@@ -291,29 +374,30 @@
         type="button"
         class="rounded px-1.5 py-0.5 text-chrome-xs {regex ? 'bg-primary-500/20 text-primary-100' : 'text-content-quiet hover:bg-surface-800'}"
         title="Use regular expression"
+        aria-label="Use regular expression"
         aria-pressed={regex}
         onclick={() => (regex = !regex)}
       >.*</button>
-      <button
-        type="button"
-        class="rounded px-1.5 py-0.5 text-chrome-xs {changedOnly ? 'bg-primary-500/20 text-primary-100' : 'text-content-quiet hover:bg-surface-800'}"
-        title="Changed files only"
-        aria-pressed={changedOnly}
-        onclick={() => (changedOnly = !changedOnly)}
-      >Changed</button>
+      <select class="rounded bg-surface-900 px-2 py-1 text-chrome-xs" aria-label="Search scope" bind:value={scope} onchange={() => { if (scope === "package") scopePackage = packageRoot; }}><option value="project">Whole project</option><option value="package" disabled={!packageRoot}>Current package</option><option value="changed">Changed files</option></select>
+      {#if scope === "package"}<span class="text-chrome-xs text-content-quiet">{scopePackage}</span>{/if}
+      <button type="button" class="rounded px-2 py-1 text-chrome-xs text-content-secondary" aria-pressed={replaceOpen} onclick={() => (replaceOpen = !replaceOpen)}>Replace</button>
+      <button type="button" class="rounded px-2 py-1 text-chrome-xs text-content-secondary" aria-pressed={advancedOpen} onclick={() => (advancedOpen = !advancedOpen)}>Filters</button>
       <button
         type="button"
         class="ml-auto rounded bg-primary-500/80 px-2 py-0.5 text-chrome-xs font-medium text-white disabled:opacity-40"
-        disabled={loading || query.trim().length < 2}
+        disabled={loading || query.trim().length < 1}
         onclick={() => void runSearch()}
       >Search</button>
+      {#if replaceOpen}
       <button
         type="button"
         class="rounded border border-surface-500/40 px-2 py-0.5 text-chrome-xs text-content-secondary hover:bg-surface-800 disabled:opacity-40"
-        disabled={previewing || query.trim().length < 2}
+        disabled={previewing || query.trim().length < 1}
         onclick={() => void previewReplace()}
-      >{previewing ? "Previewing…" : "Replace…"}</button>
+      >{previewing ? "Previewing…" : "Review replace…"}</button>
+      {/if}
     </div>
+    {#if advancedOpen}
     <div class="grid grid-cols-2 gap-1">
       <input
         class="rounded border border-surface-500/25 bg-surface-900/50 px-1.5 py-0.5 text-chrome-xs text-content-tertiary outline-none focus:border-primary-500/40"
@@ -328,15 +412,18 @@
         onkeydown={onKeydown}
       />
     </div>
+    {/if}
   </div>
 
-  <div class="min-h-0 flex-1 overflow-y-auto">
+  <div bind:this={resultsContainer} class="min-h-0 flex-1 overflow-y-auto">
     {#if loading}
       <p class="flex items-center gap-1.5 px-3 py-3 text-chrome-sm text-content-quiet">
         <LoaderCircle size={11} class="animate-spin" /> Searching…
       </p>
     {:else if error && !replacePlan}
       <p class="px-3 py-3 text-chrome-sm text-rose-300/90">{error}</p>
+    {:else if cancelled}
+      <p class="px-3 py-3 text-chrome-sm text-content-quiet">Search cancelled. Change the query or choose Search to retry.</p>
     {:else if !result}
       <p class="px-3 py-3 text-chrome-sm text-content-quiet">
         Search tracked and untracked source. Preview a replace before applying.
@@ -344,17 +431,17 @@
     {:else if hits.length === 0}
       <p class="px-3 py-3 text-chrome-sm text-content-quiet">No matches.</p>
     {:else}
-      {#each hits as hit, index (`${hit.path}:${hit.line}:${index}`)}
-        <button
-          type="button"
-          class="flex w-full flex-col gap-0.5 border-b border-surface-500/10 px-3 py-1.5 text-left hover:bg-surface-800/60"
-          onclick={() => void onOpenHit?.(hit.path, hit.line)}
-        >
-          <span class="truncate text-chrome-sm text-content-secondary">
-            {hit.path}<span class="text-content-quiet">:{hit.line}</span>
-          </span>
-          <span class="truncate font-mono text-chrome-xs text-content-quiet">{hit.preview}</span>
-        </button>
+      <p class="px-3 py-2 text-chrome-xs text-content-quiet">{hits.length} matching lines in {groups.length} files{result.truncated ? " · more results available" : ""}</p>
+      {#each groups as group (group.path)}
+        <details open><summary class="sticky top-0 cursor-pointer bg-surface-900 px-3 py-2 font-mono text-chrome-xs text-content-secondary">{group.path} · {group.rows.length}</summary>
+          {#each group.rows as hit, index (`${hit.line}:${index}`)}
+            {@const parts = highlight(hit.preview)}
+            <button type="button" data-search-hit onkeydown={resultKeys} class="flex w-full gap-3 border-b border-surface-500/10 px-3 py-2 text-left hover:bg-surface-800/60 focus:bg-surface-800" onclick={() => void onOpenHit?.(hit.path, hit.line)}>
+              <span class="text-chrome-xs text-content-quiet">{hit.line}</span>
+              <span class="break-all font-mono text-chrome-xs text-content-secondary">{parts.before}{#if parts.match}<mark class="rounded bg-primary-500/25 text-primary-100">{parts.match}</mark>{/if}{parts.after}</span>
+            </button>
+          {/each}
+        </details>
       {/each}
       {#if canLoadMore}
         <div class="px-3 py-2">
@@ -370,7 +457,7 @@
       {/if}
     {/if}
   </div>
-</div>
+</CodePanelFrame>
 
 {#if replacePlan}
   <div class="fixed inset-0 z-[128] flex items-center justify-center p-4">
@@ -385,6 +472,8 @@
     ></button>
     <div
       class="relative flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-surface-500/50 bg-surface-950 shadow-2xl"
+      bind:this={replaceDialog}
+      onkeydown={dialogKeys}
       role="dialog"
       aria-modal="true"
       aria-label="Review replace"
