@@ -151,7 +151,7 @@ export class CodeProblemsController {
     this.#taskScope = "";
   }
 
-  get documentFallback(): CodeProblem[] {
+  get documentObservations(): CodeProblem[] {
     const uri = this.#deps.getDocumentUri();
     const root = this.#deps.getWorkspaceRoot();
     if (!uri || !root || this.#documentScope !== this.scopeKey || this.#documentUri !== uri) return [];
@@ -164,10 +164,11 @@ export class CodeProblemsController {
   }
 
   get effective(): CodeProblem[] {
-    const languageProblems = this.loaded && this.workspaceScope === this.scopeKey
-      ? this.workspaceProblems
-      : this.documentFallback;
     const uri = this.#deps.getDocumentUri();
+    const currentDocumentObserved = this.#documentScope === this.scopeKey && this.#documentUri === uri;
+    const languageProblems = this.loaded && this.workspaceScope === this.scopeKey
+      ? [...this.workspaceProblems.filter((problem) => !currentDocumentObserved || problem.uri !== uri), ...(currentDocumentObserved ? this.documentObservations : [])]
+      : this.documentObservations;
     const version = this.#deps.getDocumentVersion?.();
     const observations = languageProblems.map((problem) => problem.uri === uri && version != null ? { ...problem, fresh: problem.documentVersion != null && problem.documentVersion === version } : problem);
     return [...observations, ...(this.#taskScope === this.scopeKey ? this.taskProblems : [])];

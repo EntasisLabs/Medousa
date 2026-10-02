@@ -93,3 +93,16 @@ it("hides old document and task problems immediately when scope changes", () => 
   scope = "workshop-b";
   expect(problems.effective).toEqual([]);
 });
+
+it("keeps current editor observations ahead of an older aggregate snapshot", async () => {
+  const problems = controller();
+  diagnostics.mockResolvedValueOnce({ scope: "active_sessions", languages: ["rust"], documents: [
+    { uri: "file:///work/project/src/main.rs", language: "rust", diagnostics: [{ message: "older snapshot", range: { start: { line: 0, character: 0 }, end: { line: 0, character: 2 } } }] },
+    { uri: "file:///work/project/src/other.rs", language: "rust", diagnostics: [{ message: "other file", range: { start: { line: 0, character: 0 }, end: { line: 0, character: 2 } } }] },
+  ] });
+  problems.setDocumentProblems([{ message: "current editor", severity: "warning", line: 1, character: 2, endCharacter: 4, source: "rust-analyzer" }]);
+  await problems.refresh();
+  expect(problems.effective.map((problem) => problem.message)).toEqual(["other file", "current editor"]);
+  problems.setDocumentProblems([]);
+  expect(problems.effective.map((problem) => problem.message)).toEqual(["other file"]);
+});
