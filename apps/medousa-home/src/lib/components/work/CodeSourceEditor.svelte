@@ -361,6 +361,7 @@
     getReviewTitle: () => detail?.title ?? "project",
   });
   const tasks = new CodeTasksController({
+    getDocumentPath: () => activeTabPath,
     getScopeKey: () => workspaceScope,
     getWorkId: () => workId,
     persistTestsOpen: (open) => {
@@ -1528,6 +1529,11 @@
     void workspaceScope;
     const prepared = Boolean(workspaceRoot);
     return tasks.bindTaskList(id, prepared, interactive);
+  });
+
+  $effect(() => {
+    void tasks.projectTasks;
+    tasks.suggestForDocument(activeTabPath);
   });
 
   $effect(() => {

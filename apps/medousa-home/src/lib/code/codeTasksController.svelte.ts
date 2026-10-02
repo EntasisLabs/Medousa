@@ -3,6 +3,7 @@
  * CodeSourceEditor wires layout; this owns run state, buffers, and actions.
  */
 
+import { contextualCommands, suggestedCommand } from "$lib/code/codeCommandContext";
 import {
   cancelProjectTaskRun,
   getProjectTaskRun,
@@ -39,6 +40,7 @@ export type CodeTasksLease = { leaseId: string; generation: number };
 
 export type CodeTasksControllerDeps = {
   getWorkId: () => string;
+  getDocumentPath?: () => string;
   getScopeKey: () => string;
   persistTestsOpen: (open: boolean) => void;
   persistOutputOpen: (open: boolean) => void;
@@ -103,7 +105,6 @@ export class CodeTasksController {
   get selectedTask(): ProjectTask | null {
     return (
       this.projectTasks.find((task) => task.id === this.selectedTaskId) ??
-      this.projectTasks[0] ??
       null
     );
   }
@@ -148,6 +149,11 @@ export class CodeTasksController {
       .map((runId) => runId.trim())
       .filter(Boolean)
       .slice(0, 12);
+  }
+
+  suggestForDocument(path: string) {
+    if (this.restoredTaskId || this.running || this.preparing) return;
+    this.selectedTaskId = suggestedCommand(this.projectTasks, path)?.id ?? "";
   }
 
   selectTask(taskId: string) {
@@ -429,7 +435,7 @@ export class CodeTasksController {
   async runDetected(test?: ProjectTest) {
     const taskId = test?.task_id ?? this.selectedTask?.id;
     if (!taskId) {
-      this.#deps.onOpenTerminal?.();
+      this.#deps.onError("Choose a project command before running. Open the command picker to review available targets.");
       return;
     }
     if (this.running || this.preparing) return;
@@ -472,7 +478,9 @@ export class CodeTasksController {
   }
 
   async runKind(kind: "run" | "build" | "test" | "verify") {
-    const candidates = this.projectTasks.filter((candidate) => candidate.kind === kind);
+    const path = this.#deps.getDocumentPath?.();
+    const catalog = path ? contextualCommands(this.projectTasks, path) : this.projectTasks;
+    const candidates = catalog.filter((candidate) => candidate.kind === kind);
     const task = this.defaultTask(candidates);
     if (!task) {
       this.#deps.onError(`No ${kind} command was detected for this project.`);

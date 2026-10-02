@@ -539,3 +539,12 @@ Return to the expected branch on the workshop, or preserve your drafts, release
 the old project, and attach the current checkout as a new project. Language
 support package management opens **Settings → Packages**; editor repair never
 installs optional tools silently.
+
+### Choosing a project command
+
+The command picker beside **Run** starts with the deepest runtime-discovered
+package containing the current file. Choose **Whole project** to search every
+package. Commands are grouped into Run, Build, Test, and Check, with their working
+directory and exact command visible before selection. Equal recommendations
+require a choice. Selecting a command pins it for this project; moving to another
+file does not retarget that choice, an active run, Stop, or Rerun.

@@ -16,6 +16,7 @@
     Search,
     GitBranch,
   } from "@lucide/svelte";
+  import CodeCommandPicker from "./CodeCommandPicker.svelte";
   import CodeBreadcrumbs from "$lib/components/code/CodeBreadcrumbs.svelte";
   import OverflowMenu from "$lib/components/ui/OverflowMenu.svelte";
   import type { CodeChangesController } from "$lib/code/codeChangesController.svelte";
@@ -238,7 +239,7 @@
           }}
         ><Play size={14} strokeWidth={1.75} /></button>
       {/if}
-      {#if tasks.projectTasks.length > 0}
+      {#if tasks.projectTasks.length > 0 || activeTab}
         <div class="code-run-control" aria-label="Project command">
           {#if tasks.running}
             <button
@@ -264,18 +265,7 @@
               onclick={() => void tasks.runDetected()}
             ><Play size={12} strokeWidth={2} /><span>{tasks.preparing ? "Saving…" : "Run"}</span></button>
           {/if}
-          <select
-            class="code-run-select"
-            value={tasks.selectedTaskId}
-            disabled={tasks.running || tasks.preparing}
-            aria-label="Select project command"
-            title={tasks.selectedTask?.argv.join(" ") ?? "Select project command"}
-            onchange={(event) => tasks.selectTask(event.currentTarget.value)}
-          >
-            {#each tasks.projectTasks as task (task.id)}
-              <option value={task.id} disabled={task.available === false}>{task.label}{#if task.root && task.root !== "."} · {task.root}{/if}{#if task.available === false} · unavailable{/if}{#if task.long_running} · background{/if}</option>
-            {/each}
-          </select>
+          <CodeCommandPicker {tasks} path={activeTab?.path ?? ""} />
         </div>
       {/if}
       {#if activeTab}
@@ -286,7 +276,7 @@
           aria-label="Show issues"
           aria-pressed={problems.panel === "problems"}
           onclick={() => void problems.showProblems()}
-        ><CircleAlert size={14} strokeWidth={1.75} /></button>
+        ><CircleAlert size={14} strokeWidth={1.75} /><span class="code-action-label">Problems</span></button>
         <button
           type="button"
           class="scripts-workbench-toolbar-btn {searchOpen ? 'scripts-workbench-toolbar-btn-active' : ''}"
@@ -294,7 +284,7 @@
           aria-label="Search in files"
           aria-pressed={searchOpen}
           onclick={() => toggleSearch()}
-        ><Search size={14} strokeWidth={1.75} /></button>
+        ><Search size={14} strokeWidth={1.75} /><span class="code-action-label">Search</span></button>
         <button
           type="button"
           class="scripts-workbench-toolbar-btn {changes.open ? 'scripts-workbench-toolbar-btn-active' : ''}"
@@ -311,7 +301,7 @@
             aria-label="Toggle terminal"
             aria-pressed={terminalDockOpen}
             onclick={() => void toggleTerminalDock()}
-          ><SquareTerminal size={14} strokeWidth={1.75} /></button>
+          ><SquareTerminal size={14} strokeWidth={1.75} /><span class="code-action-label">Terminal</span></button>
         {/if}
         <span class="code-editor-chrome-divider" aria-hidden="true"></span>
 
@@ -405,16 +395,6 @@
             <span>Tab size</span>
             <span class="code-chrome-menu-meta">{tabSizePref}</span>
           </button>
-          {#if tasks.projectTasks.length > 1}
-            <label class="code-chrome-menu-field">
-              <span class="code-chrome-menu-field-label">Project command</span>
-              <select class="code-chrome-menu-select" aria-label="Project command" bind:value={tasks.selectedTaskId}>
-                {#each tasks.projectTasks as task (task.id)}
-                  <option value={task.id} disabled={task.available === false}>{task.label}{#if task.root && task.root !== "."} · {task.root}{/if}{#if task.available === false} · unavailable{/if}{#if task.long_running} · background{/if}{#if task.provider === "vscode-tasks"} · tasks.json{/if}</option>
-                {/each}
-              </select>
-            </label>
-          {/if}
           {#if tasks.projectTasks.some((task) => task.kind === "test")}
             <button type="button" role="menuitem" class="code-chrome-menu-item" onclick={() => void tasks.toggleTests()}>
               <span>Discovered tests</span>
@@ -537,7 +517,6 @@
     min-width: 0;
     height: 24px;
     align-items: stretch;
-    overflow: hidden;
     border: 1px solid rgb(var(--color-primary-500) / 0.32);
     border-radius: 0.35rem;
     background: rgb(var(--color-primary-500) / 0.09);
@@ -572,27 +551,8 @@
     color: rgb(254 205 211);
   }
 
-  .code-run-select {
-    min-width: 5rem;
-    max-width: 10rem;
-    border: 0;
-    background: transparent;
-    padding: 0 1.45rem 0 0.4rem;
-    color: rgb(var(--theme-text-secondary));
-    font-size: 11px;
-    outline: none;
-    text-overflow: ellipsis;
-  }
-
-  @media (max-width: 760px) {
-    .code-run-button span {
-      display: none;
-    }
-
-    .code-run-select {
-      max-width: 7rem;
-    }
-  }
+  .code-action-label { margin-left: 0.25rem; font-size: 11px; }
+  @media (max-width: 1100px) { .code-action-label { display: none; } }
 
   :global(.code-chrome-menu-item) {
     display: flex;
@@ -644,33 +604,4 @@
     border-top: 1px solid rgb(var(--color-surface-500) / 0.25);
   }
 
-  :global(.code-chrome-menu-field) {
-    display: block;
-    border-top: 1px solid rgb(var(--color-surface-500) / 0.2);
-    padding: 0.4rem 0.5rem 0.5rem;
-  }
-
-  :global(.code-chrome-menu-field-label) {
-    color: color-mix(
-      in srgb,
-      rgb(var(--theme-text)) 45%,
-      transparent
-    );
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-
-  :global(.code-chrome-menu-select) {
-    margin-top: 0.3rem;
-    width: 100%;
-    border: 0;
-    border-radius: 0.3rem;
-    background: rgb(var(--color-surface-800));
-    padding: 0.3rem 0.4rem;
-    color: rgb(var(--theme-text-secondary));
-    font-size: 12px;
-    outline: none;
-  }
 </style>

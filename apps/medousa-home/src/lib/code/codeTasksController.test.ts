@@ -515,3 +515,16 @@ it("does not let delayed run history replace an explicit new run", async () => {
   expect(api.getProjectTaskRun).not.toHaveBeenCalled();
   unbind(); controller.dispose();
 });
+
+it("follows a discovered package until an explicit command is selected", () => {
+  const { controller } = createController();
+  controller.projectTasks = [
+    { ...checkTask, id: "web", root: "apps/web", default_rank: 500 },
+    { ...checkTask, id: "rust", root: "crates/engine", default_rank: 900 },
+  ];
+  controller.suggestForDocument("apps/web/src/app.ts");
+  expect(controller.selectedTaskId).toBe("web");
+  controller.selectTask("web");
+  controller.suggestForDocument("crates/engine/src/lib.rs");
+  expect(controller.selectedTaskId).toBe("web");
+});
