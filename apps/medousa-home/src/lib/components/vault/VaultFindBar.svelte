@@ -1,5 +1,6 @@
 <script lang="ts">
   import "$lib/styles/vault-find.postcss";
+  import "$lib/styles/editor-find.postcss";
   import { onMount } from "svelte";
   import { CaseSensitive, ChevronDown, ChevronUp, Replace, X } from "@lucide/svelte";
   import { titleWithKeys } from "$lib/utils/keyboardShortcutsCatalog";
@@ -85,17 +86,17 @@
 </script>
 
 <div
-  class="vault-find-bar"
-  class:vault-find-bar--replace={vaultFind.replaceMode}
+  class="editor-find-bar"
+  class:editor-find-bar--replace={vaultFind.replaceMode}
   role="search"
   aria-label="Find in note"
 >
-  <div class="vault-find-bar-row">
+  <div class="editor-find-bar-row">
     <label class="sr-only" for={VAULT_FIND_INPUT_ID}>Find in note</label>
     <input
       id={VAULT_FIND_INPUT_ID}
       bind:this={inputEl}
-      class="vault-find-input"
+      class="editor-find-input"
       type="text"
       placeholder="Find"
       value={vaultFind.query}
@@ -105,14 +106,14 @@
       spellcheck="false"
     />
     {#if showStatus}
-      <span class="vault-find-divider" aria-hidden="true"></span>
-      <span class="vault-find-status" aria-live="polite">{vaultFind.statusLabel}</span>
+      <span class="editor-find-divider" aria-hidden="true"></span>
+      <span class="editor-find-status" aria-live="polite">{vaultFind.statusLabel}</span>
     {/if}
-    <span class="vault-find-divider" aria-hidden="true"></span>
+    <span class="editor-find-divider" aria-hidden="true"></span>
     <button
       type="button"
-      class="vault-find-btn"
-      class:vault-find-btn--active={vaultFind.matchCase}
+      class="editor-find-btn"
+      class:editor-find-btn--active={vaultFind.matchCase}
       aria-label="Match case"
       aria-pressed={vaultFind.matchCase}
       title="Match case"
@@ -123,8 +124,8 @@
     </button>
     <button
       type="button"
-      class="vault-find-btn"
-      class:vault-find-btn--active={vaultFind.replaceMode}
+      class="editor-find-btn"
+      class:editor-find-btn--active={vaultFind.replaceMode}
       aria-label="Toggle replace"
       aria-pressed={vaultFind.replaceMode}
       title={titleWithKeys("Replace", "mod:⌥F")}
@@ -136,10 +137,10 @@
     >
       <Replace size={13} strokeWidth={2.25} />
     </button>
-    <div class="vault-find-nav">
+    <div class="editor-find-nav">
       <button
         type="button"
-        class="vault-find-btn"
+        class="editor-find-btn"
         aria-label="Previous match"
         title="Previous match (Shift+Enter)"
         disabled={vaultFind.matchCount === 0}
@@ -150,7 +151,7 @@
       </button>
       <button
         type="button"
-        class="vault-find-btn"
+        class="editor-find-btn"
         aria-label="Next match"
         title="Next match (Enter)"
         disabled={vaultFind.matchCount === 0}
@@ -160,10 +161,10 @@
         <ChevronDown size={13} strokeWidth={2.25} />
       </button>
     </div>
-    <span class="vault-find-divider" aria-hidden="true"></span>
+    <span class="editor-find-divider" aria-hidden="true"></span>
     <button
       type="button"
-      class="vault-find-btn"
+      class="editor-find-btn"
       aria-label="Close find"
       title="Close (Esc)"
       onmousedown={keepFocus}
@@ -173,12 +174,12 @@
     </button>
   </div>
   {#if vaultFind.replaceMode}
-    <div class="vault-find-bar-row vault-find-bar-row--replace">
+    <div class="editor-find-bar-row editor-find-bar-row--replace">
       <label class="sr-only" for="vault-find-replace-input">Replace with</label>
       <input
         id="vault-find-replace-input"
         bind:this={replaceInputEl}
-        class="vault-find-input"
+        class="editor-find-input"
         type="text"
         placeholder="Replace"
         value={vaultFind.replaceQuery}
@@ -189,7 +190,7 @@
       />
       <button
         type="button"
-        class="vault-find-text-btn"
+        class="editor-find-text-btn"
         disabled={vaultFind.matchCount === 0}
         onmousedown={keepFocus}
         onclick={() => vaultFind.replaceOne()}
@@ -198,7 +199,7 @@
       </button>
       <button
         type="button"
-        class="vault-find-text-btn"
+        class="editor-find-text-btn"
         disabled={vaultFind.matchCount === 0}
         onmousedown={keepFocus}
         onclick={() => vaultFind.replaceAll()}

@@ -139,6 +139,12 @@
       "loadedBy": "VaultLiveProperties.svelte"
     },
     {
+      "id": "editor-find",
+      "class": "feature",
+      "path": "src/lib/styles/editor-find.postcss",
+      "loadedBy": "VaultFindBar.svelte / CodeFindBar.svelte"
+    },
+    {
       "id": "vault-find",
       "class": "feature",
       "path": "src/lib/styles/vault-find.postcss",

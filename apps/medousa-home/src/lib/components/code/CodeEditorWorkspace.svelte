@@ -9,6 +9,7 @@
   import CodeContextSidePanel from "$lib/components/code/CodeContextSidePanel.svelte";
   import CodeFeedbackPanel from "$lib/components/code/CodeFeedbackPanel.svelte";
   import EmptyState from "$lib/components/ui/EmptyState.svelte";
+  import type { CodeFindState } from "$lib/code/codeFindController.svelte";
   import type { CodeChangesController } from "$lib/code/codeChangesController.svelte";
   import type { CodeProblemsController } from "$lib/code/codeProblemsController.svelte";
   import type { CodeQuickOpenController } from "$lib/code/codeQuickOpenController.svelte";
@@ -43,6 +44,7 @@
     editor: CodeMirrorHost | undefined;
     editorSelection: EditorSelection | null;
     editorPrefsEpoch: number;
+    findState?: CodeFindState;
     documentUri: string | null;
     lspClient: LSPClient | null | undefined;
     languageStatus: CodeWorkspaceLspStatus;
@@ -122,6 +124,7 @@
     editor = $bindable(),
     editorSelection = $bindable(),
     editorPrefsEpoch,
+    findState,
     documentUri,
     lspClient,
     languageStatus,
@@ -207,7 +210,7 @@
 
   <div class="flex min-h-0 flex-1 overflow-hidden">
     <div class="relative min-h-0 min-w-0 flex-1">
-      {#if editorSelection?.text && onHandoffToAgent && !agentHasControl}
+      {#if editorSelection?.text && onHandoffToAgent && !agentHasControl && !findState?.open}
         <div class="absolute right-3 top-2 z-20 flex max-w-[calc(100%-1.5rem)] items-center gap-1 overflow-x-auto rounded-md border border-primary-500/30 bg-surface-950/95 px-1.5 py-1 shadow-xl" aria-label="Selected code actions">
           <span class="mr-1 flex shrink-0 items-center gap-1 text-chrome-xs text-primary-200/80"><Sparkles size={10} />Selection</span>
           <button type="button" class="code-intent-action" disabled={busy} onclick={() => void save.handoffToAgent("Help me understand the selected code and answer my questions about it.")}>Ask</button>
@@ -229,6 +232,7 @@
         {#key `${editorTab.tabId}:${editorPrefsEpoch}`}
           <CodeMirrorHost
             bind:this={editor}
+            {findState}
             value={editorTab.draft}
             languageId={editorTab.encoding === "binary" ? "plaintext" : editorTab.language}
             {documentUri}

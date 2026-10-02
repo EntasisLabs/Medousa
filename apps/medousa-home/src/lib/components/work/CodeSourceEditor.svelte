@@ -89,7 +89,7 @@
     type CodeEditorFontSize,
   } from "$lib/config/codeEditorPreferences";
   import { readCodeWorkbenchPreferences } from "$lib/config/codeWorkbenchPreferences";
-  import { codeEditorFind } from "$lib/stores/codeEditorFind.svelte";
+  import { CodeFindStateCache } from "$lib/code/codeFindController.svelte";
   import { codeStatusIssues } from "$lib/code/codeStatusIssues";
   import { subscribeCodeDiagnostics } from "$lib/code/codeDiagnosticsEvents";
   import type { TerminalSessionSummary } from "$lib/terminal";
@@ -151,7 +151,8 @@
   let fontSize = $state<CodeEditorFontSize>(readCodeEditorFontSize());
   let tabSizePref = $state(readCodeEditorTabSize());
   let editorPrefsEpoch = $state(0);
-  let findOpenByTabId = $state<Record<string, boolean>>({});
+  const findStates = new CodeFindStateCache();
+  const activeFindState = $derived.by(() => findStates.forFile(workspaceScope, activeTabId, codeWorkspace.tabs.map((tab) => tab.tabId)));
   let terminalDockOpen = $state(false);
   let dockSessionId = $state<string | null>(null);
   let dockBusy = $state(false);
@@ -1664,25 +1665,6 @@
 
   $effect(() => {
     const tabId = activeTabId;
-    if (!interactive || !tabId) return;
-    // The cleanup snapshots find state back into this map. Keep both the read
-    // and write outside the effect dependency graph to avoid self-invalidation.
-    const shouldOpen = untrack(() => findOpenByTabId[tabId] ?? false);
-    void tick().then(() => {
-      if (!editor) return;
-      if (shouldOpen) editor.openFind();
-      else codeEditorFind.hide(editor.getView());
-    });
-    return () => {
-      // Persist the find state without making this effect depend on its own cleanup write.
-      untrack(() => {
-        findOpenByTabId = { ...findOpenByTabId, [tabId]: codeEditorFind.open };
-      });
-    };
-  });
-
-  $effect(() => {
-    const tabId = activeTabId;
     const draft = activeTab?.draft;
     void draft;
     void workbenchPrefsEpoch;
@@ -2037,6 +2019,7 @@
   />
 
   <CodeEditorWorkspace
+    findState={activeFindState}
     {workspaceScope}
     {workId}
     {activeTab}

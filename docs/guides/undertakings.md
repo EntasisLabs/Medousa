@@ -240,8 +240,19 @@ a private Code IDE chrome.
   copy path, and Reveal in Explorer. `F2` opens inline rename. **Problems**
   collects diagnostics from every active project-language session, groups them
   by file, filters by severity or text, and opens the exact location even when
-  the file is not already open. `Cmd/Ctrl+F` opens find with the shared editor
-  chrome.
+  the file is not already open. `Cmd/Ctrl+F` opens a compact floating **Find**
+  bar at the editor’s upper right, using the same appearance as Notes. Matches
+  highlight as you type, with a current-match count. Use `Enter` / `Shift+Enter`
+  or the arrows to move between hits; `Esc` closes Find and returns focus to
+  the editor. Each open file retains its query and options when switching tabs.
+  Toggle **Match case**, **Whole word**, **Regular expression**, or **Find in
+  selection** as needed; invalid expressions are explained inside the bar.
+  **Replace** reveals a second row (`Cmd+Option+F` on Mac, `Ctrl+H` elsewhere).
+  `Enter` in that row replaces the current match; `Cmd/Ctrl+Enter` replaces all
+  matches in the current file or selected range. Replacements change the draft
+  and are undoable; use the inline **Undo** action or the editor’s usual undo.
+  Read-only previews support Find without replacement controls. Project search
+  remains separate on `Cmd/Ctrl+Shift+F`.
 - If a language server stops, Code keeps the file editable, shows the degraded
   state, and makes three short reconnect attempts. Use **Restart language
   server** to retry immediately or **Show language server logs** to inspect the

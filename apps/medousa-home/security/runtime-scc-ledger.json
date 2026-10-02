@@ -85,6 +85,10 @@
       "specifier": "$lib/styles/vault-browse.postcss"
     },
     {
+      "from": "src/lib/components/code/CodeFindBar.svelte",
+      "specifier": "$lib/styles/editor-find.postcss"
+    },
+    {
       "from": "src/lib/components/code/CodeMirrorHost.svelte",
       "specifier": "$lib/styles/editor-host.postcss"
     },
@@ -247,6 +251,10 @@
     {
       "from": "src/lib/components/vault/VaultEditor.svelte",
       "specifier": "$lib/styles/vault-editor.postcss"
+    },
+    {
+      "from": "src/lib/components/vault/VaultFindBar.svelte",
+      "specifier": "$lib/styles/editor-find.postcss"
     },
     {
       "from": "src/lib/components/vault/VaultFindBar.svelte",
