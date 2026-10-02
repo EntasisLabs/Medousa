@@ -9,6 +9,7 @@ import {
   type ProjectTaskResult,
 } from "$lib/forge";
 import { getCoderExecutionTransport } from "$lib/executionAuthority";
+import { codeExecutionScopeKey } from "$lib/code/codeWorkspaceContext.svelte";
 import {
   DEFAULT_WORKSPACE_BACKOFF,
   ReconnectScheduler,
@@ -60,6 +61,9 @@ export class CodeTaskRunEventStream {
   private lastSeq = -1;
   private connecting = false;
   private closed = false;
+  private generation = 0;
+  private executionScope = "";
+  private executionRuntimeId: string | null = null;
   private readonly reconnect = new ReconnectScheduler({
     policy: DEFAULT_WORKSPACE_BACKOFF,
   });
@@ -77,6 +81,8 @@ export class CodeTaskRunEventStream {
     this.stopSource();
     this.reconnect.cancel();
     this.closed = false;
+    this.executionScope = codeExecutionScopeKey();
+    this.executionRuntimeId = getCoderExecutionTransport();
     this.workId = workId.trim() || null;
     this.runId = runId.trim() || null;
     this.lastSeq = Math.max(-1, since - 1);
@@ -98,6 +104,7 @@ export class CodeTaskRunEventStream {
   }
 
   private stopSource() {
+    this.generation += 1;
     this.connecting = false;
     if (this.source) {
       this.source.close();
@@ -108,8 +115,11 @@ export class CodeTaskRunEventStream {
   private async connect() {
     const workId = this.workId;
     const runId = this.runId;
-    if (!workId || !runId || this.connecting || this.closed) return;
+    if (!workId || !runId || this.connecting || this.closed || this.executionScope !== codeExecutionScopeKey()) return;
     this.connecting = true;
+    const generation = ++this.generation;
+    const current = () => !this.closed && generation === this.generation &&
+      this.workId === workId && this.runId === runId && this.executionScope === codeExecutionScopeKey();
     if (this.source) {
       this.source.close();
       this.source = null;
@@ -117,13 +127,14 @@ export class CodeTaskRunEventStream {
     let source: DaemonEventConnection | null = null;
     try {
       source = await openDaemonEventStream<ProjectTaskOutputEvent>({
-        executionRuntimeId: getCoderExecutionTransport(),
+        executionRuntimeId: this.executionRuntimeId,
         operation: "forge.items.by_work_id.task_runs.by_run_id.events.get",
         pathParams: { work_id: workId, run_id: runId },
         query: { since: String(this.lastSeq + 1) },
         browserUrl: () => forgeTaskRunEventsUrl(workId, runId, this.lastSeq + 1),
         browserEvent: "task",
         onEvent: (payload) => {
+          if (!current()) return;
           const event = parseTaskRunEventPayload(payload);
           if (!event || event.run_id !== runId) return;
           if (event.seq <= this.lastSeq) return;
@@ -136,25 +147,27 @@ export class CodeTaskRunEventStream {
           }
         },
         onOpen: () => {
+          if (!current()) return;
           this.connecting = false;
           this.reconnect.noteSuccess();
         },
         onError: () => {
+          if (!current()) return;
           this.connecting = false;
           if (source && this.source === source) this.source = null;
           if (this.closed || this.workId !== workId || this.runId !== runId) return;
           this.reconnect.schedule(() => void this.connect());
         },
       });
-      if (this.workId !== workId || this.runId !== runId || this.closed) {
+      if (!current()) {
         source.close();
-        this.connecting = false;
         return;
       }
       if (source.closed) return;
       this.source = source;
     } catch {
       source?.close();
+      if (!current()) return;
       this.connecting = false;
       this.handlers.onUnavailable?.();
       if (!this.closed && this.workId === workId && this.runId === runId) {

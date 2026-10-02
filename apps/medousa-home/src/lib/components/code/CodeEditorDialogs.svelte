@@ -15,7 +15,7 @@
     comparingTabId: string | null;
     tabs: CodeDocumentTab[];
     externalVersions: Record<string, ForgeSourceFile>;
-    refactorPreview: { workId: string; plan: CodeWorkspaceEditPlan } | null;
+    refactorPreview: { workId: string; workspaceScope: string; plan: CodeWorkspaceEditPlan } | null;
     refactorApplying: boolean;
     refactorDiffFiles: DiffFileSection[];
     refactorDiffMode: "inline" | "side";

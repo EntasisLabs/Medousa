@@ -26,6 +26,7 @@ import { openInBrowser } from "$lib/utils/openInBrowser";
 import { deferCodeWorkspaceWork } from "$lib/utils/codeWorkspaceTrace";
 import { shellTabs } from "$lib/stores/shellTabs.svelte";
 import { browser } from "$lib/stores/browser.svelte";
+import { captureCodeScope } from "$lib/code/codeWorkspaceContext.svelte";
 
 export type CodeTaskLocation = {
   path: string;
@@ -38,6 +39,7 @@ export type CodeTasksLease = { leaseId: string; generation: number };
 
 export type CodeTasksControllerDeps = {
   getWorkId: () => string;
+  getScopeKey: () => string;
   persistTestsOpen: (open: boolean) => void;
   persistOutputOpen: (open: boolean) => void;
   persistSelectedTask: (taskId: string | null) => void;
@@ -80,10 +82,22 @@ export class CodeTasksController {
   #eventStream: CodeTaskRunEventStream | null = null;
   #deps: CodeTasksControllerDeps;
   #boundWorkId = "";
+  #boundScope = "";
+  #scopeEpoch = 0;
+  #disposed = false;
   #monitorGeneration = 0;
+  #runSelectionEpoch = 0;
 
   constructor(deps: CodeTasksControllerDeps) {
     this.#deps = deps;
+  }
+
+  #captureScope(): () => boolean {
+    const epoch = this.#scopeEpoch;
+    const scope = this.#deps.getScopeKey();
+    const current = captureCodeScope(this.#deps.getScopeKey);
+    return () => !this.#disposed && epoch === this.#scopeEpoch && current() &&
+      (!this.#boundScope || this.#boundScope === scope);
   }
 
   get selectedTask(): ProjectTask | null {
@@ -187,6 +201,7 @@ export class CodeTasksController {
   }
 
   applyRunEvent(event: ProjectTaskOutputEvent) {
+    if (!this.run || event.run_id !== this.run.run_id) return;
     if (event.kind === "output" && event.text) {
       if (event.stream === "stderr") {
         this.liveStderr += event.text;
@@ -242,12 +257,16 @@ export class CodeTasksController {
   startRunEvents(workId: string, run: ProjectTaskRun, since = 0) {
     this.stopRunEvents();
     this.resetOutputBuffers(run);
+    const current = this.#captureScope();
     const stream = new CodeTaskRunEventStream({
-      onEvent: (event) => this.applyRunEvent(event),
+      onEvent: (event) => {
+        if (current()) this.applyRunEvent(event);
+      },
       onUnavailable: () => {
         /* polling fallback in runDetected */
       },
       onTerminal: (result, state) => {
+        if (!current() || this.run?.run_id !== run.run_id) return;
         if (result) {
           this.result = result;
           this.liveStdout = result.stdout;
@@ -308,27 +327,30 @@ export class CodeTasksController {
 
   async monitorActiveRun(workId: string, runId: string) {
     const generation = ++this.#monitorGeneration;
+    const current = this.#captureScope();
     try {
       while (
-        generation === this.#monitorGeneration &&
+        current() && generation === this.#monitorGeneration &&
         this.#boundWorkId === workId &&
         this.run?.run_id === runId &&
         this.runStillActive(this.run)
       ) {
         await new Promise((resolve) => setTimeout(resolve, 350));
+        if (!current() || generation !== this.#monitorGeneration) return;
         const snapshot = await getProjectTaskRun(workId, runId);
-        if (generation !== this.#monitorGeneration || this.#boundWorkId !== workId) return;
+        if (!current() || generation !== this.#monitorGeneration || this.#boundWorkId !== workId) return;
         this.applyRunSnapshot(snapshot);
       }
+      if (!current() || generation !== this.#monitorGeneration) return;
       if (this.run?.run_id === runId) this.result = this.run.result ?? this.result;
       this.persistRunRefs();
       await this.#deps.refreshDetail();
     } catch (err) {
-      if (generation === this.#monitorGeneration) {
+      if (current() && generation === this.#monitorGeneration) {
         this.#deps.onError(err instanceof Error ? err.message : String(err));
       }
     } finally {
-      if (generation === this.#monitorGeneration) {
+      if (current() && generation === this.#monitorGeneration) {
         this.stopRunEvents();
         this.running = false;
       }
@@ -336,10 +358,13 @@ export class CodeTasksController {
   }
 
   async hydrateTaskRuns(workId: string) {
+    const scopeCurrent = this.#captureScope();
+    const selectionEpoch = this.#runSelectionEpoch;
+    const current = () => scopeCurrent() && selectionEpoch === this.#runSelectionEpoch;
     try {
       const listing = await getProjectTaskRuns(workId);
       const summaries = listing.runs;
-      if (this.#boundWorkId !== workId) return;
+      if (!current() || this.#boundWorkId !== workId) return;
       this.runListingSupported = true;
       this.recentRuns = summaries;
       this.runHistoryTruncated = listing.truncated;
@@ -348,7 +373,7 @@ export class CodeTasksController {
       const selected = summaries.find((run) => !run.terminal) ?? summaries[0];
       if (!selected || this.run?.run_id === selected.run_id) return;
       const snapshot = await getProjectTaskRun(workId, selected.run_id);
-      if (this.#boundWorkId !== workId) return;
+      if (!current() || this.#boundWorkId !== workId) return;
       this.applyRunSnapshot(snapshot);
       this.persistRunRefs();
       this.lastInvocation = {
@@ -362,7 +387,7 @@ export class CodeTasksController {
         void this.monitorActiveRun(workId, snapshot.run_id);
       }
     } catch (err) {
-      if (this.#boundWorkId !== workId) return;
+      if (!current() || this.#boundWorkId !== workId) return;
       if (isMissingForgeRoute(err)) {
         this.runListingSupported = false;
         this.recentRuns = [];
@@ -372,7 +397,7 @@ export class CodeTasksController {
         if (fallbackRunId) {
           try {
             const snapshot = await getProjectTaskRun(workId, fallbackRunId);
-            if (this.#boundWorkId !== workId) return;
+            if (!current() || this.#boundWorkId !== workId) return;
             this.applyRunSnapshot(snapshot);
             this.lastInvocation = {
               taskId: snapshot.task.id,
@@ -492,14 +517,20 @@ export class CodeTasksController {
       return;
     }
     const workId = this.#deps.getWorkId();
+    const current = this.#captureScope();
+    if (!current()) return;
+    this.#runSelectionEpoch += 1;
     this.#deps.onError("");
     this.preparing = true;
     try {
-      if (!(await this.#deps.prepareRun())) {
+      const prepared = await this.#deps.prepareRun();
+      if (!current()) return;
+      if (!prepared) {
         this.preparing = false;
         return;
       }
     } catch (err) {
+      if (!current()) return;
       this.#deps.onError(err instanceof Error ? err.message : String(err));
       this.preparing = false;
       return;
@@ -515,7 +546,8 @@ export class CodeTasksController {
     }
     try {
       const lease = await this.#deps.ensureLease();
-      this.run = await startProjectTaskRun(
+      if (!current()) return;
+      const run = await startProjectTaskRun(
         workId,
         invocation.taskId,
         {
@@ -524,14 +556,17 @@ export class CodeTasksController {
           test_id: invocation.testId,
         },
       );
+      if (!current()) return;
+      this.run = run;
       this.persistRunRefs();
       this.lastInvocation = { ...invocation };
       this.startRunEvents(workId, this.run);
       await this.monitorActiveRun(workId, this.run.run_id);
     } catch (err) {
+      if (!current()) return;
       this.#deps.onError(err instanceof Error ? err.message : String(err));
     } finally {
-      if (!this.run || !this.runStillActive(this.run)) {
+      if (current() && (!this.run || !this.runStillActive(this.run))) {
         this.stopRunEvents();
         this.running = false;
       }
@@ -540,43 +575,51 @@ export class CodeTasksController {
 
   async openPreview(besideCode = false) {
     if (!(this.readyUrl || this.run?.ready_url) || this.previewOpening) return;
+    const current = this.#captureScope();
+    const run = this.run;
+    if (!current() || !run) return;
     this.previewOpening = true;
     this.#deps.onError("");
     try {
-      if (!this.run) throw new Error("No task run is available");
       const workId = this.#deps.getWorkId();
       const sourceGroupId = shellTabs.activeGroupId;
       const { url } = await resolveTaskPreviewOpenUrl(workId, {
-        ...this.run,
-        ready_url: this.readyUrl ?? this.run.ready_url,
+        ...run,
+        ready_url: this.readyUrl ?? run.ready_url,
       });
+      if (!current() || this.run?.run_id !== run.run_id) return;
       await openInBrowser(url, {
         openedBy: "user",
         workCardId: workId,
-        title: this.run.task.label,
+        title: run.task.label,
       });
-      if (besideCode) {
+      if (current() && besideCode) {
         const browserTab = browser.activeTab;
         if (browserTab) {
           const shellTabId = shellTabs.openWeb(browserTab.id, {
             activate: false,
             groupId: sourceGroupId,
-            title: this.run.task.label,
+            title: run.task.label,
           });
           if (shellTabId) shellTabs.splitGroupWithTab(sourceGroupId, shellTabId, "right");
         }
       }
     } catch (err) {
+      if (!current()) return;
       this.#deps.onError(err instanceof Error ? err.message : String(err));
     } finally {
-      this.previewOpening = false;
+      if (current()) this.previewOpening = false;
     }
   }
 
   async openRun(runId: string) {
     if (!runId || this.running || this.run?.run_id === runId) return;
+    const scopeCurrent = this.#captureScope();
+    const selectionEpoch = ++this.#runSelectionEpoch;
+    const current = () => scopeCurrent() && selectionEpoch === this.#runSelectionEpoch;
     try {
       const snapshot = await getProjectTaskRun(this.#deps.getWorkId(), runId);
+      if (!current()) return;
       this.resetOutputBuffers(snapshot);
       this.applyRunSnapshot(snapshot);
       this.lastInvocation = {
@@ -586,6 +629,7 @@ export class CodeTasksController {
       this.toggleOutput(true);
       this.persistRunRefs();
     } catch (err) {
+      if (!current()) return;
       this.#deps.onError(err instanceof Error ? err.message : String(err));
     }
   }
@@ -599,13 +643,18 @@ export class CodeTasksController {
     ) {
       return;
     }
+    const current = this.#captureScope();
+    const runId = this.run.run_id;
+    if (!current()) return;
     try {
-      this.run = await cancelProjectTaskRun(
+      const stopped = await cancelProjectTaskRun(
         this.#deps.getWorkId(),
-        this.run.run_id,
+        runId,
         force || this.run.state === "stopping",
       );
+      if (current() && this.run?.run_id === runId) this.run = stopped;
     } catch (err) {
+      if (!current()) return;
       this.#deps.onError(err instanceof Error ? err.message : String(err));
     }
   }
@@ -616,21 +665,34 @@ export class CodeTasksController {
     this.#deps.persistTestsOpen(next);
     const workId = this.#deps.getWorkId();
     if (!next || this.projectTests.length || !workId) return;
+    const current = this.#captureScope();
     try {
-      this.projectTests = await getProjectTests(workId);
+      const tests = await getProjectTests(workId);
+      if (current()) this.projectTests = tests;
     } catch (err) {
+      if (!current()) return;
       this.#deps.onError(err instanceof Error ? err.message : String(err));
     }
   }
 
   bindTaskList(workId: string, prepared: boolean, interactive: boolean): () => void {
-    if (workId !== this.#boundWorkId) {
+    const scope = this.#deps.getScopeKey();
+    this.#disposed = false;
+    if (scope !== this.#boundScope || workId !== this.#boundWorkId) {
+      this.#scopeEpoch += 1;
+      this.#boundScope = scope;
       this.#monitorGeneration += 1;
       this.stopRunEvents();
       this.#boundWorkId = workId;
       this.restoredTaskId = null;
       this.restoredActiveRunId = null;
       this.restoredRecentRunIds = [];
+      this.projectTests = [];
+      this.projectTasks = [];
+      this.selectedTaskId = "";
+      this.running = false;
+      this.preparing = false;
+      this.previewOpening = false;
       this.lastInvocation = null;
       this.result = null;
       this.run = null;
@@ -647,11 +709,12 @@ export class CodeTasksController {
       return () => {};
     }
     let cancelled = false;
+    const current = this.#captureScope();
     const cancelDeferred = deferCodeWorkspaceWork(() => {
       void this.hydrateTaskRuns(workId);
       void getProjectTasks(workId)
         .then((loaded) => {
-          if (cancelled) return;
+          if (cancelled || !current()) return;
           this.projectTasks = loaded;
           this.catalogError = null;
           if (
@@ -666,7 +729,7 @@ export class CodeTasksController {
           }
         })
         .catch((err) => {
-          if (cancelled) return;
+          if (cancelled || !current()) return;
           this.projectTasks = [];
           this.selectedTaskId = "";
           this.catalogError = err instanceof Error ? err.message : String(err);
@@ -680,6 +743,8 @@ export class CodeTasksController {
   }
 
   dispose() {
+    this.#disposed = true;
+    this.#scopeEpoch += 1;
     this.#monitorGeneration += 1;
     this.stopRunEvents();
   }

@@ -67,6 +67,14 @@ files under the same language root reuse one Home client. Home requires the
 language-root discovery contract. Missing, failed, or invalid discovery leaves
 language assistance unavailable; Home never substitutes the project root.
 
+Home's client identity also includes the workshop, execution transport, and
+governed environment projection (working-copy path, generation, branch, and
+baseline). A workshop visit generation prevents earlier requests from becoming
+current again after leaving and returning. Delayed root discovery and
+initialization are checked against their original workshop before a client can
+be used. These client checks do not grant execution authority; the daemon still
+validates the project boundary and current environment.
+
 All editor languages, including Grapheme, use `/v1/code/lsp`. Home does not
 switch to the daemon's Grapheme endpoint when the coding engine is unavailable,
 incompatible, or fails to initialize. The engine's failure reason is retained.
@@ -154,11 +162,11 @@ through the same Forge workspace-edit endpoint. The runtime treats an in-flight
 or uncertain application as non-replayable; it must reconcile and preview again
 rather than repeat a possibly completed side effect.
 
-For rolling upgrades, Home falls back to the older digest-fenced
-`PUT …/source/batch` contract only when the proposal contains text writes and
-the connected daemon does not expose `source/workspace-edit`. Resource edits
-remain unapplied with an explicit daemon-upgrade message; Home never splits an
-atomic refactor across the older create/rename/delete endpoints.
+Home requires the Forge workspace-edit contract for language refactors. If the
+connected daemon does not expose it, the proposal remains unapplied with a
+daemon-upgrade message. Home never substitutes source-batch writes or splits an
+atomic refactor across separate create/rename/delete endpoints. Pending language
+actions also retain their document and workspace context before editing buffers.
 
 ## Language dogfood pack
 

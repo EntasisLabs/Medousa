@@ -13,10 +13,10 @@
   import { writeToTerminal } from "$lib/terminal/terminalInputBridge";
   import {
     findCodeLanguageMatrixEntry,
-    getCodeEditorConventions,
     getCodeLanguageMatrix,
-    type CodeDocumentSymbol,
   } from "$lib/code/codingEngineClient";
+  import { codeWorkspaceScopeKey, captureCodeScope } from "$lib/code/codeWorkspaceContext.svelte";
+  import { CodeLanguageInsights } from "$lib/code/codeLanguageInsights.svelte";
   import { CodeLspSession } from "$lib/code/codeLspSession.svelte";
   import { CodeChangesController } from "$lib/code/codeChangesController.svelte";
   import { CodeProblemsController } from "$lib/code/codeProblemsController.svelte";
@@ -67,7 +67,6 @@
     getUndertakingSource,
     heartbeatLease,
     isMissingForgeRoute,
-    saveUndertakingSources,
     getReviewFile,
     type ForgeSourceFile,
   } from "$lib/code/codeDocumentService";
@@ -165,14 +164,22 @@
   const languageMatrixError = $derived(lspSession.languageMatrixError);
   let repairingLanguage = $state(false);
   let languageActionRunning = $state(false);
-  let symbols = $state<CodeDocumentSymbol[]>([]);
-  let symbolsLoading = $state(false);
+  const insights = new CodeLanguageInsights({
+    getScopeKey: () => workspaceScope,
+    getWorkId: () => workId,
+    getDocumentUri: () => documentUri,
+    getLanguage: () => activeLspLanguage,
+    getClient: () => lspClient,
+    onError: (message) => { surfaceError = message || null; },
+  });
+  const symbols = $derived(insights.symbols);
+  const symbolsLoading = $derived(insights.symbolsLoading);
   let searchOpen = $state(false);
   let externalVersions = $state<Record<string, ForgeSourceFile>>({});
   let comparingTabId = $state<string | null>(null);
   let reviewChangedLines = $state<Array<{ line: number; kind: string }>>([]);
-  let languageCapabilities = $state<Record<string, unknown>>({});
-  let editorConventions = $state<{ indent_style?: "space" | "tab"; indent_size?: string; tab_width?: string }>({});
+  const languageCapabilities = $derived(insights.capabilities);
+  const editorConventions = $derived(insights.conventions);
   let references = $state<Array<{ uri?: string; range?: { start?: { line?: number } } }>>([]);
   let cursorLine = $state(1);
   let cursorTotalLines = $state(1);
@@ -194,6 +201,7 @@
   let renameInput = $state<HTMLInputElement | null>(null);
   let refactorPreview = $state<{
     workId: string;
+    workspaceScope: string;
     plan: CodeWorkspaceEditPlan;
   } | null>(null);
   let refactorApplying = $state(false);
@@ -275,6 +283,11 @@
     }
     return context?.workId === workId ? context.worktree : null;
   });
+  const workspaceScope = $derived(codeWorkspaceScopeKey({
+    workId,
+    workspaceRoot,
+    environment: detail?.id === workId ? detail.environment : null,
+  }));
   const documentUri = $derived.by(() => {
     if (!activeTabPath || !workspaceRoot) return null;
     return pathToFileUri(
@@ -330,6 +343,7 @@
   );
 
   const changes = new CodeChangesController({
+    getScopeKey: () => workspaceScope,
     getWorkId: () => workId,
     persistOpen: (open) => {
       if (!workId) return;
@@ -349,6 +363,7 @@
     getReviewTitle: () => detail?.title ?? "project",
   });
   const tasks = new CodeTasksController({
+    getScopeKey: () => workspaceScope,
     getWorkId: () => workId,
     persistTestsOpen: (open) => {
       if (!workId) return;
@@ -377,6 +392,7 @@
     refreshDetail: () => undertakings.refreshDetail(),
   });
   const problems = new CodeProblemsController({
+    getScopeKey: () => workspaceScope,
     getWorkId: () => workId,
     getWorkspaceRoot: () => workspaceRoot,
     getDocumentUri: () => documentUri,
@@ -447,6 +463,7 @@
     await toggleTerminalDock(true);
   }
   const quick = new CodeQuickOpenController({
+    getScopeKey: () => workspaceScope,
     getWorkId: () => workId,
     getLspClient: () => lspClient,
     pathFromUri: (uri) => pathFromUri(uri),
@@ -472,6 +489,7 @@
     },
   });
   const save = new CodeSaveController({
+    getScopeKey: () => workspaceScope,
     getWorkId: () => workId,
     getContext: () => context,
     getDetail: () => detail,
@@ -537,10 +555,12 @@
   }
 
   async function ensureHumanLease(): Promise<{ leaseId: string; generation: number }> {
-    let leaseId = context?.leaseId ?? null;
-    let generation = context?.leaseGeneration ?? null;
-    if ((!leaseId || generation == null) && detail && canStartHumanEditing(detail.allowed_actions)) {
+    const current = captureCodeScope(() => workspaceScope);
+    let leaseId = context?.workId === workId ? context.leaseId : null;
+    let generation = context?.workId === workId ? context.leaseGeneration : null;
+    if ((!leaseId || generation == null) && detail?.id === workId && canStartHumanEditing(detail.allowed_actions)) {
       const begun = await startHumanEditingSession(detail.id, detail.allowed_actions);
+      if (!current()) throw new Error("The coding workspace changed while acquiring editing control");
       leaseId = begun.lease.lease_id;
       generation = begun.lease.generation;
       undertakings.setActiveFromItem(begun.item, {
@@ -656,17 +676,20 @@
       return;
     }
     if (dockSessionId) return;
+    const current = captureCodeScope(() => workspaceScope);
     dockBusy = true;
     surfaceError = null;
     try {
       const sessionId = await openTrackedTerminal(detail, { activate: false });
+      if (!current()) return;
       dockSessionId = sessionId;
       if (!sessionId) surfaceError = "Could not open a workshop shell for this project.";
     } catch (err) {
+      if (!current()) return;
       surfaceError = err instanceof Error ? err.message : String(err);
       setFeedbackPanel(null);
     } finally {
-      dockBusy = false;
+      if (current()) dockBusy = false;
     }
   }
 
@@ -860,9 +883,11 @@
   }
 
   async function reconcileExternal(tab: CodeDocumentTab | null) {
+    const scopeCurrent = captureCodeScope(() => workspaceScope);
     if (!tab || tab.loading || !tab.digest) return;
     try {
       const source = await getUndertakingSource(tab.work_id, tab.path);
+      if (!scopeCurrent()) return;
       const current = codeWorkspace.tabs.find((entry) => entry.tabId === tab.tabId);
       if (!current || current.digest === source.digest) return;
       if (codeWorkspace.isDirty(current)) {
@@ -875,6 +900,7 @@
         codeWorkspace.acceptSaved(current.tabId, source);
       }
     } catch (err) {
+      if (!scopeCurrent()) return;
       const status = (err as { status?: number } | null)?.status;
       if (status === 404) {
         await reconcileExternalDelete(tab.work_id, tab.path);
@@ -1034,28 +1060,7 @@
     comparingTabId = null;
   }
 
-  async function refreshSymbols() {
-    if (!activeTab || !documentUri || !lspClient) {
-      symbols = [];
-      return;
-    }
-    symbolsLoading = true;
-    try {
-      lspClient.sync();
-      const result = await lspClient.request<
-        { textDocument: { uri: string } },
-        CodeDocumentSymbol[] | null
-      >("textDocument/documentSymbol", {
-        textDocument: { uri: documentUri },
-      });
-      symbols = Array.isArray(result) ? result : [];
-    } catch (err) {
-      surfaceError = err instanceof Error ? err.message : String(err);
-      symbols = [];
-    } finally {
-      symbolsLoading = false;
-    }
-  }
+  const refreshSymbols = () => insights.refreshSymbols();
 
   async function showOutline() {
     const next = problems.panel === "outline" ? null : "outline";
@@ -1109,55 +1114,26 @@
   }
 
   async function reviewWorkspaceEdit(result: unknown): Promise<boolean> {
+    const current = captureCodeScope(() => JSON.stringify([workspaceScope, documentUri]));
+    const id = workId;
     const root = workspaceRoot;
     if (!root) throw new Error("The project workspace root is unavailable.");
     const plan = await buildCodeWorkspaceEditPlan(result, {
       workspaceRoot: root,
       loadSource: async (path) => {
         try {
-          return await getUndertakingSource(workId, path);
+          if (!current()) throw new Error("The coding context changed while planning the refactor");
+          return await getUndertakingSource(id, path);
         } catch (err) {
           if (sourceWasNotFound(err)) return null;
           throw err;
         }
       },
     });
-    if (plan.operations.length === 0) return false;
+    if (!current() || plan.operations.length === 0) return false;
     refactorDiffMode = "side";
-    refactorPreview = { workId, plan };
+    refactorPreview = { workId: id, workspaceScope, plan };
     return true;
-  }
-
-  async function applyTextOnlyRefactorFallback(
-    plan: CodeWorkspaceEditPlan,
-    lease: { leaseId: string; generation: number },
-  ): Promise<ForgeSourceFile[]> {
-    if (plan.operations.some((operation) => operation.kind !== "write")) {
-      throw new Error(
-        "This workshop needs a newer Medousa daemon to apply refactors that create, rename, or delete files.",
-      );
-    }
-    const digests = new Map(
-      plan.preconditions
-        .filter((precondition) => precondition.kind === "existing")
-        .map((precondition) => [precondition.path, precondition.expected_digest]),
-    );
-    const finalContent = new Map<string, string>();
-    for (const operation of plan.operations) {
-      if (operation.kind === "write") finalContent.set(operation.path, operation.content);
-    }
-    const files = [...finalContent].map(([path, content]) => {
-      const expectedDigest = digests.get(path);
-      if (!expectedDigest) {
-        throw new Error(`The refactor is missing a source snapshot for ${path}.`);
-      }
-      return { path, content, expected_digest: expectedDigest };
-    });
-    return saveUndertakingSources(workId, {
-      files,
-      lease_id: lease.leaseId,
-      generation: lease.generation,
-    });
   }
 
   function notifyLanguageServerOfRefactor(plan: CodeWorkspaceEditPlan) {
@@ -1225,6 +1201,7 @@
     plan: CodeWorkspaceEditPlan,
     saved: ForgeSourceFile[],
   ) {
+    const current = captureCodeScope(() => workspaceScope);
     const initiallyActivePath = activeTabPath;
     const openTabs = [...tabs];
     const openByPath = new Map(openTabs.map((tab) => [tab.path, tab]));
@@ -1236,12 +1213,14 @@
     // An overwrite rename may delete an open destination before moving the
     // source identity into that same path, so close replaced identities first.
     for (const file of plan.files.filter((entry) => entry.status === "deleted")) {
+      if (!current()) return;
       if (!openByPath.has(file.path)) continue;
       codeWorkspace.removePath(workId, file.path);
       await lmeWorkspace.closeCodeFile(workId, file.path);
     }
     await tick();
     for (const file of plan.files.filter((entry) => entry.status === "deleted")) {
+      if (!current()) return;
       const presentationStillOpen = lmeWorkspace.tabs.some(
         (tab) =>
           tab.kind === "code" &&
@@ -1253,6 +1232,7 @@
     }
 
     for (const file of plan.files) {
+      if (!current()) return;
       const oldPath = file.oldPath;
       if (file.status !== "renamed" || !oldPath) continue;
       const oldTab = openByPath.get(oldPath);
@@ -1266,6 +1246,7 @@
         oldTab.line ?? 1,
         { activate: initiallyActivePath === oldPath },
       );
+      if (!current()) return;
       if (initiallyActivePath === oldPath) {
         undertakings.setSelection({ path: file.path, line: oldTab.line, entityId: null });
       }
@@ -1282,6 +1263,7 @@
       undertakings.setSelection({ path: null, line: null, entityId: null });
     }
 
+    if (!current()) return;
     for (const source of saved) {
       const tab = codeWorkspace.tabs.find(
         (entry) => entry.work_id === workId && entry.path === source.path,
@@ -1298,7 +1280,7 @@
     } catch {
       // The applied transaction is authoritative; the normal tree refresh can retry.
     }
-    await undertakings.refreshDetail();
+    if (current()) await undertakings.refreshDetail();
   }
 
   function clientSyncAfterRefactor() {
@@ -1308,8 +1290,9 @@
   async function applyRefactorPreview() {
     const preview = refactorPreview;
     const active = context;
-    if (!preview || preview.workId !== workId || refactorApplying) return;
-    if (!active?.leaseId || active.leaseGeneration == null) {
+    if (!preview || preview.workId !== workId || preview.workspaceScope !== workspaceScope || refactorApplying) return;
+    const current = captureCodeScope(() => workspaceScope);
+    if (active?.workId !== workId || !active.leaseId || active.leaseGeneration == null) {
       surfaceError = "Editing control changed. Reopen the rename preview and try again.";
       return;
     }
@@ -1326,18 +1309,17 @@
         });
       } catch (err) {
         if (!isMissingForgeRoute(err)) throw err;
-        saved = await applyTextOnlyRefactorFallback(preview.plan, {
-          leaseId: active.leaseId,
-          generation: active.leaseGeneration,
-        });
+        throw new Error("This workshop needs a newer Medousa daemon to apply language refactors.");
       }
+      if (!current()) return;
       await reconcileAppliedRefactor(preview.plan, saved);
+      if (!current()) return;
       refactorPreview = null;
       save.flashWhisper("Refactor applied", 1800);
     } catch (err) {
-      surfaceError = err instanceof Error ? err.message : String(err);
+      if (current()) surfaceError = err instanceof Error ? err.message : String(err);
     } finally {
-      refactorApplying = false;
+      if (current()) refactorApplying = false;
     }
   }
 
@@ -1346,6 +1328,8 @@
     newName?: string,
   ): Promise<boolean> {
     const client = lspClient;
+    const current = captureCodeScope(() => JSON.stringify([workspaceScope, documentUri]));
+    const sourceDraft = editor?.getValue();
     if (!activeTab || !documentUri || !client || languageActionRunning) return false;
     const cursor = editor?.getCursorPosition() ?? { line: 0, character: 0 };
     if (action === "rename" && !newName?.trim()) return false;
@@ -1355,6 +1339,7 @@
       if (action === "rename" && !(await save.saveAll())) {
         throw new Error("Resolve unsaved files before renaming across the project");
       }
+      if (!current() || lspClient !== client) return false;
       client.sync();
       const position = { line: cursor.line, character: cursor.character };
       const [method, params] = action === "references"
@@ -1383,6 +1368,7 @@
                 context: { diagnostics: [], only: ["source.organizeImports"] },
               }];
       const result = await client.request(method, params);
+      if (!current() || lspClient !== client || editor?.getValue() !== sourceDraft) return false;
       if (action === "references") {
         references = Array.isArray(result) ? result : [];
         problems.setPanel("references");
@@ -1395,10 +1381,10 @@
       } else if (action === "rename") surfaceError = "The language server did not return an editable rename.";
       return action !== "rename" || edits.length > 0;
     } catch (err) {
-      surfaceError = err instanceof Error ? err.message : String(err);
+      if (current()) surfaceError = err instanceof Error ? err.message : String(err);
       return false;
     } finally {
-      languageActionRunning = false;
+      if (current()) languageActionRunning = false;
     }
   }
 
@@ -1520,6 +1506,24 @@
     });
   });
 
+  $effect(() => {
+    void workspaceScope;
+    untrack(() => {
+      problems.resetForScope();
+      quick.resetForScope();
+      changes.resetForScope();
+      save.resetForScope();
+      dockSessionId = null;
+      dockBusy = false;
+      insights.reset();
+      references = [];
+      refactorPreview = null;
+      refactorApplying = false;
+      reviewChangedLines = [];
+      surfaceError = null;
+    });
+  });
+
   /** Keep matcher diagnostics scoped to the selected run; LSP problems stay intact. */
   $effect(() => {
     const run = tasks.run;
@@ -1557,7 +1561,8 @@
 
   $effect(() => {
     const id = workId;
-    const prepared = Boolean(context?.worktree);
+    void workspaceScope;
+    const prepared = Boolean(workspaceRoot);
     return tasks.bindTaskList(id, prepared, interactive);
   });
 
@@ -1569,6 +1574,7 @@
 
   $effect(() => {
     const path = activeTabPath;
+    void workspaceScope;
     if (!interactive || !reviewAvailable || !workId || !path) {
       reviewChangedLines = [];
       return;
@@ -1600,23 +1606,26 @@
       lspSession.stop();
       return;
     }
+    const id = workId;
+    const current = captureCodeScope(() => workspaceScope);
     const language = activeLspLanguage;
     const languageLabel = activeTabLanguage;
-    const scope = `${workId}:${language}:${uri}`;
     // connect() is a no-op reconnect when scope is unchanged and already live,
     // but always safe to call — it cancels in-flight work via generation.
     lspSession.connect({
+      workspaceScope,
       workId,
       workspaceRoot: root,
       language,
       languageLabel,
       documentUri: uri,
       bridge: {
-        handlesUri: (candidateUri) => Boolean(pathFromUri(candidateUri, root)),
+        handlesUri: (candidateUri) => current() && Boolean(pathFromUri(candidateUri, root)),
         requestFile: async (candidateUri) => {
           const path = pathFromUri(candidateUri, root);
-          if (!path) return null;
-          const source = await getUndertakingSource(workId, path);
+          if (!current() || !path) return null;
+          const source = await getUndertakingSource(id, path);
+          if (!current()) return null;
           return {
             languageId: languageForWorkspacePath(path),
             text: source.content,
@@ -1624,11 +1633,11 @@
         },
         displayFile: async (candidateUri) => {
           const path = pathFromUri(candidateUri, root);
-          if (!path) return null;
-          const source = await lmeWorkspace.openCodeFile(workId, path, {
+          if (!current() || !path) return null;
+          const source = await lmeWorkspace.openCodeFile(id, path, {
             recordNavigation: false,
           });
-          return source ? codeEditorViewRegistry.waitFor(candidateUri) : null;
+          return current() && source ? codeEditorViewRegistry.waitFor(candidateUri) : null;
         },
       },
     });
@@ -1639,28 +1648,12 @@
   });
 
   $effect(() => {
-    void activeTabId;
+    void workspaceScope;
     void documentUri;
     void lspClient;
-    let cleanup = () => {};
-    untrack(() => {
-      const uri = documentUri;
-      const client = lspClient;
-      if (!interactive || !activeTabId || !uri || !client) {
-        languageCapabilities = {};
-        editorConventions = {};
-        return;
-      }
-      const cancelDeferred = deferCodeWorkspaceWork(() => {
-        void refreshSymbols();
-        languageCapabilities = (client.serverCapabilities ?? {}) as Record<string, unknown>;
-        void getCodeEditorConventions({ workId, uri, language: activeLspLanguage })
-          .then((conventions) => (editorConventions = conventions))
-          .catch(() => (editorConventions = {}));
-      });
-      cleanup = cancelDeferred;
-    });
-    return cleanup;
+    void interactive;
+    untrack(() => { languageActionRunning = false; });
+    return untrack(() => insights.bind(interactive));
   });
 
   $effect(() => {
@@ -1946,9 +1939,10 @@
   $effect(() => {
     if (!interactive || !workId) return;
     const id = workId;
+    const current = captureCodeScope(() => workspaceScope);
     void (async () => {
       await codeWorkspace.hydrate(id);
-      if (workId !== id) return;
+      if (!current()) return;
       const layout = codeWorkbenchState.layoutFor(id);
       problems.restorePanel(layout.context_panel === "problems" ? null : layout.context_panel);
       const restoredFeedback = tasks.running ? "output" : layout.bottom_panel;
@@ -1966,12 +1960,13 @@
   $effect(() => {
     if (!interactive) return;
     const id = workId;
+    const current = captureCodeScope(() => workspaceScope);
     if (!id) return;
     return subscribeCodeProjectEvents(id, {
-      onEvent: (event) => void handleProjectEvent(event),
-      onResync: () => void handleProjectEvent({
+      onEvent: (event) => { if (current()) void handleProjectEvent(event); },
+      onResync: () => { if (current()) void handleProjectEvent({
         work_id: id, seq: 0, kind: "snapshot", updated_at: new Date().toISOString(),
-      }),
+      }); },
     });
   });
 
@@ -2048,6 +2043,7 @@
   />
 
   <CodeEditorWorkspace
+    {workspaceScope}
     {workId}
     {activeTab}
     {surfaceError}

@@ -31,6 +31,7 @@ export const PROBLEM_SEVERITY_OPTIONS: Array<{
 ];
 
 export type CodeProblemsControllerDeps = {
+  getScopeKey: () => string;
   getWorkId: () => string;
   getWorkspaceRoot: () => string | null;
   getDocumentUri: () => string | null;
@@ -104,6 +105,9 @@ export class CodeProblemsController {
   query = $state("");
   severity = $state<CodeProblemSeverityFilter>("all");
   #requestEpoch = 0;
+  #documentScope = "";
+  #documentUri: string | null = null;
+  #taskScope = "";
   #deps: CodeProblemsControllerDeps;
 
   constructor(deps: CodeProblemsControllerDeps) {
@@ -113,13 +117,29 @@ export class CodeProblemsController {
   get scopeKey(): string {
     const workId = this.#deps.getWorkId();
     const root = this.#deps.getWorkspaceRoot();
-    return workId && root ? `${workId}\u0000${root}` : "";
+    return workId && root ? this.#deps.getScopeKey() : "";
+  }
+
+  resetForScope() {
+    this.#requestEpoch += 1;
+    this.documentProblems = [];
+    this.workspaceProblems = [];
+    this.taskProblems = [];
+    this.taskRunId = null;
+    this.workspaceScope = "";
+    this.loaded = false;
+    this.loading = false;
+    this.error = null;
+    this.unavailableLanguages = [];
+    this.#documentScope = "";
+    this.#documentUri = null;
+    this.#taskScope = "";
   }
 
   get documentFallback(): CodeProblem[] {
     const uri = this.#deps.getDocumentUri();
     const root = this.#deps.getWorkspaceRoot();
-    if (!uri || !root) return [];
+    if (!uri || !root || this.#documentScope !== this.scopeKey || this.#documentUri !== uri) return [];
     return editorProblemsToWorkspace(
       this.documentProblems,
       uri,
@@ -132,7 +152,7 @@ export class CodeProblemsController {
     const languageProblems = this.loaded && this.workspaceScope === this.scopeKey
       ? this.workspaceProblems
       : this.documentFallback;
-    return [...languageProblems, ...this.taskProblems];
+    return [...languageProblems, ...(this.#taskScope === this.scopeKey ? this.taskProblems : [])];
   }
 
   get filtered(): CodeProblem[] {
@@ -161,10 +181,13 @@ export class CodeProblemsController {
   }
 
   setDocumentProblems(next: CodeEditorDocumentProblem[]) {
+    this.#documentScope = this.scopeKey;
+    this.#documentUri = this.#deps.getDocumentUri();
     this.documentProblems = next;
   }
 
   setTaskRun(run: CodeTaskProblemRun | null) {
+    this.#taskScope = this.scopeKey;
     if (!run) {
       this.taskRunId = null;
       this.taskProblems = [];
@@ -196,8 +219,7 @@ export class CodeProblemsController {
   async refresh(options?: { quiet?: boolean }) {
     const requestWorkId = this.#deps.getWorkId();
     const requestRoot = this.#deps.getWorkspaceRoot();
-    const requestScope =
-      requestWorkId && requestRoot ? `${requestWorkId}\u0000${requestRoot}` : "";
+    const requestScope = this.scopeKey;
     const requestLanguages = [...this.#deps.getWorkspaceLanguages()];
     const requestEpoch = ++this.#requestEpoch;
     if (!requestScope || !requestRoot) {

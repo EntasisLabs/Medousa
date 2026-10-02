@@ -31,6 +31,7 @@ import {
 import { codeWorkspace } from "$lib/stores/codeWorkspace.svelte";
 import { landCodeWorkingSet as landCodeWorkingSetThroughController } from "$lib/utils/codeWorkspaceController";
 import type { LandCodeResult } from "$lib/utils/codeWorkspaceController";
+import { captureCodeScope, codeExecutionScopeKey } from "$lib/code/codeWorkspaceContext.svelte";
 
 function terminalSessionId(created: { session_id?: string; id?: string }): string {
   return typeof created.session_id === "string"
@@ -103,6 +104,8 @@ export async function openTrackedTerminal(
   options?: { activate?: boolean },
 ): Promise<string | null> {
   if (undertakings.active?.workId !== item.id) undertakings.setActiveFromItem(item);
+  const current = captureCodeScope(() => JSON.stringify([codeExecutionScopeKey(), undertakings.active?.workId]));
+  const executionRuntimeId = undertakings.active?.executionRuntimeId ?? null;
 
   const existing =
     undertakings.active?.workId === item.id
@@ -126,6 +129,7 @@ export async function openTrackedTerminal(
   let leaseId = undertakings.active?.leaseId ?? null;
   if (canStartHumanEditing(item.allowed_actions)) {
     const begun = await startHumanEditingSession(item.id, item.allowed_actions);
+    if (!current()) return null;
     leaseId = begun.lease.lease_id;
     undertakings.setActiveFromItem(begun.item, {
       leaseId,
@@ -136,8 +140,9 @@ export async function openTrackedTerminal(
 
   const created = await terminalCreate(
     { work_id: item.id, lease_id: leaseId },
-    undertakings.active?.executionRuntimeId ?? null,
+    executionRuntimeId,
   );
+  if (!current()) return null;
   const sessionId = terminalSessionId(created);
   if (!sessionId) return null;
 

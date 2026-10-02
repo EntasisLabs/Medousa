@@ -1,3 +1,5 @@
+import { setActiveWorkshopIdPort } from "$lib/utils/workshopLocality";
+import { invalidateCodeWorkshopContext } from "./codeWorkspaceContext.svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const daemon = vi.hoisted(() => ({
@@ -100,6 +102,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  setActiveWorkshopIdPort(null);
 });
 
 describe("language-service routing", () => {
@@ -296,5 +299,52 @@ describe("required language discovery", () => {
     vi.stubGlobal("fetch", fetch);
     await expect(getAllCodeWorkspaceDiagnostics({ workId: "work-1", languages: ["rust"] })).rejects.toThrow("does not support");
     expect(fetch).toHaveBeenCalledOnce();
+  });
+});
+
+describe("workshop language-service isolation", () => {
+  const request = { workId: "identical-id", workspaceRoot: "/repo", language: "typescript", documentUri: "file:///repo/app.ts" };
+
+  it("does not reuse a live client across workshops with identical paths", async () => {
+    let workshop = "workshop-a";
+    setActiveWorkshopIdPort(() => workshop);
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ ok: true, language: "typescript", root_uri: "file:///repo" })));
+    const first = await acquireCodeWorkspaceLspClient(request);
+    const firstClient = await first.client;
+    workshop = "workshop-b";
+    const second = await acquireCodeWorkspaceLspClient(request);
+    expect(await second.client).not.toBe(firstClient);
+    expect(LanguageSocket.sockets).toHaveLength(2);
+    vi.useFakeTimers();
+    first.release();
+    await vi.advanceTimersByTimeAsync(1_001);
+    expect(LanguageSocket.sockets[0]!.readyState).toBe(3);
+    expect(LanguageSocket.sockets[1]!.readyState).toBe(LanguageSocket.OPEN);
+    second.release();
+    await vi.advanceTimersByTimeAsync(1_001);
+  });
+
+  it("does not connect after returning from another workshop during root discovery", async () => {
+    let resolve!: (response: Response) => void;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((done) => { resolve = done; })));
+    const pending = acquireCodeWorkspaceLspClient(request);
+    await vi.waitFor(() => expect(resolve).toBeDefined());
+    invalidateCodeWorkshopContext();
+    resolve(Response.json({ ok: true, language: "typescript", root_uri: "file:///repo" }));
+    await expect(pending).rejects.toThrow("workshop changed");
+    expect(daemon.info).not.toHaveBeenCalled();
+    expect(LanguageSocket.sockets).toHaveLength(0);
+  });
+
+  it("does not open a socket after engine discovery finishes on a different workshop", async () => {
+    let workshop = "workshop-a";
+    setActiveWorkshopIdPort(() => workshop);
+    let resolve!: (info: unknown) => void;
+    daemon.info.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+    const pending = connectOrchestratorLspClient({ language: "rust" });
+    workshop = "workshop-b";
+    resolve({ available: true, daemon_lsp_path: "/v1/code/lsp" });
+    await expect(pending).rejects.toThrow("workshop changed");
+    expect(LanguageSocket.sockets).toHaveLength(0);
   });
 });

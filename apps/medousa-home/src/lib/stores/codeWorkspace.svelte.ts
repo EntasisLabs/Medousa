@@ -6,6 +6,7 @@ import {
 } from "$lib/forge";
 import { resolveCodeEditorLanguage } from "$lib/code/codeEditorLanguageRegistry";
 import { codeWorkbenchState } from "$lib/code/codeWorkbenchState.svelte";
+import { invalidateCodeWorkshopContext } from "$lib/code/codeWorkspaceContext.svelte";
 
 export type CodeDocumentTab = ForgeSourceFile & {
   tabId: string;
@@ -72,6 +73,7 @@ class CodeWorkspaceStore {
   }
 
   resetForWorkshopSwitch() {
+    invalidateCodeWorkshopContext();
     this.workspaceEpoch += 1;
     for (const timer of this.persistTimers.values()) clearTimeout(timer);
     this.persistTimers.clear();

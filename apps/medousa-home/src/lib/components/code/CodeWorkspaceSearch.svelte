@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount, onDestroy, tick } from "svelte";
+  import { captureCodeScope, codeExecutionScopeKey } from "$lib/code/codeWorkspaceContext.svelte";
   import { LoaderCircle, Search, X } from "@lucide/svelte";
   import DiffStack from "$lib/components/diff/DiffStack.svelte";
   import { buildTextDiff } from "$lib/diff/buildTextDiff";
@@ -17,12 +18,13 @@
 
   interface Props {
     workId: string;
+    workspaceScope: string;
     onOpenHit?: (path: string, line: number) => void | Promise<void>;
     onClose?: () => void;
     onApplied?: () => void | Promise<void>;
   }
 
-  let { workId, onOpenHit, onClose, onApplied }: Props = $props();
+  let { workId, workspaceScope, onOpenHit, onClose, onApplied }: Props = $props();
 
   let query = $state("");
   let replacement = $state("");
@@ -42,6 +44,7 @@
   let excludedPaths = $state<Set<string>>(new Set());
   let replaceDiffMode = $state<"inline" | "side">("side");
   let requestEpoch = 0;
+  let disposed = false;
   let queryInput: HTMLInputElement | null = $state(null);
 
   const hits = $derived(result?.hits ?? []);
@@ -61,6 +64,12 @@
   onMount(() => {
     void tick().then(() => queryInput?.focus());
   });
+  onDestroy(() => { disposed = true; requestEpoch += 1; });
+
+  function captureScope() {
+    const current = captureCodeScope(() => JSON.stringify([codeExecutionScopeKey(), workspaceScope, workId]));
+    return () => !disposed && current();
+  }
 
   function searchOptions() {
     return {
@@ -75,6 +84,7 @@
   }
 
   async function runSearch(options?: { append?: boolean }) {
+    const current = captureScope();
     const needle = query.trim();
     if (needle.length < 2) {
       error = "Type at least 2 characters";
@@ -94,7 +104,7 @@
         limit: 100,
         cursor: append ? result?.next_cursor : null,
       });
-      if (epoch !== requestEpoch) return;
+      if (!current() || epoch !== requestEpoch) return;
       if (append && result) {
         result = {
           ...page,
@@ -104,10 +114,10 @@
         result = page;
       }
     } catch (err) {
-      if (epoch !== requestEpoch) return;
+      if (!current() || epoch !== requestEpoch) return;
       error = humanizeForgeMessage(err instanceof Error ? err.message : String(err));
     } finally {
-      if (epoch === requestEpoch) {
+      if (current() && epoch === requestEpoch) {
         loading = false;
         loadingMore = false;
       }
@@ -115,6 +125,7 @@
   }
 
   async function previewReplace() {
+    const current = captureScope();
     const needle = query.trim();
     if (needle.length < 2) {
       error = "Type at least 2 characters to replace";
@@ -129,6 +140,7 @@
         dryRun: true,
         limit: 50,
       });
+      if (!current()) return;
       excludedPaths = new Set();
       replacePlan = plan;
       if (plan.files.length === 0) {
@@ -136,13 +148,15 @@
         replacePlan = null;
       }
     } catch (err) {
+      if (!current()) return;
       error = humanizeForgeMessage(err instanceof Error ? err.message : String(err));
     } finally {
-      previewing = false;
+      if (current()) previewing = false;
     }
   }
 
   async function applyReplace() {
+    const current = captureScope();
     const plan = replacePlan;
     if (!plan || applying || replaceFiles.length === 0) return;
     applying = true;
@@ -164,6 +178,7 @@
           );
         }
         const begun = await startHumanEditingSession(workId, detail.allowed_actions);
+        if (!current()) return;
         undertakings.setActiveFromItem(begun.item, {
           leaseId: begun.lease.lease_id,
           leaseGeneration: begun.lease.generation,
@@ -185,14 +200,17 @@
         generation,
         limit: 50,
       });
+      if (!current()) return;
       replacePlan = null;
       excludedPaths = new Set();
       await runSearch();
+      if (!current()) return;
       await onApplied?.();
     } catch (err) {
+      if (!current()) return;
       error = humanizeForgeMessage(err instanceof Error ? err.message : String(err));
     } finally {
-      applying = false;
+      if (current()) applying = false;
     }
   }
 

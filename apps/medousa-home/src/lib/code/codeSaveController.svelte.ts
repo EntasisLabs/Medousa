@@ -16,6 +16,8 @@ import {
   decideCodeSave,
 } from "$lib/code/codeSaveGate";
 
+import { captureCodeScope } from "$lib/code/codeWorkspaceContext.svelte";
+
 export type CodeSaveTab = {
   tabId: string;
   path: string;
@@ -33,6 +35,7 @@ export type CodeSaveEditorHost = {
 
 export type CodeSaveControllerDeps = {
   getWorkId: () => string;
+  getScopeKey: () => string;
   getContext: () => {
     workId?: string;
     leaseId?: string | null;
@@ -75,9 +78,25 @@ export class CodeSaveController {
   beginEditPromise = $state<Promise<void> | null>(null);
   #whisperTimer: ReturnType<typeof setTimeout> | null = null;
   #deps: CodeSaveControllerDeps;
+  #epoch = 0;
 
   constructor(deps: CodeSaveControllerDeps) {
     this.#deps = deps;
+  }
+
+  #captureScope() {
+    const epoch = this.#epoch;
+    const current = captureCodeScope(this.#deps.getScopeKey);
+    return () => epoch === this.#epoch && current();
+  }
+
+  resetForScope() {
+    this.dispose();
+    this.savingFile = false;
+    this.beginningEdit = false;
+    this.handingOff = false;
+    this.saveWhisper = null;
+    this.beginEditPromise = null;
   }
 
   get busy(): boolean {
@@ -85,8 +104,9 @@ export class CodeSaveController {
   }
 
   async startEditing() {
+    const current = this.#captureScope();
     const detail = this.#deps.getDetail();
-    if (!detail) return;
+    if (!detail || detail.id !== this.#deps.getWorkId()) return;
     const allowedActions = detail.allowed_actions;
     if (!allowedActions || !canStartHumanEditing(allowedActions)) return;
     if (this.beginEditPromise) {
@@ -97,6 +117,7 @@ export class CodeSaveController {
     this.#deps.onError(null);
     this.beginEditPromise = (async () => {
       const begun = await startHumanEditingSession(detail.id, allowedActions);
+      if (!current()) return;
       this.#deps.setActiveFromItem(begun.item, {
         leaseId: begun.lease.lease_id,
         leaseGeneration: begun.lease.generation,
@@ -107,12 +128,15 @@ export class CodeSaveController {
     try {
       await this.beginEditPromise;
     } catch (err) {
+      if (!current()) return;
       this.#deps.onError(
         humanizeForgeMessage(err instanceof Error ? err.message : String(err)),
       );
     } finally {
-      this.beginEditPromise = null;
-      this.beginningEdit = false;
+      if (current()) {
+        this.beginEditPromise = null;
+        this.beginningEdit = false;
+      }
     }
   }
 
@@ -124,6 +148,7 @@ export class CodeSaveController {
   }
 
   async saveTab(tab: CodeSaveTab | null): Promise<boolean> {
+    const current = this.#captureScope();
     if (!tab) return true;
     if (tab.preview) {
       this.#deps.onError(CODE_SAVE_PREVIEW_ERROR);
@@ -168,6 +193,7 @@ export class CodeSaveController {
         try {
           await this.beginEditPromise;
         } catch (err) {
+          if (!current()) return false;
           this.#deps.onError(
             humanizeForgeMessage(err instanceof Error ? err.message : String(err)),
           );
@@ -178,6 +204,7 @@ export class CodeSaveController {
       try {
         await this.startEditing();
       } catch (err) {
+        if (!current()) return false;
         this.#deps.onError(
           humanizeForgeMessage(err instanceof Error ? err.message : String(err)),
         );
@@ -185,14 +212,17 @@ export class CodeSaveController {
       }
     }
 
-    let leaseId = context?.leaseId ?? null;
-    let generation = context?.leaseGeneration ?? null;
+    if (!current()) return false;
+    let leaseId = context?.workId === workId ? context.leaseId ?? null : null;
+    let generation = context?.workId === workId ? context.leaseGeneration ?? null : null;
     if (!leaseId || generation == null) {
       try {
         const lease = await this.#deps.ensureLease();
+        if (!current()) return false;
         leaseId = lease.leaseId;
         generation = lease.generation;
       } catch (err) {
+        if (!current()) return false;
         this.#deps.onError(
           humanizeForgeMessage(err instanceof Error ? err.message : String(err)),
         );
@@ -204,6 +234,7 @@ export class CodeSaveController {
     }
 
     if (this.#deps.beforeSave && !(await this.#deps.beforeSave(tab))) return false;
+    if (!current()) return false;
     if (tab.tabId === this.#deps.getActiveTabId() && editor) {
       const transformedDraft = editor.getValue();
       if (transformedDraft !== tab.draft) {
@@ -226,6 +257,7 @@ export class CodeSaveController {
         generation,
         expected_digest: tab.digest,
       });
+      if (!current()) return false;
       this.#deps.acceptSaved(tab.tabId, next);
       this.saveWhisper = "Saved";
       this.#whisperTimer = setTimeout(() => {
@@ -233,6 +265,7 @@ export class CodeSaveController {
       }, 1600);
       return true;
     } catch (err) {
+      if (!current()) return false;
       this.saveWhisper = null;
       const message = humanizeForgeMessage(
         err instanceof Error ? err.message : String(err),
@@ -241,29 +274,35 @@ export class CodeSaveController {
       this.#deps.onError(message);
       return false;
     } finally {
-      this.savingFile = false;
+      if (current()) this.savingFile = false;
     }
   }
 
   async save() {
+    const current = this.#captureScope();
     const activeTab = this.#deps.getActiveTab();
     const ok = await this.saveTab(activeTab);
-    if (!ok && activeTab && this.#deps.isDirty(activeTab)) {
+    if (current() && !ok && activeTab && this.#deps.isDirty(activeTab)) {
       this.#deps.onError("Could not save the file.");
     }
   }
 
   async saveAll(): Promise<boolean> {
+    const current = this.#captureScope();
     for (const tab of this.#deps.getTabs()) {
+      if (!current()) return false;
       if (this.#deps.isDirty(tab) && !(await this.saveTab(tab))) return false;
     }
-    return true;
+    return current();
   }
 
   async handoffToAgent(draft?: string) {
+    const current = this.#captureScope();
     if (!this.#deps.onHandoffToAgent || this.busy) return;
     this.#deps.onError(null);
-    if (!(await this.saveAll())) {
+    const saved = await this.saveAll();
+    if (!current()) return;
+    if (!saved) {
       this.#deps.onError("Resolve the unsaved file before asking an agent to continue.");
       return;
     }
@@ -272,26 +311,29 @@ export class CodeSaveController {
       this.#deps.captureEditorContext();
       await this.#deps.onHandoffToAgent(this.#deps.preferredAgent(), draft);
     } catch (err) {
+      if (!current()) return;
       this.#deps.onError(
         humanizeForgeMessage(err instanceof Error ? err.message : String(err)),
       );
     } finally {
-      this.handingOff = false;
+      if (current()) this.handingOff = false;
     }
   }
 
   async reclaimHuman() {
+    const current = this.#captureScope();
     if (!this.#deps.onReclaimHuman || this.busy) return;
     this.handingOff = true;
     this.#deps.onError(null);
     try {
       await this.#deps.onReclaimHuman();
     } catch (err) {
+      if (!current()) return;
       this.#deps.onError(
         humanizeForgeMessage(err instanceof Error ? err.message : String(err)),
       );
     } finally {
-      this.handingOff = false;
+      if (current()) this.handingOff = false;
     }
   }
 
@@ -304,6 +346,7 @@ export class CodeSaveController {
   }
 
   dispose() {
+    this.#epoch += 1;
     if (this.#whisperTimer) clearTimeout(this.#whisperTimer);
     this.#whisperTimer = null;
   }

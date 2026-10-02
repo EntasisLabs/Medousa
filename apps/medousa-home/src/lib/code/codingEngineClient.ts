@@ -32,6 +32,9 @@ import {
 import type { GraphemeLspWorkspaceResponse } from "$lib/types/grapheme";
 import { isTauri } from "$lib/window";
 import { getCoderExecutionTransport } from "$lib/executionAuthority";
+import { codeExecutionScopeKey, captureCodeScope } from "$lib/code/codeWorkspaceContext.svelte";
+import { observeCodeLanguageService, type CodeLanguageServiceIdentity } from "$lib/code/codeLspServiceIdentity";
+export type { CodeLanguageServiceIdentity } from "$lib/code/codeLspServiceIdentity";
 type CloseableTransport = {
   transport: Transport;
   close: () => void;
@@ -134,6 +137,8 @@ async function createNativeCloseableWebSocketTransport(
   path: string,
   onServerEvent?: (event: CodeLanguageServerEvent) => void,
 ): Promise<CloseableTransport> {
+  const executionRuntimeId = getCoderExecutionTransport();
+  const current = captureCodeScope(codeExecutionScopeKey);
   const handlers: Array<(value: string) => void> = [];
   let attachId: number | null = null;
   let expectedClose = false;
@@ -177,7 +182,8 @@ async function createNativeCloseableWebSocketTransport(
   );
 
   try {
-    const attached = await invoke<{ attach_id: number }>("code_lsp_attach", { path, executionRuntimeId: getCoderExecutionTransport() });
+    if (!current()) throw new Error("The coding workshop changed while opening the language connection");
+    const attached = await invoke<{ attach_id: number }>("code_lsp_attach", { path, executionRuntimeId });
     attachId = attached.attach_id;
     await invoke("code_lsp_ready", { attachId });
   } catch (error) {
@@ -343,14 +349,6 @@ export type ConnectOrchestratorLspOptions = {
   onServerEvent?: (event: CodeLanguageServerEvent) => void;
 };
 
-export type CodeLanguageServiceIdentity = {
-  language: string;
-  rootUri: string;
-  path: string;
-  serverName: string | null;
-  serverVersion: string | null;
-};
-
 export async function connectOrchestratorLspClient(options: ConnectOrchestratorLspOptions): Promise<{
   client: LSPClient;
   workspace: GraphemeLspWorkspaceResponse;
@@ -362,9 +360,14 @@ export async function connectOrchestratorLspClient(options: ConnectOrchestratorL
 }> {
   const language = options.language?.trim().toLowerCase();
   if (!language) throw new Error("An explicit language is required for language assistance");
+  const current = captureCodeScope(codeExecutionScopeKey);
+  const assertCurrent = () => {
+    if (!current()) throw new Error("The coding workshop changed while starting language assistance");
+  };
 
   try {
     const info = await getCodingEngineInfo();
+    assertCurrent();
     if (!info.available && !info.starting) {
       throw new Error(info.message || "The coding engine is unavailable on this workshop");
     }
@@ -376,6 +379,7 @@ export async function connectOrchestratorLspClient(options: ConnectOrchestratorL
       throw new Error("Coding engine returned an invalid language root outside the governed coding workspace");
     }
     const graphemeWorkspace = await getGraphemeLspWorkspace();
+    assertCurrent();
     const rootUri = options.languageRootUri
       ? canonicalCodeDocumentUri(options.languageRootUri)
       : options.workspaceRoot
@@ -389,36 +393,17 @@ export async function connectOrchestratorLspClient(options: ConnectOrchestratorL
     if (options.documentUri) query.set("document_uri", options.documentUri);
     const path = `${info.daemon_lsp_path}?${query}`;
     const wsUrl = await daemonWebSocketUrl(path);
+    assertCurrent();
     const connection = await createCloseableWebSocketTransport(
       wsUrl,
       options.onServerEvent,
       path,
     );
-    const service: CodeLanguageServiceIdentity = {
-      language, rootUri, path, serverName: null, serverVersion: null,
-    };
-    let initializeId: unknown;
-    const observeInitialize = (raw: string) => {
-      try {
-        const response = JSON.parse(raw);
-        if (response.id !== initializeId) return;
-        const server = response.result?.serverInfo;
-        if (typeof server?.name === "string") service.serverName = server.name;
-        if (typeof server?.version === "string") service.serverVersion = server.version;
-      } catch {
-        // The LSP client handles protocol parsing and errors.
-      }
-    };
-    connection.transport.subscribe(observeInitialize);
-    const transport: Transport = {
-      send(raw) {
-        const message = JSON.parse(raw);
-        if (message.method === "initialize") initializeId = message.id;
-        connection.transport.send(raw);
-      },
-      subscribe: (handler) => connection.transport.subscribe(handler),
-      unsubscribe: (handler) => connection.transport.unsubscribe(handler),
-    };
+    if (!current()) {
+      connection.close();
+      assertCurrent();
+    }
+    const identity = observeCodeLanguageService(connection.transport, { language, rootUri, path });
     const client = new LSPClient({
       rootUri,
       timeout: 30_000,
@@ -438,13 +423,12 @@ export async function connectOrchestratorLspClient(options: ConnectOrchestratorL
       workspace: options.workspaceBridge
         ? (client) => new MedousaCodeWorkspace(client, options.workspaceBridge!)
         : undefined,
-    }).connect(transport);
+    }).connect(identity.transport);
     const ready = client.initializing.then(() => {
-      if (service.serverName?.toLowerCase() === "grapheme-lsp" && language !== "grapheme") {
-        throw new Error(`Unexpected language server grapheme-lsp for ${language}`);
-      }
+      assertCurrent();
+      identity.validate();
       return null;
-    }).finally(() => connection.transport.unsubscribe(observeInitialize));
+    }).finally(identity.dispose);
     void ready.catch(() => {
       client.disconnect();
       connection.close();
@@ -460,7 +444,7 @@ export async function connectOrchestratorLspClient(options: ConnectOrchestratorL
       close: connection.close,
       closed: connection.closed,
       ready,
-      service,
+      service: identity.service,
     };
   } catch (error) {
     throw new Error(smartEditingUnavailableMessage(language, error));
@@ -540,8 +524,9 @@ export function codeWorkspaceLspPoolKey(
   workId: string,
   language: string,
   languageRootUri: string,
+  workspaceScope = codeExecutionScopeKey(),
 ): string {
-  return `${workId}:${language.toLowerCase()}:${canonicalCodeDocumentUri(languageRootUri)}`;
+  return JSON.stringify([workspaceScope, workId, language.toLowerCase(), canonicalCodeDocumentUri(languageRootUri)]);
 }
 
 function closeWorkspaceClient(key: string, entry: WorkspaceClientEntry) {
@@ -720,17 +705,22 @@ function restartWorkspaceClient(key: string, entry: WorkspaceClientEntry) {
 }
 
 export async function acquireCodeWorkspaceLspClient(options: {
+  workspaceScope?: string;
   workId: string;
   workspaceRoot: string;
   language: string;
   documentUri: string;
 }): Promise<CodeWorkspaceLspLease> {
+  const executionScope = codeExecutionScopeKey();
   const workspaceRoot = options.workspaceRoot.replace(/[\\/]+$/, "");
   const resolved = await getCodeLanguageRoot({
     workId: options.workId,
     language: options.language,
     uri: options.documentUri,
   });
+  if (executionScope !== codeExecutionScopeKey()) {
+    throw new Error("The coding workshop changed while discovering the language root");
+  }
   const languageRootUri = validatedCodeLanguageRootUri(resolved.root_uri, workspaceRoot);
   if (!languageRootUri) {
     throw new Error("Coding engine returned an invalid language root outside the governed coding workspace");
@@ -739,6 +729,7 @@ export async function acquireCodeWorkspaceLspClient(options: {
     options.workId,
     options.language,
     languageRootUri,
+    JSON.stringify([executionScope, options.workspaceScope]),
   );
   let entry = workspaceClients.get(key);
   if (!entry) {

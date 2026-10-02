@@ -29,6 +29,7 @@
   };
 
   interface Props {
+    workspaceScope: string;
     workId: string;
     activeTab: CodeDocumentTab | null;
     surfaceError: string | null;
@@ -99,6 +100,7 @@
   }
 
   let {
+    workspaceScope,
     workId,
     activeTab,
     surfaceError,
@@ -261,7 +263,9 @@
     onRestartLanguage={onRestartLanguage}
   />
   {#if searchOpen}
+    {#key workspaceScope}
     <CodeWorkspaceSearch
+      {workspaceScope}
       {workId}
       onOpenHit={onOpenSearchHit}
       onClose={() => onToggleSearch(false)}
@@ -269,6 +273,7 @@
         await onSearchApplied();
       }}
     />
+    {/key}
   {/if}
   {#if changes.open}
     <CodeChangesPanel

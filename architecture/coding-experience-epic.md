@@ -113,8 +113,8 @@ before fixing the final component design.
 
 ## Delivery slices
 
-CE0 implementation has started. Other slices are **not implemented under this
-epic**. Existing foundations can be reused, but acceptance must be demonstrated
+CE0 and CE1 implementation have started. Other slices are **not implemented
+under this epic**. Existing foundations can be reused, but acceptance must be demonstrated
 against these requirements.
 
 **CE0 progress (2026-10-01):** Removed automatic provider, root-discovery,
@@ -125,6 +125,19 @@ drafts remain editable. Added routing, initialization, discovery, pooled-session
 and editor lifecycle regression coverage. Final local/remote workshop journeys
 and the unavailable-engine incident investigation remain required; CE0 is not
 closed by automated checks alone. Workshop-switch isolation continues in CE1.
+
+**CE1 progress (2026-10-01):** Added a derived workshop/runtime/project/environment
+identity and a workshop visit generation. Applied it to language-service pooling
+and discovery, task catalogs and runs, test discovery, Problems, Quick Open,
+language insights, Changes, save/editing-control completion, search replacements,
+and terminal creation. Late responses are discarded and pending multi-step
+actions check their original scope before continuing. Changing documents within
+one checkout preserves explicit task selection and active run identity. Existing
+draft buffers remain owned by the document store. Language refactors now require
+the Forge transaction contract without a source-batch compatibility downgrade.
+Runtime cause translation,
+contextual package suggestions, complete checkout recovery, and local/remote
+workflow proof remain open; this is the scope-isolation foundation, not CE1 closure.
 
 | Slice | Priority | User outcome | Dependency |
 |-------|----------|--------------|------------|

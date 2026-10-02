@@ -78,6 +78,14 @@ the workshop that owns the project. If the workshop is too old for language
 discovery, update its coding engine and daemon together, then restart the service.
 The file and your draft remain open while you recover language assistance.
 
+Coding tools follow the selected workshop and working copy. When that context
+changes, results from the previous context are cleared, and pending actions stop
+before continuing in the new context. A command already submitted remains owned
+by its original workshop; switching does not cancel it or move it elsewhere.
+Within the same working copy, changing files keeps your selected command and
+active run stable. The workshop validates editing control again when you run or
+change files.
+
 ## Choose a repository
 
 Repository discovery always follows the workshop selected for the project. A
@@ -242,9 +250,9 @@ a private Code IDE chrome.
   refactor** first, including text changes and any proposed create, rename, or
   delete operations. Apply verifies the previewed digest or absence of every
   path and commits the ordered edit as one governed transaction; a conflict or
-  write failure leaves every file unchanged. An older connected daemon can
-  still apply text-only refactors, while resource operations explain that the
-  workshop must be updated instead of partially applying the rename.
+  write failure leaves every file unchanged. An older connected daemon must
+  be updated before applying language refactors; Medousa keeps the proposal
+  unapplied instead of changing how the rename is executed.
 - Repository `.editorconfig` rules feed indentation before Medousa falls back
   to the file’s existing style and language defaults. An explicit user
   preference still wins.
