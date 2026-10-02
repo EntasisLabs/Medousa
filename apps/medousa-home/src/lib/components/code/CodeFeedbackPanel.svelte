@@ -13,6 +13,11 @@
     tasks: CodeTasksController;
     workId: string;
     terminalSessionId: string | null;
+    terminalBusy: boolean;
+    terminalError: string | null;
+    canCreateTerminal: boolean;
+    terminalBlockedReason: string;
+    onCreateTerminal: () => void;
     workspaceRoot: string | null;
     terminalTitle: string;
     onSelect: (panel: Exclude<CodeBottomPanel, null>) => void | Promise<void>;
@@ -27,6 +32,11 @@
     tasks,
     workId,
     terminalSessionId,
+    terminalBusy,
+    terminalError,
+    canCreateTerminal,
+    terminalBlockedReason,
+    onCreateTerminal,
     workspaceRoot,
     terminalTitle,
     onSelect,
@@ -80,7 +90,7 @@
       {:else if active === "tests"}
         <CodeTasksOutput {tasks} mode="tests" {onOpenLocation} />
       {:else}
-        <CodeTerminalDock open={true} sessionId={terminalSessionId} {workId} worktreeRoot={workspaceRoot} title={terminalTitle} onClose={onClose} onPopOut={() => void onPopOutTerminal()} />
+        <CodeTerminalDock open={true} sessionId={terminalSessionId} busy={terminalBusy} error={terminalError} {canCreateTerminal} blockedReason={terminalBlockedReason} onCreate={onCreateTerminal} {workId} worktreeRoot={workspaceRoot} title={terminalTitle} onClose={onClose} onPopOut={() => void onPopOutTerminal()} />
       {/if}
     </div>
   </section>

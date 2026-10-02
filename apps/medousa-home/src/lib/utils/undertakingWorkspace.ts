@@ -101,7 +101,7 @@ export function activeCodeContext(sessionId: string): CodeIntentContext | null {
 
 export async function openTrackedTerminal(
   item: ItemProjection,
-  options?: { activate?: boolean },
+  options?: { activate?: boolean; create?: boolean },
 ): Promise<string | null> {
   if (undertakings.active?.workId !== item.id) undertakings.setActiveFromItem(item);
   const current = captureCodeScope(() => JSON.stringify([codeExecutionScopeKey(), undertakings.active?.workId]));
@@ -125,6 +125,8 @@ export async function openTrackedTerminal(
     }
     return existing;
   }
+
+  if (options?.create === false) return null;
 
   let leaseId = undertakings.active?.leaseId ?? null;
   if (canStartHumanEditing(item.allowed_actions)) {

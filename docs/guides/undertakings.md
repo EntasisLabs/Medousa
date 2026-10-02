@@ -524,3 +524,18 @@ reviewed commit to origin without force, then creates a GitHub PR against that
 same repository. GitHub CLI must already be installed and signed in on the
 workshop. Retrying reuses an existing open PR for the same head and base. These
 operations use the workshop's repository, including when you are on a phone.
+
+### Opening a shell from Code
+
+Opening Terminal reveals an existing project shell or an empty panel. It does
+not start an editing session. Choose **Create shell · edit here** to explicitly
+create a shell using your editing control. If an agent owns the project, use
+**Resume editing** first. A failed shell stays visible with a readable explanation
+and **Details** for the workshop response.
+
+If the working copy changed branches externally, the explanation names the
+expected and current branches. Medousa does not switch branches automatically.
+Return to the expected branch on the workshop, or preserve your drafts, release
+the old project, and attach the current checkout as a new project. Language
+support package management opens **Settings → Packages**; editor repair never
+installs optional tools silently.

@@ -52,7 +52,6 @@
   import { containingSymbolTrail } from "$lib/code/codeDocumentSymbols";
   import {
     codeEditorLspLanguageId,
-    languageRepairPackageId,
     languageSupportsLsp,
     resolveCodeEditorLanguage,
   } from "$lib/code/codeEditorLanguageRegistry";
@@ -78,8 +77,6 @@
   import { layout } from "$lib/runtime/layout.svelte";
   import { setActiveCodeInsights } from "$lib/utils/undertakingWorkspace";
   import { deferCodeWorkspaceWork } from "$lib/utils/codeWorkspaceTrace";
-  import { fetchPackagesCatalog, installPackage } from "$lib/utils/packagesApi";
-  import { isCoLocatedWorkshop } from "$lib/utils/workshopLocality";
   import {
     readCodeEditorFontSize,
     readCodeEditorLineNumbers,
@@ -154,6 +151,7 @@
   let terminalDockOpen = $state(false);
   let dockSessionId = $state<string | null>(null);
   let dockBusy = $state(false);
+  let dockError = $state<string | null>(null);
   let editor = $state<CodeMirrorHost | undefined>();
   let lspSession = new CodeLspSession();
   const lspClient = $derived(lspSession.client);
@@ -658,7 +656,7 @@
     });
   }
 
-  async function toggleTerminalDock(forceOpen?: boolean) {
+  async function toggleTerminalDock(forceOpen?: boolean, create = false) {
     const next = forceOpen === true ? true : forceOpen === false ? false : !terminalDockOpen;
     if (!next) {
       setFeedbackPanel(null);
@@ -675,19 +673,18 @@
       undertakings.bindTerminal(runSessionId);
       return;
     }
-    if (dockSessionId) return;
+    if (dockSessionId || dockBusy) return;
     const current = captureCodeScope(() => workspaceScope);
     dockBusy = true;
-    surfaceError = null;
+    dockError = null;
     try {
-      const sessionId = await openTrackedTerminal(detail, { activate: false });
+      const sessionId = await openTrackedTerminal(detail, { activate: false, create });
       if (!current()) return;
       dockSessionId = sessionId;
-      if (!sessionId) surfaceError = "Could not open a workshop shell for this project.";
+      if (!sessionId && create) dockError = "Could not open a workshop shell for this project.";
     } catch (err) {
       if (!current()) return;
-      surfaceError = err instanceof Error ? err.message : String(err);
-      setFeedbackPanel(null);
+      dockError = err instanceof Error ? err.message : String(err);
     } finally {
       if (current()) dockBusy = false;
     }
@@ -834,42 +831,8 @@
     }
   }
 
-  async function repairLanguageSupport() {
-    if (!isCoLocatedWorkshop()) {
-      openLanguagePackages();
-      return;
-    }
-    repairingLanguage = true;
-    surfaceError = null;
-    try {
-      await refreshLanguageMatrix({ quiet: true });
-      const catalog = await fetchPackagesCatalog();
-      if (!catalog) throw new Error("Package repair is unavailable here");
-      const matrixPackage = activeLanguageMatrix?.packageId ?? null;
-      const languagePackage =
-        matrixPackage ?? languageRepairPackageId(activeTabLanguage);
-      if (!languagePackage) {
-        openLanguagePackages();
-        surfaceError = activeLanguageMatrix?.command
-          ? `Install ${activeLanguageMatrix.command} on this workshop, then restart the language server.`
-          : "This language has no Medousa package yet — install its language server on the workshop.";
-        return;
-      }
-      const wanted = ["coding-engine", languagePackage].filter(
-        (id, index, list) => list.indexOf(id) === index,
-      );
-      for (const packageId of wanted) {
-        const row = catalog.packages.find((entry) => entry.id === packageId);
-        if (row && !row.installed) await installPackage(packageId);
-      }
-      await refreshLanguageMatrix({ quiet: true });
-      lspSession.restart();
-    } catch (err) {
-      surfaceError = err instanceof Error ? err.message : String(err);
-      openLanguagePackages();
-    } finally {
-      repairingLanguage = false;
-    }
+  function repairLanguageSupport() {
+    openLanguagePackages();
   }
 
   async function reload() {
@@ -1514,6 +1477,7 @@
       changes.resetForScope();
       save.resetForScope();
       dockSessionId = null;
+      dockError = null;
       dockBusy = false;
       insights.reset();
       references = [];
@@ -2108,6 +2072,10 @@
     terminalTitle={detail?.title?.trim() || "Terminal"}
     {terminalAvailable}
     {dockBusy}
+    {dockError}
+    canCreateTerminal={editable || canBeginEdit}
+    terminalBlockedReason={agentHasControl ? "The agent has editing control. Resume editing before creating a shell." : "This project needs an available working copy and editing control."}
+    onCreateTerminal={() => void toggleTerminalDock(true, true)}
     onToggleTerminal={(forceOpen) => void toggleTerminalDock(forceOpen)}
     onPopOutTerminal={() => void popOutTerminal()}
     {feedbackPanel}

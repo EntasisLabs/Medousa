@@ -1,4 +1,5 @@
 <script lang="ts">
+  import CodeOperationNotice from "./CodeOperationNotice.svelte";
   import { LoaderCircle, Sparkles } from "@lucide/svelte";
   import type { LSPClient } from "@codemirror/lsp-client";
   import CodeMirrorHost from "$lib/components/code/CodeMirrorHost.svelte";
@@ -92,6 +93,10 @@
     terminalTitle: string;
     terminalAvailable: boolean;
     dockBusy: boolean;
+    dockError: string | null;
+    canCreateTerminal: boolean;
+    terminalBlockedReason: string;
+    onCreateTerminal: () => void;
     onToggleTerminal: (forceOpen?: boolean) => void | Promise<void>;
     onPopOutTerminal: () => void | Promise<void>;
     feedbackPanel: CodeBottomPanel;
@@ -158,6 +163,10 @@
     terminalTitle,
     terminalAvailable,
     dockBusy,
+    dockError,
+    canCreateTerminal,
+    terminalBlockedReason,
+    onCreateTerminal,
     onToggleTerminal,
     onPopOutTerminal,
     feedbackPanel,
@@ -168,9 +177,7 @@
 
 {#if activeTab}
   {#if surfaceError || activeTab.error || codeWorkspace.workspaceErrorByWorkId[workId]}
-    <p class="shrink-0 border-b border-amber-500/30 bg-amber-950/25 px-2.5 py-1.5 text-chrome-sm text-amber-100">
-      {humanizeForgeMessage(surfaceError || activeTab.error || codeWorkspace.workspaceErrorByWorkId[workId] || "")}
-    </p>
+    <CodeOperationNotice message={surfaceError || activeTab.error || codeWorkspace.workspaceErrorByWorkId[workId] || ""} />
   {/if}
   {#if activeTab.preview}
     <div class="flex shrink-0 items-center gap-2 border-b border-sky-500/25 bg-sky-950/20 px-2.5 py-1.5 text-chrome-sm text-sky-100/90" role="status">
@@ -379,6 +386,11 @@
   {tasks}
   {workId}
   terminalSessionId={dockSessionId}
+  terminalBusy={dockBusy}
+  terminalError={dockError}
+  {canCreateTerminal}
+  {terminalBlockedReason}
+  {onCreateTerminal}
   {workspaceRoot}
   {terminalTitle}
   onSelect={onSelectFeedbackPanel}
