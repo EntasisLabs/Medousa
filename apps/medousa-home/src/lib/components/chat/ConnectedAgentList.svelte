@@ -1,20 +1,19 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { Plus, RefreshCw } from "@lucide/svelte";
-  import { listExternalConversations, type ExternalConversation, type ExternalProvider } from "$lib/daemon/externalConversations";
+  import { type ExternalConversation, type ExternalProvider } from "$lib/daemon/externalConversations";
   import { externalConversationBinding, externalConversationSessionId } from "$lib/utils/externalConversationSession";
   import { getExternalConversationSelection } from "$lib/utils/externalConversationSelection";
   import { agentRuntimeLabel, getSessionAgentRuntime } from "$lib/utils/sessionAgentRuntime";
+  import { connectedAgents } from "$lib/stores/connectedAgents.svelte";
   import { chat } from "$lib/stores/chat.svelte";
   import { connection } from "$lib/stores/connection.svelte";
-  import { settingsNav } from "$lib/stores/settingsNav.svelte";
-  import { layout } from "$lib/runtime/layout.svelte";
+  import { agentCreation } from "$lib/stores/agentCreation.svelte";
 
   let { open, query, onSelect }: { open: boolean; query: string; onSelect: (sessionId: string, title: string) => void } = $props();
-  let conversations = $state<ExternalConversation[]>([]);
-  let loading = $state(false);
-  let error = $state<string | null>(null);
-  let sequence = 0;
+  const conversations = $derived(connectedAgents.workshopScopeId === chat.workshopScopeId ? connectedAgents.conversations : []);
+  const loading = $derived(connectedAgents.loading);
+  const error = $derived(connectedAgents.error);
   const providers: ExternalProvider[] = ["grok_bot", "muse", "instinct", "dots"];
   const groups = $derived(providers.map((provider) => ({
     provider,
@@ -25,43 +24,21 @@
   })).filter((group) => group.conversations.length > 0));
   const current = $derived(externalConversationBinding(chat.focusedSessionId));
 
-  async function refresh() {
-    const scope = chat.workshopScopeId;
-    const request = ++sequence;
-    loading = true;
-    error = null;
-    try {
-      const result = await listExternalConversations();
-      if (sequence === request && chat.workshopScopeId === scope) conversations = result;
-    } catch (cause) {
-      if (sequence === request && chat.workshopScopeId === scope) error = cause instanceof Error ? cause.message : String(cause);
-    } finally {
-      if (sequence === request) loading = false;
-    }
-  }
+  async function refresh() { await connectedAgents.refresh(chat.workshopScopeId ?? "", true); }
   $effect(() => {
-    chat.workshopScopeId;
-    connection.offline;
-    sequence += 1;
-    conversations = [];
-    loading = false;
-    error = null;
-    if (open && !connection.offline) untrack(() => { void refresh(); });
+    const scope = chat.workshopScopeId;
+    if (open && !connection.offline) untrack(() => {void connectedAgents.refresh(scope ?? "");});
   });
   onMount(() => {
-    const changed = () => { if (open && !connection.offline) void refresh(); };
-    window.addEventListener("medousa-external-conversation-changed", changed);
-    return () => { sequence += 1; window.removeEventListener("medousa-external-conversation-changed", changed); };
+    const changed = () => {if (open && !connection.offline) void refresh();};
+    window.addEventListener("medousa-external-conversation-changed",changed);
+    return () => window.removeEventListener("medousa-external-conversation-changed",changed);
   });
   function selected(item: ExternalConversation): boolean {
     if (current) return current.provider === item.provider && current.id === item.id;
     return getSessionAgentRuntime(chat.focusedSessionId) === item.provider && getExternalConversationSelection(chat.focusedSessionId, item.provider) === item.id;
   }
-  function manage() {
-    settingsNav.setActiveSection("connections");
-    if (layout.isMobile) { layout.setSessionDrawerOpen(false); layout.openMore("settings"); }
-    else layout.navigateDesktop("settings");
-  }
+  function manage() { agentCreation.connectAgent(); }
 </script>
 
 <li class="session-sidebar-section">

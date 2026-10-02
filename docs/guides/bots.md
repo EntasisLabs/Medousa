@@ -22,9 +22,10 @@ collaborate in General, or work in Coder while keeping the same relationship.
 
 1. Open **Sessions** from Chat.
 2. Under **Bots**, choose **+** or **Create a Bot**.
-3. Enter a name and purpose. Tap the avatar to choose Medousa, Seahorse, Starfish, or a colored Medousa mark.
+3. Enter a name and purpose. Tap the avatar to choose from six expressions for each companion—Medousa, Seahorse, and Starfish—or a colored Medousa mark.
 4. Choose an **Archetype**, or select **Create archetype…** to define reusable expertise and an optional approach. Your Bot draft is preserved while you do this.
-5. Choose **Create Bot**.
+5. Choose **Runs with**: Medousa, Codex, Cursor, or Hermes. For an external runtime, choose its workshop and a provisioned project.
+6. Choose **Create Bot**.
 
 Medousa opens the Bot's primary conversation. Opening that Bot later—from the
 same app, your phone, or another Medousa client connected to the workshop—opens
@@ -42,6 +43,30 @@ Archetypes use the same reusable definitions called Specialists elsewhere in Med
 Creating one here makes it available to other Bots and the existing specialist editor.
 Existing emoji avatars are preserved until you choose another avatar.
 
+## Find and create from Spotlight
+
+Open Spotlight and search a Bot’s name, purpose, or runtime. Select
+it to open its primary conversation. Connected Muse, Grok Bot, Instinct, and
+Dots conversations appear under **Connected agents** and open their attached
+sessions.
+
+In Spotlight’s **Create** view, choose **New Bot** or **Connect agent**. You can
+also type `+ bot` or `+ agent`. These open the same setup dialogs as Sessions.
+
+## Runtime Bots
+
+Codex, Cursor, and Hermes Bots keep their runtime, workshop, and project in
+their profile. Their composer accepts text and has no runtime, model, or mode
+picker. The runtime must be installed and signed in on the selected workshop.
+The project must already have a provisioned workspace; create one in Code if
+none are available.
+
+Each request uses a fresh runtime process with the Bot’s purpose and bounded
+conversation context. Accepted requests keep running when you leave the chat.
+The status line lets you cancel a job or retry an uncertain submission using
+the original request ID. Responses are saved to the Bot conversation on the
+workshop. Execution administration is required to configure these bindings.
+
 ## Edit, duplicate, and archive
 
 Select the Bot’s name in the conversation header to view its profile and edit it.
@@ -50,7 +75,7 @@ You can also use the quiet actions on a Bot row in Sessions:
 - **Edit** changes its name, purpose, avatar, or archetype. Existing transcript
   history is not rewritten.
 - **Duplicate** copies the setup into a new Bot with a fresh conversation and
-  fresh memory. It does not copy learned memory or transcript history.
+  fresh memory. It does not copy learned memory or transcript history. External executor bindings are cleared; configure the duplicate’s runtime and project explicitly.
 - **Archive** removes the Bot from the active list without deleting its
   conversation or memory. Expand **Archived Bots** to restore it.
 
@@ -79,18 +104,19 @@ medousa project inspect FORGE_WORK_ID
 ```
 
 Create the named Bot in Medousa, then enroll its external executor from the
-operator CLI. The executor pins `runtime: "codex"`, `home_workshop_id`, a provisioned
+operator CLI. The executor pins `runtime` (`codex`, `cursor`, or `hermes`), `home_workshop_id`, a provisioned
 `forge_work_id`, `forge_repo_id`, and `session_contract: "fresh_per_job"`.
 Use the workshop ID shown by `medousa pair targets`; the pinned Forge work and
 repository must exist on that destination. Editing this binding requires
 execution administration. The Bot's name and purpose are still managed with
-the normal Bot profile. ACP manages Codex's own tool permissions.
+the normal Bot profile. ACP manages the selected runtime’s own tool permissions.
 
 ```sh
 medousa bot list
-medousa bot enroll codex-mini --workshop-id MINI_WORKSHOP_ID --work-id FORGE_WORK_ID --repo-id FORGE_REPO_ID
+medousa bot enroll codex-mini --runtime codex --workshop-id MINI_WORKSHOP_ID --work-id FORGE_WORK_ID --repo-id FORGE_REPO_ID
 medousa ask "fix the failing test" --bot codex-mini
 medousa ask "fix the failing test" --agent codex --workshop "mac mini"
+# --runtime and --agent also accept cursor or hermes.
 medousa ask "fix the failing test" --bot codex-mini --request-id incident-42 --detach
 medousa ask --resume delegation-job-EXAMPLE
 medousa ask --cancel delegation-job-EXAMPLE
@@ -107,7 +133,7 @@ and the terminal result. `--cancel` explicitly stops that job.
 
 For a remote Bot, the source and destination daemons must be paired through
 Medousa mesh, the destination policy must allow Assistant and Coder work for
-the selected Forge project, and Codex CLI must be installed and signed in on
+the selected Forge project, and the selected runtime CLI must be installed and signed in on
 the destination. The destination checks the pinned repository and governed
 workdir before starting ACP. Portal and HTTPS bridges are separate paths.
 

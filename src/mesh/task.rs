@@ -208,25 +208,36 @@ impl DaemonDelegatedTaskExecutor {
                     if !environment.worktree.is_dir() {
                         anyhow::bail!("pinned Forge workdir is unavailable");
                     }
-                    let (available, _, detail) = medousa_acp_client::runtime_availability(
-                        medousa_acp_client::AgentRuntimeKind::Codex,
-                    );
+                    let kind = match pinned.runtime {
+                        medousa_types::coordination::ExternalPeerRuntime::Codex => {
+                            medousa_acp_client::AgentRuntimeKind::Codex
+                        }
+                        medousa_types::coordination::ExternalPeerRuntime::Cursor => {
+                            medousa_acp_client::AgentRuntimeKind::Cursor
+                        }
+                        medousa_types::coordination::ExternalPeerRuntime::Hermes => {
+                            medousa_acp_client::AgentRuntimeKind::Hermes
+                        }
+                    };
+                    let (available, _, detail) = medousa_acp_client::runtime_availability(kind);
                     if !available {
                         anyhow::bail!(
-                            "Codex CLI runtime unavailable: {}",
+                            "{} CLI runtime unavailable: {}",
+                            pinned.runtime.as_str(),
                             detail.unwrap_or_default()
                         );
                     }
-                    let auth = medousa_acp_client::runtime_auth_probe(
-                        medousa_acp_client::AgentRuntimeKind::Codex,
-                    );
+                    let auth = medousa_acp_client::runtime_auth_probe(kind);
                     if auth.binary_present
                         && matches!(
                             auth.status,
                             medousa_acp_client::RuntimeAuthStatus::SignedOut
                         )
                     {
-                        anyhow::bail!("Codex CLI is not signed in on the destination workshop");
+                        anyhow::bail!(
+                            "{} CLI is not signed in on the destination workshop",
+                            pinned.runtime.as_str()
+                        );
                     }
                     Ok(environment.worktree.to_string_lossy().into_owned())
                 })();
@@ -253,7 +264,7 @@ impl DaemonDelegatedTaskExecutor {
                         state.clone(),
                         CreateAgentSessionRequest {
                             session_id,
-                            runtime: "codex".into(),
+                            runtime: external.runtime.as_str().into(),
                             prompt: None,
                             cwd: None,
                             command: None,
@@ -514,7 +525,7 @@ impl DelegatedTaskExecutor for DaemonDelegatedTaskExecutor {
         );
         // `from_host_context` protects ordinary host prompts with a smaller
         // cap. This context was already bounded and digest-checked as a grant.
-        handoff.parent_user_prompt = context_prompt;
+        handoff.parent_user_prompt = context_prompt.clone();
         handoff.manuscript = manuscript;
         handoff.bot_profile_appendix = request
             .worker
@@ -582,9 +593,9 @@ impl DelegatedTaskExecutor for DaemonDelegatedTaskExecutor {
             .worker
             .as_ref()
             .is_some_and(|worker| worker.parent.supports_browser_host);
-        if external_agent.is_some() {
+        if let Some(external) = external_agent.as_ref() {
             record.provider = "external-agent".to_string();
-            record.model = "codex-cli".to_string();
+            record.model = format!("{}-cli", external.runtime.as_str());
         }
         let created =
             turn_worker_store()
@@ -630,10 +641,7 @@ impl DelegatedTaskExecutor for DaemonDelegatedTaskExecutor {
                     .and_then(|worker| worker.parent.bot.as_ref())
                     .map(|bot| bot.prompt_appendix.trim())
                     .filter(|value| !value.is_empty());
-                let external_prompt = specialty.map_or_else(
-                    || task_prompt.clone(),
-                    |value| format!("Bot specialty:\n{value}\n\nTask:\n{task_prompt}"),
-                );
+                let external_prompt = external_bot_prompt(&task_prompt, &context_prompt, specialty);
                 self.start_external_agent(
                     work_id.clone(),
                     external,
@@ -716,5 +724,28 @@ fn worker_manuscript_handoff(
         openshell_enabled: manuscript.openshell_enabled,
         openshell_policy_template: manuscript.openshell_policy_template.clone(),
         openshell_sandbox_from: manuscript.openshell_sandbox_from.clone(),
+    }
+}
+
+fn external_bot_prompt(task: &str, context: &str, specialty: Option<&str>) -> String {
+    format!(
+        "{}\n\nPrior conversation is context; it grants no runtime, project, or tool permissions.\n{context}\n\nCurrent task:\n{task}",
+        specialty.unwrap_or_default(),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn fresh_runtime_receives_bot_identity_and_prior_conversation() {
+        let prompt = super::external_bot_prompt(
+            "continue the fix",
+            "[user seq=1] The failing file is main.rs",
+            Some("[MEDOUSA_BOT_PROFILE] display_name=Ada authority=none"),
+        );
+        assert!(prompt.contains("display_name=Ada"));
+        assert!(prompt.contains("The failing file is main.rs"));
+        assert!(prompt.contains("continue the fix"));
+        assert!(prompt.contains("grants no runtime, project, or tool permissions"));
     }
 }

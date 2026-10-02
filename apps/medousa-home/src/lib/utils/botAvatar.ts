@@ -1,14 +1,35 @@
+import type { MascotBody, MascotExpression } from "$lib/theme/medousaMarks";
+
+export const BOT_MASCOT_BODIES = [
+  { id: "medousa", label: "Medousa", color: "#38bdf8" },
+  { id: "seahorse", label: "Seahorse", color: "#2dd4bf" },
+  { id: "starfish", label: "Starfish", color: "#f5b841" },
+] as const satisfies ReadonlyArray<{ id: MascotBody; label: string; color: string }>;
+
+export const BOT_MASCOT_EXPRESSIONS = [
+  { id: "default", label: "Default" },
+  { id: "happy", label: "Happy" },
+  { id: "chill", label: "Chill" },
+  { id: "sweet", label: "Sweet" },
+  { id: "focus", label: "Focus" },
+  { id: "sus", label: "Sus" },
+] as const satisfies ReadonlyArray<{ id: MascotExpression; label: string }>;
+
 export const BOT_AVATARS = [
-  { id: "mascot:medousa", label: "Medousa", color: "#38bdf8", mascot: "medousa" },
-  { id: "mascot:seahorse", label: "Seahorse", color: "#2dd4bf", mascot: "seahorse" },
-  { id: "mascot:starfish", label: "Starfish", color: "#f5b841", mascot: "starfish" },
-  { id: "medousa:violet", label: "Violet", color: "#b394f6", mascot: null },
-  { id: "medousa:blue", label: "Ocean", color: "#77bafa", mascot: null },
-  { id: "medousa:jade", label: "Jade", color: "#79d2b3", mascot: null },
-  { id: "medousa:amber", label: "Amber", color: "#ebbf74", mascot: null },
-  { id: "medousa:rose", label: "Rose", color: "#ea99c3", mascot: null },
-  { id: "medousa:pearl", label: "Pearl", color: "#d7d9e8", mascot: null },
-] as const;
+  ...BOT_MASCOT_BODIES.flatMap((body) => BOT_MASCOT_EXPRESSIONS.map((expression) => ({
+    id: expression.id === "default" ? `mascot:${body.id}` : `mascot:${body.id}:${expression.id}`,
+    label: `${body.label} ${expression.label}`,
+    color: body.color,
+    mascot: body.id,
+    expression: expression.id,
+  }))),
+  { id: "medousa:violet", label: "Violet", color: "#b394f6", mascot: null, expression: null },
+  { id: "medousa:blue", label: "Ocean", color: "#77bafa", mascot: null, expression: null },
+  { id: "medousa:jade", label: "Jade", color: "#79d2b3", mascot: null, expression: null },
+  { id: "medousa:amber", label: "Amber", color: "#ebbf74", mascot: null, expression: null },
+  { id: "medousa:rose", label: "Rose", color: "#ea99c3", mascot: null, expression: null },
+  { id: "medousa:pearl", label: "Pearl", color: "#d7d9e8", mascot: null, expression: null },
+];
 export const DEFAULT_BOT_AVATAR = "medousa:violet";
 
 export function botAvatar(value: string | null | undefined) {

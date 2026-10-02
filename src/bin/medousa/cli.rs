@@ -117,6 +117,8 @@ pub enum BotCommand {
     List,
     Enroll {
         bot: String,
+        #[arg(long, default_value = "codex", value_parser = ["codex", "cursor", "hermes"])]
+        runtime: String,
         #[arg(long = "workshop-id")]
         workshop_id: String,
         #[arg(long = "work-id")]
@@ -135,7 +137,7 @@ pub struct AskArgs {
     #[arg(
         long,
         conflicts_with = "bot",
-        help = "Find an enrolled runtime, currently codex"
+        help = "Find an enrolled Codex, Cursor, or Hermes Bot"
     )]
     pub agent: Option<String>,
     #[arg(long, help = "Eligible workshop name or ID; must match the Bot home")]
@@ -1127,6 +1129,54 @@ mod tests {
             }
             other => panic!("expected Credentials, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn enroll_selects_each_supported_runtime_and_rejects_unknown_ones() {
+        for runtime in ["codex", "cursor", "hermes"] {
+            let parsed = Cli::try_parse_from([
+                "medousa",
+                "bot",
+                "enroll",
+                "Ada",
+                "--runtime",
+                runtime,
+                "--workshop-id",
+                "mini",
+                "--work-id",
+                "work-project",
+                "--repo-id",
+                "repo-project",
+            ])
+            .unwrap();
+            match parsed.command {
+                Some(Commands::Bot(BotArgs {
+                    command:
+                        BotCommand::Enroll {
+                            runtime: selected, ..
+                        },
+                    ..
+                })) => assert_eq!(selected, runtime),
+                other => panic!("expected Bot enrollment, got {other:?}"),
+            }
+        }
+        assert!(
+            Cli::try_parse_from([
+                "medousa",
+                "bot",
+                "enroll",
+                "Ada",
+                "--runtime",
+                "grok",
+                "--workshop-id",
+                "mini",
+                "--work-id",
+                "work-project",
+                "--repo-id",
+                "repo-project"
+            ])
+            .is_err()
+        );
     }
 
     #[test]

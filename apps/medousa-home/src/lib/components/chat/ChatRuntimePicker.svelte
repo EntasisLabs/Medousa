@@ -142,6 +142,7 @@
           markId={settings.medousaMark}
           darkMode={settings.darkMode}
           simplified
+          showMascot={false}
           decorative
         />
       </span>

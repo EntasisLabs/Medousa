@@ -270,6 +270,16 @@ class BotWorldBindingKind(Enum):
     persistent_browser = 'persistent_browser'
 
 
+class ExternalAgentSessionContract(Enum):
+    fresh_per_job = 'fresh_per_job'
+
+
+class ExternalPeerRuntime(Enum):
+    codex = 'codex'
+    cursor = 'cursor'
+    hermes = 'hermes'
+
+
 class BotSessionKind(Enum):
     primary = 'primary'
     secondary = 'secondary'
@@ -1234,12 +1244,6 @@ class McpGatewayServerRuntime(MedousaModel):
 class CoordinationChannelRef(MedousaModel):
     authority_id: AuthorityId
     channel_id: str
-
-
-class ExternalPeerRuntime(Enum):
-    codex = 'codex'
-    cursor = 'cursor'
-    hermes = 'hermes'
 
 
 class ExternalPeerTarget(MedousaModel):
@@ -3847,6 +3851,18 @@ class BotWorldBinding(MedousaModel):
     world_id: str
 
 
+class ExternalAgentExecutor(MedousaModel):
+    allowed_capabilities: list[str] | None = None
+    allowed_tools: list[str] | None = None
+    forge_repo_id: str
+    forge_work_id: str
+    home_workshop_id: str
+    runtime: ExternalPeerRuntime = Field(
+        ..., description='Installed ACP runtime, distinct from an inference provider.'
+    )
+    session_contract: ExternalAgentSessionContract
+
+
 class BotSessionBinding(MedousaModel):
     bot_id: BotId
     bot_revision_at_bind: int = Field(..., ge=0)
@@ -4419,6 +4435,7 @@ class CreateBotRequest(MedousaModel):
     avatar_ref: str | None = None
     default_mode: AgentModeId | None = None
     display_name: str
+    external_agent: ExternalAgentExecutor | None = None
     primary_manuscript_id: str
     role_description: str | None = None
     world_binding: BotWorldBinding | None = Field(
@@ -4741,6 +4758,7 @@ class TurnStreamEnvelopeV3(MedousaModel):
 class UpdateBotRequest(MedousaModel):
     additional_manuscript_ids: list[str] | None = None
     avatar_ref: str | None = None
+    clear_external_agent: bool | None = None
     clear_world_binding: bool | None = Field(
         None,
         description='Explicitly clear durable continuity. This cannot be combined with `world_binding`.',
@@ -4748,6 +4766,9 @@ class UpdateBotRequest(MedousaModel):
     default_mode: AgentModeId | None = None
     display_name: str
     expected_revision: int = Field(..., ge=0)
+    external_agent: ExternalAgentExecutor | None = Field(
+        None, description='Omission preserves the current executor for older clients.'
+    )
     primary_manuscript_id: str
     role_description: str | None = None
     world_binding: BotWorldBinding | None = Field(
@@ -4787,6 +4808,10 @@ class BotProfile(MedousaModel):
     created_at: AwareDatetime
     default_mode: AgentModeId | None = None
     display_name: str
+    external_agent: ExternalAgentExecutor | None = Field(
+        None,
+        description='Configuration only. Each execution still requires placement, pairing, destination policy, and runtime admission.',
+    )
     memory_scope_id: str
     owner_profile_id: str
     primary_manuscript_id: str

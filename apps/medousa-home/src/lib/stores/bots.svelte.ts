@@ -125,8 +125,9 @@ export class BotStore {
   }
 
   async create(request: CreateBotRequest): Promise<BotOpenResponse> {
+    const epoch = this.epoch;
     const response = await this.api.create(request);
-    this.upsert(response.bot);
+    if (epoch === this.epoch) this.upsert(response.bot);
     return response;
   }
 
@@ -159,8 +160,9 @@ export class BotStore {
   }
 
   async open(bot: BotProfile): Promise<BotOpenResponse> {
+    const epoch = this.epoch;
     const response = await this.api.open(bot.bot_id);
-    this.upsert(response.bot);
+    if (epoch === this.epoch) this.upsert(response.bot);
     return response;
   }
 

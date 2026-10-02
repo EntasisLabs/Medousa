@@ -7,7 +7,7 @@
 
 <span class="bot-avatar" style:--avatar-color={avatar.color} style:width={`${size}px`} style:height={`${size}px`} aria-hidden="true">
   {#if avatar.legacy}<span class="legacy">{avatar.legacy}</span>
-  {:else if avatar.mascot}<img class="mascot" src={mascotImage(avatar.mascot)} alt="" />
+  {:else if avatar.mascot}<img class="mascot" class:starfish={avatar.mascot === "starfish"} src={mascotImage(avatar.mascot, avatar.expression ?? "default")} alt="" />
   {:else}<span class="mark"></span>{/if}
 </span>
 
@@ -16,4 +16,5 @@
   .mark { width: 57%; height: 73%; background: currentColor; mask: url('/brand/medousa-mark-simplified.svg') center / contain no-repeat; -webkit-mask: url('/brand/medousa-mark-simplified.svg') center / contain no-repeat; }
   .legacy { font-size: 1em; line-height: 1; }
   .mascot { width: 92%; height: 92%; object-fit: contain; image-rendering: pixelated; }
+  .mascot.starfish { transform: translateY(-5%) scale(1.1); }
 </style>

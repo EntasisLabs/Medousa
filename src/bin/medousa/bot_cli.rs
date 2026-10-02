@@ -45,6 +45,7 @@ pub fn run_bot(args: BotArgs) -> Result<()> {
         }
         BotCommand::Enroll {
             bot,
+            runtime,
             workshop_id,
             work_id,
             repo_id,
@@ -78,7 +79,7 @@ pub fn run_bot(args: BotArgs) -> Result<()> {
             object.insert(
                 "external_agent".into(),
                 json!({
-                    "runtime": "codex",
+                    "runtime": runtime,
                     "home_workshop_id": workshop_id,
                     "forge_work_id": work_id,
                     "forge_repo_id": repo_id,

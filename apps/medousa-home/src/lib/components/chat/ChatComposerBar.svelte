@@ -93,7 +93,7 @@
   const activeBot = $derived(bots.forSession(chat.focusedSessionId));
   const showModelPicker = $derived(
     !quietChrome &&
-      modelPickerEnabled &&
+      !activeBot?.external_agent && modelPickerEnabled &&
       (Boolean(activeBot) || settings.showChatModelPicker || onAgentRuntimeChange !== undefined),
   );
   const placeholder = $derived(
@@ -144,7 +144,7 @@
       : sttReason ?? "Voice input unavailable",
   );
   const blocked = $derived(disabled || composerBlocked || runtime.savingControls);
-  const providerConversation = $derived(isProviderConversationRuntime(agentRuntime));
+  const providerConversation = $derived(isProviderConversationRuntime(agentRuntime) || Boolean(activeBot?.external_agent));
   const canSend = $derived(
     !blocked && !chat.pendingMediaUploading &&
       (chat.draft.trim().length > 0 || (!providerConversation && chat.pendingMediaRefs.length > 0)),

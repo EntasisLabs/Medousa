@@ -19,7 +19,7 @@
   } from "$lib/daemon/externalConversations";
   import type { ExternalMuseDiscoveryStatus, ExternalWhatsAppPairingStatus } from "$lib/types/generated/daemon_api";
 
-  let { provider }: { provider: ExternalProvider } = $props();
+  let { provider, oncreated }: { provider: ExternalProvider; oncreated?: (conversation: ExternalConversation) => void } = $props();
   let conversations = $state<ExternalConversation[]>([]);
   let creating = $state(false);
   let busy = $state(false);
@@ -166,6 +166,7 @@
       discovery = null;
       creating = false;
       changed();
+      oncreated?.(result.conversation);
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause);
     } finally {
@@ -237,9 +238,6 @@
   {/if}
 
   {#if registered.length > 0}
-    {#if provider === "muse"}
-      <p class="text-xs text-content-warning">WhatsApp may mark Medousa messages Read without delivering them to Muse. In our linked-device test, the message did not appear in Muse's app and replies did not reach Medousa.</p>
-    {/if}
     <div class="mt-3 space-y-2">
       {#each registered as conversation (conversation.id)}
         <div class="rounded-lg bg-surface-800 p-3">

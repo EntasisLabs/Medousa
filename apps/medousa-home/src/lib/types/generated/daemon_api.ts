@@ -761,6 +761,18 @@ export interface BotWorldBinding {
   world_id: string;
 }
 
+export type ExternalAgentSessionContract = "fresh_per_job";
+
+export interface ExternalAgentExecutor {
+  allowed_capabilities?: string[];
+  allowed_tools?: string[];
+  forge_repo_id: string;
+  forge_work_id: string;
+  home_workshop_id: string;
+  runtime: ExternalPeerRuntime;
+  session_contract: ExternalAgentSessionContract;
+}
+
 export interface BotProfile {
   additional_manuscript_ids?: string[];
   archived?: boolean;
@@ -769,6 +781,7 @@ export interface BotProfile {
   created_at: string;
   default_mode?: AgentModeId | null;
   display_name: string;
+  external_agent?: ExternalAgentExecutor | null;
   memory_scope_id: string;
   owner_profile_id: string;
   primary_manuscript_id: string;
@@ -793,6 +806,7 @@ export interface CreateBotRequest {
   avatar_ref?: string | null;
   default_mode?: AgentModeId | null;
   display_name: string;
+  external_agent?: ExternalAgentExecutor | null;
   primary_manuscript_id: string;
   role_description?: string | null;
   world_binding?: BotWorldBinding | null;
@@ -801,10 +815,12 @@ export interface CreateBotRequest {
 export interface UpdateBotRequest {
   additional_manuscript_ids?: string[];
   avatar_ref?: string | null;
+  clear_external_agent?: boolean;
   clear_world_binding?: boolean;
   default_mode?: AgentModeId | null;
   display_name: string;
   expected_revision: number;
+  external_agent?: ExternalAgentExecutor | null;
   primary_manuscript_id: string;
   role_description?: string | null;
   world_binding?: BotWorldBinding | null;

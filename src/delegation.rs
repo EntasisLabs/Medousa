@@ -1311,6 +1311,7 @@ impl DelegationService {
         bot: &BotProfile,
         target: DelegationTarget,
         parent_runtime_id: &str,
+        source_session_id: Option<&str>,
     ) -> StasisResult<DelegationTicket> {
         let request_id = request_id.trim();
         let prompt = prompt.trim();
@@ -1392,14 +1393,16 @@ impl DelegationService {
                 agent_mode: Some("coder".to_string()),
                 original_user_prompt: prompt.to_string(),
                 provider: "external-agent".to_string(),
-                model: "codex-cli".to_string(),
+                model: format!("{}-cli", external.runtime.as_str()),
                 response_depth_mode: "standard".to_string(),
                 code_work_id: None,
                 bot: Some(crate::delegated_task::WorkerBotSpec {
                     bot_id: bot.bot_id.to_string(),
                     profile_revision: bot.revision,
                     memory_scope_id: bot.memory_scope_id.clone(),
-                    prompt_appendix: bot.role_description.clone().unwrap_or_default(),
+                    prompt_appendix:
+                        crate::agent_runtime::execution_context::BotTurnIdentity::from_profile(bot)
+                            .prompt_appendix(),
                 }),
                 supports_ui_artifacts: false,
                 supports_liquid_markdown: false,
@@ -1421,8 +1424,12 @@ impl DelegationService {
             },
         };
         crate::delegated_task::validate_worker_spawn_spec(&worker).map_err(port_failure)?;
-        let source_session = SessionId::parse(format!("ses_botask_{identity}"))
-            .map_err(|error| port_failure(error.to_string()))?;
+        let source_session = SessionId::parse(
+            source_session_id
+                .map(str::to_owned)
+                .unwrap_or_else(|| format!("ses_botask_{identity}")),
+        )
+        .map_err(|error| port_failure(error.to_string()))?;
         let source_execution = medousa_types::ExecutionRef {
             authority_id: self.authority_id.clone(),
             session_id: source_session.clone(),
@@ -1430,7 +1437,11 @@ impl DelegationService {
                 .map_err(|error| port_failure(error.to_string()))?,
         };
         let entries = self.session_store.load_transcript_entries(&source_session);
-        if entries.is_empty() {
+        let admitted = entries
+            .iter()
+            .filter(|entry| entry.caused_by.as_ref() == Some(&source_execution))
+            .collect::<Vec<_>>();
+        if admitted.is_empty() {
             let now = Utc::now();
             self.session_store
                 .append_transcript_batch(
@@ -1444,7 +1455,7 @@ impl DelegationService {
                                 Vec::new(),
                                 None,
                             ),
-                            None,
+                            Some(source_execution.clone()),
                         ),
                         TranscriptAppend::native(
                             ConversationTurn::plain(
@@ -1460,10 +1471,10 @@ impl DelegationService {
                 )
                 .await
                 .map_err(port_failure)?;
-        } else if entries.len() != 2
-            || entries[0].turn.role != "user"
-            || entries[0].turn.content != prompt
-            || entries[1].caused_by.as_ref() != Some(&source_execution)
+        } else if admitted.len() != 2
+            || admitted[0].turn.role != "user"
+            || admitted[0].turn.content != prompt
+            || admitted[1].turn.content != "Delegated to the Bot."
         {
             return Err(port_failure(
                 "request ID source transcript conflicts with payload",
@@ -1588,14 +1599,12 @@ impl DelegationService {
         let source_entries = self
             .session_store
             .load_transcript_entries(&payload.request.source_execution.session_id);
+        let result_entry_id =
+            deterministic_identity("ent_", &[b"delegated-result", turn_id.as_bytes()]);
         let result = source_entries
             .iter()
             .rev()
-            .find(|entry| {
-                entry.turn.role == "assistant"
-                    && entry.turn.content != payload.user_ack
-                    && entry.source.is_none()
-            })
+            .find(|entry| entry.entry_id.as_str() == result_entry_id)
             .map(|entry| entry.turn.content.clone());
         Ok(Some(json!({
             "job_id": job_id,
@@ -2943,7 +2952,7 @@ mod tests {
         let service = install_delegation_runtime(
             runtime.clone(),
             authority,
-            store,
+            store.clone(),
             Arc::new(UnavailableOperatorTransport),
         )
         .unwrap();
@@ -2988,6 +2997,7 @@ mod tests {
                 &bot,
                 target.clone(),
                 "prox-workshop",
+                None,
             )
             .await
             .unwrap();
@@ -3000,6 +3010,7 @@ mod tests {
                 &bot,
                 target.clone(),
                 "prox-workshop",
+                None,
             )
             .await
             .unwrap();
@@ -3014,7 +3025,8 @@ mod tests {
                     "different task",
                     &bot,
                     target,
-                    "prox-workshop"
+                    "prox-workshop",
+                    None,
                 )
                 .await
                 .is_err()
@@ -3033,6 +3045,84 @@ mod tests {
                 .unwrap()
                 .is_some()
         );
+        let chat_session = SessionId::parse("ses_bot_conversation").unwrap();
+        for (request_id, agent_runtime) in [
+            ("chat-cursor", ExternalPeerRuntime::Cursor),
+            ("chat-hermes", ExternalPeerRuntime::Hermes),
+        ] {
+            let mut runtime_bot = bot.clone();
+            runtime_bot.external_agent.as_mut().unwrap().runtime = agent_runtime;
+            let chat_ticket = service
+                .submit_operator_bot(
+                    "user:alice",
+                    request_id,
+                    request_id,
+                    "continue our work",
+                    &runtime_bot,
+                    DelegationTarget {
+                        route_ref: "paired-mini".into(),
+                        peer_device_id: "mini-workshop".into(),
+                        label: None,
+                    },
+                    "prox-workshop",
+                    Some(chat_session.as_str()),
+                )
+                .await
+                .unwrap();
+            let retry = service
+                .submit_operator_bot(
+                    "user:alice",
+                    request_id,
+                    request_id,
+                    "continue our work",
+                    &runtime_bot,
+                    DelegationTarget {
+                        route_ref: "paired-mini".into(),
+                        peer_device_id: "mini-workshop".into(),
+                        label: None,
+                    },
+                    "prox-workshop",
+                    Some(chat_session.as_str()),
+                )
+                .await
+                .unwrap();
+            assert_eq!(chat_ticket.job_id, retry.job_id);
+            let job = runtime.get_job(&chat_ticket.job_id).await.unwrap().unwrap();
+            let StoredDelegationPayload::Resolved(payload) =
+                StoredDelegationPayload::parse(&job).unwrap()
+            else {
+                panic!("resolved Bot job")
+            };
+            assert!(
+                payload
+                    .request
+                    .worker
+                    .as_ref()
+                    .unwrap()
+                    .parent
+                    .bot
+                    .as_ref()
+                    .unwrap()
+                    .prompt_appendix
+                    .contains("display_name=codex-mini")
+            );
+            assert!(
+                payload
+                    .request
+                    .context
+                    .entries
+                    .iter()
+                    .any(|entry| entry.turn.content == "continue our work")
+            );
+        }
+        let transcript = store.load_transcript_entries(&chat_session);
+        assert_eq!(
+            transcript
+                .iter()
+                .filter(|entry| entry.turn.role == "user")
+                .count(),
+            2
+        );
         let mut local_bot = bot.clone();
         local_bot.external_agent.as_mut().unwrap().home_workshop_id = "prox-workshop".into();
         let local = service
@@ -3048,6 +3138,7 @@ mod tests {
                     label: Some("This workshop".into()),
                 },
                 "prox-workshop",
+                None,
             )
             .await
             .unwrap();

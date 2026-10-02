@@ -661,9 +661,6 @@ fn normalize_external_agent(executor: &mut Option<ExternalAgentExecutor>) -> Res
     let Some(executor) = executor.as_mut() else {
         return Ok(());
     };
-    if executor.runtime != medousa_types::coordination::ExternalPeerRuntime::Codex {
-        return Err("only the Codex external-agent runtime is enrolled".to_string());
-    }
     executor.home_workshop_id = normalize_opaque(
         std::mem::take(&mut executor.home_workshop_id),
         MAX_RUNTIME_ID_BYTES,
@@ -848,6 +845,35 @@ mod tests {
             session_contract: medousa_types::ExternalAgentSessionContract::FreshPerJob,
             allowed_tools: vec!["code".to_string()],
             allowed_capabilities: vec!["forge".to_string()],
+        }
+    }
+
+    #[test]
+    fn every_acp_runtime_can_be_enrolled_without_losing_project_pins() {
+        use medousa_types::coordination::ExternalPeerRuntime;
+        let root = tempfile::tempdir().unwrap();
+        let bots = store(root.path());
+        for runtime in [
+            ExternalPeerRuntime::Codex,
+            ExternalPeerRuntime::Cursor,
+            ExternalPeerRuntime::Hermes,
+        ] {
+            let mut request = create_request(runtime.as_str());
+            let mut executor = codex_executor("workshop-mini");
+            executor.runtime = runtime;
+            request.external_agent = Some(executor.clone());
+            let created = bots
+                .create(
+                    "user:alice",
+                    &format!("session-{}", runtime.as_str()),
+                    request,
+                )
+                .unwrap();
+            let resolved = bots
+                .resolve_external("user:alice", None, Some(runtime), Some("workshop-mini"))
+                .unwrap();
+            assert_eq!(resolved.bot_id, created.bot.bot_id);
+            assert_eq!(resolved.external_agent, Some(executor));
         }
     }
 

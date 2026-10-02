@@ -539,8 +539,7 @@ pub fn validate_worker_spawn_spec(spec: &WorkerSpawnSpec) -> Result<(), Delegate
     let intent = crate::agent_runtime::turn_worker::TurnWorkerIntent::parse(&spec.intent)
         .ok_or_else(|| DelegatedTaskError::invalid("delegated worker intent is unsupported"))?;
     if let Some(external) = spec.external_agent.as_ref()
-        && (external.runtime != medousa_types::coordination::ExternalPeerRuntime::Codex
-            || external.home_workshop_id != spec.execution_placement.resolved_runtime_id
+        && (external.home_workshop_id != spec.execution_placement.resolved_runtime_id
             || intent != crate::agent_runtime::turn_worker::TurnWorkerIntent::Coder
             || spec.parent.bot.is_none()
             || spec.code_project.as_ref().is_none_or(|project| {
@@ -551,7 +550,7 @@ pub fn validate_worker_spawn_spec(spec: &WorkerSpawnSpec) -> Result<(), Delegate
             || spec.code_project_setup.is_some())
     {
         return Err(DelegatedTaskError::invalid(
-            "external-agent Bot must pin Codex, Bot identity, and destination Forge project",
+            "external-agent Bot must pin Bot identity, and destination Forge project",
         ));
     }
     validate_worker_text("task", &spec.task, MAX_DELEGATED_PROMPT_CHARS)?;
@@ -1535,6 +1534,43 @@ mod tests {
         worker.code_project.as_mut().unwrap().runtime_id = "another-daemon".to_string();
         let error = validate_worker_spawn_spec(&worker).expect_err("mismatched authority");
         assert!(error.message.contains("does not match worker placement"));
+    }
+
+    #[test]
+    fn external_runtimes_keep_bot_and_project_authority_checks() {
+        use medousa_types::coordination::ExternalPeerRuntime;
+        let request = sample_request();
+        for runtime in [
+            ExternalPeerRuntime::Codex,
+            ExternalPeerRuntime::Cursor,
+            ExternalPeerRuntime::Hermes,
+        ] {
+            let mut worker = canonical_worker(&request);
+            worker.intent = "coder".into();
+            worker.parent.bot = Some(WorkerBotSpec {
+                bot_id: format!("bot_{}", "a".repeat(32)),
+                profile_revision: 1,
+                memory_scope_id: format!("bot_{}", "a".repeat(32)),
+                prompt_appendix: "Keep changes small".into(),
+            });
+            worker.code_project = Some(WorkerCodeProjectRef {
+                runtime_id: "remote-daemon".into(),
+                work_id: "work-project".into(),
+                repo_id: "repo-project".into(),
+            });
+            worker.external_agent = Some(medousa_types::ExternalAgentExecutor {
+                runtime,
+                home_workshop_id: "remote-daemon".into(),
+                forge_work_id: "work-project".into(),
+                forge_repo_id: "repo-project".into(),
+                session_contract: medousa_types::ExternalAgentSessionContract::FreshPerJob,
+                allowed_tools: Vec::new(),
+                allowed_capabilities: Vec::new(),
+            });
+            validate_worker_spawn_spec(&worker).unwrap();
+            worker.code_project.as_mut().unwrap().repo_id = "other-repo".into();
+            assert!(validate_worker_spawn_spec(&worker).is_err());
+        }
     }
 
     #[test]

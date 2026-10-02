@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PreparedAgentSession } from "./agentSessionController.svelte";
 
-const state = vi.hoisted(() => ({ sessionId: "chat-a", runtime: "codex", bot: false, seeded: false }));
-const api = vi.hoisted(() => ({ bot: vi.fn(), prompt: vi.fn(), ticket: vi.fn(), begin: vi.fn(), seed: vi.fn() }));
+const state = vi.hoisted(() => ({ sessionId: "chat-a", runtime: "codex", bot: false, external: false, seeded: false }));
+const api = vi.hoisted(() => ({ bot: vi.fn(), prompt: vi.fn(), ticket: vi.fn(), begin: vi.fn(), seed: vi.fn(), runtimeBot: vi.fn() }));
+vi.mock("./runtimeBotTurns.svelte", () => ({sendRuntimeBotTurn:api.runtimeBot}));
 vi.mock("$lib/daemon", () => ({ createTurnTicket: api.ticket, promptAgentSession: api.prompt }));
 vi.mock("$lib/daemon/bot", () => ({ getSessionBot: api.bot }));
 vi.mock("$lib/stores/chat.svelte", () => ({ chat: {
@@ -11,7 +12,7 @@ vi.mock("$lib/stores/chat.svelte", () => ({ chat: {
   messagesFor: () => [{ id: "old", role: "user", content: "Use Svelte 5" }],
   beginTurn: api.begin, clearPendingMedia: vi.fn(), startTurnStream: vi.fn(),
 } }));
-vi.mock("$lib/stores/bots.svelte", () => ({ bots: { forSession: () => state.bot ? {} : null } }));
+vi.mock("$lib/stores/bots.svelte", () => ({ bots: { forSession: () => state.bot ? {bot_id:"ada",external_agent:state.external ? {runtime:"hermes"} : null} : null } }));
 vi.mock("$lib/stores/userProfiles.svelte", () => ({ userProfiles: { turnIdentityUserId: () => "owner" } }));
 vi.mock("$lib/stores/executionTargets.svelte", () => ({ executionTargets: { turnSelection: () => null } }));
 vi.mock("$lib/stores/voicePresets.svelte", () => ({ voicePresets: { turnVoiceFields: () => ({}) } }));
@@ -32,7 +33,8 @@ function input(synchronize = vi.fn(async () => prepared)) {
     synchronizeAgentSession: synchronize, onAgentSessionLost: vi.fn(), scrollToLatest: vi.fn() };
 }
 beforeEach(() => {
-  vi.clearAllMocks(); state.sessionId = "chat-a"; state.runtime = "codex"; state.bot = false; state.seeded = false;
+  vi.clearAllMocks(); state.sessionId = "chat-a"; state.runtime = "codex"; state.bot = false; state.external = false; state.seeded = false;
+  api.runtimeBot.mockResolvedValue({ticket:{jobId:"job",turnId:"turn"}});
   api.bot.mockResolvedValue({ binding: null }); api.prompt.mockResolvedValue({});
   api.ticket.mockResolvedValue({ turn_id: "native", session_id: "chat-a", stream_url: "/stream" });
   api.seed.mockImplementation(() => { state.seeded = true; });
@@ -46,6 +48,12 @@ describe("session identity at turn submission", () => {
     expect(request.synchronizeAgentSession).not.toHaveBeenCalled();
     expect(api.prompt).not.toHaveBeenCalled();
     expect(api.ticket).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "chat-a", prompt: "Continue" }));
+  });
+  it("invokes the enrolled Bot instead of a native or freely selected ACP runtime", async () => {
+    state.bot = true; state.external = true;
+    const request = input(); await submitChatTurn(request);
+    expect(api.runtimeBot).toHaveBeenCalledWith(expect.objectContaining({bot_id:"ada"}),"chat-a","Continue");
+    expect(request.synchronizeAgentSession).not.toHaveBeenCalled();expect(api.ticket).not.toHaveBeenCalled();expect(api.prompt).not.toHaveBeenCalled();
   });
   it("rejects native turn submission for an attached provider conversation", async () => {
     state.runtime = "muse";

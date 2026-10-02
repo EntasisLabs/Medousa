@@ -195,9 +195,17 @@ bindings; it does not grant tools, credentials, or execution authority.
 | GET | `/v1/sessions/{session_id}/bot` | `SessionBotResponse` | `bots().session` |
 | PUT | `/v1/sessions/{session_id}/bot` | `SetSessionBotRequest` -> `SessionBotResponse` | `bots().bind_session` |
 | DELETE | `/v1/sessions/{session_id}/bot` | `SessionBotResponse` | `bots().unbind_session` |
-| POST | `/v1/bots/ask` | `{prompt, request_id, bot? , agent?, workshop?}` -> `{request_id, ticket}` | CLI `medousa ask` |
+| POST | `/v1/bots/ask` | `{prompt, request_id, bot?, agent?, workshop?, session_id?}` -> `{request_id, ticket}` | CLI `medousa ask` |
 | GET | `/v1/bots/ask/{job_id}` | durable status, result, destination, runtime, Forge IDs, terminal evidence | CLI `medousa ask --resume` |
 | POST | `/v1/bots/ask/{job_id}/cancel` | explicit owner-scoped cancellation | CLI `medousa ask --cancel` |
+
+`agent` accepts `codex`, `cursor`, or `hermes`. External executors pin that
+runtime, a home workshop, a provisioned Forge work and repository, and a
+`fresh_per_job` session contract. Configuration requires `admin.execute`.
+When `session_id` is supplied to `/v1/bots/ask`, it must be bound to the selected
+Bot and owned by the caller. Admission and terminal results are appended to
+that conversation; CLI requests without it use a private job conversation.
+The session is part of the request fingerprint, so retries cannot retarget it.
 
 All operations are scoped to the authenticated workshop profile. Create and
 duplicate allocate a fresh primary conversation on the daemon. Duplicate copies

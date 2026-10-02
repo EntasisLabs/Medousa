@@ -47,7 +47,7 @@ pub fn run_ask(args: AskArgs) -> Result<()> {
             .as_deref()
             .context("usage: medousa ask \"prompt\" --bot NAME")?;
         if args.bot.is_none() == args.agent.is_none() {
-            bail!("choose --bot NAME or --agent codex [--workshop NAME]");
+            bail!("choose --bot NAME or --agent codex|cursor|hermes [--workshop NAME]");
         }
         let request_id = args
             .request_id

@@ -10,6 +10,7 @@
     markId: MedousaMarkId;
     darkMode?: boolean;
     simplified?: boolean;
+    showMascot?: boolean;
     decorative?: boolean;
     label?: string;
   }
@@ -18,6 +19,7 @@
     markId,
     darkMode = true,
     simplified = false,
+    showMascot = true,
     decorative = false,
     label = "Medousa",
   }: Props = $props();
@@ -42,7 +44,7 @@
   aria-label={decorative ? undefined : label}
   aria-hidden={decorative}
 >
-  {#if mascot}
+  {#if mascot && showMascot}
     <img class="medousa-mark-image mascot-image" src={mascotImage(mascot)} alt="" aria-hidden="true" />
   {:else if markId === "aurora"}
     <img

@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { ChevronDown, Pencil, X } from "@lucide/svelte";
   import BotAvatar from "./BotAvatar.svelte";
+  import { botExecutorUpdate } from "$lib/utils/botExecutorUpdate";
   import BotEditor from "./BotEditor.svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { bots } from "$lib/stores/bots.svelte";
@@ -14,7 +15,7 @@
   import { agentRuntimeLabel, getSessionAgentRuntime, isProviderConversationRuntime } from "$lib/utils/sessionAgentRuntime";
   import { getExternalConversationSelection } from "$lib/utils/externalConversationSelection";
   import { getExternalConversation, type ExternalConversation, type ExternalProvider } from "$lib/daemon/externalConversations";
-  import type { BotProfile, BotWorldBinding } from "$lib/types/generated/daemon_api";
+  import type { BotProfile, BotWorldBinding, ExternalAgentExecutor } from "$lib/types/generated/daemon_api";
 
   let { sessionId, conversation, provider = null }: {
     sessionId: string; conversation?: ExternalConversation | null; provider?: ExternalProvider | null;
@@ -29,6 +30,7 @@
   let purpose = $state("");
   let avatar = $state("");
   let archetypeId = $state("");
+  let externalAgent = $state<ExternalAgentExecutor | null>(null);
   let worldBinding = $state<BotWorldBinding | null>(null);
   const bot = $derived(bots.forSession(sessionId));
   const binding = $derived(externalConversationBinding(sessionId));
@@ -60,6 +62,7 @@
     purpose = bot.role_description ?? "";
     avatar = bot.avatar_ref ?? "";
     archetypeId = bot.primary_manuscript_id;
+    externalAgent = bot.external_agent ? { ...bot.external_agent } : null;
     worldBinding = bot.world_binding ? { ...bot.world_binding } : null;
     error = null;
     open = false;
@@ -73,7 +76,7 @@
     saving = true;
     try {
       await bots.update(draftBot, { display_name: name.trim(), role_description: purpose.trim(), avatar_ref: avatar,
-        primary_manuscript_id: archetypeId, world_binding: worldBinding, clear_world_binding: !worldBinding });
+        primary_manuscript_id: archetypeId, ...botExecutorUpdate(draftBot.external_agent, externalAgent), world_binding: worldBinding, clear_world_binding: !worldBinding });
       if (scope === chat.workshopScopeId && id === sessionId) {
         editing = false;
         void chat.refreshSessions({ force: true });
@@ -109,14 +112,14 @@
         <h2>{label}</h2>
         <p class="archetype">{bot ? archetype || "Bot" : externalProvider ? agentRuntimeLabel(externalProvider) : "Connected agent"}</p>
         {#if bot?.role_description}<p class="purpose">{bot.role_description}</p>{/if}
-        <p class="memory">{bot ? "This conversation and its memory stay with this Bot." : "This conversation stays with the connected agent on your workshop."}</p>
+        <p class="memory">{bot?.external_agent ? `Runs with ${agentRuntimeLabel(bot.external_agent.runtime)} in its pinned workshop project.` : bot ? "This conversation and its memory stay with this Bot." : "This conversation stays with the connected agent on your workshop."}</p>
         <button type="button" class="edit" onclick={bot ? edit : manage}><Pencil size={15} />{bot ? "Edit Bot" : "Manage connection"}</button>
       </div>
     </dialog>
   </BodyPortal>
 {/if}
 {#if editing}
-  <BotEditor bind:name bind:purpose bind:avatar bind:archetypeId bind:worldBinding editing saving={saving} {error} onclose={() => { if (!saving) editing = false; }} onsubmit={(event) => void save(event)} />
+  <BotEditor bind:name bind:purpose bind:avatar bind:archetypeId bind:worldBinding bind:externalAgent editing saving={saving} {error} onclose={() => { if (!saving) editing = false; }} onsubmit={(event) => void save(event)} />
 {/if}
 
 <style>

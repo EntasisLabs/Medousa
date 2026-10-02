@@ -61,6 +61,11 @@ and the transcript stay attached to that entry. Open a different entry in Sessio
 to change agents, or open an ordinary chat to use the runtime picker. Select the
 conversation header to view its connection details or manage it in Settings.
 
+You can also search the conversation’s name or provider in Spotlight. Choose
+**Connect agent** in Spotlight’s **Create** view, or type `+ agent`, to register
+a new connection. Setup keeps any new callback key visible so you can save it;
+choose **Open chat** when setup is complete.
+
 The list belongs to the currently connected workshop. The embedded Personal
 workshop on your phone has its own list. To use a Muse session already running
 on your Mac, select that Mac's workshop on the phone first. The Mac keeps its

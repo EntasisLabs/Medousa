@@ -34,6 +34,16 @@ pub enum ExternalPeerRuntime {
     Hermes,
 }
 
+impl ExternalPeerRuntime {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Codex => "codex",
+            Self::Cursor => "cursor",
+            Self::Hermes => "hermes",
+        }
+    }
+}
+
 /// An exact adapter on an exact execution workshop, not a model preference.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]

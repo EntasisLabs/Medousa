@@ -236,12 +236,14 @@ async and sync clients. Bot updates and archive transitions require the current
 profile revision. `open` returns the durable primary conversation, creating a
 replacement only when the previous primary binding was explicitly removed.
 
-The operator-only external-agent Bot path is currently exposed by the
+The external-agent Bot job path is exposed by the app and
 product CLI: `medousa ask "prompt" --bot NAME`. Its local daemon endpoints are
 `POST /v1/bots/ask`, `GET /v1/bots/ask/{job_id}`, and
 `POST /v1/bots/ask/{job_id}/cancel`; the SDK `bots()` accessor does not wrap
 this job workflow. `request_id` is scoped to the authenticated profile, and a
-retry with the same ID must carry the same payload.
+retry with the same ID must carry the same payload. `agent` accepts `codex`,
+`cursor`, and `hermes`. An optional `session_id` attaches the request to an
+owned conversation bound to the selected Bot; results remain in that transcript.
 
 ---
 

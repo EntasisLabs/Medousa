@@ -3,6 +3,7 @@
  * Uses ChatStore.beginTurn + startTurnStream — no second stream apply path.
  */
 
+import { sendRuntimeBotTurn } from "./runtimeBotTurns.svelte";
 import { createTurnTicket, promptAgentSession } from "$lib/daemon";
 import type { TurnTicketResponse } from "$lib/types/session";
 import { prepareInteractiveTurnOptions } from "$lib/interactiveTurnOptions";
@@ -51,11 +52,20 @@ export async function submitChatTurn(input: {
   }
   const identityUserId = userProfiles.turnIdentityUserId();
   const codeProjectSetupAuthorized = input.codeProjectSetupAuthorized ?? false;
-  let runtime = bots.forSession(sessionId) ? "medousa" : getSessionAgentRuntime(sessionId);
-  if (isExternalAgentRuntime(runtime)) {
+  let bot = bots.forSession(sessionId);
+  let runtime = bot ? "medousa" : getSessionAgentRuntime(sessionId);
+  if (!bot && !isProviderConversationRuntime(runtime)) {
     const result = await getSessionBot(sessionId);
     if (!current()) throw new Error("Conversation changed while checking the session identity");
-    if (result.binding) runtime = "medousa";
+    if (result.binding) { runtime = "medousa"; bot = result.bot ?? null; }
+  }
+  if (bot?.external_agent) {
+    if (chat.pendingMediaRefs.length > 0) throw new Error("Runtime Bots currently accept text only.");
+    const admitted = await sendRuntimeBotTurn(bot, sessionId, input.prompt);
+    if (!current() || !admitted) return;
+    input.onAccepted?.({turn_id: admitted.ticket.turnId,session_id:sessionId,mode:input.mode,phase:"accepted",accepted_at_utc:new Date().toISOString(),stream_url:"",stream_ready:false});
+    input.scrollToLatest(true);
+    return;
   }
   if (isProviderConversationRuntime(runtime)) {
     throw new Error("Provider conversations must use the selected session or bot.");

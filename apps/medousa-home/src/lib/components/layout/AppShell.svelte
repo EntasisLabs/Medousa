@@ -5,6 +5,7 @@
   import ShellChunkError from "$lib/components/layout/ShellChunkError.svelte";
   import ToastHost from "$lib/components/layout/ToastHost.svelte";
   import AgentBrowserPanel from "$lib/components/chat/AgentBrowserPanel.svelte";
+  import { agentCreation } from "$lib/stores/agentCreation.svelte";
   import { commandSpotlight } from "$lib/stores/commandSpotlight.svelte";
   import { layout } from "$lib/runtime/layout.svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
@@ -35,6 +36,7 @@
     loadWorkAskDockPopover,
   } from "$lib/runtime/viewLoaders";
 
+  const loadAgentCreation = () => import("$lib/components/chat/AgentCreationDialog.svelte");
   const loadDesktopShell = () => import("$lib/components/layout/WorkshopShell.svelte");
   const loadMobileShell = () => import("$lib/components/mobile/MobileShell.svelte");
   const initialPlatform = probeClientPlatform();
@@ -95,6 +97,8 @@
     </div>
   </div>
 {/if}
+
+{#if agentCreation.kind}<LazyFeatureView loader={loadAgentCreation} overlay />{/if}
 
 {#if commandSpotlight.open}
   <LazyFeatureView

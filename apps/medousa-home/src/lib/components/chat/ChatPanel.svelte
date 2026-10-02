@@ -6,6 +6,8 @@
   import ExternalConversationTranscript from "$lib/components/chat/ExternalConversationTranscript.svelte";
   import { chatTurnNavigationItems } from "$lib/utils/chatTurnNavigation";
   import { agentRuntimeLabel, isExternalAgentRuntime, isProviderConversationRuntime } from "$lib/utils/sessionAgentRuntime";
+  import RuntimeBotStatus from "./RuntimeBotStatus.svelte";
+  import { admitRuntimeBotTurn, runtimeBotJob, runtimeBotJobPending } from "$lib/chat/runtimeBotTurns.svelte";
   import SessionIdentity from "./SessionIdentity.svelte";
   import BotAvatar from "./BotAvatar.svelte";
   import ChatAsyncToolsHint from "$lib/components/chat/ChatAsyncToolsHint.svelte";
@@ -538,6 +540,16 @@
   async function retryLastSend() {
     const payload = lastFailedSend;
     if (!payload) return;
+    const botJob = panelBot?.external_agent ? runtimeBotJob(panelSessionId) : null;
+    if (botJob) {
+      lastFailedSend = null;
+      chat.clearStreamError(panelSessionId);
+      if (!botJob.jobId && botJob.status === "submission_uncertain") {
+        try { await admitRuntimeBotTurn(panelSessionId); }
+        catch (cause) { chat.setError(cause instanceof Error ? cause.message : String(cause)); }
+      }
+      return;
+    }
     lastFailedSend = null;
     chat.clearStreamError(panelSessionId);
     let accepted = false;
@@ -572,7 +584,7 @@
 
   async function submit(event: Event) {
     event.preventDefault();
-    if (connection.offline || runtime.savingControls || chat.pendingMediaUploading) return;
+    if (connection.offline || runtime.savingControls || chat.pendingMediaUploading || runtimeBotJobPending(panelSessionId)) return;
     if (providerRuntime) {
       if (!chat.draft.trim() || externalConversation.busy) return;
       const draft = chat.draft;
@@ -588,7 +600,7 @@
     const prompt = panelBot ? basePrompt : applyActiveAgentPrompt(basePrompt);
     const hasAttachments = chat.pendingMediaRefs.length > 0;
     if (!prompt && !hasAttachments) return;
-    if (!allowUnboundCoderSend && !activeCodeContext(chat.sessionId)) {
+    if (!panelBot?.external_agent && !allowUnboundCoderSend && !activeCodeContext(chat.sessionId)) {
       const [agentMode, binding] = await Promise.all([
         getSessionAgentMode(chat.sessionId),
         getSessionCodeBinding(chat.sessionId),
@@ -1116,10 +1128,11 @@
           Steering handoff — your next message continues the worker
         </p>
       {/if}
+      {#if panelBot?.external_agent}<RuntimeBotStatus sessionId={panelSessionId} />{/if}
       <ChatComposerBar
         mobile={workshop || useMobileChatLayout}
         disabled={connection.offline || externalConversation.busy}
-        composerBlocked={chat.composerBlocked}
+        composerBlocked={chat.composerBlocked || runtimeBotJobPending(panelSessionId)}
         modelPickerEnabled
         agentRuntime={agentSession.sessionRuntime}
         agentConfigOptions={agentSession.agentConfigOptions}
@@ -1134,13 +1147,13 @@
         onkeydown={handleKeydown}
         onCursorChange={(cursor) => (draftCursor = cursor)}
       />
-      {#if !workshop && !embedded && !providerRuntime}
+      {#if !workshop && !embedded && !providerRuntime && !panelBot?.external_agent}
         <ChatRuntimeControlRow
           sessionId={panelSessionId}
           value={agentSession.sessionRuntime}
           configOptions={agentSession.agentConfigOptions}
           pending={agentSession.preparingAgent}
-          disabled={connection.offline || chat.composerBlocked || externalConversation.busy}
+          disabled={connection.offline || chat.composerBlocked || externalConversation.busy || runtimeBotJobPending(panelSessionId)}
           runtimeLocked={Boolean(panelBot)}
           onChange={agentSession.onRuntimeChange}
           onConfigChange={agentSession.updateAgentConfig}

@@ -2212,6 +2212,17 @@
           "display_name": {
             "type": "string"
           },
+          "external_agent": {
+            "description": "Configuration only. Each execution still requires placement, pairing, destination policy, and runtime admission.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ExternalAgentExecutor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "memory_scope_id": {
             "type": "string"
           },
@@ -2284,6 +2295,65 @@
         "type": "string",
         "enum": [
           "persistent_browser"
+        ]
+      },
+      "ExternalAgentExecutor": {
+        "description": "Owner-pinned execution authority for an external-agent Bot. `forge_work_id` is resolved on the home workshop; caller-supplied host paths are forbidden.",
+        "type": "object",
+        "required": [
+          "forge_repo_id",
+          "forge_work_id",
+          "home_workshop_id",
+          "runtime",
+          "session_contract"
+        ],
+        "properties": {
+          "allowed_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowed_tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "forge_repo_id": {
+            "type": "string"
+          },
+          "forge_work_id": {
+            "type": "string"
+          },
+          "home_workshop_id": {
+            "type": "string"
+          },
+          "runtime": {
+            "description": "Installed ACP runtime, distinct from an inference provider.",
+            "allOf": [
+              {
+                "$ref": "#/definitions/ExternalPeerRuntime"
+              }
+            ]
+          },
+          "session_contract": {
+            "$ref": "#/definitions/ExternalAgentSessionContract"
+          }
+        }
+      },
+      "ExternalAgentSessionContract": {
+        "type": "string",
+        "enum": [
+          "fresh_per_job"
+        ]
+      },
+      "ExternalPeerRuntime": {
+        "type": "string",
+        "enum": [
+          "codex",
+          "cursor",
+          "hermes"
         ]
       }
     }
@@ -2369,6 +2439,17 @@
           },
           "display_name": {
             "type": "string"
+          },
+          "external_agent": {
+            "description": "Configuration only. Each execution still requires placement, pairing, destination policy, and runtime admission.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ExternalAgentExecutor"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "memory_scope_id": {
             "type": "string"
@@ -2480,6 +2561,65 @@
         "enum": [
           "persistent_browser"
         ]
+      },
+      "ExternalAgentExecutor": {
+        "description": "Owner-pinned execution authority for an external-agent Bot. `forge_work_id` is resolved on the home workshop; caller-supplied host paths are forbidden.",
+        "type": "object",
+        "required": [
+          "forge_repo_id",
+          "forge_work_id",
+          "home_workshop_id",
+          "runtime",
+          "session_contract"
+        ],
+        "properties": {
+          "allowed_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowed_tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "forge_repo_id": {
+            "type": "string"
+          },
+          "forge_work_id": {
+            "type": "string"
+          },
+          "home_workshop_id": {
+            "type": "string"
+          },
+          "runtime": {
+            "description": "Installed ACP runtime, distinct from an inference provider.",
+            "allOf": [
+              {
+                "$ref": "#/definitions/ExternalPeerRuntime"
+              }
+            ]
+          },
+          "session_contract": {
+            "$ref": "#/definitions/ExternalAgentSessionContract"
+          }
+        }
+      },
+      "ExternalAgentSessionContract": {
+        "type": "string",
+        "enum": [
+          "fresh_per_job"
+        ]
+      },
+      "ExternalPeerRuntime": {
+        "type": "string",
+        "enum": [
+          "codex",
+          "cursor",
+          "hermes"
+        ]
       }
     }
   },
@@ -2534,6 +2674,17 @@
       },
       "display_name": {
         "type": "string"
+      },
+      "external_agent": {
+        "description": "Configuration only. Each execution still requires placement, pairing, destination policy, and runtime admission.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ExternalAgentExecutor"
+          },
+          {
+            "type": "null"
+          }
+        ]
       },
       "memory_scope_id": {
         "type": "string"
@@ -2622,6 +2773,65 @@
         "type": "string",
         "enum": [
           "persistent_browser"
+        ]
+      },
+      "ExternalAgentExecutor": {
+        "description": "Owner-pinned execution authority for an external-agent Bot. `forge_work_id` is resolved on the home workshop; caller-supplied host paths are forbidden.",
+        "type": "object",
+        "required": [
+          "forge_repo_id",
+          "forge_work_id",
+          "home_workshop_id",
+          "runtime",
+          "session_contract"
+        ],
+        "properties": {
+          "allowed_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowed_tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "forge_repo_id": {
+            "type": "string"
+          },
+          "forge_work_id": {
+            "type": "string"
+          },
+          "home_workshop_id": {
+            "type": "string"
+          },
+          "runtime": {
+            "description": "Installed ACP runtime, distinct from an inference provider.",
+            "allOf": [
+              {
+                "$ref": "#/definitions/ExternalPeerRuntime"
+              }
+            ]
+          },
+          "session_contract": {
+            "$ref": "#/definitions/ExternalAgentSessionContract"
+          }
+        }
+      },
+      "ExternalAgentSessionContract": {
+        "type": "string",
+        "enum": [
+          "fresh_per_job"
+        ]
+      },
+      "ExternalPeerRuntime": {
+        "type": "string",
+        "enum": [
+          "codex",
+          "cursor",
+          "hermes"
         ]
       }
     }
@@ -4952,6 +5162,16 @@
       "display_name": {
         "type": "string"
       },
+      "external_agent": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ExternalAgentExecutor"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "primary_manuscript_id": {
         "type": "string"
       },
@@ -5010,6 +5230,65 @@
         "type": "string",
         "enum": [
           "persistent_browser"
+        ]
+      },
+      "ExternalAgentExecutor": {
+        "description": "Owner-pinned execution authority for an external-agent Bot. `forge_work_id` is resolved on the home workshop; caller-supplied host paths are forbidden.",
+        "type": "object",
+        "required": [
+          "forge_repo_id",
+          "forge_work_id",
+          "home_workshop_id",
+          "runtime",
+          "session_contract"
+        ],
+        "properties": {
+          "allowed_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowed_tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "forge_repo_id": {
+            "type": "string"
+          },
+          "forge_work_id": {
+            "type": "string"
+          },
+          "home_workshop_id": {
+            "type": "string"
+          },
+          "runtime": {
+            "description": "Installed ACP runtime, distinct from an inference provider.",
+            "allOf": [
+              {
+                "$ref": "#/definitions/ExternalPeerRuntime"
+              }
+            ]
+          },
+          "session_contract": {
+            "$ref": "#/definitions/ExternalAgentSessionContract"
+          }
+        }
+      },
+      "ExternalAgentSessionContract": {
+        "type": "string",
+        "enum": [
+          "fresh_per_job"
+        ]
+      },
+      "ExternalPeerRuntime": {
+        "type": "string",
+        "enum": [
+          "codex",
+          "cursor",
+          "hermes"
         ]
       }
     }
@@ -21346,6 +21625,17 @@
           "display_name": {
             "type": "string"
           },
+          "external_agent": {
+            "description": "Configuration only. Each execution still requires placement, pairing, destination policy, and runtime admission.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ExternalAgentExecutor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "memory_scope_id": {
             "type": "string"
           },
@@ -21455,6 +21745,65 @@
         "type": "string",
         "enum": [
           "persistent_browser"
+        ]
+      },
+      "ExternalAgentExecutor": {
+        "description": "Owner-pinned execution authority for an external-agent Bot. `forge_work_id` is resolved on the home workshop; caller-supplied host paths are forbidden.",
+        "type": "object",
+        "required": [
+          "forge_repo_id",
+          "forge_work_id",
+          "home_workshop_id",
+          "runtime",
+          "session_contract"
+        ],
+        "properties": {
+          "allowed_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowed_tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "forge_repo_id": {
+            "type": "string"
+          },
+          "forge_work_id": {
+            "type": "string"
+          },
+          "home_workshop_id": {
+            "type": "string"
+          },
+          "runtime": {
+            "description": "Installed ACP runtime, distinct from an inference provider.",
+            "allOf": [
+              {
+                "$ref": "#/definitions/ExternalPeerRuntime"
+              }
+            ]
+          },
+          "session_contract": {
+            "$ref": "#/definitions/ExternalAgentSessionContract"
+          }
+        }
+      },
+      "ExternalAgentSessionContract": {
+        "type": "string",
+        "enum": [
+          "fresh_per_job"
+        ]
+      },
+      "ExternalPeerRuntime": {
+        "type": "string",
+        "enum": [
+          "codex",
+          "cursor",
+          "hermes"
         ]
       }
     }
@@ -28932,6 +29281,9 @@
           "null"
         ]
       },
+      "clear_external_agent": {
+        "type": "boolean"
+      },
       "clear_world_binding": {
         "description": "Explicitly clear durable continuity. This cannot be combined with `world_binding`.",
         "type": "boolean"
@@ -28953,6 +29305,17 @@
         "type": "integer",
         "format": "uint64",
         "minimum": 0.0
+      },
+      "external_agent": {
+        "description": "Omission preserves the current executor for older clients.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ExternalAgentExecutor"
+          },
+          {
+            "type": "null"
+          }
+        ]
       },
       "primary_manuscript_id": {
         "type": "string"
@@ -29012,6 +29375,65 @@
         "type": "string",
         "enum": [
           "persistent_browser"
+        ]
+      },
+      "ExternalAgentExecutor": {
+        "description": "Owner-pinned execution authority for an external-agent Bot. `forge_work_id` is resolved on the home workshop; caller-supplied host paths are forbidden.",
+        "type": "object",
+        "required": [
+          "forge_repo_id",
+          "forge_work_id",
+          "home_workshop_id",
+          "runtime",
+          "session_contract"
+        ],
+        "properties": {
+          "allowed_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowed_tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "forge_repo_id": {
+            "type": "string"
+          },
+          "forge_work_id": {
+            "type": "string"
+          },
+          "home_workshop_id": {
+            "type": "string"
+          },
+          "runtime": {
+            "description": "Installed ACP runtime, distinct from an inference provider.",
+            "allOf": [
+              {
+                "$ref": "#/definitions/ExternalPeerRuntime"
+              }
+            ]
+          },
+          "session_contract": {
+            "$ref": "#/definitions/ExternalAgentSessionContract"
+          }
+        }
+      },
+      "ExternalAgentSessionContract": {
+        "type": "string",
+        "enum": [
+          "fresh_per_job"
+        ]
+      },
+      "ExternalPeerRuntime": {
+        "type": "string",
+        "enum": [
+          "codex",
+          "cursor",
+          "hermes"
         ]
       }
     }

@@ -18,6 +18,7 @@ pub struct AskBotRequest {
     pub bot: Option<String>,
     pub agent: Option<String>,
     pub workshop: Option<String>,
+    pub session_id: Option<String>,
 }
 
 fn ask_error(
@@ -59,18 +60,20 @@ pub async fn ask_bot(
     }
     let runtime = match request.agent.as_deref() {
         Some("codex") => Some(medousa_types::coordination::ExternalPeerRuntime::Codex),
+        Some("cursor") => Some(medousa_types::coordination::ExternalPeerRuntime::Cursor),
+        Some("hermes") => Some(medousa_types::coordination::ExternalPeerRuntime::Hermes),
         Some(_) => {
             return Err(ask_error(
                 StatusCode::BAD_REQUEST,
                 "unknown_agent",
-                "only enrolled Codex CLI Bots are supported",
+                "supported Bot runtimes are codex, cursor, and hermes",
                 false,
             ));
         }
         None => None,
     };
     let fingerprint = format!("{:x}", Sha256::digest(serde_json::to_vec(&json!({
-        "prompt": request.prompt, "bot": request.bot, "agent": request.agent, "workshop": request.workshop,
+        "prompt": request.prompt, "bot": request.bot, "agent": request.agent, "workshop": request.workshop, "session_id": request.session_id,
     })).map_err(|error| ask_error(StatusCode::INTERNAL_SERVER_ERROR, "encode_failure", error.to_string(), false))?));
     let service = state.platform.delegation_service().ok_or_else(|| {
         ask_error(
@@ -242,6 +245,35 @@ pub async fn ask_bot(
             false,
         )
     })?;
+    if let Some(session_id) = request.session_id.as_ref() {
+        let owner = profile.clone();
+        let session = session_id.clone();
+        let bound = tokio::task::spawn_blocking(move || {
+            crate::bot_profiles::BotProfileStore::daemon_default().resolve_session(&owner, &session)
+        })
+        .await
+        .map_err(|error| {
+            ask_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "bot_store_failure",
+                error.to_string(),
+                false,
+            )
+        })?
+        .map_err(|error| ask_error(StatusCode::FORBIDDEN, "session_denied", error, false))?;
+        if bound
+            .bot
+            .as_ref()
+            .is_none_or(|bound| bound.bot_id != bot.bot_id)
+        {
+            return Err(ask_error(
+                StatusCode::FORBIDDEN,
+                "session_denied",
+                "conversation must belong to the selected Bot",
+                false,
+            ));
+        }
+    }
     let home = bot
         .external_agent
         .as_ref()
@@ -317,6 +349,7 @@ pub async fn ask_bot(
             &bot,
             target,
             &runtime_id,
+            request.session_id.as_deref(),
         )
         .await
         .map_err(|error| {

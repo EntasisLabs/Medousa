@@ -5,6 +5,8 @@
     agentSession: ReturnType<typeof createAgentSessionController>;
     externalConversation: ReturnType<typeof createExternalConversationController>;
   } = $props();
+  import RuntimeBotStatus from "$lib/components/chat/RuntimeBotStatus.svelte";
+  import { runtimeBotJobPending } from "$lib/chat/runtimeBotTurns.svelte";
   import MobileChatContext from "./MobileChatContext.svelte";
   import { Mic } from "@lucide/svelte";
   import { isTauriIos } from "$lib/platform";
@@ -42,7 +44,7 @@
   import { activeCodeContext } from "$lib/utils/undertakingWorkspace";
 
   const providerRuntime = $derived(isProviderConversationRuntime(agentSession.sessionRuntime));
-  const blocked = $derived(chat.composerBlocked || runtime.savingControls || externalConversation.busy || agentSession.preparingAgent);
+  const blocked = $derived(runtimeBotJobPending(chat.focusedSessionId) || chat.composerBlocked || runtime.savingControls || externalConversation.busy || agentSession.preparingAgent);
 
   function scrollToLatest() {
     window.dispatchEvent(new CustomEvent("medousa-chat-scroll-to-bottom", { detail: { force: true } }));
@@ -149,7 +151,7 @@
       );
       return;
     }
-    if (!allowUnboundCoderSend && !activeCodeContext(chat.sessionId)) {
+    if (!bots.forSession(chat.focusedSessionId)?.external_agent && !allowUnboundCoderSend && !activeCodeContext(chat.sessionId)) {
       const [agentMode, binding] = await Promise.all([
         getSessionAgentMode(chat.sessionId),
         getSessionCodeBinding(chat.sessionId),
@@ -252,9 +254,9 @@
   {/if}
   <div class="flex min-w-0 items-center justify-between gap-2">
   <div class="min-w-0 flex-1">
-    {#if !providerRuntime}<MobileChatContext {agentSession} disabled={connection.offline || blocked}/>{/if}
+    {#if !providerRuntime && !bots.forSession(chat.focusedSessionId)?.external_agent}<MobileChatContext {agentSession} disabled={connection.offline || blocked}/>{/if}
   </div>
-  {#if agentSession.sessionRuntime === "medousa" && isTauriIos() && !$liveVoiceState.active}
+  {#if agentSession.sessionRuntime === "medousa" && !bots.forSession(chat.focusedSessionId)?.external_agent && isTauriIos() && !$liveVoiceState.active}
     <button
       type="button"
       class="mr-2 mb-1 flex min-h-11 shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-sm text-white disabled:opacity-45"
@@ -266,6 +268,7 @@
     </button>
   {/if}
   </div>
+  {#if bots.forSession(chat.focusedSessionId)?.external_agent}<RuntimeBotStatus sessionId={chat.focusedSessionId} />{/if}
   <ChatComposerBar
     mobile
     disabled={connection.offline || externalConversation.busy}

@@ -521,6 +521,17 @@
           "display_name": {
             "type": "string"
           },
+          "external_agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExternalAgentExecutor"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Configuration only. Each execution still requires placement, pairing, destination policy, and runtime admission."
+          },
           "memory_scope_id": {
             "type": "string"
           },
@@ -2168,6 +2179,16 @@
           "display_name": {
             "type": "string"
           },
+          "external_agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExternalAgentExecutor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "primary_manuscript_id": {
             "type": "string"
           },
@@ -3585,10 +3606,61 @@
         ],
         "type": "object"
       },
+      "ExternalAgentExecutor": {
+        "description": "Owner-pinned execution authority for an external-agent Bot. `forge_work_id` is resolved on the home workshop; caller-supplied host paths are forbidden.",
+        "properties": {
+          "allowed_capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "allowed_tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "forge_repo_id": {
+            "type": "string"
+          },
+          "forge_work_id": {
+            "type": "string"
+          },
+          "home_workshop_id": {
+            "type": "string"
+          },
+          "runtime": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ExternalPeerRuntime"
+              }
+            ],
+            "description": "Installed ACP runtime, distinct from an inference provider."
+          },
+          "session_contract": {
+            "$ref": "#/components/schemas/ExternalAgentSessionContract"
+          }
+        },
+        "required": [
+          "forge_repo_id",
+          "forge_work_id",
+          "home_workshop_id",
+          "runtime",
+          "session_contract"
+        ],
+        "type": "object"
+      },
       "ExternalAgentScope": {
         "enum": [
           "read",
           "work"
+        ],
+        "type": "string"
+      },
+      "ExternalAgentSessionContract": {
+        "enum": [
+          "fresh_per_job"
         ],
         "type": "string"
       },
@@ -8953,6 +9025,9 @@
               "null"
             ]
           },
+          "clear_external_agent": {
+            "type": "boolean"
+          },
           "clear_world_binding": {
             "description": "Explicitly clear durable continuity. This cannot be combined with `world_binding`.",
             "type": "boolean"
@@ -8974,6 +9049,17 @@
             "format": "uint64",
             "minimum": 0.0,
             "type": "integer"
+          },
+          "external_agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExternalAgentExecutor"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Omission preserves the current executor for older clients."
           },
           "primary_manuscript_id": {
             "type": "string"
