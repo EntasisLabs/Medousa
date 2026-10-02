@@ -17,7 +17,7 @@ use crate::daemon::coordination::assignments::{
     AssignmentEventsQuery, AssignmentGetQuery, AssignmentListQuery, OwnerEventsQuery,
 };
 #[cfg(feature = "full-daemon")]
-use crate::daemon::work_units::{WorkGraphMutateInput, WorkUnitGetQuery};
+use crate::daemon::work_units::{WorkGraphMutateInput, WorkNativeResolveInput, WorkUnitGetQuery};
 use crate::events::TuiEvent;
 use crate::public_api::{COGNITION_RUNTIME_MUTATE, COGNITION_RUNTIME_QUERY};
 use crate::recurring_delivery::RecurringDeliverySpec;
@@ -108,6 +108,9 @@ pub enum RuntimeMutateAction {
     #[cfg(feature = "full-daemon")]
     #[serde(rename = "work.record")]
     WorkRecord(WorkGraphMutateInput),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "work.resolve")]
+    WorkResolve(WorkNativeResolveInput),
     #[serde(rename = "job.enqueue")]
     JobEnqueue(JobEnqueue),
     #[serde(rename = "job.cancel")]
@@ -385,7 +388,8 @@ impl JsonSchema for RuntimeMutateAction {
             "workflow.plan",
         ];
         #[cfg(feature = "full-daemon")]
-        let actions = std::iter::once("work.record")
+        let actions = ["work.record", "work.resolve"]
+            .into_iter()
             .chain(actions)
             .collect::<Vec<_>>();
         advertised_object_schema(&[("action", string_enum_schema(&actions), true)])
@@ -481,6 +485,11 @@ pub fn runtime_type_schemas() -> Vec<TypedActionSchema> {
                 "work.record",
                 "Record intent, explicit scope, relationships, or contact preference; this does not launch, schedule, cancel, or contact native executors",
             ),
+            typed_action_schema::<WorkNativeResolveInput>(
+                MUTATE_ID,
+                "work.resolve",
+                "Resolve an exact user-vault note, folder, or stable reference on an explicit vault root; records bounded native metadata without reading note bodies into the response",
+            ),
             typed_action_schema::<AssignmentListQuery>(
                 QUERY_ID,
                 "assignment.list",
@@ -555,7 +564,7 @@ impl CognitionRuntimeQueryTool {
 
 #[medousa_tool(id = MUTATE_ID)]
 impl CognitionRuntimeMutateTool {
-    /// Mutate durable runtime work. work.record saves session-independent intent without launching execution; job.enqueue and workflow.run execute through their native admission. Fetch fields with cognition_schema types=[...].
+    /// Mutate durable runtime work. work.record saves session-independent intent without launching execution; work.resolve refreshes exact native vault metadata. job.enqueue and workflow.run execute through their native admission. Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(
         &self,
         action: RuntimeMutateAction,
@@ -655,6 +664,13 @@ async fn dispatch_mutate(
         RuntimeMutateAction::WorkRecord(params) => {
             let (host, turn) = admitted_work_access()?;
             host.record(&turn, params).await.map_err(runtime_error)
+        }
+        #[cfg(feature = "full-daemon")]
+        RuntimeMutateAction::WorkResolve(params) => {
+            let (host, turn) = admitted_work_access()?;
+            host.resolve_native(&turn, params)
+                .await
+                .map_err(runtime_error)
         }
         RuntimeMutateAction::JobEnqueue(params) => params.execute(tool).await,
         RuntimeMutateAction::JobCancel(params) => params.execute(tool).await,
@@ -1039,7 +1055,15 @@ mod tests {
         unknown["command"]["mutation"]["operation"] = json!("launch_agent");
         assert!(serde_json::from_value::<RuntimeMutateAction>(unknown).is_err());
         assert!(admitted_work_access().is_err());
-        for name in ["work.graph", "work.get", "work.record"] {
+        let resolve = json!({"action":"work.resolve","root_id":"personal","target":{"kind":"note","path":"docs.md"}});
+        assert!(matches!(
+            serde_json::from_value::<RuntimeMutateAction>(resolve.clone()).unwrap(),
+            RuntimeMutateAction::WorkResolve(_)
+        ));
+        let mut spoofed_resolve = resolve;
+        spoofed_resolve["user_id"] = json!("user:other");
+        assert!(serde_json::from_value::<RuntimeMutateAction>(spoofed_resolve).is_err());
+        for name in ["work.graph", "work.get", "work.record", "work.resolve"] {
             assert!(
                 runtime_type_schemas()
                     .iter()
@@ -1105,15 +1129,16 @@ mod tests {
                     .any(|entry| entry.name == action)
             );
         }
-        assert!(
-            serde_json::from_value::<RuntimeMutateAction>(json!({"action": "work.record"}))
-                .is_err()
-        );
-        assert!(
-            !runtime_type_schemas()
-                .iter()
-                .any(|entry| entry.name == "work.record")
-        );
+        for action in ["work.record", "work.resolve"] {
+            assert!(
+                serde_json::from_value::<RuntimeMutateAction>(json!({"action": action})).is_err()
+            );
+            assert!(
+                !runtime_type_schemas()
+                    .iter()
+                    .any(|entry| entry.name == action)
+            );
+        }
     }
 
     #[test]

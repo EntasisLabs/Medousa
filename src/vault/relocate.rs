@@ -26,6 +26,8 @@ pub struct RelocateIntent {
     pub source: String,
     pub destination: Option<String>,
     pub vault_generation: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<crate::vault::contracts::VaultIdentityBinding>,
 }
 
 pub fn relocate_move(
@@ -74,6 +76,17 @@ fn commit_relocate(
     let _guard = owner.lanes.acquire(keys)?;
 
     let operation_id = uuid::Uuid::new_v4().simple().to_string();
+    #[cfg(feature = "full-daemon")]
+    let mut identities = crate::vault::identity::VaultIdentityTransaction::begin(owner, false)?;
+    #[cfg(feature = "full-daemon")]
+    let identity = {
+        let mut binding = identities.prepare_relocate(&source, kind == RelocateKind::Restore)?;
+        // Rename preserves physical identity; freeze its evidence before publish.
+        binding.published_file = binding.prior_file.clone();
+        Some(binding)
+    };
+    #[cfg(not(feature = "full-daemon"))]
+    let identity = None;
     let intent = RelocateIntent {
         operation_id: operation_id.clone(),
         kind,
@@ -81,6 +94,7 @@ fn commit_relocate(
         source: source.to_string(),
         destination: destination.as_ref().map(|path| path.to_string()),
         vault_generation: owner.current_generation(),
+        identity,
     };
     let intent_path = StorePath::parse(&format!(".medousa/vault/intents/{operation_id}.json"))
         .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
@@ -107,6 +121,28 @@ fn commit_relocate(
             tx.move_path_create_only(&source, &dest, DurabilityLevel::Synced)
         }
     } {
+        #[cfg(feature = "full-daemon")]
+        if let Some(binding) = &intent.identity {
+            let source_absent = matches!(owner.files.metadata(&source), Err(e) if e.is_not_found());
+            let destination_matches = owner
+                .files
+                .metadata(&dest)
+                .is_ok_and(|metadata| binding.published_file.as_ref() == Some(&metadata.into()));
+            if source_absent && destination_matches {
+                // Publication succeeded but its fence/receipt is uncertain.
+                // Preserve the journal and let recovery complete the sync.
+                return Ok(relocate_repair_outcome(owner, &operation_id));
+            }
+            let source_matches = owner
+                .files
+                .metadata(&source)
+                .is_ok_and(|metadata| binding.prior_file.as_ref() == Some(&metadata.into()));
+            if !source_matches {
+                return Err(VaultMutationError::ExternallyAmbiguous(
+                    "relocation custody is uncertain; intent retained for reconciliation".into(),
+                ));
+            }
+        }
         let _ = tx.root().remove_file(&intent_path);
         return Err(error.into());
     }
@@ -140,6 +176,27 @@ fn commit_relocate(
     let index_repair_required =
         match tx.write_receipt(&receipt_path, &receipt_bytes, DurabilityLevel::Synced) {
             Ok(_) => {
+                #[cfg(feature = "full-daemon")]
+                if let Some(binding) = &intent.identity {
+                    let locator = if kind == RelocateKind::Delete {
+                        &source
+                    } else {
+                        &dest
+                    };
+                    if identities
+                        .complete(binding, locator, kind == RelocateKind::Delete, None)
+                        .is_err()
+                    {
+                        return Ok(VaultCommitOutcome {
+                            receipt,
+                            note_version: crate::vault::contracts::NoteVersion::from_digest(
+                                operation_id,
+                            ),
+                            vault_generation,
+                            index_repair_required: true,
+                        });
+                    }
+                }
                 let _ = tx.root().remove_file(&intent_path);
                 false
             }
@@ -196,12 +253,21 @@ pub fn recover_pending_relocate(
     owner: &Arc<VaultIndexOwner>,
     operation_id: &str,
 ) -> Result<Option<VaultCommitOutcome>, VaultMutationError> {
+    #[cfg(feature = "full-daemon")]
+    let mut identities = crate::vault::identity::VaultIdentityTransaction::begin(owner, true)?;
     let intent_path = StorePath::parse(&format!(".medousa/vault/intents/{operation_id}.json"))
         .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
     let receipt_path = StorePath::parse(&format!(".medousa/vault/receipts/{operation_id}.json"))
         .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
     let tx = owner.transaction();
     if tx.root().is_file(&receipt_path).unwrap_or(false) {
+        #[cfg(feature = "full-daemon")]
+        if tx.root().is_file(&intent_path).unwrap_or(false) {
+            let bytes = tx.root().read_limited(&receipt_path, 64 * 1024)?;
+            let intent: RelocateIntent = serde_json::from_slice(&bytes)
+                .map_err(|e| VaultMutationError::Invalid(e.to_string()))?;
+            project_identity(&mut identities, &intent)?;
+        }
         let _ = tx.root().remove_file(&intent_path);
         return Ok(None);
     }
@@ -225,12 +291,24 @@ pub fn recover_pending_relocate(
     let source_exists = tx.root().is_file(&source).unwrap_or(false);
     let dest_exists = tx.root().is_file(&dest).unwrap_or(false);
     if dest_exists && !source_exists {
-        // Move/delete already published; write receipt. Keep intent until
-        // the receipt is durable.
+        #[cfg(feature = "full-daemon")]
+        if let Some(binding) = &intent.identity
+            && binding.published_file.as_ref() != Some(&tx.root().metadata(&dest)?.into())
+        {
+            return Err(VaultMutationError::ExternallyAmbiguous(
+                "destination does not match the journal's physical resource witness".into(),
+            ));
+        }
+        // Complete native directory durability before publishing its receipt.
+        // Otherwise a later receipt replay could skip an unfinished fence.
+        tx.root().sync_parent_of(&dest)?;
+        tx.root().sync_parent_of(&source)?;
         let vault_generation = owner.bump_generation()?;
         let receipt_bytes = serde_json::to_vec(&intent)
             .map_err(|error| VaultMutationError::Invalid(error.to_string()))?;
         tx.write_receipt(&receipt_path, &receipt_bytes, DurabilityLevel::Synced)?;
+        #[cfg(feature = "full-daemon")]
+        project_identity(&mut identities, &intent)?;
         let _ = tx.root().remove_file(&intent_path);
         return Ok(Some(VaultCommitOutcome {
             receipt: vault_receipt(
@@ -244,9 +322,57 @@ pub fn recover_pending_relocate(
             index_repair_required: true,
         }));
     }
-    // Incomplete: drop intent; do not invent a new mutation.
+    #[cfg(feature = "full-daemon")]
+    if let Some(binding) = &intent.identity
+        && (!source_exists
+            || binding.prior_file.as_ref() != Some(&tx.root().metadata(&source)?.into()))
+    {
+        return Err(VaultMutationError::ExternallyAmbiguous(
+            "relocation cannot be proven published or abandoned; intent retained".into(),
+        ));
+    }
+    // Proven incomplete: drop intent; do not invent a new mutation.
     let _ = tx.root().remove_file(&intent_path);
     Ok(None)
+}
+
+#[cfg(feature = "full-daemon")]
+fn project_identity(
+    identities: &mut crate::vault::identity::VaultIdentityTransaction<'_>,
+    intent: &RelocateIntent,
+) -> Result<(), VaultMutationError> {
+    if let Some(binding) = &intent.identity {
+        let locator = if intent.kind == RelocateKind::Delete {
+            &intent.source
+        } else {
+            intent
+                .destination
+                .as_ref()
+                .ok_or_else(|| VaultMutationError::Invalid("missing relocate destination".into()))?
+        };
+        identities.complete(
+            binding,
+            &VaultPath::parse(locator)?,
+            intent.kind == RelocateKind::Delete,
+            None,
+        )?;
+    }
+    Ok(())
+}
+
+#[cfg(feature = "full-daemon")]
+fn relocate_repair_outcome(owner: &VaultIndexOwner, operation_id: &str) -> VaultCommitOutcome {
+    VaultCommitOutcome {
+        receipt: vault_receipt(
+            format!("relocate:{operation_id}"),
+            owner.current_generation(),
+            0,
+            DurabilityLevel::Synced,
+        ),
+        note_version: crate::vault::contracts::NoteVersion::from_digest(operation_id),
+        vault_generation: owner.current_generation(),
+        index_repair_required: true,
+    }
 }
 
 fn unique_trash_path(

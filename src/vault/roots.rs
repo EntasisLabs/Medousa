@@ -143,6 +143,30 @@ pub fn active_vault_root() -> PathBuf {
     panic!("embedded vault root must be configured before use")
 }
 
+/// Resolve an explicit configured root without consulting the active selection.
+#[cfg(feature = "full-daemon")]
+pub fn vault_root_by_id(id: &str) -> Result<PathBuf> {
+    if let Some(path) = root_override::get() {
+        if id == DEFAULT_VAULT_ROOT_ID {
+            return Ok(path);
+        }
+        bail!("unknown vault root");
+    }
+    if let Some(root) = DEPLOYMENT_VAULT_ROOT.get() {
+        if id == DEFAULT_VAULT_ROOT_ID {
+            return Ok(root.path.clone());
+        }
+        bail!("unknown vault root");
+    }
+    let config = normalize_vault_config(&load_product_config().vault);
+    let entry = config
+        .roots
+        .iter()
+        .find(|root| root.id == id)
+        .ok_or_else(|| anyhow::anyhow!("unknown vault root"))?;
+    Ok(resolve_root_path(entry))
+}
+
 pub fn list_vault_root_views() -> crate::daemon_api::VaultRootsResponse {
     if let Some(path) = DEPLOYMENT_VAULT_ROOT.get() {
         return crate::daemon_api::VaultRootsResponse {

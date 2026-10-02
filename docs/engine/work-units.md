@@ -5,10 +5,11 @@ relationships and session-independent work intent. It uses the existing
 `cognition_runtime_query`, `cognition_runtime_mutate`, and `cognition_schema`
 tools. It adds no app navigation or required Goals workflow.
 
-This is the storage and intent foundation. Native resource indexing, execution
-subscriptions, autonomous coordination, provider federation, and contact
-delivery are subsequent implementation steps. Recording a responsibility does
-not launch an executor or register a schedule.
+This is the storage and intent foundation, with exact native user-vault note and
+folder observations. Other native resource adapters, execution subscriptions,
+autonomous coordination, provider federation, and contact delivery are subsequent
+implementation steps. Recording a responsibility does not launch an executor or
+register a schedule.
 
 ## Access and identity
 
@@ -29,8 +30,71 @@ Remote references do not establish cross-workshop identity or execution policy.
 without changing that reference. Paths, titles, and content hashes alone do not
 establish stable identity. The initial agent-facing registration records
 unresolved claims. Models cannot assert native availability, native revisions,
-or deletion; those facts require an authoritative adapter. Native vault identity
-issuance and managed-move projection are not yet connected to this registry.
+or deletion; those facts require an authoritative adapter. `work.resolve` issues
+and refreshes authoritative references for exact user-vault notes and folders.
+
+## Native vault resolution
+
+`work.resolve` is a mutation: it writes identity metadata and the admitted owner's
+graph projection, so it requires the mutation permissions above. Supply an exact
+configured `root_id`; it never falls back to the currently selected vault. The
+target is a public user-vault note path, folder path, or previously issued exact
+reference. For example:
+
+```json
+{"action":"work.resolve","root_id":"personal","target":{"kind":"note","path":"notes/design.md"}}
+```
+
+To refresh after a move, use `target: {"kind":"reference","reference":...}`
+with the returned `resource.reference` and the same configured root ID. Responses
+contain the resource, graph revision, and `coverage: "user_vault_exact_resource"`.
+Unchanged observations do not append another graph event. Metadata carries a
+native observation revision; no note body is copied into the graph or response.
+
+Each physical vault has a daemon-issued namespace in the synced sidecar
+`.medousa/vault/resource-identities.json`. References use
+`vault:<namespace>:user:<resource-id>`, qualified by workshop authority and resource
+kind. Paths are locators. Managed atomic writes and managed note moves preserve
+the resource ID across owner and daemon restart. Managed deletion permanently
+tombstones the ID and retains its links; restore or path reuse creates a new ID.
+Existing note content and app navigation need no migration.
+
+The adapter hashes at most 1 MiB of a note. Larger notes retain their ID but
+resolve as `unavailable`, invalidating checkpoints on refresh. Folder observations
+prove folder metadata only; they neither enumerate membership nor prove every
+descendant ready. The sidecar holds at most 4,096 identities and 1 MiB of metadata,
+with projection headroom checked before native mutations. Capacity exhaustion
+rejects further mutations rather than evicting identities or tombstones.
+
+Filesystem object identifiers and creation time provide reconciliation evidence,
+not semantic identity. External replacement cannot inherit an old ID because its
+bytes match. Missing or replaced resources resolve as `unavailable`; a physical
+object observed at another path stays ambiguous until explicit reconciliation.
+External moves and folder moves are not automatically adopted. Copied sidecars
+under a different physical root, corrupt metadata, and unsupported versions fail
+without resetting identities. Losing the sidecar produces a new namespace, so
+old references cannot silently retarget. Unobserved filesystem identifier reuse
+remains subject to the platform's object identity guarantees.
+
+Native write/move/delete/restore journals retain identity bindings until sidecar
+projection is synced. Write publication witnesses come from the staged file
+handle, so an external replacement immediately after publication cannot inherit
+the publisher's identity. If publication succeeds but projection fails, the native
+commit reports repair required and retains its intent/receipt. Owner startup and
+`work.resolve` replay pending journals before resolution. Unchanged metadata and
+graph replays finish pending parent sync fences without adding observations.
+A nonblocking root lock
+rejects concurrent identity custody as overloaded; retry after the owner releases
+it. When a write published without a durable physical publication witness,
+recovery retains an ambiguous intent instead of guessing from equal content.
+Identity resolution and further native mutations remain blocked until explicit
+reconciliation; that repair workflow has not yet been implemented. Ordinary native
+content reads remain available.
+
+Observations are explicit, not background subscriptions. `work.get` does not
+refresh native content; refresh relevant resources before using a checkpoint for
+new work. Project overlays, projects, artifacts, feeds, execution identities, and
+cross-workshop resolution are not covered by this adapter.
 
 ## Query actions
 
@@ -72,7 +136,7 @@ For example, inspect accepted work through the existing query tool:
 {"action":"work.graph","collection":"work_units","limit":20}
 ```
 
-## Mutation action
+## Intent mutation action
 
 `work.record` accepts a `command` containing `command_id`, `expected_revision`,
 and a typed `mutation`. Fetch the full parameter schema with `cognition_schema`
@@ -149,9 +213,9 @@ The saved checkpoint pins both native versions and registry revisions. A resourc
 update, loss of availability, scope edit, pause, or expiry invalidates it for new
 parent completion. Scope edits and lifecycle transitions clear the checkpoint;
 contact changes and conversation attachments preserve it. Previously satisfied
-finite units retain their historical result. Native refresh and readiness
-reconciliation remain adapter work, so freshness is limited to observations
-already present in this registry.
+finite units retain their historical result. `work.resolve` refreshes exact vault
+resources; freshness remains limited to observations already present in this
+registry until native event subscriptions are connected.
 
 An accepted origin is also its first conversation attachment. A later session
 joins through `attach_conversation`, specifying the exact work identity and

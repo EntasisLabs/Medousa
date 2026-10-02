@@ -273,6 +273,9 @@ pub struct StoreDirectoryEntry {
 
 #[derive(Debug, Clone, Copy)]
 pub struct StoreMetadata {
+    /// Filesystem evidence for reconciliation, never a semantic resource ID.
+    pub device: u64,
+    pub inode: u64,
     pub kind: StoreEntryKind,
     pub size: u64,
     pub created: Option<SystemTime>,
@@ -280,6 +283,12 @@ pub struct StoreMetadata {
 }
 
 impl StoreRoot {
+    pub fn root_metadata(&self) -> Result<StoreMetadata, StoreRootError> {
+        self.dir
+            .dir_metadata()
+            .map(|metadata| store_metadata(&metadata))
+            .map_err(|error| StoreRootError::io("root_metadata", error))
+    }
     /// Open an existing trusted root using ambient authority exactly once.
     pub fn open(path: &Path) -> Result<Self, StoreRootError> {
         let dir = Dir::open_ambient_dir(path, ambient_authority())
@@ -581,6 +590,7 @@ impl StoreRoot {
         stage: impl FnMut(AtomicWriteStage) -> Result<(), E>,
     ) -> Result<(), AtomicWriteError<E>> {
         self.atomic_publish_with_stages(path, write, false, "atomic_write", stage)
+            .map(|_| ())
     }
 
     /// Create-only atomic publication. Fails if the destination leaf exists.
@@ -590,6 +600,27 @@ impl StoreRoot {
         bytes: &[u8],
     ) -> Result<(), StoreRootError> {
         self.atomic_publish(path, bytes, true, "atomic_create")
+    }
+
+    /// Return evidence from the staged file handle, never from a possibly
+    /// replaced destination path after publication.
+    pub fn atomic_publish_witness(
+        &self,
+        path: &impl StoreRootPath,
+        bytes: &[u8],
+        create_only: bool,
+    ) -> Result<StoreMetadata, StoreRootError> {
+        match self.atomic_publish_with_stages(
+            path,
+            |file| file.write_all(bytes),
+            create_only,
+            "atomic_publish_witness",
+            |_| Ok::<_, std::convert::Infallible>(()),
+        ) {
+            Ok(metadata) => Ok(metadata),
+            Err(AtomicWriteError::Store(error)) => Err(error),
+            Err(AtomicWriteError::Stage(never)) => match never {},
+        }
     }
 
     /// Sync the parent directory of `path` when the platform supports it.
@@ -621,7 +652,7 @@ impl StoreRoot {
         match self.atomic_publish_with_stages(path, write, create_only, operation, |_| {
             Ok::<_, std::convert::Infallible>(())
         }) {
-            Ok(()) => Ok(()),
+            Ok(_) => Ok(()),
             Err(AtomicWriteError::Store(error)) => Err(error),
             Err(AtomicWriteError::Stage(never)) => match never {},
         }
@@ -634,7 +665,7 @@ impl StoreRoot {
         create_only: bool,
         operation: &'static str,
         mut stage: impl FnMut(AtomicWriteStage) -> Result<(), E>,
-    ) -> Result<(), AtomicWriteError<E>> {
+    ) -> Result<StoreMetadata, AtomicWriteError<E>> {
         let (parent, leaf) = self
             .open_parent(path, true, operation)
             .map_err(AtomicWriteError::Store)?;
@@ -669,12 +700,22 @@ impl StoreRoot {
                 })
             })
             .and_then(|()| stage(AtomicWriteStage::AfterFileSync).map_err(AtomicWriteError::Stage))
-            .and_then(|()| stage(AtomicWriteStage::BeforeRename).map_err(AtomicWriteError::Stage));
-        if let Err(error) = prepare {
-            drop(file);
-            let _ = parent.remove_file(&temporary);
-            return Err(error);
-        }
+            .and_then(|()| stage(AtomicWriteStage::BeforeRename).map_err(AtomicWriteError::Stage))
+            .and_then(|()| {
+                file.metadata()
+                    .map(|metadata| store_metadata(&metadata))
+                    .map_err(|error| {
+                        AtomicWriteError::Store(StoreRootError::io("temporary_metadata", error))
+                    })
+            });
+        let metadata = match prepare {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                drop(file);
+                let _ = parent.remove_file(&temporary);
+                return Err(error);
+            }
+        };
         drop(file);
         if create_only {
             if let Err(error) = rename_noreplace(&parent, &temporary, &parent, leaf) {
@@ -697,7 +738,7 @@ impl StoreRoot {
         sync_directory(&parent)
             .map_err(|error| AtomicWriteError::Store(StoreRootError::io("sync_parent", error)))?;
         stage(AtomicWriteStage::AfterParentSync).map_err(AtomicWriteError::Stage)?;
-        Ok(())
+        Ok(metadata)
     }
 
     /// Copy one regular file between held roots through fixed-size buffering,
@@ -1075,6 +1116,8 @@ fn store_metadata(metadata: &cap_std::fs::Metadata) -> StoreMetadata {
         StoreEntryKind::Other
     };
     StoreMetadata {
+        device: metadata.dev(),
+        inode: metadata.ino(),
         kind,
         size: metadata.len(),
         created: metadata.created().ok().map(|created| created.into_std()),

@@ -642,6 +642,65 @@ publication faults, aggregate cost overflow, immutable settlement replay, stale
 maintenance checkpoints, and legacy snapshot/command compatibility. The full CI
 matrix has not been run; no frontend files changed and no PR has been opened.
 
+### Native user-vault identity milestone — 2026-10-02
+
+The first native adapter now issues stable user-vault note/folder references and
+publishes exact bounded observations through `work.resolve`. It uses an explicit
+configured root, the admitted owner domain, and daemon-side capability-confined
+IO. Neither the active UI selection nor a model-supplied owner can retarget it.
+The existing UI and native note bodies are unchanged.
+
+Managed atomic writes and note moves preserve a daemon-issued ID across owner and
+store restart. Delete retains a permanent tombstone; restore and path reuse issue
+new IDs. A synced sidecar retains the namespace, locator, physical evidence, and
+monotonic observation revision. A root writer lock holds identity custody through
+native publication and graph projection. Unchanged observations produce no new
+graph event. Exact many-to-many links and inverse queries survive a real native
+move, not just a model-written locator fixture.
+
+Native journals retain identity bindings until sidecar projection is durable.
+Projection failures return a committed native outcome with repair required;
+startup and explicit resolution replay intents/receipts without repeating the
+file mutation. Relocation recovery verifies its physical witness and completes
+directory fences before publishing a receipt. Replaying a completed old receipt
+cannot roll a resource back to an earlier path. Copied registries, corrupt
+metadata, missing publication witnesses, and external moves fail without guessing
+identity from paths or equal content.
+Write witnesses come from the staged file handle; replacement immediately after
+publication cannot inherit that identity. Unchanged sidecar and graph replays
+finish interrupted parent fences without appending new observations.
+
+- [x] Exact native user-vault note/folder observations
+- [x] Managed note write/move identity preservation and deletion tombstones
+- [x] Durable projection repair for witnessed native mutations
+- [x] Real native revision refresh invalidating maintenance readiness
+- [ ] External ambiguity reconciliation and operational repair affordance
+- [ ] Project/overlay, artifact, feed, and execution identity adapters
+- [ ] Native event subscriptions and automatic observation refresh
+
+Note observation is capped at 1 MiB; an oversized note keeps its identity but is
+unavailable as readiness evidence. Folders prove metadata, not recursively ready
+membership. Sidecar capacity is bounded and preserves historical IDs. A write
+without a durable publication witness retains an ambiguous intent that blocks
+identity resolution and further native mutations until explicit reconciliation;
+that repair workflow is still outstanding. Platform file identifiers are
+reconciliation evidence, not globally portable resource identity.
+
+This closes the native user-vault milestone, not the full Phase 1 gate or the
+Prox → executor → review → contact pipeline. See the
+[engine guide](../docs/engine/work-units.md) for the shipped action and limits.
+
+Validation: 74 vault/native-adapter tests, 25 shared persistence tests, 19 work
+store tests, 4 admitted-host tests, and 6 runtime action/schema tests passed.
+Strict clippy over all targets of `medousa`, `medousa-store`, `medousa-work`, and
+`medousa-types`, strict docs verification, and diff whitespace checks passed.
+The embedded daemon library compile check passed with its existing feature
+warnings. Fault fixtures include projection failure after native publication,
+interrupted graph publication, completed old receipt replay, and external
+replacement immediately after native create/replace. The full workspace/hermetic
+CI and frontend matrix have not been run; no frontend files changed and no PR
+has been opened. Windows/wasm qualification remains outstanding.
+
 ### Phase exit gates
 
 - [ ] Phase 0 — contract and source audit
