@@ -142,6 +142,9 @@ export function expandDetailsForExport(root: HTMLElement): void {
     el.open = true;
     el.setAttribute("open", "");
   }
+  for (const block of root.querySelectorAll(".markdown-code-collapsed")) {
+    block.classList.remove("markdown-code-collapsed");
+  }
 }
 
 /** Strip interactive chrome that should not appear in export. */

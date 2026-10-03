@@ -325,6 +325,10 @@
       "specifier": "$lib/styles/markdown-content.postcss"
     },
     {
+      "from": "src/lib/liquid/archetypes/molecules/code/Code.svelte",
+      "specifier": "$lib/styles/markdown-content.postcss"
+    },
+    {
       "from": "src/lib/liquid/archetypes/organisms/slides/FigureGridBody.svelte",
       "specifier": "$lib/liquid/styles/liquidFigureGrid.css"
     },

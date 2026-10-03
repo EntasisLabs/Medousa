@@ -63,11 +63,6 @@
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.55);
   }
 
-  .markdown-code-header {
-    background-color: rgb(var(--md-code-header-bg));
-    border-bottom: 1px solid rgb(var(--md-code-border));
-  }
-
   .markdown-code-lang {
     color: rgb(var(--md-code-meta));
   }
@@ -76,11 +71,15 @@
     color: rgb(var(--md-code-comment));
   }
 
-  .markdown-code-copy {
+  .markdown-code-copy,
+  .markdown-code-wrap,
+  .markdown-code-expand {
     color: rgb(var(--md-code-meta));
   }
 
-  .markdown-code-copy:hover {
+  .markdown-code-copy:hover,
+  .markdown-code-wrap:hover,
+  .markdown-code-expand:hover {
     background-color: rgb(var(--md-code-border) / 0.35);
     color: rgb(var(--md-code-fg));
   }

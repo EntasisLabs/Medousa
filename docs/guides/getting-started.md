@@ -74,6 +74,11 @@ Connection**.
 Send a normal message. Medousa keeps work durable on the engine — closing the
 window does not throw away an accepted job.
 
+Code snippets use a compact header with the language and **Copy**. Long
+snippets offer **Show all** / **Show less**, with thin scrollbars and optional
+**Wrap** for longer lines. Copy always includes the full code, including any
+collapsed lines.
+
 To include an image, copy it and paste into the message field (**⌘V** on Mac,
 **Ctrl+V** on Windows/Linux, or touch and hold → **Paste** on your phone).
 You can also choose **+ → Paste image** when clipboard access is available;

@@ -4,6 +4,7 @@
  */
 
 import type { VaultNoteKind } from "./vaultFrontmatter";
+import { buildCodeExportCss } from "./vaultExportCodeCss";
 import {
   exportFontStack,
   exportMonoFontStack,
@@ -552,26 +553,7 @@ export function buildExportPrintCss(
     font-weight: 600 !important;
   }
 
-  .vault-pdf-export-mount .markdown-code-block,
-  .vault-pdf-export-mount pre,
-  .vault-pdf-export-mount .markdown-pre {
-    background: #f3f4f6 !important;
-    border: 1px solid #d1d5db !important;
-    border-radius: 6px !important;
-    color: #111827 !important;
-  }
-
-  .vault-pdf-export-mount code,
-  .vault-pdf-export-mount .markdown-code {
-    background: #f3f4f6 !important;
-    color: #111827 !important;
-    font-family: ${mono} !important;
-  }
-
-  .vault-pdf-export-mount :not(pre) > code {
-    padding: 0.1rem 0.35rem !important;
-    border-radius: 4px !important;
-  }
+  ${buildCodeExportCss(mono)}
 
   .vault-pdf-export-mount .markdown-code-copy,
   .vault-pdf-export-mount .liquid-chart-toolbar,
