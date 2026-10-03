@@ -33,6 +33,7 @@ pub use conversational::PeerProposalIntent;
 pub mod http;
 mod owner_intake;
 mod proposals;
+mod progress;
 pub use host::{local_coordination_host, start_local_coordination_host};
 pub use owner_intake::OwnerIntakeResult;
 

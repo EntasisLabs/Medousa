@@ -594,8 +594,16 @@ Generated operation tables include `coordination.proposals.get` and
 Use the SDK's low-level generated-operation request path; dedicated convenience
 helpers are not yet exposed. POST bodies are `{}` and must not contain mutable
 instructions or caller-selected identities. The inbox query requires
-`session_id` and optionally `after`; response DTOs are `PeerProposalInboxResponse`
+`session_id` and optionally `after` and `selected_proposal_id`; response DTOs are `PeerProposalInboxResponse`
 and `PeerProposalActionResponse` in `medousa-types::coordination` (and generated
 Python/TypeScript mirrors). These are native operator operations, not model
 approval tools. See [Coordination](../engine/coordination.md) for limits and
 ownership checks.
+
+`tracked_proposal` is an optional exact, owner/session-scoped record that can
+retain a selected terminal result after it leaves the pending inbox. Assigned
+records may include optional `progress` (`PeerAssignmentProgress`), with
+execution state, observation/activity times, and bounded current/previous
+actions. Treat missing progress as unavailable. An activity failure or stale
+observation does not establish an assignment outcome or authorize a retry;
+the immutable `receipt` remains authoritative.

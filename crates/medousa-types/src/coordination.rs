@@ -458,6 +458,44 @@ pub struct PeerProposalDecision {
     pub approved: bool,
 }
 
+/// Read-only execution observations; only a terminal receipt establishes the
+/// assignment outcome. Missing observations never authorize a retry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum PeerExecutionState {
+    Accepted,
+    Running,
+    Blocked,
+    AwaitingReceipt,
+    Unobserved,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum PeerActivityStatus {
+    Running,
+    Succeeded,
+    Failed,
+    Blocked,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct PeerAssignmentProgress {
+    pub state: PeerExecutionState,
+    pub observed_at: chrono::DateTime<chrono::Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_activity: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity_status: Option<PeerActivityStatus>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct PeerProposalReviewRecord {
@@ -469,6 +507,8 @@ pub struct PeerProposalReviewRecord {
     /// immutable terminal even though execution belongs to another workshop.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub receipt: Option<ExternalPeerAssignmentReceipt>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress: Option<PeerAssignmentProgress>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -476,6 +516,10 @@ pub struct PeerProposalReviewRecord {
 pub struct PeerProposalInboxResponse {
     pub proposals: Vec<PeerProposalReviewRecord>,
     pub next_cursor: Option<String>,
+    /// Keeps the selected, owner-scoped assignment visible after it leaves the
+    /// pending inbox. It does not consume a pagination slot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tracked_proposal: Option<PeerProposalReviewRecord>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

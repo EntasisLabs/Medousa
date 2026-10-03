@@ -6,19 +6,23 @@
   import { workshops } from "$lib/stores/workshops.svelte";
   import { isTauri } from "$lib/platform";
   import { requestRemotePeerCompletionSync } from "$lib/remotePeerCompletionSync";
+  import { peerProgressPresentation, peerRuntimeLabel } from "./peerProgress";
 
   let { sessionId, mobile = false }: { sessionId: string | null; mobile?: boolean } = $props();
   let rows = $state<PeerProposalReviewRecord[]>([]);
-  let cursor = $state<string | null>(null);
+  let cursors = $state<{ runtime: string | null; cursor: string }[]>([]);
   let busy = $state(false);
   let feedback = $state<string | null>(null);
   let now = $state(Date.now());
   let epoch = 0;
   let revision = 0;
-  let pageAfter: string | undefined;
+  let pageAfter = new Map<string | null, string>();
+  let selectedRuntime: string | null = null;
   let selectedId: string | undefined;
+  let proposalOrigins = new Map<string, string | null>();
   const current = $derived(rows[0] ?? null);
   const completed = $derived(current?.receipt ?? null);
+  const progress = $derived(current ? peerProgressPresentation(current, now) : null);
   const adopting = $derived(Boolean(current?.proposal.request.existing_agent_session_id));
   const profileScope = $derived(connection.health?.active_profile_id ?? "");
   const proposalRuntimes = $derived([
@@ -43,8 +47,8 @@
     const profile = profileScope;
     const enabled = available;
     const token = ++epoch;
-    rows = []; cursor = null; feedback = null; busy = false;
-    pageAfter = undefined; selectedId = undefined;
+    rows = []; cursors = []; feedback = null; busy = false;
+    pageAfter = new Map(); selectedId = undefined; selectedRuntime = null; proposalOrigins = new Map();
     if (!session || !enabled) return;
     let loading = false;
     const refresh = async () => {
@@ -54,20 +58,20 @@
       const requestRevision = revision;
       try {
         const settled = await Promise.allSettled(
-          proposalRuntimes.map(runtime => listPeerProposals(session, runtime, pageAfter)),
+          proposalRuntimes.map(async runtime => ({ runtime, response: await listPeerProposals(
+            session, runtime, pageAfter.get(runtime), runtime === selectedRuntime ? selectedId : undefined,
+          ) })),
         );
         const responses = settled
-          .filter((result): result is PromiseFulfilledResult<PeerProposalInboxResponse> => result.status === "fulfilled")
+          .filter((result): result is PromiseFulfilledResult<{ runtime: string | null; response: PeerProposalInboxResponse }> => result.status === "fulfilled")
           .map(result => result.value);
         if (!responses.length) throw settled.find(result => result.status === "rejected")?.reason ?? new Error("Proposal inbox unavailable");
         if (token === epoch && requestRevision === revision) {
-          const proposals = responses
-            .flatMap(response => response.proposals)
-            .filter((row, index, all) => all.findIndex(candidate => candidate.proposal.proposal_id === row.proposal.proposal_id) === index);
-          const index = proposals.findIndex(row => row.proposal.proposal_id === selectedId);
-          rows = index > 0 ? [...proposals.slice(index), ...proposals.slice(0, index)] : proposals;
-          cursor = null; now = Date.now();
-          if (!rows.length && pageAfter) pageAfter = undefined;
+          applyResponses(responses);
+          const selectedIndex = proposalRuntimes.indexOf(selectedRuntime);
+          feedback = selectedId && settled[selectedIndex]?.status === "rejected"
+            ? "Progress could not be refreshed on the execution workshop. Showing the last known activity."
+            : null;
         }
       } catch (error) {
         if (token === epoch && requestRevision === revision && untrack(() => rows.length > 0)) feedback = String(error);
@@ -79,6 +83,37 @@
     document.addEventListener("visibilitychange", refresh);
     return () => { ++epoch; clearInterval(timer); document.removeEventListener("visibilitychange", refresh); };
   });
+
+  function applyResponses(responses: { runtime: string | null; response: PeerProposalInboxResponse }[]) {
+    const byId = new Map<string, PeerProposalReviewRecord>();
+
+    for (const { runtime, response } of responses) {
+      for (const row of [...response.proposals, ...(response.tracked_proposal ? [response.tracked_proposal] : [])]) {
+        const previous = byId.get(row.proposal.proposal_id);
+        if (!previous?.receipt || row.receipt) {
+          byId.set(row.proposal.proposal_id, row);
+          proposalOrigins.set(row.proposal.proposal_id, runtime);
+        }
+      }
+    }
+    // A failed workshop refresh cannot erase the already observed assignment.
+    const selected = rows.find(row => row.proposal.proposal_id === selectedId);
+    if (selected && !responses.some(result => result.runtime === selectedRuntime) && !byId.has(selected.proposal.proposal_id)) {
+      byId.set(selected.proposal.proposal_id, selected);
+      proposalOrigins.set(selected.proposal.proposal_id, selectedRuntime);
+    }
+    const proposals = [...byId.values()];
+    const index = proposals.findIndex(row => row.proposal.proposal_id === selectedId);
+    rows = index > 0 ? [proposals[index], ...proposals.slice(0, index), ...proposals.slice(index + 1)] : proposals;
+    selectedId = rows[0]?.proposal.proposal_id;
+    selectedRuntime = selectedId ? proposalOrigins.get(selectedId) ?? null : null;
+    const successful = new Set(responses.map(result => result.runtime));
+    cursors = [
+      ...cursors.filter(page => !successful.has(page.runtime)),
+      ...responses.flatMap(({ runtime, response }) => response.next_cursor ? [{ runtime, cursor: response.next_cursor }] : []),
+    ];
+    now = Date.now();
+  }
 
   async function action(kind: "approve_and_dispatch" | "deny" | "dispatch") {
     if (!current || busy || !available) return;
@@ -117,15 +152,24 @@
   }
   async function next(more = false) {
     if (busy || !sessionId) return;
-    if (!more && rows.length > 1) { rows = [...rows.slice(1), rows[0]]; selectedId = rows[0].proposal.proposal_id; feedback = null; return; }
-    if (!cursor) return;
+    if (!more && rows.length > 1) { ++revision; rows = [...rows.slice(1), rows[0]]; selectedId = rows[0].proposal.proposal_id; selectedRuntime = proposalOrigins.get(selectedId) ?? null; feedback = null; return; }
+    if (!cursors.length) return;
     const token = epoch;
     ++revision;
     busy = true;
     try {
-      const after = cursor;
-      const response = await listPeerProposals(sessionId, undefined, after);
-      if (token === epoch) { pageAfter = after; selectedId = undefined; rows = response.proposals; cursor = response.next_cursor ?? null; }
+      const pages = [...cursors];
+      const settled = await Promise.allSettled(pages.map(async page => ({
+        runtime: page.runtime,
+        response: await listPeerProposals(sessionId!, page.runtime, page.cursor),
+      })));
+      if (token !== epoch) return;
+      const responses = settled.filter((result): result is PromiseFulfilledResult<{ runtime: string | null; response: PeerProposalInboxResponse }> => result.status === "fulfilled").map(result => result.value);
+      if (!responses.length) throw settled.find(result => result.status === "rejected")?.reason ?? new Error("Proposal inbox unavailable");
+      for (const page of pages) if (responses.some(result => result.runtime === page.runtime)) pageAfter.set(page.runtime, page.cursor);
+      selectedId = undefined;
+      applyResponses(responses);
+      feedback = settled.some(result => result.status === "rejected") ? "Some workshop requests could not be loaded." : null;
     } catch (error) { if (token === epoch) feedback = String(error); }
     finally { if (token === epoch) busy = false; }
   }
@@ -134,18 +178,28 @@
 {#if current && available}
   <section class="{mobile ? 'mx-3' : 'mx-4'} mb-2 rounded-xl border border-primary-400/25 bg-surface-900 p-3" aria-label="Agent delegation approval">
     <div class="flex items-center justify-between gap-2">
-      <p class="text-xs font-medium text-content-link">{completed ? 'Agent result · verified terminal' : current.binding ? 'Medousa is tracking this work' : current.decision?.approved ? 'Approved delegation' : 'Delegate work · needs your approval'}</p>
+      <p class="text-xs font-medium text-content-link">{completed ? 'Agent result · verified terminal' : current.binding ? progress?.headline : current.decision?.approved ? 'Approved delegation' : 'Delegate work · needs your approval'}</p>
       <div class="flex gap-2">
         {#if rows.length > 1}<button type="button" class="text-xs text-content-secondary" disabled={busy} onclick={() => void next()}>Next request</button>{/if}
-        {#if cursor}<button type="button" class="text-xs text-content-secondary" disabled={busy} onclick={() => void next(true)}>More requests</button>{/if}
+        {#if cursors.length}<button type="button" class="text-xs text-content-secondary" disabled={busy} onclick={() => void next(true)}>More requests</button>{/if}
       </div>
     </div>
-    <p class="mt-1 text-sm text-content-primary">{current.proposal.request.target.runtime} · {proposalWorkshop(current.proposal.request.target.execution_runtime_id)?.label ?? workshops.activeLabel}{adopting ? ' · existing work' : ''}</p>
+    <p class="mt-1 text-sm text-content-primary">{peerRuntimeLabel(current.proposal.request.target.runtime)} · {proposalWorkshop(current.proposal.request.target.execution_runtime_id)?.label ?? workshops.activeLabel}{adopting ? ' · existing work' : ''}</p>
     <p class="mt-1 whitespace-pre-wrap text-sm text-content-secondary">{current.proposal.request.instructions}</p>
     {#if completed}
       <div class="mt-2 rounded-lg border border-primary-400/15 bg-surface-950/60 p-2">
-        <p class="text-xs font-medium text-content-primary">{completed.outcome}</p>
+        <p class="text-xs font-medium text-content-primary">{progress?.headline}</p>
         <p class="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap text-sm text-content-secondary">{completed.result}</p>
+      </div>
+    {/if}
+    {#if current.binding && !completed && progress}
+      <div class="mt-2 space-y-1 text-xs text-content-secondary" role="status" aria-live="polite">
+        {#if progress.activity}<p class="text-sm text-content-primary">{progress.activity}</p>{/if}
+        {#if progress.lastActivity && progress.lastActivity !== current.progress?.current_activity}
+          <p>Last action: {progress.lastActivity}{progress.lastActivityStatus === 'failed' ? ' · failed' : progress.lastActivityStatus === 'blocked' ? ' · blocked' : progress.lastActivityStatus === 'succeeded' ? ' · succeeded' : ''}</p>
+        {/if}
+        {#if progress.lastUpdate}<p>Last update {progress.lastUpdate}</p>{/if}
+        {#if progress.notice}<p>{progress.notice}</p>{/if}
       </div>
     {/if}
     <details class="mt-2 text-xs text-content-secondary">
@@ -170,7 +224,7 @@
       {#if completed}
         <span class="text-xs text-content-secondary">Medousa received the terminal result.</span>
       {:else if current.binding}
-        <span class="text-xs text-content-secondary">Waiting for the verified terminal result…</span>
+        <span class="text-xs text-content-secondary">The final result will appear here when Medousa verifies it.</span>
       {:else if current.decision?.approved}
         <button type="button" class="btn btn-sm variant-filled-primary" disabled={busy || expired} onclick={() => void action('dispatch')}>Start approved work</button>
       {:else}

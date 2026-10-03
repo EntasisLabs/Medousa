@@ -180,7 +180,7 @@ These native-only routes require `admin.execute` plus a bound owner identity
 
 | Method | Route | Behavior |
 |--------|-------|----------|
-| GET | `/v1/coordination/proposals?session_id=...&after=...` | Owner-session inbox, including paired request-scoped shadows projected through their immutable source chat; optional opaque proposal-id cursor |
+| GET | `/v1/coordination/proposals?session_id=...&after=...&selected_proposal_id=...` | Owner-session inbox, including paired request-scoped shadows projected through their immutable source chat; optional opaque proposal-id cursor and exact selected-assignment observation |
 | POST | `/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/approve` | Approve the immutable snapshot; compile exact grants |
 | POST | `/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/deny` | Immutable denial |
 | POST | `/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/dispatch` | Dispatch an already approved snapshot |
@@ -197,6 +197,29 @@ validated against its immutable snapshot and current channel owner. Source
 visibility is fully rechecked on approval and dispatch, not inferred from channel
 membership. Corruption or exceeded scan budgets fail closed. The index is
 create-only; an interrupted index write is repaired by exact proposal replay.
+
+The optional `selected_proposal_id` returns an owner/session-scoped
+`tracked_proposal` independently of the pending page and its cursor. This
+projection retains custody and the immutable terminal receipt after local work
+leaves the pending inbox. An unrelated session, owner, or unassociated source
+shadow cannot inspect it. Selecting an assignment grants no execution authority.
+The pending page keeps its one-MiB budget; the combined response with progress
+and the extra selected record is capped at two MiB.
+
+Assigned records may include an optional `progress` observation with
+`observed_at`, `last_activity_at`, `current_activity`, `last_activity`, and
+`last_activity_status`. Execution states are `accepted`, `running`, `blocked`,
+`awaiting_receipt`, and `unobserved`. Activity statuses are `running`,
+`succeeded`, `failed`, and `blocked`; an action failure is not an assignment
+failure. Only `receipt` establishes the assignment outcome.
+
+Native progress joins the exact execution-session/turn ticket, Forge attempt,
+and bounded Coder activity. External progress inspects the exact ACP custody,
+pending permissions, and its matching Forge attempt/lease. Progress includes
+no raw reasoning, tool payloads, or activity from other attempts. Filesystem
+inspection is admitted through `ForgeExecutionService`. Missing process-local
+custody after a restart is `unobserved`, even when durable attempt metadata
+still says running; inspection never retries or dispatches work.
 
 Approval records precede grant compilation. Dispatch repairs partial compilation
 from an already approved snapshot before executing. Retries use persistent

@@ -459,10 +459,13 @@ impl CoderActivityStore {
             presence.last_tool = Some(tool.to_string());
             presence.last_intent = Some(intent.clone());
 
-            let kind = if result.is_ok() {
-                CoderActivityKind::ToolCompleted
-            } else {
-                CoderActivityKind::ToolFailed
+            let kind = match result {
+                Ok(output)
+                    if super::tool_stream::tool_status_from_output(output) == "succeeded" =>
+                {
+                    CoderActivityKind::ToolCompleted
+                }
+                _ => CoderActivityKind::ToolFailed,
             };
             let mut completed = event(work_id, identity, kind);
             completed.call_id = Some(call_id.to_string());
@@ -529,6 +532,39 @@ impl CoderActivityStore {
             .get(work_id)
             .map(|work| work.events.clone())
             .unwrap_or_default())
+    }
+
+    /// Assignment inspection must not expose other attempts or advance an
+    /// agent's causal cursor. Retain inactive presence for receipt reconciliation.
+    pub(crate) fn activity_for_turn(
+        &self,
+        work_id: &str,
+        session_id: &str,
+        turn_id: &str,
+    ) -> Result<Option<(CoderAgentPresence, Option<CoderActivityEvent>)>, String> {
+        let _guard = self.lock.lock().map_err(|err| err.to_string())?;
+        let index = self.read_index();
+        let Some(work) = index.work.get(work_id) else {
+            return Ok(None);
+        };
+        let presence = work
+            .agents
+            .values()
+            .find(|agent| agent.session_id == session_id && agent.turn_id == turn_id);
+        Ok(presence.map(|agent| {
+            let latest = work.events.iter().rev().find(|event| {
+                event.agent_id == agent.agent_id
+                    && event.attempt_id == agent.attempt_id
+                    && event.intent.is_some()
+                    && matches!(
+                        event.kind,
+                        CoderActivityKind::ToolCompleted
+                            | CoderActivityKind::ToolFailed
+                            | CoderActivityKind::ToolBlocked
+                    )
+            });
+            (agent.clone(), latest.cloned())
+        }))
     }
 
     /// Compile the full bounded entry frame and advance only this agent's
@@ -1175,6 +1211,63 @@ mod tests {
         let appendix = shared_space_prompt_appendix(&snapshot);
         super::super::sttp::validate_canonical_sttp_node(&appendix).expect("canonical STTP");
         assert!(appendix.contains("Inspect the changed symbol before editing"));
+    }
+
+    #[test]
+    fn assignment_activity_is_exact_and_read_only_even_after_agent_leaves() {
+        let temp = TempDir::new().unwrap();
+        let store = store(&temp);
+        let a = identity("session-a", 1);
+        let b = identity("session-b", 2);
+        store.register_agent("work-1", &a).unwrap();
+        store.register_agent("work-1", &b).unwrap();
+        let call = store
+            .begin_tool("work-1", &a, "shell", "Verify package", vec![], vec![])
+            .unwrap();
+        store
+            .finish_tool(
+                "work-1",
+                &a,
+                &call.call_id,
+                "shell",
+                "Verify package",
+                vec![],
+                Ok(&json!({"ok": false})),
+            )
+            .unwrap();
+        store
+            .begin_tool("work-1", &b, "shell", "Unrelated work", vec![], vec![])
+            .unwrap();
+        store
+            .begin_tool("work-1", &a, "shell", "Repair package", vec![], vec![])
+            .unwrap();
+        let (active, previous) = store
+            .activity_for_turn("work-1", &a.session_id, &a.turn_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(active.current_intent.as_deref(), Some("Repair package"));
+        assert_eq!(previous.unwrap().kind, CoderActivityKind::ToolFailed);
+        store.leave_agent("work-1", &a).unwrap();
+        let before = std::fs::read(&store.path).unwrap();
+        let (presence, event) = store
+            .activity_for_turn("work-1", &a.session_id, &a.turn_id)
+            .unwrap()
+            .unwrap();
+        assert!(!presence.active);
+        assert_eq!(event.unwrap().kind, CoderActivityKind::ToolFailed);
+        assert!(
+            store
+                .activity_for_turn("work-1", &b.session_id, &a.turn_id)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            store
+                .activity_for_turn("other-work", &a.session_id, &a.turn_id)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(std::fs::read(&store.path).unwrap(), before);
     }
 
     #[test]

@@ -772,6 +772,25 @@ mod tests {
             .unwrap();
         assert_eq!(terminal_rows.len(), 1);
         assert_eq!(terminal_rows[0].receipt.as_ref(), Some(&receipt));
+        let source = medousa_types::SessionRef {
+            authority_id: proposal.request.channel.authority_id.clone(),
+            session_id: source_session_id.clone(),
+        };
+        assert_eq!(
+            store
+                .tracked_proposal_for_session("user:alice", &source, &proposal.proposal_id, true)
+                .unwrap()
+                .unwrap()
+                .receipt
+                .as_ref(),
+            Some(&receipt)
+        );
+        assert!(
+            store
+                .tracked_proposal_for_session("user:mallory", &source, &proposal.proposal_id, true)
+                .unwrap()
+                .is_none()
+        );
         assert!(
             store
                 .proposal_inbox_for_source_session("user:mallory", &source_session_id, None)
@@ -888,6 +907,65 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+        let tracked = store
+            .tracked_proposal_for_session(
+                &request.owner_principal_id,
+                &request.owner_session,
+                &proposal.proposal_id,
+                false,
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(tracked.receipt.unwrap().result, "done");
+        assert!(
+            store
+                .tracked_proposal_for_session(
+                    "user:mallory",
+                    &request.owner_session,
+                    &proposal.proposal_id,
+                    false,
+                )
+                .unwrap()
+                .is_none()
+        );
+        let mut foreign = request.owner_session.clone();
+        foreign.session_id = "ses_unrelated".parse().unwrap();
+        assert!(
+            store
+                .tracked_proposal_for_session(
+                    &request.owner_principal_id,
+                    &foreign,
+                    &proposal.proposal_id,
+                    false,
+                )
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            store
+                .tracked_proposal_for_session(
+                    &request.owner_principal_id,
+                    &request.owner_session,
+                    &proposal.proposal_id,
+                    true,
+                )
+                .unwrap()
+                .is_none()
+        );
+        let reopened = store::CoordinationStore::open(_temp.path()).unwrap();
+        assert!(
+            reopened
+                .tracked_proposal_for_session(
+                    &request.owner_principal_id,
+                    &request.owner_session,
+                    &proposal.proposal_id,
+                    false,
+                )
+                .unwrap()
+                .unwrap()
+                .receipt
+                .is_some()
+        );
     }
 
     fn persisted_fixture() -> (
@@ -962,14 +1040,17 @@ mod tests {
                         // Registration shares a nonblocking native custody
                         // fence with claims. Contention retries the same key;
                         // it never manufactures a new dispatch identity.
-                        for _ in 0..1000 {
+                        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+                        loop {
                             match store.claim_assignment(request) {
                                 Ok(claim) => return claim,
-                                Err(error) if error.downcast_ref::<medousa_store::PersistenceError>().is_some_and(|e| matches!(e.kind, medousa_store::PersistenceErrorKind::Overloaded | medousa_store::PersistenceErrorKind::RetryableIo)) => std::thread::yield_now(),
+                                Err(error) if error.downcast_ref::<medousa_store::PersistenceError>().is_some_and(|e| matches!(e.kind, medousa_store::PersistenceErrorKind::Overloaded | medousa_store::PersistenceErrorKind::RetryableIo)) => {
+                                    assert!(std::time::Instant::now() < deadline, "native claim custody did not become available: {error}");
+                                    std::thread::sleep(std::time::Duration::from_millis(1));
+                                }
                                 Err(error) => panic!("claim failed: {error}"),
                             }
                         }
-                        panic!("native claim custody did not become available")
                     })
                 })
                 .collect();

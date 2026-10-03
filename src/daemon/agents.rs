@@ -79,6 +79,43 @@ static AGENT_SESSIONS: once_cell::sync::Lazy<RwLock<AgentSessionRegistry>> =
 static ACP_CLIENT: once_cell::sync::Lazy<ExternalAcpClient> =
     once_cell::sync::Lazy::new(ExternalAcpClient::new);
 
+/// Inspect exact assignment custody without discovering unrelated sessions or
+/// dispatching work. The coordinator authenticates the proposal before calling.
+pub(crate) async fn peer_execution_state(
+    binding: &medousa_types::coordination::ExternalPeerAssignmentBinding,
+    work_id: &str,
+) -> Option<medousa_types::coordination::PeerExecutionState> {
+    use medousa_types::coordination::PeerExecutionState;
+    let live = AGENT_SESSIONS
+        .read()
+        .await
+        .by_agent_session
+        .get(&binding.agent_session_id)
+        .cloned()?;
+    if live.session_id != binding.execution_session.session_id.as_str()
+        || live.runtime != binding.target.runtime.as_str()
+        || live.forge_work_id.as_ref().map(|id| id.as_str()) != Some(work_id)
+    {
+        return None;
+    }
+    let cancelled = *live.cancelled.lock().await;
+    let terminal = live.peer_terminal.lock().await.is_some();
+    if cancelled || terminal {
+        Some(PeerExecutionState::AwaitingReceipt)
+    } else if agent_permission_request_store()
+        .has_pending_for_session(&live.agent_session_id, &live.session_id)
+    {
+        Some(PeerExecutionState::Blocked)
+    } else if live
+        .peer_prompt_started
+        .load(std::sync::atomic::Ordering::SeqCst)
+    {
+        Some(PeerExecutionState::Running)
+    } else {
+        Some(PeerExecutionState::Accepted)
+    }
+}
+
 #[derive(Clone, serde::Serialize)]
 pub(crate) struct AdoptableAgentSession {
     pub agent_session_id: String,

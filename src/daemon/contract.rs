@@ -144,6 +144,12 @@ pub fn operation_from_policy(policy: &RoutePolicy, profile: FeatureProfile) -> O
                 required: false,
                 schema: SchemaRef::named("string"),
             },
+            ParameterSpec {
+                name: "selected_proposal_id".into(),
+                location: ParameterLocation::Query,
+                required: false,
+                schema: SchemaRef::named("string"),
+            },
         ]);
     }
     spec = spec.with_path_parameters();

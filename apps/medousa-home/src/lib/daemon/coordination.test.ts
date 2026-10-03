@@ -16,6 +16,10 @@ describe("operator coordination client", () => {
     await listPeerProposals("session-one", "workshop-one", "proposal-cursor");
     expect(mocks.unary).toHaveBeenCalledWith("coordination.proposals.get", {}, undefined, "workshop-one", { session_id: "session-one", after: "proposal-cursor" });
   });
+  it("requests the exact selected proposal without sending execution authority", async () => {
+    await listPeerProposals("session-one", "workshop-one", undefined, "selected-proposal");
+    expect(mocks.unary).toHaveBeenCalledWith("coordination.proposals.get", {}, undefined, "workshop-one", { session_id: "session-one", selected_proposal_id: "selected-proposal" });
+  });
   it.each(["approve", "deny", "dispatch"] as const)("%s submits only the persisted identity, not client instructions or grants", async action => {
     const proposal = { proposal_id: "immutable-proposal", request: { channel: { channel_id: "channel/one" }, instructions: "must not be sent", owner_principal_id: "cannot choose the approver" } } as PeerAssignmentProposal;
     await actOnPeerProposal(proposal, action, "authoring-workshop");

@@ -241,6 +241,19 @@ export interface ExternalPeerAssignmentReceipt {
   result: string;
 }
 
+export type PeerActivityStatus = "running" | "succeeded" | "failed" | "blocked";
+
+export type PeerExecutionState = "accepted" | "running" | "blocked" | "awaiting_receipt" | "unobserved";
+
+export interface PeerAssignmentProgress {
+  current_activity?: string | null;
+  last_activity?: string | null;
+  last_activity_at?: string | null;
+  last_activity_status?: PeerActivityStatus | null;
+  observed_at: string;
+  state: PeerExecutionState;
+}
+
 export type ContextManifestId = string;
 
 export interface ConversationRangeSelection {
@@ -292,6 +305,7 @@ export interface PeerProposalDecision {
 export interface PeerProposalReviewRecord {
   binding?: ExternalPeerAssignmentBinding | null;
   decision?: PeerProposalDecision | null;
+  progress?: PeerAssignmentProgress | null;
   proposal: PeerAssignmentProposal;
   receipt?: ExternalPeerAssignmentReceipt | null;
 }
@@ -299,6 +313,7 @@ export interface PeerProposalReviewRecord {
 export interface PeerProposalInboxResponse {
   next_cursor?: string | null;
   proposals: PeerProposalReviewRecord[];
+  tracked_proposal?: PeerProposalReviewRecord | null;
 }
 
 export interface PeerProposalActionResponse {

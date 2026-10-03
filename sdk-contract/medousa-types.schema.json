@@ -19103,6 +19103,17 @@
         "items": {
           "$ref": "#/definitions/PeerProposalReviewRecord"
         }
+      },
+      "tracked_proposal": {
+        "description": "Keeps the selected, owner-scoped assignment visible after it leaves the pending inbox. It does not consume a pagination slot.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/PeerProposalReviewRecord"
+          },
+          {
+            "type": "null"
+          }
+        ]
       }
     },
     "definitions": {
@@ -19330,6 +19341,15 @@
           }
         }
       },
+      "PeerActivityStatus": {
+        "type": "string",
+        "enum": [
+          "running",
+          "succeeded",
+          "failed",
+          "blocked"
+        ]
+      },
       "PeerAssignmentOutcome": {
         "type": "string",
         "enum": [
@@ -19338,6 +19358,51 @@
           "cancelled",
           "interrupted"
         ]
+      },
+      "PeerAssignmentProgress": {
+        "type": "object",
+        "required": [
+          "observed_at",
+          "state"
+        ],
+        "properties": {
+          "current_activity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_activity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_activity_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_activity_status": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/PeerActivityStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "state": {
+            "$ref": "#/definitions/PeerExecutionState"
+          }
+        }
       },
       "PeerAssignmentProposal": {
         "description": "Immutable snapshot offered to the owner for explicit approval. No execution authority exists merely because a proposal was submitted.",
@@ -19363,6 +19428,17 @@
             "$ref": "#/definitions/ExternalPeerAssignmentRequest"
           }
         }
+      },
+      "PeerExecutionState": {
+        "description": "Read-only execution observations; only a terminal receipt establishes the assignment outcome. Missing observations never authorize a retry.",
+        "type": "string",
+        "enum": [
+          "accepted",
+          "running",
+          "blocked",
+          "awaiting_receipt",
+          "unobserved"
+        ]
       },
       "PeerProposalDecision": {
         "type": "object",
@@ -19404,6 +19480,16 @@
             "anyOf": [
               {
                 "$ref": "#/definitions/PeerProposalDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/PeerAssignmentProgress"
               },
               {
                 "type": "null"

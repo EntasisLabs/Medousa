@@ -5909,6 +5909,15 @@
         "title": "ModelDownloadProgress",
         "type": "object"
       },
+      "PeerActivityStatus": {
+        "enum": [
+          "running",
+          "succeeded",
+          "failed",
+          "blocked"
+        ],
+        "type": "string"
+      },
       "PeerAssignmentOutcome": {
         "enum": [
           "completed",
@@ -5917,6 +5926,51 @@
           "interrupted"
         ],
         "type": "string"
+      },
+      "PeerAssignmentProgress": {
+        "properties": {
+          "current_activity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_activity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_activity_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_activity_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PeerActivityStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "observed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/PeerExecutionState"
+          }
+        },
+        "required": [
+          "observed_at",
+          "state"
+        ],
+        "type": "object"
       },
       "PeerAssignmentProposal": {
         "description": "Immutable snapshot offered to the owner for explicit approval. No execution authority exists merely because a proposal was submitted.",
@@ -5942,6 +5996,17 @@
           "request"
         ],
         "type": "object"
+      },
+      "PeerExecutionState": {
+        "description": "Read-only execution observations; only a terminal receipt establishes the assignment outcome. Missing observations never authorize a retry.",
+        "enum": [
+          "accepted",
+          "running",
+          "blocked",
+          "awaiting_receipt",
+          "unobserved"
+        ],
+        "type": "string"
       },
       "PeerProposalActionRequest": {
         "additionalProperties": false,
@@ -6003,6 +6068,17 @@
               "$ref": "#/components/schemas/PeerProposalReviewRecord"
             },
             "type": "array"
+          },
+          "tracked_proposal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PeerProposalReviewRecord"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Keeps the selected, owner-scoped assignment visible after it leaves the pending inbox. It does not consume a pagination slot."
           }
         },
         "required": [
@@ -6092,6 +6168,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/PeerProposalDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PeerAssignmentProgress"
               },
               {
                 "type": "null"
@@ -18150,6 +18236,14 @@
           {
             "in": "query",
             "name": "after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "selected_proposal_id",
             "required": false,
             "schema": {
               "type": "string"

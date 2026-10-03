@@ -19,3 +19,20 @@ You can ask from your current chat to work on an existing project. The runtime
 checks project ownership and uses a separate execution session; you do not need
 to open the project's chat just to assign a coder. Assignment approvals still
 apply. A saved runtime preference does not authorize additional work.
+
+## Follow assigned work
+
+The assignment card in your chat shows the coder's execution state, its current
+action when available, the previous action's result, and the latest activity
+time. Medousa Coder runs in its own execution session, so your chat can be idle
+while the coder continues working. External runtimes report their execution
+state and activity time; detailed actions depend on the runtime's observations.
+
+A failed action can be followed by a repair attempt. The card reports the whole
+assignment as completed, failed, cancelled, or interrupted only after Medousa
+receives its verified final result. The selected card keeps that result visible
+after the assignment leaves the pending inbox.
+
+If updates are delayed or the runtime cannot observe the execution, the card
+shows that uncertainty and the last known activity. It does not restart the
+work. Older workshops may show that live progress is unavailable until updated.

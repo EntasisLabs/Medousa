@@ -1253,11 +1253,26 @@ class ExternalPeerTarget(MedousaModel):
     runtime: ExternalPeerRuntime
 
 
+class PeerActivityStatus(Enum):
+    running = 'running'
+    succeeded = 'succeeded'
+    failed = 'failed'
+    blocked = 'blocked'
+
+
 class PeerAssignmentOutcome(Enum):
     completed = 'completed'
     failed = 'failed'
     cancelled = 'cancelled'
     interrupted = 'interrupted'
+
+
+class PeerExecutionState(Enum):
+    accepted = 'accepted'
+    running = 'running'
+    blocked = 'blocked'
+    awaiting_receipt = 'awaiting_receipt'
+    unobserved = 'unobserved'
 
 
 class PeerProposalDecision(MedousaModel):
@@ -4566,6 +4581,15 @@ class ExternalPeerAssignmentRequest(MedousaModel):
     target: ExternalPeerTarget
 
 
+class PeerAssignmentProgress(MedousaModel):
+    current_activity: str | None = None
+    last_activity: str | None = None
+    last_activity_at: AwareDatetime | None = None
+    last_activity_status: PeerActivityStatus | None = None
+    observed_at: AwareDatetime
+    state: PeerExecutionState
+
+
 class PeerAssignmentProposal(MedousaModel):
     continue_owner: bool
     expires_at: AwareDatetime
@@ -4578,6 +4602,7 @@ class PeerProposalReviewRecord(MedousaModel):
         None, description='Recorded custody remains visible until its terminal receipt arrives.'
     )
     decision: PeerProposalDecision | None = None
+    progress: PeerAssignmentProgress | None = None
     proposal: PeerAssignmentProposal
     receipt: ExternalPeerAssignmentReceipt | None = Field(
         None,
@@ -5252,6 +5277,10 @@ class PeerProposalActionResponse(MedousaModel):
 class PeerProposalInboxResponse(MedousaModel):
     next_cursor: str | None = None
     proposals: list[PeerProposalReviewRecord]
+    tracked_proposal: PeerProposalReviewRecord | None = Field(
+        None,
+        description='Keeps the selected, owner-scoped assignment visible after it leaves the pending inbox. It does not consume a pagination slot.',
+    )
 
 
 class RuntimeConfigCommandRequest(MedousaModel):
