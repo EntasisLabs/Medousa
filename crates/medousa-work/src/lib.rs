@@ -18,8 +18,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 mod budget;
+mod coordinator;
 mod events;
 mod providers;
+pub use coordinator::{COORDINATOR_ACTOR, CoordinatorInbox, CoordinatorInboxPage};
 use medousa_types::work_provider::WorkProviderRecord;
 
 #[cfg(test)]

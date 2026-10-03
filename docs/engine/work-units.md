@@ -685,3 +685,20 @@ provider-associated unit. Ordinary WhatsApp/Slack messages, reactions and transp
 acceptance remain conversation observations. Live provider transport acceptance
 and the complete external execution/review controller remain qualification gates.
 See [Provider callback protocol](external-conversations.md#correlated-work-callbacks).
+
+### Runtime-owned provider intake
+
+New provider work associations atomically register an actor-bound runtime inbox
+before a dispatch claim can be committed. Its identity pins the owner domain,
+request, work scope generation and deadline. Recovery uses the retained journal,
+not the selected profile, open source chat or a new provider send. Authenticated
+callback publication wakes the daemon coordinator; a bounded rotating scan also
+recovers inboxes after restart. Native and provider recovery share four worker
+slots, and corrupt snapshots are retained rather than reset.
+
+The runtime can acknowledge progress as an attributable observation. Terminal
+callbacks remain pending for stage qualification; reading them or waking the
+coordinator does not imply approval, work satisfaction, a model turn or contact.
+Existing caller-created pull subscriptions retain their explicit acknowledgment
+contract. This increment registers inboxes for new provider associations; legacy
+associations keep their retained evidence and explicit pull path.

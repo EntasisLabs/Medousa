@@ -27,13 +27,14 @@ use crate::request_principal::{Capability, PrincipalKind, RequestPrincipal};
 pub mod assignments;
 mod conversational;
 mod host;
+pub(crate) use host::wake_work_coordinator;
 pub(crate) mod native_coder;
 pub(crate) mod work;
 pub use conversational::PeerProposalIntent;
 pub mod http;
 mod owner_intake;
-mod proposals;
 mod progress;
+mod proposals;
 pub use host::{local_coordination_host, start_local_coordination_host};
 pub use owner_intake::OwnerIntakeResult;
 

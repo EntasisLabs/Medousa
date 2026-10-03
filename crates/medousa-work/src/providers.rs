@@ -125,6 +125,7 @@ impl Snapshot {
                 "provider request already associated; replay the original command",
             ));
         }
+        self.subscribe_provider_coordinator(&request)?;
         self.provider_requests.insert(
             id,
             WorkProviderRecord {

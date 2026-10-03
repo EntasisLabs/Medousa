@@ -2520,3 +2520,130 @@ fn native_peer_scope_pin_tracks_resource_versions_without_coupling_contact_or_gr
         accepted.revision
     );
 }
+
+#[test]
+fn runtime_intake_registers_before_dispatch_and_recovers_without_a_source_chat() {
+    let dir = tempdir();
+    let store = WorkGraphStore::open(dir.path()).unwrap();
+    next(&store, accept("work", WorkScope::default()));
+    for id in ["request", "second", "third"] {
+        next(
+            &store,
+            WorkGraphMutation::RegisterProviderRequest {
+                request: Box::new(provider_request(&store, id)),
+            },
+        );
+        // Merely prepared or claimed sends are not provider outcomes.
+        assert!(
+            store
+                .coordinator_inboxes(&domain("user:a").authority_id, 4, None)
+                .unwrap()
+                .inboxes
+                .iter()
+                .all(|inbox| inbox.request_id != id)
+        );
+        next(
+            &store,
+            WorkGraphMutation::ClaimProviderRequest {
+                conversation_id: "provider-chat".into(),
+                request_id: id.into(),
+            },
+        );
+        let mut event = provider_event(
+            &format!("done-{id}"),
+            1,
+            medousa_types::ExternalEventKind::Completed,
+        );
+        event.request_id = id.into();
+        next(
+            &store,
+            WorkGraphMutation::RecordProviderEvent {
+                event: Box::new(event),
+            },
+        );
+    }
+    std::fs::write(dir.path().join("000-invalid.json"), "broken").unwrap();
+    let restarted = WorkGraphStore::open(dir.path()).unwrap();
+    let authority = domain("user:a").authority_id;
+    let mut after = None;
+    let mut recovered = vec![];
+    loop {
+        let page = restarted
+            .coordinator_inboxes(&authority, 1, after.as_deref())
+            .unwrap();
+        for inbox in page.inboxes {
+            assert_eq!(inbox.domain, domain("user:a"));
+            assert!(
+                restarted
+                    .events(
+                        &inbox.domain,
+                        "other-actor",
+                        WorkEventsQuery {
+                            subscription_id: inbox.subscription_id.clone(),
+                            limit: Some(1)
+                        }
+                    )
+                    .is_err()
+            );
+            let pending = restarted
+                .events(
+                    &inbox.domain,
+                    crate::COORDINATOR_ACTOR,
+                    WorkEventsQuery {
+                        subscription_id: inbox.subscription_id,
+                        limit: Some(1),
+                    },
+                )
+                .unwrap();
+            assert_eq!(pending.events.len(), 1);
+            recovered.push(inbox.request_id);
+        }
+        after = page.next_cursor;
+        if after.is_none() {
+            break;
+        }
+    }
+    recovered.sort();
+    assert_eq!(recovered, ["request", "second", "third"]);
+    let foreign = medousa_types::AuthorityId::parse(format!("auth_{}", "b".repeat(64))).unwrap();
+    assert!(
+        restarted
+            .coordinator_inboxes(&foreign, 4, None)
+            .unwrap()
+            .inboxes
+            .is_empty()
+    );
+    assert_eq!(
+        restarted
+            .work_unit(&domain("user:a"), "work")
+            .unwrap()
+            .state,
+        WorkUnitState::Accepted
+    );
+}
+
+#[test]
+fn model_cannot_preempt_runtime_inbox_identity() {
+    let dir = tempdir();
+    let store = WorkGraphStore::open(dir.path()).unwrap();
+    next(&store, accept("work", WorkScope::default()));
+    let id = crate::coordinator::inbox_id("provider-chat", "request").unwrap();
+    let mut claimed = subscription(&id, 1, vec![], 0);
+    if let WorkGraphMutation::Subscribe { input } = &mut claimed {
+        input.event_kinds = vec![WorkEventKind::WorkStateChanged];
+    }
+    let mut model = provenance();
+    model.source = RecordSource::ModelInferred;
+    model.actor_id = crate::COORDINATOR_ACTOR.into();
+    assert!(
+        store
+            .apply(&domain("user:a"), command("preempt", 1, claimed), model)
+            .is_err()
+    );
+    next(
+        &store,
+        WorkGraphMutation::RegisterProviderRequest {
+            request: Box::new(provider_request(&store, "request")),
+        },
+    );
+}

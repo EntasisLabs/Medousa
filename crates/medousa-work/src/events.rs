@@ -55,7 +55,10 @@ impl Snapshot {
         }
     }
 
-    fn pending_events(&self, subscription: &WorkEventSubscription) -> Vec<&CommittedCommand> {
+    pub(super) fn pending_events(
+        &self,
+        subscription: &WorkEventSubscription,
+    ) -> Vec<&CommittedCommand> {
         let mut events: Vec<_> = self
             .commands
             .values()
@@ -137,6 +140,14 @@ impl Snapshot {
         provenance: &RecordProvenance,
     ) -> Result<()> {
         identifier(&input.subscription_id)?;
+        if input.subscription_id.starts_with("work-intake:")
+            && (provenance.source != RecordSource::SystemEvent
+                || provenance.actor_id != crate::COORDINATOR_ACTOR)
+        {
+            return Err(invalid(
+                "runtime inbox identity is reserved for native intake",
+            ));
+        }
         if self.subscriptions.contains_key(&input.subscription_id) {
             return Err(invalid(
                 "subscription identity already registered; replay the original command",

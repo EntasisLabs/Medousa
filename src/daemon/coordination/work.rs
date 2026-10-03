@@ -8,6 +8,7 @@ use medousa_types::{work_coordination::*, work_unit::UserDomainRef};
 #[serde(rename_all = "snake_case")]
 pub(crate) enum WorkCoordinationProgress {
     DeferredBusy,
+    ProviderIntake,
     AwaitingApproval,
     ExecutorRunning,
     ReviewerRunning,
@@ -79,6 +80,15 @@ impl LocalPeerDispatcher {
                 move || Ok(f(&native, &work, &forge)),
             )
             .await?
+    }
+
+    pub(crate) async fn resume_provider_inbox(
+        &self,
+        inbox: medousa_work::CoordinatorInbox,
+    ) -> Result<WorkCoordinationProgress> {
+        self.work_io(move |_, work, _| work.consume_provider_inbox(&inbox))
+            .await?;
+        Ok(WorkCoordinationProgress::ProviderIntake)
     }
 
     pub(crate) async fn register_work_coordination(

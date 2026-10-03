@@ -17,6 +17,7 @@ use crate::{
 
 static HOST: OnceLock<Arc<WorkUnitHost>> = OnceLock::new();
 
+mod coordinator;
 mod native_content;
 mod native_graph;
 mod native_project;

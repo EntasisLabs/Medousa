@@ -439,6 +439,8 @@ impl WorkUnitHost {
             )?;
             Ok(())
         })
-        .await
+        .await?;
+        crate::daemon::coordination::wake_work_coordinator();
+        Ok(())
     }
 }

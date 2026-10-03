@@ -20,6 +20,12 @@ pub fn local_coordination_host() -> Option<Arc<LocalPeerDispatcher>> {
     HOST.get().cloned()
 }
 
+pub(crate) fn wake_work_coordinator() {
+    if let Some(host) = HOST.get() {
+        host.wake.notify_one();
+    }
+}
+
 pub async fn start_local_coordination_host(
     state: AppState,
     runtime_id: String,
@@ -55,6 +61,7 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
     let mut worker_keys = HashMap::new();
     let mut cursor: Option<String> = None;
     let mut work_cursor: Option<String> = None;
+    let mut intake_cursor: Option<String> = None;
     let mut work_workers = tokio::task::JoinSet::new();
     loop {
         if *shutdown.borrow() {
@@ -64,7 +71,7 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
         tokio::select! {
             changed = shutdown.changed() => { if changed.is_err() || *shutdown.borrow() { break; } },
             _ = interval.tick() => { recover_work = true; },
-            _ = host.wake.notified() => { cursor = None; work_cursor = None; recover_work = true; },
+            _ = host.wake.notified() => { cursor = None; work_cursor = None; intake_cursor = None; recover_work = true; },
             finished = work_workers.join_next(), if !work_workers.is_empty() => {
                 match finished {
                     Some(Ok(Err(error))) => tracing::warn!(%error, "work coordination retained for reconciliation"),
@@ -128,6 +135,27 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
                 }
                 other => {
                     tracing::warn!(error = ?other, "work coordination recovery scan failed closed")
+                }
+            }
+        }
+        if recover_work && work_workers.len() < 4 {
+            if let Some(work) = crate::daemon::work_units::local_work_unit_host() {
+                let after = intake_cursor.clone();
+                match work
+                    .coordinator_inboxes(after, 4 - work_workers.len())
+                    .await
+                {
+                    Ok(page) => {
+                        intake_cursor = page.next_cursor;
+                        // The scan page is bounded; native and provider workers
+                        // share the same four-slot recovery admission.
+                        for inbox in page.inboxes.into_iter().take(4 - work_workers.len()) {
+                            let host = host.clone();
+                            work_workers
+                                .spawn(async move { host.resume_provider_inbox(inbox).await });
+                        }
+                    }
+                    Err(error) => tracing::warn!(%error, "work intake retained for reconciliation"),
                 }
             }
         }

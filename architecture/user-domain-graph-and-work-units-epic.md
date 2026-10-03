@@ -1168,3 +1168,15 @@ clippy (release, aarch64 macOS, Iroh feature) pass. Python SDK tests pass 28 cas
 Home reports zero errors/warnings and its full suite passes 1,879 tests in 371
 files. Strict docs verification passes. These are incremental qualification
 receipts, not full workspace CI parity or live provider acceptance.
+
+### Runtime provider intake increment — 2026-10-03
+
+New provider associations now commit a native actor-bound inbox in the same
+transaction as request identity, before any dispatch claim. Authenticated callbacks
+wake the coordinator, and bounded recovery rotates through retained owner domains
+without relying on a source chat, selected profile or replacement send. Progress
+can be acknowledged once; terminal outcomes remain pending for the provider stage
+controller. Runtime inbox identities cannot be preempted by model subscriptions.
+This is deterministic admitted intake, not admission of a new model turn or user
+contact. Generic model wakes, native resource triggers and legacy-inbox backfill
+remain separate qualification gates.
