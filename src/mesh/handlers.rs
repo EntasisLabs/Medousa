@@ -1157,10 +1157,15 @@ async fn propose_remote_peer(
             )
             .await
             .map_err(internal)?;
-        record_remote_peer_completion_destination_binding_admitted(&proposal.proposal_id, &binding)
+        if let Some(binding) = &binding {
+            record_remote_peer_completion_destination_binding_admitted(
+                &proposal.proposal_id,
+                binding,
+            )
             .await
             .map_err(internal)?;
-        Some(binding)
+        }
+        binding
     } else {
         None
     };

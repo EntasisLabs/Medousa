@@ -852,7 +852,7 @@ keys even when no legacy filesystem path can represent that profile.
 - [x] Exact owner-bound observation with revision/readiness checks
 - [x] Native binding metadata without guessed cross-session artifact edges
 - [x] Restart replay, publication custody, and durable cross-resource relationships
-- [ ] Native execution identity/admission and executor → reviewer coordination
+- [x] Bounded local native execution identity/admission and executor → reviewer coordination (see next milestone)
 - [ ] Alias reconciliation, subscriptions, and automatic maintenance propagation
 - [ ] Physical-incarnation/deletion history and multi-process content writer custody
 - [ ] Full workspace, parallel, and cross-platform qualification
@@ -876,6 +876,61 @@ readiness invalidation, append/put publication custody, and post-commit replay.
 Full workspace/hermetic CI, frontend CI, Windows/wasm, and live Surreal-backed
 artifact observation qualification remain outstanding; no frontend files changed
 and no PR has been opened.
+
+### Native executor → reviewer milestone — 2026-10-02
+
+`work.coordinate` registers durable execution/review intent independently of an
+originating chat. `work.coordination` inspects it from any admitted owner chat.
+Plans bind the admitted domain, scope generation and resource versions, exact
+native proposals/assignments, one governed Forge work, and a bounded deadline.
+Pending proposals can be registered; each stage still requires its existing
+operator approval and exact grant. Existing approve/dispatch surfaces queue a
+registered stage with a nullable binding; no UI changes or new grants are added.
+
+The daemon recovers plans through bounded pages and nonblocking coordinator
+leases. Registration and dispatch share assignment custody, including direct
+native dispatch, so torn registration cannot launch outside the controller.
+Unknown claims are retained without replacement launches. Work-owned terminal
+events do not admit source-chat AI continuations or contact delivery.
+
+After a completed executor receipt, the runtime pins the observed clean governed
+checkout's branch, generation, and full HEAD. Review requires an explicitly
+approved `medousa-work-review-v1` contract and a strict JSON verdict tied to that
+exact receipt/revision and the unit's completion condition. Native completion
+alone cannot satisfy work. Approved current revisions publish both actual native
+Assignment references; changes requested, failed execution, invalid review,
+changed revisions, and elapsed deadlines publish `needs_attention`. Saved native
+results replay publication after interruption without repeating provider effects.
+Model state claims cannot bypass native review, including after rescoping.
+
+- [x] Durable local executor/reviewer plan, native grants and stage fencing
+- [x] Exact revision review, native assignment evidence and result publication
+- [x] Restart/uncertain-launch/duplicate-wake/publication recovery qualification
+- [ ] Metered/composite/maintenance execution and automatic revision loops
+- [ ] Muse/Instinct/Dots/bot adapters, federated work and contact/voice delivery
+- [ ] Full workspace, live provider, cross-platform and live Surreal qualification
+
+This closes the bounded local native execute/review milestone. It supports the
+existing Codex, Cursor and Hermes native adapters, standalone finite units, and
+at most two new effects. Units with children/dependencies, reservations, or cost
+budgets (including ancestor budgets) fail admission while ACP cost is unknown.
+The Phase 3 exit gate remains open for broader adapters and acceptance evidence.
+
+Validation: 273 daemon tests (two ignored), seven runtime action/schema tests,
+78 ACP coordination/client tests, and 21 work-store tests passed (379 distinct
+passing tests). Daemon qualification used the final compiled test harness with
+`--test-threads=1` after recovering disk space; the first final run exhausted the
+disk and its filesystem failures were discarded only after successful rerun.
+The eight execute/review integration fixtures use real native stores, Forge and
+Git with fake provider effects, including fast completion, uncertainty, duplicate
+wakes, revoked approval, pause/cancel/rescope fences, changed revisions and
+interrupted result publication. No paid/live provider run was performed.
+Strict clippy passed over all targets of `medousa`, `medousa-types`,
+`medousa-store`, `medousa-work`, and `medousa-acp-client`; strict docs, explicit
+changed-file formatting and diff whitespace checks passed. The embedded library
+compile passed with its 32 existing feature warnings after the disk recovery.
+Full workspace/hermetic CI, frontend CI, parallel vault qualification, Windows/wasm and live Surreal
+remain outstanding. No frontend files changed and no PR was opened.
 
 ### Phase exit gates
 

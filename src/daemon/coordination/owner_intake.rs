@@ -38,6 +38,7 @@ fn owner_terminal_failure_reason(phase: TurnTicketPhase) -> Option<&'static str>
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OwnerIntakeResult {
     Delivered,
+    WorkScoped,
     AlreadyConsumed,
     DeferredBusy,
     NeedsReconciliation,
@@ -243,6 +244,13 @@ impl LocalPeerDispatcher {
                 store.receipt(&saved_channel, &assignment_id)
             })
             .await?;
+        let saved = receipt.clone();
+        if self
+            .stored(move |store| store.retain_work_terminal_for_controller(&saved))
+            .await?
+        {
+            return Ok(OwnerIntakeResult::WorkScoped);
+        }
         let saved = receipt.clone();
         let request = self
             .stored(move |store| store.require_owner_continuation(&saved, chrono::Utc::now()))

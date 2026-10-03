@@ -23,6 +23,12 @@ WebP, SVG, and AVIF reads are capped at 2 MiB and remain scoped to the governed
 workshop working copy, including symlink and `.git` restrictions. Omitting
 `image` preserves the existing source response. See [Forge routes](../engine/forge.md).
 
+Work-scoped native execute/review uses the existing runtime tool actions
+`work.coordinate` and `work.coordination`; it adds no HTTP routes or SDK approval
+payloads. Registration accepts exact native proposal IDs and each stage waits for
+its existing grant. Registered proposal dispatch can return the existing nullable
+`binding` while queued. See [Work scopes and native coordination](../engine/work-units.md#native-executor--reviewer-coordination).
+
 ## Packages
 
 | Package | Role |

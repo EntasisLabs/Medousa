@@ -54,6 +54,8 @@ use crate::typed_tools::{
 };
 use crate::workflow::WorkflowRegistry;
 #[cfg(feature = "full-daemon")]
+use medousa_types::work_coordination::{WorkCoordinationInput, WorkCoordinationQuery};
+#[cfg(feature = "full-daemon")]
 use medousa_types::work_unit::WorkGraphQuery;
 use stasis::prelude::RuntimeComposition;
 
@@ -77,6 +79,9 @@ pub enum RuntimeQueryAction {
     #[cfg(feature = "full-daemon")]
     #[serde(rename = "work.get")]
     WorkGet(WorkUnitGetQuery),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "work.coordination")]
+    WorkCoordination(WorkCoordinationQuery),
     #[cfg(feature = "full-daemon")]
     #[serde(rename = "assignment.list")]
     AssignmentList(AssignmentListQuery),
@@ -123,6 +128,9 @@ pub enum RuntimeMutateAction {
     #[cfg(feature = "full-daemon")]
     #[serde(rename = "work.resolve_content")]
     WorkResolveContent(WorkContentResolveInput),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "work.coordinate")]
+    WorkCoordinate(WorkCoordinationInput),
     #[serde(rename = "job.enqueue")]
     JobEnqueue(JobEnqueue),
     #[serde(rename = "job.cancel")]
@@ -371,6 +379,7 @@ impl JsonSchema for RuntimeQueryAction {
                 [
                     "work.graph",
                     "work.get",
+                    "work.coordination",
                     "assignment.list",
                     "assignment.get",
                     "assignment.events",
@@ -406,6 +415,7 @@ impl JsonSchema for RuntimeMutateAction {
             "work.reconcile",
             "work.resolve_project",
             "work.resolve_content",
+            "work.coordinate",
         ]
         .into_iter()
         .chain(actions)
@@ -497,6 +507,16 @@ pub fn runtime_type_schemas() -> Vec<TypedActionSchema> {
                 QUERY_ID,
                 "work.get",
                 "Inspect a session-independent work unit by exact identity",
+            ),
+            typed_action_schema::<WorkCoordinationQuery>(
+                QUERY_ID,
+                "work.coordination",
+                "Inspect durable execute/review registration, native custody, pinned revision, and review verdict",
+            ),
+            typed_action_schema::<WorkCoordinationInput>(
+                MUTATE_ID,
+                "work.coordinate",
+                "Register bounded executor then reviewer observation for a standalone finite work unit using two exact native peer proposals; each stage waits for its approved execution grant. The reviewer must opt into medousa-work-review-v1; no grants or owner-chat continuations are issued",
             ),
             typed_action_schema::<WorkGraphMutateInput>(
                 MUTATE_ID,
@@ -597,7 +617,7 @@ impl CognitionRuntimeQueryTool {
 
 #[medousa_tool(id = MUTATE_ID)]
 impl CognitionRuntimeMutateTool {
-    /// Mutate durable runtime work. work.record saves session-independent intent; work.resolve refreshes exact native vault metadata; work.reconcile repairs vault identity metadata; work.resolve_project observes owned Forge projects, work, and pinned overlays; work.resolve_content observes artifacts, components, and feeds without executing work. job.enqueue and workflow.run execute through their native admission. Fetch fields with cognition_schema types=[...].
+    /// Mutate durable runtime work. work.coordinate registers a bounded native executor/reviewer handoff without issuing grants. work.record saves session-independent intent; work.resolve refreshes exact native vault metadata; work.reconcile repairs vault identity metadata; work.resolve_project observes owned Forge projects, work, and pinned overlays; work.resolve_content observes artifacts, components, and feeds without executing work. job.enqueue and workflow.run execute through their native admission. Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(
         &self,
         action: RuntimeMutateAction,
@@ -649,6 +669,13 @@ async fn dispatch_query(
         RuntimeQueryAction::WorkGet(params) => {
             let (host, turn) = admitted_work_access()?;
             host.get(&turn, params).await.map_err(runtime_error)
+        }
+        #[cfg(feature = "full-daemon")]
+        RuntimeQueryAction::WorkCoordination(params) => {
+            let (host, turn) = admitted_work_access()?;
+            host.coordination(&turn, params)
+                .await
+                .map_err(runtime_error)
         }
         #[cfg(feature = "full-daemon")]
         RuntimeQueryAction::AssignmentList(params) => {
@@ -725,6 +752,11 @@ async fn dispatch_mutate(
             host.resolve_content(&turn, params)
                 .await
                 .map_err(runtime_error)
+        }
+        #[cfg(feature = "full-daemon")]
+        RuntimeMutateAction::WorkCoordinate(params) => {
+            let (host, turn) = admitted_work_access()?;
+            host.coordinate(&turn, params).await.map_err(runtime_error)
         }
         RuntimeMutateAction::JobEnqueue(params) => params.execute(tool).await,
         RuntimeMutateAction::JobCancel(params) => params.execute(tool).await,
@@ -1171,7 +1203,51 @@ mod tests {
             "work.reconcile",
             "work.resolve_project",
             "work.resolve_content",
+            "work.coordinate",
         ] {
+            assert!(
+                runtime_type_schemas()
+                    .iter()
+                    .any(|entry| entry.name == name)
+            );
+        }
+    }
+
+    #[cfg(feature = "full-daemon")]
+    #[test]
+    fn work_coordination_actions_bind_owner_and_native_facts_outside_model_input() {
+        let authority = format!("auth_{}", "a".repeat(64));
+        let input = json!({"action":"work.coordinate", "coordination_id":"coord", "work_unit_id":"unit", "expected_scope_revision":1,
+            "channel":{"authority_id":authority, "channel_id":"channel"}, "executor_proposal_id":"executor", "reviewer_proposal_id":"reviewer", "deadline":"2026-10-02T20:00:00Z"});
+        assert!(matches!(
+            serde_json::from_value::<RuntimeMutateAction>(input.clone()).unwrap(),
+            RuntimeMutateAction::WorkCoordinate(_)
+        ));
+        for field in [
+            "owner_id",
+            "domain",
+            "scope_digest",
+            "head_oid",
+            "execution_grant",
+            "decision",
+            "provenance",
+        ] {
+            let mut spoofed = input.clone();
+            spoofed[field] = "spoofed".into();
+            assert!(
+                serde_json::from_value::<RuntimeMutateAction>(spoofed).is_err(),
+                "{field}"
+            );
+        }
+        let query = json!({"action":"work.coordination", "coordination_id":"coord", "channel":input["channel"]});
+        assert!(matches!(
+            serde_json::from_value::<RuntimeQueryAction>(query.clone()).unwrap(),
+            RuntimeQueryAction::WorkCoordination(_)
+        ));
+        let mut spoofed = query;
+        spoofed["owner_id"] = "other".into();
+        assert!(serde_json::from_value::<RuntimeQueryAction>(spoofed).is_err());
+        for name in ["work.coordinate", "work.coordination"] {
             assert!(
                 runtime_type_schemas()
                     .iter()
@@ -1223,6 +1299,7 @@ mod tests {
         for action in [
             "work.graph",
             "work.get",
+            "work.coordination",
             "assignment.list",
             "assignment.get",
             "assignment.events",
@@ -1243,6 +1320,7 @@ mod tests {
             "work.reconcile",
             "work.resolve_project",
             "work.resolve_content",
+            "work.coordinate",
         ] {
             assert!(
                 serde_json::from_value::<RuntimeMutateAction>(json!({"action": action})).is_err()

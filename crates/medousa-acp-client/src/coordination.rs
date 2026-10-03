@@ -958,10 +958,18 @@ mod tests {
                     let path = temp.path();
                     let request = &request;
                     scope.spawn(move || {
-                        store::CoordinationStore::open(path)
-                            .unwrap()
-                            .claim_assignment(request)
-                            .unwrap()
+                        let store = store::CoordinationStore::open(path).unwrap();
+                        // Registration shares a nonblocking native custody
+                        // fence with claims. Contention retries the same key;
+                        // it never manufactures a new dispatch identity.
+                        for _ in 0..1000 {
+                            match store.claim_assignment(request) {
+                                Ok(claim) => return claim,
+                                Err(error) if error.downcast_ref::<medousa_store::PersistenceError>().is_some_and(|e| matches!(e.kind, medousa_store::PersistenceErrorKind::Overloaded | medousa_store::PersistenceErrorKind::RetryableIo)) => std::thread::yield_now(),
+                                Err(error) => panic!("claim failed: {error}"),
+                            }
+                        }
+                        panic!("native claim custody did not become available")
                     })
                 })
                 .collect();

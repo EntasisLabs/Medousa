@@ -37,9 +37,13 @@ a grant nor starts or adopts work; native execution admission still applies.
 ## Assignment inspection
 
 Session-independent intent and resource relationships use the separate
-[work-domain registry](work-units.md). Its storage foundation does not change
-the execution, approval, source-session visibility, or owner-inbox behavior
-described here.
+[work-domain registry](work-units.md). Its bounded `work.coordinate` controller
+registers native executor/reviewer proposals before effects and observes their
+terminal receipts without an owner-chat continuation. Existing native approvals,
+exact grants, and source-session visibility still admit every new stage. A
+registered proposal's dispatch operation queues the stage with that controller;
+its existing response can contain `binding: null` while approval/dependency or
+native custody is pending. Ordinary unregistered proposals still dispatch directly.
 
 On a full workshop daemon, `cognition_runtime_query` exposes `assignment.list`,
 `assignment.get`, `assignment.events`, and `owner.events`. The admitted turn supplies the

@@ -176,7 +176,7 @@ impl LocalPeerDispatcher {
         principal: &RequestPrincipal,
         channel: CoordinationChannelRef,
         proposal_id: String,
-    ) -> Result<ExternalPeerAssignmentBinding> {
+    ) -> Result<Option<ExternalPeerAssignmentBinding>> {
         let owner = actor(principal)?;
         let store = self.store.clone();
         let proposal = self
@@ -195,12 +195,34 @@ impl LocalPeerDispatcher {
             true,
         )
         .await?;
+        let native = self.store.clone();
+        let request = proposal.request.clone();
+        let registered = self
+            .state
+            .forge_execution
+            .run(ExecutionClass::StoreIo, MAX_CONTEXT_BYTES, move || {
+                Ok((|| -> Result<_> {
+                    if native.work_plan_for_assignment(&request)?.is_some() {
+                        return Ok(Some(
+                            native.peer_if_recorded(&request.channel, &request.assignment_id)?,
+                        ));
+                    }
+                    Ok(None)
+                })())
+            })
+            .await??;
+        if let Some(binding) = registered {
+            // Existing approval UI submits approve then dispatch. Accept work
+            // into the durable controller; a reviewer waits for its dependency.
+            self.wake.notify_one();
+            return Ok(binding);
+        }
         let binding = self.dispatch(principal, &proposal.request).await?;
         crate::peer_coordination_mesh::record_remote_peer_completion_destination_binding_admitted(
             &proposal.proposal_id,
             &binding,
         )
         .await?;
-        Ok(binding)
+        Ok(Some(binding))
     }
 }

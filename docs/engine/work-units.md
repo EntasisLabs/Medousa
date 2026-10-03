@@ -7,10 +7,10 @@ tools. It adds no app navigation or required Goals workflow.
 
 This is the storage and intent foundation, with native user-vault and governed
 overlay observations, repository identities, Forge lifecycle metadata, and exact
-artifact/component/feed observations. Execution subscriptions,
-autonomous coordination, provider federation, and contact delivery are subsequent
-implementation steps. Recording a responsibility does not launch an executor or
-register a schedule.
+artifact/component/feed observations. A bounded native executor → reviewer
+controller can now be registered separately with `work.coordinate`. Provider
+federation, automatic fix loops, and contact delivery remain subsequent steps.
+Recording a responsibility alone does not launch an executor or register a schedule.
 
 ## Access and identity
 
@@ -232,9 +232,9 @@ Responses include `resource`, `graph_revision`, a graph receipt, and
 `affected_resources`; overlay responses identify the work and environment pins.
 The project registry holds at most 256 identities, eight physical identities per
 locator, and 1 MiB. Capacity exhaustion preserves history and denies new identity
-admission; compaction remains future work. Automatic subscriptions,
-executor admission, federation, and contact delivery remain subsequent
-milestones.
+admission; compaction remains future work. Automatic subscriptions, broader
+executor adapters, federation, and contact delivery remain subsequent milestones.
+The bounded native execute/review controller is described below.
 
 ## Native artifacts, components, and feeds
 
@@ -304,7 +304,7 @@ or event summaries. They retain existing native stores and UI. Feed coverage is 
 in-process owner's retained state, not an external-writer or complete-history
 snapshot; native file tampering, multi-process content writers, subscriptions,
 physical-incarnation tracking, artifact alias reconciliation, automatic maintenance,
-executor/reviewer coordination, and contact delivery remain subsequent work.
+broader executor/reviewer adapters, and contact delivery remain subsequent work.
 
 ## Query actions
 
@@ -502,3 +502,97 @@ tombstones preserve relationships and prevent identity reuse after deletion.
 All daemon file operations enter through `ForgeExecutionService`; no graph
 write introduces a blocking filesystem wait on a Tokio worker. Embedded/mobile
 engines do not advertise these workshop-local actions.
+
+
+## Native executor → reviewer coordination
+
+`work.coordinate` registers one bounded execute/review handoff for an admitted
+owner's standalone finite work unit. Supply `coordination_id`, `work_unit_id`,
+`expected_scope_revision`, the exact `channel`, `executor_proposal_id`,
+`reviewer_proposal_id`, and an absolute RFC3339 `deadline`. Registration can precede
+approval: proposals are immutable native snapshots, and each stage waits for its
+existing operator approval and exact execution grant. Registration never grants
+execution authority. Register before either native dispatch claim. Both proposals
+must name the same owned governed Forge work, fresh distinct execution sessions,
+and `continue_owner: false`. The deadline is at most 24 hours from registration
+and no later than either proposal expiry.
+
+The reviewer proposal's instructions must explicitly opt into
+`medousa-work-review-v1`: review the clean committed checkout observed after the
+executor finishes,
+do not edit its checkout, and return the protocol's JSON verdict. The runtime
+appends bounded derived review data to the already approved instructions/context;
+it never edits the grant or replaces the source transcript ranges. Executor output
+is untrusted data. The supplied `reviewed` object pins the work unit, coordination,
+executor assignment and terminal receipt, Forge work, environment generation,
+governed branch, and full HEAD object ID. The whole reviewer result must be JSON:
+
+```json
+{"reviewed":{},"verdict":"approved","summary":"Review findings"}
+```
+
+Here `reviewed` must be the complete, unchanged object supplied by the runtime,
+not an empty object. `verdict` is `approved` or `changes_requested`; a nonempty
+summary is at most 4,096 bytes and the complete envelope at most 8,192 bytes.
+Markdown fences, unknown fields, prose-only completion, and another revision's
+verdict do not approve work.
+
+Registration freezes the scope generation and recorded resource versions.
+Native dispatch checks them before claiming, before startup, and after provider
+handshake. It checks current owner/source visibility and grants too. Scope or
+resource-version changes, pause, cancellation, supersession, unknown execution
+custody, or loss of native work ownership block new stage admission. Executor completion
+is observed from the native terminal receipt, then the runtime pins a clean
+checkout on its governed branch before admitting review. Dirty or unavailable
+checkouts remain blocked; equal text or process completion does not prove review.
+HEAD, branch, and environment generation are checked again for review admission
+and before satisfaction. The provider can still mutate files outside Forge custody;
+satisfaction is an observation of the checked native revision, not an OS-wide lock
+against arbitrary external Git writes.
+
+Registrations, stage indexes, claims, bindings, receipts, review pins, verdicts,
+and publication acknowledgment live in the existing coordination store. Native
+stage indexes fence standalone dispatch as well as recovery. A partial registration
+blocks dispatch and exact registration replay repairs it. Nonblocking assignment
+locks serialize registration against claim publication; contention reports
+retryable overload and retains the same command identity. Cross-process coordinator
+leases and native claims prevent duplicate starts. A claim without a binding remains
+uncertain after restart; the runtime never launches a replacement to resolve it.
+
+The daemon recovers four work registrations at a time on its existing coordination
+wake/30-second recovery loop. Recovery pages rotate and do not need an active source
+chat or a result-only owner turn. Existing approval UI still submits the same approve
+and dispatch operations: dispatch accepts a registered stage into the durable
+controller and may return `binding: null` until its dependency is ready. Source
+transcript visibility remains required for new native execution, even after the
+originating chat stops being active.
+
+`work.coordination` queries the same exact `channel` and `coordination_id` from
+any admitted chat in the owner domain. It returns the registration, current
+scope/state, approval and claim markers,
+pinned review input, native stage bindings/terminal receipts, and retained result.
+A claimed stage without a binding is uncertain. Reading native results requires
+current Forge ownership and source-context visibility; `work.get` retains the
+owner's saved intent metadata independently. `work.get`
+shows published work state and evidence. An explicit approval for the current
+revision publishes both native Assignment references using their actual ledger
+IDs and can satisfy the work. Changes
+requested, failed/interrupted execution, invalid review, changed revision, and
+elapsed deadline publish `needs_attention`. Model state claims cannot satisfy
+registered execute/review work, even after
+rescoping; satisfaction writes require an available native control registry.
+Native results survive a crash before work publication and replay without repeating either provider effect. A deadline
+blocks new stages; it does not invent cancellation or settlement of existing custody.
+
+This first controller admits at most two new native effects per registration.
+It does not auto-retry, fix code after review, cancel existing custody, or send
+notifications. Work contact preferences are retained without spending any contact
+or owner-continuation grant. Work-owned terminal events are retained for the
+work controller and never admit the source chat's result-only AI continuation.
+Work with children/dependencies, maintenance duties,
+existing reservations, or cost budgets (including ancestor budgets) requires a
+later metered/composite execution adapter. ACP provider costs are currently unknown;
+these configurations fail closed rather than recording unknown cost as zero.
+Current native execution targets remain Codex, Cursor, and Hermes on this workshop.
+Muse/Instinct/Dots/bot adapters, cross-workshop coordination, and voice/contact
+routing require their native adapter and delivery admission paths.

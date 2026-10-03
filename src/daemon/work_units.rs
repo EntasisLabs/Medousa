@@ -21,6 +21,7 @@ mod native_content;
 mod native_graph;
 mod native_project;
 mod native_vault;
+mod peer_coordination;
 pub use native_content::WorkContentResolveInput;
 pub use native_project::WorkProjectResolveInput;
 pub use native_vault::{WorkNativeReconcileInput, WorkNativeResolveInput};
@@ -153,6 +154,31 @@ fn validate_model_mutation(domain: &UserDomainRef, mutation: &WorkGraphMutation)
     Ok(())
 }
 
+fn validate_peer_qualification(
+    native: Option<&medousa_acp_client::coordination::store::CoordinationStore>,
+    domain: &UserDomainRef,
+    mutation: &WorkGraphMutation,
+) -> Result<()> {
+    if let WorkGraphMutation::SetState {
+        work_unit_id,
+        state: WorkUnitState::Satisfied,
+        ..
+    } = mutation
+    {
+        let native = native.ok_or_else(|| {
+            anyhow::anyhow!(
+                "native work-control registry unavailable; satisfaction cannot be qualified"
+            )
+        })?;
+        if native.work_is_controlled(domain, work_unit_id)? {
+            bail!(
+                "registered executor/reviewer work requires a native review verdict; model claims cannot satisfy it"
+            );
+        }
+    }
+    Ok(())
+}
+
 fn bounded_response(value: serde_json::Value) -> Result<serde_json::Value> {
     if serde_json::to_vec(&value)?.len() > MAX_SNAPSHOT_BYTES {
         bail!("work domain response exceeds byte budget; use a smaller page");
@@ -213,13 +239,20 @@ impl WorkUnitHost {
             source: RecordSource::ModelInferred,
             evidence: vec![],
         };
+        let native =
+            crate::daemon::coordination::local_coordination_host().map(|host| host.work_registry());
         self.with_store(move |store| {
             bounded_response(serde_json::to_value(store.apply_checked(
                 &domain,
                 input.command,
                 provenance,
                 |mutation| {
-                    validate_model_mutation(&domain, mutation).map_err(|error| {
+                    (|| -> Result<()> {
+                        validate_model_mutation(&domain, mutation)?;
+                        validate_peer_qualification(native.as_deref(), &domain, mutation)?;
+                        Ok(())
+                    })()
+                    .map_err(|error| {
                         medousa_store::PersistenceError::new(
                             medousa_store::PersistenceErrorKind::PermanentIo,
                             error.to_string(),

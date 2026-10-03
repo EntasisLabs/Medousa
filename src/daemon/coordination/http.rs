@@ -138,7 +138,7 @@ async fn dispatch(
         .map_err(conflict)?;
     Ok(Json(PeerProposalActionResponse {
         proposal_id,
-        binding: Some(binding),
+        binding,
     }))
 }
 

@@ -39,6 +39,7 @@ pub mod tool_history;
 pub mod turn;
 pub mod turn_stream;
 pub mod turn_ticket;
+pub mod work_coordination;
 pub mod work_unit;
 pub mod workflow;
 pub mod workflow_plan;

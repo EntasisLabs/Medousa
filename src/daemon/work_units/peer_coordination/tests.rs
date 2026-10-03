@@ -1,0 +1,807 @@
+//! The real controller driver, native journal and Forge observations with a
+//! fake provider. Even test filesystem/Git work is admitted off Tokio workers.
+use super::*;
+use crate::daemon::coordination::work::{
+    WorkCoordinationPort, WorkCoordinationProgress, advance_work_coordination,
+};
+use async_trait::async_trait;
+use medousa_acp_client::coordination::store::{AssignmentClaim, proposals::proposal_identity};
+use medousa_acp_client::coordination::{
+    ExternalPeerExecutionPort, PeerAssignmentAuthority, PeerDispatchJournal,
+    dispatch_external_peer_assignment,
+};
+use medousa_forge::{
+    git::{CheckpointAuthor, GitEngine},
+    model::{ActorKind, ActorRef, WorkspaceMode},
+};
+use medousa_types::*;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+struct TestPort {
+    _temp: Arc<tempfile::TempDir>,
+    native: Arc<CoordinationStore>,
+    host: Arc<WorkUnitHost>,
+    starts: Arc<AtomicUsize>,
+    uncertain_start: AtomicBool,
+    lost_publication: AtomicBool,
+    changes_requested: AtomicBool,
+}
+
+impl TestPort {
+    async fn io<T: Send + 'static>(
+        &self,
+        f: impl FnOnce(&CoordinationStore, &WorkUnitHost, &Forge) -> Result<T> + Send + 'static,
+    ) -> Result<T> {
+        let native = self.native.clone();
+        let host = self.host.clone();
+        let forge = host.forge.clone();
+        self.host
+            .execution
+            .run(ExecutionClass::StoreIo, MAX_SNAPSHOT_BYTES, move || {
+                Ok(f(&native, &host, &forge))
+            })
+            .await?
+    }
+
+    async fn fixture() -> (Self, WorkCoordinationPlan) {
+        let execution = Arc::new(ForgeExecutionService::new());
+        let exec = execution.clone();
+        execution
+            .run(ExecutionClass::StoreIo, MAX_SNAPSHOT_BYTES, move || {
+                Ok(Self::fixture_sync(exec, true))
+            })
+            .await
+            .unwrap()
+            .unwrap()
+    }
+
+    fn fixture_sync(
+        execution: Arc<ForgeExecutionService>,
+        approved: bool,
+    ) -> Result<(Self, WorkCoordinationPlan)> {
+        let temp = Arc::new(tempfile::tempdir()?);
+        let root = temp.path().canonicalize()?;
+        let repo = root.join("repo");
+        std::fs::create_dir(&repo)?;
+        for args in [
+            vec!["init", "-b", "main"],
+            vec!["config", "user.name", "test"],
+            vec!["config", "user.email", "test@example.com"],
+        ] {
+            assert!(
+                std::process::Command::new("git")
+                    .args(args)
+                    .current_dir(&repo)
+                    .output()?
+                    .status
+                    .success()
+            );
+        }
+        std::fs::write(repo.join("initial.txt"), "initial")?;
+        assert!(
+            std::process::Command::new("git")
+                .args(["add", "."])
+                .current_dir(&repo)
+                .output()?
+                .status
+                .success()
+        );
+        GitEngine::detect()?.commit_checkpoint(&repo, "initial", &CheckpointAuthor::default())?;
+        let forge = Arc::new(Forge::open(root.join("forge"))?);
+        let actor = ActorRef {
+            kind: ActorKind::User,
+            id: "owner".into(),
+        };
+        let item = forge.register_with_workspace_mode(
+            "work",
+            "brief",
+            &repo,
+            "main",
+            "owner",
+            WorkspaceMode::AttachedCheckout,
+            &actor,
+        )?;
+        let item = forge.provision(&item.id, &actor)?;
+        let authority =
+            crate::workshop_authority::initialize(&medousa_types::secrets::InstallationId::parse(
+                crate::workshop_authority::TEST_INSTALLATION_ID,
+            )?)
+            .map_err(anyhow::Error::msg)?
+            .clone();
+        let domain = UserDomainRef {
+            authority_id: authority.clone(),
+            user_id: "owner".into(),
+        };
+        let store = Arc::new(WorkGraphStore::open(&root.join("graph"))?);
+        store.apply(
+            &domain,
+            WorkGraphCommand {
+                command_id: "accept".into(),
+                expected_revision: 0,
+                mutation: WorkGraphMutation::AcceptWork {
+                    work_unit_id: "unit".into(),
+                    intent: "implement and review".into(),
+                    kind: WorkUnitKind::Finite,
+                    scope: WorkScope::default(),
+                    completion_condition: "reviewed implementation".into(),
+                    contact: WorkContactPreference::Silent,
+                    origin: None,
+                    budget: None,
+                },
+            },
+            RecordProvenance {
+                actor_id: "owner".into(),
+                source: RecordSource::UserDirect,
+                evidence: vec![],
+            },
+        )?;
+        let host = Arc::new(WorkUnitHost {
+            store,
+            forge: forge.clone(),
+            execution,
+        });
+        let native = Arc::new(CoordinationStore::open(&root.join("coordination"))?);
+        let channel = CoordinationChannelRef {
+            authority_id: authority.clone(),
+            channel_id: "channel".into(),
+        };
+        let session = SessionRef {
+            authority_id: authority.clone(),
+            session_id: SessionId::parse("ses_owner")?,
+        };
+        native.create_channel(&CoordinationChannelRecord {
+            channel: channel.clone(),
+            owner_principal_id: "owner".into(),
+            member_principal_ids: vec!["owner".into()],
+            attached_sessions: vec![session.clone()],
+        })?;
+        let expiry = chrono::Utc::now() + chrono::Duration::hours(2);
+        let mut ids = vec![];
+        for id in ["executor", "reviewer"] {
+            let request = ExternalPeerAssignmentRequest {
+                assignment_id: id.into(),
+                idempotency_key: format!("command-{id}"),
+                owner_principal_id: "owner".into(),
+                owner_session: session.clone(),
+                channel: channel.clone(),
+                target: ExternalPeerTarget {
+                    authority_id: authority.clone(),
+                    execution_runtime_id: "runtime".into(),
+                    runtime: ExternalPeerRuntime::Codex,
+                },
+                context: ContextManifest {
+                    manifest_id: ContextManifestId::parse(format!(
+                        "ctx_{}",
+                        if id == "executor" {
+                            "a".repeat(32)
+                        } else {
+                            "b".repeat(32)
+                        }
+                    ))?,
+                    sources: vec![ResolvedConversationRange {
+                        selection: ConversationRangeSelection {
+                            session: session.clone(),
+                            after_entry_seq: None,
+                            through_entry_seq: 1,
+                        },
+                        selection_digest: "test-digest".into(),
+                    }],
+                    created_by: "owner".into(),
+                    created_at: chrono::Utc::now(),
+                },
+                execution_session: SessionRef {
+                    authority_id: authority.clone(),
+                    session_id: SessionId::parse(format!("ses_{id}"))?,
+                },
+                instructions: format!("do {id} {WORK_REVIEW_CONTRACT}"),
+                execution_grant_id: format!("grant-{id}"),
+                forge_work_id: item.id.to_string(),
+                existing_agent_session_id: None,
+            };
+            let mut proposal = PeerAssignmentProposal {
+                proposal_id: String::new(),
+                request: request.clone(),
+                expires_at: expiry,
+                continue_owner: false,
+            };
+            proposal.proposal_id = proposal_identity(&proposal)?;
+            native.record_proposal(&proposal)?;
+            if approved {
+                native.decide_proposal(
+                    &channel,
+                    &PeerProposalDecision {
+                        proposal_id: proposal.proposal_id.clone(),
+                        owner_principal_id: "owner".into(),
+                        approved: true,
+                    },
+                )?;
+                native.approve_assignment(&ExternalPeerAssignmentGrant {
+                    request,
+                    expires_at: expiry,
+                })?;
+            }
+            ids.push(proposal.proposal_id);
+        }
+        let input = WorkCoordinationInput {
+            coordination_id: "coord".into(),
+            work_unit_id: "unit".into(),
+            expected_scope_revision: 1,
+            channel,
+            executor_proposal_id: ids[0].clone(),
+            reviewer_proposal_id: ids[1].clone(),
+            deadline: chrono::Utc::now() + chrono::Duration::hours(1),
+        };
+        let plan = WorkCoordinationPlan {
+            scope_digest: host.peer_scope_digest(&domain, &input)?,
+            domain,
+            input,
+            executor_assignment_id: "executor".into(),
+            reviewer_assignment_id: "reviewer".into(),
+            forge_work_id: item.id.to_string(),
+        };
+        host.register_peer_plan(&native, &forge, &plan)?;
+        Ok((
+            Self {
+                _temp: temp,
+                native,
+                host,
+                starts: Arc::new(AtomicUsize::new(0)),
+                uncertain_start: AtomicBool::new(false),
+                lost_publication: AtomicBool::new(false),
+                changes_requested: AtomicBool::new(false),
+            },
+            plan,
+        ))
+    }
+
+    async fn reopen(self) -> Self {
+        let temp = self._temp.clone();
+        let starts = self.starts.clone();
+        let execution = self.host.execution.clone();
+        let exec = execution.clone();
+        execution
+            .run(ExecutionClass::StoreIo, MAX_SNAPSHOT_BYTES, move || {
+                let root = temp.path().canonicalize().unwrap();
+                Ok(Self {
+                    _temp: temp,
+                    starts,
+                    host: Arc::new(WorkUnitHost {
+                        store: Arc::new(WorkGraphStore::open(&root.join("graph")).unwrap()),
+                        forge: Arc::new(Forge::open(root.join("forge")).unwrap()),
+                        execution: exec,
+                    }),
+                    native: Arc::new(CoordinationStore::open(&root.join("coordination")).unwrap()),
+                    uncertain_start: AtomicBool::new(false),
+                    lost_publication: AtomicBool::new(false),
+                    changes_requested: AtomicBool::new(false),
+                })
+            })
+            .await
+            .unwrap()
+    }
+
+    async fn mutate(&self, plan: &WorkCoordinationPlan, mutation: WorkGraphMutation) {
+        let plan = plan.clone();
+        self.io(move |_, host, _| {
+            let revision = host
+                .store
+                .query(&plan.domain, WorkGraphQuery::default())?
+                .revision;
+            host.store.apply(
+                &plan.domain,
+                WorkGraphCommand {
+                    command_id: format!("test-{revision}"),
+                    expected_revision: revision,
+                    mutation,
+                },
+                RecordProvenance {
+                    actor_id: "owner".into(),
+                    source: RecordSource::UserDirect,
+                    evidence: vec![],
+                },
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+    }
+
+    async fn state(&self, plan: &WorkCoordinationPlan) -> WorkUnitState {
+        let plan = plan.clone();
+        self.io(move |_, host, _| {
+            Ok(host
+                .store
+                .work_unit(&plan.domain, &plan.input.work_unit_id)?
+                .state)
+        })
+        .await
+        .unwrap()
+    }
+}
+
+#[async_trait]
+impl PeerAssignmentAuthority for TestPort {
+    async fn authorize(&self, request: &ExternalPeerAssignmentRequest) -> Result<()> {
+        let request = request.clone();
+        self.io(move |native, host, forge| {
+            native.require_assignment_grant(&request, chrono::Utc::now())?;
+            let plan = native.work_plan_for_assignment(&request)?.unwrap();
+            host.peer_stage_context(native, forge, &plan, &request)?;
+            Ok(())
+        })
+        .await
+    }
+}
+#[async_trait]
+impl PeerDispatchJournal for TestPort {
+    async fn claim(&self, request: &ExternalPeerAssignmentRequest) -> Result<AssignmentClaim> {
+        let request = request.clone();
+        self.io(move |native, host, forge| {
+            native.claim_assignment_checked(&request, || {
+                let plan = native.work_plan_for_assignment(&request)?.unwrap();
+                host.peer_stage_context(native, forge, &plan, &request)?;
+                Ok(())
+            })
+        })
+        .await
+    }
+    async fn binding(
+        &self,
+        request: &ExternalPeerAssignmentRequest,
+    ) -> Result<Option<ExternalPeerAssignmentBinding>> {
+        let request = request.clone();
+        self.io(move |native, _, _| {
+            native.peer_if_recorded(&request.channel, &request.assignment_id)
+        })
+        .await
+    }
+    async fn record(&self, binding: &ExternalPeerAssignmentBinding) -> Result<()> {
+        let binding = binding.clone();
+        self.io(move |native, _, _| native.record_peer(&binding).map(|_| ()))
+            .await
+    }
+}
+#[async_trait]
+impl ExternalPeerExecutionPort for TestPort {
+    async fn discover(&self) -> Result<Vec<ExternalPeerCandidate>> {
+        let authority = crate::workshop_authority::current()
+            .map_err(anyhow::Error::msg)?
+            .clone();
+        Ok(vec![ExternalPeerCandidate {
+            target: ExternalPeerTarget {
+                authority_id: authority,
+                execution_runtime_id: "runtime".into(),
+                runtime: ExternalPeerRuntime::Codex,
+            },
+            availability: PeerAvailability::Ready,
+        }])
+    }
+    async fn assign(
+        &self,
+        request: &ExternalPeerAssignmentRequest,
+    ) -> Result<ExternalPeerAssignmentBinding> {
+        self.starts.fetch_add(1, Ordering::SeqCst);
+        if self.uncertain_start.swap(false, Ordering::SeqCst) {
+            bail!("lost custody after provider effect");
+        }
+        let request = request.clone();
+        let changes = self.changes_requested.load(Ordering::SeqCst);
+        self.io(move |native, host, forge| {
+            let plan = native.work_plan_for_assignment(&request)?.unwrap();
+            host.peer_stage_context(native, forge, &plan, &request)?;
+            let binding = ExternalPeerAssignmentBinding {
+                assignment_id: request.assignment_id.clone(),
+                owner_principal_id: request.owner_principal_id.clone(),
+                channel: request.channel.clone(),
+                target: request.target.clone(),
+                execution_session: request.execution_session.clone(),
+                agent_session_id: format!("native-{}", request.assignment_id),
+            };
+            native.record_peer(&binding)?;
+            let result = if request.assignment_id == plan.executor_assignment_id {
+                let item = item(forge, &plan)?;
+                let repo = &item.workspace_environment().unwrap().worktree;
+                std::fs::write(repo.join("implemented.txt"), "implementation")?;
+                assert!(
+                    std::process::Command::new("git")
+                        .args(["add", "."])
+                        .current_dir(repo)
+                        .output()?
+                        .status
+                        .success()
+                );
+                forge
+                    .git()
+                    .commit_checkpoint(repo, "implemented", &CheckpointAuthor::default())?;
+                "implemented and tested".into()
+            } else {
+                let input = native.work_review_input(&plan)?.unwrap();
+                serde_json::to_string(&WorkReviewDecision {
+                    reviewed: input,
+                    verdict: if changes {
+                        WorkReviewVerdict::ChangesRequested
+                    } else {
+                        WorkReviewVerdict::Approved
+                    },
+                    summary: "native revision reviewed".into(),
+                })?
+            };
+            // Complete before assign returns: observation was registered first.
+            native.observe_receipt_once(&ExternalPeerAssignmentReceipt {
+                receipt_id: peer_terminal_receipt_id(&binding),
+                binding: binding.clone(),
+                outcome: PeerAssignmentOutcome::Completed,
+                result,
+            })?;
+            Ok(binding)
+        })
+        .await
+    }
+}
+
+#[async_trait]
+impl WorkCoordinationPort for TestPort {
+    async fn ready(&self, plan: &WorkCoordinationPlan, executor: bool) -> Result<bool> {
+        let plan = plan.clone();
+        self.io(move |native, _, _| {
+            let proposal = native.proposal(
+                &plan.input.channel,
+                if executor {
+                    &plan.input.executor_proposal_id
+                } else {
+                    &plan.input.reviewer_proposal_id
+                },
+            )?;
+            Ok(native
+                .proposal_decision(&proposal)?
+                .is_some_and(|decision| decision.approved))
+        })
+        .await
+    }
+    async fn result(&self, plan: &WorkCoordinationPlan) -> Result<Option<WorkCoordinationResult>> {
+        let plan = plan.clone();
+        self.io(move |native, _, _| native.work_coordination_result(&plan))
+            .await
+    }
+    async fn admit(&self, plan: &WorkCoordinationPlan) -> Result<()> {
+        let plan = plan.clone();
+        self.io(move |_, host, forge| host.admit_peer_plan(forge, &plan).map(|_| ()))
+            .await
+    }
+    async fn receipt(
+        &self,
+        plan: &WorkCoordinationPlan,
+        executor: bool,
+    ) -> Result<Option<ExternalPeerAssignmentReceipt>> {
+        let plan = plan.clone();
+        self.io(move |native, _, _| {
+            native.receipt_if_recorded(
+                &plan.input.channel,
+                if executor {
+                    &plan.executor_assignment_id
+                } else {
+                    &plan.reviewer_assignment_id
+                },
+            )
+        })
+        .await
+    }
+    async fn pin(&self, plan: &WorkCoordinationPlan) -> Result<WorkReviewInput> {
+        let plan = plan.clone();
+        self.io(move |native, host, forge| {
+            if let Some(input) = native.work_review_input(&plan)? {
+                Ok(input)
+            } else {
+                host.pin_peer_output(native, forge, &plan)
+            }
+        })
+        .await
+    }
+    async fn revision_current(
+        &self,
+        plan: &WorkCoordinationPlan,
+        input: &WorkReviewInput,
+    ) -> Result<bool> {
+        let plan = plan.clone();
+        let input = input.clone();
+        self.io(move |_, host, forge| host.peer_revision_current(forge, &plan, &input))
+            .await
+    }
+    async fn dispatch_stage(&self, plan: &WorkCoordinationPlan, executor: bool) -> Result<()> {
+        let plan = plan.clone();
+        let request = self
+            .io(move |native, _, _| {
+                Ok(native
+                    .require_approved_proposal(
+                        &plan.input.channel,
+                        if executor {
+                            &plan.input.executor_proposal_id
+                        } else {
+                            &plan.input.reviewer_proposal_id
+                        },
+                        &plan.domain.user_id,
+                    )?
+                    .request)
+            })
+            .await?;
+        dispatch_external_peer_assignment(self, self, self, &request)
+            .await
+            .map(|_| ())
+    }
+    async fn close(
+        &self,
+        plan: &WorkCoordinationPlan,
+        result: WorkCoordinationResult,
+    ) -> Result<WorkCoordinationProgress> {
+        let plan = plan.clone();
+        let lost = self.lost_publication.swap(false, Ordering::SeqCst);
+        self.io(move |native, host, forge| {
+            native.record_work_coordination_result(&plan, &result)?;
+            if lost {
+                bail!("crash after native review result before work publication");
+            }
+            host.project_peer_result(native, forge, &plan, &result)?;
+            Ok(WorkCoordinationProgress::Closed)
+        })
+        .await
+    }
+}
+
+#[tokio::test]
+async fn fast_completion_restart_and_duplicate_wakes_execute_and_review_once() {
+    let (port, plan) = TestPort::fixture().await;
+    assert!(matches!(
+        advance_work_coordination(&port, &plan).await.unwrap(),
+        WorkCoordinationProgress::ExecutorRunning
+    ));
+    let port = port.reopen().await;
+    assert!(matches!(
+        advance_work_coordination(&port, &plan).await.unwrap(),
+        WorkCoordinationProgress::ReviewerRunning
+    ));
+    port.lost_publication.store(true, Ordering::SeqCst);
+    assert!(advance_work_coordination(&port, &plan).await.is_err());
+    let port = port.reopen().await;
+    for _ in 0..3 {
+        assert!(matches!(
+            advance_work_coordination(&port, &plan).await.unwrap(),
+            WorkCoordinationProgress::Closed
+        ));
+    }
+    assert_eq!(port.starts.load(Ordering::SeqCst), 2);
+    assert_eq!(port.state(&plan).await, WorkUnitState::Satisfied);
+    let saved = plan.clone();
+    port.io(move |native, host, _| {
+        assert!(
+            native
+                .local_work_plans(&saved.domain.authority_id, "runtime", 4, None)?
+                .is_empty()
+        );
+        assert_eq!(
+            host.store.work_unit(&saved.domain, "unit")?.contact,
+            WorkContactPreference::Silent
+        );
+        let resources = host.store.query(&saved.domain, WorkGraphQuery::default())?;
+        let mut assignment_ids = resources
+            .items
+            .into_iter()
+            .filter_map(|item| match item {
+                WorkGraphItem::Resource(record)
+                    if record.reference.kind == ResourceKind::Assignment =>
+                {
+                    Some(record.reference.id)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assignment_ids.sort();
+        assert_eq!(
+            assignment_ids,
+            vec![saved.executor_assignment_id, saved.reviewer_assignment_id]
+        );
+        Ok(())
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn uncertain_launch_survives_restart_without_relaunching_or_starting_review() {
+    let (port, plan) = TestPort::fixture().await;
+    port.uncertain_start.store(true, Ordering::SeqCst);
+    assert!(advance_work_coordination(&port, &plan).await.is_err());
+    let port = port.reopen().await;
+    for _ in 0..3 {
+        assert!(advance_work_coordination(&port, &plan).await.is_err());
+    }
+    assert_eq!(port.starts.load(Ordering::SeqCst), 1);
+    assert_eq!(port.state(&plan).await, WorkUnitState::Accepted);
+}
+
+#[tokio::test]
+async fn review_changes_request_preserves_work_and_cannot_become_satisfaction_on_replay() {
+    let (port, plan) = TestPort::fixture().await;
+    port.changes_requested.store(true, Ordering::SeqCst);
+    advance_work_coordination(&port, &plan).await.unwrap();
+    advance_work_coordination(&port, &plan).await.unwrap();
+    advance_work_coordination(&port, &plan).await.unwrap();
+    assert_eq!(port.state(&plan).await, WorkUnitState::NeedsAttention);
+    let port = port.reopen().await;
+    advance_work_coordination(&port, &plan).await.unwrap();
+    assert_eq!(port.starts.load(Ordering::SeqCst), 2);
+    assert_eq!(port.state(&plan).await, WorkUnitState::NeedsAttention);
+}
+
+#[tokio::test]
+async fn changing_the_checkout_after_review_does_not_satisfy_work() {
+    let (port, plan) = TestPort::fixture().await;
+    advance_work_coordination(&port, &plan).await.unwrap();
+    advance_work_coordination(&port, &plan).await.unwrap();
+    let saved = plan.clone();
+    port.io(move |_, _, forge| {
+        let item = item(forge, &saved)?;
+        let repo = &item.workspace_environment().unwrap().worktree;
+        std::fs::write(repo.join("changed.txt"), "changed")?;
+        assert!(
+            std::process::Command::new("git")
+                .args(["add", "."])
+                .current_dir(repo)
+                .output()?
+                .status
+                .success()
+        );
+        forge
+            .git()
+            .commit_checkpoint(repo, "changed", &CheckpointAuthor::default())?;
+        Ok(())
+    })
+    .await
+    .unwrap();
+    advance_work_coordination(&port, &plan).await.unwrap();
+    assert_eq!(port.state(&plan).await, WorkUnitState::NeedsAttention);
+}
+
+#[tokio::test]
+async fn paused_cancelled_and_superseded_work_block_even_direct_native_dispatch() {
+    for state in [WorkUnitState::Paused, WorkUnitState::Cancelled] {
+        let (port, plan) = TestPort::fixture().await;
+        port.mutate(
+            &plan,
+            WorkGraphMutation::SetState {
+                work_unit_id: "unit".into(),
+                state,
+                reason: "user intent".into(),
+                evidence: vec![],
+            },
+        )
+        .await;
+        assert!(advance_work_coordination(&port, &plan).await.is_err());
+        assert!(port.dispatch_stage(&plan, true).await.is_err());
+        assert_eq!(port.starts.load(Ordering::SeqCst), 0);
+    }
+    let (port, plan) = TestPort::fixture().await;
+    port.mutate(
+        &plan,
+        WorkGraphMutation::SetScope {
+            work_unit_id: "unit".into(),
+            scope: WorkScope::default(),
+        },
+    )
+    .await;
+    assert!(port.dispatch_stage(&plan, true).await.is_err());
+    assert_eq!(port.starts.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn revoked_review_grant_stops_the_handoff_after_executor_completion() {
+    let (port, plan) = TestPort::fixture().await;
+    advance_work_coordination(&port, &plan).await.unwrap();
+    let saved = plan.clone();
+    port.io(move |native, _, _| {
+        let request = native
+            .proposal(&saved.input.channel, &saved.input.reviewer_proposal_id)?
+            .request;
+        native.revoke_assignment_grant(&request.channel, &request.execution_grant_id)?;
+        Ok(())
+    })
+    .await
+    .unwrap();
+    assert!(advance_work_coordination(&port, &plan).await.is_err());
+    assert_eq!(port.starts.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn registration_precedes_approval_and_each_stage_waits_for_its_own_grant() {
+    let execution = Arc::new(ForgeExecutionService::new());
+    let exec = execution.clone();
+    let (port, plan) = execution
+        .run(ExecutionClass::StoreIo, MAX_SNAPSHOT_BYTES, move || {
+            Ok(TestPort::fixture_sync(exec, false))
+        })
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        advance_work_coordination(&port, &plan).await.unwrap(),
+        WorkCoordinationProgress::AwaitingApproval
+    ));
+    assert_eq!(port.starts.load(Ordering::SeqCst), 0);
+    for executor in [true, false] {
+        let saved = plan.clone();
+        port.io(move |native, _, _| {
+            let id = if executor {
+                &saved.input.executor_proposal_id
+            } else {
+                &saved.input.reviewer_proposal_id
+            };
+            let proposal = native.proposal(&saved.input.channel, id)?;
+            native.decide_proposal(
+                &saved.input.channel,
+                &PeerProposalDecision {
+                    proposal_id: id.clone(),
+                    owner_principal_id: "owner".into(),
+                    approved: true,
+                },
+            )?;
+            native.approve_assignment(&ExternalPeerAssignmentGrant {
+                request: proposal.request,
+                expires_at: proposal.expires_at,
+            })?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        advance_work_coordination(&port, &plan).await.unwrap();
+        if executor {
+            assert!(matches!(
+                advance_work_coordination(&port, &plan).await.unwrap(),
+                WorkCoordinationProgress::AwaitingApproval
+            ));
+            assert_eq!(port.starts.load(Ordering::SeqCst), 1);
+        }
+    }
+    advance_work_coordination(&port, &plan).await.unwrap();
+    assert_eq!(port.state(&plan).await, WorkUnitState::Satisfied);
+    assert_eq!(port.starts.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn model_satisfaction_cannot_bypass_registered_review_after_rescoping() {
+    let (port, plan) = TestPort::fixture().await;
+    let saved = plan.clone();
+    port.io(move |native, _, _| {
+        let mutation = WorkGraphMutation::SetState {
+            work_unit_id: "unit".into(),
+            state: WorkUnitState::Satisfied,
+            reason: "model says done".into(),
+            evidence: vec![],
+        };
+        assert!(validate_peer_qualification(Some(native), &saved.domain, &mutation).is_err());
+        assert!(validate_peer_qualification(None, &saved.domain, &mutation).is_err());
+        Ok(())
+    })
+    .await
+    .unwrap();
+    port.mutate(
+        &plan,
+        WorkGraphMutation::SetScope {
+            work_unit_id: "unit".into(),
+            scope: WorkScope::default(),
+        },
+    )
+    .await;
+    let saved = plan.clone();
+    port.io(move |native, _, _| {
+        assert!(native.work_is_controlled(&saved.domain, "unit")?);
+        let mutation = WorkGraphMutation::SetState {
+            work_unit_id: "unit".into(),
+            state: WorkUnitState::Satisfied,
+            reason: "new scope".into(),
+            evidence: vec![],
+        };
+        assert!(validate_peer_qualification(Some(native), &saved.domain, &mutation).is_err());
+        Ok(())
+    })
+    .await
+    .unwrap();
+}

@@ -1669,3 +1669,134 @@ fn registry_rejects_symlink_substitution() {
             .is_err()
     );
 }
+
+#[test]
+fn native_peer_coordination_rejects_changed_paused_composite_and_unmetered_budget_scope() {
+    let dir = tempdir();
+    let store = WorkGraphStore::open(dir.path()).unwrap();
+    let owner = domain("user:a");
+    let accepted = next(&store, accept("child", WorkScope::default()));
+    assert!(
+        store
+            .admit_peer_coordination(&owner, "child", accepted.revision)
+            .is_ok()
+    );
+    assert!(
+        store
+            .admit_peer_coordination(&owner, "child", accepted.revision + 1)
+            .is_err()
+    );
+    next(
+        &store,
+        WorkGraphMutation::SetState {
+            work_unit_id: "child".into(),
+            state: WorkUnitState::Paused,
+            reason: "pause".into(),
+            evidence: vec![],
+        },
+    );
+    assert!(
+        store
+            .admit_peer_coordination(&owner, "child", accepted.revision)
+            .is_err()
+    );
+    next(
+        &store,
+        WorkGraphMutation::SetState {
+            work_unit_id: "child".into(),
+            state: WorkUnitState::Active,
+            reason: "resume".into(),
+            evidence: vec![],
+        },
+    );
+    let parent = next(
+        &store,
+        accept(
+            "parent",
+            WorkScope {
+                children: vec!["child".into()],
+                ..Default::default()
+            },
+        ),
+    );
+    assert!(
+        store
+            .admit_peer_coordination(&owner, "parent", parent.revision)
+            .is_err()
+    );
+    next(
+        &store,
+        WorkGraphMutation::SetBudget {
+            work_unit_id: "parent".into(),
+            limits: WorkBudgetLimits {
+                cost_microusd: 100,
+                execution_count: 2,
+                concurrent_executions: 1,
+                deadline: chrono::Utc::now() + chrono::Duration::hours(1),
+            },
+        },
+    );
+    assert!(
+        store
+            .admit_peer_coordination(&owner, "child", accepted.revision)
+            .is_err()
+    );
+}
+
+#[test]
+fn native_peer_scope_pin_tracks_resource_versions_without_coupling_contact_or_graph_activity() {
+    let dir = tempdir();
+    let store = WorkGraphStore::open(dir.path()).unwrap();
+    let owner = domain("user:a");
+    let reference = resource(ResourceKind::Project, "native-project");
+    next(
+        &store,
+        record(reference.clone(), "project", ResourceResolution::Available),
+    );
+    let accepted = next(
+        &store,
+        accept(
+            "work",
+            WorkScope {
+                resources: vec![reference.clone()],
+                ..Default::default()
+            },
+        ),
+    );
+    let pin = store
+        .peer_coordination_scope_digest(&owner, "work")
+        .unwrap();
+    next(
+        &store,
+        WorkGraphMutation::SetContact {
+            work_unit_id: "work".into(),
+            contact: WorkContactPreference::Silent,
+        },
+    );
+    next(&store, accept("unrelated", WorkScope::default()));
+    assert_eq!(
+        store
+            .peer_coordination_scope_digest(&owner, "work")
+            .unwrap(),
+        pin
+    );
+    next(
+        &store,
+        WorkGraphMutation::RecordResource {
+            reference,
+            locator: Some("project".into()),
+            native_revision: Some("changed".into()),
+            resolution: ResourceResolution::Available,
+        },
+    );
+    assert_ne!(
+        store
+            .peer_coordination_scope_digest(&owner, "work")
+            .unwrap(),
+        pin
+    );
+    assert_eq!(
+        store.work_unit(&owner, "work").unwrap().scope_revision,
+        accepted.revision
+    );
+}

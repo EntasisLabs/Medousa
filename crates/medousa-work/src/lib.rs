@@ -312,6 +312,114 @@ impl WorkGraphStore {
         self.inspect_work_unit(domain, id).map(|(unit, _, _)| unit)
     }
 
+    pub fn peer_coordination_scope_digest(
+        &self,
+        domain: &UserDomainRef,
+        id: &str,
+    ) -> Result<String> {
+        let snapshot = self.load(domain)?;
+        let unit = snapshot
+            .work_units
+            .get(id)
+            .ok_or_else(|| invalid("unknown work unit"))?;
+        let resources = unit
+            .scope
+            .resources
+            .iter()
+            .map(|reference| {
+                let record = snapshot
+                    .resources
+                    .get(&reference_key(reference)?)
+                    .ok_or_else(|| invalid("scope resource missing"))?;
+                Ok((
+                    reference,
+                    record.revision,
+                    record.resolution,
+                    &record.native_revision,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        digest(&(unit.scope_revision, &unit.scope, resources))
+    }
+
+    /// Registration holds this nonblocking writer fence through native index
+    /// publication, so a model state commit cannot race controller ownership.
+    pub fn peer_coordination_custody(
+        &self,
+        domain: &UserDomainRef,
+        id: &str,
+        scope_revision: u64,
+        scope_digest: &str,
+    ) -> Result<std::fs::File> {
+        let lock = self
+            .transaction
+            .root()
+            .open_lock_file(&Self::path(domain, "lock")?)?;
+        lock.try_lock_exclusive().map_err(|e| {
+            error(
+                PersistenceErrorKind::Overloaded,
+                format!("work registration custody unavailable: {e}"),
+            )
+        })?;
+        self.admit_peer_coordination(domain, id, scope_revision)?;
+        if self.peer_coordination_scope_digest(domain, id)? != scope_digest {
+            return Err(invalid(
+                "work resource revisions changed during registration",
+            ));
+        }
+        Ok(lock)
+    }
+
+    /// Native peer execution currently supports standalone finite work. Unknown
+    /// provider costs cannot be booked as zero or bypass a parent's budget.
+    /// Called again at every native provider effect boundary.
+    pub fn admit_peer_coordination(
+        &self,
+        domain: &UserDomainRef,
+        id: &str,
+        scope_revision: u64,
+    ) -> Result<WorkUnit> {
+        let snapshot = self.load(domain)?;
+        let unit = snapshot
+            .work_units
+            .get(id)
+            .ok_or_else(|| invalid("unknown work unit"))?;
+        if unit.scope_revision != scope_revision
+            || unit.kind != WorkUnitKind::Finite
+            || !matches!(
+                unit.state,
+                WorkUnitState::Accepted | WorkUnitState::Active | WorkUnitState::Waiting
+            )
+            || !unit.scope.children.is_empty()
+            || !unit.scope.depends_on.is_empty()
+            || snapshot.budget_usage(id).concurrent_executions != 0
+        {
+            return Err(invalid(
+                "work coordination scope or execution custody is not admissible",
+            ));
+        }
+        let mut visited = std::collections::BTreeSet::new();
+        let mut pending = vec![id.to_string()];
+        while let Some(child) = pending.pop() {
+            if !visited.insert(child.clone()) {
+                continue;
+            }
+            if snapshot.work_units[&child].budget.is_some() {
+                return Err(invalid(
+                    "peer provider cost is unmetered; budgeted work requires a metered native adapter",
+                ));
+            }
+            pending.extend(
+                snapshot
+                    .work_units
+                    .iter()
+                    .filter(|(_, parent)| parent.scope.children.contains(&child))
+                    .map(|(id, _)| id.clone()),
+            );
+        }
+        Ok(unit.clone())
+    }
+
     /// Freshness and the saved record are read from one snapshot. This is a
     /// projection of recorded native facts, not an implicit native refresh.
     pub fn inspect_work_unit(
