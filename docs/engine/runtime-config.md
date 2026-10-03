@@ -4,6 +4,23 @@
 
 Runtime settings control inference profiles, stage routing, TUI defaults, and verification policy.
 
+## Coding runtime preferences
+
+The existing workshop defaults API persists `codingRuntime` as
+`{"preferred":"medousa","fallbacks":[]}`. Supported values are `medousa`,
+`codex`, `cursor`, and `hermes`. Missing preferences default to Medousa Coder
+with no implicit external fallback. Preferred and fallback entries must be
+unique; fallbacks are ordered. Invalid preferences are rejected before saving.
+This setting belongs to the connected workshop, alongside its other runtime
+defaults. It does not choose an inference model or grant execution permission.
+
+Local coder proposals may omit `runtime` to select the first ready runtime in
+that saved order. An explicit runtime overrides the preference. Selection is
+frozen into the immutable proposal; retries keep that executor, and a started
+or uncertain assignment never switches runtimes. Discovery exposes unavailable
+choices and the saved preferences. See [coordination](coordination.md) and the
+[coding runtime guide](../guides/coding-runtimes.md).
+
 ---
 
 ## Execution lifetime and recovery

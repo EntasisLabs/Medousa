@@ -539,7 +539,8 @@ pub fn validate_worker_spawn_spec(spec: &WorkerSpawnSpec) -> Result<(), Delegate
     let intent = crate::agent_runtime::turn_worker::TurnWorkerIntent::parse(&spec.intent)
         .ok_or_else(|| DelegatedTaskError::invalid("delegated worker intent is unsupported"))?;
     if let Some(external) = spec.external_agent.as_ref()
-        && (external.home_workshop_id != spec.execution_placement.resolved_runtime_id
+        && (external.runtime == medousa_types::coordination::ExternalPeerRuntime::Medousa
+            || external.home_workshop_id != spec.execution_placement.resolved_runtime_id
             || intent != crate::agent_runtime::turn_worker::TurnWorkerIntent::Coder
             || spec.parent.bot.is_none()
             || spec.code_project.as_ref().is_none_or(|project| {

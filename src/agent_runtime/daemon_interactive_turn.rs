@@ -75,6 +75,8 @@ pub struct InteractiveTurnSessionHooks {
     pub turn_ticket_registry: Option<TurnTicketRegistry>,
     /// When set, mirror terminal/interim outcomes into ask job store + workspace cards.
     pub ask_job_id: Option<String>,
+    pub(crate) peer_receipt_sink: Option<crate::daemon::coordination::PeerReceiptSink>,
+    pub(crate) native_coder_guard: Option<Arc<dyn super::coder_tools::CoderExecutionGuard>>,
     /// When set, store the latest turn-start context budget per session.
     pub context_usage_by_session:
         Option<Arc<RwLock<HashMap<String, crate::daemon_api::ContextUsageReport>>>>,
@@ -388,6 +390,25 @@ impl InteractiveTurnStreamSink {
         event: TurnStreamEventV3,
         journal_override: Option<super::turn_event::TurnEvent>,
     ) {
+        if let Some(sink) = &self.session_hooks.peer_receipt_sink
+            && let TurnStreamEventV3::TurnCompleted {
+                outcome,
+                aggregate_text,
+                operator_message,
+                ..
+            } = &event
+        {
+            let result = operator_message.as_ref().unwrap_or(aggregate_text).clone();
+            if let Err(error) = sink
+                .terminal(
+                    crate::daemon::coordination::native_coder::terminal_outcome(*outcome),
+                    result,
+                )
+                .await
+            {
+                tracing::warn!(%error, "native Coder terminal retained for reconciliation");
+            }
+        }
         if let Some(registry) = &self.session_hooks.turn_ticket_registry {
             let (event_type, phase, terminal) = stream_tracking(&event);
             session_active_turn::note_stream_event(
@@ -1503,6 +1524,34 @@ async fn run_agent_turn_inner(
                     .trim()
                     .to_string(),
             );
+            let native_coder_guard = context_telemetry
+                .as_ref()
+                .and_then(|sink| sink.session_hooks.native_coder_guard.clone());
+            if let Some(guard) = native_coder_guard.as_ref() {
+                let guard = guard.clone();
+                let checked = match guard.admission_service() {
+                    Some(service) => service
+                        .run(
+                            medousa_forge::execution::ExecutionClass::StoreIo,
+                            64 * 1024,
+                            move || Ok(guard.verify()),
+                        )
+                        .await
+                        .map_err(|error| {
+                            stasis::prelude::StasisError::PortFailure(error.to_string())
+                        })
+                        .and_then(|result| result),
+                    None => guard.verify(),
+                };
+                if let Err(error) = checked {
+                    sink.agent_error(
+                        1,
+                        format!("native Coder assignment is no longer admitted: {error}"),
+                    )
+                    .await;
+                    return;
+                }
+            }
             if let Err(err) = prepare_attached_native_coder_handoff(
                 forge.as_ref(),
                 &work_id,
@@ -1667,11 +1716,12 @@ async fn run_agent_turn_inner(
                 turn_id,
                 &lease.attempt_id.to_string(),
             );
-            let authority = match super::coder_tools::CoderTurnLease::new(
+            let authority = match super::coder_tools::CoderTurnLease::new_with_guard(
                 forge,
                 lease,
                 super::coder_activity::coder_activity_store(),
                 identity,
+                native_coder_guard,
             ) {
                 Ok(authority) => Arc::new(authority),
                 Err(err) => {

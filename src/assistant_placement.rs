@@ -10,6 +10,41 @@ use medousa_types::assistant_placement::{
     AssistantPlacementResult,
 };
 
+/// Preference ranks eligible coding candidates; explicit task constraints and
+/// observed availability retain priority. This does not admit an assignment.
+pub fn apply_coding_preferences(
+    result: &mut AssistantPlacementResult,
+    request: &AssistantPlacementRequest,
+    preferences: &medousa_types::coordination::CodingRuntimePreferences,
+) {
+    if request.requested_adapter.is_some() {
+        return;
+    }
+    let order = preferences.ordered();
+    let preference = |candidate: &AssistantPlacementCandidate| {
+        order
+            .iter()
+            .position(|runtime| candidate.adapter.as_deref() == Some(runtime.as_str()))
+            .unwrap_or(order.len())
+    };
+    result.candidates.sort_by(|left, right| {
+        right
+            .eligible
+            .cmp(&left.eligible)
+            .then_with(|| preference(left).cmp(&preference(right)))
+            .then_with(|| left.rank.cmp(&right.rank))
+    });
+    let mut rank = 0;
+    for candidate in &mut result.candidates {
+        candidate.rank = if candidate.eligible {
+            rank += 1;
+            Some(rank)
+        } else {
+            None
+        };
+    }
+}
+
 /// Rank observed candidate rows against explicit caller constraints. Candidate
 /// order is deterministic; unavailable and unknown rows remain in the result.
 pub fn rank_candidates(
@@ -336,6 +371,24 @@ mod tests {
         )
     }
 
+    #[test]
+    fn coding_preference_ranks_native_first_without_overriding_explicit_constraints() {
+        let request = req();
+        let mut native = row("native", "runtime", "authority");
+        native.adapter = Some("medousa".into());
+        let mut codex = row("codex", "runtime", "authority");
+        codex.adapter = Some("codex".into());
+        let mut result =
+            rank_candidates(&request, true, vec![codex.clone(), native.clone()]).unwrap();
+        apply_coding_preferences(&mut result, &request, &Default::default());
+        assert_eq!(result.candidates[0].adapter.as_deref(), Some("medousa"));
+        let mut explicit = request.clone();
+        explicit.requested_adapter = Some("codex".into());
+        let mut result = rank_candidates(&explicit, true, vec![native, codex]).unwrap();
+        apply_coding_preferences(&mut result, &explicit, &Default::default());
+        assert_eq!(result.candidates[0].adapter.as_deref(), Some("codex"));
+        assert!(!result.candidates[1].eligible);
+    }
     #[test]
     fn exact_runtime_pin_ranks_only_the_pinned_target() {
         let mut request = req();

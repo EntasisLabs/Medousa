@@ -658,6 +658,13 @@ fn validate_update_request(request: &mut UpdateBotRequest) -> Result<(), String>
 }
 
 fn normalize_external_agent(executor: &mut Option<ExternalAgentExecutor>) -> Result<(), String> {
+    if executor.as_ref().is_some_and(|executor| {
+        executor.runtime == medousa_types::coordination::ExternalPeerRuntime::Medousa
+    }) {
+        return Err(
+            "Medousa Bots use native runtime settings, not an external-agent executor".into(),
+        );
+    }
     let Some(executor) = executor.as_mut() else {
         return Ok(());
     };

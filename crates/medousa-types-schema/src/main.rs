@@ -21,6 +21,11 @@ macro_rules! export_type {
 
 fn main() {
     let mut schemas: BTreeMap<String, RootSchema> = BTreeMap::new();
+    export_type!(
+        schemas,
+        medousa_types::coordination::CodingRuntimePreferences,
+        "CodingRuntimePreferences"
+    );
 
     export_type!(
         schemas,

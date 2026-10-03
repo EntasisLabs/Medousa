@@ -3,6 +3,7 @@
   import SettingsCharterSaveBar from "$lib/components/settings/SettingsCharterSaveBar.svelte";
   import SettingsPresentationRetention from "$lib/components/settings/SettingsPresentationRetention.svelte";
   import SettingsStorageGovernance from "$lib/components/settings/SettingsStorageGovernance.svelte";
+  import SettingsCodingRuntime from "$lib/components/settings/SettingsCodingRuntime.svelte";
   import ModelsSettingsTab from "$lib/components/settings/ModelsSettingsTab.svelte";
   import ModelsStagesTab from "$lib/components/settings/ModelsStagesTab.svelte";
   import { workshopDefaults } from "$lib/stores/workshopDefaults.svelte";
@@ -445,6 +446,8 @@
       </div>
     </details>
   </div>
+
+  <SettingsCodingRuntime />
 
   {#if nativeWorkloads}
     <details class="prefs-more" bind:open={modeTransitionsOpen}>

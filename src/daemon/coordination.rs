@@ -27,6 +27,7 @@ use crate::request_principal::{Capability, PrincipalKind, RequestPrincipal};
 pub mod assignments;
 mod conversational;
 mod host;
+pub(crate) mod native_coder;
 pub(crate) mod work;
 pub use conversational::PeerProposalIntent;
 pub mod http;
@@ -257,6 +258,15 @@ impl LocalPeerDispatcher {
                 })())
             })
             .await??;
+        if request.target.runtime == ExternalPeerRuntime::Medousa {
+            super::interactive::cancel_active_session_turn_for_session(
+                &self.state,
+                request.execution_session.session_id.as_str(),
+            )
+            .await
+            .map_err(|(_, message)| anyhow::anyhow!(message))?;
+            return Ok(());
+        }
         super::agents::cancel_agent_session_for_chat(
             &self.state,
             request.execution_session.session_id.as_str(),
@@ -295,9 +305,8 @@ impl LocalPeerDispatcher {
                     {
                         bail!("peer source sessions are not attached to the coordination channel");
                     }
-                    forge.load(&medousa_forge::model::WorkId::from(
-                        request.forge_work_id.clone(),
-                    ))?;
+                    let work = forge.load(&medousa_forge::model::WorkId::from(request.forge_work_id.clone()))?;
+                    if work.owner != profile { bail!("governed Forge work does not belong to the authenticated owner"); }
                     let sessions = crate::session_store::get_session_store();
                     let mut prompt = hydrate_assignment_context(
                         &request,
@@ -412,6 +421,7 @@ impl PeerDispatchJournal for LocalPeerCall<'_> {
 
 fn runtime_kind(runtime: ExternalPeerRuntime) -> AgentRuntimeKind {
     match runtime {
+        ExternalPeerRuntime::Medousa => AgentRuntimeKind::Medousa,
         ExternalPeerRuntime::Codex => AgentRuntimeKind::Codex,
         ExternalPeerRuntime::Cursor => AgentRuntimeKind::Cursor,
         ExternalPeerRuntime::Hermes => AgentRuntimeKind::Hermes,
@@ -432,6 +442,7 @@ impl ExternalPeerExecutionPort for LocalPeerCall<'_> {
                 let stub = std::env::var("MEDOUSA_ACP_FORCE_STUB")
                     .is_ok_and(|value| value == "1" || value.eq_ignore_ascii_case("true"));
                 Ok([
+                    ExternalPeerRuntime::Medousa,
                     ExternalPeerRuntime::Codex,
                     ExternalPeerRuntime::Cursor,
                     ExternalPeerRuntime::Hermes,
@@ -441,7 +452,9 @@ impl ExternalPeerExecutionPort for LocalPeerCall<'_> {
                     let kind = runtime_kind(runtime);
                     let (installed, _, _) = runtime_availability(kind);
                     let probe = runtime_auth_probe(kind);
-                    let availability = if stub {
+                    let availability = if runtime == ExternalPeerRuntime::Medousa {
+                        PeerAvailability::Ready
+                    } else if stub {
                         PeerAvailability::Unavailable {
                             reason: "development stub cannot execute delegated work".into(),
                         }
@@ -477,6 +490,12 @@ impl ExternalPeerExecutionPort for LocalPeerCall<'_> {
         request: &ExternalPeerAssignmentRequest,
     ) -> Result<ExternalPeerAssignmentBinding> {
         let prompt = self.host.hydrate(&self.principal, request, true).await?;
+        if request.target.runtime == ExternalPeerRuntime::Medousa {
+            return self
+                .host
+                .assign_native_coder(&self.principal, request, prompt)
+                .await;
+        }
         if let Some(agent_session_id) = request.existing_agent_session_id.as_deref() {
             super::agents::require_adoptable_agent_session(
                 &request.owner_principal_id,

@@ -85,14 +85,31 @@ or conflicting terminal marker fails closed.
 
 ## Conversational peer proposals
 
-Peer discovery reports local ACP availability and the current chat's project
-binding and committed range.
-Proposal input contains only `request_key`, `runtime`, `instructions`,
+Peer discovery reports Medousa Coder and local ACP availability, saved coding
+runtime preferences, and the current chat's project binding and committed range.
+Proposal input contains only `request_key`, optional `runtime`, optional
+`forge_work_id`, `instructions`,
 `after_entry_seq`, `through_entry_seq`, `continue_owner`, and the optional exact
 `existing_agent_session_id` returned by discovery; unknown fields are rejected.
 The host derives owner, workshop, session, channel, Forge work, range digests,
 manifest, grant reference, and independent coordination execution session.
-Project binding must explicitly name the current execution runtime.
+An explicit `forge_work_id` names a project owned by the authenticated user on
+this workshop; the source chat need not be bound to it. When omitted, the legacy
+chat binding must explicitly name the current execution runtime. Omitted
+`runtime` follows saved preferences (default Medousa Coder); explicit selection
+wins. Exact retries retain the original runtime even after preferences change.
+
+Medousa Coder uses a dedicated native turn and Forge lease through the same
+immutable assignment, approval, claim, and receipt contracts as external peers.
+Its turn correlation is persisted before admission. Native Coder tools recheck
+the exact grant, source visibility, project ownership, and registered work scope.
+Checkpointed and input-needed turns are interrupted receipts, not completion.
+Native peer assignments currently execute in their admitted Coder turn; child
+worker spawning is denied until those workers can inherit the exact grant.
+Additional parallel work requires separate scoped assignments.
+Revocation cancels the native turn. Uncertain native claims are never relaunched
+from disk. Codex/Cursor/Hermes continue through ACP; Medousa is not sent to the
+ACP session endpoint or external-agent Bot adapter.
 
 Discovery includes visible, unowned local ACP sessions bound to the same Forge
 work. Adopting one never sends another prompt or restarts its provider. Approval

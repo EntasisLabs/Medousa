@@ -178,6 +178,30 @@ pub async fn spawn_turn_ticket(
     } else {
         None
     };
+    let native_coder = if turn_id.starts_with("medousa_coder_") {
+        let host = crate::daemon::coordination::local_coordination_host().ok_or_else(|| {
+            (
+                StatusCode::CONFLICT,
+                "native Coder host unavailable".to_string(),
+            )
+        })?;
+        host.native_coder_contract(
+            &turn_id,
+            session_id.as_str(),
+            interactive_request
+                .identity_user_id
+                .as_deref()
+                .unwrap_or_default(),
+            interactive_request
+                .code_context
+                .as_ref()
+                .and_then(|context| context.work_id.as_deref()),
+        )
+        .await
+        .map_err(|error| (StatusCode::CONFLICT, error.to_string()))?
+    } else {
+        None
+    };
     let admission = crate::session_deletion::acquire_mutation(&session_id)
         .map_err(|error| (StatusCode::CONFLICT, error))?;
     let session_id_text = session_id.to_string();
@@ -372,6 +396,8 @@ pub async fn spawn_turn_ticket(
         cancelled_turns: Some(cancelled_interactive_turns),
         turn_ticket_registry: Some(turn_tickets.clone()),
         ask_job_id,
+        native_coder_guard: native_coder.as_ref().map(|(guard, _)| guard.clone()),
+        peer_receipt_sink: native_coder.map(|(_, sink)| sink),
         context_usage_by_session: Some(state.last_context_usage_by_session.clone()),
     };
 

@@ -34,7 +34,7 @@ struct PeerDelegateTool {
 
 #[medousa_tool(id = PEER_DELEGATE_ID)]
 impl PeerDelegateTool {
-    /// Delegate an immutable Codex/Cursor/Hermes assignment to the exact remote workshop that owns a discovered Forge work item. This transfers a bounded, digest-checked slice of this chat. A trusted owner-level Assistant policy launches it immediately; narrower policies return a human approval proposal. Use only exact ids returned by cognition_active_work_discover. Reuse request_key only for an exact retry.
+    /// Delegate an immutable Medousa Coder/Codex/Cursor/Hermes assignment to the exact remote workshop that owns a discovered Forge work item. This transfers a bounded, digest-checked slice of this chat. A trusted owner-level Assistant policy launches it immediately; narrower policies return a human approval proposal. Use only exact ids returned by cognition_active_work_discover. Unless the user explicitly names a coding runtime, choose the first ready runtime in that workshop inventory's coding_runtime_preferences order; default to Medousa Coder when preferences are absent. Reuse request_key only for an exact retry.
     async fn invoke_typed(&self, input: PeerDelegateInput) -> Result<serde_json::Value> {
         let response = self
             .service

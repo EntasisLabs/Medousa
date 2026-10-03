@@ -2351,6 +2351,7 @@
       "ExternalPeerRuntime": {
         "type": "string",
         "enum": [
+          "medousa",
           "codex",
           "cursor",
           "hermes"
@@ -2616,6 +2617,7 @@
       "ExternalPeerRuntime": {
         "type": "string",
         "enum": [
+          "medousa",
           "codex",
           "cursor",
           "hermes"
@@ -2829,6 +2831,7 @@
       "ExternalPeerRuntime": {
         "type": "string",
         "enum": [
+          "medousa",
           "codex",
           "cursor",
           "hermes"
@@ -4195,6 +4198,39 @@
       "repository"
     ]
   },
+  "CodingRuntimePreferences": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "CodingRuntimePreferences",
+    "description": "Workshop preference, never an execution grant. Fallbacks apply only before an immutable assignment is prepared; a started assignment never migrates.",
+    "type": "object",
+    "required": [
+      "preferred"
+    ],
+    "properties": {
+      "fallbacks": {
+        "default": [],
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ExternalPeerRuntime"
+        }
+      },
+      "preferred": {
+        "$ref": "#/definitions/ExternalPeerRuntime"
+      }
+    },
+    "additionalProperties": false,
+    "definitions": {
+      "ExternalPeerRuntime": {
+        "type": "string",
+        "enum": [
+          "medousa",
+          "codex",
+          "cursor",
+          "hermes"
+        ]
+      }
+    }
+  },
   "CompleteMcpOAuthRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "CompleteMcpOAuthRequest",
@@ -5286,6 +5322,7 @@
       "ExternalPeerRuntime": {
         "type": "string",
         "enum": [
+          "medousa",
           "codex",
           "cursor",
           "hermes"
@@ -19000,6 +19037,7 @@
       "ExternalPeerRuntime": {
         "type": "string",
         "enum": [
+          "medousa",
           "codex",
           "cursor",
           "hermes"
@@ -19266,6 +19304,7 @@
       "ExternalPeerRuntime": {
         "type": "string",
         "enum": [
+          "medousa",
           "codex",
           "cursor",
           "hermes"
@@ -21801,6 +21840,7 @@
       "ExternalPeerRuntime": {
         "type": "string",
         "enum": [
+          "medousa",
           "codex",
           "cursor",
           "hermes"
@@ -29431,6 +29471,7 @@
       "ExternalPeerRuntime": {
         "type": "string",
         "enum": [
+          "medousa",
           "codex",
           "cursor",
           "hermes"
@@ -30168,6 +30209,7 @@
       "ExternalPeerRuntime": {
         "type": "string",
         "enum": [
+          "medousa",
           "codex",
           "cursor",
           "hermes"
@@ -30181,7 +30223,6 @@
           "continue_owner",
           "instructions",
           "request_key",
-          "runtime",
           "through_entry_seq"
         ],
         "properties": {
@@ -30202,6 +30243,14 @@
               "null"
             ]
           },
+          "forge_work_id": {
+            "description": "An explicit owned project; omission preserves legacy chat binding.",
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "instructions": {
             "type": "string"
           },
@@ -30210,7 +30259,16 @@
             "type": "string"
           },
           "runtime": {
-            "$ref": "#/definitions/ExternalPeerRuntime"
+            "description": "Omit to use the workshop's saved preference and available fallbacks.",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ExternalPeerRuntime"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "through_entry_seq": {
             "description": "Inclusive committed upper bound from native discovery.",

@@ -48,7 +48,7 @@ impl TestPort {
         let exec = execution.clone();
         execution
             .run(ExecutionClass::StoreIo, MAX_SNAPSHOT_BYTES, move || {
-                Ok(Self::fixture_sync(exec, true))
+                Ok(Self::fixture_sync(exec, true, ExternalPeerRuntime::Codex))
             })
             .await
             .unwrap()
@@ -58,6 +58,7 @@ impl TestPort {
     fn fixture_sync(
         execution: Arc<ForgeExecutionService>,
         approved: bool,
+        runtime: ExternalPeerRuntime,
     ) -> Result<(Self, WorkCoordinationPlan)> {
         let temp = Arc::new(tempfile::tempdir()?);
         let root = temp.path().canonicalize()?;
@@ -167,7 +168,7 @@ impl TestPort {
                 target: ExternalPeerTarget {
                     authority_id: authority.clone(),
                     execution_runtime_id: "runtime".into(),
-                    runtime: ExternalPeerRuntime::Codex,
+                    runtime,
                 },
                 context: ContextManifest {
                     manifest_id: ContextManifestId::parse(format!(
@@ -367,14 +368,17 @@ impl ExternalPeerExecutionPort for TestPort {
         let authority = crate::workshop_authority::current()
             .map_err(anyhow::Error::msg)?
             .clone();
-        Ok(vec![ExternalPeerCandidate {
-            target: ExternalPeerTarget {
-                authority_id: authority,
-                execution_runtime_id: "runtime".into(),
-                runtime: ExternalPeerRuntime::Codex,
-            },
-            availability: PeerAvailability::Ready,
-        }])
+        Ok([ExternalPeerRuntime::Medousa, ExternalPeerRuntime::Codex]
+            .into_iter()
+            .map(|runtime| ExternalPeerCandidate {
+                target: ExternalPeerTarget {
+                    authority_id: authority.clone(),
+                    execution_runtime_id: "runtime".into(),
+                    runtime,
+                },
+                availability: PeerAvailability::Ready,
+            })
+            .collect())
     }
     async fn assign(
         &self,
@@ -716,7 +720,11 @@ async fn registration_precedes_approval_and_each_stage_waits_for_its_own_grant()
     let exec = execution.clone();
     let (port, plan) = execution
         .run(ExecutionClass::StoreIo, MAX_SNAPSHOT_BYTES, move || {
-            Ok(TestPort::fixture_sync(exec, false))
+            Ok(TestPort::fixture_sync(
+                exec,
+                false,
+                ExternalPeerRuntime::Codex,
+            ))
         })
         .await
         .unwrap()
@@ -804,4 +812,36 @@ async fn model_satisfaction_cannot_bypass_registered_review_after_rescoping() {
     })
     .await
     .unwrap();
+}
+
+#[tokio::test]
+async fn native_medousa_executor_and_reviewer_follow_the_same_durable_controller() {
+    let execution = Arc::new(ForgeExecutionService::new());
+    let exec = execution.clone();
+    let (port, plan) = execution
+        .run(ExecutionClass::StoreIo, MAX_SNAPSHOT_BYTES, move || {
+            Ok(TestPort::fixture_sync(
+                exec,
+                true,
+                ExternalPeerRuntime::Medousa,
+            ))
+        })
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        advance_work_coordination(&port, &plan).await.unwrap(),
+        WorkCoordinationProgress::ExecutorRunning
+    ));
+    let port = port.reopen().await;
+    assert!(matches!(
+        advance_work_coordination(&port, &plan).await.unwrap(),
+        WorkCoordinationProgress::ReviewerRunning
+    ));
+    assert!(matches!(
+        advance_work_coordination(&port, &plan).await.unwrap(),
+        WorkCoordinationProgress::Closed
+    ));
+    assert_eq!(port.starts.load(Ordering::SeqCst), 2);
+    assert_eq!(port.state(&plan).await, WorkUnitState::Satisfied);
 }

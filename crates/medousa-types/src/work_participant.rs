@@ -9,7 +9,12 @@ use serde::{Deserialize, Serialize};
 pub struct PeerProposalIntent {
     /// Stable request key; reuse for exact retries.
     pub request_key: String,
-    pub runtime: ExternalPeerRuntime,
+    /// Omit to use the workshop's saved preference and available fallbacks.
+    #[serde(default)]
+    pub runtime: Option<ExternalPeerRuntime>,
+    /// An explicit owned project; omission preserves legacy chat binding.
+    #[serde(default)]
+    pub forge_work_id: Option<String>,
     pub instructions: String,
     /// Exclusive lower bound from native discovery.
     pub after_entry_seq: u64,

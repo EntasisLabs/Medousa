@@ -1111,7 +1111,8 @@ async fn propose_remote_peer(
             shadow_session_id,
             crate::daemon::coordination::PeerProposalIntent {
                 request_key: request.request_key,
-                runtime: request.runtime,
+                runtime: Some(request.runtime),
+                forge_work_id: Some(request.forge_work_id.clone()),
                 instructions: request.instructions,
                 after_entry_seq: first.entry_seq.saturating_sub(1),
                 through_entry_seq: last.entry_seq,

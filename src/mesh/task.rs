@@ -209,6 +209,9 @@ impl DaemonDelegatedTaskExecutor {
                         anyhow::bail!("pinned Forge workdir is unavailable");
                     }
                     let kind = match pinned.runtime {
+                        medousa_types::coordination::ExternalPeerRuntime::Medousa => anyhow::bail!(
+                            "native Medousa Coder must use the native assignment adapter"
+                        ),
                         medousa_types::coordination::ExternalPeerRuntime::Codex => {
                             medousa_acp_client::AgentRuntimeKind::Codex
                         }

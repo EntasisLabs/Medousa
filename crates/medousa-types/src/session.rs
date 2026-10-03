@@ -432,6 +432,8 @@ pub struct TuiDefaults {
     pub response_depth_mode: Option<String>,
     pub reasoning_effort: Option<String>,
     pub stage_routing: Option<StageRoutingMatrix>,
+    #[serde(default)]
+    pub coding_runtime: Option<crate::coordination::CodingRuntimePreferences>,
     pub command_usage_counts: Option<std::collections::HashMap<String, u64>>,
     pub web_search_preferred_provider: Option<String>,
     pub web_search_try_fallbacks: Option<bool>,

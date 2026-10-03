@@ -577,6 +577,18 @@ the snapshot returned by `changes/git`. See [Forge](../engine/forge.md#explicit-
 for request fields, stale-snapshot behavior, and partial-success handling.
 ## Native coordination approval preview
 
+The coordination wire runtime enum now includes `medousa` for native Medousa
+Coder alongside `codex`, `cursor`, and `hermes`. `PeerProposalIntent.runtime`
+is optional on local intake: omission uses the connected workshop's saved
+`TuiDefaults.codingRuntime` (`CodingRuntimePreferences`), defaulting to Medousa
+with no implicit fallback. `forge_work_id` may name an owned project independently
+of the source chat binding. An immutable proposal retains its selected runtime
+on retries. Explicit runtime requests take priority over preferences.
+Remote delegation still names an exact runtime; discovery exposes destination
+preferences and availability. Preferences do not issue execution grants. See
+[runtime configuration](../engine/runtime-config.md) and
+[coding runtime preferences](../guides/coding-runtimes.md).
+
 Generated operation tables include `coordination.proposals.get` and
 `coordination.channels.by_channel_id.proposals.by_proposal_id.{approve,deny,dispatch}.post`.
 Use the SDK's low-level generated-operation request path; dedicated convenience

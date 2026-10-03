@@ -7,6 +7,17 @@ fn fixture() -> (
     WorkCoordinationPlan,
     Vec<ExternalPeerAssignmentRequest>,
 ) {
+    fixture_for_runtime(ExternalPeerRuntime::Codex)
+}
+
+fn fixture_for_runtime(
+    runtime: ExternalPeerRuntime,
+) -> (
+    tempfile::TempDir,
+    CoordinationStore,
+    WorkCoordinationPlan,
+    Vec<ExternalPeerAssignmentRequest>,
+) {
     let temp = tempfile::tempdir().unwrap();
     let store = CoordinationStore::open(temp.path()).unwrap();
     let authority = AuthorityId::parse(format!("auth_{}", "a".repeat(64))).unwrap();
@@ -39,7 +50,7 @@ fn fixture() -> (
             target: ExternalPeerTarget {
                 authority_id: authority.clone(),
                 execution_runtime_id: "runtime".into(),
-                runtime: ExternalPeerRuntime::Codex,
+                runtime,
             },
             context: ContextManifest {
                 manifest_id: ContextManifestId::parse(format!(
@@ -339,4 +350,43 @@ fn work_owned_terminals_do_not_spend_owner_chat_continuation_authority() {
             .is_empty()
     );
     assert!(store.work_coordination_result(&plan).unwrap().is_none());
+}
+
+#[test]
+fn native_coder_turn_identity_replays_after_restart_and_revocation_prevents_readmission() {
+    let (temp, store, plan, requests) = fixture_for_runtime(ExternalPeerRuntime::Medousa);
+    store.register_work_plan(&plan).unwrap();
+    let request = &requests[0];
+    let turn_id = format!("medousa_coder_{}", request.assignment_id);
+    assert!(
+        store
+            .record_native_coder("unrelated-turn", request)
+            .is_err()
+    );
+    store.claim_assignment(request).unwrap();
+    store.record_native_coder(&turn_id, request).unwrap();
+    store.record_native_coder(&turn_id, request).unwrap();
+    let reopened = CoordinationStore::open(temp.path()).unwrap();
+    assert_eq!(
+        reopened
+            .native_coder_request(&plan.domain.authority_id, &turn_id)
+            .unwrap(),
+        *request
+    );
+    assert_eq!(
+        reopened.claim_assignment(request).unwrap(),
+        super::super::AssignmentClaim::Existing
+    );
+    let mut changed = request.clone();
+    changed.instructions = "Different unapproved work".into();
+    assert!(reopened.record_native_coder(&turn_id, &changed).is_err());
+    reopened
+        .revoke_assignment_grant(&request.channel, &request.execution_grant_id)
+        .unwrap();
+    assert!(reopened.record_native_coder(&turn_id, request).is_err());
+    assert!(
+        reopened
+            .require_assignment_grant(request, chrono::Utc::now())
+            .is_err()
+    );
 }

@@ -128,6 +128,16 @@ pub fn load_tui_defaults_value() -> serde_json::Value {
 
 /// Merge incoming JSON (may include client-only keys) with normalized `TuiDefaults` fields.
 pub fn save_tui_defaults_merged(incoming: serde_json::Value) -> Result<TuiDefaults, String> {
+    if let Some(preferences) = incoming
+        .get("codingRuntime")
+        .filter(|value| !value.is_null())
+    {
+        serde_json::from_value::<medousa_types::coordination::CodingRuntimePreferences>(
+            preferences.clone(),
+        )
+        .map_err(|err| format!("invalid coding runtime preferences: {err}"))?
+        .validate()?;
+    }
     let mut typed: TuiDefaults = serde_json::from_value(incoming.clone()).unwrap_or_default();
     crate::inference_profiles::normalize_tui_defaults(&mut typed);
     crate::inference_profiles::sync_top_level_from_main(&mut typed);

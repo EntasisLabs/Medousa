@@ -275,6 +275,7 @@ class ExternalAgentSessionContract(Enum):
 
 
 class ExternalPeerRuntime(Enum):
+    medousa = 'medousa'
     codex = 'codex'
     cursor = 'cursor'
     hermes = 'hermes'
@@ -2376,9 +2377,14 @@ class PeerProposalIntent(MedousaModel):
     existing_agent_session_id: (
         str | None
     ) = Field(None, description='Exact adoptable native session; omit to create fresh work.')
+    forge_work_id: str | None = Field(
+        None, description='An explicit owned project; omission preserves legacy chat binding.'
+    )
     instructions: str
     request_key: str = Field(..., description='Stable request key; reuse for exact retries.')
-    runtime: ExternalPeerRuntime
+    runtime: ExternalPeerRuntime | None = Field(
+        None, description="Omit to use the workshop's saved preference and available fallbacks."
+    )
     through_entry_seq: int = Field(
         ..., description='Inclusive committed upper bound from native discovery.', ge=0
     )
@@ -3220,6 +3226,14 @@ class CapabilityResolveResponse(MedousaModel):
     implementations: CapabilityImplementations
     recommended: CapabilityRecommendation | None = None
     title: str
+
+
+class CodingRuntimePreferences(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    fallbacks: list[ExternalPeerRuntime] | None = []
+    preferred: ExternalPeerRuntime
 
 
 class CompleteMcpOAuthRequest(MedousaModel):

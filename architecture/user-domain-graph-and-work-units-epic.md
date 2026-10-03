@@ -1,6 +1,6 @@
 # User domain graph and composable work units
 
-> **Status:** Implementation started — storage and intent foundation; execution integration pending
+> **Status:** Implementation underway — local graph, work intake and execute/review adapters; federation and contact gates remain open
 >
 > **Date:** 2026-10-02
 >
@@ -984,6 +984,49 @@ zero errors and zero warnings; strict docs, formatting and whitespace checks pas
 The frontend changes are generated transport types/operations only. Full workspace
 and hermetic CI, fresh `npm ci`, cross-platform builds, live Surreal and live
 provider execution remain outside this increment. No PR was opened.
+
+### Native Coder and saved runtime preference increment — 2026-10-02
+
+Medousa Coder now participates in the same local immutable proposal, exact grant,
+dispatch claim, execution receipt and executor → reviewer contracts as Codex,
+Cursor and Hermes. It runs a separate native Coder turn with a Forge lease.
+Turn correlation and custody are persisted before admission; uncertain claims
+are never automatically relaunched. Tool admission rechecks the assignment
+grant, source visibility, project ownership and registered scope. Checkpoints
+and requests for input retain interrupted outcomes rather than satisfying work.
+Native assignment child workers are blocked pending exact grant propagation;
+additional parallel work requires separately admitted assignments.
+
+The existing Settings → Medousa Agent surface now saves a preferred coding
+runtime and ordered fallbacks in connected-workshop defaults. Missing preferences
+default to Medousa without implicit external fallbacks. Local model proposals
+omit runtime to use this order; explicit task requests win, and retries retain
+the original selected runtime. Paired discovery exposes destination preferences
+and ready runtime inventory; remote requests still name an exact adapter.
+
+An owned local Forge project can now be selected explicitly from an unrelated
+source chat. The source still supplies authenticated, visible, digest-checked
+context and requires the existing native approval. No chat move or new goals
+management UI is required.
+
+This closes the native coding runtime and preference increment. The deterministic
+controller fixture covers native execute/review across store reopen, and the
+assignment fixture covers correlation replay and grant revocation. These are
+not live model executor/reviewer qualification. Full workspace/hermetic CI,
+cross-platform qualification, provider-hosted reviews, federation and contact
+delivery remain separate exit evidence.
+
+Validation: 281 daemon tests (two ignored), 34 Coder tool tests, seven placement
+tests, 58 shared-type tests, 79 ACP/coordination store tests, 1,851 frontend tests
+and 28 Python SDK tests passed. Native fixtures cover execute/review after reopen,
+correlation replay, revoked tool admission and rejection of unscoped child work.
+Schema and OpenAPI artifacts were regenerated and contract parity passed. Strict
+clippy passed across all targets of `medousa`, `medousa-types`,
+`medousa-acp-client` and `medousa-sdk`; frontend checking reports zero errors and
+warnings. The embedded library compiles with its 32 existing feature warnings.
+Strict documentation, changed-file formatting and diff whitespace checks pass.
+Full workspace/hermetic CI, fresh `npm ci`, live Surreal and live model execution
+remain outside this increment. No PR was opened.
 
 ### Phase exit gates
 

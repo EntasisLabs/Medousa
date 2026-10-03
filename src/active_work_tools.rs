@@ -246,13 +246,29 @@ impl AssistantPlacementDiscoverTool {
                 .map_err(error)?
                 .to_string(),
         );
-        let result = crate::assistant_placement::rank_candidates(
+        let mut result = crate::assistant_placement::rank_candidates(
             &requirements,
             coverage_complete,
             candidates,
         )
         .map_err(error)?;
-        serde_json::to_value(result).map_err(error)
+        if let Some(preferences) = local_peer_discovery.as_ref().and_then(|discovery| {
+            serde_json::from_value::<medousa_types::coordination::CodingRuntimePreferences>(
+                discovery["coding_runtime_preferences"].clone(),
+            )
+            .ok()
+        }) {
+            crate::assistant_placement::apply_coding_preferences(
+                &mut result,
+                &requirements,
+                &preferences,
+            );
+        }
+        let mut result = serde_json::to_value(result).map_err(error)?;
+        if let Some(discovery) = local_peer_discovery {
+            result["coding_runtime_preferences"] = discovery["coding_runtime_preferences"].clone();
+        }
+        Ok(result)
     }
 }
 
@@ -378,6 +394,11 @@ pub(crate) fn build_placement_candidates(
             for peer in peers {
                 let target = &peer["target"];
                 let adapter = target["runtime"].as_str().map(str::to_ascii_lowercase);
+                let executor_kind = if adapter.as_deref() == Some("medousa") {
+                    AssistantExecutorKind::Workshop
+                } else {
+                    AssistantExecutorKind::LocalAcp
+                };
                 let peer_runtime = target["execution_runtime_id"].as_str().map(str::to_string);
                 let state = peer["availability"]["state"]
                     .as_str()
@@ -419,7 +440,7 @@ pub(crate) fn build_placement_candidates(
                             adapter.as_deref().unwrap_or("ACP"),
                             project["title"].as_str().unwrap_or("Governed work")
                         ),
-                        AssistantExecutorKind::LocalAcp,
+                        executor_kind,
                         adapter.clone(),
                         peer_runtime.clone().or_else(|| runtime.clone()),
                         authority.clone(),
@@ -439,7 +460,7 @@ pub(crate) fn build_placement_candidates(
                                 adapter.as_deref().unwrap_or("ACP"),
                                 project["title"].as_str().unwrap_or("governed work")
                             ),
-                            AssistantExecutorKind::LocalAcp,
+                            executor_kind,
                             adapter.clone(),
                             peer_runtime.clone().or_else(|| runtime.clone()),
                             authority.clone(),
@@ -464,7 +485,7 @@ pub(crate) fn build_placement_candidates(
                             "{} on current workshop",
                             adapter.as_deref().unwrap_or("ACP")
                         ),
-                        AssistantExecutorKind::LocalAcp,
+                        executor_kind,
                         adapter,
                         peer_runtime.or_else(|| runtime.clone()),
                         authority.clone(),

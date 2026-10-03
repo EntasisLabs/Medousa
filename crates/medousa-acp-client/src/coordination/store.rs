@@ -18,6 +18,7 @@ const MAX_RECORD_BYTES: u64 = 2 * 1024 * 1024;
 const SCHEMA_VERSION: u16 = 1;
 pub mod assistant_ledger;
 pub mod intake;
+pub mod native_coder;
 pub mod owner_inbox;
 pub mod proposals;
 pub mod work;
@@ -66,6 +67,7 @@ fn object_path(channel: &CoordinationChannelRef, kind: &str, id: &str) -> Result
             "assistant-terminal" => "at1",
             "assistant-command" => "ac1",
             "work-plan" => "wp1",
+            "native-coder" => "nc1",
             _ => "c1",
         },
         digest.finalize()

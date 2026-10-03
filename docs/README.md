@@ -48,6 +48,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Desktop companion](guides/desktop-companion.md) | Floating pet for chat, approvals, notes, Web, and views |
 | [Drawing](guides/drawing.md) | Sketch inside notes or use a full drawing note |
 | [Chat drawings and generated images](guides/chat-media-and-images.md) | Draw, generate, refine, and revisit images in chat |
+| [Coding runtimes](guides/coding-runtimes.md) | Choose a preferred coder and ordered fallbacks |
 | [Interactive recipes](guides/interactive-recipes.md) | Follow guided recipes/procedures with durable step timers |
 | [Undertakings & ForgeLens](guides/undertakings.md) | Governed work, chat review, comments, commits, pull requests |
 | [Delegation approvals](guides/delegation-approvals.md) | Review agent-work proposals and queue remote background workers |

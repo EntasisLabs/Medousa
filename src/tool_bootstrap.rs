@@ -234,13 +234,13 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             },
             ToolDomainCatalogEntry {
                 domain: "remote_peers",
-                summary: "Prepare Codex/Cursor/Hermes work on an exact authorized remote workshop for human approval",
+                summary: "Prepare Medousa Coder/Codex/Cursor/Hermes work on an exact authorized remote workshop for human approval",
                 tools: &["cognition_peer_delegate"],
             },
             #[cfg(feature = "full-daemon")]
             ToolDomainCatalogEntry {
                 domain: "peers",
-                summary: "Inspect active work, rank Assistant placement candidates, discover local Codex/Cursor/Hermes, and propose project work for human approval; never grants or launches work",
+                summary: "Inspect active work, rank Assistant placement candidates, discover local Medousa Coder/Codex/Cursor/Hermes and saved coding preferences, and propose owned project work independently of the chat binding for human approval; never grants or launches work",
                 tools: &[
                     "cognition_active_work_discover",
                     "cognition_assistant_placement",

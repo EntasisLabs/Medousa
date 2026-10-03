@@ -3972,6 +3972,7 @@
       },
       "ExternalPeerRuntime": {
         "enum": [
+          "medousa",
           "codex",
           "cursor",
           "hermes"
@@ -6031,6 +6032,14 @@
               "null"
             ]
           },
+          "forge_work_id": {
+            "default": null,
+            "description": "An explicit owned project; omission preserves legacy chat binding.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "instructions": {
             "type": "string"
           },
@@ -6039,7 +6048,16 @@
             "type": "string"
           },
           "runtime": {
-            "$ref": "#/components/schemas/ExternalPeerRuntime"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExternalPeerRuntime"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Omit to use the workshop's saved preference and available fallbacks."
           },
           "through_entry_seq": {
             "description": "Inclusive committed upper bound from native discovery.",
@@ -6053,7 +6071,6 @@
           "continue_owner",
           "instructions",
           "request_key",
-          "runtime",
           "through_entry_seq"
         ],
         "type": "object"

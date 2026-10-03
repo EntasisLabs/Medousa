@@ -32,7 +32,7 @@ struct PeerProposeTool;
 
 #[medousa_tool(id = PEER_DISCOVER_ID)]
 impl PeerDiscoverTool {
-    /// Discover local Codex/Cursor/Hermes peers, exact adoptable agent sessions, and this chat's bound project/context range. Unavailable peers must not be substituted. Use peer_propose to prepare new or adopted work, not to execute it.
+    /// Discover local Medousa Coder/Codex/Cursor/Hermes peers and saved coding runtime preferences, exact adoptable agent sessions, and this chat's bound project/context range. Unavailable explicit targets must not be substituted; omitted runtime follows the saved fallback order. Use peer_propose to prepare new or adopted work, not to execute it.
     async fn invoke_typed(&self, _input: PeerDiscoverInput) -> Result<serde_json::Value> {
         let turn = admitted()?;
         let host = local_coordination_host()
@@ -47,7 +47,7 @@ impl PeerDiscoverTool {
 }
 #[medousa_tool(id = PEER_PROPOSE_ID)]
 impl PeerProposeTool {
-    /// Prepare an immutable peer assignment for this chat's bound local Forge project. Discover first and select an explicit committed context range. To adopt existing work, copy only an exact existing_agent_session_id returned by discovery; omission starts new work. Reuse request_key for exact retries only. This requests human review; it does NOT approve, launch, adopt, or complete work. Tell the user to review the approval card and explicitly start approved work. A conversational yes is not execution authority.
+    /// Prepare an immutable coder assignment for an owned local Forge project. Pass forge_work_id from active-work discovery; the source chat need not be bound to it. Omit runtime to follow saved preferences and available fallbacks, defaulting to Medousa Coder. Set runtime only when the user explicitly requests it. Never ask the user to move chats just to assign work. Discover first and select an explicit committed context range. To adopt existing work, copy only an exact existing_agent_session_id returned by discovery; omission starts new work. Reuse request_key for exact retries only. This requests human review; it does NOT approve, launch, adopt, or complete work. Tell the user to review the approval card and explicitly start approved work. A conversational yes is not execution authority.
     async fn invoke_typed(&self, input: PeerProposalIntent) -> Result<serde_json::Value> {
         let turn = admitted()?;
         let host = local_coordination_host()
