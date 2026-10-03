@@ -34,10 +34,14 @@
   $effect(() => {
     if (!open) return;
     query = ""; limit = 60; all = root === null;
-    const place = () => { if (trigger && panel) placeToolbarPopover(trigger, panel, { prefer: "below", align: "end", width: 440, gap: 6, pad: 8 }); };
+    const place = () => { if (trigger && panel) placeToolbarPopover(trigger, panel, { prefer: "below", align: "end", width: 440, maxHeight: 400, gap: 6, pad: 8 }); };
     void tick().then(() => { place(); input?.focus(); });
     window.addEventListener("resize", place);
-    return () => window.removeEventListener("resize", place);
+    window.visualViewport?.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.visualViewport?.removeEventListener("resize", place);
+    };
   });
 </script>
 <button bind:this={trigger} type="button" class="flex max-w-56 items-center gap-2 px-2 text-chrome-sm text-content-secondary hover:bg-primary-500/10" aria-haspopup="dialog" aria-expanded={open} aria-label="Choose project command" disabled={tasks.running || tasks.preparing || tasks.testQueueActive} onclick={() => (open = !open)}>
@@ -46,28 +50,39 @@
 {#if open}
   <BodyPortal>
     <button type="button" tabindex="-1" class="fixed inset-0 z-[120] cursor-default" aria-label="Dismiss command picker" onclick={close}></button>
-    <div bind:this={panel} class="z-[121] flex max-h-[min(36rem,80vh)] flex-col overflow-hidden rounded-lg border border-surface-500/40 bg-surface-950 shadow-2xl" role="dialog" aria-label="Choose project command" tabindex="-1" onkeydown={keydown}>
-      <div class="flex items-center gap-2 border-b border-surface-500/25 p-3"><Search size={14} /><input bind:this={input} bind:value={query} oninput={() => (limit = 60)} class="min-w-0 flex-1 bg-transparent text-chrome-md outline-none" aria-label="Search project commands" placeholder="Search commands, packages, or tools…" /><button type="button" aria-label="Close command picker" onclick={close}><X size={14} /></button></div>
-      <div class="flex flex-wrap items-center gap-2 border-b border-surface-500/20 px-3 py-2 text-chrome-xs">
-        <button type="button" class="rounded px-2 py-1 {all ? 'text-content-quiet' : 'bg-primary-500/20 text-primary-100'}" disabled={root === null} aria-pressed={!all} onclick={() => { all = false; limit = 60; }}>Current package</button>
-        <button type="button" class="rounded px-2 py-1 {all ? 'bg-primary-500/20 text-primary-100' : 'text-content-quiet'}" aria-pressed={all} onclick={() => { all = true; limit = 60; }}>Whole project</button>
-        <span class="min-w-0 truncate text-content-quiet">{all ? "All discovered packages" : root === "." ? "Project root" : root}</span>
+    <div bind:this={panel} class="command-picker z-[121] flex flex-col overflow-hidden rounded-lg border border-surface-500/40 shadow-2xl" role="dialog" aria-label="Choose project command" tabindex="-1" onkeydown={keydown}>
+      <div class="shrink-0 flex items-center gap-2 border-b border-surface-500/25 p-3"><Search size={14} /><input bind:this={input} bind:value={query} oninput={() => (limit = 60)} class="min-w-0 flex-1 bg-transparent text-chrome-md outline-none" aria-label="Search project commands" placeholder="Search commands, packages, or tools…" /><button type="button" aria-label="Close command picker" onclick={close}><X size={14} /></button></div>
+      <div class="shrink-0 flex flex-wrap items-center gap-2 border-b border-surface-500/20 px-3 py-2 text-chrome-xs">
+        <button type="button" class="rounded px-2 py-1 {all ? 'text-content-tertiary' : 'bg-primary-500/20 text-primary-100'}" disabled={root === null} aria-pressed={!all} onclick={() => { all = false; limit = 60; }}>Current package</button>
+        <button type="button" class="rounded px-2 py-1 {all ? 'bg-primary-500/20 text-primary-100' : 'text-content-tertiary'}" aria-pressed={all} onclick={() => { all = true; limit = 60; }}>Whole project</button>
+        <span class="min-w-0 truncate text-content-secondary">{all ? "All discovered packages" : root === "." ? "Project root" : root}</span>
       </div>
       {#if tasks.catalogError}<CodeOperationNotice message={tasks.catalogError} />{/if}
-      <div class="min-h-0 flex-1 overflow-y-auto p-2">
+      <div class="command-picker-list min-h-0 flex-1 overflow-y-auto p-2">
         {#each visible as task, index (task.id)}
-          {#if index === 0 || visible[index - 1].kind !== task.kind}<p class="px-2 pb-1 pt-2 text-chrome-xs font-medium text-content-quiet">{commandKindLabel(task.kind)}</p>{/if}
-          <button type="button" data-command class="flex w-full flex-col gap-1 rounded px-2 py-2 text-left hover:bg-surface-800 focus:bg-surface-800 focus:outline focus:outline-1 focus:outline-primary-400" aria-pressed={tasks.selectedTaskId === task.id} onclick={() => select(task.id)}>
-            <span class="text-chrome-sm text-content-secondary">{task.label}{#if task.available === false}<span class="ml-2 text-amber-200">Unavailable</span>{/if}</span>
-            <span class="text-chrome-xs text-content-quiet">{commandRoot(task) === "." ? "Project root" : commandRoot(task)} · {task.provider}{task.long_running ? " · background" : ""}</span>
-            <code class="break-all text-chrome-xs text-content-faint">{task.argv.join(" ")}</code>
+          {#if index === 0 || visible[index - 1].kind !== task.kind}<p class="px-2 pb-1 pt-2 text-chrome-xs font-medium text-content-secondary">{commandKindLabel(task.kind)}</p>{/if}
+          <button type="button" data-command title={task.argv.join(" ")} class="flex w-full flex-col gap-1 rounded px-2 py-2 text-left hover:bg-surface-800 focus:bg-surface-800 focus:outline focus:outline-1 focus:outline-primary-400" aria-pressed={tasks.selectedTaskId === task.id} onclick={() => select(task.id)}>
+            <span class="w-full truncate text-chrome-sm text-content-primary">{task.label}{#if task.available === false}<span class="ml-2 text-amber-200">Unavailable</span>{/if}</span>
+            <span class="w-full truncate text-chrome-xs text-content-secondary">{commandRoot(task) === "." ? "Project root" : commandRoot(task)} · {task.provider}{task.long_running ? " · background" : ""} · {task.argv.join(" ")}</span>
             {#if task.available === false}<span class="text-chrome-xs text-amber-200">{tasks.taskRepair(task) ?? "Required tool is unavailable on this workshop."}</span>{/if}
           </button>
         {/each}
-        {#if matches.length === 0}<p class="px-2 py-5 text-chrome-sm text-content-quiet">{query ? "No commands match this search." : "No commands were discovered in this scope. Try Whole project."}</p>{/if}
+        {#if matches.length === 0}<p class="px-2 py-5 text-chrome-sm text-content-secondary">{query ? "No commands match this search." : "No commands were discovered in this scope. Try Whole project."}</p>{/if}
         {#if matches.length > limit}<button type="button" class="m-2 rounded px-2 py-1 text-chrome-sm text-content-link" onclick={() => (limit += 60)}>Show more · {matches.length - limit} remaining</button>{/if}
       </div>
-      <p class="border-t border-surface-500/20 px-3 py-2 text-chrome-xs text-content-quiet">Select a command, then Run. Arrow keys navigate; Escape returns to the editor toolbar.</p>
+      <p class="shrink-0 border-t border-surface-500/20 px-3 py-2 text-chrome-xs text-content-secondary">Select, then Run · ↑↓ navigate · Esc closes</p>
     </div>
   </BodyPortal>
 {/if}
+
+<style>
+  .command-picker {
+    max-height: min(400px, calc(100dvh - 16px));
+    background: rgb(var(--color-surface-950));
+    color: rgb(var(--theme-text));
+  }
+  .command-picker-list {
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
+</style>

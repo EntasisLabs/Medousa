@@ -334,6 +334,32 @@ describe("placeToolbarPopover", () => {
     });
   });
 
+  it("honors a compact height cap even with a large command catalog", () => {
+    const trigger = {
+      getBoundingClientRect: () => fakeRect({ top: 48, bottom: 80, left: 600, right: 740 }),
+    } as HTMLElement;
+    const menu = fakeMenu({ width: 440, height: 2000 });
+    placeToolbarPopover(trigger, menu, { width: 440, maxHeight: 400 });
+    expect(menu.style.maxHeight).toBe("400px");
+    expect(menu.style.top).toBe("86px");
+  });
+
+  it("shrinks a compact menu to the visible viewport and flips above a low trigger", () => {
+    vi.stubGlobal("window", {
+      innerWidth: 390, innerHeight: 360,
+      visualViewport: { offsetLeft: 0, offsetTop: 0, width: 390, height: 300 },
+    });
+    const trigger = {
+      getBoundingClientRect: () => fakeRect({ top: 250, bottom: 280, left: 200, right: 380 }),
+    } as HTMLElement;
+    const menu = fakeMenu({ width: 440, height: 2000 });
+    placeToolbarPopover(trigger, menu, { width: 440, maxHeight: 400, pad: 8 });
+    expect(menu.style.maxHeight).toBe("236px");
+    expect(menu.style.maxWidth).toBe("374px");
+    expect(menu.style.top).toBe("auto");
+    expect(menu.style.bottom).toBe("116px");
+  });
+
   it("opens above a dock trigger near the bottom", () => {
     const trigger = {
       getBoundingClientRect: () =>

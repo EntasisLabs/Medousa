@@ -39,7 +39,7 @@
     data-group-id={node.id}
     role="button"
     tabindex="0"
-    aria-label={active ? "Active pane" : tabs.length ? "Pane" : "Empty pane"}
+    aria-label="Pane {paneIndex}{active ? ', active' : ''}, {tabs.length} tabs"
     onclick={(event) => {
       const target = event.target as HTMLElement | null;
       if (target?.closest(".shell-tab-notch-rail-row, button")) return;
@@ -61,7 +61,7 @@
     }}
   >
     <div class="shell-tab-notch-pane-chrome">
-      <span>Pane {paneIndex}</span>
+      <span>Pane {paneIndex} · {tabs.length} tab{tabs.length === 1 ? "" : "s"}</span>
       {#if active}
         <div class="shell-tab-notch-pane-actions" role="group" aria-label="Active pane actions">
         <button

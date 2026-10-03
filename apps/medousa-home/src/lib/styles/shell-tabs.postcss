@@ -14,8 +14,7 @@
     overflow: hidden;
     border: 1px solid rgb(var(--color-surface-500) / 0.36);
     border-radius: 0.55rem;
-    background: rgb(var(--color-surface-900) / 0.98);
-    backdrop-filter: blur(14px);
+    background: rgb(var(--color-surface-900));
     box-shadow: 0 14px 32px rgb(0 0 0 / 0.28);
     animation: shell-tab-notch-open 150ms ease-out;
   }
@@ -132,17 +131,20 @@
 
   .shell-tab-notch-drawer-stage {
     display: flex;
-    height: 7.5rem;
-    min-height: 7.5rem;
-    flex: 0 0 auto;
+    min-height: 0;
+    flex: 1 1 auto;
     flex-direction: column;
-    overflow: hidden;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
     padding: 0.6rem;
   }
 
-  .shell-tab-notch-drawer--single .shell-tab-notch-drawer-stage {
-    height: 5.5rem;
-    min-height: 5.5rem;
+  .shell-tab-notch-map {
+    display: flex;
+    min-width: 0;
+    flex: 0 0 auto;
+    flex-direction: column;
   }
 
   .shell-tab-notch-drawer--search {
@@ -251,7 +253,7 @@
 
   .shell-tab-notch-branch {
     display: flex;
-    min-height: 100%;
+    min-height: 0;
     min-width: 0;
     flex: 1 1 auto;
     gap: 0.35rem;
@@ -314,14 +316,14 @@
 
   .shell-tab-notch-pane-chrome {
     display: flex;
-    height: 1.65rem;
-    flex: 0 0 1.65rem;
+    height: 1.85rem;
+    flex: 0 0 1.85rem;
     align-items: center;
     justify-content: space-between;
     border-bottom: 1px solid rgb(var(--color-surface-500) / 0.2);
     padding: 0 0.4rem 0 0.5rem;
     color: rgb(var(--theme-text-tertiary));
-    font-size: 0.57rem;
+    font-size: 0.65rem;
     font-weight: 650;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -433,6 +435,7 @@
 
   .shell-tab-notch-rail-item {
     min-width: 0;
+    flex-shrink: 0;
   }
 
   .shell-tab-notch-rail-row {
@@ -491,7 +494,7 @@
     flex: 1 1 auto;
     overflow: hidden;
     color: rgb(var(--color-surface-150, var(--color-surface-100)));
-    font-size: 0.72rem;
+    font-size: 0.8rem;
     font-weight: 500;
     line-height: 1.2;
     text-overflow: ellipsis;

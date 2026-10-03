@@ -303,6 +303,8 @@ export function placeToolbarPopover(
     /** Dock triggers usually prefer above; titlebars prefer below. */
     prefer?: "below" | "above";
     maxHeightRatio?: number;
+    /** Optional compact-menu cap, still constrained by the viewport/open side. */
+    maxHeight?: number;
     /** End-align (default), start-align, or center under the trigger. */
     align?: "end" | "start" | "center";
   },
@@ -316,7 +318,11 @@ export function placeToolbarPopover(
   const view = viewportBox();
 
   const maxW = Math.max(0, Math.min(preferredWidth, view.width - pad * 2));
-  const viewMaxH = Math.max(0, Math.min(view.height - pad * 2, view.height * maxHeightRatio));
+  const viewMaxH = Math.max(0, Math.min(
+    view.height - pad * 2,
+    view.height * maxHeightRatio,
+    options?.maxHeight ?? Infinity,
+  ));
 
   menu.style.position = "fixed";
   menu.style.width = `${Math.round(maxW)}px`;
