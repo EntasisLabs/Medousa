@@ -16,7 +16,11 @@
     onApprove, onApply }: Props = $props();
 </script>
 
-{#if allowReview}
+{#if allowApply}
+  <button type="button" class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-primary flex items-center gap-1.5 px-2" disabled={busy} title={actionLabel} aria-label={actionLabel} onclick={onApply}>
+    <Check size={14} strokeWidth={1.75} /><span>{actionLabel}</span>
+  </button>
+{:else if allowReview}
   {#if allowContinue}
     <button type="button" class="scripts-workbench-toolbar-btn" disabled={busy} title="Continue editing" aria-label="Continue editing" onclick={onContinue}>
       <Pencil size={14} strokeWidth={1.75} />
@@ -34,9 +38,5 @@
   {/if}
   <button type="button" class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-primary flex items-center gap-1.5 px-2" disabled={!canApprove} title={`Approve changes · ${actionLabel}`} aria-label={`Approve changes · ${actionLabel}`} onclick={onApprove}>
     <Check size={14} strokeWidth={1.75} /><span class="hidden sm:inline">Approve</span>
-  </button>
-{:else if allowApply}
-  <button type="button" class="scripts-workbench-toolbar-btn scripts-workbench-toolbar-btn-primary flex items-center gap-1.5 px-2" disabled={busy} title={actionLabel} aria-label={actionLabel} onclick={onApply}>
-    <Check size={14} strokeWidth={1.75} /><span>{actionLabel}</span>
   </button>
 {/if}

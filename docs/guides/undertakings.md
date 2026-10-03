@@ -35,7 +35,9 @@ Intent → Set up → Edit → Verify → Review → Finish
    editing** interrupt or reclaim the agent. **Understand** explains
    relationships without changing anything.
 4. **Review changes** gathers what changed and how it was made.
-5. **Approve changes**, then **Finish project**. Close, Terminal in the
+5. Choose the approval outcome, click **Approve**, then **Apply to** the source
+   branch or **Keep** the separate branch. Current-checkout projects show
+   **Keep changes here**. Close, Terminal in the
    workspace, and Reveal remain under **More**. Closing an isolated project
    removes its private copy; closing a current-checkout project never removes,
    resets, or stashes files. The workshop stops any bound coding agent before
@@ -190,7 +192,7 @@ a private Code IDE chrome.
   current-checkout project permits Fetch but disables Pull, Push, and Sync so
   Coder cannot move its pinned `HEAD`, branch, or index while the attachment is
   active.
-  **Seal for Review** checkpoints into Review; Share still happens from Review
+  **Prepare merge** checkpoints into Review; Share still happens from Review
   after finish. History and Blame are available on the Changes panel.
   Review remains the finish/decision surface.
 - New file and New folder are available in the repository explorer. Nested
@@ -426,7 +428,13 @@ Binary changes show honest file metadata instead of an unreadable patch. Policy
 exceptions and risky content (secrets, oversize) are called out above the file
 list and must be acknowledged before approval; softer warnings such as “checks
 haven’t run” do not block Approve. Applying an approved revision has its own
-confirmation boundary.
+confirmation boundary. For an isolated worktree, choose **Apply to main** (or
+the project's source branch) and click **Approve**. The toolbar then shows
+**Apply to main**; click it and confirm to integrate the reviewed changes
+locally without a PR. This requires a safe fast-forward and refuses if the base
+branch has advanced. Choose **Keep** with the worktree branch instead to finish
+with that branch separate. A current-checkout project offers **Keep changes
+here**, since its files are already in that checkout.
 
 When several sealed attempts exist, pick another from a quiet overflow under the
 outcome — not as the hero of the page.

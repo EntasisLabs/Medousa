@@ -307,7 +307,7 @@ export class CodeChangesController {
         `Review · ${this.#deps.getReviewTitle()}`,
       );
       if (!current()) return;
-      this.syncMessage = "Sealed for Review";
+      this.syncMessage = "Prepared for merge";
       await this.refresh();
     } catch (err) {
       if (!current()) return;

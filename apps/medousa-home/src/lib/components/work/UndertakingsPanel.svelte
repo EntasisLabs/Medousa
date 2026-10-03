@@ -351,7 +351,7 @@
       }
     }
     if (!leaseId || generation == null) {
-      actionError = "Nothing to seal yet — make a change first, then seal for review.";
+      actionError = "Nothing to prepare yet — make a change first, then choose Prepare merge.";
       return;
     }
     await run(async () => {

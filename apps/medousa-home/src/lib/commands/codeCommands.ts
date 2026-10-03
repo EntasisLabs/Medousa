@@ -559,10 +559,10 @@ export function buildCodeCommands(): WorkshopCommand[] {
     {
       id: "medousa.forge.checkpoint",
       section: "do",
-      label: "Seal for Review",
+      label: "Prepare merge",
       subtitle: "Checkpoint the working copy and open Review",
-      keywords: "seal checkpoint commit review forge vscode",
-      aliases: ["medousa.forge.checkpoint", "git.commit", "Seal for Review", "Checkpoint"],
+      keywords: "prepare merge seal checkpoint commit review forge vscode",
+      aliases: ["medousa.forge.checkpoint", "git.commit", "Prepare merge", "Seal for Review", "Checkpoint"],
       run: (ctx) => {
         ctx.navigate("code");
         dispatchCodeCommand("medousa.forge.checkpoint");
