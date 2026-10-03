@@ -6,7 +6,7 @@ vi.mock("$lib/haptics", () => ({ haptic: vi.fn() }));
 // Happy DOM drops the outer element during DOMPurify parsing. Exercise DOM
 // controls here; the real sanitization path is verified in browser QA.
 vi.mock("dompurify", () => ({ default: { sanitize: (html: string) => html } }));
-import { hydrateCodeBlocks } from "./codeBlocks";
+import { codeBlockControls, hydrateCodeBlocks } from "./codeBlocks";
 import { renderMarkdown } from "./render";
 
 beforeEach(() => {
@@ -22,6 +22,27 @@ function render(source: string, language = "ts") {
   document.body.appendChild(root);
   return root;
 }
+
+it("delegates parse-only controls once across nested roots and removes the listener on destroy", async () => {
+  const root = render("hello");
+  const outer = codeBlockControls(document.body);
+  const inner = codeBlockControls(root);
+  root.querySelector<HTMLButtonElement>(".markdown-code-copy")!.click();
+  expect(writeText).toHaveBeenCalledExactlyOnceWith("hello");
+  inner.destroy();
+  outer.destroy();
+  root.querySelector<HTMLButtonElement>(".markdown-code-copy")!.click();
+  expect(writeText).toHaveBeenCalledTimes(1);
+});
+
+it("leaves hydrated controls to their existing owner", async () => {
+  const root = render("hello");
+  const controls = codeBlockControls(root);
+  await hydrateCodeBlocks(root);
+  root.querySelector<HTMLButtonElement>(".markdown-code-copy")!.click();
+  expect(writeText).toHaveBeenCalledExactlyOnceWith("hello");
+  controls.destroy();
+});
 
 it("renders Copy immediately and wires it while highlighting is still pending", async () => {
   let finish!: () => void;

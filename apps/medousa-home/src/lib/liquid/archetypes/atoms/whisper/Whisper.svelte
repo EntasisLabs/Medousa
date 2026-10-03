@@ -2,6 +2,7 @@
   import "$lib/styles/markdown-content.postcss";
   /** `whisper` atom — a muted stage-direction line above the main voice. */
   import { renderMarkdown } from "$lib/markdown/render";
+  import { codeBlockControls } from "$lib/markdown/codeBlocks";
   import { getLiquidContext } from "$lib/liquid/render/context";
   import type { ArchetypeProps } from "$lib/liquid/render/types";
 
@@ -17,7 +18,7 @@
 
 {#if text}
   <div class="liquid-whisper">
-    <div class="markdown-content min-w-0 max-w-full">{@html html}</div>
+    <div class="markdown-content min-w-0 max-w-full" use:codeBlockControls>{@html html}</div>
   </div>
 {/if}
 

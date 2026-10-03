@@ -8,6 +8,7 @@
   import type { ArchetypeProps } from "$lib/liquid/render/types";
   import LiquidGlyph from "$lib/liquid/icons/LiquidGlyph.svelte";
   import { renderInlineMarkdown, renderMarkdown } from "$lib/markdown/render";
+  import { codeBlockControls } from "$lib/markdown/codeBlocks";
 
   interface AccordionItem {
     id: string;
@@ -132,7 +133,7 @@
             <span class="liquid-accordion-chevron" aria-hidden="true">▾</span>
           </button>
           {#if isOpen(item.id)}
-            <div class="liquid-accordion-panel liquid-accordion-body">
+            <div class="liquid-accordion-panel liquid-accordion-body" use:codeBlockControls>
               {@html renderMarkdown(item.body)}
             </div>
           {/if}

@@ -4,15 +4,30 @@ import { highlightCodeBlocks } from "./highlight";
 import { codeCopyContent, copyCodeText } from "./codeBlockPresentation";
 
 const resetTimers = new WeakMap<HTMLButtonElement, number>();
+const handledClicks = new WeakSet<MouseEvent>();
+
+/** Controls for parse-only Markdown surfaces; survive replacement of raw HTML. */
+export function codeBlockControls(root: HTMLElement): { destroy(): void } {
+  const handleClick = (event: MouseEvent) => {
+    const block = (event.target as Element | null)?.closest<HTMLElement>(".markdown-code-block");
+    // Hydrated Markdown and Liquid snippets already own their controls.
+    if (block?.dataset.copyHydrated === "1") return;
+    handleCodeBlockControlClick(event);
+  };
+  root.addEventListener("click", handleClick);
+  return { destroy: () => root.removeEventListener("click", handleClick) };
+}
 
 /** Delegated controls also work on a streaming tail whose HTML is replaced. */
 export function handleCodeBlockControlClick(event: MouseEvent): void {
+  if (handledClicks.has(event)) return;
   const button = (event.target as Element | null)?.closest<HTMLButtonElement>(
     ".markdown-code-copy, .markdown-code-wrap, .markdown-code-expand",
   );
   const block = button?.closest<HTMLElement>(".markdown-code-block");
   const code = block?.querySelector("code");
   if (!button || !block || !code) return;
+  handledClicks.add(event);
   if (button.classList.contains("markdown-code-copy")) {
     void copyCode(button, code.textContent ?? "");
   } else if (button.classList.contains("markdown-code-wrap")) {

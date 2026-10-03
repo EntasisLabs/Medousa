@@ -8,6 +8,7 @@
   import { haptic } from "$lib/haptics";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { renderInlineMarkdown, renderMarkdown } from "$lib/markdown";
+  import { codeBlockControls } from "$lib/markdown/codeBlocks";
   import type { CardDetailPayload } from "$lib/markdown/liquidEmbeds";
 
   interface Props {
@@ -96,7 +97,7 @@
           {/if}
 
           {#if detail.summary}
-            <div class="liquid-card-detail-summary markdown-body">
+            <div class="liquid-card-detail-summary markdown-body" use:codeBlockControls>
               {@html renderMarkdown(detail.summary)}
             </div>
           {/if}

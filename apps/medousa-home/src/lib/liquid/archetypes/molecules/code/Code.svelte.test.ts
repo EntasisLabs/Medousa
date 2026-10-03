@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { flushSync, mount, tick, unmount } from "svelte";
 import { createNode } from "$lib/liquid/core";
-import { hydrateCodeBlocks } from "$lib/markdown/codeBlocks";
+import { codeBlockControls, hydrateCodeBlocks } from "$lib/markdown/codeBlocks";
 import Code from "./Code.svelte";
 
 vi.mock("$lib/syntax/highlightCode", () => ({
@@ -40,6 +40,7 @@ async function click(selector: string) {
 it("keeps Liquid controls working independently of generic Markdown hydration", async () => {
   const source = Array.from({ length: 20 }, (_, i) => `const value${i} = ${i};`).join("\n");
   open(source);
+  const controls = codeBlockControls(document.body);
   await hydrateCodeBlocks(document.body);
   expect(document.querySelector(".markdown-code-lang")?.textContent).toBe("TypeScript");
   expect(document.querySelector("code")?.textContent).toBe(source);
@@ -50,6 +51,7 @@ it("keeps Liquid controls working independently of generic Markdown hydration", 
   await click(".markdown-code-copy");
   expect(writeText).toHaveBeenCalledExactlyOnceWith(source);
   await vi.waitFor(() => expect(document.querySelector(".markdown-code-copy")?.textContent).toBe("Copied"));
+  controls.destroy();
 });
 
 it("honors disabled Copy and copies diff source exactly when enabled", async () => {

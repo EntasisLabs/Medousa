@@ -5,6 +5,7 @@
    * (MarkdownContent) so archetypes never import the hydrate owner.
    */
   import { renderMarkdown } from "$lib/markdown/render";
+  import { codeBlockControls } from "$lib/markdown/codeBlocks";
   import { getLiquidContext } from "./context";
   import { getMarkdownViewComponent } from "$lib/components/ui/markdownView";
 
@@ -34,5 +35,5 @@
     {streaming}
   />
 {:else}
-  <div class="markdown-content min-w-0 max-w-full">{@html html}</div>
+  <div class="markdown-content min-w-0 max-w-full" use:codeBlockControls>{@html html}</div>
 {/if}

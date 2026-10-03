@@ -7,6 +7,7 @@
   import { haptic } from "$lib/haptics";
   import { registerMobileBackHandler } from "$lib/mobileNavigation";
   import { renderMarkdown } from "$lib/markdown";
+  import { codeBlockControls } from "$lib/markdown/codeBlocks";
   import { workerTranscripts } from "$lib/work/workerTranscripts.svelte";
   import { toolRunsFromWorkerActivity } from "$lib/utils/subagentRows";
 
@@ -123,7 +124,7 @@
                 <section class="worker-transcript-answer">
                   <p class="worker-transcript-label">{isRunning ? "Current output" : "Answer"}</p>
                   {#if bodyText}
-                    <div class="worker-transcript-output markdown-body">
+                    <div class="worker-transcript-output markdown-body" use:codeBlockControls>
                       {@html renderMarkdown(bodyText)}
                     </div>
                   {:else if isRunning}
@@ -154,7 +155,7 @@
                         <ChevronDown size={15} strokeWidth={2} />
                       </span>
                     </summary>
-                    <div class="worker-reasoning-copy markdown-body">
+                    <div class="worker-reasoning-copy markdown-body" use:codeBlockControls>
                       {@html thinkingHtml}
                     </div>
                   </details>

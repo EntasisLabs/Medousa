@@ -56,3 +56,20 @@ it("copies the live streaming tail, subsequent chunks, and the completed block",
   await clickCopy("  echo first\n  echo second");
   expect(writeText).toHaveBeenCalledTimes(3);
 });
+
+it("copies completed history loaded into an already mounted nonstreaming view", async () => {
+  vi.stubGlobal("navigator", { clipboard: { writeText } });
+  const store = writable("");
+  const state = fromStore(store);
+  component = mount(MarkdownContent, {
+    target: document.body,
+    props: { get content() { return state.current; } },
+  });
+  flushSync();
+  store.set("```sh\n  echo history\n```");
+  await tick();
+  const button = document.querySelector<HTMLButtonElement>(".markdown-code-copy")!;
+  button.click();
+  await vi.waitFor(() => expect(writeText).toHaveBeenCalledExactlyOnceWith("  echo history"));
+  await vi.waitFor(() => expect(button.textContent).toBe("Copied"));
+});
