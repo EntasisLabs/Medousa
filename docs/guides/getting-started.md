@@ -78,6 +78,8 @@ Code snippets use a compact header with the language and **Copy**. Long
 snippets offer **Show all** / **Show less**, with thin scrollbars and optional
 **Wrap** for longer lines. Copy always includes the full code, including any
 collapsed lines.
+Copy works while a response is streaming, and successful copies briefly show a
+checkmark and **Copied** before returning to **Copy**.
 
 Tool activity uses a quiet count and short context line. While calls run, the
 line names the current activity; failed calls get a small count. Select the

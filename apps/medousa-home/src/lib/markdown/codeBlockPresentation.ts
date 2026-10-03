@@ -1,4 +1,6 @@
 /** Shared presentation for fenced Markdown and Liquid code snippets. */
+import { copyTextToClipboard } from "$lib/utils/vaultClipboard";
+
 export const CODE_PREVIEW_LINES = 12;
 
 const LANGUAGE_LABELS: Record<string, string> = {
@@ -42,11 +44,5 @@ export function codeCopyContent(state: CodeCopyState = "idle"): string {
 }
 
 export async function copyCodeText(text: string): Promise<boolean> {
-  if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) return false;
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    return false;
-  }
+  return copyTextToClipboard(text, { preserveWhitespace: true });
 }

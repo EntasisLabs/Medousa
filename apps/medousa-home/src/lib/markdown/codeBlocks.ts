@@ -3,7 +3,44 @@ import { haptic } from "$lib/haptics";
 import { highlightCodeBlocks } from "./highlight";
 import { codeCopyContent, copyCodeText } from "./codeBlockPresentation";
 
-function attachCopyButtons(root: HTMLElement): void {
+const resetTimers = new WeakMap<HTMLButtonElement, number>();
+
+/** Delegated controls also work on a streaming tail whose HTML is replaced. */
+export function handleCodeBlockControlClick(event: MouseEvent): void {
+  const button = (event.target as Element | null)?.closest<HTMLButtonElement>(
+    ".markdown-code-copy, .markdown-code-wrap, .markdown-code-expand",
+  );
+  const block = button?.closest<HTMLElement>(".markdown-code-block");
+  const code = block?.querySelector("code");
+  if (!button || !block || !code) return;
+  if (button.classList.contains("markdown-code-copy")) {
+    void copyCode(button, code.textContent ?? "");
+  } else if (button.classList.contains("markdown-code-wrap")) {
+    button.setAttribute("aria-pressed", String(block.classList.toggle("markdown-code-wrapped")));
+  } else {
+    const collapsed = block.classList.toggle("markdown-code-collapsed");
+    button.setAttribute("aria-expanded", String(!collapsed));
+    button.textContent = collapsed ? "Show all" : "Show less";
+  }
+}
+
+async function copyCode(button: HTMLButtonElement, source: string): Promise<void> {
+  const ok = await copyCodeText(source);
+  const resetTimer = resetTimers.get(button);
+  if (resetTimer !== undefined) window.clearTimeout(resetTimer);
+  button.innerHTML = codeCopyContent(ok ? "copied" : "failed");
+  button.classList.toggle("markdown-code-copy-done", ok);
+  button.title = ok ? "Code copied" : "Could not copy code";
+  if (ok) haptic("light");
+  resetTimers.set(button, window.setTimeout(() => {
+    button.innerHTML = codeCopyContent();
+    button.classList.remove("markdown-code-copy-done");
+    button.title = "Copy code";
+    resetTimers.delete(button);
+  }, 1500));
+}
+
+function attachCodeBlockControls(root: HTMLElement): void {
   root.querySelectorAll<HTMLElement>(".markdown-code-block").forEach((block) => {
     if (block.dataset.copyHydrated === "1") return;
 
@@ -30,35 +67,12 @@ function attachCopyButtons(root: HTMLElement): void {
     button.setAttribute("aria-label", "Copy code");
     button.title = "Copy code";
     button.innerHTML = codeCopyContent();
-    let resetTimer: number | undefined;
-    button.addEventListener("click", async () => {
-      const ok = await copyCodeText(code.textContent ?? "");
-      if (resetTimer !== undefined) window.clearTimeout(resetTimer);
-      button.innerHTML = codeCopyContent(ok ? "copied" : "failed");
-      button.classList.toggle("markdown-code-copy-done", ok);
-      button.title = ok ? "Code copied" : "Could not copy code";
-      if (ok) {
-        haptic("light");
-      }
-      resetTimer = window.setTimeout(() => {
-        button.innerHTML = codeCopyContent();
-        button.classList.remove("markdown-code-copy-done");
-        button.title = "Copy code";
-        resetTimer = undefined;
-      }, 1500);
-    });
+    button.addEventListener("click", handleCodeBlockControlClick);
     if (!button.parentElement) header.appendChild(button);
     const wrap = block.querySelector<HTMLButtonElement>(".markdown-code-wrap");
-    wrap?.addEventListener("click", () => {
-      const wrapped = block.classList.toggle("markdown-code-wrapped");
-      wrap.setAttribute("aria-pressed", String(wrapped));
-    });
+    wrap?.addEventListener("click", handleCodeBlockControlClick);
     const expand = block.querySelector<HTMLButtonElement>(".markdown-code-expand");
-    expand?.addEventListener("click", () => {
-      const collapsed = block.classList.toggle("markdown-code-collapsed");
-      expand.setAttribute("aria-expanded", String(!collapsed));
-      expand.textContent = collapsed ? "Show all" : "Show less";
-    });
+    expand?.addEventListener("click", handleCodeBlockControlClick);
     block.dataset.copyHydrated = "1";
   });
 }
@@ -66,7 +80,7 @@ function attachCopyButtons(root: HTMLElement): void {
 /** Highlight fenced blocks and wire copy controls. */
 export async function hydrateCodeBlocks(root: HTMLElement): Promise<void> {
   if (typeof window === "undefined") return;
-  attachCopyButtons(root);
+  attachCodeBlockControls(root);
   try {
     await highlightCodeBlocks(root);
   } catch {

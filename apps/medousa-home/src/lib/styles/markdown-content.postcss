@@ -610,6 +610,11 @@
     @apply shrink-0;
   }
 
+  .markdown-code-copy {
+    min-width: 4.75rem;
+    justify-content: center;
+  }
+
   .markdown-code-actions {
     @apply flex shrink-0 items-center gap-0.5;
   }
@@ -621,6 +626,23 @@
 
   .markdown-code-copy-done {
     @apply text-content-success;
+  }
+
+  .markdown-code-copy-done > svg,
+  .markdown-code-copy-done > span {
+    animation: markdown-code-copied 180ms ease-out;
+  }
+
+  @keyframes markdown-code-copied {
+    from { opacity: 0; transform: translateY(2px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .markdown-code-copy-done > svg,
+    .markdown-code-copy-done > span {
+      animation: none;
+    }
   }
 
   .markdown-pre {

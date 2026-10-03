@@ -96,7 +96,7 @@
           <button type="button" class="markdown-code-wrap" aria-pressed={wrapped} title="Wrap lines" data-export-strip onclick={() => wrapped = !wrapped}>Wrap</button>
         {/if}
         {#if showCopy}
-          <button type="button" class="liquid-code-copy markdown-code-copy" class:markdown-code-copy-done={copyState === "copied"} aria-label="Copy code" title={copyState === "failed" ? "Could not copy code" : "Copy code"} onclick={copySource}>
+          <button type="button" class="liquid-code-copy markdown-code-copy" class:markdown-code-copy-done={copyState === "copied"} aria-label="Copy code" title={copyState === "copied" ? "Code copied" : copyState === "failed" ? "Could not copy code" : "Copy code"} onclick={copySource}>
             {@html codeCopyContent(copyState)}
           </button>
         {/if}

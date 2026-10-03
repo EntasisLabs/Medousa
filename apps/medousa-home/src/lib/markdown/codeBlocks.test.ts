@@ -14,7 +14,7 @@ beforeEach(() => {
   writeText.mockReset().mockResolvedValue(undefined);
   vi.stubGlobal("navigator", { clipboard: { writeText } });
 });
-afterEach(() => { vi.unstubAllGlobals(); document.body.replaceChildren(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); document.body.replaceChildren(); });
 
 function render(source: string, language = "ts") {
   const root = document.createElement("div");
@@ -73,6 +73,25 @@ it("reports clipboard failure without claiming success", async () => {
   await hydrateCodeBlocks(root);
   root.querySelector<HTMLButtonElement>(".markdown-code-copy")!.click();
   await vi.waitFor(() => expect(root.querySelector(".markdown-code-copy")?.textContent).toBe("Failed"));
+});
+
+it("shows success briefly and restarts the feedback timer on another copy", async () => {
+  vi.useFakeTimers();
+  const root = render("hello");
+  await hydrateCodeBlocks(root);
+  const button = root.querySelector<HTMLButtonElement>(".markdown-code-copy")!;
+  button.click();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(button.textContent).toBe("Copied");
+  expect(button.classList.contains("markdown-code-copy-done")).toBe(true);
+  await vi.advanceTimersByTimeAsync(1000);
+  button.click();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(button.textContent).toBe("Copied");
+  await vi.advanceTimersByTimeAsync(500);
+  expect(button.textContent).toBe("Copy");
+  expect(button.classList.contains("markdown-code-copy-done")).toBe(false);
+  expect(writeText).toHaveBeenCalledTimes(2);
 });
 
 it("toggles wrapping without changing the source copied to the clipboard", async () => {

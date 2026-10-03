@@ -21,6 +21,7 @@ afterEach(async () => {
   if (component) await unmount(component);
   component = undefined;
   vi.unstubAllGlobals();
+  vi.useRealTimers();
   document.body.replaceChildren();
 });
 function open(source: string, props: Record<string, unknown> = {}) {
@@ -48,7 +49,7 @@ it("keeps Liquid controls working independently of generic Markdown hydration", 
   expect(document.querySelector(".markdown-code-collapsed")).toBeNull();
   await click(".markdown-code-copy");
   expect(writeText).toHaveBeenCalledExactlyOnceWith(source);
-  expect(document.querySelector(".markdown-code-copy")?.textContent).toBe("Copied");
+  await vi.waitFor(() => expect(document.querySelector(".markdown-code-copy")?.textContent).toBe("Copied"));
 });
 
 it("honors disabled Copy and copies diff source exactly when enabled", async () => {
@@ -61,4 +62,18 @@ it("honors disabled Copy and copies diff source exactly when enabled", async () 
   expect(document.querySelector("code")?.textContent).toBe(source);
   await click(".markdown-code-copy");
   expect(writeText).toHaveBeenCalledExactlyOnceWith(source);
+});
+
+it("returns Liquid copy feedback to its idle state", async () => {
+  vi.useFakeTimers();
+  open("  hello\n");
+  document.querySelector<HTMLButtonElement>(".markdown-code-copy")!.click();
+  await vi.advanceTimersByTimeAsync(0);
+  flushSync();
+  expect(document.querySelector(".markdown-code-copy-done")?.textContent).toBe("Copied");
+  expect(writeText).toHaveBeenCalledWith("  hello\n");
+  await vi.advanceTimersByTimeAsync(1500);
+  flushSync();
+  expect(document.querySelector(".markdown-code-copy")?.textContent).toBe("Copy");
+  expect(document.querySelector(".markdown-code-copy-done")).toBeNull();
 });

@@ -20,20 +20,24 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 function copyViaExecCommand(text: string): boolean {
   if (typeof document === "undefined") return false;
+  const previousFocus = document.activeElement;
+  let el: HTMLTextAreaElement | undefined;
   try {
-    const el = document.createElement("textarea");
+    el = document.createElement("textarea");
     el.value = text;
     el.setAttribute("readonly", "");
     el.style.position = "fixed";
     el.style.left = "-9999px";
     el.style.top = "0";
     document.body.appendChild(el);
+    el.focus({ preventScroll: true });
     el.select();
-    const ok = document.execCommand("copy");
-    el.remove();
-    return ok;
+    return document.execCommand("copy");
   } catch {
     return false;
+  } finally {
+    el?.remove();
+    if (previousFocus instanceof HTMLElement) previousFocus.focus({ preventScroll: true });
   }
 }
 
@@ -47,8 +51,11 @@ function clipboardGestureSafe(): boolean {
   return true;
 }
 
-export async function copyTextToClipboard(text: string): Promise<boolean> {
-  const payload = text.trim();
+export async function copyTextToClipboard(
+  text: string,
+  options: { preserveWhitespace?: boolean } = {},
+): Promise<boolean> {
+  const payload = options.preserveWhitespace ? text : text.trim();
   if (!payload) return false;
   if (!clipboardGestureSafe()) return false;
   if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
