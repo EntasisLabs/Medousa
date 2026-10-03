@@ -1080,6 +1080,32 @@ uncertain effect unresolved rather than relaunching it. Provider transport
 acknowledgment alone must never advance review or satisfy work. This extends the
 original agent-coordination promise without introducing a goal-management UI.
 
+### Durable work inbox increment — 2026-10-03
+
+`work.record` can now register bounded subscriptions against an exact saved scope,
+selected native resources and event kinds, a retained journal cursor, and an
+expiry. `work.events` exposes the next observations to the frozen authenticated
+recipient through both runtime tools and provider HTTP participation. Reading
+does not consume an event; an attributable acknowledgment and cursor publish in
+one graph transaction. Completion racing registration, closed chats, restart,
+unrelated resources, competing credentials and publication faults retain exact
+evidence without creating another effect. Stopping retains pending events and
+fences future intake; later acknowledgments do not extend that intake boundary.
+
+This is the general pull-inbox increment, not arbitrary autonomous model wakes,
+native change subscriptions, provider request correlation or contact delivery.
+Scope changes, pause, terminal work, stop and expiry remain explicit statuses;
+observing a hook never confers execution authority. Existing native observation
+and work-controller publication paths supply events without a new scheduler or
+user-managed goal workflow. The broader Phase 3 exit gate remains open.
+
+Validation: 24 work-store tests, 44 daemon work-unit tests, 22 daemon coordination
+tests, seven runtime action/schema tests, 14 API contract/parity/compatibility
+tests and 28 Python SDK tests pass. Frontend checking reports zero errors and
+warnings. Schema, OpenAPI and generated transport types were refreshed. Strict
+work/type clippy and docs verification pass; full CI parity and live provider
+qualification remain separate gates.
+
 ### Phase exit gates
 
 - [ ] Phase 0 — contract and source audit

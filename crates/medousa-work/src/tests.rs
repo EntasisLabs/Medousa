@@ -139,6 +139,272 @@ fn activate(store: &WorkGraphStore, id: &str) {
     );
 }
 
+fn subscription(
+    id: &str,
+    scope_revision: u64,
+    resources: Vec<ResourceRef>,
+    after_revision: u64,
+) -> WorkGraphMutation {
+    WorkGraphMutation::Subscribe {
+        input: WorkSubscriptionInput {
+            subscription_id: id.into(),
+            work_unit_id: "work".into(),
+            expected_scope_revision: scope_revision,
+            resources,
+            event_kinds: vec![
+                WorkEventKind::ResourceObserved,
+                WorkEventKind::WorkStateChanged,
+                WorkEventKind::WorkScopeChanged,
+            ],
+            after_revision,
+            expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+        },
+    }
+}
+
+fn inbox(store: &WorkGraphStore, id: &str, limit: usize) -> WorkEventsPage {
+    store
+        .events(
+            &domain("user:a"),
+            "adapter:test",
+            WorkEventsQuery {
+                subscription_id: id.into(),
+                limit: Some(limit),
+            },
+        )
+        .unwrap()
+}
+
+#[test]
+fn durable_hooks_replay_raced_completion_without_a_chat_and_acknowledge_in_order() {
+    let dir = tempdir();
+    let store = WorkGraphStore::open(dir.path()).unwrap();
+    let note = resource(ResourceKind::VaultNote, "note");
+    next(
+        &store,
+        record(note.clone(), "note.md", ResourceResolution::Available),
+    );
+    let scope = next(
+        &store,
+        accept(
+            "work",
+            WorkScope {
+                resources: vec![note.clone()],
+                ..Default::default()
+            },
+        ),
+    )
+    .revision;
+    activate(&store, "work"); // Completion/state can precede hook registration.
+    next(
+        &store,
+        subscription("hook", scope, vec![note.clone()], scope),
+    );
+    let restarted = WorkGraphStore::open(dir.path()).unwrap();
+    let first = inbox(&restarted, "hook", 1);
+    assert_eq!(first.events[0].receipt.revision, 3);
+    assert_eq!(inbox(&restarted, "hook", 1).events, first.events); // Reads never consume.
+    next(
+        &restarted,
+        record(note, "note.md", ResourceResolution::Unavailable),
+    );
+    reject(
+        &restarted,
+        WorkGraphMutation::AcknowledgeEvent {
+            subscription_id: "hook".into(),
+            event_revision: 5,
+            decision: "skip first".into(),
+        },
+    );
+    let ack = command(
+        "ack",
+        5,
+        WorkGraphMutation::AcknowledgeEvent {
+            subscription_id: "hook".into(),
+            event_revision: 3,
+            decision: "Observed executor running".into(),
+        },
+    );
+    restarted
+        .apply(&domain("user:a"), ack.clone(), provenance())
+        .unwrap();
+    assert!(
+        restarted
+            .apply(&domain("user:a"), ack, provenance())
+            .unwrap()
+            .replayed
+    );
+    let pending = inbox(&WorkGraphStore::open(dir.path()).unwrap(), "hook", 1);
+    assert_eq!(pending.events.len(), 1);
+    assert_eq!(pending.events[0].receipt.revision, 5);
+    assert!(
+        store
+            .events(
+                &domain("user:a"),
+                "other",
+                WorkEventsQuery {
+                    subscription_id: "hook".into(),
+                    limit: None
+                }
+            )
+            .is_err()
+    );
+    assert!(
+        store
+            .events(
+                &domain("user:b"),
+                "adapter:test",
+                WorkEventsQuery {
+                    subscription_id: "hook".into(),
+                    limit: None
+                }
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn hooks_are_exact_bounded_and_fenced_without_implicit_authority() {
+    let dir = tempdir();
+    let store = WorkGraphStore::open(dir.path()).unwrap();
+    let note = resource(ResourceKind::VaultNote, "note");
+    let unrelated = resource(ResourceKind::VaultNote, "unrelated");
+    next(
+        &store,
+        record(note.clone(), "note.md", ResourceResolution::Available),
+    );
+    next(
+        &store,
+        record(unrelated.clone(), "other.md", ResourceResolution::Available),
+    );
+    let scope = next(
+        &store,
+        accept(
+            "work",
+            WorkScope {
+                resources: vec![note.clone()],
+                ..Default::default()
+            },
+        ),
+    )
+    .revision;
+    reject(
+        &store,
+        subscription("bad", scope, vec![unrelated.clone()], scope),
+    );
+    reject(
+        &store,
+        subscription("bad", scope + 1, vec![note.clone()], scope),
+    );
+    next(
+        &store,
+        subscription("hook", scope, vec![note.clone()], scope),
+    );
+    next(
+        &store,
+        record(unrelated, "other.md", ResourceResolution::Unavailable),
+    );
+    assert!(inbox(&store, "hook", 32).events.is_empty());
+    next(
+        &store,
+        WorkGraphMutation::SetScope {
+            work_unit_id: "work".into(),
+            scope: WorkScope::default(),
+        },
+    );
+    assert_eq!(
+        inbox(&store, "hook", 1).status,
+        WorkSubscriptionStatus::ScopeChanged
+    );
+    assert_eq!(inbox(&store, "hook", 1).events.len(), 1);
+    next(
+        &store,
+        WorkGraphMutation::StopSubscription {
+            subscription_id: "hook".into(),
+        },
+    );
+    next(
+        &store,
+        record(note, "note.md", ResourceResolution::Unavailable),
+    );
+    assert_eq!(inbox(&store, "hook", 32).events.len(), 1); // No post-stop intake.
+    assert_eq!(
+        inbox(&store, "hook", 32).status,
+        WorkSubscriptionStatus::Stopped
+    );
+    assert_eq!(
+        store.work_unit(&domain("user:a"), "work").unwrap().state,
+        WorkUnitState::Accepted
+    );
+}
+
+#[test]
+fn hook_acknowledgment_publication_fault_keeps_event_or_commits_cursor_atomically() {
+    for (point, published) in [
+        (TransactionFaultPoint::BeforeRenamePublish, false),
+        (TransactionFaultPoint::AfterRenamePublish, true),
+    ] {
+        let dir = tempdir();
+        let store = WorkGraphStore::open(dir.path()).unwrap();
+        let note = resource(ResourceKind::VaultNote, "note");
+        next(
+            &store,
+            record(note.clone(), "note.md", ResourceResolution::Available),
+        );
+        let scope = next(
+            &store,
+            accept(
+                "work",
+                WorkScope {
+                    resources: vec![note.clone()],
+                    ..Default::default()
+                },
+            ),
+        )
+        .revision;
+        next(
+            &store,
+            subscription("hook", scope, vec![note.clone()], scope),
+        );
+        next(
+            &store,
+            record(note, "note.md", ResourceResolution::Unavailable),
+        );
+        let faulty = WorkGraphStore::with_faults(
+            dir.path(),
+            Arc::new(FailOnce {
+                point,
+                fired: AtomicBool::new(false),
+            }),
+        )
+        .unwrap();
+        let ack = command(
+            "ack",
+            4,
+            WorkGraphMutation::AcknowledgeEvent {
+                subscription_id: "hook".into(),
+                event_revision: 4,
+                decision: "Observed unavailable resource".into(),
+            },
+        );
+        assert!(
+            faulty
+                .apply(&domain("user:a"), ack.clone(), provenance())
+                .is_err()
+        );
+        let reopened = WorkGraphStore::open(dir.path()).unwrap();
+        assert_eq!(inbox(&reopened, "hook", 1).events.is_empty(), published);
+        assert_eq!(
+            reopened
+                .apply(&domain("user:a"), ack, provenance())
+                .unwrap()
+                .replayed,
+            published
+        );
+        assert!(inbox(&reopened, "hook", 1).events.is_empty());
+    }
+}
+
 fn reserve(id: &str, unit: &str, execution: &str, cost: u64) -> WorkGraphMutation {
     WorkGraphMutation::ReserveBudget {
         reservation_id: id.into(),

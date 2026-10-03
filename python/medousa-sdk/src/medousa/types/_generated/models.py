@@ -2544,117 +2544,158 @@ class WorkCoordinationInput(MedousaModel):
     work_unit_id: str
 
 
+class WorkEventKind(Enum):
+    resource_observed = 'resource_observed'
+    work_state_changed = 'work_state_changed'
+    work_scope_changed = 'work_scope_changed'
+    provider_progress = 'provider_progress'
+    provider_completed = 'provider_completed'
+    provider_failed = 'provider_failed'
+
+
 class Operation(Enum):
-    record_resource = 'record_resource'
-
-
-class WorkGraphMutation1(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    locator: str | None = None
-    native_revision: str | None = None
-    operation: Operation
-    reference: ResourceRef
-    resolution: ResourceResolution
+    subscribe = 'subscribe'
 
 
 class Operation1(Enum):
-    put_relationship = 'put_relationship'
+    acknowledge_event = 'acknowledge_event'
 
 
 class WorkGraphMutation2(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
+    decision: str = Field(
+        ..., description='Attributable observation/decision receipt, not a provider effect.'
+    )
+    event_revision: int = Field(..., ge=0)
+    operation: Operation1
+    subscription_id: str
+
+
+class Operation2(Enum):
+    stop_subscription = 'stop_subscription'
+
+
+class WorkGraphMutation3(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    operation: Operation2
+    subscription_id: str
+
+
+class Operation3(Enum):
+    record_resource = 'record_resource'
+
+
+class WorkGraphMutation4(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    locator: str | None = None
+    native_revision: str | None = None
+    operation: Operation3
+    reference: ResourceRef
+    resolution: ResourceResolution
+
+
+class Operation4(Enum):
+    put_relationship = 'put_relationship'
+
+
+class WorkGraphMutation5(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
     from_: ResourceRef = Field(..., alias='from')
     kind: ResourceRelationshipKind
-    operation: Operation1
+    operation: Operation4
     relationship_id: str
     to: ResourceRef
 
 
-class Operation2(Enum):
+class Operation5(Enum):
     accept_work = 'accept_work'
 
 
-class Operation3(Enum):
+class Operation6(Enum):
     set_scope = 'set_scope'
 
 
-class Operation4(Enum):
+class Operation7(Enum):
     set_state = 'set_state'
 
 
-class Operation5(Enum):
-    set_contact = 'set_contact'
-
-
-class WorkGraphMutation6(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    contact: WorkContactPreference
-    operation: Operation5
-    work_unit_id: str
-
-
-class Operation6(Enum):
-    attach_conversation = 'attach_conversation'
-
-
-class WorkGraphMutation7(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    operation: Operation6
-    session: SessionRef
-    work_unit_id: str
-
-
-class Operation7(Enum):
-    record_readiness = 'record_readiness'
-
-
 class Operation8(Enum):
-    set_budget = 'set_budget'
+    set_contact = 'set_contact'
 
 
 class WorkGraphMutation9(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    limits: WorkBudgetLimits
+    contact: WorkContactPreference
     operation: Operation8
     work_unit_id: str
 
 
 class Operation9(Enum):
-    reserve_budget = 'reserve_budget'
+    attach_conversation = 'attach_conversation'
 
 
 class WorkGraphMutation10(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    execution: ResourceRef
     operation: Operation9
+    session: SessionRef
+    work_unit_id: str
+
+
+class Operation10(Enum):
+    record_readiness = 'record_readiness'
+
+
+class Operation11(Enum):
+    set_budget = 'set_budget'
+
+
+class WorkGraphMutation12(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    limits: WorkBudgetLimits
+    operation: Operation11
+    work_unit_id: str
+
+
+class Operation12(Enum):
+    reserve_budget = 'reserve_budget'
+
+
+class WorkGraphMutation13(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    execution: ResourceRef
+    operation: Operation12
     reservation_id: str
     reserved_cost_microusd: int = Field(..., ge=0)
     work_unit_id: str
 
 
-class Operation10(Enum):
+class Operation13(Enum):
     settle_budget = 'settle_budget'
 
 
-class WorkGraphMutation11(MedousaModel):
+class WorkGraphMutation14(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
     actual_cost_microusd: int = Field(..., ge=0)
     disposition: WorkBudgetDisposition
-    operation: Operation10
+    operation: Operation13
     reservation_id: str
 
 
@@ -2687,6 +2728,25 @@ class WorkScope(MedousaModel):
     resources: list[ResourceRef] | None = Field([], validate_default=True)
 
 
+class WorkSubscriptionInput(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    after_revision: int = Field(
+        ...,
+        description='Exclusive durable journal cursor, including events racing registration.',
+        ge=0,
+    )
+    event_kinds: list[WorkEventKind]
+    expected_scope_revision: int = Field(..., ge=0)
+    expires_at: AwareDatetime
+    resources: list[ResourceRef] = Field(
+        ..., description='Exact resources within the saved work scope; no transitive selectors.'
+    )
+    subscription_id: str
+    work_unit_id: str
+
+
 class WorkUnitKind(Enum):
     finite = 'finite'
     maintenance = 'maintenance'
@@ -2717,12 +2777,21 @@ class WorkCoordinationQuery(MedousaModel):
     coordination_id: str
 
 
+class WorkEventsQuery(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    limit: int | None = Field(None, ge=0)
+    subscription_id: str
+
+
 class WorkGraphCollection(Enum):
     resources = 'resources'
     relationships = 'relationships'
     work_units = 'work_units'
     events = 'events'
     budget_reservations = 'budget_reservations'
+    subscriptions = 'subscriptions'
 
 
 class WorkGraphQuery(MedousaModel):
@@ -4175,7 +4244,7 @@ class WorkParticipantQuery2(MedousaModel):
 
 
 class Action5(Enum):
-    work_coordination = 'work.coordination'
+    work_events = 'work.events'
 
 
 class WorkParticipantQuery3(MedousaModel):
@@ -4183,11 +4252,11 @@ class WorkParticipantQuery3(MedousaModel):
         extra='forbid',
     )
     action: Action5
-    query: WorkCoordinationQuery
+    query: WorkEventsQuery
 
 
 class Action6(Enum):
-    peer_discover = 'peer.discover'
+    work_coordination = 'work.coordination'
 
 
 class WorkParticipantQuery4(MedousaModel):
@@ -4195,6 +4264,18 @@ class WorkParticipantQuery4(MedousaModel):
         extra='forbid',
     )
     action: Action6
+    query: WorkCoordinationQuery
+
+
+class Action7(Enum):
+    peer_discover = 'peer.discover'
+
+
+class WorkParticipantQuery5(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    action: Action7
     session_id: SessionId
 
 
@@ -4204,6 +4285,7 @@ class WorkParticipantQuery(
         | WorkParticipantQuery2
         | WorkParticipantQuery3
         | WorkParticipantQuery4
+        | WorkParticipantQuery5
     ]
 ):
     root: (
@@ -4211,6 +4293,7 @@ class WorkParticipantQuery(
         | WorkParticipantQuery2
         | WorkParticipantQuery3
         | WorkParticipantQuery4
+        | WorkParticipantQuery5
     ) = Field(..., title='WorkParticipantQuery')
 
 
@@ -4804,7 +4887,15 @@ class TurnStreamEventV3(
     ) = Field(..., description='Chronological turn facts. Visible prose is addressed by `segment_id`, tool receipts update by `tool_run_id`, and terminal settlement never replaces the preceding timeline.', title='TurnStreamEventV3')
 
 
-class WorkGraphMutation3(MedousaModel):
+class WorkGraphMutation1(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    input: WorkSubscriptionInput
+    operation: Operation
+
+
+class WorkGraphMutation6(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
@@ -4815,29 +4906,18 @@ class WorkGraphMutation3(MedousaModel):
     )
     intent: str
     kind: WorkUnitKind
-    operation: Operation2
+    operation: Operation5
     origin: SessionRef | None = None
     scope: WorkScope
     work_unit_id: str
 
 
-class WorkGraphMutation4(MedousaModel):
+class WorkGraphMutation7(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    operation: Operation3
+    operation: Operation6
     scope: WorkScope
-    work_unit_id: str
-
-
-class WorkGraphMutation5(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    evidence: list[ResourceRef]
-    operation: Operation4
-    reason: str
-    state: WorkUnitState
     work_unit_id: str
 
 
@@ -4845,10 +4925,21 @@ class WorkGraphMutation8(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
+    evidence: list[ResourceRef]
+    operation: Operation7
+    reason: str
+    state: WorkUnitState
+    work_unit_id: str
+
+
+class WorkGraphMutation11(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
     condition: str
     evidence: list[WorkRevisionEvidence]
     expected_scope_revision: int = Field(..., ge=0)
-    operation: Operation7
+    operation: Operation10
     valid_for_seconds: int = Field(
         ...,
         description='Checkpoints expire; the runtime does not infer continuing freshness.',
@@ -4870,9 +4961,12 @@ class WorkGraphMutation(
         | WorkGraphMutation9
         | WorkGraphMutation10
         | WorkGraphMutation11
+        | WorkGraphMutation12
+        | WorkGraphMutation13
+        | WorkGraphMutation14
     ]
 ):
-    root: WorkGraphMutation1 | WorkGraphMutation2 | WorkGraphMutation3 | WorkGraphMutation4 | WorkGraphMutation5 | WorkGraphMutation6 | WorkGraphMutation7 | WorkGraphMutation8 | WorkGraphMutation9 | WorkGraphMutation10 | WorkGraphMutation11
+    root: WorkGraphMutation1 | WorkGraphMutation2 | WorkGraphMutation3 | WorkGraphMutation4 | WorkGraphMutation5 | WorkGraphMutation6 | WorkGraphMutation7 | WorkGraphMutation8 | WorkGraphMutation9 | WorkGraphMutation10 | WorkGraphMutation11 | WorkGraphMutation12 | WorkGraphMutation13 | WorkGraphMutation14
 
 
 class WorkCard(MedousaModel):

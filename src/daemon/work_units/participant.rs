@@ -112,6 +112,17 @@ async fn query(
         WorkParticipantQuery::Get { work_unit_id } => {
             host(injected)?.get_in_domain(domain, work_unit_id).await
         }
+        WorkParticipantQuery::Events { query } => {
+            let actor = principal
+                .credential_id()
+                .ok_or((
+                    StatusCode::FORBIDDEN,
+                    "participant credential unavailable".into(),
+                ))?
+                .as_str()
+                .to_string();
+            host(injected)?.events_in_domain(domain, actor, query).await
+        }
         WorkParticipantQuery::Coordination { query } => {
             peer_host()?.get_work_coordination(domain, query).await
         }

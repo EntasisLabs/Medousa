@@ -9973,13 +9973,46 @@
         ],
         "type": "object"
       },
+      "WorkEventKind": {
+        "description": "Selected observations, never an implicit grant to execute or contact anyone.",
+        "enum": [
+          "resource_observed",
+          "work_state_changed",
+          "work_scope_changed",
+          "provider_progress",
+          "provider_completed",
+          "provider_failed"
+        ],
+        "type": "string"
+      },
+      "WorkEventsQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "format": "uint",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "subscription_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "subscription_id"
+        ],
+        "type": "object"
+      },
       "WorkGraphCollection": {
         "enum": [
           "resources",
           "relationships",
           "work_units",
           "events",
-          "budget_reservations"
+          "budget_reservations",
+          "subscriptions"
         ],
         "type": "string"
       },
@@ -10008,6 +10041,74 @@
       },
       "WorkGraphMutation": {
         "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "input": {
+                "$ref": "#/components/schemas/WorkSubscriptionInput"
+              },
+              "operation": {
+                "enum": [
+                  "subscribe"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "input",
+              "operation"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "decision": {
+                "description": "Attributable observation/decision receipt, not a provider effect.",
+                "type": "string"
+              },
+              "event_revision": {
+                "format": "uint64",
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              "operation": {
+                "enum": [
+                  "acknowledge_event"
+                ],
+                "type": "string"
+              },
+              "subscription_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "decision",
+              "event_revision",
+              "operation",
+              "subscription_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "operation": {
+                "enum": [
+                  "stop_subscription"
+                ],
+                "type": "string"
+              },
+              "subscription_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "subscription_id"
+            ],
+            "type": "object"
+          },
           {
             "additionalProperties": false,
             "properties": {
@@ -10531,6 +10632,25 @@
             "properties": {
               "action": {
                 "enum": [
+                  "work.events"
+                ],
+                "type": "string"
+              },
+              "query": {
+                "$ref": "#/components/schemas/WorkEventsQuery"
+              }
+            },
+            "required": [
+              "action",
+              "query"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
                   "work.coordination"
                 ],
                 "type": "string"
@@ -10643,6 +10763,55 @@
             "type": "array"
           }
         },
+        "type": "object"
+      },
+      "WorkSubscriptionInput": {
+        "additionalProperties": false,
+        "properties": {
+          "after_revision": {
+            "description": "Exclusive durable journal cursor, including events racing registration.",
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "event_kinds": {
+            "items": {
+              "$ref": "#/components/schemas/WorkEventKind"
+            },
+            "type": "array"
+          },
+          "expected_scope_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "resources": {
+            "description": "Exact resources within the saved work scope; no transitive selectors.",
+            "items": {
+              "$ref": "#/components/schemas/ResourceRef"
+            },
+            "type": "array"
+          },
+          "subscription_id": {
+            "type": "string"
+          },
+          "work_unit_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "after_revision",
+          "event_kinds",
+          "expected_scope_revision",
+          "expires_at",
+          "resources",
+          "subscription_id",
+          "work_unit_id"
+        ],
         "type": "object"
       },
       "WorkUnitKind": {

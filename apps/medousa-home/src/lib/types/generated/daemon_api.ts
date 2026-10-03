@@ -22,6 +22,11 @@ export interface WorkCoordinationQuery {
   coordination_id: string;
 }
 
+export interface WorkEventsQuery {
+  limit?: number | null;
+  subscription_id: string;
+}
+
 export type RelationshipDirection = "both" | "incoming" | "outgoing";
 
 export type ResourceKind = "project" | "forge_work" | "vault_note" | "vault_folder" | "artifact" | "component" | "feed" | "session" | "assignment" | "job" | "work_unit" | "bot" | "external_agent";
@@ -32,7 +37,7 @@ export interface ResourceRef {
   kind: ResourceKind;
 }
 
-export type WorkGraphCollection = "resources" | "relationships" | "work_units" | "events" | "budget_reservations";
+export type WorkGraphCollection = "resources" | "relationships" | "work_units" | "events" | "budget_reservations" | "subscriptions";
 
 export interface WorkGraphQuery {
   anchor?: ResourceRef | null;
@@ -42,7 +47,7 @@ export interface WorkGraphQuery {
   limit?: number | null;
 }
 
-export type WorkParticipantQuery = { action: "work.graph"; query: WorkGraphQuery } | { action: "work.get"; work_unit_id: string } | { action: "work.coordination"; query: WorkCoordinationQuery } | { action: "peer.discover"; session_id: SessionId };
+export type WorkParticipantQuery = { action: "work.graph"; query: WorkGraphQuery } | { action: "work.get"; work_unit_id: string } | { action: "work.events"; query: WorkEventsQuery } | { action: "work.coordination"; query: WorkCoordinationQuery } | { action: "peer.discover"; session_id: SessionId };
 
 export interface PeerProposalIntent {
   after_entry_seq: number;
@@ -102,11 +107,23 @@ export interface WorkScope {
   resources?: ResourceRef[];
 }
 
+export type WorkEventKind = "resource_observed" | "work_state_changed" | "work_scope_changed" | "provider_progress" | "provider_completed" | "provider_failed";
+
+export interface WorkSubscriptionInput {
+  after_revision: number;
+  event_kinds: WorkEventKind[];
+  expected_scope_revision: number;
+  expires_at: string;
+  resources: ResourceRef[];
+  subscription_id: string;
+  work_unit_id: string;
+}
+
 export type WorkUnitKind = "finite" | "maintenance";
 
 export type WorkUnitState = "accepted" | "active" | "waiting" | "needs_attention" | "paused" | "satisfied" | "failed" | "cancelled";
 
-export type WorkGraphMutation = { locator?: string | null; native_revision?: string | null; operation: "record_resource"; reference: ResourceRef; resolution: ResourceResolution } | { from: ResourceRef; kind: ResourceRelationshipKind; operation: "put_relationship"; relationship_id: string; to: ResourceRef } | { budget?: WorkBudgetLimits | null; completion_condition: string; contact?: WorkContactPreference; intent: string; kind: WorkUnitKind; operation: "accept_work"; origin?: SessionRef | null; scope: WorkScope; work_unit_id: string } | { operation: "set_scope"; scope: WorkScope; work_unit_id: string } | { evidence: ResourceRef[]; operation: "set_state"; reason: string; state: WorkUnitState; work_unit_id: string } | { contact: WorkContactPreference; operation: "set_contact"; work_unit_id: string } | { operation: "attach_conversation"; session: SessionRef; work_unit_id: string } | { condition: string; evidence: WorkRevisionEvidence[]; expected_scope_revision: number; operation: "record_readiness"; valid_for_seconds: number; work_unit_id: string } | { limits: WorkBudgetLimits; operation: "set_budget"; work_unit_id: string } | { execution: ResourceRef; operation: "reserve_budget"; reservation_id: string; reserved_cost_microusd: number; work_unit_id: string } | { actual_cost_microusd: number; disposition: WorkBudgetDisposition; operation: "settle_budget"; reservation_id: string };
+export type WorkGraphMutation = { input: WorkSubscriptionInput; operation: "subscribe" } | { decision: string; event_revision: number; operation: "acknowledge_event"; subscription_id: string } | { operation: "stop_subscription"; subscription_id: string } | { locator?: string | null; native_revision?: string | null; operation: "record_resource"; reference: ResourceRef; resolution: ResourceResolution } | { from: ResourceRef; kind: ResourceRelationshipKind; operation: "put_relationship"; relationship_id: string; to: ResourceRef } | { budget?: WorkBudgetLimits | null; completion_condition: string; contact?: WorkContactPreference; intent: string; kind: WorkUnitKind; operation: "accept_work"; origin?: SessionRef | null; scope: WorkScope; work_unit_id: string } | { operation: "set_scope"; scope: WorkScope; work_unit_id: string } | { evidence: ResourceRef[]; operation: "set_state"; reason: string; state: WorkUnitState; work_unit_id: string } | { contact: WorkContactPreference; operation: "set_contact"; work_unit_id: string } | { operation: "attach_conversation"; session: SessionRef; work_unit_id: string } | { condition: string; evidence: WorkRevisionEvidence[]; expected_scope_revision: number; operation: "record_readiness"; valid_for_seconds: number; work_unit_id: string } | { limits: WorkBudgetLimits; operation: "set_budget"; work_unit_id: string } | { execution: ResourceRef; operation: "reserve_budget"; reservation_id: string; reserved_cost_microusd: number; work_unit_id: string } | { actual_cost_microusd: number; disposition: WorkBudgetDisposition; operation: "settle_budget"; reservation_id: string };
 
 export interface WorkGraphCommand {
   command_id: string;

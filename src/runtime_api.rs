@@ -56,7 +56,7 @@ use crate::workflow::WorkflowRegistry;
 #[cfg(feature = "full-daemon")]
 use medousa_types::work_coordination::{WorkCoordinationInput, WorkCoordinationQuery};
 #[cfg(feature = "full-daemon")]
-use medousa_types::work_unit::WorkGraphQuery;
+use medousa_types::work_unit::{WorkEventsQuery, WorkGraphQuery};
 use stasis::prelude::RuntimeComposition;
 
 const QUERY_ID: ToolId = ToolId::new(COGNITION_RUNTIME_QUERY);
@@ -79,6 +79,9 @@ pub enum RuntimeQueryAction {
     #[cfg(feature = "full-daemon")]
     #[serde(rename = "work.get")]
     WorkGet(WorkUnitGetQuery),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "work.events")]
+    WorkEvents(WorkEventsQuery),
     #[cfg(feature = "full-daemon")]
     #[serde(rename = "work.coordination")]
     WorkCoordination(WorkCoordinationQuery),
@@ -379,6 +382,7 @@ impl JsonSchema for RuntimeQueryAction {
                 [
                     "work.graph",
                     "work.get",
+                    "work.events",
                     "work.coordination",
                     "assignment.list",
                     "assignment.get",
@@ -507,6 +511,11 @@ pub fn runtime_type_schemas() -> Vec<TypedActionSchema> {
                 QUERY_ID,
                 "work.get",
                 "Inspect a session-independent work unit by exact identity",
+            ),
+            typed_action_schema::<WorkEventsQuery>(
+                QUERY_ID,
+                "work.events",
+                "Read the next bounded events for your durable work subscription without consuming them; acknowledge the exact event with work.record",
             ),
             typed_action_schema::<WorkCoordinationQuery>(
                 QUERY_ID,
@@ -669,6 +678,11 @@ async fn dispatch_query(
         RuntimeQueryAction::WorkGet(params) => {
             let (host, turn) = admitted_work_access()?;
             host.get(&turn, params).await.map_err(runtime_error)
+        }
+        #[cfg(feature = "full-daemon")]
+        RuntimeQueryAction::WorkEvents(params) => {
+            let (host, turn) = admitted_work_access()?;
+            host.events(&turn, params).await.map_err(runtime_error)
         }
         #[cfg(feature = "full-daemon")]
         RuntimeQueryAction::WorkCoordination(params) => {
@@ -1198,6 +1212,7 @@ mod tests {
         for name in [
             "work.graph",
             "work.get",
+            "work.events",
             "work.record",
             "work.resolve",
             "work.reconcile",

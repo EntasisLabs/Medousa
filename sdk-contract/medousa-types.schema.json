@@ -30603,6 +30603,18 @@
         },
         "additionalProperties": false
       },
+      "WorkEventKind": {
+        "description": "Selected observations, never an implicit grant to execute or contact anyone.",
+        "type": "string",
+        "enum": [
+          "resource_observed",
+          "work_state_changed",
+          "work_scope_changed",
+          "provider_progress",
+          "provider_completed",
+          "provider_failed"
+        ]
+      },
       "WorkGraphCommand": {
         "type": "object",
         "required": [
@@ -30628,6 +30640,74 @@
       },
       "WorkGraphMutation": {
         "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "input",
+              "operation"
+            ],
+            "properties": {
+              "input": {
+                "$ref": "#/definitions/WorkSubscriptionInput"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "subscribe"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "decision",
+              "event_revision",
+              "operation",
+              "subscription_id"
+            ],
+            "properties": {
+              "decision": {
+                "description": "Attributable observation/decision receipt, not a provider effect.",
+                "type": "string"
+              },
+              "event_revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "acknowledge_event"
+                ]
+              },
+              "subscription_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "operation",
+              "subscription_id"
+            ],
+            "properties": {
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "stop_subscription"
+                ]
+              },
+              "subscription_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
           {
             "type": "object",
             "required": [
@@ -31060,6 +31140,55 @@
         },
         "additionalProperties": false
       },
+      "WorkSubscriptionInput": {
+        "type": "object",
+        "required": [
+          "after_revision",
+          "event_kinds",
+          "expected_scope_revision",
+          "expires_at",
+          "resources",
+          "subscription_id",
+          "work_unit_id"
+        ],
+        "properties": {
+          "after_revision": {
+            "description": "Exclusive durable journal cursor, including events racing registration.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "event_kinds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/WorkEventKind"
+            }
+          },
+          "expected_scope_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resources": {
+            "description": "Exact resources within the saved work scope; no transitive selectors.",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ResourceRef"
+            }
+          },
+          "subscription_id": {
+            "type": "string"
+          },
+          "work_unit_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "WorkUnitKind": {
         "type": "string",
         "enum": [
@@ -31120,6 +31249,25 @@
           },
           "work_unit_id": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "action",
+          "query"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "work.events"
+            ]
+          },
+          "query": {
+            "$ref": "#/definitions/WorkEventsQuery"
           }
         },
         "additionalProperties": false
@@ -31249,6 +31397,26 @@
         },
         "additionalProperties": false
       },
+      "WorkEventsQuery": {
+        "type": "object",
+        "required": [
+          "subscription_id"
+        ],
+        "properties": {
+          "limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "subscription_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "WorkGraphCollection": {
         "type": "string",
         "enum": [
@@ -31256,7 +31424,8 @@
           "relationships",
           "work_units",
           "events",
-          "budget_reservations"
+          "budget_reservations",
+          "subscriptions"
         ]
       },
       "WorkGraphQuery": {

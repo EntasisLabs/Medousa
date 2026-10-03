@@ -188,6 +188,31 @@ fn bounded_response(value: serde_json::Value) -> Result<serde_json::Value> {
 }
 
 impl WorkUnitHost {
+    pub async fn events(
+        &self,
+        turn: &TurnExecutionContext,
+        query: WorkEventsQuery,
+    ) -> Result<serde_json::Value> {
+        let domain = admitted_domain(turn, false)?;
+        let actor = turn
+            .principal()
+            .credential_id()
+            .map(|credential| credential.as_str().to_string())
+            .unwrap_or_else(|| domain.user_id.clone());
+        self.events_in_domain(domain, actor, query).await
+    }
+
+    async fn events_in_domain(
+        &self,
+        domain: UserDomainRef,
+        actor: String,
+        query: WorkEventsQuery,
+    ) -> Result<serde_json::Value> {
+        self.with_store(move |store| {
+            bounded_response(serde_json::to_value(store.events(&domain, &actor, query)?)?)
+        })
+        .await
+    }
     async fn with_store<T: Send + 'static>(
         &self,
         work: impl FnOnce(&WorkGraphStore) -> Result<T> + Send + 'static,
@@ -251,7 +276,20 @@ impl WorkUnitHost {
         input: WorkGraphMutateInput,
     ) -> Result<serde_json::Value> {
         let domain = admitted_domain(turn, true)?;
-        let actor_id = domain.user_id.clone();
+        // Preserve actor/digest compatibility for existing model commands.
+        let actor_id = if matches!(
+            &input.command.mutation,
+            WorkGraphMutation::Subscribe { .. }
+                | WorkGraphMutation::AcknowledgeEvent { .. }
+                | WorkGraphMutation::StopSubscription { .. }
+        ) {
+            turn.principal()
+                .credential_id()
+                .map(|credential| credential.as_str().to_string())
+                .unwrap_or_else(|| domain.user_id.clone())
+        } else {
+            domain.user_id.clone()
+        };
         self.record_in_domain(domain, actor_id, input.command).await
     }
 

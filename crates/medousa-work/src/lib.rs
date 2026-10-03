@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 mod budget;
+mod events;
 
 #[cfg(test)]
 mod tests;
@@ -46,6 +47,8 @@ struct Snapshot {
     work_units: BTreeMap<String, WorkUnit>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     reservations: BTreeMap<String, WorkBudgetReservation>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    subscriptions: BTreeMap<String, WorkEventSubscription>,
     commands: BTreeMap<String, CommittedCommand>,
 }
 
@@ -160,6 +163,7 @@ impl WorkGraphStore {
                     relationships: BTreeMap::new(),
                     work_units: BTreeMap::new(),
                     reservations: BTreeMap::new(),
+                    subscriptions: BTreeMap::new(),
                     commands: BTreeMap::new(),
                 });
             }
@@ -550,6 +554,17 @@ impl WorkGraphStore {
                     )
                 })
                 .collect(),
+            WorkGraphCollection::Subscriptions => snapshot
+                .subscriptions
+                .iter()
+                .filter(|(_, subscription)| {
+                    query.anchor.as_ref().is_none_or(|anchor| {
+                        anchor == &work_reference(domain, &subscription.input.work_unit_id)
+                            || subscription.input.resources.contains(anchor)
+                    })
+                })
+                .map(|(id, record)| (id.clone(), WorkGraphItem::Subscription(record.clone())))
+                .collect(),
         };
         rows.retain(|(k, _)| after.as_ref().is_none_or(|a| k > a));
         let has_more = rows.len() > limit;
@@ -716,6 +731,21 @@ impl Snapshot {
     fn mutate(&mut self, mutation: WorkGraphMutation, provenance: RecordProvenance) -> Result<()> {
         let now = Utc::now();
         match mutation {
+            WorkGraphMutation::Subscribe { input } => self.subscribe(input, &provenance)?,
+            WorkGraphMutation::AcknowledgeEvent {
+                subscription_id,
+                event_revision,
+                decision,
+            } => {
+                self.acknowledge_event(&subscription_id, event_revision, &decision, &provenance)?;
+            }
+            WorkGraphMutation::StopSubscription { subscription_id } => {
+                let revision = self.revision;
+                let subscription =
+                    self.subscription_for_actor(&subscription_id, &provenance.actor_id)?;
+                subscription.stopped_at_revision.get_or_insert(revision);
+                subscription.revision = revision;
+            }
             WorkGraphMutation::RecordResource {
                 reference,
                 locator,
@@ -1117,6 +1147,7 @@ impl Snapshot {
             self.relationships.len(),
             self.work_units.len(),
             self.reservations.len(),
+            self.subscriptions.len(),
             self.commands.len(),
         ]
         .iter()
@@ -1254,6 +1285,7 @@ impl Snapshot {
             }
         }
         self.validate_reservations()?;
+        self.validate_subscriptions()?;
         Ok(())
     }
 }

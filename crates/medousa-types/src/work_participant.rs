@@ -34,6 +34,8 @@ pub enum WorkParticipantQuery {
     Graph { query: WorkGraphQuery },
     #[serde(rename = "work.get")]
     Get { work_unit_id: String },
+    #[serde(rename = "work.events")]
+    Events { query: WorkEventsQuery },
     #[serde(rename = "work.coordination")]
     Coordination { query: WorkCoordinationQuery },
     #[serde(rename = "peer.discover")]

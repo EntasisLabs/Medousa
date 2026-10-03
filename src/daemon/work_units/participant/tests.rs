@@ -85,6 +85,84 @@ fn accept() -> Value {
 }
 
 #[tokio::test]
+async fn participant_hooks_are_credential_bound_and_acknowledgments_do_not_launch_work() {
+    let (_dir, host) = fixture().await;
+    assert_eq!(
+        request(
+            host.clone(),
+            principal("owner", true),
+            "/v1/work/mutate",
+            accept()
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let subscribe = json!({"action":"work.record","command":{"command_id":"hook","expected_revision":1,
+        "mutation":{"operation":"subscribe","input":{"subscription_id":"hook","work_unit_id":"unit",
+        "expected_scope_revision":1,"resources":[],"event_kinds":["work_state_changed"],"after_revision":1,
+        "expires_at":chrono::Utc::now() + chrono::Duration::hours(1)}}}});
+    assert_eq!(
+        request(
+            host.clone(),
+            principal("owner", false),
+            "/v1/work/mutate",
+            subscribe.clone()
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        request(
+            host.clone(),
+            principal("owner", true),
+            "/v1/work/mutate",
+            subscribe
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(request(host.clone(), principal("owner", true), "/v1/work/mutate", json!({"action":"work.record","command":{
+        "command_id":"state","expected_revision":2,"mutation":{"operation":"set_state","work_unit_id":"unit",
+        "state":"active","reason":"Admitted work","evidence":[]}}})).await.0, StatusCode::OK);
+    let query = json!({"action":"work.events","query":{"subscription_id":"hook","limit":1}});
+    let (status, page) = request(
+        host.clone(),
+        principal("owner", true),
+        "/v1/work/query",
+        query.clone(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(page["result"]["events"][0]["receipt"]["revision"], 3);
+    let other = RequestPrincipal::external_agent(
+        Arc::from("external-agent:other"),
+        "owner".into(),
+        true,
+        TransportClass::Direct,
+    );
+    assert_eq!(
+        request(host.clone(), other, "/v1/work/query", query.clone())
+            .await
+            .0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(request(host.clone(), principal("owner", true), "/v1/work/mutate", json!({"action":"work.record","command":{
+        "command_id":"ack","expected_revision":3,"mutation":{"operation":"acknowledge_event","subscription_id":"hook",
+        "event_revision":3,"decision":"Observed the accepted work"}}})).await.0, StatusCode::OK);
+    assert!(
+        request(host, principal("owner", true), "/v1/work/query", query)
+            .await
+            .1["result"]["events"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
 async fn participant_intent_reopens_without_a_chat_and_preserves_credential_provenance() {
     let (dir, host) = fixture().await;
     assert_eq!(

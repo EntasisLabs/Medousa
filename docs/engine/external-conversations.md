@@ -81,6 +81,7 @@ principal before admission and never construct a synthetic chat turn.
 | --- | --- | --- |
 | query | `work.graph` | `query`: existing bounded `WorkGraphQuery` |
 | query | `work.get` | `work_unit_id` |
+| query | `work.events` | `query`: exact actor-owned subscription and bounded limit |
 | query | `work.coordination` | `query`: exact `channel` and `coordination_id` |
 | query | `peer.discover` | `session_id`: owned source chat; requires `work` scope |
 | mutate | `work.record` | `command`: existing idempotent `WorkGraphCommand` |

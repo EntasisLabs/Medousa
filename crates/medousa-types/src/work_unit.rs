@@ -280,10 +280,89 @@ pub struct WorkUnit {
     pub updated_at: DateTime<Utc>,
 }
 
+/// Selected observations, never an implicit grant to execute or contact anyone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum WorkEventKind {
+    ResourceObserved,
+    WorkStateChanged,
+    WorkScopeChanged,
+    ProviderProgress,
+    ProviderCompleted,
+    ProviderFailed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct WorkSubscriptionInput {
+    pub subscription_id: String,
+    pub work_unit_id: String,
+    pub expected_scope_revision: u64,
+    /// Exact resources within the saved work scope; no transitive selectors.
+    pub resources: Vec<ResourceRef>,
+    pub event_kinds: Vec<WorkEventKind>,
+    /// Exclusive durable journal cursor, including events racing registration.
+    pub after_revision: u64,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkEventSubscription {
+    pub input: WorkSubscriptionInput,
+    /// Frozen authenticated actor; a caller cannot select another recipient.
+    pub recipient_actor_id: String,
+    pub acknowledged_revision: u64,
+    pub stopped_at_revision: Option<u64>,
+    pub revision: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct WorkEventsQuery {
+    pub subscription_id: String,
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkSubscriptionStatus {
+    Active,
+    Paused,
+    ScopeChanged,
+    Terminal,
+    Expired,
+    Stopped,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkEventsPage {
+    pub revision: u64,
+    pub subscription: WorkEventSubscription,
+    pub status: WorkSubscriptionStatus,
+    pub events: Vec<WorkGraphEvent>,
+    pub has_more: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum WorkGraphMutation {
+    Subscribe {
+        input: WorkSubscriptionInput,
+    },
+    AcknowledgeEvent {
+        subscription_id: String,
+        event_revision: u64,
+        /// Attributable observation/decision receipt, not a provider effect.
+        decision: String,
+    },
+    StopSubscription {
+        subscription_id: String,
+    },
     RecordResource {
         reference: ResourceRef,
         locator: Option<String>,
@@ -389,6 +468,7 @@ pub enum WorkGraphCollection {
     WorkUnits,
     Events,
     BudgetReservations,
+    Subscriptions,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -422,6 +502,7 @@ pub enum WorkGraphItem {
     WorkUnit(WorkUnit),
     Event(WorkGraphEvent),
     BudgetReservation(WorkBudgetReservation),
+    Subscription(WorkEventSubscription),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -312,7 +312,7 @@ broader executor/reviewer adapters, and contact delivery remain subsequent work.
 
 | Field | Meaning |
 |---|---|
-| `collection` | `resources` (default), `relationships`, `work_units`, `events`, or `budget_reservations` |
+| `collection` | `resources` (default), `relationships`, `work_units`, `events`, `budget_reservations`, or `subscriptions` |
 | `anchor` | Optional exact resource reference; event history is domain-scoped and rejects an anchor |
 | `direction` | For relationship queries: `both` (default), `incoming`, or `outgoing` |
 | `limit` | 1–100, default 20 |
@@ -597,6 +597,37 @@ Current native execution targets are Medousa Coder, Codex, Cursor, and Hermes on
 this workshop. Muse/Instinct/Dots/Grok Bot have authenticated work API access;
 provider-hosted review execution, cross-workshop coordination, and voice/contact
 routing still require their native correlation and delivery admission paths.
+
+## Durable work event subscriptions
+
+Use `work.record` with `operation: "subscribe"` to register an exact work inbox.
+Its `input` supplies `subscription_id`, `work_unit_id`,
+`expected_scope_revision`, selected `resources`, `event_kinds`, an exclusive
+`after_revision`, and `expires_at` (within 30 days). Resource selectors must be
+local members of the saved scope. The recipient is the authenticated actor;
+requests cannot select another actor or grant execution/contact authority.
+
+`work.events` takes `subscription_id` and optional `limit` (1–32, default 16).
+It returns retained matching journal events, the current subscription status,
+and `has_more`. Reads never consume events. Native resource observations,
+work-state changes and scope changes are selected explicitly; model-written
+resource claims are not native observation events. An earlier cursor covers
+completion racing registration. The journal retains exact commands and receipts
+across restart and closed chats; capacity exhaustion never evicts unseen events.
+
+Commit `acknowledge_event` with `subscription_id`, the next pending
+`event_revision`, and an attributable `decision` through `work.record`.
+Acknowledgment and cursor advancement publish atomically. Skipping a pending
+event or acknowledging another credential's inbox fails. Exact command retry
+returns the original receipt. `stop_subscription` stops future intake while
+retaining already pending observations. Scope changes, pause, terminal work,
+expiry and stop are explicit statuses, not permission to reopen work.
+
+These are pull-based agent/runtime inboxes, not user-managed goal screens.
+They do not automatically start model turns, invoke providers, refresh resource
+observations, or send contact. A consumer must retain its own admitted command
+identity before effects; an acknowledgment is observation evidence, not proof
+that an external effect succeeded.
 
 ## Authenticated provider participation
 
