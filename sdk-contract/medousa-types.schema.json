@@ -30080,6 +30080,1102 @@
       }
     }
   },
+  "WorkParticipantMutation": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorkParticipantMutation",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "action",
+          "command"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "work.record"
+            ]
+          },
+          "command": {
+            "$ref": "#/definitions/WorkGraphCommand"
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "action",
+          "input"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "work.coordinate"
+            ]
+          },
+          "input": {
+            "$ref": "#/definitions/WorkCoordinationInput"
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "action",
+          "intent",
+          "session_id"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "peer.propose"
+            ]
+          },
+          "intent": {
+            "$ref": "#/definitions/PeerProposalIntent"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        },
+        "additionalProperties": false
+      }
+    ],
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "CoordinationChannelRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "channel_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "channel_id": {
+            "type": "string"
+          }
+        }
+      },
+      "ExternalPeerRuntime": {
+        "type": "string",
+        "enum": [
+          "codex",
+          "cursor",
+          "hermes"
+        ]
+      },
+      "PeerProposalIntent": {
+        "description": "Source selection is checked against a visible, owned, governed chat.",
+        "type": "object",
+        "required": [
+          "after_entry_seq",
+          "continue_owner",
+          "instructions",
+          "request_key",
+          "runtime",
+          "through_entry_seq"
+        ],
+        "properties": {
+          "after_entry_seq": {
+            "description": "Exclusive lower bound from native discovery.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "continue_owner": {
+            "description": "Result-only owner-chat continuation; must be false for HTTP work participants.",
+            "type": "boolean"
+          },
+          "existing_agent_session_id": {
+            "description": "Exact adoptable native session; omit to create fresh work.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "request_key": {
+            "description": "Stable request key; reuse for exact retries.",
+            "type": "string"
+          },
+          "runtime": {
+            "$ref": "#/definitions/ExternalPeerRuntime"
+          },
+          "through_entry_seq": {
+            "description": "Inclusive committed upper bound from native discovery.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResourceKind": {
+        "type": "string",
+        "enum": [
+          "project",
+          "forge_work",
+          "vault_note",
+          "vault_folder",
+          "artifact",
+          "component",
+          "feed",
+          "session",
+          "assignment",
+          "job",
+          "work_unit",
+          "bot",
+          "external_agent"
+        ]
+      },
+      "ResourceRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "id",
+          "kind"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "id": {
+            "description": "Native stable identity or a registry identity issued by an adapter. A path, display title, or content hash alone is not an identity.",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/definitions/ResourceKind"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResourceRelationshipKind": {
+        "type": "string",
+        "enum": [
+          "supports",
+          "informs",
+          "produces",
+          "tracks",
+          "related_to"
+        ]
+      },
+      "ResourceResolution": {
+        "type": "string",
+        "enum": [
+          "unresolved",
+          "available",
+          "unavailable",
+          "tombstoned"
+        ]
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      },
+      "WorkBudgetDisposition": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "completed"
+            ]
+          },
+          {
+            "description": "Native admission proves the execution never started; release its hold.",
+            "type": "string",
+            "enum": [
+              "not_started"
+            ]
+          }
+        ]
+      },
+      "WorkBudgetLimits": {
+        "type": "object",
+        "required": [
+          "concurrent_executions",
+          "cost_microusd",
+          "deadline",
+          "execution_count"
+        ],
+        "properties": {
+          "concurrent_executions": {
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "cost_microusd": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "deadline": {
+            "description": "Absolute deadline survives process and conversation restarts.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "execution_count": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkContactPreference": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "silent"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "return_to_origin"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "participant"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "participant"
+                ]
+              },
+              "participant": {
+                "$ref": "#/definitions/ResourceRef"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "channel",
+              "kind"
+            ],
+            "properties": {
+              "channel": {
+                "$ref": "#/definitions/ResourceRef"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "channel"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "WorkCoordinationInput": {
+        "type": "object",
+        "required": [
+          "channel",
+          "coordination_id",
+          "deadline",
+          "executor_proposal_id",
+          "expected_scope_revision",
+          "reviewer_proposal_id",
+          "work_unit_id"
+        ],
+        "properties": {
+          "channel": {
+            "$ref": "#/definitions/CoordinationChannelRef"
+          },
+          "coordination_id": {
+            "type": "string"
+          },
+          "deadline": {
+            "description": "Absolute bound; at most 24 hours and no later than either approval.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "executor_proposal_id": {
+            "type": "string"
+          },
+          "expected_scope_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "reviewer_proposal_id": {
+            "type": "string"
+          },
+          "work_unit_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkGraphCommand": {
+        "type": "object",
+        "required": [
+          "command_id",
+          "expected_revision",
+          "mutation"
+        ],
+        "properties": {
+          "command_id": {
+            "description": "Replays of the exact command return the original receipt, even after later commits. Reusing this key for different intent is a conflict.",
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "mutation": {
+            "$ref": "#/definitions/WorkGraphMutation"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkGraphMutation": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "operation",
+              "reference",
+              "resolution"
+            ],
+            "properties": {
+              "locator": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "native_revision": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "record_resource"
+                ]
+              },
+              "reference": {
+                "$ref": "#/definitions/ResourceRef"
+              },
+              "resolution": {
+                "$ref": "#/definitions/ResourceResolution"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "from",
+              "kind",
+              "operation",
+              "relationship_id",
+              "to"
+            ],
+            "properties": {
+              "from": {
+                "$ref": "#/definitions/ResourceRef"
+              },
+              "kind": {
+                "$ref": "#/definitions/ResourceRelationshipKind"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "put_relationship"
+                ]
+              },
+              "relationship_id": {
+                "type": "string"
+              },
+              "to": {
+                "$ref": "#/definitions/ResourceRef"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "completion_condition",
+              "intent",
+              "kind",
+              "operation",
+              "scope",
+              "work_unit_id"
+            ],
+            "properties": {
+              "budget": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/WorkBudgetLimits"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "completion_condition": {
+                "type": "string"
+              },
+              "contact": {
+                "default": {
+                  "kind": "return_to_origin"
+                },
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/WorkContactPreference"
+                  }
+                ]
+              },
+              "intent": {
+                "type": "string"
+              },
+              "kind": {
+                "$ref": "#/definitions/WorkUnitKind"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "accept_work"
+                ]
+              },
+              "origin": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/SessionRef"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "scope": {
+                "$ref": "#/definitions/WorkScope"
+              },
+              "work_unit_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "operation",
+              "scope",
+              "work_unit_id"
+            ],
+            "properties": {
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "set_scope"
+                ]
+              },
+              "scope": {
+                "$ref": "#/definitions/WorkScope"
+              },
+              "work_unit_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "evidence",
+              "operation",
+              "reason",
+              "state",
+              "work_unit_id"
+            ],
+            "properties": {
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/ResourceRef"
+                }
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "set_state"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              },
+              "state": {
+                "$ref": "#/definitions/WorkUnitState"
+              },
+              "work_unit_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "contact",
+              "operation",
+              "work_unit_id"
+            ],
+            "properties": {
+              "contact": {
+                "$ref": "#/definitions/WorkContactPreference"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "set_contact"
+                ]
+              },
+              "work_unit_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "operation",
+              "session",
+              "work_unit_id"
+            ],
+            "properties": {
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "attach_conversation"
+                ]
+              },
+              "session": {
+                "$ref": "#/definitions/SessionRef"
+              },
+              "work_unit_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "condition",
+              "evidence",
+              "expected_scope_revision",
+              "operation",
+              "valid_for_seconds",
+              "work_unit_id"
+            ],
+            "properties": {
+              "condition": {
+                "type": "string"
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/WorkRevisionEvidence"
+                }
+              },
+              "expected_scope_revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "record_readiness"
+                ]
+              },
+              "valid_for_seconds": {
+                "description": "Checkpoints expire; the runtime does not infer continuing freshness.",
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              },
+              "work_unit_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "limits",
+              "operation",
+              "work_unit_id"
+            ],
+            "properties": {
+              "limits": {
+                "$ref": "#/definitions/WorkBudgetLimits"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "set_budget"
+                ]
+              },
+              "work_unit_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Runtime-only reservation; storing intent is not executor admission.",
+            "type": "object",
+            "required": [
+              "execution",
+              "operation",
+              "reservation_id",
+              "reserved_cost_microusd",
+              "work_unit_id"
+            ],
+            "properties": {
+              "execution": {
+                "$ref": "#/definitions/ResourceRef"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "reserve_budget"
+                ]
+              },
+              "reservation_id": {
+                "type": "string"
+              },
+              "reserved_cost_microusd": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "work_unit_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Runtime-only settlement against authoritative native custody.",
+            "type": "object",
+            "required": [
+              "actual_cost_microusd",
+              "disposition",
+              "operation",
+              "reservation_id"
+            ],
+            "properties": {
+              "actual_cost_microusd": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "disposition": {
+                "$ref": "#/definitions/WorkBudgetDisposition"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "settle_budget"
+                ]
+              },
+              "reservation_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "WorkReadinessRequirement": {
+        "type": "object",
+        "required": [
+          "condition",
+          "work_unit_id"
+        ],
+        "properties": {
+          "condition": {
+            "type": "string"
+          },
+          "work_unit_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkRevisionEvidence": {
+        "type": "object",
+        "required": [
+          "native_revision",
+          "reference"
+        ],
+        "properties": {
+          "native_revision": {
+            "type": "string"
+          },
+          "reference": {
+            "$ref": "#/definitions/ResourceRef"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkScope": {
+        "type": "object",
+        "properties": {
+          "children": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "depends_on": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "readiness": {
+            "description": "Explicit checkpoints for maintenance members. Omission requires a terminal satisfied child, which an ongoing responsibility cannot supply.",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/WorkReadinessRequirement"
+            }
+          },
+          "resources": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ResourceRef"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkUnitKind": {
+        "type": "string",
+        "enum": [
+          "finite",
+          "maintenance"
+        ]
+      },
+      "WorkUnitState": {
+        "type": "string",
+        "enum": [
+          "accepted",
+          "active",
+          "waiting",
+          "needs_attention",
+          "paused",
+          "satisfied",
+          "failed",
+          "cancelled"
+        ]
+      }
+    }
+  },
+  "WorkParticipantQuery": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorkParticipantQuery",
+    "oneOf": [
+      {
+        "type": "object",
+        "required": [
+          "action",
+          "query"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "work.graph"
+            ]
+          },
+          "query": {
+            "$ref": "#/definitions/WorkGraphQuery"
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "action",
+          "work_unit_id"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "work.get"
+            ]
+          },
+          "work_unit_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "action",
+          "query"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "work.coordination"
+            ]
+          },
+          "query": {
+            "$ref": "#/definitions/WorkCoordinationQuery"
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "action",
+          "session_id"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "peer.discover"
+            ]
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        },
+        "additionalProperties": false
+      }
+    ],
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "CoordinationChannelRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "channel_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "channel_id": {
+            "type": "string"
+          }
+        }
+      },
+      "RelationshipDirection": {
+        "type": "string",
+        "enum": [
+          "both",
+          "incoming",
+          "outgoing"
+        ]
+      },
+      "ResourceKind": {
+        "type": "string",
+        "enum": [
+          "project",
+          "forge_work",
+          "vault_note",
+          "vault_folder",
+          "artifact",
+          "component",
+          "feed",
+          "session",
+          "assignment",
+          "job",
+          "work_unit",
+          "bot",
+          "external_agent"
+        ]
+      },
+      "ResourceRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "id",
+          "kind"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "id": {
+            "description": "Native stable identity or a registry identity issued by an adapter. A path, display title, or content hash alone is not an identity.",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/definitions/ResourceKind"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "WorkCoordinationQuery": {
+        "type": "object",
+        "required": [
+          "channel",
+          "coordination_id"
+        ],
+        "properties": {
+          "channel": {
+            "$ref": "#/definitions/CoordinationChannelRef"
+          },
+          "coordination_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkGraphCollection": {
+        "type": "string",
+        "enum": [
+          "resources",
+          "relationships",
+          "work_units",
+          "events",
+          "budget_reservations"
+        ]
+      },
+      "WorkGraphQuery": {
+        "type": "object",
+        "properties": {
+          "anchor": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ResourceRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "collection": {
+            "default": "resources",
+            "allOf": [
+              {
+                "$ref": "#/definitions/WorkGraphCollection"
+              }
+            ]
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "direction": {
+            "default": "both",
+            "allOf": [
+              {
+                "$ref": "#/definitions/RelationshipDirection"
+              }
+            ]
+          },
+          "limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint",
+            "minimum": 0.0
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "WorkParticipantResponse": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "WorkParticipantResponse",
+    "description": "Bounded native result; no transport acknowledgment is promoted to completion.",
+    "type": "object",
+    "required": [
+      "result"
+    ],
+    "properties": {
+      "result": true
+    },
+    "additionalProperties": false
+  },
   "WorkspaceCardActionResponse": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "WorkspaceCardActionResponse",

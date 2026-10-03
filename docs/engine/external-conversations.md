@@ -13,8 +13,8 @@ The workshop daemon owns persistent conversations with provider-hosted agents. M
 | `GET /v1/external-conversations/{id}` | `workshop.read` | Replay one conversation |
 | `DELETE /v1/external-conversations/{id}` | `admin.execute` | Remove a conversation and revoke its stored keys |
 | `POST /v1/external-conversations/{id}/callback-key/rotate` | `admin.execute` | Replace the Grok Bot callback key and show the new value once |
-| `POST /v1/external-conversations/{id}/api-token` | `admin.execute` | Issue or replace an Instinct or Dots API token and show it once |
-| `DELETE /v1/external-conversations/{id}/api-token` | `admin.execute` | Revoke an Instinct or Dots API token |
+| `POST /v1/external-conversations/{id}/api-token` | `admin.execute` | Issue or replace a provider API token and show it once |
+| `DELETE /v1/external-conversations/{id}/api-token` | `admin.execute` | Revoke a provider API token |
 | `POST /v1/external-conversations/{id}/messages` | `workshop.interact` | Commit and send a user message |
 | `POST /v1/external-conversations/{id}/events` | `workshop.interact` plus callback key | Ingest a Grok Bot VM event |
 | `POST /v1/external-conversations/whatsapp/inbound` | `workshop.interact`, loopback | Route an inbound message or claim an outgoing Muse discovery code |
@@ -32,7 +32,7 @@ The WhatsApp adapter routes an exact one-time Muse code sent by the user from th
 
 The adapter posts a pairing QR payload to the daemon over loopback with its workshop credential. The daemon renders SVG in memory, returns it only to an `admin.execute` client, and stops returning it when its WhatsApp expiry passes or the adapter reports a new state. The QR is never written to the conversation journal. Home polls this status while Muse setup is open, so remote Home clients can scan the workshop's QR from the desktop app. Agent reactions observed on the linked WhatsApp account are recorded as typed provider events and appear in Home without being converted into assistant prose.
 
-## Instinct and Dots API credentials
+## Provider API credentials
 
 Instinct binds an international `+` phone number, normalized to a WhatsApp PN
 JID. It uses the WhatsApp adapter for sends and replies. A phone chat can belong
@@ -43,7 +43,7 @@ from normal channel ingest and records messages only from the selected dot
 member or bot ID.
 
 `POST /v1/external-conversations/{id}/api-token` requires `admin.execute` and
-conversation ownership. Body: `{ "scopes": ["read", "work"], "expires_in_days": 30 }`.
+conversation ownership for Muse, Instinct, Dots, and Grok Bot. Body: `{ "scopes": ["read", "work"], "expires_in_days": 30 }`.
 It returns `{ "token": "...", "access": { "scopes": [...], "expires_at": "..." } }`
 with `Cache-Control: no-store`. Expiry must be 1–90 days. Issuing a replacement
 invalidates the old token. `DELETE` on the same route revokes access and returns
@@ -60,9 +60,56 @@ boundary restricts these credentials to exact method/registered-route pairs:
 | `read` | `GET /v1/vault/notes`, `GET /v1/vault/notes/{*note_path}`, `GET /v1/vault/search`, `GET /v1/vault/tags` |
 | `read` | `GET /v1/calendar/events` |
 | `work` | `POST /v1/jobs/ask`, `GET /v1/jobs/{job_id}/result`, `GET /v1/jobs/{job_id}/report` |
+| `read` or `work` | `POST /v1/work/query` |
+| `work` | `POST /v1/work/mutate` |
 
 All other routes fail closed, including on loopback. Scopes authorize workshop
 resources, not individual notes or projects. Background work receives member
 capabilities and remains governed by existing workshop admission. Token
 revocation blocks new HTTP requests but does not cancel admitted jobs.
 See the [Instinct guide](../guides/instinct-agent.md) and [Dots guide](../guides/dots.md) for HTTPS requirements and command examples.
+
+## Work participant adapters
+
+`POST /v1/work/query` and `POST /v1/work/mutate` expose the same owner-domain
+intent and native execution contracts as the runtime tools. They require a
+credential with a bound profile; local operator credentials without a profile
+cannot select a domain through these bodies. Requests freeze the authenticated
+principal before admission and never construct a synthetic chat turn.
+
+| Endpoint | Action | Fields |
+| --- | --- | --- |
+| query | `work.graph` | `query`: existing bounded `WorkGraphQuery` |
+| query | `work.get` | `work_unit_id` |
+| query | `work.coordination` | `query`: exact `channel` and `coordination_id` |
+| query | `peer.discover` | `session_id`: owned source chat; requires `work` scope |
+| mutate | `work.record` | `command`: existing idempotent `WorkGraphCommand` |
+| mutate | `peer.propose` | `session_id` and `intent`: existing native proposal fields |
+| mutate | `work.coordinate` | `input`: existing bounded native coordination fields |
+
+Bodies reject unknown fields, including caller-supplied owner, grant, or
+provenance fields. Responses wrap the bounded native result as `{ "result": ... }`.
+For example, `{ "action": "work.graph", "query": { "collection": "work_units" } }`
+reads accepted work without an active Medousa chat. Native coordination inspection
+still checks channel ownership, Forge ownership, and source visibility.
+
+`work.record` uses optimistic graph revision and exact command replay, and
+records the authenticated credential ID as model-inferred provenance. It cannot
+publish native availability/revisions, reserve or settle execution budgets, or
+satisfy registered executor/reviewer work through a model state claim. Source
+conversation references still require native visibility.
+
+`peer.propose` requires an exact visible source chat bound to owned Forge work
+on this workshop, bounded committed transcript ranges, and `continue_owner: false`.
+Discovery does not grant execution authority. Native proposals remain immutable
+and require the existing operator approval; provider credentials cannot approve,
+dispatch, mint grants, send messages through another provider, or run arbitrary
+runtime mutations. After both proposals are registered, the durable controller
+advances approved stages without requiring the source chat to remain active.
+
+API access is independent of chat transport verification. WhatsApp/Slack messages
+without an exact admitted work association remain conversation events. These
+adapters do not make Muse/Instinct/Dots/Grok Bot messages native review receipts,
+automatically deliver follow-ups, or establish work federation. Muse's linked-
+device transport remains unverified as described above. Revocation blocks new
+participant requests; it does not cancel already admitted work or its native grants.

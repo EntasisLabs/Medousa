@@ -21,6 +21,7 @@ mod native_content;
 mod native_graph;
 mod native_project;
 mod native_vault;
+pub mod participant;
 mod peer_coordination;
 pub use native_content::WorkContentResolveInput;
 pub use native_project::WorkProjectResolveInput;
@@ -205,6 +206,14 @@ impl WorkUnitHost {
         query: WorkGraphQuery,
     ) -> Result<serde_json::Value> {
         let domain = admitted_domain(turn, false)?;
+        self.graph_in_domain(domain, query).await
+    }
+
+    async fn graph_in_domain(
+        &self,
+        domain: UserDomainRef,
+        query: WorkGraphQuery,
+    ) -> Result<serde_json::Value> {
         self.with_store(move |store| {
             bounded_response(serde_json::to_value(store.query(&domain, query)?)?)
         })
@@ -217,9 +226,17 @@ impl WorkUnitHost {
         query: WorkUnitGetQuery,
     ) -> Result<serde_json::Value> {
         let domain = admitted_domain(turn, false)?;
+        self.get_in_domain(domain, query.work_unit_id).await
+    }
+
+    async fn get_in_domain(
+        &self,
+        domain: UserDomainRef,
+        work_unit_id: String,
+    ) -> Result<serde_json::Value> {
         self.with_store(move |store| {
             let (unit, readiness_current, budget_usage) =
-                store.inspect_work_unit(&domain, &query.work_unit_id)?;
+                store.inspect_work_unit(&domain, &work_unit_id)?;
             let mut value = serde_json::to_value(unit)?;
             value["readiness_current"] = readiness_current.into();
             value["budget_usage"] = serde_json::to_value(budget_usage)?;
@@ -234,8 +251,18 @@ impl WorkUnitHost {
         input: WorkGraphMutateInput,
     ) -> Result<serde_json::Value> {
         let domain = admitted_domain(turn, true)?;
+        let actor_id = domain.user_id.clone();
+        self.record_in_domain(domain, actor_id, input.command).await
+    }
+
+    async fn record_in_domain(
+        &self,
+        domain: UserDomainRef,
+        actor_id: String,
+        command: WorkGraphCommand,
+    ) -> Result<serde_json::Value> {
         let provenance = RecordProvenance {
-            actor_id: domain.user_id.clone(),
+            actor_id,
             source: RecordSource::ModelInferred,
             evidence: vec![],
         };
@@ -244,7 +271,7 @@ impl WorkUnitHost {
         self.with_store(move |store| {
             bounded_response(serde_json::to_value(store.apply_checked(
                 &domain,
-                input.command,
+                command,
                 provenance,
                 |mutation| {
                     (|| -> Result<()> {

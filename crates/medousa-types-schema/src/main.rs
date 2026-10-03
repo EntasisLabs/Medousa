@@ -22,6 +22,22 @@ macro_rules! export_type {
 fn main() {
     let mut schemas: BTreeMap<String, RootSchema> = BTreeMap::new();
 
+    export_type!(
+        schemas,
+        medousa_types::work_participant::WorkParticipantQuery,
+        "WorkParticipantQuery"
+    );
+    export_type!(
+        schemas,
+        medousa_types::work_participant::WorkParticipantMutation,
+        "WorkParticipantMutation"
+    );
+    export_type!(
+        schemas,
+        medousa_types::work_participant::WorkParticipantResponse,
+        "WorkParticipantResponse"
+    );
+
     // Health & jobs
     export_type!(schemas, DaemonRuntimeDescriptor, "DaemonRuntimeDescriptor");
     export_type!(schemas, HealthResponse, "HealthResponse");

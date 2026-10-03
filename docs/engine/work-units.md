@@ -596,3 +596,11 @@ these configurations fail closed rather than recording unknown cost as zero.
 Current native execution targets remain Codex, Cursor, and Hermes on this workshop.
 Muse/Instinct/Dots/bot adapters, cross-workshop coordination, and voice/contact
 routing require their native adapter and delivery admission paths.
+
+## Authenticated provider participation
+
+Muse, Instinct, Dots and Grok Bot can read and record owner-domain work and propose
+native execution through the [work participant HTTP adapters](external-conversations.md#work-participant-adapters).
+These requests bind the domain to a scoped credential rather than an active chat.
+They share this registry, model-intent validation, native grant checks and durable
+controller; HTTP access adds no independent scheduler or execution authority.

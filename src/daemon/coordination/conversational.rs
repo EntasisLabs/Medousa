@@ -6,22 +6,7 @@ use medousa_types::{
     TranscriptEntryRef,
 };
 
-#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct PeerProposalIntent {
-    /// Stable request key; reuse for retries, never for different work.
-    pub request_key: String,
-    pub runtime: ExternalPeerRuntime,
-    pub instructions: String,
-    /// Exclusive lower bound from coordination discovery.
-    pub after_entry_seq: u64,
-    /// Inclusive committed upper bound from coordination discovery.
-    pub through_entry_seq: u64,
-    /// Request a separately approved result-only reply in this chat.
-    pub continue_owner: bool,
-    /// Exact active ACP session returned by discovery. Omit to start new work.
-    pub existing_agent_session_id: Option<String>,
-}
+pub use medousa_types::work_participant::PeerProposalIntent;
 
 fn identity(owner: &str, session: &SessionRef, key: &str) -> String {
     let mut digest = Sha256::new();
@@ -227,18 +212,34 @@ impl LocalPeerDispatcher {
             authority_id: authority.clone(),
             session_id,
         };
-        let projected_source_session_ids = crate::session_store::get_session_store()
-            .load_derivation(&session.session_id)?
-            .map(|derived| {
-                derived
-                    .derivation
-                    .manifest
-                    .sources
-                    .into_iter()
-                    .map(|source| source.selection.session.session_id)
-                    .collect::<Vec<_>>()
+        let source_session = session.session_id.clone();
+        let source_owner = owner.clone();
+        let projected_source_session_ids = self
+            .state
+            .forge_execution
+            .run(ExecutionClass::StoreIo, MAX_CONTEXT_BYTES, move || {
+                Ok((|| -> Result<Vec<SessionId>> {
+                    if !crate::session_catalog::session_visible_to_profile(
+                        source_session.as_str(),
+                        &source_owner,
+                    ) {
+                        bail!("owner session is not visible");
+                    }
+                    Ok(crate::session_store::get_session_store()
+                        .load_derivation(&source_session)?
+                        .map(|derived| {
+                            derived
+                                .derivation
+                                .manifest
+                                .sources
+                                .into_iter()
+                                .map(|source| source.selection.session.session_id)
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default())
+                })())
             })
-            .unwrap_or_default();
+            .await??;
         let channel = CoordinationChannelRef {
             authority_id: authority.clone(),
             channel_id: format!("peer_chat_{}", identity(&owner, &session, "channel")),

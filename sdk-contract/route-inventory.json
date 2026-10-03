@@ -7099,6 +7099,38 @@
       "trust_group": "portal"
     },
     {
+      "body_limit": 1048576,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.write"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "work.mutate.post",
+      "path": "/v1/work/mutate",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
+      "body_limit": 1048576,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.read"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "work.query.post",
+      "path": "/v1/work/query",
+      "rate_limit_class": "read",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
       "body_limit": 1024,
       "bootstrap_public": false,
       "browser_policy": "native_only",

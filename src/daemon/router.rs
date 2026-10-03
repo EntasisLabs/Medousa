@@ -166,6 +166,9 @@ pub fn build_declared_route_inventory(pairing_enabled: bool) -> RouteInventory {
         .extend(crate::daemon::detamu_host::world_surface().inventory())
         .expect("duplicate world model route policy");
     inventory
+        .extend(crate::daemon::work_units::participant::surface().inventory())
+        .expect("duplicate work participant route policy");
+    inventory
         .extend(crate::daemon::coordination::http::surface().inventory())
         .expect("duplicate coordination route policy");
     inventory
@@ -1426,12 +1429,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 463);
-        assert_eq!(with_pairing.entries().len(), 482);
+        assert_eq!(without_pairing.entries().len(), 465);
+        assert_eq!(with_pairing.entries().len(), 484);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 482);
+        assert_eq!(rows.len(), 484);
         assert_eq!(rows[0]["path"], "/health");
         for method in ["POST", "DELETE"] {
             assert!(rows.iter().any(|row| {

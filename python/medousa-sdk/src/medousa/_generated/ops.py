@@ -458,6 +458,8 @@ OPERATIONS: dict[str, Operation] = {
     "vault.tags.get": Operation("vault.tags.get", "GET", "/v1/vault/tags", False),
     "vault.trash.get": Operation("vault.trash.get", "GET", "/v1/vault/trash", False),
     "vault.trash.restore.post": Operation("vault.trash.restore.post", "POST", "/v1/vault/trash/restore", False),
+    "work.mutate.post": Operation("work.mutate.post", "POST", "/v1/work/mutate", False),
+    "work.query.post": Operation("work.query.post", "POST", "/v1/work/query", False),
     "workers.by_id.delete": Operation("workers.by_id.delete", "DELETE", "/v1/workers/{id}", False),
     "workers.by_id.put": Operation("workers.by_id.put", "PUT", "/v1/workers/{id}", False),
     "workers.default.put": Operation("workers.default.put", "PUT", "/v1/workers/default", False),

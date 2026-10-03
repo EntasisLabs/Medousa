@@ -455,6 +455,8 @@ export const OPERATIONS = {
   "vault.tags.get": { id: "vault.tags.get", method: "GET", path: "/v1/vault/tags", streaming: false },
   "vault.trash.get": { id: "vault.trash.get", method: "GET", path: "/v1/vault/trash", streaming: false },
   "vault.trash.restore.post": { id: "vault.trash.restore.post", method: "POST", path: "/v1/vault/trash/restore", streaming: false },
+  "work.mutate.post": { id: "work.mutate.post", method: "POST", path: "/v1/work/mutate", streaming: false },
+  "work.query.post": { id: "work.query.post", method: "POST", path: "/v1/work/query", streaming: false },
   "workers.by_id.delete": { id: "workers.by_id.delete", method: "DELETE", path: "/v1/workers/{id}", streaming: false },
   "workers.by_id.put": { id: "workers.by_id.put", method: "PUT", path: "/v1/workers/{id}", streaming: false },
   "workers.default.put": { id: "workers.default.put", method: "PUT", path: "/v1/workers/default", streaming: false },

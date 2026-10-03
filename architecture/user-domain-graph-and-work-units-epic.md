@@ -932,6 +932,59 @@ compile passed with its 32 existing feature warnings after the disk recovery.
 Full workspace/hermetic CI, frontend CI, parallel vault qualification, Windows/wasm and live Surreal
 remain outstanding. No frontend files changed and no PR was opened.
 
+### Authenticated provider participation milestone — 2026-10-02
+
+Muse, Instinct, Dots and Grok Bot now share the daemon's scoped work participant
+HTTP adapter. Existing conversation API-token issuance, replacement, expiry and
+revocation apply to all four providers. Tokens remain random/hash-only,
+conversation-owner-bound credentials with exact method/route admission; neither
+provider identity nor a chat transport acknowledgment grants execution authority.
+
+`POST /v1/work/query` exposes bounded graph/unit/native coordination reads and
+work-scoped peer discovery. `POST /v1/work/mutate` records model-inferred intent,
+proposes exact native agents against owned governed source chats, and registers
+saved executor/reviewer handoffs. Requests use the authenticated profile directly
+without synthesizing a turn or requiring an active source chat. Their store,
+optimistic revisions, native scopes/grants, uncertainty and publication recovery
+are the existing work controller's contracts.
+
+Read-only credentials cannot mutate or discover execution targets. Provider
+participants cannot approve/dispatch native proposals, mint grants, request
+owner-chat continuations, reserve/settle budget custody or publish native facts.
+Model mutations retain source visibility and native-review qualification fences.
+Work records identify the actual authenticated credential as model-inferred
+provenance. Unbound local operator requests cannot choose an owner in the body.
+
+- [x] Owner-bound work API participation for all four provider credential kinds
+- [x] Shared intent/replay, native proposal and execute/review registration paths
+- [x] Typed HTTP schemas and generated SDK operation contracts
+- [ ] Exact provider review-request/completion association and qualified verdicts
+- [ ] Authenticated remote unit federation and coordinator handoff
+- [ ] Live provider round trips and contact/voice delivery qualification
+
+This closes the authenticated participation adapter increment. Ordinary
+WhatsApp/Slack replies remain conversation events without work correlation.
+Muse's linked-device send/receive remains unverified. This increment does not
+claim provider-hosted review execution, live provider acceptance, or Phase 4
+completion, and adds no UI flow or notification delivery.
+
+Validation: 277 daemon tests (two ignored), seven runtime action/schema tests,
+1,848 frontend tests and 25 Python SDK tests passed (2,157 distinct passing tests).
+Fixtures exercise real HTTP handlers and persisted work with no active chat,
+credential provenance, owner isolation, exact replay/reopen, read/write scope
+separation, native-evidence/budget fences, and provider-token grants across direct,
+loopback and Iroh access boundaries. All four provider credential kinds were
+qualified for issuance, reopen, revocation and denial of administrative routes.
+Initial new-fixture failures used a noncanonical macOS temporary path and an
+invalid resource-kind spelling; both were corrected before the final passing run.
+Strict clippy passed across all targets of `medousa`, `medousa-types`,
+`medousa-work` and `medousa-sdk`. Schema/OpenAPI/operation artifacts were regenerated
+and contract parity/released compatibility tests passed. Frontend checking reports
+zero errors and zero warnings; strict docs, formatting and whitespace checks pass.
+The frontend changes are generated transport types/operations only. Full workspace
+and hermetic CI, fresh `npm ci`, cross-platform builds, live Surreal and live
+provider execution remain outside this increment. No PR was opened.
+
 ### Phase exit gates
 
 - [ ] Phase 0 — contract and source audit

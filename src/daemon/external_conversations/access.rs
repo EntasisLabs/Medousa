@@ -43,8 +43,12 @@ impl AgentAccess {
         {
             return true;
         }
+        if method == Method::POST && route == "/v1/work/query" {
+            return self.scopes.contains(&ExternalAgentScope::Read)
+                || self.scopes.contains(&ExternalAgentScope::Work);
+        }
         self.scopes.contains(&ExternalAgentScope::Work)
-            && ((method == Method::POST && route == "/v1/jobs/ask")
+            && ((method == Method::POST && matches!(route, "/v1/jobs/ask" | "/v1/work/mutate"))
                 || (method == Method::GET
                     && matches!(
                         route,
@@ -73,9 +77,6 @@ impl ExternalConversationStore {
         let (id, _) = token.strip_prefix(TOKEN_PREFIX)?.split_once('.')?;
         let document = self.document.lock().await;
         let record = document.conversations.get(id)?;
-        if !matches!(record.provider, Provider::Instinct | Provider::Dots) {
-            return None;
-        }
         let grant = record.api_access.as_ref()?;
         if grant.status.expires_at <= Utc::now()
             || !constant_time_equal(grant.token_hash.as_bytes(), token_hash(token).as_bytes())
@@ -109,10 +110,7 @@ impl ExternalConversationStore {
         let record = current
             .conversations
             .get(id)
-            .filter(|record| {
-                record.owner_id == owner_id
-                    && matches!(record.provider, Provider::Instinct | Provider::Dots)
-            })
+            .filter(|record| record.owner_id == owner_id)
             .ok_or((StatusCode::NOT_FOUND, "agent conversation not found".into()))?;
         let mut random = [0u8; 32];
         rand::rngs::OsRng.fill_bytes(&mut random);
@@ -149,10 +147,7 @@ impl ExternalConversationStore {
         let record = next
             .conversations
             .get_mut(id)
-            .filter(|record| {
-                record.owner_id == owner_id
-                    && matches!(record.provider, Provider::Instinct | Provider::Dots)
-            })
+            .filter(|record| record.owner_id == owner_id)
             .ok_or((StatusCode::NOT_FOUND, "agent conversation not found".into()))?;
         record.api_access = None;
         let view = ConversationView::from(&*record);
@@ -278,6 +273,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn every_provider_has_revocable_work_participation_without_admin_authority() {
+        let (_dir, store, _) = fixture().await;
+        for (index, provider) in [
+            Provider::Muse,
+            Provider::Instinct,
+            Provider::Dots,
+            Provider::GrokBot,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let id = uuid::Uuid::new_v4().to_string();
+            store
+                .create(
+                    id.clone(),
+                    "owner".into(),
+                    &CreateConversationRequest {
+                        provider,
+                        label: "Participant".into(),
+                        target: format!("target-{index}"),
+                        webhook_url: None,
+                        webhook_key: None,
+                        slack_user_token: None,
+                        dot_user_id: None,
+                    },
+                )
+                .await
+                .unwrap();
+            let grant = store
+                .issue_agent_token("owner", &id, request(vec![ExternalAgentScope::Work]))
+                .await
+                .unwrap();
+            let access = store.resolve_agent_token(&grant.token).await.unwrap();
+            assert!(access.permits(&Method::POST, "/v1/work/query"));
+            assert!(access.permits(&Method::POST, "/v1/work/mutate"));
+            for route in [
+                "/v1/work/mutate/extra",
+                "/v1/coordination/channels/{channel_id}/proposals/{proposal_id}/approve",
+                "/v1/external-conversations/{id}/messages",
+            ] {
+                assert!(!access.permits(&Method::POST, route));
+            }
+            let principal = access.principal(crate::request_principal::TransportClass::Iroh);
+            assert_eq!(principal.profile_id(), Some("owner"));
+            assert!(!principal.capabilities().contains(Capability::AdminExecute));
+            let reopened = ExternalConversationStore::open(store.path.clone())
+                .await
+                .unwrap();
+            assert!(reopened.resolve_agent_token(&grant.token).await.is_some());
+            store.revoke_agent_token("owner", &id).await.unwrap();
+            assert!(store.resolve_agent_token(&grant.token).await.is_none());
+        }
+    }
+
+    #[tokio::test]
     async fn expired_or_invalid_grants_fail_closed() {
         let (_dir, store, id) = fixture().await;
         assert!(
@@ -348,6 +398,8 @@ mod tests {
                 Capability::ContentRead,
             ),
             (Method::POST, "/v1/jobs/ask", Capability::WorkshopInteract),
+            (Method::POST, "/v1/work/query", Capability::ContentRead),
+            (Method::POST, "/v1/work/mutate", Capability::ContentWrite),
             (
                 Method::GET,
                 "/v1/external-conversations",
@@ -385,6 +437,8 @@ mod tests {
                 (Method::GET, "/v1/vault/notes", StatusCode::OK),
                 (Method::GET, "/v1/vault/notes/note.md", StatusCode::OK),
                 (Method::POST, "/v1/jobs/ask", StatusCode::FORBIDDEN),
+                (Method::POST, "/v1/work/query", StatusCode::OK),
+                (Method::POST, "/v1/work/mutate", StatusCode::FORBIDDEN),
                 (
                     Method::GET,
                     "/v1/external-conversations",
@@ -421,6 +475,8 @@ mod tests {
             .unwrap();
         for (method, path, expected) in [
             (Method::POST, "/v1/jobs/ask", StatusCode::OK),
+            (Method::POST, "/v1/work/query", StatusCode::OK),
+            (Method::POST, "/v1/work/mutate", StatusCode::OK),
             (Method::GET, "/v1/vault/notes", StatusCode::FORBIDDEN),
         ] {
             let response = app

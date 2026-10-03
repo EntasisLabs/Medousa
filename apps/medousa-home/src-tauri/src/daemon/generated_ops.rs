@@ -896,6 +896,10 @@ pub enum DaemonOperation {
     VaultTrashGet,
     #[serde(rename = "vault.trash.restore.post")]
     VaultTrashRestorePost,
+    #[serde(rename = "work.mutate.post")]
+    WorkMutatePost,
+    #[serde(rename = "work.query.post")]
+    WorkQueryPost,
     #[serde(rename = "workers.by_id.delete")]
     WorkersByIdDelete,
     #[serde(rename = "workers.by_id.put")]
@@ -1419,6 +1423,8 @@ impl DaemonOperation {
             Self::VaultTagsGet => "vault.tags.get",
             Self::VaultTrashGet => "vault.trash.get",
             Self::VaultTrashRestorePost => "vault.trash.restore.post",
+            Self::WorkMutatePost => "work.mutate.post",
+            Self::WorkQueryPost => "work.query.post",
             Self::WorkersByIdDelete => "workers.by_id.delete",
             Self::WorkersByIdPut => "workers.by_id.put",
             Self::WorkersDefaultPut => "workers.default.put",

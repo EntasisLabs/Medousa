@@ -115,3 +115,13 @@ have been accepted. Check the workshop's job history first. A 401 means the
 token is invalid, expired, or revoked. A 403 means its scope does not permit the
 operation. API access is separate from WhatsApp; the token never needs to be
 sent in a WhatsApp message.
+
+## Coordinate durable work
+
+The saved API token can also use the [work participant API](../engine/external-conversations.md#work-participant-adapters).
+Read access can inspect your work graph, units, and coordination status. Work
+access can record work intent, propose native execution against a visible governed
+project chat, and register executor/reviewer handoffs. Native execution retains
+its existing approval requirements. The originating chat can close while the
+runtime coordinates approved work; this does not enable automatic follow-ups or
+turn provider messages into qualified review verdicts.

@@ -80,3 +80,15 @@ and does not need a Vite server.
 - **Provider message, progress, question, completed, failed** are events the workshop actually received. An ordinary Muse reply does not claim a task is complete.
 
 Provider VM access to Medousa tools is a separate pairing step. The workshop still decides which files, vault content, and tools that VM may access. Never paste a workshop credential into a chat message.
+
+## Work participation without an active Medousa chat
+
+Connected Muse, Instinct, Dots and Grok Bot agents can use the authenticated
+[work participant API](../engine/external-conversations.md#work-participant-adapters)
+to inspect work, record intents, propose native agents and register durable
+executor/reviewer coordination. This uses scoped API credentials, separate from
+chat delivery or a Grok Bot callback key. Instinct and Dots retain their existing
+API-token controls; an operator can issue Muse or Grok Bot credentials through
+the same documented conversation API. Each execution still needs its native
+approval. Provider replies and transport acknowledgments do not qualify as review
+verdicts without an exact admitted work association.

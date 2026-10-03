@@ -3131,6 +3131,20 @@ pub const VAULT_TRASH_RESTORE_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const WORK_MUTATE_POST: Operation = Operation {
+    id: "work.mutate.post",
+    method: "POST",
+    path: "/v1/work/mutate",
+    streaming: false,
+};
+
+pub const WORK_QUERY_POST: Operation = Operation {
+    id: "work.query.post",
+    method: "POST",
+    path: "/v1/work/query",
+    streaming: false,
+};
+
 pub const WORKERS_BY_ID_DELETE: Operation = Operation {
     id: "workers.by_id.delete",
     method: "DELETE",
@@ -3830,6 +3844,8 @@ pub static ALL: &[Operation] = &[
     VAULT_TAGS_GET,
     VAULT_TRASH_GET,
     VAULT_TRASH_RESTORE_POST,
+    WORK_MUTATE_POST,
+    WORK_QUERY_POST,
     WORKERS_BY_ID_DELETE,
     WORKERS_BY_ID_PUT,
     WORKERS_DEFAULT_PUT,

@@ -59,3 +59,13 @@ permissions; the Slack identity does not grant filesystem access.
 OpenAI documents [Slack messaging for dots](https://learn.chatgpt.com/docs/dots/channels)
 and [computer access](https://learn.chatgpt.com/docs/dots/computers-and-apps)
 as separate connections.
+
+## Coordinate durable work
+
+The saved API token can also use the [work participant API](../engine/external-conversations.md#work-participant-adapters).
+Read access can inspect your work graph, units, and coordination status. Work
+access can record work intent, propose native execution against a visible governed
+project chat, and register executor/reviewer handoffs. Native execution retains
+its existing approval requirements. The originating chat can close while the
+runtime coordinates approved work; this does not enable automatic follow-ups or
+turn provider messages into qualified review verdicts.

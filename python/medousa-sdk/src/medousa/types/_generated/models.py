@@ -2362,6 +2362,359 @@ class VaultSearchHit(MedousaModel):
     snippet: str | None = None
 
 
+class PeerProposalIntent(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    after_entry_seq: int = Field(
+        ..., description='Exclusive lower bound from native discovery.', ge=0
+    )
+    continue_owner: bool = Field(
+        ...,
+        description='Result-only owner-chat continuation; must be false for HTTP work participants.',
+    )
+    existing_agent_session_id: (
+        str | None
+    ) = Field(None, description='Exact adoptable native session; omit to create fresh work.')
+    instructions: str
+    request_key: str = Field(..., description='Stable request key; reuse for exact retries.')
+    runtime: ExternalPeerRuntime
+    through_entry_seq: int = Field(
+        ..., description='Inclusive committed upper bound from native discovery.', ge=0
+    )
+
+
+class ResourceKind(Enum):
+    project = 'project'
+    forge_work = 'forge_work'
+    vault_note = 'vault_note'
+    vault_folder = 'vault_folder'
+    artifact = 'artifact'
+    component = 'component'
+    feed = 'feed'
+    session = 'session'
+    assignment = 'assignment'
+    job = 'job'
+    work_unit = 'work_unit'
+    bot = 'bot'
+    external_agent = 'external_agent'
+
+
+class ResourceRef(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    authority_id: AuthorityId
+    id: str = Field(
+        ...,
+        description='Native stable identity or a registry identity issued by an adapter. A path, display title, or content hash alone is not an identity.',
+    )
+    kind: ResourceKind
+
+
+class ResourceRelationshipKind(Enum):
+    supports = 'supports'
+    informs = 'informs'
+    produces = 'produces'
+    tracks = 'tracks'
+    related_to = 'related_to'
+
+
+class ResourceResolution(Enum):
+    unresolved = 'unresolved'
+    available = 'available'
+    unavailable = 'unavailable'
+    tombstoned = 'tombstoned'
+
+
+class WorkBudgetDisposition1(Enum):
+    completed = 'completed'
+
+
+class WorkBudgetDisposition2(Enum):
+    not_started = 'not_started'
+
+
+class WorkBudgetDisposition(RootModel[WorkBudgetDisposition1 | WorkBudgetDisposition2]):
+    root: WorkBudgetDisposition1 | WorkBudgetDisposition2
+
+
+class WorkBudgetLimits(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    concurrent_executions: int = Field(..., ge=0)
+    cost_microusd: int = Field(..., ge=0)
+    deadline: AwareDatetime = Field(
+        ..., description='Absolute deadline survives process and conversation restarts.'
+    )
+    execution_count: int = Field(..., ge=0)
+
+
+class Kind15(Enum):
+    silent = 'silent'
+
+
+class WorkContactPreference1(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    kind: Kind15
+
+
+class Kind16(Enum):
+    return_to_origin = 'return_to_origin'
+
+
+class WorkContactPreference2(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    kind: Kind16
+
+
+class Kind17(Enum):
+    participant = 'participant'
+
+
+class WorkContactPreference3(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    kind: Kind17
+    participant: ResourceRef
+
+
+class Kind18(Enum):
+    channel = 'channel'
+
+
+class WorkContactPreference4(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    channel: ResourceRef
+    kind: Kind18
+
+
+class WorkContactPreference(
+    RootModel[
+        WorkContactPreference1
+        | WorkContactPreference2
+        | WorkContactPreference3
+        | WorkContactPreference4
+    ]
+):
+    root: WorkContactPreference1 | WorkContactPreference2 | WorkContactPreference3 | WorkContactPreference4
+
+
+class WorkCoordinationInput(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    channel: CoordinationChannelRef
+    coordination_id: str
+    deadline: AwareDatetime = Field(
+        ..., description='Absolute bound; at most 24 hours and no later than either approval.'
+    )
+    executor_proposal_id: str
+    expected_scope_revision: int = Field(..., ge=0)
+    reviewer_proposal_id: str
+    work_unit_id: str
+
+
+class Operation(Enum):
+    record_resource = 'record_resource'
+
+
+class WorkGraphMutation1(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    locator: str | None = None
+    native_revision: str | None = None
+    operation: Operation
+    reference: ResourceRef
+    resolution: ResourceResolution
+
+
+class Operation1(Enum):
+    put_relationship = 'put_relationship'
+
+
+class WorkGraphMutation2(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    from_: ResourceRef = Field(..., alias='from')
+    kind: ResourceRelationshipKind
+    operation: Operation1
+    relationship_id: str
+    to: ResourceRef
+
+
+class Operation2(Enum):
+    accept_work = 'accept_work'
+
+
+class Operation3(Enum):
+    set_scope = 'set_scope'
+
+
+class Operation4(Enum):
+    set_state = 'set_state'
+
+
+class Operation5(Enum):
+    set_contact = 'set_contact'
+
+
+class WorkGraphMutation6(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    contact: WorkContactPreference
+    operation: Operation5
+    work_unit_id: str
+
+
+class Operation6(Enum):
+    attach_conversation = 'attach_conversation'
+
+
+class WorkGraphMutation7(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    operation: Operation6
+    session: SessionRef
+    work_unit_id: str
+
+
+class Operation7(Enum):
+    record_readiness = 'record_readiness'
+
+
+class Operation8(Enum):
+    set_budget = 'set_budget'
+
+
+class WorkGraphMutation9(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    limits: WorkBudgetLimits
+    operation: Operation8
+    work_unit_id: str
+
+
+class Operation9(Enum):
+    reserve_budget = 'reserve_budget'
+
+
+class WorkGraphMutation10(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    execution: ResourceRef
+    operation: Operation9
+    reservation_id: str
+    reserved_cost_microusd: int = Field(..., ge=0)
+    work_unit_id: str
+
+
+class Operation10(Enum):
+    settle_budget = 'settle_budget'
+
+
+class WorkGraphMutation11(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    actual_cost_microusd: int = Field(..., ge=0)
+    disposition: WorkBudgetDisposition
+    operation: Operation10
+    reservation_id: str
+
+
+class WorkReadinessRequirement(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    condition: str
+    work_unit_id: str
+
+
+class WorkRevisionEvidence(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    native_revision: str
+    reference: ResourceRef
+
+
+class WorkScope(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    children: list[str] | None = []
+    depends_on: list[str] | None = []
+    readiness: list[WorkReadinessRequirement] | None = Field(
+        None,
+        description='Explicit checkpoints for maintenance members. Omission requires a terminal satisfied child, which an ongoing responsibility cannot supply.',
+    )
+    resources: list[ResourceRef] | None = Field([], validate_default=True)
+
+
+class WorkUnitKind(Enum):
+    finite = 'finite'
+    maintenance = 'maintenance'
+
+
+class WorkUnitState(Enum):
+    accepted = 'accepted'
+    active = 'active'
+    waiting = 'waiting'
+    needs_attention = 'needs_attention'
+    paused = 'paused'
+    satisfied = 'satisfied'
+    failed = 'failed'
+    cancelled = 'cancelled'
+
+
+class RelationshipDirection(Enum):
+    both = 'both'
+    incoming = 'incoming'
+    outgoing = 'outgoing'
+
+
+class WorkCoordinationQuery(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    channel: CoordinationChannelRef
+    coordination_id: str
+
+
+class WorkGraphCollection(Enum):
+    resources = 'resources'
+    relationships = 'relationships'
+    work_units = 'work_units'
+    events = 'events'
+    budget_reservations = 'budget_reservations'
+
+
+class WorkGraphQuery(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    anchor: ResourceRef | None = None
+    collection: WorkGraphCollection | None = 'resources'
+    cursor: str | None = None
+    direction: RelationshipDirection | None = 'both'
+    limit: int | None = Field(None, ge=0)
+
+
 class WorkCardAssociations(MedousaModel):
     artifact_ids: list[str] | None = []
     locus_node_ids: list[str] | None = []
@@ -2518,48 +2871,48 @@ class WorldRecipe(MedousaModel):
     steps: list[WorldRecipeStep]
 
 
-class Kind15(Enum):
+class Kind19(Enum):
     text = 'text'
 
 
 class WorldRecipeRunInputValue1(MedousaModel):
-    kind: Kind15
+    kind: Kind19
     text: str
 
 
-class Kind16(Enum):
+class Kind20(Enum):
     selection = 'selection'
 
 
 class WorldRecipeRunInputValue2(MedousaModel):
-    kind: Kind16
+    kind: Kind20
     value: str
 
 
-class Kind17(Enum):
+class Kind21(Enum):
     key = 'key'
 
 
 class WorldRecipeRunInputValue3(MedousaModel):
     key: str
-    kind: Kind17
+    kind: Kind21
 
 
-class Kind18(Enum):
+class Kind22(Enum):
     scroll_delta = 'scroll_delta'
 
 
 class WorldRecipeRunInputValue4(MedousaModel):
     delta_y: int
-    kind: Kind18
+    kind: Kind22
 
 
-class Kind19(Enum):
+class Kind23(Enum):
     wait_duration = 'wait_duration'
 
 
 class WorldRecipeRunInputValue5(MedousaModel):
-    kind: Kind19
+    kind: Kind23
     milliseconds: int = Field(..., ge=0)
 
 
@@ -3739,6 +4092,106 @@ class VaultWriteResponse(MedousaModel):
     vault_generation: int | None = Field(None, ge=0)
 
 
+class Action(Enum):
+    work_record = 'work.record'
+
+
+class Action1(Enum):
+    work_coordinate = 'work.coordinate'
+
+
+class WorkParticipantMutation2(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    action: Action1
+    input: WorkCoordinationInput
+
+
+class Action2(Enum):
+    peer_propose = 'peer.propose'
+
+
+class WorkParticipantMutation3(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    action: Action2
+    intent: PeerProposalIntent
+    session_id: SessionId
+
+
+class Action3(Enum):
+    work_graph = 'work.graph'
+
+
+class WorkParticipantQuery1(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    action: Action3
+    query: WorkGraphQuery
+
+
+class Action4(Enum):
+    work_get = 'work.get'
+
+
+class WorkParticipantQuery2(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    action: Action4
+    work_unit_id: str
+
+
+class Action5(Enum):
+    work_coordination = 'work.coordination'
+
+
+class WorkParticipantQuery3(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    action: Action5
+    query: WorkCoordinationQuery
+
+
+class Action6(Enum):
+    peer_discover = 'peer.discover'
+
+
+class WorkParticipantQuery4(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    action: Action6
+    session_id: SessionId
+
+
+class WorkParticipantQuery(
+    RootModel[
+        WorkParticipantQuery1
+        | WorkParticipantQuery2
+        | WorkParticipantQuery3
+        | WorkParticipantQuery4
+    ]
+):
+    root: (
+        WorkParticipantQuery1
+        | WorkParticipantQuery2
+        | WorkParticipantQuery3
+        | WorkParticipantQuery4
+    ) = Field(..., title='WorkParticipantQuery')
+
+
+class WorkParticipantResponse(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    result: Any
+
+
 class WorkspaceCardActionResponse(MedousaModel):
     action: str
     associations: WorkCardAssociations | None = None
@@ -4310,6 +4763,77 @@ class TurnStreamEventV3(
         | TurnStreamEventV322
         | TurnStreamEventV323
     ) = Field(..., description='Chronological turn facts. Visible prose is addressed by `segment_id`, tool receipts update by `tool_run_id`, and terminal settlement never replaces the preceding timeline.', title='TurnStreamEventV3')
+
+
+class WorkGraphMutation3(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    budget: WorkBudgetLimits | None = None
+    completion_condition: str
+    contact: WorkContactPreference | None = Field(
+        {'kind': 'return_to_origin'}, validate_default=True
+    )
+    intent: str
+    kind: WorkUnitKind
+    operation: Operation2
+    origin: SessionRef | None = None
+    scope: WorkScope
+    work_unit_id: str
+
+
+class WorkGraphMutation4(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    operation: Operation3
+    scope: WorkScope
+    work_unit_id: str
+
+
+class WorkGraphMutation5(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    evidence: list[ResourceRef]
+    operation: Operation4
+    reason: str
+    state: WorkUnitState
+    work_unit_id: str
+
+
+class WorkGraphMutation8(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    condition: str
+    evidence: list[WorkRevisionEvidence]
+    expected_scope_revision: int = Field(..., ge=0)
+    operation: Operation7
+    valid_for_seconds: int = Field(
+        ...,
+        description='Checkpoints expire; the runtime does not infer continuing freshness.',
+        ge=0,
+    )
+    work_unit_id: str
+
+
+class WorkGraphMutation(
+    RootModel[
+        WorkGraphMutation1
+        | WorkGraphMutation2
+        | WorkGraphMutation3
+        | WorkGraphMutation4
+        | WorkGraphMutation5
+        | WorkGraphMutation6
+        | WorkGraphMutation7
+        | WorkGraphMutation8
+        | WorkGraphMutation9
+        | WorkGraphMutation10
+        | WorkGraphMutation11
+    ]
+):
+    root: WorkGraphMutation1 | WorkGraphMutation2 | WorkGraphMutation3 | WorkGraphMutation4 | WorkGraphMutation5 | WorkGraphMutation6 | WorkGraphMutation7 | WorkGraphMutation8 | WorkGraphMutation9 | WorkGraphMutation10 | WorkGraphMutation11
 
 
 class WorkCard(MedousaModel):
@@ -4897,6 +5421,18 @@ class ConversationTurn(MedousaModel):
     tool_names: list[str]
 
 
+class WorkGraphCommand(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    command_id: str = Field(
+        ...,
+        description='Replays of the exact command return the original receipt, even after later commits. Reusing this key for different intent is a conflict.',
+    )
+    expected_revision: int = Field(..., ge=0)
+    mutation: WorkGraphMutation
+
+
 class BotListResponse(MedousaModel):
     bots: list[BotProfile]
 
@@ -4937,6 +5473,22 @@ class SessionBotResponse(MedousaModel):
     binding: BotSessionBinding | None = None
     bot: BotProfile | None = None
     session_id: str
+
+
+class WorkParticipantMutation1(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    action: Action
+    command: WorkGraphCommand
+
+
+class WorkParticipantMutation(
+    RootModel[WorkParticipantMutation1 | WorkParticipantMutation2 | WorkParticipantMutation3]
+):
+    root: WorkParticipantMutation1 | WorkParticipantMutation2 | WorkParticipantMutation3 = Field(
+        ..., title='WorkParticipantMutation'
+    )
 
 
 class LayoutPreset(MedousaModel):
