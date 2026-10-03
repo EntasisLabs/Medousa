@@ -10,6 +10,7 @@
   import { layout } from "$lib/runtime/layout.svelte";
   import { wizard } from "$lib/stores/wizard.svelte";
   import { chat } from "$lib/stores/chat.svelte";
+  import { workshops } from "$lib/stores/workshops.svelte";
   import { noteWorkshop } from "$lib/stores/noteWorkshop.svelte";
   import { browserWorkshop } from "$lib/stores/browserWorkshop.svelte";
   import { workAskDock } from "$lib/stores/workAskDock.svelte";
@@ -37,6 +38,7 @@
   } from "$lib/runtime/viewLoaders";
 
   const loadAgentCreation = () => import("$lib/components/chat/AgentCreationDialog.svelte");
+  const loadWorkshopJoin = () => import("$lib/components/workshops/WorkshopJoinSheet.svelte");
   const loadDesktopShell = () => import("$lib/components/layout/WorkshopShell.svelte");
   const loadMobileShell = () => import("$lib/components/mobile/MobileShell.svelte");
   const initialPlatform = probeClientPlatform();
@@ -99,6 +101,17 @@
 {/if}
 
 {#if agentCreation.kind}<LazyFeatureView loader={loadAgentCreation} overlay />{/if}
+
+{#if workshops.pendingPairLink}
+  <LazyFeatureView
+    loader={loadWorkshopJoin}
+    overlay
+    open
+    initialPairLink={workshops.pendingPairLink}
+    variant={layout.isMobile ? "mobile" : "desktop"}
+    onClose={() => (workshops.pendingPairLink = null)}
+  />
+{/if}
 
 {#if commandSpotlight.open}
   <LazyFeatureView

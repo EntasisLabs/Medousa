@@ -27,7 +27,10 @@ portal you may switch to; it does not replace Personal or merge their data.
 2. Show the QR / invite.
 3. On the phone: open **Settings → Connection**, choose to add a workshop, then
    scan the QR or paste the invite link.
-4. Accept — the phone joins as a **portal** to that workshop.
+4. Choose a **Workshop name**, or leave it blank to use the host's name.
+   Scanned QR codes and opened invite links show the same form as pasted links.
+5. Choose **Join workshop** — the phone joins as a **portal** to that workshop.
+   You can switch to it now or keep using your current workshop.
 
 After pairing, you can leave the LAN pairing window off. Already-paired clients
 keep working over the private tunnel (Iroh) when you’re off the LAN.
@@ -36,6 +39,14 @@ Pairing trusts the device, not one forever-lived bearer token. Medousa keeps
 short-lived sessions in its secret store and renews them by proving possession
 of the device key created during pairing. Closing the app, changing networks,
 or letting a session expire does not require another QR scan.
+
+If a paired connection becomes stale, open the workshop menu and choose
+**Refresh connection**, or use **Refresh** on the active workshop in
+**Settings → Connection**. Medousa checks the route and saved credentials,
+reloads current workshop data, and reconnects its streams. Your selected
+workshop, conversation draft, open notes, tabs, and running work stay in place.
+If the host is offline, bring it back online and refresh again. Revoked or
+expired device trust still requires pairing again.
 
 Under **Settings → Phone**, expand a paired device to choose its trust policy:
 

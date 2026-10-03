@@ -29,7 +29,7 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Bots](guides/bots.md) | Create native and runtime Bots, search them in Spotlight, and continue their memory |
 | [Packages](guides/packages.md) | Optional computer, coding, model, channel, and MCP capabilities |
 | [Workshop & Automations](guides/workshop-and-automations.md) | Flows, schedules, specialists |
-| [Phone pairing](guides/phone-pairing.md) | Add another computer as an optional portal, including from a browser |
+| [Phone pairing](guides/phone-pairing.md) | Name paired workshops, refresh stale connections, and add optional portals |
 | [Siri and Shortcuts](guides/siri-and-shortcuts.md) | Continue the selected chat by voice or from an iPhone shortcut |
 | [Medousa Live on iPhone](guides/medousa-live-ios.md) | Continuous in-app voice, controls, requirements, and preview limits |
 | [Medousa Live in CarPlay](guides/medousa-carplay.md) | Development companion controls, setup, and qualification limits |

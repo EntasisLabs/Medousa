@@ -11,6 +11,15 @@ In Settings → Connection you will see cards for each known workshop:
 
 **Active** marks the current link. **Switch** moves Home onto another workshop. Edit when the address or label needs a correction.
 
+When adding a paired workshop, choose its **Workshop name** before joining.
+Leave it blank to use the host's name. Scanned and opened invites show the same
+form as pasted links; pairing does not switch your active workshop automatically.
+
+For a stale connection, choose **Refresh connection** in the workshop menu, or
+**Refresh** on the active card in Settings → Connection. It reconnects using
+the saved pairing while keeping your draft, open notes, tabs, and running work.
+An offline host must be brought online; revoked device trust requires pairing again.
+
 ## Status
 
 Below workshops, **Status** shows live connection health and engine summary (tools, age, profile). If chat misbehaves, look here first.

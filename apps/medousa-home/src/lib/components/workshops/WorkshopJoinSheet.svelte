@@ -13,6 +13,7 @@
     onClose: () => void;
     onJoined?: () => void;
     onHealthChange?: (health: import("$lib/daemon").DaemonHealth | null) => void;
+    initialPairLink?: string;
   }
 
   let {
@@ -21,17 +22,20 @@
     onClose,
     onJoined,
     onHealthChange,
+    initialPairLink = "",
   }: Props = $props();
 
   let pairLink = $state("");
   let daemonUrlOverride = $state("");
+  let workshopName = $state("");
   let sheetEl = $state<HTMLDivElement | null>(null);
   let headerEl = $state<HTMLElement | null>(null);
 
   $effect(() => {
     if (open) {
-      pairLink = "";
+      pairLink = initialPairLink;
       daemonUrlOverride = "";
+      workshopName = "";
       workshops.joinError = null;
     }
   });
@@ -48,6 +52,7 @@
     try {
       await workshops.joinFromPairLink(pairLink, {
         daemonUrl: daemonUrlOverride.trim() || undefined,
+        workshopName: workshopName.trim() || undefined,
       });
       onJoined?.();
       onClose();
@@ -139,6 +144,20 @@
             bind:value={pairLink}
             oninput={applyParsedLink}
           ></textarea>
+        </label>
+
+        <label class="block" for="workshop-pair-name">
+          <span class="workshop-label">Workshop name</span>
+          <input
+            id="workshop-pair-name"
+            class="input mt-1 w-full text-sm"
+            placeholder={parsedPreview?.peerName || "My workshop"}
+            bind:value={workshopName}
+            disabled={workshops.joinBusy}
+          />
+          <span class="workshop-faint mt-1 block text-xs">
+            Choose the name shown in Medousa, or leave blank to use its current name.
+          </span>
         </label>
 
         {#if !isBrowserWorkshop()}

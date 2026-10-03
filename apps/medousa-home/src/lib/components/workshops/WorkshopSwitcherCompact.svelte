@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Check, Monitor, Plus, Settings2 } from "@lucide/svelte";
   import WorkshopJoinSheet from "$lib/components/workshops/WorkshopJoinSheet.svelte";
+  import WorkshopRefreshButton from "$lib/components/workshops/WorkshopRefreshButton.svelte";
   import BodyPortal from "$lib/components/ui/BodyPortal.svelte";
   import { workshops } from "$lib/stores/workshops.svelte";
   import { connection } from "$lib/stores/connection.svelte";
@@ -145,7 +146,7 @@
   }
 
   function openSheet() {
-    if (workshops.switching) return;
+    if (workshops.switching || workshops.refreshing) return;
     haptic("light");
     if (variant === "status") announceStatusPopoverOpen("workshops");
     sheetOpen = true;
@@ -203,7 +204,7 @@
     aria-label="Switch workshop — {workshops.activeLabel}"
     aria-haspopup="menu"
     aria-expanded={sheetOpen}
-    disabled={workshops.switching}
+    disabled={workshops.switching || workshops.refreshing}
     onclick={openSheet}
   >
     <Monitor size={13} strokeWidth={1.75} class="shrink-0 opacity-80" aria-hidden="true" />
@@ -223,7 +224,7 @@
     aria-label="Switch workshop — {workshops.activeLabel}"
     aria-haspopup="menu"
     aria-expanded={sheetOpen}
-    disabled={workshops.switching}
+    disabled={workshops.switching || workshops.refreshing}
     onclick={openSheet}
   >
     <span class="workshop-rail-btn-icon" aria-hidden="true">
@@ -244,7 +245,7 @@
     aria-label="Switch workshop — {workshops.activeLabel}"
     aria-haspopup="menu"
     aria-expanded={sheetOpen}
-    disabled={workshops.switching}
+    disabled={workshops.switching || workshops.refreshing}
     onclick={openSheet}
   >
     <span
@@ -293,7 +294,7 @@
         <button
           type="button"
           class="btn btn-sm variant-filled-primary"
-          disabled={workshops.switching}
+          disabled={workshops.switching || workshops.refreshing}
           onclick={() => {
             sheetOpen = false;
             void workshops.confirmSwitchAfterPair();
@@ -338,7 +339,7 @@
         <button
           type="button"
           class="btn btn-sm variant-filled-primary"
-          disabled={workshops.switching}
+          disabled={workshops.switching || workshops.refreshing}
           onclick={() => workshops.confirmSwitch()}
         >
           {workshops.switching ? "Switching…" : "Switch anyway"}
@@ -411,16 +412,19 @@
       >
         {#if workshops.loading && workshops.workshops.length === 0}
           <p class="workshop-faint px-2 text-sm">Loading…</p>
-        {:else if workshops.error}
-          <p class="px-2 text-sm text-content-error">{workshops.error}</p>
-          <button
-            type="button"
-            class="btn btn-sm variant-ghost-surface mx-2 mt-3"
-            onclick={() => workshops.load()}
-          >
-            Retry
-          </button>
         {:else}
+          {#if workshops.error}
+            <p class="px-2 text-sm text-content-error">{workshops.error}</p>
+            {#if workshops.workshops.length === 0}
+              <button
+                type="button"
+                class="btn btn-sm variant-ghost-surface mx-2 mt-3"
+                onclick={() => workshops.load()}
+              >
+                Retry
+              </button>
+            {/if}
+          {/if}
           {#each workshops.workshops as workshop (workshop.id)}
             {@const isActive = workshop.id === workshops.activeWorkshopId}
             <button
@@ -428,7 +432,7 @@
               role="menuitemradio"
               aria-checked={isActive}
               class="workshop-switcher-row {isActive ? 'workshop-switcher-row-active' : ''}"
-              disabled={workshops.switching}
+              disabled={workshops.switching || workshops.refreshing}
               onclick={() => pickWorkshop(workshop.id)}
             >
               <span
@@ -456,12 +460,13 @@
         {/if}
       </div>
 
-      {#if !workshops.loading && !workshops.error}
+      {#if !workshops.loading}
         <div
           class="{isFloatingMenu
             ? 'workshop-switcher-footer'
             : 'workshop-switcher-mobile-footer'}"
         >
+          <WorkshopRefreshButton variant={isFloatingMenu ? "menu" : "mobile"} />
           <button
             type="button"
             role="menuitem"

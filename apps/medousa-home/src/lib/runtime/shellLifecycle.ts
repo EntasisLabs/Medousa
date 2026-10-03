@@ -13,7 +13,7 @@ import { settings } from "$lib/stores/settings.svelte";
 import { setUndertakingGroupIdPort } from "./undertakingGroupPort";
 import { isVaultDirty } from "./vaultDirtySnapshot";
 import { setActiveWorkshopKindPort } from "$lib/utils/workshopLocality";
-import { setWorkshopReconnectPort } from "./workshopReconnectPort";
+import { setWorkshopReconnectPort, setWorkshopRefreshPort } from "./workshopReconnectPort";
 import { setArtifactSessionTitlePort } from "./artifactSessionTitlePort";
 import { setProfileSwitchPorts } from "./profileSwitchPorts";
 import { setWorkshopSwitchPorts } from "./workshopSwitchPorts";
@@ -23,6 +23,7 @@ import {
   activateWorkshopScope,
   prepareForWorkshopSwitch,
   reconnectWorkshop,
+  refreshWorkshopConnection,
 } from "$lib/workshopConnection";
 import {
   applyNativeMobileShellLayout,
@@ -53,6 +54,11 @@ export function startShellRootResources(): () => void {
   setWorkshopReconnectPort(async (onHealthChange) => {
     const health = await reconnectWorkshop(onHealthChange ?? (() => {}));
     if (health) void requestRemotePeerCompletionSync();
+    return health;
+  });
+  setWorkshopRefreshPort(async (onHealthChange) => {
+    const health = await refreshWorkshopConnection(onHealthChange ?? (() => {}));
+    if (health.ok) void requestRemotePeerCompletionSync();
     return health;
   });
   setArtifactSessionTitlePort((sessionId) => {
@@ -145,16 +151,7 @@ export function startShellRootResources(): () => void {
     "mobile-native",
     initMobileNative(openWorkCard, openVaultNote, {
       onPairLink: (pairUrl) => {
-        void workshops
-          .joinFromPairLink(pairUrl)
-          .then((result) => {
-            toast.show(`Paired with ${result.workshopPeerName}`);
-          })
-          .catch((err) => {
-            toast.show(err instanceof Error ? err.message : String(err), {
-              durationMs: 4500,
-            });
-          });
+        workshops.pendingPairLink = pairUrl;
       },
       onOpenPeer: openPeerThread,
       onOpenCalendar: openCalendarEvent,
@@ -240,6 +237,7 @@ export function startShellRootResources(): () => void {
     stopWorkAskFocus();
     setActiveWorkshopKindPort(() => undefined);
     setWorkshopReconnectPort(null);
+    setWorkshopRefreshPort(null);
     setArtifactSessionTitlePort(null);
     setProfileSwitchPorts(null);
     setWorkshopSwitchPorts(null);

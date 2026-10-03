@@ -79,6 +79,7 @@ const interactiveReconnect = new ReconnectScheduler({
   policy: DEFAULT_INTERACTIVE_BACKOFF,
 });
 let resumeWorkshopInFlight = false;
+let workshopRefreshTask: Promise<DaemonHealth> | null = null;
 let lastResumeWorkshopAt = 0;
 const RESUME_DEBOUNCE_MS = 3_000;
 const TRUST_HEARTBEAT_INTERVAL_MS = 6 * 60 * 60 * 1_000;
@@ -199,7 +200,7 @@ async function restartWorkshopStreamsLite(): Promise<void> {
   await stopEnvironmentSync();
   await startWorkspaceStream(workspace.revision || undefined);
   await startEnvironmentSync();
-  void chat.tryReattachActiveTurn(workspace.cards);
+  await chat.tryReattachActiveTurn(workspace.cards);
 }
 
 function registerStreamListeners(unlisteners: Promise<() => void>[]) {
@@ -406,7 +407,7 @@ export async function resumeWorkshop(
   onHealthChange: (health: DaemonHealth | null) => void,
 ): Promise<void> {
   const now = Date.now();
-  if (resumeWorkshopInFlight || now - lastResumeWorkshopAt < RESUME_DEBOUNCE_MS) {
+  if (workshopRefreshTask || resumeWorkshopInFlight || now - lastResumeWorkshopAt < RESUME_DEBOUNCE_MS) {
     return;
   }
   resumeWorkshopInFlight = true;
@@ -483,6 +484,72 @@ export async function resumeWorkshop(
     }
   } finally {
     resumeWorkshopInFlight = false;
+  }
+}
+
+/** Refresh the same authority without clearing drafts, open notes, tabs, or turns. */
+export async function refreshWorkshopConnection(
+  onHealthChange: (health: DaemonHealth | null) => void,
+): Promise<DaemonHealth> {
+  if (workshopRefreshTask) {
+    const health = await workshopRefreshTask;
+    onHealthChange(health);
+    return health;
+  }
+  if (workshopTransitioning || workshopTeardown) {
+    throw new Error("The workshop connection is changing. Try again in a moment.");
+  }
+  workshopRefreshTask = refreshCurrentWorkshop(onHealthChange);
+  try {
+    return await workshopRefreshTask;
+  } finally {
+    workshopRefreshTask = null;
+  }
+}
+
+async function refreshCurrentWorkshop(
+  onHealthChange: (health: DaemonHealth | null) => void,
+): Promise<DaemonHealth> {
+  connection.setRecovering(true);
+  try {
+    await ensureMobileDaemonUrl();
+    await invalidateRouteCaches();
+    // The transport renews expired/rejected paired sessions using the saved key.
+    await sendPairingHeartbeat().catch(() => {});
+    const health = await ensureWorkshopEngineHealthy({
+      allowSpawn: workshops.activeWorkshop?.kind === "local",
+    });
+    connection.setHealth(health);
+    onHealthChange(health);
+    if (!health.ok) return health;
+
+    cancelScheduledStreamRecovery();
+    await Promise.all([
+      stopWorkspaceStream(), stopEnvironmentSync(), chat.stopOwnedInteractiveStreams(),
+    ]);
+    try {
+      await workspace.reconcileCardsFromSnapshot();
+      await Promise.all([
+        environment.load(), vault.refreshVaultRoots(), vault.refreshNotes(),
+        chat.refreshSessions({ force: true }),
+        chat.reconcileOnResume({ notice: false }, workspace.cards),
+        chat.hydrateAskThreads(workspace.cards),
+        userProfiles.syncOnResume(health),
+        executionTargets.refresh({ force: true }), bots.refresh({ force: true }),
+      ]);
+      await workspace.recoverPendingWorkerResults();
+    } finally {
+      await restartWorkshopStreamsLite();
+    }
+    void registerBrowserHostClient(health);
+    return health;
+  } catch (error) {
+    scheduleWorkspaceStreamReconnect();
+    scheduleEnvironmentStreamReconnect();
+    scheduleInteractiveStreamRecover();
+    throw error;
+  } finally {
+    connection.setRecovering(false);
   }
 }
 

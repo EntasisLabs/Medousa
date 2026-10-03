@@ -9,7 +9,7 @@ import {
   updateWorkshopClientState,
   upsertBrowserPortalWorkshop,
 } from "$lib/workshops";
-import { requestWorkshopReconnect } from "$lib/runtime/workshopReconnectPort";
+import { requestWorkshopReconnect, requestWorkshopRefresh } from "$lib/runtime/workshopReconnectPort";
 import { workshopSwitchPorts } from "$lib/runtime/workshopSwitchPorts";
 import {
   activeWorkshop,
@@ -34,12 +34,15 @@ export class WorkshopsStore {
   registry = $state<WorkshopRegistry>(defaultWorkshopRegistry());
   loading = $state(false);
   switching = $state(false);
+  refreshing = $state(false);
   error = $state<string | null>(null);
   confirmSwitchId = $state<string | null>(null);
   /** After QR join — offer to switch to the new workshop. */
   pendingSwitchAfterPair = $state<string | null>(null);
   joinBusy = $state(false);
   joinError = $state<string | null>(null);
+  /** Scanned/opened invites use the same naming form as pasted invites. */
+  pendingPairLink = $state<string | null>(null);
 
   activeWorkshop = $derived(activeWorkshop(this.registry));
   activeWorkshopId = $derived(this.registry.activeWorkshopId);
@@ -99,6 +102,7 @@ export class WorkshopsStore {
   }
 
   requestSwitch(workshopId: string) {
+    if (this.refreshing) return;
     if (workshopId === this.activeWorkshopId) return;
     if (this.needsSwitchConfirm()) {
       this.confirmSwitchId = workshopId;
@@ -133,10 +137,10 @@ export class WorkshopsStore {
 
   async joinFromPairLink(
     qrUrl: string,
-    options?: { daemonUrl?: string; phoneName?: string },
+    options?: { daemonUrl?: string; phoneName?: string; workshopName?: string },
   ): Promise<PairCompleteFromQrResult> {
     if (isBrowserWorkshop()) {
-      return this.joinBrowserPortal(qrUrl, options?.phoneName);
+      return this.joinBrowserPortal(qrUrl, options?.phoneName, options?.workshopName);
     }
     if (!isTauri()) {
       throw new Error("Joining workshops requires the Medousa app");
@@ -163,7 +167,7 @@ export class WorkshopsStore {
         phoneName: options?.phoneName,
         role: "portal",
       });
-      await this.onPairComplete(result);
+      await this.onPairComplete(result, options?.workshopName);
       return result;
     } catch (err) {
       this.joinError = err instanceof Error ? err.message : String(err);
@@ -173,14 +177,24 @@ export class WorkshopsStore {
     }
   }
 
-  async onPairComplete(result: PairCompleteFromQrResult) {
+  async onPairComplete(result: PairCompleteFromQrResult, workshopName?: string) {
     await this.load();
+    const label = workshopName?.trim();
+    if (result.workshopId && label) {
+      try {
+        await this.renameWorkshop(result.workshopId, label);
+      } catch (error) {
+        // Pairing already succeeded: don't make the user reuse a consumed invite.
+        this.error = `Workshop paired, but its name could not be saved: ${error instanceof Error ? error.message : String(error)}`;
+        toast.show(this.error, { durationMs: 4500 });
+      }
+    }
     if (result.workshopId && result.workshopId !== this.activeWorkshopId) {
       this.pendingSwitchAfterPair = result.workshopId;
     }
   }
 
-  async joinBrowserPortal(qrUrl: string, phoneName?: string): Promise<PairCompleteFromQrResult> {
+  async joinBrowserPortal(qrUrl: string, phoneName?: string, workshopName?: string): Promise<PairCompleteFromQrResult> {
     const trimmed = qrUrl.trim();
     const parsed = parsePairQrUrl(trimmed);
     if (!parsed) {
@@ -204,7 +218,7 @@ export class WorkshopsStore {
       const now = new Date().toISOString();
       this.registry = upsertBrowserPortalWorkshop(this.registry, {
         id: paired.workshopId,
-        label: paired.workshopPeerName,
+        label: workshopName?.trim() || paired.workshopPeerName,
         kind: "portal",
         url: paired.daemonUrl,
         icon: "building",
@@ -246,7 +260,7 @@ export class WorkshopsStore {
   ) {
     if (!isTauri() && !isBrowserWorkshop()) return;
     if (workshopId === this.activeWorkshopId) return;
-    if (this.switching) return;
+    if (this.switching || this.refreshing) return;
     if (!options?.force && this.needsSwitchConfirm()) {
       this.confirmSwitchId = workshopId;
       return;
@@ -305,6 +319,27 @@ export class WorkshopsStore {
       });
     } catch {
       // Best-effort — session still works locally.
+    }
+  }
+
+  async refreshConnection(
+    onHealthChange?: (health: import("$lib/daemon").DaemonHealth | null) => void,
+  ): Promise<boolean> {
+    if (this.switching || this.refreshing || this.loading) return false;
+    this.refreshing = true;
+    this.error = null;
+    try {
+      const health = await requestWorkshopRefresh(onHealthChange);
+      if (!health?.ok) {
+        throw new Error(health?.message || "Could not reach this workshop. Check that it is running, then try again.");
+      }
+      toast.show(`Connection refreshed · ${this.activeLabel}`);
+      return true;
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : String(error);
+      return false;
+    } finally {
+      this.refreshing = false;
     }
   }
 
@@ -376,6 +411,7 @@ export class WorkshopsStore {
     workshopId: string,
     options?: { onHealthChange?: (health: import("$lib/daemon").DaemonHealth | null) => void },
   ) {
+    if (this.refreshing || this.switching) return;
     if (workshopId === PERSONAL_WORKSHOP_ID) return;
     const wasActive = workshopId === this.activeWorkshopId;
     let shellTabs: {
