@@ -520,7 +520,7 @@ pub enum TurnFinishOutput {
 
 #[medousa_tool(id = COGNITION_TURN_FINISH_ID)]
 impl CognitionTurnFinishTool {
-    /// End ActiveWork only after the full requested outcome is complete and verified, or when a concrete blocker prevents further authorized progress and is clearly reported. Prefer assistant prose plus turn.finish with no message; message is a fallback only when the response contains no prose. Set needs_synthesis=false when the prose is already the complete principal-facing answer. Progress is not completion.
+    /// End ActiveWork only after the full requested outcome is complete and verified, or when a concrete blocker prevents further authorized progress and is clearly reported. A successful turn.finish ends the turn even without a message or new prose. Omit message when the answer was already delivered or no reply is needed; message is an optional fallback for a tool-only response. Set needs_synthesis=false when the prose is already the complete principal-facing answer. Progress is not completion.
     pub(crate) async fn invoke_typed(
         &self,
         input: TurnFinishInput,

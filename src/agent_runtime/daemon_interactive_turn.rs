@@ -2821,6 +2821,48 @@ mod chronological_sink_tests {
     }
 
     #[tokio::test]
+    async fn silent_finish_preserves_delivered_prose_without_another_text_segment() {
+        let output = Arc::new(RecordingOutput::default());
+        let sink = sink(Arc::clone(&output));
+        let prose = "The callback bridge is bounded and abort-aware.";
+        sink.model_response_completed_with_text(1, 1, Some(prose.into()))
+            .await;
+        sink.model_response_completed_with_text(1, 2, None).await;
+        let body = sink.terminal_body("").await;
+        assert_eq!(body, prose);
+        sink.publish_tracked(TurnStreamEventV3::TurnCompleted {
+            outcome: TurnCompletionOutcomeV3::Completed,
+            aggregate_text: body,
+            tool_names: vec!["cognition_turn".into()],
+            operator_message: None,
+            debug_message: None,
+        })
+        .await;
+
+        let parts = sink.parts.lock().unwrap().preview_parts();
+        assert_eq!(
+            parts
+                .iter()
+                .filter(|part| matches!(part, TurnPart::Text { .. }))
+                .count(),
+            1
+        );
+        let events = output.events.lock().unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event,
+                    TurnPipelineEnvelope::V3(envelope)
+                        if matches!(&envelope.event, TurnStreamEventV3::TurnCompleted { .. })
+                ))
+                .count(),
+            1
+        );
+        drop(events);
+        sink.pipeline.cancel();
+    }
+
+    #[tokio::test]
     async fn terminal_tool_message_follows_earlier_interim_prose() {
         let output = Arc::new(RecordingOutput::default());
         let sink = sink(Arc::clone(&output));

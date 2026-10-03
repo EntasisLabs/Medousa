@@ -406,8 +406,8 @@ fn turn_protocol_slice() -> Result<SttpContentSlice, SttpDocumentBuildError> {
                 "s3_terminal(.99)": "typed outcome only"
             },
             "t5_finish(.99)": {
-                "f1_preferred(.99)": "use turn.finish only after the full requested outcome is complete and verified, or when a concrete blocker prevents further authorized progress and is clearly reported; pair final prose with turn.finish{} and omit message so the answer is not repeated",
-                "f2_required(.99)": "use finish.message only when the provider cannot emit prose beside the tool call; never finish silently or treat progress as completion",
+                "f1_preferred(.99)": "use turn.finish only after the full requested outcome is complete and verified, or when a concrete blocker prevents further authorized progress and is clearly reported; a successful finish ends the turn immediately, even without message or new prose",
+                "f2_message(.99)": "omit finish.message when the answer was already delivered or no reply is needed; otherwise use final prose or the optional finish.message fallback, without repeating the answer; progress alone is not completion",
                 "f3_checkpoint(.99)": "turn.checkpoint deliberately ends this agent turn and waits for the principal; use only when their input is needed or work must pause; otherwise use progress prose or turn.update_user and continue"
             },
             "t6_status(.96)": "turn.update_user = ephemeral HUD; it does not end or pause active work"
@@ -637,7 +637,7 @@ mod tests {
                 "t6_status",
             ],
             &["s1_prose", "s2_tools", "s3_terminal"],
-            &["f1_preferred", "f2_required"],
+            &["f1_preferred", "f2_message"],
         ] {
             let positions = ordered_fields
                 .iter()

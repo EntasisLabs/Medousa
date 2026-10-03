@@ -1194,25 +1194,66 @@ async fn golden_finish_prefers_same_response_prose_over_message_fallback() {
 }
 
 #[tokio::test]
-async fn golden_silent_finish_is_repaired_before_terminal_delivery() {
-    let outcome = run_golden(
-        "finish with a principal-facing answer",
-        vec![
-            tool_response(vec![silent_finish_call()]),
-            tool_response(vec![finish_call("The requested work is complete.")]),
-        ],
-        10,
-        false,
-    )
-    .await;
+async fn golden_silent_finish_is_terminal_without_another_model_request() {
+    for stream in [false, true] {
+        for call in [
+            tool_call(COGNITION_TURN, json!({"action": "turn.finish"})),
+            silent_finish_call(),
+            finish_call(" \n "),
+        ] {
+            let outcome = run_golden(
+                "finish without adding a reply",
+                vec![
+                    tool_response(vec![call]),
+                    tool_response(vec![finish_call("Unwanted extra generation")]),
+                ],
+                10,
+                stream,
+            )
+            .await;
 
-    assert_eq!(outcome.termination_reason, "cognition_turn_finish");
-    assert_eq!(outcome.text, "The requested work is complete.");
-    assert_eq!(outcome.rounds_executed, 2);
-    assert_eq!(
-        outcome.tool_invocations,
-        vec![COGNITION_TURN.to_string(), COGNITION_TURN.to_string()]
-    );
+            assert_eq!(outcome.termination_reason, "cognition_turn_finish");
+            assert!(outcome.text.is_empty());
+            assert_eq!(outcome.rounds_executed, 1);
+            assert_eq!(outcome.request_count, 1);
+            assert_eq!(outcome.tool_invocations, vec![COGNITION_TURN.to_string()]);
+            assert_eq!(
+                outcome.checkpoints.last().unwrap().status,
+                crate::checkpoint::ActiveTurnCheckpointStatus::Completed
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn golden_silent_finish_after_delivered_prose_does_not_repeat_the_answer() {
+    let prose = "The callback bridge is bounded and abort-aware. Verification passed.";
+    for stream in [false, true] {
+        let outcome = run_golden(
+            "verify the callback bridge",
+            vec![
+                tool_response(vec![tool_call("data_probe", json!({"q": "callback"}))]),
+                text_response(prose),
+                tool_response(vec![silent_finish_call()]),
+                tool_response(vec![finish_call("Unwanted repeated answer")]),
+            ],
+            10,
+            stream,
+        )
+        .await;
+
+        assert_eq!(outcome.termination_reason, "cognition_turn_finish");
+        assert!(outcome.text.is_empty());
+        assert_eq!(outcome.request_count, 3);
+        assert_eq!(outcome.tool_invocations, ["data_probe", COGNITION_TURN]);
+        let transcript =
+            serde_json::to_string(&outcome.checkpoints.last().unwrap().tool_lane_messages).unwrap();
+        assert!(transcript.contains(prose));
+        assert!(!transcript.contains("turn.finish was ignored"));
+        if stream {
+            assert_eq!(outcome.streamed.concat(), prose);
+        }
+    }
 }
 
 #[tokio::test]

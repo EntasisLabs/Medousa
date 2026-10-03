@@ -76,6 +76,13 @@ Source: `src/tool_bootstrap.rs`
 | Handback | `cognition_turn action=turn.checkpoint` — ends this agent turn and waits for principal input; use only when input is needed or work must pause |
 | Finish | `cognition_turn action=turn.finish` — ends tool loop after the full requested outcome is complete or a concrete blocker is reported |
 
+`turn.finish` ends the turn on its first successful standalone call, including
+when `message` and assistant prose are absent. Earlier prose stays in the
+chronological transcript; the runtime does not request another model response
+to repeat it, including external-channel continuation synthesis. Same-response
+prose takes precedence over the optional `message` fallback. `intent` and
+`reason` are control metadata, not reply text.
+
 `turn.finish` may also carry a short reaction without assistant prose:
 
 ```json

@@ -9,7 +9,12 @@ const CONTINUATION_MAX_DRAFT_CHARS: usize = 6_000;
 const CONTINUATION_MAX_TOOL_OUTPUT_CHARS: usize = 2_000;
 const CONTINUATION_MAX_TOOL_SUMMARIES: usize = 6;
 
-pub fn should_run_continuation(invocations: &[ToolInvocation]) -> bool {
+pub fn should_run_continuation(termination_reason: &str, invocations: &[ToolInvocation]) -> bool {
+    // An explicit finish must not trigger another answer-generation pass on
+    // bot or other external channels, even when tool evidence is large.
+    if termination_reason == "cognition_turn_finish" {
+        return false;
+    }
     for invocation in invocations {
         let output_chars = invocation.tool_output.to_string().chars().count();
         if output_chars >= CONTINUATION_TRIGGER_TOOL_OUTPUT_CHARS {
@@ -112,7 +117,7 @@ mod tests {
     use super::should_run_continuation;
 
     #[test]
-    fn continuation_trigger_detects_large_stdout_payload() {
+    fn continuation_trigger_respects_explicit_finish_with_large_stdout() {
         let invocations = vec![ToolInvocation {
             tool_name: "cognition.grapheme.run".to_string(),
             tool_input: serde_json::json!({"script": "noop"}),
@@ -121,6 +126,10 @@ mod tests {
             }),
         }];
 
-        assert!(should_run_continuation(&invocations));
+        assert!(should_run_continuation("direct_prose", &invocations));
+        assert!(!should_run_continuation(
+            "cognition_turn_finish",
+            &invocations
+        ));
     }
 }
