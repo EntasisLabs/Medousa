@@ -2,7 +2,7 @@
 
 > **Status:** Implementation underway — local graph, work intake and execute/review adapters; federation and contact gates remain open
 >
-> **Date:** 2026-10-02
+> **Date:** 2026-10-02 — implementation review updated 2026-10-03
 >
 > **Related:** [Assistant ownership foundation](assistant-ownership-foundation-plan.md),
 > [identity memory](cognitive-identity-memory-plan.md),
@@ -1027,6 +1027,58 @@ warnings. The embedded library compiles with its 32 existing feature warnings.
 Strict documentation, changed-file formatting and diff whitespace checks pass.
 Full workspace/hermetic CI, fresh `npm ci`, live Surreal and live model execution
 remain outside this increment. No PR was opened.
+
+### Current implementation and remaining work — 2026-10-03
+
+This snapshot supersedes historical outstanding-item lists above. Completed
+increments do not by themselves close the broader phase exit gates.
+
+The local implementation now includes durable owner-domain graph/intent storage,
+composition and budget accounting contracts, native vault identity and repair,
+Forge/project/overlay observations, artifact/component/feed observations, and
+bounded native executor → reviewer coordination. Medousa Coder, Codex, Cursor and
+Hermes share the native assignment contracts. Muse, Instinct, Dots and Grok Bot
+have authenticated work participation APIs; provider chat messages do not yet
+constitute correlated execution or review evidence.
+
+The follow-up increments also resolved demonstrated friction on existing surfaces:
+
+- Native Coder defaults and saved preferred runtime/fallback order (`9f233cf5`).
+- Nullable successful tool errors preserve successful status (`c959cc42`).
+- Assignment cards show execution progress and retain verified completion results
+  (`bf37e12d`). Ordinary admitted owner continuations and work-controller results
+  retain distinct routes; this is not generic work contact delivery.
+- A successful message-free `turn.finish` ends the shared runtime turn without
+  another generation (`59ed536f`).
+- Readable workspace/command pickers and removal of runtime-startup chat noise
+  (`c3975b59`).
+- Workshop refresh preserves local interaction state, and pairing accepts an
+  initial workshop name (`99ca01b3`). Connection refresh does not establish work
+  federation or transfer coordination custody.
+
+User testing confirms the interaction fixes work in the user's setup. It does
+not replace the epic's complete live acceptance scenarios or provider review
+qualification. The latest frontend suite passes 1,879 tests in 371 files;
+frontend checking reports zero errors/warnings, the production build and strict
+docs verification pass. Full repository CI parity remains a separate gate.
+
+| Remaining increment | Existing foundation | Evidence still needed |
+|---|---|---|
+| Durable work event hooks and intake (Phase 3) | Saved native execute/review plans, terminal receipts and recovery | General admitted subscriptions, resource-change intake, replay cursors, bounded reactions and registration/completion races beyond the two-stage controller |
+| Correlated provider execution/review (Phases 3–4) | Scoped provider work APIs and existing conversation transports | Exact request/assignment/result association, revision-bound verdicts, real send/receive and live provider acceptance; Muse transport remains unverified |
+| Composite execution and bounded fix/review (Phases 2–3) | Composition/readiness contracts and budget custody ledger | Native metering/reservation/settlement integration, child/dependency scheduling, bounded revision loops and shared-execution accounting; current controller admits standalone finite work only |
+| Federated work and custody (Phase 4) | Existing portal/peer transports and scoped native execution | Authenticated cross-workshop user-domain mappings, permission-filtered graph projections, remote work correlation and fenced coordinator handoff where supported |
+| Automatic maintenance (Phase 5) | Native resource observations and explicit readiness checkpoints | Admitted note/folder/feed triggers, freshness/occurrence evidence, snapshot recovery after retention gaps, bounded coalescing and generated-update feedback fencing |
+| Work contact policy and delivery (Phase 6) | Saved contact preferences, native result receipts and existing delivery transports | Reporter/route selection, silence, current-preference checks, durable attempts/reconciliation and receipts; voice invitation/connection/completion capabilities must be qualified separately |
+| Compatibility and qualification (Phases 0–1, 7 and cross-cutting gates) | Native adapter/recovery fixtures and incremental contract/docs checks | Remaining native identity/repair coverage, overlay reconciliation, alias/deletion history, safe compaction, parallel/cross-platform and live Surreal qualification, full CI parity and end-to-end acceptance scenarios |
+
+The next increment should establish general durable work subscriptions/intake,
+then use that contract for exact provider request/completion correlation. Its
+first acceptance fixture should retain a registered reaction across restart and
+a closed source chat, consume one verified completion exactly once, and leave an
+uncertain effect unresolved rather than relaunching it. Provider transport
+acknowledgment alone must never advance review or satisfy work. This extends the
+original agent-coordination promise without introducing a goal-management UI.
 
 ### Phase exit gates
 

@@ -99,8 +99,10 @@ publish native availability/revisions, reserve or settle execution budgets, or
 satisfy registered executor/reviewer work through a model state claim. Source
 conversation references still require native visibility.
 
-`peer.propose` requires an exact visible source chat bound to owned Forge work
-on this workshop, bounded committed transcript ranges, and `continue_owner: false`.
+`peer.propose` requires an exact visible source chat, owned Forge work on this
+workshop, bounded committed transcript ranges, and `continue_owner: false`.
+An explicit `forge_work_id` can select that work from an unrelated source chat;
+omitting it uses the existing chat's project binding.
 Discovery does not grant execution authority. Native proposals remain immutable
 and require the existing operator approval; provider credentials cannot approve,
 dispatch, mint grants, send messages through another provider, or run arbitrary

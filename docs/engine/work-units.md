@@ -593,9 +593,10 @@ Work with children/dependencies, maintenance duties,
 existing reservations, or cost budgets (including ancestor budgets) requires a
 later metered/composite execution adapter. ACP provider costs are currently unknown;
 these configurations fail closed rather than recording unknown cost as zero.
-Current native execution targets remain Codex, Cursor, and Hermes on this workshop.
-Muse/Instinct/Dots/bot adapters, cross-workshop coordination, and voice/contact
-routing require their native adapter and delivery admission paths.
+Current native execution targets are Medousa Coder, Codex, Cursor, and Hermes on
+this workshop. Muse/Instinct/Dots/Grok Bot have authenticated work API access;
+provider-hosted review execution, cross-workshop coordination, and voice/contact
+routing still require their native correlation and delivery admission paths.
 
 ## Authenticated provider participation
 
