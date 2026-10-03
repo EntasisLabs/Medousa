@@ -84,6 +84,8 @@ impl WorkUnitHost {
             plan.input.expected_scope_revision,
             &plan.scope_digest,
         )?;
+        self.store
+            .require_provider_idle(&plan.domain, &plan.input.work_unit_id)?;
         self.admit_peer_plan(forge, plan)?;
         native.register_work_plan(plan)?;
         Ok(())

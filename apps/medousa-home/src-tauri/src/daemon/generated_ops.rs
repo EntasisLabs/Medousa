@@ -238,6 +238,8 @@ pub enum DaemonOperation {
     ExternalConversationsByIdGet,
     #[serde(rename = "external_conversations.by_id.messages.post")]
     ExternalConversationsByIdMessagesPost,
+    #[serde(rename = "external_conversations.by_id.work_events.post")]
+    ExternalConversationsByIdWorkEventsPost,
     #[serde(rename = "external_conversations.get")]
     ExternalConversationsGet,
     #[serde(rename = "external_conversations.muse.discovery.get")]
@@ -1094,6 +1096,7 @@ impl DaemonOperation {
             Self::ExternalConversationsByIdEventsPost => "external_conversations.by_id.events.post",
             Self::ExternalConversationsByIdGet => "external_conversations.by_id.get",
             Self::ExternalConversationsByIdMessagesPost => "external_conversations.by_id.messages.post",
+            Self::ExternalConversationsByIdWorkEventsPost => "external_conversations.by_id.work_events.post",
             Self::ExternalConversationsGet => "external_conversations.get",
             Self::ExternalConversationsMuseDiscoveryGet => "external_conversations.muse.discovery.get",
             Self::ExternalConversationsMuseDiscoveryPost => "external_conversations.muse.discovery.post",

@@ -1038,8 +1038,10 @@ composition and budget accounting contracts, native vault identity and repair,
 Forge/project/overlay observations, artifact/component/feed observations, and
 bounded native executor → reviewer coordination. Medousa Coder, Codex, Cursor and
 Hermes share the native assignment contracts. Muse, Instinct, Dots and Grok Bot
-have authenticated work participation APIs; provider chat messages do not yet
-constitute correlated execution or review evidence.
+have authenticated work participation APIs, exact request/outcome correlation and
+revision-bound provider review evidence. Ordinary provider chat messages remain
+conversation observations. General pull inboxes retain actor-bound subscriptions,
+explicit acknowledgments and replay across restart.
 
 The follow-up increments also resolved demonstrated friction on existing surfaces:
 
@@ -1064,21 +1066,22 @@ docs verification pass. Full repository CI parity remains a separate gate.
 
 | Remaining increment | Existing foundation | Evidence still needed |
 |---|---|---|
-| Durable work event hooks and intake (Phase 3) | Saved native execute/review plans, terminal receipts and recovery | General admitted subscriptions, resource-change intake, replay cursors, bounded reactions and registration/completion races beyond the two-stage controller |
-| Correlated provider execution/review (Phases 3–4) | Scoped provider work APIs and existing conversation transports | Exact request/assignment/result association, revision-bound verdicts, real send/receive and live provider acceptance; Muse transport remains unverified |
+| Automatic work intake and reactions (Phase 3) | Durable actor-bound pull subscriptions, explicit next-event acknowledgment, retained journal replay and provider event kinds | Admitted model wakes, native resource-change subscriptions, bounded/coalesced effects and retention-gap recovery beyond explicit pull intake |
+| Provider execution/review orchestration (Phases 3–4) | Scoped provider APIs, exact durable request/dispatch/result ledger, authenticated self callbacks and revision-bound qualified verdicts | Native provider stage/controller integration, work satisfaction publication, real send/receive and live provider acceptance; Muse transport remains unverified |
 | Composite execution and bounded fix/review (Phases 2–3) | Composition/readiness contracts and budget custody ledger | Native metering/reservation/settlement integration, child/dependency scheduling, bounded revision loops and shared-execution accounting; current controller admits standalone finite work only |
 | Federated work and custody (Phase 4) | Existing portal/peer transports and scoped native execution | Authenticated cross-workshop user-domain mappings, permission-filtered graph projections, remote work correlation and fenced coordinator handoff where supported |
 | Automatic maintenance (Phase 5) | Native resource observations and explicit readiness checkpoints | Admitted note/folder/feed triggers, freshness/occurrence evidence, snapshot recovery after retention gaps, bounded coalescing and generated-update feedback fencing |
 | Work contact policy and delivery (Phase 6) | Saved contact preferences, native result receipts and existing delivery transports | Reporter/route selection, silence, current-preference checks, durable attempts/reconciliation and receipts; voice invitation/connection/completion capabilities must be qualified separately |
 | Compatibility and qualification (Phases 0–1, 7 and cross-cutting gates) | Native adapter/recovery fixtures and incremental contract/docs checks | Remaining native identity/repair coverage, overlay reconciliation, alias/deletion history, safe compaction, parallel/cross-platform and live Surreal qualification, full CI parity and end-to-end acceptance scenarios |
 
-The next increment should establish general durable work subscriptions/intake,
-then use that contract for exact provider request/completion correlation. Its
-first acceptance fixture should retain a registered reaction across restart and
-a closed source chat, consume one verified completion exactly once, and leave an
+The two pull-intake and provider-correlation increments below establish durable
+subscriptions and exact provider evidence. Next, qualify an admitted consumer and
+provider stage/controller against these contracts: retain its identity across
+restart and a closed source chat, consume one completion once, and leave an
 uncertain effect unresolved rather than relaunching it. Provider transport
-acknowledgment alone must never advance review or satisfy work. This extends the
-original agent-coordination promise without introducing a goal-management UI.
+acknowledgment alone must never advance review or satisfy work. Automatic intake,
+native resource triggers, provider satisfaction publication and live acceptance
+remain separate gates, without a new goal-management UI.
 
 ### Durable work inbox increment — 2026-10-03
 
@@ -1119,3 +1122,49 @@ qualification remain separate gates.
 
 Phase completion requires the corresponding exit evidence; implemented storage
 contracts alone do not establish autonomous execution or live provider acceptance.
+
+
+### Provider request/callback correlation increment — 2026-10-03
+
+Operator-authorized provider sends can associate an exact standalone finite work
+scope, instruction/completion-condition digest and deadline. The native adapter
+commits request association and durable dispatch custody before transport.
+Unknown delivery/claims survive restart without authorizing another send.
+Outstanding provider custody also fences competing dispatch and native controller
+registration. Budgeted/composite work still requires a metered adapter.
+
+Current self Work credentials for Muse, Instinct, Dots and Grok Bot can report
+bounded progress/question/terminal callbacks. The callback binds the exact
+conversation/request/event and commits native work evidence before its chat
+mirror. Exact replay retains actor/time; changed evidence or replacement terminal
+results fail closed. Native work subscriptions select typed provider events and
+explicitly acknowledge them. Ordinary replies/reactions and transport acceptance
+retain their prior conversation meaning.
+
+A provider review request can name an owned completed native executor. Native
+proposal/receipt association, source visibility, Forge ownership and a clean
+checkout derive the receipt/generation/branch/full-HEAD pin. Only an exact strict
+review envelope can qualify as approved or changes requested; changed revision,
+scope, deadline and invalid review evidence remain explicit non-approving results.
+These qualified receipts do not automatically satisfy work or admit chat/contact
+continuations. Model mutations cannot publish provider custody/evidence or satisfy
+provider-associated work.
+
+The tests use retained native stores and real Forge/Git with simulated provider
+callbacks. They cover exact identity and scope, native provenance, one dispatch,
+registration/completion races, replay/restart and publication faults, strict
+review envelopes, current checkout/source visibility, terminal immutability and
+all four providers' self credentials/rotation/revocation. No live provider network
+request is performed by the suite. Full CI parity, live provider round trips,
+automatic intake, provider-stage orchestration/satisfaction publication,
+cross-workshop custody and contact/voice remain open.
+
+
+Validation for this increment: 29 work-store tests, 46 native work-unit host tests,
+12 provider callback/access tests, 22 daemon coordination tests, seven runtime
+schema tests and 14 contract tests pass. Released API compatibility and generated
+contract parity pass. Strict work/type clippy (all targets) and daemon library
+clippy (release, aarch64 macOS, Iroh feature) pass. Python SDK tests pass 28 cases;
+Home reports zero errors/warnings and its full suite passes 1,879 tests in 371
+files. Strict docs verification passes. These are incremental qualification
+receipts, not full workspace CI parity or live provider acceptance.

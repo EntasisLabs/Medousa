@@ -40,6 +40,7 @@ pub struct WorkCoordinationPlan {
 
 /// Captured from a clean governed checkout after native executor completion.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct WorkReviewInput {
     pub coordination_id: String,
@@ -53,6 +54,7 @@ pub struct WorkReviewInput {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum WorkReviewVerdict {
     Approved,
@@ -62,6 +64,7 @@ pub enum WorkReviewVerdict {
 /// A completed reviewer process is not an approval. Its entire result must be
 /// this bounded envelope, naming the exact input supplied by the runtime.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct WorkReviewDecision {
     pub reviewed: WorkReviewInput,

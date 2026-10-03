@@ -186,4 +186,4 @@ async fn mutate(
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

@@ -129,6 +129,7 @@ OPERATIONS: dict[str, Operation] = {
     "external_conversations.by_id.events.post": Operation("external_conversations.by_id.events.post", "POST", "/v1/external-conversations/{id}/events", False),
     "external_conversations.by_id.get": Operation("external_conversations.by_id.get", "GET", "/v1/external-conversations/{id}", False),
     "external_conversations.by_id.messages.post": Operation("external_conversations.by_id.messages.post", "POST", "/v1/external-conversations/{id}/messages", False),
+    "external_conversations.by_id.work_events.post": Operation("external_conversations.by_id.work_events.post", "POST", "/v1/external-conversations/{id}/work-events", False),
     "external_conversations.get": Operation("external_conversations.get", "GET", "/v1/external-conversations", False),
     "external_conversations.muse.discovery.get": Operation("external_conversations.muse.discovery.get", "GET", "/v1/external-conversations/muse/discovery", False),
     "external_conversations.muse.discovery.post": Operation("external_conversations.muse.discovery.post", "POST", "/v1/external-conversations/muse/discovery", False),

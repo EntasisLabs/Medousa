@@ -95,6 +95,37 @@ impl Snapshot {
             {
                 WorkEventKind::WorkScopeChanged
             }
+            WorkGraphMutation::RecordProviderEvent { event } => {
+                let Some(record) = self.provider_requests.values().find(|record| {
+                    record.request.conversation_id == event.conversation_id
+                        && record.request.request_id == event.request_id
+                }) else {
+                    return false;
+                };
+                if record.request.input.work_unit_id != input.work_unit_id
+                    || record.request.input.expected_scope_revision != input.expected_scope_revision
+                {
+                    return false;
+                }
+                match event.kind {
+                    medousa_types::ExternalEventKind::Completed => WorkEventKind::ProviderCompleted,
+                    medousa_types::ExternalEventKind::Failed => WorkEventKind::ProviderFailed,
+                    medousa_types::ExternalEventKind::Progress
+                    | medousa_types::ExternalEventKind::Question => {
+                        if record.events.iter().any(|terminal| {
+                            matches!(
+                                terminal.kind,
+                                medousa_types::ExternalEventKind::Completed
+                                    | medousa_types::ExternalEventKind::Failed
+                            ) && terminal.request_sequence < event.request_sequence
+                        }) {
+                            return false;
+                        }
+                        WorkEventKind::ProviderProgress
+                    }
+                    _ => return false,
+                }
+            }
             _ => return false,
         };
         input.event_kinds.contains(&kind)

@@ -31,6 +31,13 @@ existing grant. Registered proposal dispatch can return the existing nullable
 `binding` while queued. See [Work scopes and native coordination](../engine/work-units.md#native-executor--reviewer-coordination)
 and [Provider work participant adapters](../engine/external-conversations.md#work-participant-adapters).
 
+Work event inboxes use `work.events` plus explicit actor-bound acknowledgment.
+Provider sends can attach exact `work` scope metadata, and current self Work
+credentials report outcomes through
+`external_conversations.by_id.work_events.post`. These callbacks retain exact
+request/result association and qualified revision-bound review evidence without
+automatically satisfying work. See [Correlated work callbacks](../engine/external-conversations.md#correlated-work-callbacks).
+
 ## Packages
 
 | Package | Role |

@@ -3733,6 +3733,17 @@
           },
           "text": {
             "type": "string"
+          },
+          "work": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkProviderRequestInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional exact work association; ordinary messages retain their behavior."
           }
         },
         "required": [
@@ -10012,7 +10023,8 @@
           "work_units",
           "events",
           "budget_reservations",
-          "subscriptions"
+          "subscriptions",
+          "provider_requests"
         ],
         "type": "string"
       },
@@ -10472,6 +10484,70 @@
               "reservation_id"
             ],
             "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Native-only association, retained before provider effects.",
+            "properties": {
+              "operation": {
+                "enum": [
+                  "register_provider_request"
+                ],
+                "type": "string"
+              },
+              "request": {
+                "$ref": "#/components/schemas/WorkProviderRequest"
+              }
+            },
+            "required": [
+              "operation",
+              "request"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Native-only single dispatch custody. Unknown claims never relaunch.",
+            "properties": {
+              "conversation_id": {
+                "type": "string"
+              },
+              "operation": {
+                "enum": [
+                  "claim_provider_request"
+                ],
+                "type": "string"
+              },
+              "request_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "conversation_id",
+              "operation",
+              "request_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Authenticated provider evidence; not native execution or satisfaction.",
+            "properties": {
+              "event": {
+                "$ref": "#/components/schemas/WorkProviderEvent"
+              },
+              "operation": {
+                "enum": [
+                  "record_provider_event"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "event",
+              "operation"
+            ],
+            "type": "object"
           }
         ]
       },
@@ -10699,6 +10775,173 @@
         "title": "WorkParticipantResponse",
         "type": "object"
       },
+      "WorkProviderEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "actor_id": {
+            "type": "string"
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ExternalEventKind"
+          },
+          "qualification": {
+            "$ref": "#/components/schemas/WorkProviderQualification"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "request_sequence": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "review_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkReviewDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor_id",
+          "conversation_id",
+          "created_at",
+          "event_id",
+          "kind",
+          "qualification",
+          "request_id",
+          "request_sequence",
+          "text"
+        ],
+        "type": "object"
+      },
+      "WorkProviderQualification": {
+        "enum": [
+          "outcome_only",
+          "review_approved",
+          "changes_requested",
+          "invalid_review",
+          "revision_changed",
+          "scope_changed",
+          "inactive_work",
+          "expired"
+        ],
+        "type": "string"
+      },
+      "WorkProviderRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "completion_condition": {
+            "type": "string"
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "input": {
+            "$ref": "#/components/schemas/WorkProviderRequestInput"
+          },
+          "instruction_digest": {
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/ExternalProvider"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "reviewed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkReviewInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scope_digest": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "completion_condition",
+          "conversation_id",
+          "input",
+          "instruction_digest",
+          "provider",
+          "request_id",
+          "scope_digest"
+        ],
+        "type": "object"
+      },
+      "WorkProviderRequestInput": {
+        "additionalProperties": false,
+        "properties": {
+          "deadline": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expected_scope_revision": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "review_of": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkProviderReviewSource"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The runtime derives the receipt/revision pin; callers cannot assert it."
+          },
+          "work_unit_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deadline",
+          "expected_scope_revision",
+          "work_unit_id"
+        ],
+        "type": "object"
+      },
+      "WorkProviderReviewSource": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "$ref": "#/components/schemas/CoordinationChannelRef"
+          },
+          "executor_assignment_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "executor_assignment_id"
+        ],
+        "type": "object"
+      },
       "WorkReadinessRequirement": {
         "additionalProperties": false,
         "properties": {
@@ -10714,6 +10957,77 @@
           "work_unit_id"
         ],
         "type": "object"
+      },
+      "WorkReviewDecision": {
+        "additionalProperties": false,
+        "description": "A completed reviewer process is not an approval. Its entire result must be this bounded envelope, naming the exact input supplied by the runtime.",
+        "properties": {
+          "reviewed": {
+            "$ref": "#/components/schemas/WorkReviewInput"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/WorkReviewVerdict"
+          }
+        },
+        "required": [
+          "reviewed",
+          "summary",
+          "verdict"
+        ],
+        "type": "object"
+      },
+      "WorkReviewInput": {
+        "additionalProperties": false,
+        "description": "Captured from a clean governed checkout after native executor completion.",
+        "properties": {
+          "branch": {
+            "type": "string"
+          },
+          "coordination_id": {
+            "type": "string"
+          },
+          "environment_generation": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "executor_assignment_id": {
+            "type": "string"
+          },
+          "executor_receipt_id": {
+            "type": "string"
+          },
+          "forge_work_id": {
+            "type": "string"
+          },
+          "head_oid": {
+            "type": "string"
+          },
+          "work_unit_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "branch",
+          "coordination_id",
+          "environment_generation",
+          "executor_assignment_id",
+          "executor_receipt_id",
+          "forge_work_id",
+          "head_oid",
+          "work_unit_id"
+        ],
+        "type": "object"
+      },
+      "WorkReviewVerdict": {
+        "enum": [
+          "approved",
+          "changes_requested"
+        ],
+        "type": "string"
       },
       "WorkRevisionEvidence": {
         "additionalProperties": false,
@@ -20025,6 +20339,75 @@
           "browser_policy": "native_only",
           "capabilities": [
             "workshop.interact"
+          ],
+          "credential_scheme": "bearer",
+          "feature_profile": "core",
+          "rate_limit_class": "mutation",
+          "trust_group": "portal"
+        }
+      }
+    },
+    "/v1/external-conversations/{id}/work-events": {
+      "post": {
+        "operationId": "external_conversations.by_id.work_events.post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExternalProviderEventRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalConversationView"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.work_events.post"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.work_events.post"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            },
+            "description": "external_conversations.by_id.work_events.post"
+          }
+        },
+        "x-medousa-policy": {
+          "body_limit": 20480,
+          "bootstrap_public": false,
+          "browser_policy": "native_only",
+          "capabilities": [
+            "content.write"
           ],
           "credential_scheme": "bearer",
           "feature_profile": "core",

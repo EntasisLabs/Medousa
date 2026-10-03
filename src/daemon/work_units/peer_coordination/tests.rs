@@ -845,3 +845,67 @@ async fn native_medousa_executor_and_reviewer_follow_the_same_durable_controller
     assert_eq!(port.starts.load(Ordering::SeqCst), 2);
     assert_eq!(port.state(&plan).await, WorkUnitState::Satisfied);
 }
+
+#[tokio::test]
+async fn provider_review_requires_exact_completed_source_visibility_and_current_checkout() {
+    use crate::daemon::work_units::provider_events::{
+        review_revision, source_request_with_visibility,
+    };
+    use medousa_types::work_provider::WorkProviderReviewSource;
+    let (port, plan) = TestPort::fixture().await;
+    let copy = plan.clone();
+    port.io(move |native, _, _| {
+        let source = WorkProviderReviewSource {
+            channel: copy.input.channel.clone(),
+            executor_assignment_id: copy.executor_assignment_id.clone(),
+        };
+        assert!(
+            source_request_with_visibility(native, &copy.domain, &source, |_, _| true).is_err()
+        );
+        Ok(())
+    })
+    .await
+    .unwrap();
+    advance_work_coordination(&port, &plan).await.unwrap();
+    let pin = port.pin(&plan).await.unwrap();
+    let copy = plan.clone();
+    port.io(move |native, _, forge| {
+        let source = WorkProviderReviewSource {
+            channel: copy.input.channel.clone(),
+            executor_assignment_id: copy.executor_assignment_id.clone(),
+        };
+        assert!(source_request_with_visibility(native, &copy.domain, &source, |_, _| true).is_ok());
+        assert!(
+            source_request_with_visibility(native, &copy.domain, &source, |_, _| false).is_err()
+        );
+        let mut foreign = copy.domain.clone();
+        foreign.user_id = "other".into();
+        assert!(source_request_with_visibility(native, &foreign, &source, |_, _| true).is_err());
+        let mut missing = source.clone();
+        missing.executor_assignment_id = "unknown".into();
+        assert!(
+            source_request_with_visibility(native, &copy.domain, &missing, |_, _| true).is_err()
+        );
+        assert!(review_revision(forge, &copy.domain.user_id, &pin)?);
+        assert!(!review_revision(forge, "other", &pin)?);
+        let item = item(forge, &copy)?;
+        let root = &item.workspace_environment().unwrap().worktree;
+        std::fs::write(root.join("changed.txt"), "changed after pin")?;
+        assert!(!review_revision(forge, &copy.domain.user_id, &pin)?);
+        assert!(
+            std::process::Command::new("git")
+                .args(["add", "."])
+                .current_dir(root)
+                .output()?
+                .status
+                .success()
+        );
+        forge
+            .git()
+            .commit_checkpoint(root, "changed", &CheckpointAuthor::default())?;
+        assert!(!review_revision(forge, &copy.domain.user_id, &pin)?);
+        Ok(())
+    })
+    .await
+    .unwrap();
+}

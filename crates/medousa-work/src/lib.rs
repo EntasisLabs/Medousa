@@ -19,6 +19,8 @@ use sha2::{Digest, Sha256};
 
 mod budget;
 mod events;
+mod providers;
+use medousa_types::work_provider::WorkProviderRecord;
 
 #[cfg(test)]
 mod tests;
@@ -49,6 +51,8 @@ struct Snapshot {
     reservations: BTreeMap<String, WorkBudgetReservation>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     subscriptions: BTreeMap<String, WorkEventSubscription>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    provider_requests: BTreeMap<String, WorkProviderRecord>,
     commands: BTreeMap<String, CommittedCommand>,
 }
 
@@ -164,6 +168,7 @@ impl WorkGraphStore {
                     work_units: BTreeMap::new(),
                     reservations: BTreeMap::new(),
                     subscriptions: BTreeMap::new(),
+                    provider_requests: BTreeMap::new(),
                     commands: BTreeMap::new(),
                 });
             }
@@ -554,6 +559,16 @@ impl WorkGraphStore {
                     )
                 })
                 .collect(),
+            WorkGraphCollection::ProviderRequests => snapshot
+                .provider_requests
+                .iter()
+                .filter(|(_, record)| {
+                    query.anchor.as_ref().is_none_or(|anchor| {
+                        anchor == &work_reference(domain, &record.request.input.work_unit_id)
+                    })
+                })
+                .map(|(id, record)| (id.clone(), WorkGraphItem::ProviderRequest(record.clone())))
+                .collect(),
             WorkGraphCollection::Subscriptions => snapshot
                 .subscriptions
                 .iter()
@@ -731,6 +746,16 @@ impl Snapshot {
     fn mutate(&mut self, mutation: WorkGraphMutation, provenance: RecordProvenance) -> Result<()> {
         let now = Utc::now();
         match mutation {
+            WorkGraphMutation::RegisterProviderRequest { request } => {
+                self.register_provider_request(*request, &provenance)?
+            }
+            WorkGraphMutation::ClaimProviderRequest {
+                conversation_id,
+                request_id,
+            } => self.claim_provider_request(&conversation_id, &request_id, &provenance)?,
+            WorkGraphMutation::RecordProviderEvent { event } => {
+                self.record_provider_event(*event, &provenance)?
+            }
             WorkGraphMutation::Subscribe { input } => self.subscribe(input, &provenance)?,
             WorkGraphMutation::AcknowledgeEvent {
                 subscription_id,
@@ -923,6 +948,16 @@ impl Snapshot {
                     return Err(invalid("accepted state is established by admission"));
                 }
                 if state == WorkUnitState::Satisfied {
+                    if provenance.source != RecordSource::SystemEvent
+                        && self
+                            .provider_requests
+                            .values()
+                            .any(|record| record.request.input.work_unit_id == work_unit_id)
+                    {
+                        return Err(invalid(
+                            "provider work requires native outcome qualification; a model state claim cannot satisfy it",
+                        ));
+                    }
                     if self.budget_usage(&work_unit_id).concurrent_executions != 0 {
                         return Err(invalid("satisfaction requires settled execution custody"));
                     }
@@ -1148,6 +1183,7 @@ impl Snapshot {
             self.work_units.len(),
             self.reservations.len(),
             self.subscriptions.len(),
+            self.provider_requests.len(),
             self.commands.len(),
         ]
         .iter()
@@ -1286,6 +1322,7 @@ impl Snapshot {
         }
         self.validate_reservations()?;
         self.validate_subscriptions()?;
+        self.validate_provider_records()?;
         Ok(())
     }
 }

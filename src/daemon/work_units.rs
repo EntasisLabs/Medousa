@@ -23,6 +23,7 @@ mod native_project;
 mod native_vault;
 pub mod participant;
 mod peer_coordination;
+mod provider_events;
 pub use native_content::WorkContentResolveInput;
 pub use native_project::WorkProjectResolveInput;
 pub use native_vault::{WorkNativeReconcileInput, WorkNativeResolveInput};
@@ -113,9 +114,13 @@ fn admitted_domain(turn: &TurnExecutionContext, write: bool) -> Result<UserDomai
 fn validate_model_mutation(domain: &UserDomainRef, mutation: &WorkGraphMutation) -> Result<()> {
     if matches!(
         mutation,
-        WorkGraphMutation::ReserveBudget { .. } | WorkGraphMutation::SettleBudget { .. }
+        WorkGraphMutation::ReserveBudget { .. }
+            | WorkGraphMutation::SettleBudget { .. }
+            | WorkGraphMutation::RegisterProviderRequest { .. }
+            | WorkGraphMutation::ClaimProviderRequest { .. }
+            | WorkGraphMutation::RecordProviderEvent { .. }
     ) {
-        bail!("budget custody requires a native execution adapter");
+        bail!("native custody and provider evidence require an authenticated native adapter");
     }
     if let WorkGraphMutation::RecordResource {
         reference,

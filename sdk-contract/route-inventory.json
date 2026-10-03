@@ -2247,6 +2247,22 @@
       "trust_group": "portal"
     },
     {
+      "body_limit": 20480,
+      "bootstrap_public": false,
+      "browser_policy": "native_only",
+      "capabilities": [
+        "content.write"
+      ],
+      "feature_profile": "core",
+      "method": "POST",
+      "operation_id": "external_conversations.by_id.work_events.post",
+      "path": "/v1/external-conversations/{id}/work-events",
+      "rate_limit_class": "mutation",
+      "stream_transport": null,
+      "streaming": false,
+      "trust_group": "portal"
+    },
+    {
       "body_limit": 1024,
       "bootstrap_public": false,
       "browser_policy": "native_only",

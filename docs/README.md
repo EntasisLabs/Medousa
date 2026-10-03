@@ -97,8 +97,8 @@ Coder runtime: [Usage attribution and batch edits](engine/coder-efficiency.md).
 | [Workspace](engine/workspace.md) | Work board, feed, SSE |
 | [Forge](engine/forge.md) | Undertaking custody (`/v1/forge`), leases, review |
 | [Coordination](engine/coordination.md) | Owner-scoped native delegation approval and dispatch |
-| [Work scopes and relationships](engine/work-units.md) | Durable user-domain intent, resource links, and actor-bound event inboxes through existing runtime tools |
-| [External agent conversations](engine/external-conversations.md) | Muse, Grok Bot, Instinct, and Dots bridges and authenticated work participation |
+| [Work scopes and relationships](engine/work-units.md) | Durable user-domain intent, resource links, actor-bound inboxes, and correlated provider evidence through existing runtime tools |
+| [External agent conversations](engine/external-conversations.md) | Muse, Grok Bot, Instinct, and Dots bridges, authenticated work participation, and exact work callbacks |
 | [Coding engine](engine/coding-engine.md) | Language servers, project intelligence, safe edits |
 | [Agent tools](engine/agent-tools.md) | Host/worker lanes, discover domains |
 | [Runtime config](engine/runtime-config.md) | Inference profiles, stage routing |

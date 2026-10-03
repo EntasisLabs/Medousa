@@ -37,7 +37,7 @@ export interface ResourceRef {
   kind: ResourceKind;
 }
 
-export type WorkGraphCollection = "resources" | "relationships" | "work_units" | "events" | "budget_reservations" | "subscriptions";
+export type WorkGraphCollection = "resources" | "relationships" | "work_units" | "events" | "budget_reservations" | "subscriptions" | "provider_requests";
 
 export interface WorkGraphQuery {
   anchor?: ResourceRef | null;
@@ -90,6 +90,67 @@ export interface WorkBudgetLimits {
 
 export type WorkContactPreference = { kind: "silent" } | { kind: "return_to_origin" } | { kind: "participant"; participant: ResourceRef } | { channel: ResourceRef; kind: "channel" };
 
+export type ExternalEventKind = "user_message" | "transport_pending" | "transport_accepted" | "transport_failed" | "transport_uncertain" | "provider_message" | "progress" | "question" | "completed" | "failed";
+
+export type WorkProviderQualification = "outcome_only" | "review_approved" | "changes_requested" | "invalid_review" | "revision_changed" | "scope_changed" | "inactive_work" | "expired";
+
+export interface WorkReviewInput {
+  branch: string;
+  coordination_id: string;
+  environment_generation: number;
+  executor_assignment_id: string;
+  executor_receipt_id: string;
+  forge_work_id: string;
+  head_oid: string;
+  work_unit_id: string;
+}
+
+export type WorkReviewVerdict = "approved" | "changes_requested";
+
+export interface WorkReviewDecision {
+  reviewed: WorkReviewInput;
+  summary: string;
+  verdict: WorkReviewVerdict;
+}
+
+export interface WorkProviderEvent {
+  actor_id: string;
+  conversation_id: string;
+  created_at: string;
+  event_id: string;
+  kind: ExternalEventKind;
+  qualification: WorkProviderQualification;
+  request_id: string;
+  request_sequence: number;
+  review_decision?: WorkReviewDecision | null;
+  text: string;
+}
+
+export type ExternalProvider = "muse" | "grok_bot" | "instinct" | "dots";
+
+export interface WorkProviderReviewSource {
+  channel: CoordinationChannelRef;
+  executor_assignment_id: string;
+}
+
+export interface WorkProviderRequestInput {
+  deadline: string;
+  expected_scope_revision: number;
+  review_of?: WorkProviderReviewSource | null;
+  work_unit_id: string;
+}
+
+export interface WorkProviderRequest {
+  completion_condition: string;
+  conversation_id: string;
+  input: WorkProviderRequestInput;
+  instruction_digest: string;
+  provider: ExternalProvider;
+  request_id: string;
+  reviewed?: WorkReviewInput | null;
+  scope_digest: string;
+}
+
 export interface WorkRevisionEvidence {
   native_revision: string;
   reference: ResourceRef;
@@ -123,7 +184,7 @@ export type WorkUnitKind = "finite" | "maintenance";
 
 export type WorkUnitState = "accepted" | "active" | "waiting" | "needs_attention" | "paused" | "satisfied" | "failed" | "cancelled";
 
-export type WorkGraphMutation = { input: WorkSubscriptionInput; operation: "subscribe" } | { decision: string; event_revision: number; operation: "acknowledge_event"; subscription_id: string } | { operation: "stop_subscription"; subscription_id: string } | { locator?: string | null; native_revision?: string | null; operation: "record_resource"; reference: ResourceRef; resolution: ResourceResolution } | { from: ResourceRef; kind: ResourceRelationshipKind; operation: "put_relationship"; relationship_id: string; to: ResourceRef } | { budget?: WorkBudgetLimits | null; completion_condition: string; contact?: WorkContactPreference; intent: string; kind: WorkUnitKind; operation: "accept_work"; origin?: SessionRef | null; scope: WorkScope; work_unit_id: string } | { operation: "set_scope"; scope: WorkScope; work_unit_id: string } | { evidence: ResourceRef[]; operation: "set_state"; reason: string; state: WorkUnitState; work_unit_id: string } | { contact: WorkContactPreference; operation: "set_contact"; work_unit_id: string } | { operation: "attach_conversation"; session: SessionRef; work_unit_id: string } | { condition: string; evidence: WorkRevisionEvidence[]; expected_scope_revision: number; operation: "record_readiness"; valid_for_seconds: number; work_unit_id: string } | { limits: WorkBudgetLimits; operation: "set_budget"; work_unit_id: string } | { execution: ResourceRef; operation: "reserve_budget"; reservation_id: string; reserved_cost_microusd: number; work_unit_id: string } | { actual_cost_microusd: number; disposition: WorkBudgetDisposition; operation: "settle_budget"; reservation_id: string };
+export type WorkGraphMutation = { input: WorkSubscriptionInput; operation: "subscribe" } | { decision: string; event_revision: number; operation: "acknowledge_event"; subscription_id: string } | { operation: "stop_subscription"; subscription_id: string } | { locator?: string | null; native_revision?: string | null; operation: "record_resource"; reference: ResourceRef; resolution: ResourceResolution } | { from: ResourceRef; kind: ResourceRelationshipKind; operation: "put_relationship"; relationship_id: string; to: ResourceRef } | { budget?: WorkBudgetLimits | null; completion_condition: string; contact?: WorkContactPreference; intent: string; kind: WorkUnitKind; operation: "accept_work"; origin?: SessionRef | null; scope: WorkScope; work_unit_id: string } | { operation: "set_scope"; scope: WorkScope; work_unit_id: string } | { evidence: ResourceRef[]; operation: "set_state"; reason: string; state: WorkUnitState; work_unit_id: string } | { contact: WorkContactPreference; operation: "set_contact"; work_unit_id: string } | { operation: "attach_conversation"; session: SessionRef; work_unit_id: string } | { condition: string; evidence: WorkRevisionEvidence[]; expected_scope_revision: number; operation: "record_readiness"; valid_for_seconds: number; work_unit_id: string } | { limits: WorkBudgetLimits; operation: "set_budget"; work_unit_id: string } | { execution: ResourceRef; operation: "reserve_budget"; reservation_id: string; reserved_cost_microusd: number; work_unit_id: string } | { actual_cost_microusd: number; disposition: WorkBudgetDisposition; operation: "settle_budget"; reservation_id: string } | { operation: "register_provider_request"; request: WorkProviderRequest } | { conversation_id: string; operation: "claim_provider_request"; request_id: string } | { event: WorkProviderEvent; operation: "record_provider_event" };
 
 export interface WorkGraphCommand {
   command_id: string;
@@ -136,8 +197,6 @@ export type WorkParticipantMutation = { action: "work.record"; command: WorkGrap
 export interface WorkParticipantResponse {
   result: unknown;
 }
-
-export type ExternalProvider = "muse" | "grok_bot" | "instinct" | "dots";
 
 export type ExternalAgentScope = "read" | "work";
 
@@ -155,8 +214,6 @@ export interface CreateExternalAgentTokenResponse {
   access: ExternalAgentAccessStatus;
   token: string;
 }
-
-export type ExternalEventKind = "user_message" | "transport_pending" | "transport_accepted" | "transport_failed" | "transport_uncertain" | "provider_message" | "progress" | "question" | "completed" | "failed";
 
 export type MessageReactionTarget = "current_user_message" | { message_id: string };
 
@@ -210,6 +267,7 @@ export interface ExternalConversationListResponse {
 export interface ExternalConversationSendRequest {
   request_id: string;
   text: string;
+  work?: WorkProviderRequestInput | null;
 }
 
 export interface ExternalMuseDiscoveryStatus {

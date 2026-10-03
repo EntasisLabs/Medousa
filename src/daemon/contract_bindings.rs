@@ -100,7 +100,8 @@ pub(crate) fn wire_binding(operation_id: &str) -> Option<WireBinding> {
             request: Some("ExternalConversationSendRequest"),
             response: "ExternalConversationView",
         },
-        "external_conversations.by_id.events.post" => WireBinding {
+        "external_conversations.by_id.events.post"
+        | "external_conversations.by_id.work_events.post" => WireBinding {
             request: Some("ExternalProviderEventRequest"),
             response: "ExternalConversationView",
         },

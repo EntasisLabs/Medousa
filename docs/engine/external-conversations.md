@@ -16,6 +16,7 @@ The workshop daemon owns persistent conversations with provider-hosted agents. M
 | `POST /v1/external-conversations/{id}/api-token` | `admin.execute` | Issue or replace a provider API token and show it once |
 | `DELETE /v1/external-conversations/{id}/api-token` | `admin.execute` | Revoke a provider API token |
 | `POST /v1/external-conversations/{id}/messages` | `workshop.interact` | Commit and send a user message |
+| `POST /v1/external-conversations/{id}/work-events` | `content.write`, current self Work credential | Retain exact provider work outcomes |
 | `POST /v1/external-conversations/{id}/events` | `workshop.interact` plus callback key | Ingest a Grok Bot VM event |
 | `POST /v1/external-conversations/whatsapp/inbound` | `workshop.interact`, loopback | Route an inbound message or claim an outgoing Muse discovery code |
 | `POST /v1/external-conversations/slack/inbound` | `workshop.interact`, loopback | Reserve a dot channel and record replies from its bound dot |
@@ -62,6 +63,7 @@ boundary restricts these credentials to exact method/registered-route pairs:
 | `work` | `POST /v1/jobs/ask`, `GET /v1/jobs/{job_id}/result`, `GET /v1/jobs/{job_id}/report` |
 | `read` or `work` | `POST /v1/work/query` |
 | `work` | `POST /v1/work/mutate` |
+| `work` | `POST /v1/external-conversations/{id}/work-events` (own conversation only) |
 
 All other routes fail closed, including on loopback. Scopes authorize workshop
 resources, not individual notes or projects. Background work receives member
@@ -96,8 +98,9 @@ still checks channel ownership, Forge ownership, and source visibility.
 
 `work.record` uses optimistic graph revision and exact command replay, and
 records the authenticated credential ID as model-inferred provenance. It cannot
-publish native availability/revisions, reserve or settle execution budgets, or
-satisfy registered executor/reviewer work through a model state claim. Source
+publish native availability/revisions, reserve or settle execution budgets,
+register/claim provider dispatch, publish provider evidence, or satisfy registered
+executor/reviewer or provider-associated work through a model state claim. Source
 conversation references still require native visibility.
 
 `peer.propose` requires an exact visible source chat, owned Forge work on this
@@ -112,7 +115,79 @@ advances approved stages without requiring the source chat to remain active.
 
 API access is independent of chat transport verification. WhatsApp/Slack messages
 without an exact admitted work association remain conversation events. These
-adapters do not make Muse/Instinct/Dots/Grok Bot messages native review receipts,
-automatically deliver follow-ups, or establish work federation. Muse's linked-
+adapters do not make ordinary Muse/Instinct/Dots/Grok Bot messages native review
+receipts, automatically deliver follow-ups, or establish work federation. Muse's linked-
 device transport remains unverified as described above. Revocation blocks new
 participant requests; it does not cancel already admitted work or its native grants.
+
+
+## Correlated work callbacks
+
+The operator-authorized `/messages` send body can include:
+
+```json
+{
+  "request_id": "review-request-1",
+  "text": "Review the implementation and report the result.",
+  "work": {
+    "work_unit_id": "review-unit",
+    "expected_scope_revision": 7,
+    "deadline": "2026-10-03T20:00:00Z",
+    "review_of": {
+      "channel": { "authority_id": "workshop-authority", "channel_id": "owned-channel" },
+      "executor_assignment_id": "completed-executor"
+    }
+  }
+}
+```
+
+Use a future deadline within 24 hours. Omit `review_of` for an ordinary provider
+work request. The adapter derives the native review pin and appends a bounded
+`medousa-work-provider-v1` protocol object to the outgoing text. Raw work
+instructions are capped at 12 KiB; final text including context remains capped
+at 16 KiB. The work association commits before the user-message/transport journals,
+and a durable dispatch claim commits before network I/O. Inspect claimed or
+uncertain requests without resending; even an uncertain claim publication cannot
+authorize a replacement send. The [work contract](work-units.md#correlated-provider-work-and-review-evidence)
+describes scope, custody and review restrictions.
+
+Muse, Instinct, Dots and Grok Bot report with their own current Work token:
+
+```text
+POST /v1/external-conversations/{own-conversation-id}/work-events
+Authorization: Bearer <own-current-work-token>
+Content-Type: application/json
+```
+
+```json
+{
+  "event_id": "stable-provider-event-id",
+  "request_id": "review-request-1",
+  "kind": "completed",
+  "text": "<result or strict serialized WorkReviewDecision>"
+}
+```
+
+Allowed kinds are `progress`, `question`, `completed` and `failed`; reactions are
+not accepted on this route. The body is capped at 20 KiB and text at 16 KiB;
+event/request IDs are bounded to 128 bytes. Other conversations, read-only,
+expired, rotated and revoked tokens fail closed. A review result must serialize
+`{ "reviewed": <exact runtime pin>, "verdict": "approved|changes_requested", "summary": "..." }`
+as the entire `text`, without extra fields or surrounding prose. The envelope
+is capped at 8 KiB, with a nonempty summary of at most 4 KiB.
+
+The existing Grok Bot `/events` route also correlates supported, reaction-free
+callbacks when its request has this exact saved work association. Its paired
+bearer and bridge-key requirements remain. Ordinary messages and reactions
+continue through the conversation journal.
+
+Native work evidence commits before the conversation mirror. Retry the identical
+callback ID/body after an uncertain response; this reconciles retained evidence
+without replacing its original actor/time or sending another provider request.
+A request retains at most 64 events and one immutable completed/failed terminal
+outcome; work-ledger capacity errors require source retention and reconciliation.
+Subscription readers receive typed provider events through `work.events` and
+acknowledge them explicitly. Transport acceptance and ordinary chat replies do
+not qualify review. This increment does not automate stage dispatch, work
+satisfaction, chat wakeups, voice delivery or provider federation, and does not
+change Muse's unverified linked-device transport status.

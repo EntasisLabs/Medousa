@@ -162,6 +162,460 @@ fn subscription(
     }
 }
 
+fn provider_request(
+    store: &WorkGraphStore,
+    id: &str,
+) -> medousa_types::work_provider::WorkProviderRequest {
+    use medousa_types::work_provider::*;
+    let unit = store.work_unit(&domain("user:a"), "work").unwrap();
+    WorkProviderRequest {
+        conversation_id: "provider-chat".into(),
+        request_id: id.into(),
+        provider: medousa_types::ExternalProvider::Muse,
+        input: WorkProviderRequestInput {
+            work_unit_id: "work".into(),
+            expected_scope_revision: unit.scope_revision,
+            deadline: chrono::Utc::now() + chrono::Duration::hours(1),
+            review_of: None,
+        },
+        instruction_digest: "a".repeat(64),
+        scope_digest: store
+            .peer_coordination_scope_digest(&domain("user:a"), "work")
+            .unwrap(),
+        completion_condition: unit.completion_condition,
+        reviewed: None,
+    }
+}
+
+fn provider_event(
+    id: &str,
+    sequence: u64,
+    kind: medousa_types::ExternalEventKind,
+) -> medousa_types::work_provider::WorkProviderEvent {
+    medousa_types::work_provider::WorkProviderEvent {
+        conversation_id: "provider-chat".into(),
+        request_id: "request".into(),
+        event_id: id.into(),
+        actor_id: "adapter:test".into(),
+        request_sequence: sequence,
+        kind,
+        text: "Exact result".into(),
+        created_at: chrono::Utc::now(),
+        qualification: medousa_types::work_provider::WorkProviderQualification::OutcomeOnly,
+        review_decision: None,
+    }
+}
+
+#[test]
+fn provider_results_are_exact_and_feed_durable_hooks_without_claiming_work_satisfaction() {
+    let dir = tempdir();
+    let store = WorkGraphStore::open(dir.path()).unwrap();
+    next(&store, accept("work", WorkScope::default()));
+    next(
+        &store,
+        WorkGraphMutation::Subscribe {
+            input: WorkSubscriptionInput {
+                subscription_id: "provider-hook".into(),
+                work_unit_id: "work".into(),
+                expected_scope_revision: 1,
+                resources: vec![],
+                event_kinds: vec![
+                    WorkEventKind::ProviderProgress,
+                    WorkEventKind::ProviderCompleted,
+                    WorkEventKind::ProviderFailed,
+                ],
+                after_revision: 1,
+                expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+            },
+        },
+    );
+    let request = provider_request(&store, "request");
+    next(
+        &store,
+        WorkGraphMutation::RegisterProviderRequest {
+            request: Box::new(request),
+        },
+    );
+    reject(
+        &store,
+        WorkGraphMutation::RecordProviderEvent {
+            event: Box::new(provider_event(
+                "premature",
+                1,
+                medousa_types::ExternalEventKind::Completed,
+            )),
+        },
+    );
+    next(
+        &store,
+        WorkGraphMutation::ClaimProviderRequest {
+            conversation_id: "provider-chat".into(),
+            request_id: "request".into(),
+        },
+    );
+    let event = provider_event("terminal", 1, medousa_types::ExternalEventKind::Completed);
+    let result = WorkGraphMutation::RecordProviderEvent {
+        event: Box::new(event),
+    };
+    let receipt = store
+        .apply_native_command(
+            &domain("user:a"),
+            "provider-result".into(),
+            result.clone(),
+            provenance(),
+        )
+        .unwrap();
+    assert_eq!(receipt.revision, 5);
+    let reopened = WorkGraphStore::open(dir.path()).unwrap();
+    assert!(
+        reopened
+            .apply_native_command(
+                &domain("user:a"),
+                "provider-result".into(),
+                result,
+                provenance()
+            )
+            .unwrap()
+            .replayed
+    );
+    next(
+        &reopened,
+        WorkGraphMutation::RecordProviderEvent {
+            event: Box::new(provider_event(
+                "late-progress",
+                2,
+                medousa_types::ExternalEventKind::Progress,
+            )),
+        },
+    );
+    let page = inbox(&reopened, "provider-hook", 32);
+    assert_eq!(page.events.len(), 1); // Late progress never regresses a terminal result.
+    assert_eq!(page.events[0].receipt.revision, 5);
+    reject(
+        &reopened,
+        WorkGraphMutation::RecordProviderEvent {
+            event: Box::new(provider_event(
+                "different-terminal",
+                3,
+                medousa_types::ExternalEventKind::Failed,
+            )),
+        },
+    );
+    assert_eq!(
+        reopened.work_unit(&domain("user:a"), "work").unwrap().state,
+        WorkUnitState::Accepted
+    );
+    let mut model = provenance();
+    model.source = RecordSource::ModelInferred;
+    let revision = reopened
+        .query(&domain("user:a"), WorkGraphQuery::default())
+        .unwrap()
+        .revision;
+    assert!(
+        reopened
+            .apply(
+                &domain("user:a"),
+                command(
+                    "fake-satisfaction",
+                    revision,
+                    WorkGraphMutation::SetState {
+                        work_unit_id: "work".into(),
+                        state: WorkUnitState::Satisfied,
+                        reason: "Provider said done".into(),
+                        evidence: vec![]
+                    }
+                ),
+                model
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("provider work requires native outcome qualification")
+    );
+}
+
+#[test]
+fn provider_claims_fence_changed_scope_and_unknown_dispatch_survives_restart() {
+    for changed in [false, true] {
+        let dir = tempdir();
+        let store = WorkGraphStore::open(dir.path()).unwrap();
+        next(&store, accept("work", WorkScope::default()));
+        let request = provider_request(&store, "request");
+        next(
+            &store,
+            WorkGraphMutation::RegisterProviderRequest {
+                request: Box::new(request),
+            },
+        );
+        if changed {
+            next(
+                &store,
+                WorkGraphMutation::SetScope {
+                    work_unit_id: "work".into(),
+                    scope: WorkScope::default(),
+                },
+            );
+        }
+        let claim = WorkGraphMutation::ClaimProviderRequest {
+            conversation_id: "provider-chat".into(),
+            request_id: "request".into(),
+        };
+        if changed {
+            reject(&store, claim);
+            continue;
+        }
+        store
+            .apply_native_command(
+                &domain("user:a"),
+                "dispatch".into(),
+                claim.clone(),
+                provenance(),
+            )
+            .unwrap();
+        let reopened = WorkGraphStore::open(dir.path()).unwrap();
+        assert!(
+            reopened
+                .provider_request(&domain("user:a"), "provider-chat", "request")
+                .unwrap()
+                .unwrap()
+                .dispatch_claimed
+        );
+        assert!(
+            reopened
+                .apply_native_command(
+                    &domain("user:a"),
+                    "dispatch".into(),
+                    claim.clone(),
+                    provenance()
+                )
+                .unwrap()
+                .replayed
+        );
+        assert!(
+            reopened
+                .apply_native_command(&domain("user:a"), "replacement".into(), claim, provenance())
+                .is_err()
+        );
+        assert!(
+            reopened
+                .require_provider_idle(&domain("user:a"), "work")
+                .is_err()
+        );
+        let replacement = provider_request(&reopened, "replacement-request");
+        next(
+            &reopened,
+            WorkGraphMutation::RegisterProviderRequest {
+                request: Box::new(replacement),
+            },
+        );
+        reject(
+            &reopened,
+            WorkGraphMutation::ClaimProviderRequest {
+                conversation_id: "provider-chat".into(),
+                request_id: "replacement-request".into(),
+            },
+        );
+        next(
+            &reopened,
+            WorkGraphMutation::RecordProviderEvent {
+                event: Box::new(provider_event(
+                    "done",
+                    1,
+                    medousa_types::ExternalEventKind::Completed,
+                )),
+            },
+        );
+        assert!(
+            reopened
+                .require_provider_idle(&domain("user:a"), "work")
+                .is_ok()
+        );
+        next(
+            &reopened,
+            WorkGraphMutation::ClaimProviderRequest {
+                conversation_id: "provider-chat".into(),
+                request_id: "replacement-request".into(),
+            },
+        );
+    }
+}
+
+#[test]
+fn provider_dispatch_rechecks_attention_state_at_atomic_claim() {
+    let dir = tempdir();
+    let store = WorkGraphStore::open(dir.path()).unwrap();
+    next(&store, accept("work", WorkScope::default()));
+    let request = provider_request(&store, "request");
+    next(
+        &store,
+        WorkGraphMutation::RegisterProviderRequest {
+            request: Box::new(request),
+        },
+    );
+    next(
+        &store,
+        WorkGraphMutation::SetState {
+            work_unit_id: "work".into(),
+            state: WorkUnitState::NeedsAttention,
+            reason: "Missing execution context".into(),
+            evidence: vec![],
+        },
+    );
+    reject(
+        &store,
+        WorkGraphMutation::ClaimProviderRequest {
+            conversation_id: "provider-chat".into(),
+            request_id: "request".into(),
+        },
+    );
+    assert!(
+        !store
+            .provider_request(&domain("user:a"), "provider-chat", "request")
+            .unwrap()
+            .unwrap()
+            .dispatch_claimed
+    );
+}
+
+#[test]
+fn provider_verdicts_require_the_exact_native_review_envelope() {
+    use medousa_types::{
+        coordination::CoordinationChannelRef, work_coordination::*, work_provider::*,
+    };
+    let dir = tempdir();
+    let store = WorkGraphStore::open(dir.path()).unwrap();
+    next(&store, accept("work", WorkScope::default()));
+    let mut request = provider_request(&store, "request");
+    let reviewed = WorkReviewInput {
+        coordination_id: "provider-review".into(),
+        work_unit_id: "work".into(),
+        executor_assignment_id: "executor".into(),
+        executor_receipt_id: "receipt".into(),
+        forge_work_id: "forge-work".into(),
+        environment_generation: 1,
+        branch: "main".into(),
+        head_oid: "b".repeat(40),
+    };
+    request.input.review_of = Some(WorkProviderReviewSource {
+        channel: CoordinationChannelRef {
+            authority_id: domain("user:a").authority_id,
+            channel_id: "channel".into(),
+        },
+        executor_assignment_id: "executor".into(),
+    });
+    request.reviewed = Some(reviewed.clone());
+    next(
+        &store,
+        WorkGraphMutation::RegisterProviderRequest {
+            request: Box::new(request),
+        },
+    );
+    next(
+        &store,
+        WorkGraphMutation::ClaimProviderRequest {
+            conversation_id: "provider-chat".into(),
+            request_id: "request".into(),
+        },
+    );
+    let mut event = provider_event("review", 1, medousa_types::ExternalEventKind::Completed);
+    event.qualification = WorkProviderQualification::ReviewApproved;
+    reject(
+        &store,
+        WorkGraphMutation::RecordProviderEvent {
+            event: Box::new(event.clone()),
+        },
+    );
+    let decision = WorkReviewDecision {
+        reviewed,
+        verdict: WorkReviewVerdict::Approved,
+        summary: "Verified condition against the exact revision".into(),
+    };
+    event.text = serde_json::to_string(&decision).unwrap();
+    event.review_decision = Some(decision);
+    next(
+        &store,
+        WorkGraphMutation::RecordProviderEvent {
+            event: Box::new(event),
+        },
+    );
+    assert_eq!(
+        store
+            .provider_request(&domain("user:a"), "provider-chat", "request")
+            .unwrap()
+            .unwrap()
+            .events[0]
+            .qualification,
+        WorkProviderQualification::ReviewApproved
+    );
+}
+
+#[test]
+fn provider_receipt_publication_fault_replays_the_original_native_result() {
+    for (point, published) in [
+        (TransactionFaultPoint::BeforeRenamePublish, false),
+        (TransactionFaultPoint::AfterRenamePublish, true),
+    ] {
+        let dir = tempdir();
+        let store = WorkGraphStore::open(dir.path()).unwrap();
+        next(&store, accept("work", WorkScope::default()));
+        let request = provider_request(&store, "request");
+        next(
+            &store,
+            WorkGraphMutation::RegisterProviderRequest {
+                request: Box::new(request),
+            },
+        );
+        next(
+            &store,
+            WorkGraphMutation::ClaimProviderRequest {
+                conversation_id: "provider-chat".into(),
+                request_id: "request".into(),
+            },
+        );
+        let faulty = WorkGraphStore::with_faults(
+            dir.path(),
+            Arc::new(FailOnce {
+                point,
+                fired: AtomicBool::new(false),
+            }),
+        )
+        .unwrap();
+        let mutation = WorkGraphMutation::RecordProviderEvent {
+            event: Box::new(provider_event(
+                "result",
+                1,
+                medousa_types::ExternalEventKind::Completed,
+            )),
+        };
+        assert!(
+            faulty
+                .apply_native_command(
+                    &domain("user:a"),
+                    "result".into(),
+                    mutation.clone(),
+                    provenance()
+                )
+                .is_err()
+        );
+        let reopened = WorkGraphStore::open(dir.path()).unwrap();
+        assert_eq!(
+            reopened
+                .provider_request(&domain("user:a"), "provider-chat", "request")
+                .unwrap()
+                .unwrap()
+                .events
+                .len(),
+            usize::from(published)
+        );
+        assert_eq!(
+            reopened
+                .apply_native_command(&domain("user:a"), "result".into(), mutation, provenance())
+                .unwrap()
+                .replayed,
+            published
+        );
+    }
+}
+
 fn inbox(store: &WorkGraphStore, id: &str, limit: usize) -> WorkEventsPage {
     store
         .events(

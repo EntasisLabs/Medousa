@@ -13546,9 +13546,91 @@
       },
       "text": {
         "type": "string"
+      },
+      "work": {
+        "description": "Optional exact work association; ordinary messages retain their behavior.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/WorkProviderRequestInput"
+          },
+          {
+            "type": "null"
+          }
+        ]
       }
     },
-    "additionalProperties": false
+    "additionalProperties": false,
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "CoordinationChannelRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "channel_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "channel_id": {
+            "type": "string"
+          }
+        }
+      },
+      "WorkProviderRequestInput": {
+        "type": "object",
+        "required": [
+          "deadline",
+          "expected_scope_revision",
+          "work_unit_id"
+        ],
+        "properties": {
+          "deadline": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expected_scope_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "review_of": {
+            "description": "The runtime derives the receipt/revision pin; callers cannot assert it.",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorkProviderReviewSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "work_unit_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkProviderReviewSource": {
+        "type": "object",
+        "required": [
+          "channel",
+          "executor_assignment_id"
+        ],
+        "properties": {
+          "channel": {
+            "$ref": "#/definitions/CoordinationChannelRef"
+          },
+          "executor_assignment_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
   },
   "ExternalConversationView": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -30292,6 +30374,21 @@
           }
         }
       },
+      "ExternalEventKind": {
+        "type": "string",
+        "enum": [
+          "user_message",
+          "transport_pending",
+          "transport_accepted",
+          "transport_failed",
+          "transport_uncertain",
+          "provider_message",
+          "progress",
+          "question",
+          "completed",
+          "failed"
+        ]
+      },
       "ExternalPeerRuntime": {
         "type": "string",
         "enum": [
@@ -30299,6 +30396,15 @@
           "codex",
           "cursor",
           "hermes"
+        ]
+      },
+      "ExternalProvider": {
+        "type": "string",
+        "enum": [
+          "muse",
+          "grok_bot",
+          "instinct",
+          "dots"
         ]
       },
       "PeerProposalIntent": {
@@ -31071,8 +31177,239 @@
               }
             },
             "additionalProperties": false
+          },
+          {
+            "description": "Native-only association, retained before provider effects.",
+            "type": "object",
+            "required": [
+              "operation",
+              "request"
+            ],
+            "properties": {
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "register_provider_request"
+                ]
+              },
+              "request": {
+                "$ref": "#/definitions/WorkProviderRequest"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Native-only single dispatch custody. Unknown claims never relaunch.",
+            "type": "object",
+            "required": [
+              "conversation_id",
+              "operation",
+              "request_id"
+            ],
+            "properties": {
+              "conversation_id": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "claim_provider_request"
+                ]
+              },
+              "request_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Authenticated provider evidence; not native execution or satisfaction.",
+            "type": "object",
+            "required": [
+              "event",
+              "operation"
+            ],
+            "properties": {
+              "event": {
+                "$ref": "#/definitions/WorkProviderEvent"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "record_provider_event"
+                ]
+              }
+            },
+            "additionalProperties": false
           }
         ]
+      },
+      "WorkProviderEvent": {
+        "type": "object",
+        "required": [
+          "actor_id",
+          "conversation_id",
+          "created_at",
+          "event_id",
+          "kind",
+          "qualification",
+          "request_id",
+          "request_sequence",
+          "text"
+        ],
+        "properties": {
+          "actor_id": {
+            "type": "string"
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/definitions/ExternalEventKind"
+          },
+          "qualification": {
+            "$ref": "#/definitions/WorkProviderQualification"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "request_sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "review_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorkReviewDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkProviderQualification": {
+        "type": "string",
+        "enum": [
+          "outcome_only",
+          "review_approved",
+          "changes_requested",
+          "invalid_review",
+          "revision_changed",
+          "scope_changed",
+          "inactive_work",
+          "expired"
+        ]
+      },
+      "WorkProviderRequest": {
+        "type": "object",
+        "required": [
+          "completion_condition",
+          "conversation_id",
+          "input",
+          "instruction_digest",
+          "provider",
+          "request_id",
+          "scope_digest"
+        ],
+        "properties": {
+          "completion_condition": {
+            "type": "string"
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "input": {
+            "$ref": "#/definitions/WorkProviderRequestInput"
+          },
+          "instruction_digest": {
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/definitions/ExternalProvider"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "reviewed": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorkReviewInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scope_digest": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkProviderRequestInput": {
+        "type": "object",
+        "required": [
+          "deadline",
+          "expected_scope_revision",
+          "work_unit_id"
+        ],
+        "properties": {
+          "deadline": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expected_scope_revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "review_of": {
+            "description": "The runtime derives the receipt/revision pin; callers cannot assert it.",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorkProviderReviewSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "work_unit_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkProviderReviewSource": {
+        "type": "object",
+        "required": [
+          "channel",
+          "executor_assignment_id"
+        ],
+        "properties": {
+          "channel": {
+            "$ref": "#/definitions/CoordinationChannelRef"
+          },
+          "executor_assignment_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       },
       "WorkReadinessRequirement": {
         "type": "object",
@@ -31089,6 +31426,77 @@
           }
         },
         "additionalProperties": false
+      },
+      "WorkReviewDecision": {
+        "description": "A completed reviewer process is not an approval. Its entire result must be this bounded envelope, naming the exact input supplied by the runtime.",
+        "type": "object",
+        "required": [
+          "reviewed",
+          "summary",
+          "verdict"
+        ],
+        "properties": {
+          "reviewed": {
+            "$ref": "#/definitions/WorkReviewInput"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "verdict": {
+            "$ref": "#/definitions/WorkReviewVerdict"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkReviewInput": {
+        "description": "Captured from a clean governed checkout after native executor completion.",
+        "type": "object",
+        "required": [
+          "branch",
+          "coordination_id",
+          "environment_generation",
+          "executor_assignment_id",
+          "executor_receipt_id",
+          "forge_work_id",
+          "head_oid",
+          "work_unit_id"
+        ],
+        "properties": {
+          "branch": {
+            "type": "string"
+          },
+          "coordination_id": {
+            "type": "string"
+          },
+          "environment_generation": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "executor_assignment_id": {
+            "type": "string"
+          },
+          "executor_receipt_id": {
+            "type": "string"
+          },
+          "forge_work_id": {
+            "type": "string"
+          },
+          "head_oid": {
+            "type": "string"
+          },
+          "work_unit_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkReviewVerdict": {
+        "type": "string",
+        "enum": [
+          "approved",
+          "changes_requested"
+        ]
       },
       "WorkRevisionEvidence": {
         "type": "object",
@@ -31425,7 +31833,8 @@
           "work_units",
           "events",
           "budget_reservations",
-          "subscriptions"
+          "subscriptions",
+          "provider_requests"
         ]
       },
       "WorkGraphQuery": {

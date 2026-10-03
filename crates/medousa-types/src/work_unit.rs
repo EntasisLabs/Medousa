@@ -4,7 +4,10 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::{AuthorityId, SessionRef};
+use crate::{
+    AuthorityId, SessionRef,
+    work_provider::{WorkProviderEvent, WorkProviderRecord, WorkProviderRequest},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -430,6 +433,19 @@ pub enum WorkGraphMutation {
         disposition: WorkBudgetDisposition,
         actual_cost_microusd: u64,
     },
+    /// Native-only association, retained before provider effects.
+    RegisterProviderRequest {
+        request: Box<WorkProviderRequest>,
+    },
+    /// Native-only single dispatch custody. Unknown claims never relaunch.
+    ClaimProviderRequest {
+        conversation_id: String,
+        request_id: String,
+    },
+    /// Authenticated provider evidence; not native execution or satisfaction.
+    RecordProviderEvent {
+        event: Box<WorkProviderEvent>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -469,6 +485,7 @@ pub enum WorkGraphCollection {
     Events,
     BudgetReservations,
     Subscriptions,
+    ProviderRequests,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -503,6 +520,7 @@ pub enum WorkGraphItem {
     Event(WorkGraphEvent),
     BudgetReservation(WorkBudgetReservation),
     Subscription(WorkEventSubscription),
+    ProviderRequest(WorkProviderRecord),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

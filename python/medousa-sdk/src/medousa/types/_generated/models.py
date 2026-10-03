@@ -828,6 +828,19 @@ class FeedRef(MedousaModel):
     ref_type: str
 
 
+class CoordinationChannelRef(MedousaModel):
+    authority_id: AuthorityId
+    channel_id: str
+
+
+class WorkProviderReviewSource(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    channel: CoordinationChannelRef
+    executor_assignment_id: str
+
+
 class ExternalWhatsAppPairingState(Enum):
     waiting = 'waiting'
     qr_ready = 'qr_ready'
@@ -1240,11 +1253,6 @@ class McpGatewayServerRuntime(MedousaModel):
     serverId: str
     title: str
     toolCount: int = Field(..., ge=0)
-
-
-class CoordinationChannelRef(MedousaModel):
-    authority_id: AuthorityId
-    channel_id: str
 
 
 class ExternalPeerTarget(MedousaModel):
@@ -2699,12 +2707,63 @@ class WorkGraphMutation14(MedousaModel):
     reservation_id: str
 
 
+class Operation14(Enum):
+    register_provider_request = 'register_provider_request'
+
+
+class Operation15(Enum):
+    claim_provider_request = 'claim_provider_request'
+
+
+class WorkGraphMutation16(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    conversation_id: str
+    operation: Operation15
+    request_id: str
+
+
+class Operation16(Enum):
+    record_provider_event = 'record_provider_event'
+
+
+class WorkProviderQualification(Enum):
+    outcome_only = 'outcome_only'
+    review_approved = 'review_approved'
+    changes_requested = 'changes_requested'
+    invalid_review = 'invalid_review'
+    revision_changed = 'revision_changed'
+    scope_changed = 'scope_changed'
+    inactive_work = 'inactive_work'
+    expired = 'expired'
+
+
 class WorkReadinessRequirement(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
     condition: str
     work_unit_id: str
+
+
+class WorkReviewInput(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    branch: str
+    coordination_id: str
+    environment_generation: int = Field(..., ge=0)
+    executor_assignment_id: str
+    executor_receipt_id: str
+    forge_work_id: str
+    head_oid: str
+    work_unit_id: str
+
+
+class WorkReviewVerdict(Enum):
+    approved = 'approved'
+    changes_requested = 'changes_requested'
 
 
 class WorkRevisionEvidence(MedousaModel):
@@ -2792,6 +2851,7 @@ class WorkGraphCollection(Enum):
     events = 'events'
     budget_reservations = 'budget_reservations'
     subscriptions = 'subscriptions'
+    provider_requests = 'provider_requests'
 
 
 class WorkGraphQuery(MedousaModel):
@@ -3554,14 +3614,6 @@ class EnvironmentStreamQuery(MedousaModel):
 class EnvironmentValidateResponse(MedousaModel):
     errors: list[str]
     valid: bool
-
-
-class ExternalConversationSendRequest(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    request_id: str
-    text: str
 
 
 class ExternalInboundClaimResponse(MedousaModel):
@@ -4598,6 +4650,18 @@ class FeedEvent(MedousaModel):
     summary: str
 
 
+class WorkProviderRequestInput(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    deadline: AwareDatetime
+    expected_scope_revision: int = Field(..., ge=0)
+    review_of: WorkProviderReviewSource | None = Field(
+        None, description='The runtime derives the receipt/revision pin; callers cannot assert it.'
+    )
+    work_unit_id: str
+
+
 class LocalDeviceTelemetrySnapshot(MedousaModel):
     availability: LocalDeviceTelemetryAvailability
     backend: GpuBackend
@@ -4948,25 +5012,27 @@ class WorkGraphMutation11(MedousaModel):
     work_unit_id: str
 
 
-class WorkGraphMutation(
-    RootModel[
-        WorkGraphMutation1
-        | WorkGraphMutation2
-        | WorkGraphMutation3
-        | WorkGraphMutation4
-        | WorkGraphMutation5
-        | WorkGraphMutation6
-        | WorkGraphMutation7
-        | WorkGraphMutation8
-        | WorkGraphMutation9
-        | WorkGraphMutation10
-        | WorkGraphMutation11
-        | WorkGraphMutation12
-        | WorkGraphMutation13
-        | WorkGraphMutation14
-    ]
-):
-    root: WorkGraphMutation1 | WorkGraphMutation2 | WorkGraphMutation3 | WorkGraphMutation4 | WorkGraphMutation5 | WorkGraphMutation6 | WorkGraphMutation7 | WorkGraphMutation8 | WorkGraphMutation9 | WorkGraphMutation10 | WorkGraphMutation11 | WorkGraphMutation12 | WorkGraphMutation13 | WorkGraphMutation14
+class WorkProviderRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    completion_condition: str
+    conversation_id: str
+    input: WorkProviderRequestInput
+    instruction_digest: str
+    provider: ExternalProvider
+    request_id: str
+    reviewed: WorkReviewInput | None = None
+    scope_digest: str
+
+
+class WorkReviewDecision(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    reviewed: WorkReviewInput
+    summary: str
+    verdict: WorkReviewVerdict
 
 
 class WorkCard(MedousaModel):
@@ -5166,6 +5232,18 @@ class DeriveSessionResponse(MedousaModel):
         ..., description='True when this idempotency key had already committed the same request.'
     )
     session_id: str
+
+
+class ExternalConversationSendRequest(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    request_id: str
+    text: str
+    work: WorkProviderRequestInput | None = Field(
+        None,
+        description='Optional exact work association; ordinary messages retain their behavior.',
+    )
 
 
 class ExternalProviderEventRequest(MedousaModel):
@@ -5558,16 +5636,28 @@ class ConversationTurn(MedousaModel):
     tool_names: list[str]
 
 
-class WorkGraphCommand(MedousaModel):
+class WorkGraphMutation15(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    command_id: str = Field(
-        ...,
-        description='Replays of the exact command return the original receipt, even after later commits. Reusing this key for different intent is a conflict.',
+    operation: Operation14
+    request: WorkProviderRequest
+
+
+class WorkProviderEvent(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
     )
-    expected_revision: int = Field(..., ge=0)
-    mutation: WorkGraphMutation
+    actor_id: str
+    conversation_id: str
+    created_at: AwareDatetime
+    event_id: str
+    kind: ExternalEventKind
+    qualification: WorkProviderQualification
+    request_id: str
+    request_sequence: int = Field(..., ge=0)
+    review_decision: WorkReviewDecision | None = None
+    text: str
 
 
 class BotListResponse(MedousaModel):
@@ -5612,6 +5702,62 @@ class SessionBotResponse(MedousaModel):
     session_id: str
 
 
+class LayoutPreset(MedousaModel):
+    active: bool | None = False
+    id: str
+    label: str
+    shellChrome: ShellChromeDef | None = None
+    surfaces: list[str]
+    theme: EnvironmentTheme | None = Field(
+        None,
+        description='Color theme for this layout — copied onto `EnvironmentSpec.theme` on activate.',
+    )
+
+
+class WorkGraphMutation17(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    event: WorkProviderEvent
+    operation: Operation16
+
+
+class WorkGraphMutation(
+    RootModel[
+        WorkGraphMutation1
+        | WorkGraphMutation2
+        | WorkGraphMutation3
+        | WorkGraphMutation4
+        | WorkGraphMutation5
+        | WorkGraphMutation6
+        | WorkGraphMutation7
+        | WorkGraphMutation8
+        | WorkGraphMutation9
+        | WorkGraphMutation10
+        | WorkGraphMutation11
+        | WorkGraphMutation12
+        | WorkGraphMutation13
+        | WorkGraphMutation14
+        | WorkGraphMutation15
+        | WorkGraphMutation16
+        | WorkGraphMutation17
+    ]
+):
+    root: WorkGraphMutation1 | WorkGraphMutation2 | WorkGraphMutation3 | WorkGraphMutation4 | WorkGraphMutation5 | WorkGraphMutation6 | WorkGraphMutation7 | WorkGraphMutation8 | WorkGraphMutation9 | WorkGraphMutation10 | WorkGraphMutation11 | WorkGraphMutation12 | WorkGraphMutation13 | WorkGraphMutation14 | WorkGraphMutation15 | WorkGraphMutation16 | WorkGraphMutation17
+
+
+class WorkGraphCommand(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    command_id: str = Field(
+        ...,
+        description='Replays of the exact command return the original receipt, even after later commits. Reusing this key for different intent is a conflict.',
+    )
+    expected_revision: int = Field(..., ge=0)
+    mutation: WorkGraphMutation
+
+
 class WorkParticipantMutation1(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -5625,18 +5771,6 @@ class WorkParticipantMutation(
 ):
     root: WorkParticipantMutation1 | WorkParticipantMutation2 | WorkParticipantMutation3 = Field(
         ..., title='WorkParticipantMutation'
-    )
-
-
-class LayoutPreset(MedousaModel):
-    active: bool | None = False
-    id: str
-    label: str
-    shellChrome: ShellChromeDef | None = None
-    surfaces: list[str]
-    theme: EnvironmentTheme | None = Field(
-        None,
-        description='Color theme for this layout — copied onto `EnvironmentSpec.theme` on activate.',
     )
 
 

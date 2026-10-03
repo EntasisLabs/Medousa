@@ -312,7 +312,7 @@ broader executor/reviewer adapters, and contact delivery remain subsequent work.
 
 | Field | Meaning |
 |---|---|
-| `collection` | `resources` (default), `relationships`, `work_units`, `events`, `budget_reservations`, or `subscriptions` |
+| `collection` | `resources` (default), `relationships`, `work_units`, `events`, `budget_reservations`, `subscriptions`, or `provider_requests` |
 | `anchor` | Optional exact resource reference; event history is domain-scoped and rejects an anchor |
 | `direction` | For relationship queries: `both` (default), `incoming`, or `outgoing` |
 | `limit` | 1–100, default 20 |
@@ -595,8 +595,10 @@ later metered/composite execution adapter. ACP provider costs are currently unkn
 these configurations fail closed rather than recording unknown cost as zero.
 Current native execution targets are Medousa Coder, Codex, Cursor, and Hermes on
 this workshop. Muse/Instinct/Dots/Grok Bot have authenticated work API access;
-provider-hosted review execution, cross-workshop coordination, and voice/contact
-routing still require their native correlation and delivery admission paths.
+authenticated provider callbacks can now retain exact request/result association
+and revision-bound review evidence as described below. Automatic provider stage
+orchestration, cross-workshop coordination and voice/contact routing remain separate
+admission paths.
 
 ## Durable work event subscriptions
 
@@ -610,7 +612,8 @@ requests cannot select another actor or grant execution/contact authority.
 `work.events` takes `subscription_id` and optional `limit` (1–32, default 16).
 It returns retained matching journal events, the current subscription status,
 and `has_more`. Reads never consume events. Native resource observations,
-work-state changes and scope changes are selected explicitly; model-written
+work-state changes, scope changes, and correlated provider progress/completed/failed
+results are selected explicitly; model-written
 resource claims are not native observation events. An earlier cursor covers
 completion racing registration. The journal retains exact commands and receipts
 across restart and closed chats; capacity exhaustion never evicts unseen events.
@@ -636,3 +639,49 @@ native execution through the [work participant HTTP adapters](external-conversat
 These requests bind the domain to a scoped credential rather than an active chat.
 They share this registry, model-intent validation, native grant checks and durable
 controller; HTTP access adds no independent scheduler or execution authority.
+
+
+## Correlated provider work and review evidence
+
+The existing conversation send API accepts optional `work` metadata: an exact
+`work_unit_id`, `expected_scope_revision`, and `deadline` within 24 hours.
+The authenticated native adapter records the conversation/request/provider,
+instruction digest, saved completion condition and scope/resource-version digest
+before dispatch. Only standalone finite work without budgets, dependencies,
+children or competing execution custody is admitted. A native execute/review
+controller cannot be replaced through this adapter.
+
+A durable dispatch claim precedes the existing provider transport. After a claim,
+reconciliation inspects the same request; it never creates a replacement send.
+An unknown delivery remains unresolved across restart. New requests for the same
+work cannot replace an outstanding claimed request. This path preserves current
+operator send authority; provider Work credentials cannot send messages or mint
+execution grants.
+
+An authenticated callback names the exact conversation, request and event IDs.
+The work journal commits before its conversation mirror. Exact callback retry
+returns the original evidence, actor and timestamp, including after credential
+rotation. Changed event bodies, unknown requests, pre-dispatch callbacks, reused
+event IDs across requests, and replacement terminal outcomes fail closed.
+Late progress can be retained but does not generate progress intake after a
+terminal outcome. `work.graph` with `collection: "provider_requests"` exposes
+bounded records, optionally selected through the existing work anchor. Subscription
+kinds `provider_progress`, `provider_completed` and `provider_failed` select them.
+
+Optional `review_of` names an owned native channel and completed executor
+assignment. The runtime verifies the exact proposal/receipt, current source
+visibility, Forge ownership and a clean governed checkout. It derives a
+`WorkReviewInput` pin with native receipt, environment generation, branch and full
+HEAD; callers cannot assert that pin. A provider `completed` callback qualifies
+as `review_approved` or `changes_requested` only with strict JSON containing the
+exact `reviewed` object, a recognized verdict and a nonempty bounded summary.
+Changed checkout revision, invalid review JSON, changed scope, inactive work and
+expired deadlines remain explicit qualifications with no approving decision.
+
+These records are attributable provider outcomes and qualified review evidence.
+They do not automatically satisfy work, reopen a terminal unit, wake a chat or
+send contact. Model mutations cannot manufacture these records or satisfy a
+provider-associated unit. Ordinary WhatsApp/Slack messages, reactions and transport
+acceptance remain conversation observations. Live provider transport acceptance
+and the complete external execution/review controller remain qualification gates.
+See [Provider callback protocol](external-conversations.md#correlated-work-callbacks).

@@ -828,6 +828,13 @@ pub const EXTERNAL_CONVERSATIONS_BY_ID_MESSAGES_POST: Operation = Operation {
     streaming: false,
 };
 
+pub const EXTERNAL_CONVERSATIONS_BY_ID_WORK_EVENTS_POST: Operation = Operation {
+    id: "external_conversations.by_id.work_events.post",
+    method: "POST",
+    path: "/v1/external-conversations/{id}/work-events",
+    streaming: false,
+};
+
 pub const EXTERNAL_CONVERSATIONS_GET: Operation = Operation {
     id: "external_conversations.get",
     method: "GET",
@@ -3515,6 +3522,7 @@ pub static ALL: &[Operation] = &[
     EXTERNAL_CONVERSATIONS_BY_ID_EVENTS_POST,
     EXTERNAL_CONVERSATIONS_BY_ID_GET,
     EXTERNAL_CONVERSATIONS_BY_ID_MESSAGES_POST,
+    EXTERNAL_CONVERSATIONS_BY_ID_WORK_EVENTS_POST,
     EXTERNAL_CONVERSATIONS_GET,
     EXTERNAL_CONVERSATIONS_MUSE_DISCOVERY_GET,
     EXTERNAL_CONVERSATIONS_MUSE_DISCOVERY_POST,

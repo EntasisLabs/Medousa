@@ -744,12 +744,13 @@ pub async fn send(
     State(state): State<AppState>,
     Extension(principal): Extension<RequestPrincipal>,
     Path(id): Path<String>,
-    Json(input): Json<SendMessageRequest>,
+    Json(mut input): Json<SendMessageRequest>,
 ) -> Result<Json<ConversationView>, HttpError> {
     if input.request_id.trim().is_empty()
         || input.request_id.len() > 128
         || input.text.trim().is_empty()
         || input.text.len() > 16 * 1024
+        || (input.work.is_some() && input.text.len() > 12 * 1024)
     {
         return Err(bad_request("invalid request ID or message"));
     }
@@ -798,6 +799,36 @@ pub async fn send(
     } else {
         None
     };
+    let work = if let Some(work) = input.work.clone() {
+        let host = crate::daemon::work_units::local_work_unit_host().ok_or((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "work unit host unavailable".into(),
+        ))?;
+        let domain = provider_work_domain(&binding.owner_id)?;
+        let request = host
+            .prepare_provider_request(
+                domain.clone(),
+                id.clone(),
+                binding.provider,
+                input.request_id.clone(),
+                work,
+                input.text.clone(),
+            )
+            .await
+            .map_err(internal)?;
+        input.text.push_str(&format!("\n\nmedousa-work-provider-v1: {}\nReport progress/completed/failed with your Work credential to Medousa's work-events endpoint, naming this exact request. Ordinary chat replies are not completion receipts.", serde_json::to_string(&request).map_err(internal)?));
+        if request.reviewed.is_some() {
+            input.text.push_str("\nmedousa-work-review-v1: inspect the pinned clean checkout without editing it. Completed result must be strict JSON with the exact reviewed object above, verdict approved or changes_requested, and a nonempty summary.");
+        }
+        if input.text.len() > 16 * 1024 {
+            return Err(bad_request(
+                "work instructions and derived context exceed message bound",
+            ));
+        }
+        Some((host, domain, request))
+    } else {
+        None
+    };
     state
         .external_conversations
         .record(
@@ -820,6 +851,11 @@ pub async fn send(
         )
         .await
         .map_err(internal)?;
+    if let Some((host, domain, request)) = work {
+        host.claim_provider_request(domain, request)
+            .await
+            .map_err(internal)?;
+    }
     let outcome: Result<(), (EventKind, String)> = match binding.provider {
         Provider::Muse | Provider::Instinct => {
             let target = crate::turn_scope::ChannelDeliveryTarget::interactive(
@@ -986,6 +1022,32 @@ pub async fn provider_event(
         return Err((StatusCode::CONFLICT, "unknown request ID".into()));
     }
     let event_id = format!("provider:{}", input.event_id);
+    if let Some(host) = crate::daemon::work_units::local_work_unit_host() {
+        let domain = provider_work_domain(&binding.owner_id)?;
+        if host
+            .provider_request(domain.clone(), id.clone(), input.request_id.clone())
+            .await
+            .map_err(internal)?
+            .is_some()
+            && matches!(
+                input.kind,
+                EventKind::Progress
+                    | EventKind::Question
+                    | EventKind::Completed
+                    | EventKind::Failed
+            )
+            && input.reaction.is_none()
+        {
+            host.record_provider_outcome(
+                domain,
+                id.clone(),
+                format!("provider-bridge:{id}"),
+                input.clone(),
+            )
+            .await
+            .map_err(internal)?;
+        }
+    }
     let view = if let Some(reaction) = input.reaction {
         state
             .external_conversations
@@ -1013,6 +1075,98 @@ pub async fn provider_event(
     view.map_err(internal)?
         .map(Json)
         .ok_or((StatusCode::NOT_FOUND, "conversation not found".into()))
+}
+
+fn provider_work_domain(owner: &str) -> Result<medousa_types::work_unit::UserDomainRef, HttpError> {
+    Ok(medousa_types::work_unit::UserDomainRef {
+        authority_id: crate::workshop_authority::current()
+            .map_err(internal)?
+            .clone(),
+        user_id: owner.into(),
+    })
+}
+
+/// Narrow provider-owned callback; the bearer credential must belong to this
+/// exact conversation. No admin capability or transport identity can substitute.
+pub async fn work_event(
+    State(state): State<AppState>,
+    Extension(principal): Extension<RequestPrincipal>,
+    Path(id): Path<String>,
+    Json(input): Json<ProviderEventRequest>,
+) -> Result<Json<ConversationView>, HttpError> {
+    if !state
+        .external_conversations
+        .permits_work_callback(&principal, &id)
+        .await
+    {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "work callback requires this provider's current Work credential".into(),
+        ));
+    }
+    let host = crate::daemon::work_units::local_work_unit_host().ok_or((
+        StatusCode::SERVICE_UNAVAILABLE,
+        "work unit host unavailable".into(),
+    ))?;
+    record_work_event(&state.external_conversations, &host, &principal, &id, input)
+        .await
+        .map(Json)
+}
+
+async fn record_work_event(
+    store: &ExternalConversationStore,
+    host: &crate::daemon::work_units::WorkUnitHost,
+    principal: &RequestPrincipal,
+    id: &str,
+    input: ProviderEventRequest,
+) -> Result<ConversationView, HttpError> {
+    if !store.permits_work_callback(principal, id).await {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "work callback requires this provider's current Work credential".into(),
+        ));
+    }
+    if input.event_id.trim().is_empty()
+        || input.event_id.len() > 128
+        || input.request_id.trim().is_empty()
+        || input.request_id.len() > 128
+        || input.text.len() > 16 * 1024
+        || input.reaction.is_some()
+        || !matches!(
+            input.kind,
+            EventKind::Progress | EventKind::Question | EventKind::Completed | EventKind::Failed
+        )
+    {
+        return Err(bad_request("invalid provider work event"));
+    }
+    let domain = provider_work_domain(principal.profile_id().expect("callback owner checked"))?;
+    let copy = input.clone();
+    host.record_provider_outcome(
+        domain,
+        id.to_owned(),
+        principal
+            .credential_id()
+            .expect("callback credential checked")
+            .as_str()
+            .into(),
+        copy,
+    )
+    .await
+    .map_err(|error| (StatusCode::CONFLICT, error.to_string()))?;
+    // The durable work receipt precedes this conversation mirror. A mirror
+    // failure can retry the same callback without losing or replacing evidence.
+    let view = store
+        .record(
+            id,
+            format!("provider:{}", input.event_id),
+            Some(input.request_id),
+            input.kind,
+            input.text,
+        )
+        .await
+        .map_err(internal)?
+        .ok_or((StatusCode::NOT_FOUND, "conversation not found".into()))?;
+    Ok(view)
 }
 
 fn constant_time_equal(left: &[u8], right: &[u8]) -> bool {
@@ -1193,6 +1347,15 @@ fn whatsapp_pairing_read_policy() -> RoutePolicy {
 
 pub fn surface() -> DeclaredRouter<AppState> {
     DeclaredRouter::default()
+        .route(
+            policy(
+                Method::POST,
+                "/v1/external-conversations/{id}/work-events",
+                Capability::ContentWrite,
+                20 * 1024,
+            ),
+            post(work_event),
+        )
         .methods([
             (
                 policy(

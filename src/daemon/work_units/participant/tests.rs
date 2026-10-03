@@ -7,7 +7,7 @@ use axum::{
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
-async fn fixture() -> (tempfile::TempDir, Arc<WorkUnitHost>) {
+pub(crate) async fn fixture() -> (tempfile::TempDir, Arc<WorkUnitHost>) {
     crate::workshop_authority::initialize(
         &medousa_types::secrets::InstallationId::parse(
             crate::workshop_authority::TEST_INSTALLATION_ID,
@@ -48,7 +48,7 @@ fn principal(owner: &str, work: bool) -> RequestPrincipal {
     )
 }
 
-async fn request(
+pub(crate) async fn request(
     host: Arc<WorkUnitHost>,
     principal: RequestPrincipal,
     path: &str,
@@ -77,7 +77,7 @@ async fn request(
     )
 }
 
-fn accept() -> Value {
+pub(crate) fn accept() -> Value {
     json!({"action":"work.record","command":{"command_id":"accept-unit","expected_revision":0,"mutation":{
         "operation":"accept_work","work_unit_id":"unit","intent":"Ship the requested change","kind":"finite",
         "scope":{"resources":[],"children":[],"depends_on":[]},"completion_condition":"Exact review approves", "origin":null
@@ -306,5 +306,218 @@ async fn participants_cannot_supply_native_evidence_budget_custody_or_owner() {
         .await
         .0,
         StatusCode::UNPROCESSABLE_ENTITY
+    );
+}
+
+#[tokio::test]
+async fn provider_adapter_retains_exact_results_and_never_resends_claimed_work() {
+    use medousa_types::{
+        ExternalEventKind, ExternalProvider, ExternalProviderEventRequest, work_provider::*,
+    };
+    let (dir, host) = fixture().await;
+    assert_eq!(
+        request(
+            host.clone(),
+            principal("owner", true),
+            "/v1/work/mutate",
+            accept()
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let domain = UserDomainRef {
+        authority_id: crate::workshop_authority::current().unwrap().clone(),
+        user_id: "owner".into(),
+    };
+    let input = WorkProviderRequestInput {
+        work_unit_id: "unit".into(),
+        expected_scope_revision: 1,
+        deadline: chrono::Utc::now() + chrono::Duration::hours(1),
+        review_of: None,
+    };
+    let prepared = host
+        .prepare_provider_request(
+            domain.clone(),
+            "conversation".into(),
+            ExternalProvider::Dots,
+            "request".into(),
+            input.clone(),
+            "Implement the change".into(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        host.prepare_provider_request(
+            domain.clone(),
+            "conversation".into(),
+            ExternalProvider::Dots,
+            "request".into(),
+            input.clone(),
+            "Implement the change".into()
+        )
+        .await
+        .unwrap(),
+        prepared
+    );
+    assert!(
+        host.prepare_provider_request(
+            domain.clone(),
+            "conversation".into(),
+            ExternalProvider::Dots,
+            "request".into(),
+            input.clone(),
+            "Different change".into()
+        )
+        .await
+        .is_err()
+    );
+    let event = ExternalProviderEventRequest {
+        event_id: "done".into(),
+        request_id: "request".into(),
+        kind: ExternalEventKind::Completed,
+        text: "Implemented".into(),
+        reaction: None,
+    };
+    assert!(
+        host.record_provider_outcome(
+            domain.clone(),
+            "conversation".into(),
+            "external-agent:test".into(),
+            event.clone()
+        )
+        .await
+        .is_err()
+    );
+    // A model credential cannot manufacture native dispatch or result custody.
+    for mutation in [
+        json!({"operation":"register_provider_request", "request":prepared}),
+        json!({"operation":"claim_provider_request", "conversation_id":"conversation", "request_id":"request"}),
+    ] {
+        assert_eq!(
+            request(
+                host.clone(),
+                principal("owner", true),
+                "/v1/work/mutate",
+                json!({"action":"work.record", "command":{
+            "command_id":"fake-native", "expected_revision":2, "mutation":mutation}})
+            )
+            .await
+            .0,
+            StatusCode::CONFLICT
+        );
+    }
+    host.claim_provider_request(domain.clone(), prepared.clone())
+        .await
+        .unwrap();
+    let reopened_root = dir.path().canonicalize().unwrap();
+    let execution = host.execution.clone();
+    let exec = execution.clone();
+    let reopened = execution
+        .run(ExecutionClass::StoreIo, MAX_SNAPSHOT_BYTES, move || {
+            Ok((|| -> Result<_> {
+                Ok(WorkUnitHost {
+                    store: Arc::new(WorkGraphStore::open(&reopened_root)?),
+                    forge: Arc::new(medousa_forge::forge::Forge::open(
+                        reopened_root.join("forge"),
+                    )?),
+                    execution: exec,
+                })
+            })())
+        })
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        reopened
+            .claim_provider_request(domain.clone(), prepared)
+            .await
+            .is_err()
+    );
+    assert!(
+        reopened
+            .prepare_provider_request(
+                domain.clone(),
+                "conversation".into(),
+                ExternalProvider::Dots,
+                "request".into(),
+                input,
+                "Implement the change".into()
+            )
+            .await
+            .is_err()
+    );
+    assert!(
+        reopened
+            .record_provider_outcome(
+                domain.clone(),
+                "other".into(),
+                "external-agent:test".into(),
+                event.clone()
+            )
+            .await
+            .is_err()
+    );
+    reopened
+        .record_provider_outcome(
+            domain.clone(),
+            "conversation".into(),
+            "external-agent:test".into(),
+            event.clone(),
+        )
+        .await
+        .unwrap();
+    let original = reopened
+        .provider_request(domain.clone(), "conversation".into(), "request".into())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        original.events[0].qualification,
+        WorkProviderQualification::OutcomeOnly
+    );
+    // Credential rotation permits exact reconciliation without replacing the original actor/time.
+    reopened
+        .record_provider_outcome(
+            domain.clone(),
+            "conversation".into(),
+            "external-agent:rotated".into(),
+            event.clone(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        reopened
+            .provider_request(domain.clone(), "conversation".into(), "request".into())
+            .await
+            .unwrap()
+            .unwrap(),
+        original
+    );
+    let mut changed = event.clone();
+    changed.text = "Different result".into();
+    assert!(
+        reopened
+            .record_provider_outcome(
+                domain.clone(),
+                "conversation".into(),
+                "external-agent:test".into(),
+                changed
+            )
+            .await
+            .is_err()
+    );
+    let mut replacement = event;
+    replacement.event_id = "another-done".into();
+    assert!(
+        reopened
+            .record_provider_outcome(
+                domain,
+                "conversation".into(),
+                "external-agent:test".into(),
+                replacement
+            )
+            .await
+            .is_err()
     );
 }

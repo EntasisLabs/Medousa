@@ -124,9 +124,12 @@ pub struct ExternalConversationListResponse {
 pub struct ExternalConversationSendRequest {
     pub request_id: String,
     pub text: String,
+    /// Optional exact work association; ordinary messages retain their behavior.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work: Option<crate::work_provider::WorkProviderRequestInput>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ExternalProviderEventRequest {
