@@ -61,8 +61,11 @@ impl ExecutionClass {
         match self {
             Self::StoreIo => MAX_STORE_PAYLOAD_BYTES,
             Self::RepositoryMetadata => MAX_METADATA_BYTES,
-            Self::LocalMutation => MAX_STORE_PAYLOAD_BYTES,
-            Self::NetworkGit | Self::Observation | Self::WorkEnvironment => MAX_CAPTURE_BYTES,
+            // Local Git commits and project commands capture subprocess output,
+            // so they need the capture allowance rather than the store payload cap.
+            Self::LocalMutation | Self::NetworkGit | Self::Observation | Self::WorkEnvironment => {
+                MAX_CAPTURE_BYTES
+            }
             Self::Compaction => MAX_COMPACTION_BUFFER_BYTES,
         }
     }
@@ -1000,19 +1003,47 @@ mod tests {
     #[tokio::test]
     async fn rejects_estimated_bytes_over_class_budget() {
         let service = ForgeExecutionService::new();
-        let error = match service
-            .admit(
-                ExecutionClass::RepositoryMetadata,
-                MAX_METADATA_BYTES + 1,
-                None,
+        for (class, budget) in [
+            (ExecutionClass::RepositoryMetadata, MAX_METADATA_BYTES),
+            (ExecutionClass::StoreIo, MAX_STORE_PAYLOAD_BYTES),
+            (ExecutionClass::LocalMutation, MAX_CAPTURE_BYTES),
+        ] {
+            let error = match service.admit(class, budget + 1, None).await {
+                Ok(_) => panic!("expected overload for {class:?}"),
+                Err(error) => error,
+            };
+            assert!(matches!(error, ForgeError::Overloaded(_)));
+            assert!(error.to_string().contains("exceed"));
+        }
+    }
+
+    #[tokio::test]
+    async fn local_command_capture_is_admitted_and_reserves_the_global_budget() {
+        let service = ForgeExecutionService::new();
+        service
+            .run_async(
+                ExecutionClass::LocalMutation,
+                MAX_CAPTURE_BYTES,
+                Some("review-commit".into()),
+                async {
+                    assert_eq!(service.running_commands(), 1);
+                    assert_eq!(service.queued_bytes.available_permits(), 0);
+                    let error = match service.admit(ExecutionClass::StoreIo, 1, None).await {
+                        Ok(_) => panic!("expected global byte budget exhaustion"),
+                        Err(error) => error,
+                    };
+                    assert!(error.to_string().contains("queued-byte"));
+                    Ok(())
+                },
             )
             .await
-        {
-            Ok(_) => panic!("expected overload"),
-            Err(error) => error,
-        };
-        assert!(matches!(error, ForgeError::Overloaded(_)));
-        assert!(error.to_string().contains("exceed"));
+            .unwrap();
+        assert_eq!(service.running_commands(), 0);
+        assert_eq!(service.queued_bytes.available_permits(), MAX_QUEUED_BYTES);
+        service
+            .run(ExecutionClass::LocalMutation, MAX_CAPTURE_BYTES, || Ok(()))
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

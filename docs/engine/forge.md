@@ -30,6 +30,7 @@ H06 scaling notes (Implementing — not Validated; see architecture H06 acceptan
 - Scaffolding aims for in-memory per-item tails and a catalog projection for listings.
 - `GET /v1/forge/items` without query params still returns an array (compatibility window, catalog-backed, capped). `?limit=&cursor=` returns `{ items, next_cursor, truncated }`.
 - Forge/Git work is intended to admit through a bounded execution service. Queue-full should return `503` / `overloaded`. Do not call blocking Forge/Git from async code without that service.
+- Local mutations, including human review commits and project commands, allow up to 8 MiB of retained command capture per job, matching network Git. Store payloads remain capped at 1 MiB; the shared 8 MiB admission budget still rejects concurrent jobs when their combined reservations exceed it.
 - Slug uniqueness scaffolding uses a reservation journal rather than a full-item scan; durability/repair evidence is still open.
 - Coder logical checkpoints are being separated from worktree audits; resume must require an exact generation-fenced observation once observation fencing is complete.
 - v1 JSONL readers remain for rollback. Framed log v2 and migration are scaffolding until later cars close acceptance.
