@@ -182,6 +182,7 @@ impl WorkUnitHost {
         {
             bail!("work coordination is closed or expired");
         }
+        let predecessor = native.work_round_predecessor(plan)?;
         let executor = request.assignment_id == plan.executor_assignment_id;
         let proposal_id = if executor {
             &plan.input.executor_proposal_id
@@ -197,6 +198,25 @@ impl WorkUnitHost {
             bail!("work stage differs from its approved proposal");
         }
         if executor {
+            if let Some(previous) = predecessor {
+                let decision = previous.decision.ok_or_else(|| {
+                    anyhow::anyhow!("fix round lacks attributable review decision")
+                })?;
+                if native
+                    .peer_if_recorded(&plan.input.channel, &plan.executor_assignment_id)?
+                    .is_none()
+                    && !revision_matches(forge, plan, &decision.reviewed)?
+                {
+                    bail!("fix round checkout differs from the changes_requested revision");
+                }
+                return Ok(Some(serde_json::to_string(&serde_json::json!({
+                    "protocol": medousa_acp_client::coordination::store::work::WORK_FIX_CONTRACT,
+                    "round_index": plan.round_index,
+                    "previous_review_receipt_id": previous.receipt_id,
+                    "decision": decision,
+                    "authority": "Reference feedback only; the exact native assignment grant owns execution."
+                }))?));
+            }
             return Ok(None);
         }
         let input = native

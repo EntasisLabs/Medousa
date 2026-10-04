@@ -13560,6 +13560,13 @@
         "description": "Native admission for one internal result-analysis turn. No contact or execution tools are granted to that turn.",
         "type": "boolean"
       },
+      "provider_chain": {
+        "description": "Remaining linear stages, frozen with this provider handoff. No new grants.",
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/WorkProviderStageInput"
+        }
+      },
       "request_id": {
         "type": "string"
       },
@@ -13661,6 +13668,30 @@
             "$ref": "#/definitions/CoordinationChannelRef"
           },
           "executor_assignment_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkProviderStageInput": {
+        "description": "A future stage supplied with native operator admission. Work scope and deadline are inherited; the runtime freezes its destination separately.",
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "request_id",
+          "text"
+        ],
+        "properties": {
+          "conversation_id": {
+            "type": "string"
+          },
+          "coordinator_wake": {
+            "type": "boolean"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "text": {
             "type": "string"
           }
         },
@@ -30760,10 +30791,33 @@
             "format": "uint64",
             "minimum": 0.0
           },
+          "fix_review_rounds": {
+            "description": "Up to three separately approved fix/review rounds, only after exact changes_requested.",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/WorkCoordinationRoundInput"
+            }
+          },
           "reviewer_proposal_id": {
             "type": "string"
           },
           "work_unit_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkCoordinationRoundInput": {
+        "type": "object",
+        "required": [
+          "executor_proposal_id",
+          "reviewer_proposal_id"
+        ],
+        "properties": {
+          "executor_proposal_id": {
+            "type": "string"
+          },
+          "reviewer_proposal_id": {
             "type": "string"
           }
         },
@@ -31608,6 +31662,12 @@
           "provider": {
             "$ref": "#/definitions/ExternalProvider"
           },
+          "remaining_stages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/WorkProviderPlannedStage"
+            }
+          },
           "request_id": {
             "type": "string"
           },
@@ -31691,6 +31751,26 @@
             ]
           },
           "text": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkProviderPlannedStage": {
+        "type": "object",
+        "required": [
+          "input",
+          "provider",
+          "target_digest"
+        ],
+        "properties": {
+          "input": {
+            "$ref": "#/definitions/WorkProviderStageInput"
+          },
+          "provider": {
+            "$ref": "#/definitions/ExternalProvider"
+          },
+          "target_digest": {
             "type": "string"
           }
         },
@@ -31828,6 +31908,30 @@
             "$ref": "#/definitions/CoordinationChannelRef"
           },
           "executor_assignment_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkProviderStageInput": {
+        "description": "A future stage supplied with native operator admission. Work scope and deadline are inherited; the runtime freezes its destination separately.",
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "request_id",
+          "text"
+        ],
+        "properties": {
+          "conversation_id": {
+            "type": "string"
+          },
+          "coordinator_wake": {
+            "type": "boolean"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "text": {
             "type": "string"
           }
         },

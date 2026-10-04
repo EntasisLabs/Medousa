@@ -60,12 +60,18 @@ export interface PeerProposalIntent {
   through_entry_seq: number;
 }
 
+export interface WorkCoordinationRoundInput {
+  executor_proposal_id: string;
+  reviewer_proposal_id: string;
+}
+
 export interface WorkCoordinationInput {
   channel: CoordinationChannelRef;
   coordination_id: string;
   deadline: string;
   executor_proposal_id: string;
   expected_scope_revision: number;
+  fix_review_rounds?: WorkCoordinationRoundInput[];
   reviewer_proposal_id: string;
   work_unit_id: string;
 }
@@ -145,6 +151,19 @@ export interface WorkProviderDispatchSource {
   target_digest: string;
 }
 
+export interface WorkProviderStageInput {
+  conversation_id: string;
+  coordinator_wake?: boolean;
+  request_id: string;
+  text: string;
+}
+
+export interface WorkProviderPlannedStage {
+  input: WorkProviderStageInput;
+  provider: ExternalProvider;
+  target_digest: string;
+}
+
 export interface WorkProviderDispatch {
   after_provider_completion?: WorkProviderDispatchSource | null;
   conversation_id: string;
@@ -152,6 +171,7 @@ export interface WorkProviderDispatch {
   input: WorkProviderRequestInput;
   instructions: string;
   provider: ExternalProvider;
+  remaining_stages?: WorkProviderPlannedStage[];
   request_id: string;
   scope_digest: string;
   source_request_digest: string;
@@ -329,6 +349,7 @@ export interface ExternalConversationSendRequest {
   after_native_completion?: boolean;
   after_provider_completion?: WorkProviderRequestRef | null;
   coordinator_wake?: boolean;
+  provider_chain?: WorkProviderStageInput[];
   request_id: string;
   text: string;
   work?: WorkProviderRequestInput | null;

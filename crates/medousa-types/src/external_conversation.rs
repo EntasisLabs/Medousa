@@ -135,6 +135,9 @@ pub struct ExternalConversationSendRequest {
     /// completes. Requires work metadata; mutually exclusive with the native trigger.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub after_provider_completion: Option<crate::work_provider::WorkProviderRequestRef>,
+    /// Remaining linear stages, frozen with this provider handoff. No new grants.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub provider_chain: Vec<crate::work_provider::WorkProviderStageInput>,
     /// Native admission for one internal result-analysis turn. No contact or
     /// execution tools are granted to that turn.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]

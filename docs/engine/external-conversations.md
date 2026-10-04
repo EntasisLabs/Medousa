@@ -275,5 +275,55 @@ acknowledge them explicitly. Transport acceptance and ordinary chat replies do
 not qualify review. New work associations support native stage publication,
 saved native-executor review handoffs and separately admitted internal model analysis as documented
 above. Bounded linear provider chains also use saved admission and exact terminal
-pins. Fix/review loops, reporter/voice delivery and federation remain separate
-gates. Muse's linked-device transport remains unverified.
+pins. Native fix/review rounds use exact native proposal custody; reporter/voice
+delivery and federation remain separate gates. Muse's linked-device transport remains unverified.
+
+
+For whole-plan acceptance, add a `provider_chain` to the provider B handoff above:
+
+```json
+{
+  "provider_chain": [
+    {
+      "conversation_id": "provider-c-conversation",
+      "request_id": "final-assessment-stage",
+      "text": "Assess stage B's exact outcome and identify remaining evidence."
+    }
+  ]
+}
+```
+
+Before any send, confirm B's `provider_dispatches` record retains C's frozen
+provider/destination in `remaining_stages`. Restart after B claims delivery: C
+should acquire one saved handoff, then wait for B's completed Work callback.
+Restart at that transfer and duplicate callbacks; each stage keeps its own claim
+and exact predecessor pin. Remove or replace C before its send, fail B, or cancel
+or rescope the work; no later stage should send. An uncertain B delivery must never
+cause a replacement B execution. Keep every ordinary assessment outcome distinct
+from native clean-checkout approval.
+
+For native fix/review acceptance, create a disposable governed checkout and exact
+native executor/reviewer proposals with separate approvals. Include one or more
+future pairs (at most three) in `work.coordinate`:
+
+```json
+{
+  "fix_review_rounds": [
+    {
+      "executor_proposal_id": "approved-fix-proposal",
+      "reviewer_proposal_id": "approved-re-review-proposal"
+    }
+  ]
+}
+```
+
+Use `medousa-work-fix-v1` in each future executor's instructions and
+`medousa-work-review-v1` in every reviewer's instructions. Have the initial reviewer
+return the exact strict changes-request envelope. Inspect `work.coordination`:
+round zero must retain that verdict, and round one must receive its prior receipt
+and feedback, commit a fresh revision and get a distinct review pin. Re-review
+approval should satisfy work and skip unused rounds. A further changes request at
+the bound should stop with attention required. Repeat with first-round approval,
+unapproved/revoked future grants, pause/cancel/rescope, a dirty or changed checkout,
+and restart after an uncertain fix launch. None should start an extra assignment
+or satisfy work using an old pin. Silent contact must remain silent throughout.

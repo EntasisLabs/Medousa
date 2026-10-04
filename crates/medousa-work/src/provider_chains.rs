@@ -7,6 +7,28 @@ use std::collections::BTreeSet;
 pub const MAX_PROVIDER_CHAIN_STAGES: usize = 8;
 
 impl WorkGraphStore {
+    pub fn next_provider_dispatch(
+        &self,
+        domain: &UserDomainRef,
+        dispatch: &WorkProviderDispatch,
+    ) -> Result<Option<WorkProviderDispatch>> {
+        let snapshot = self.load(domain)?;
+        let saved = snapshot
+            .provider_dispatches
+            .get(&super::provider_dispatch::dispatch_key(
+                &dispatch.conversation_id,
+                &dispatch.request_id,
+            )?)
+            .ok_or_else(|| invalid("provider plan missing"))?;
+        if saved.dispatch != *dispatch {
+            return Err(invalid("provider plan differs from admitted intent"));
+        }
+        if !snapshot.dispatch_has_future(saved) {
+            return Ok(None);
+        }
+        snapshot.next_provider_dispatch(dispatch)
+    }
+
     pub fn provider_chain_terminal(
         &self,
         domain: &UserDomainRef,
@@ -25,6 +47,41 @@ impl WorkGraphStore {
 }
 
 impl Snapshot {
+    pub(super) fn next_provider_dispatch(
+        &self,
+        dispatch: &WorkProviderDispatch,
+    ) -> Result<Option<WorkProviderDispatch>> {
+        let Some(stage) = dispatch.remaining_stages.first() else {
+            return Ok(None);
+        };
+        let source = self.provider_record(&WorkProviderRequestRef {
+            conversation_id: dispatch.conversation_id.clone(),
+            request_id: dispatch.request_id.clone(),
+        });
+        let source = match source {
+            Ok(source) if source.dispatch_claimed => source,
+            _ => return Ok(None),
+        };
+        Ok(Some(WorkProviderDispatch {
+            conversation_id: stage.input.conversation_id.clone(),
+            request_id: stage.input.request_id.clone(),
+            provider: stage.provider,
+            input: dispatch.input.clone(),
+            instructions: stage.input.text.clone(),
+            target_digest: stage.target_digest.clone(),
+            scope_digest: dispatch.scope_digest.clone(),
+            source_request_digest: digest(&source.request)?,
+            coordinator_wake: stage.input.coordinator_wake,
+            after_provider_completion: Some(WorkProviderDispatchSource {
+                request: WorkProviderRequestRef {
+                    conversation_id: dispatch.conversation_id.clone(),
+                    request_id: dispatch.request_id.clone(),
+                },
+                target_digest: dispatch.target_digest.clone(),
+            }),
+            remaining_stages: dispatch.remaining_stages[1..].to_vec(),
+        }))
+    }
     pub(super) fn chain_source(
         &self,
         dispatch: &WorkProviderDispatch,
@@ -57,7 +114,9 @@ impl Snapshot {
                 "provider chain differs from its exact admitted predecessor scope",
             ));
         }
-        if self.chain_depth(request)? >= MAX_PROVIDER_CHAIN_STAGES {
+        if self.chain_depth(request)? + 1 + dispatch.remaining_stages.len()
+            > MAX_PROVIDER_CHAIN_STAGES
+        {
             return Err(invalid("provider chain stage limit reached"));
         }
         Ok(record)

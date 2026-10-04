@@ -2649,6 +2649,7 @@ fn provider_handoff(
         target_digest: "a".repeat(64),
         source_request_digest: "b".repeat(64),
         coordinator_wake: false,
+        remaining_stages: vec![],
         after_provider_completion: None,
         scope_digest: store
             .peer_coordination_scope_digest(&domain("user:a"), "work")
@@ -3571,6 +3572,7 @@ fn provider_chain_dispatch(
             target_digest: "b".repeat(64),
         }),
         coordinator_wake: false,
+        remaining_stages: vec![],
     }
 }
 
@@ -4062,5 +4064,250 @@ fn provider_chain_has_eight_stages_and_cannot_branch_or_recycle_a_consumed_sourc
     assert_eq!(
         store.work_unit(&domain("user:a"), "work").unwrap().state,
         WorkUnitState::Accepted
+    );
+}
+
+#[test]
+fn whole_provider_plan_transfers_future_custody_once_and_survives_restart() {
+    use medousa_types::{ExternalEventKind, work_provider::*};
+    let dir = tempdir();
+    let store = WorkGraphStore::open(dir.path()).unwrap();
+    let root = chain_root(&store);
+    let mut dispatch = provider_chain_dispatch(&store, &root, "second");
+    dispatch.remaining_stages = vec![WorkProviderPlannedStage {
+        input: WorkProviderStageInput {
+            conversation_id: "third-chat".into(),
+            request_id: "third".into(),
+            text: "Assess stage two".into(),
+            coordinator_wake: false,
+        },
+        provider: medousa_types::ExternalProvider::Dots,
+        target_digest: "c".repeat(64),
+    }];
+    let mut fourth = dispatch.remaining_stages[0].clone();
+    fourth.input.conversation_id = "fourth-chat".into();
+    fourth.input.request_id = "fourth".into();
+    dispatch.remaining_stages.push(fourth);
+    admit_chain(&store, &dispatch);
+    assert!(
+        store
+            .next_provider_dispatch(&domain("user:a"), &dispatch)
+            .unwrap()
+            .is_none()
+    );
+    next(
+        &store,
+        WorkGraphMutation::RecordProviderEvent {
+            event: Box::new(provider_event("root-done", 1, ExternalEventKind::Completed)),
+        },
+    );
+    let second = chain_successor(&store, &dispatch);
+    next(
+        &store,
+        WorkGraphMutation::RegisterProviderRequest {
+            request: Box::new(second.clone()),
+        },
+    );
+    next(
+        &store,
+        WorkGraphMutation::ClaimProviderRequest {
+            conversation_id: second.conversation_id.clone(),
+            request_id: second.request_id.clone(),
+        },
+    );
+    let reopened = WorkGraphStore::open(dir.path()).unwrap();
+    let third = reopened
+        .next_provider_dispatch(&domain("user:a"), &dispatch)
+        .unwrap()
+        .unwrap();
+    assert!(
+        reopened
+            .require_provider_idle(&domain("user:a"), "work")
+            .is_err()
+    );
+    let mut competing = third.clone();
+    competing.instructions = "Changed instructions".into();
+    assert!(
+        reopened
+            .apply_native_command(
+                &domain("user:a"),
+                "competing".into(),
+                WorkGraphMutation::RegisterProviderDispatch {
+                    dispatch: Box::new(competing)
+                },
+                handoff_provenance()
+            )
+            .is_err()
+    );
+    admit_chain(&reopened, &third);
+    assert!(
+        reopened
+            .next_provider_dispatch(&domain("user:a"), &dispatch)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        reopened
+            .provider_chain_terminal(&domain("user:a"), &third)
+            .unwrap()
+            .is_none()
+    );
+    let mut event = provider_event("second-done", 1, ExternalEventKind::Completed);
+    event.conversation_id = second.conversation_id;
+    event.request_id = second.request_id;
+    next(
+        &reopened,
+        WorkGraphMutation::RecordProviderEvent {
+            event: Box::new(event),
+        },
+    );
+    let request = chain_successor(&reopened, &third);
+    assert_eq!(
+        request.predecessor.as_ref().unwrap().event_id,
+        "second-done"
+    );
+    next(
+        &reopened,
+        WorkGraphMutation::RegisterProviderRequest {
+            request: Box::new(request.clone()),
+        },
+    );
+    next(
+        &reopened,
+        WorkGraphMutation::ClaimProviderRequest {
+            conversation_id: request.conversation_id.clone(),
+            request_id: request.request_id.clone(),
+        },
+    );
+    let fourth = reopened
+        .next_provider_dispatch(&domain("user:a"), &third)
+        .unwrap()
+        .unwrap();
+    admit_chain(&reopened, &fourth);
+    assert!(
+        reopened
+            .next_provider_dispatch(&domain("user:a"), &third)
+            .unwrap()
+            .is_none()
+    );
+    let mut event = provider_event("third-done", 1, ExternalEventKind::Completed);
+    event.conversation_id = request.conversation_id;
+    event.request_id = request.request_id;
+    next(
+        &reopened,
+        WorkGraphMutation::RecordProviderEvent {
+            event: Box::new(event),
+        },
+    );
+    let request = chain_successor(&reopened, &fourth);
+    next(
+        &reopened,
+        WorkGraphMutation::RegisterProviderRequest {
+            request: Box::new(request.clone()),
+        },
+    );
+    next(
+        &reopened,
+        WorkGraphMutation::ClaimProviderRequest {
+            conversation_id: request.conversation_id,
+            request_id: request.request_id,
+        },
+    );
+    assert!(
+        reopened
+            .next_provider_dispatch(&domain("user:a"), &fourth)
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn whole_provider_plan_rejects_overflow_and_reused_identity_and_can_close_future_custody() {
+    use medousa_types::{ExternalEventKind, work_provider::*};
+    let dir = tempdir();
+    let store = WorkGraphStore::open(dir.path()).unwrap();
+    let root = chain_root(&store);
+    let mut dispatch = provider_chain_dispatch(&store, &root, "second");
+    let stage = WorkProviderPlannedStage {
+        input: WorkProviderStageInput {
+            conversation_id: root.conversation_id.clone(),
+            request_id: root.request_id.clone(),
+            text: "Reuse".into(),
+            coordinator_wake: false,
+        },
+        provider: root.provider,
+        target_digest: "c".repeat(64),
+    };
+    dispatch.remaining_stages = vec![stage.clone()];
+    assert!(
+        store
+            .apply_native_command(
+                &domain("user:a"),
+                "invalid".into(),
+                WorkGraphMutation::RegisterProviderDispatch {
+                    dispatch: Box::new(dispatch.clone())
+                },
+                handoff_provenance()
+            )
+            .is_err()
+    );
+    dispatch.remaining_stages = (0..7)
+        .map(|i| {
+            let mut stage = stage.clone();
+            stage.input.request_id = format!("future-{i}");
+            stage
+        })
+        .collect();
+    assert!(
+        store
+            .apply_native_command(
+                &domain("user:a"),
+                "overflow".into(),
+                WorkGraphMutation::RegisterProviderDispatch {
+                    dispatch: Box::new(dispatch.clone())
+                },
+                handoff_provenance()
+            )
+            .is_err()
+    );
+    dispatch.remaining_stages.truncate(1);
+    admit_chain(&store, &dispatch);
+    next(
+        &store,
+        WorkGraphMutation::RecordProviderEvent {
+            event: Box::new(provider_event("root-done", 1, ExternalEventKind::Completed)),
+        },
+    );
+    let request = chain_successor(&store, &dispatch);
+    next(
+        &store,
+        WorkGraphMutation::RegisterProviderRequest {
+            request: Box::new(request.clone()),
+        },
+    );
+    next(
+        &store,
+        WorkGraphMutation::ClaimProviderRequest {
+            conversation_id: request.conversation_id,
+            request_id: request.request_id,
+        },
+    );
+    store
+        .apply_native_command(
+            &domain("user:a"),
+            "close-plan".into(),
+            WorkGraphMutation::CloseProviderDispatch {
+                conversation_id: dispatch.conversation_id.clone(),
+                request_id: dispatch.request_id.clone(),
+                reason: "Cancelled future stages".into(),
+            },
+            handoff_provenance(),
+        )
+        .unwrap();
+    assert!(
+        store
+            .next_provider_dispatch(&domain("user:a"), &dispatch)
+            .unwrap()
+            .is_none()
     );
 }

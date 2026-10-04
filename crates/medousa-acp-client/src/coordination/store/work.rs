@@ -14,6 +14,8 @@ mod tests;
 /// Included in approved reviewer instructions before registration. This is a
 /// narrow data contract, not authority to issue grants or follow-up work.
 pub const WORK_REVIEW_CONTRACT: &str = "medousa-work-review-v1";
+pub const WORK_FIX_CONTRACT: &str = "medousa-work-fix-v1";
+pub const MAX_FIX_REVIEW_ROUNDS: usize = 3;
 
 impl CoordinationStore {
     fn work_domain_scope(
@@ -99,6 +101,9 @@ impl CoordinationStore {
         if plan.input.channel != *channel
             || plan.input.coordination_id != id
             || plan.domain.authority_id != channel.authority_id
+            || plan.round_index != 0
+            || plan.input.fix_review_rounds.len() > MAX_FIX_REVIEW_ROUNDS
+            || plan.fix_review_assignments.len() != plan.input.fix_review_rounds.len()
         {
             bail!("work coordination identity mismatch");
         }
@@ -115,22 +120,27 @@ impl CoordinationStore {
             "work-stage",
             &request.assignment_id,
         )?)?;
-        if let Some(plan) = &plan {
-            if plan.domain.user_id != request.owner_principal_id
-                || plan.input.channel != request.channel
-                || plan.forge_work_id != request.forge_work_id
-                || (plan.executor_assignment_id != request.assignment_id
-                    && plan.reviewer_assignment_id != request.assignment_id)
-            {
-                bail!("work stage does not match native request");
-            }
-            // Partial registration fences dispatch too. It cannot be completed
-            // by guessing an owner or launching outside the work controller.
-            if self.work_plan(&request.channel, &plan.input.coordination_id)? != *plan {
-                bail!("work registration is not complete");
-            }
+        let Some(root) = plan else {
+            return Ok(None);
+        };
+        // Stage indexes publish first; a torn root registration fences dispatch.
+        if self.work_plan(&request.channel, &root.input.coordination_id)? != root {
+            bail!("work registration is not complete");
         }
-        Ok(plan)
+        let plan = (0..=root.input.fix_review_rounds.len())
+            .filter_map(|i| root.round(i as u8))
+            .find(|round| {
+                round.executor_assignment_id == request.assignment_id
+                    || round.reviewer_assignment_id == request.assignment_id
+            })
+            .ok_or_else(|| anyhow::anyhow!("work assignment is absent from the admitted rounds"))?;
+        if plan.domain.user_id != request.owner_principal_id
+            || plan.input.channel != request.channel
+            || plan.forge_work_id != request.forge_work_id
+        {
+            bail!("work stage does not match native request");
+        }
+        Ok(Some(plan))
     }
 
     /// Call while holding native work and graph admission custody. This does
@@ -160,12 +170,27 @@ impl CoordinationStore {
             }
             return self.work_create(&path, plan);
         }
-        let executor = self.proposal(&input.channel, &input.executor_proposal_id)?;
-        let reviewer = self.proposal(&input.channel, &input.reviewer_proposal_id)?;
-        let mut stage_ids = [&plan.executor_assignment_id, &plan.reviewer_assignment_id];
+        if plan.round_index != 0
+            || input.fix_review_rounds.len() > MAX_FIX_REVIEW_ROUNDS
+            || plan.fix_review_assignments.len() != input.fix_review_rounds.len()
+        {
+            bail!("invalid bounded fix/review root plan");
+        }
+        let rounds: Vec<_> = (0..=input.fix_review_rounds.len())
+            .map(|i| plan.round(i as u8).unwrap())
+            .collect();
+        let mut stage_ids: Vec<_> = rounds
+            .iter()
+            .flat_map(|round| [&round.executor_assignment_id, &round.reviewer_assignment_id])
+            .collect();
         stage_ids.sort();
-        let _executor_lock = self.work_assignment_lock(&input.channel, stage_ids[0])?;
-        let _reviewer_lock = self.work_assignment_lock(&input.channel, stage_ids[1])?;
+        if stage_ids.windows(2).any(|ids| ids[0] == ids[1]) {
+            bail!("each round requires distinct native assignments");
+        }
+        let mut _stage_locks = Vec::new();
+        for id in &stage_ids {
+            _stage_locks.push(self.work_assignment_lock(&input.channel, id)?);
+        }
         if let Some(existing) = self.work_optional::<WorkCoordinationPlan>(&path)? {
             if existing != *plan {
                 bail!("conflicting work registration");
@@ -173,52 +198,67 @@ impl CoordinationStore {
             return self.work_create(&path, plan);
         }
         let now = chrono::Utc::now();
-        if input.deadline <= now
-            || input.deadline > now + chrono::Duration::hours(24)
-            || input.deadline > executor.expires_at
-            || input.deadline > reviewer.expires_at
-        {
-            bail!("work coordination deadline exceeds current approval bounds");
-        }
-        if executor.continue_owner
-            || reviewer.continue_owner
-            || executor.request.owner_principal_id != *owner
-            || reviewer.request.owner_principal_id != *owner
-            || executor.request.assignment_id != plan.executor_assignment_id
-            || reviewer.request.assignment_id != plan.reviewer_assignment_id
-            || executor.request.forge_work_id != plan.forge_work_id
-            || reviewer.request.forge_work_id != plan.forge_work_id
-            || executor.request.assignment_id == reviewer.request.assignment_id
-            || executor.request.execution_session == reviewer.request.execution_session
-            || !reviewer.request.instructions.contains(WORK_REVIEW_CONTRACT)
-        {
-            bail!(
-                "work stages require distinct native sessions, one Forge work, no chat continuation, and an approved review contract"
-            );
-        }
-        for proposal in [&executor, &reviewer] {
-            if let Some(decision) = self.proposal_decision(proposal)? {
-                if !decision.approved {
-                    bail!("declined proposal cannot be registered for work");
-                }
-                self.require_assignment_grant(&proposal.request, now)?;
-            }
-            let request = &proposal.request;
-            if request.existing_agent_session_id.is_some() {
-                bail!("work coordination requires fresh exclusive native assignments");
-            }
-            if self
-                .work_optional::<ExternalPeerAssignmentRequest>(&object_path(
-                    &request.channel,
-                    "assignment",
-                    &request.assignment_id,
-                )?)?
-                .is_some()
+        let mut sessions = std::collections::BTreeSet::new();
+        let root_target = self
+            .proposal(&input.channel, &input.executor_proposal_id)?
+            .request
+            .target;
+        for round in &rounds {
+            let executor = self.proposal(&input.channel, &round.input.executor_proposal_id)?;
+            let reviewer = self.proposal(&input.channel, &round.input.reviewer_proposal_id)?;
+            if input.deadline <= now
+                || input.deadline > now + chrono::Duration::hours(24)
+                || input.deadline > executor.expires_at
+                || input.deadline > reviewer.expires_at
             {
-                bail!("register work before native dispatch claims");
+                bail!("work coordination deadline exceeds current approval bounds");
+            }
+            if executor.request.assignment_id != round.executor_assignment_id
+                || reviewer.request.assignment_id != round.reviewer_assignment_id
+                || !reviewer.request.instructions.contains(WORK_REVIEW_CONTRACT)
+                || (round.round_index > 0
+                    && !executor.request.instructions.contains(WORK_FIX_CONTRACT))
+            {
+                bail!(
+                    "work rounds require exact assignments and approved review/fix data contracts"
+                );
+            }
+            for proposal in [&executor, &reviewer] {
+                let request = &proposal.request;
+                if proposal.continue_owner
+                    || request.owner_principal_id != *owner
+                    || request.forge_work_id != plan.forge_work_id
+                    || request.target.authority_id != root_target.authority_id
+                    || request.target.execution_runtime_id != root_target.execution_runtime_id
+                    || !sessions.insert((
+                        request.execution_session.authority_id.to_string(),
+                        request.execution_session.session_id.to_string(),
+                    ))
+                    || request.existing_agent_session_id.is_some()
+                {
+                    bail!(
+                        "work stages require fresh distinct sessions, one local runtime/Forge work and no chat continuation"
+                    );
+                }
+                if let Some(decision) = self.proposal_decision(proposal)? {
+                    if !decision.approved {
+                        bail!("declined proposal cannot be registered for work");
+                    }
+                    self.require_assignment_grant(request, now)?;
+                }
+                if self
+                    .work_optional::<ExternalPeerAssignmentRequest>(&object_path(
+                        &request.channel,
+                        "assignment",
+                        &request.assignment_id,
+                    )?)?
+                    .is_some()
+                {
+                    bail!("register work before native dispatch claims");
+                }
             }
         }
-        if self.root.list_root_utf8()?.len() > 32736 {
+        if self.root.list_root_utf8()?.len() > 32768 - 32 * rounds.len() {
             bail!(
                 "work registration has no recovery/publication headroom; retained records were not evicted"
             );
@@ -238,7 +278,7 @@ impl CoordinationStore {
             )?,
             plan,
         )?;
-        for id in [&plan.executor_assignment_id, &plan.reviewer_assignment_id] {
+        for id in stage_ids {
             self.create(&object_path(&input.channel, "work-stage", id)?, plan)?;
         }
         self.work_create(&path, plan)
@@ -248,9 +288,7 @@ impl CoordinationStore {
         &self,
         plan: &WorkCoordinationPlan,
     ) -> Result<Option<WorkCoordinationLease>> {
-        if self.work_plan(&plan.input.channel, &plan.input.coordination_id)? != *plan {
-            bail!("work plan changed");
-        }
+        self.require_work_round(plan)?;
         let file = self.root.open_lock_file(&object_path(
             &plan.input.channel,
             "work-lock",
@@ -263,15 +301,53 @@ impl CoordinationStore {
         }
     }
 
+    fn work_round_path(plan: &WorkCoordinationPlan, kind: &str) -> Result<StorePath> {
+        if plan.round_index == 0 {
+            object_path(&plan.input.channel, kind, &plan.input.coordination_id)
+        } else {
+            object_path(
+                &plan.input.channel,
+                &format!("{kind}-round"),
+                &serde_json::to_string(&(&plan.input.coordination_id, plan.round_index))?,
+            )
+        }
+    }
+
+    pub fn require_work_round(&self, plan: &WorkCoordinationPlan) -> Result<()> {
+        let root = self.work_plan(&plan.input.channel, &plan.input.coordination_id)?;
+        if root.round(plan.round_index).as_ref() != Some(plan) {
+            bail!("work round differs from immutable root intent");
+        }
+        Ok(())
+    }
+
+    pub fn work_round_predecessor(
+        &self,
+        plan: &WorkCoordinationPlan,
+    ) -> Result<Option<WorkCoordinationResult>> {
+        self.require_work_round(plan)?;
+        if plan.round_index == 0 {
+            return Ok(None);
+        }
+        let root = self.work_plan(&plan.input.channel, &plan.input.coordination_id)?;
+        let previous = root.round(plan.round_index - 1).unwrap();
+        let result = self
+            .work_coordination_result(&previous)?
+            .filter(|result| result.outcome == WorkCoordinationOutcome::ChangesRequested)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "fix round requires the exact predecessor changes_requested receipt"
+                )
+            })?;
+        Ok(Some(result))
+    }
+
     pub fn work_review_input(
         &self,
         plan: &WorkCoordinationPlan,
     ) -> Result<Option<WorkReviewInput>> {
-        let input: Option<WorkReviewInput> = self.work_optional(&object_path(
-            &plan.input.channel,
-            "work-review-input",
-            &plan.input.coordination_id,
-        )?)?;
+        let input: Option<WorkReviewInput> =
+            self.work_optional(&Self::work_round_path(plan, "work-review-input")?)?;
         if let Some(input) = &input {
             self.validate_work_review_input(plan, input)?;
         }
@@ -283,6 +359,7 @@ impl CoordinationStore {
         plan: &WorkCoordinationPlan,
         input: &WorkReviewInput,
     ) -> Result<()> {
+        self.require_work_round(plan)?;
         let receipt = self.receipt(&plan.input.channel, &plan.executor_assignment_id)?;
         if receipt.outcome != PeerAssignmentOutcome::Completed
             || input.executor_receipt_id != receipt.receipt_id
@@ -305,25 +382,15 @@ impl CoordinationStore {
         input: &WorkReviewInput,
     ) -> Result<bool> {
         self.validate_work_review_input(plan, input)?;
-        self.work_create(
-            &object_path(
-                &plan.input.channel,
-                "work-review-input",
-                &plan.input.coordination_id,
-            )?,
-            input,
-        )
+        self.work_create(&Self::work_round_path(plan, "work-review-input")?, input)
     }
 
     pub fn work_coordination_result(
         &self,
         plan: &WorkCoordinationPlan,
     ) -> Result<Option<WorkCoordinationResult>> {
-        let result: Option<WorkCoordinationResult> = self.work_optional(&object_path(
-            &plan.input.channel,
-            "work-result",
-            &plan.input.coordination_id,
-        )?)?;
+        let result: Option<WorkCoordinationResult> =
+            self.work_optional(&Self::work_round_path(plan, "work-result")?)?;
         if let Some(result) = &result {
             self.validate_work_result(plan, result)?;
         }
@@ -335,6 +402,7 @@ impl CoordinationStore {
         plan: &WorkCoordinationPlan,
         result: &WorkCoordinationResult,
     ) -> Result<()> {
+        self.require_work_round(plan)?;
         if result.coordination_id != plan.input.coordination_id {
             bail!("work result identity mismatch");
         }
@@ -403,14 +471,7 @@ impl CoordinationStore {
         result: &WorkCoordinationResult,
     ) -> Result<bool> {
         self.validate_work_result(plan, result)?;
-        self.work_create(
-            &object_path(
-                &plan.input.channel,
-                "work-result",
-                &plan.input.coordination_id,
-            )?,
-            result,
-        )
+        self.work_create(&Self::work_round_path(plan, "work-result")?, result)
     }
 
     pub fn record_work_projection(&self, plan: &WorkCoordinationPlan) -> Result<bool> {

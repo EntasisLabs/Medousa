@@ -1067,8 +1067,8 @@ docs verification pass. Full repository CI parity remains a separate gate.
 | Remaining increment | Existing foundation | Evidence still needed |
 |---|---|---|
 | Automatic work intake and reactions (Phase 3) | Durable actor-bound pull subscriptions plus native provider inboxes, bounded callback-driven intake, separately admitted result-only model turns, atomic stage decisions/cursors and restart recovery | Native resource-change subscriptions, broader bounded/coalesced effects, legacy inbox backfill and retention-gap recovery |
-| Provider execution/review orchestration (Phases 3–4) | Scoped provider APIs, exact durable request/dispatch/result ledger, authenticated callbacks, native stage intake, revision-bound satisfaction and saved native-executor → provider-reviewer plus bounded linear provider-chain recovery | Bounded fix/review dispatch, branch/composite scheduling, provider-hosted revision custody, real send/receive and live provider acceptance; Muse transport remains unverified |
-| Composite execution and bounded fix/review (Phases 2–3) | Composition/readiness contracts and budget custody ledger | Native metering/reservation/settlement integration, child/dependency scheduling, bounded revision loops and shared-execution accounting; current controller admits standalone finite work only |
+| Provider execution/review orchestration (Phases 3–4) | Scoped provider APIs, exact durable request/dispatch/result ledger, authenticated callbacks, native stage intake, revision-bound satisfaction and saved native-executor → provider-reviewer plus whole linear provider plans and bounded native fix/review recovery | Branch/composite scheduling, provider-hosted revision custody, real send/receive and live provider acceptance; Muse transport remains unverified |
+| Composite execution and bounded fix/review (Phases 2–3) | Composition/readiness contracts, budget custody ledger and up to three exact native fix/review rounds | Native metering/reservation/settlement integration, child/dependency scheduling and shared-execution accounting; current controller admits standalone finite work only |
 | Federated work and custody (Phase 4) | Existing portal/peer transports and scoped native execution | Authenticated cross-workshop user-domain mappings, permission-filtered graph projections, remote work correlation and fenced coordinator handoff where supported |
 | Automatic maintenance (Phase 5) | Native resource observations and explicit readiness checkpoints | Admitted note/folder/feed triggers, freshness/occurrence evidence, snapshot recovery after retention gaps, bounded coalescing and generated-update feedback fencing |
 | Work contact policy and delivery (Phase 6) | Saved contact preferences, native result receipts and existing delivery transports | Reporter/route selection, silence, current-preference checks, durable attempts/reconciliation and receipts; voice invitation/connection/completion capabilities must be qualified separately |
@@ -1316,3 +1316,41 @@ and native-only admission. Generated contracts are current; frontend checking
 reports zero errors and warnings. Targeted library Clippy and strict docs
 verification pass. Transport claims are exercised locally; actual provider sends
 and callback round trips remain manual qualification.
+
+
+## Whole linear provider plans and bounded native fix/review (2026-10-03)
+
+Provider handoff admission can retain its entire future linear suffix up front.
+Destinations, instructions, identities, scope and deadline stay frozen under
+native operator custody. Claimed stages transfer their exact next reservation
+through the existing atomic handoff ledger. Future custody fences competing
+provider sends and native controllers until transfer or closure; no new graph
+store, user-managed goal UI or implicit contact authority is introduced.
+
+Native coordination can retain up to three future fix/review proposal pairs.
+All assignments have distinct fresh sessions and exact grants on the same local
+runtime and governed Forge work. Strict preceding changes-request verdicts gate
+fixes and supply bounded feedback. Each subsequent executor receipt pins its own
+clean checkout; its reviewer cannot reuse the old pin. Approval skips unused
+rounds, exhaustion requires attention, and uncertainty never admits replacement
+execution. Per-round results survive restart without interim state publication.
+
+These close the bounded local whole-linear-plan and native fix/review slices.
+Branch/composite scheduling, metering, provider-hosted revision custody, federation,
+reporter routing and repair/retention remain separate phase gates. Real provider
+sends, live models and round-trip callbacks are reserved for manual qualification.
+Full workspace CI, live Surreal and cross-platform acceptance remain open.
+
+
+Qualification: 46 graph-store tests, 80 ACP/native custody tests, 61 daemon
+work-unit tests (two threads), 22 daemon coordination tests, 14 provider/access
+tests, 14 API contract tests and 28 Python SDK tests pass. New coverage includes
+frozen whole-plan custody transfer through restart, reserved stage identities,
+failed future-stage closure, early fix rejection, exact retained feedback and
+fresh per-round checkout pins, first approval skipping every future round,
+exhaustion, future grant/pause/dirty-checkout fences and unknown fix claims after
+restart. Native registration reserves publication headroom for every admitted
+round. Generated SDK/API contracts are current; frontend checking reports zero
+errors and warnings. Targeted library Clippy and strict docs verification pass.
+No real provider/model sends or live daemon deployment were performed. These
+receipts qualify the bounded local implementation, not the remaining phase exits.

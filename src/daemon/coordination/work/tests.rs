@@ -11,6 +11,8 @@ fn fixture() -> (
         channel_id: "channel".into(),
     };
     let plan = WorkCoordinationPlan {
+        fix_review_assignments: vec![],
+        round_index: 0,
         scope_digest: "a".repeat(64),
         domain: UserDomainRef {
             authority_id: authority.clone(),
@@ -24,6 +26,7 @@ fn fixture() -> (
             executor_proposal_id: "exec-proposal".into(),
             reviewer_proposal_id: "review-proposal".into(),
             deadline: chrono::Utc::now() + chrono::Duration::hours(1),
+            fix_review_rounds: vec![],
         },
         executor_assignment_id: "exec".into(),
         reviewer_assignment_id: "review".into(),

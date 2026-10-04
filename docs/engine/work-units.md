@@ -754,7 +754,7 @@ attempt; recovery does not overwrite that evidence to force a retry.
 and its closure reason. Provider results still require the exact authenticated
 callback protocol and revision qualification above. This increment adds native
 executor → provider reviewer dispatch. Bounded provider-to-provider chains use the
-separate contract below; bounded fix/review loops remain a separate gate.
+separate contract below; native fix/review rounds use their own exact proposal contract.
 
 ### Admitted coordinator model wakes
 
@@ -790,8 +790,8 @@ tickets retain a blocked reason for inspection. The canonical model pipeline kee
 its own bounded retry behavior; this is one admitted turn, not a promise of one
 HTTP inference request. Further analysis needs a new explicit provider request and
 admission. Provider-to-provider chains require the separate admission below.
-Fix/review loops, native resource-change reactions, metered/composite scheduling
-and reporter routing remain separate gates.
+Native fix/review rounds use the separate contract below. Native resource-change
+reactions, metered/composite scheduling and reporter routing remain separate gates.
 
 ### Provider to provider chains
 
@@ -832,5 +832,58 @@ separate exact native-executor review contract. An assessment callback remains
 outcome evidence and leaves work waiting for native completion/review evidence.
 This avoids treating a provider's prose verdict as a clean-checkout approval.
 The final stage may separately opt into `coordinator_wake`; contact preferences
-and normal chat listings retain their existing behavior. Bounded fix/review loops,
-branch scheduling and provider-hosted revision custody remain separate gates.
+and normal chat listings retain their existing behavior. Native fix/review rounds
+use the contract below; branch scheduling and provider-hosted revision custody
+remain separate gates.
+
+
+### Whole provider plans and bounded native fix/review
+
+A provider handoff can include `provider_chain`, an ordered list of remaining
+`{ conversation_id, request_id, text, coordinator_wake? }` stages. This requires
+`after_provider_completion` and the same native operator admission. The current
+handoff and all future stages inherit one work scope and deadline; the eight-stage
+limit includes the already-dispatched source. Each bot must belong to the same
+local owner. Admission freezes each provider and destination while holding ordered
+conversation locks. The existing HTTP body limit is 20 KiB and each instruction
+retains its 12 KiB limit; a large plan can reach the aggregate bound first.
+
+`provider_dispatches` retains the complete immutable suffix in `remaining_stages`.
+Once a stage claims dispatch, recovery atomically materializes exactly its frozen
+successor. Until that transfer commits, the suffix reserves work custody against
+competing sends or native controllers. Future request identities cannot be reused
+by another plan. A crash before publication leaves the prior reservation; a crash
+after publication leaves the exact next handoff. Progress still never sends it;
+only its predecessor's authenticated outcome completion releases dispatch. Failed
+or stale results close future custody. Pauses retain it; cancellation, scope or
+resource changes and expiry close it. A missing or changed bot closes the affected
+handoff. Unknown delivery retains the current claim without replacement execution.
+This is complete *linear* plan admission, without branching or composite scheduling.
+
+Native `work.coordinate` can separately include up to three `fix_review_rounds`,
+each naming an `executor_proposal_id` and `reviewer_proposal_id`. Root registration
+freezes all assignments under one owner/channel/work/scope/deadline and publishes
+all stage indexes before its root plan. Every stage needs a distinct fresh native
+session and its own exact approved execution grant. All stages must run on the
+same local runtime against the same governed Forge work. Reviewers opt into
+`medousa-work-review-v1`; follow-up executors must explicitly include
+`medousa-work-fix-v1` in their approved instructions. Registration issues no grants.
+
+Only an exact strict `changes_requested` verdict for the preceding pinned checkout
+can release a fix round. The runtime retains that decision without projecting a
+terminal work state between rounds. Before the fix starts, the checkout must still
+match the rejected revision; its runtime context includes the exact prior review
+receipt and decision as reference feedback. Active native execution custody permits
+that executor's subsequent edits. Its own completed receipt then pins a fresh clean
+checkout for its own reviewer. Pins and outcomes are immutable and distinct per
+round, even though all rounds belong to one coordination ID.
+
+Approval stops the plan immediately and skips unused rounds. Failures, invalid
+reviews and revision changes stop it; exhausting the admitted rounds with another
+changes request leaves work needing attention. Pause, cancellation, rescope,
+resource changes, grant revocation and deadlines retain the existing fences.
+Unknown launches are reconciled without relaunching or starting later rounds.
+`work.coordination` adds `active_round` and a `rounds` array with each round's claims,
+review pin and outcome; its top-level `result` describes the active/final round.
+Ordinary two-stage registrations omit these fields on input and retain their
+original stored identities. Contact preferences and chat UI remain unchanged.

@@ -110,6 +110,8 @@ fn fixture_for_runtime(
         requests.push(request);
     }
     let plan = WorkCoordinationPlan {
+        fix_review_assignments: vec![],
+        round_index: 0,
         domain: UserDomainRef {
             authority_id: authority,
             user_id: "owner".into(),
@@ -122,6 +124,7 @@ fn fixture_for_runtime(
             executor_proposal_id: proposals[0].clone(),
             reviewer_proposal_id: proposals[1].clone(),
             deadline: chrono::Utc::now() + chrono::Duration::hours(1),
+            fix_review_rounds: vec![],
         },
         scope_digest: "a".repeat(64),
         executor_assignment_id: "executor".into(),
@@ -388,5 +391,29 @@ fn native_coder_turn_identity_replays_after_restart_and_revocation_prevents_read
         reopened
             .require_assignment_grant(request, chrono::Utc::now())
             .is_err()
+    );
+}
+
+#[test]
+fn fix_round_registration_rejects_reused_native_assignments_and_unbounded_intent() {
+    let (_temp, store, mut plan, _) = fixture();
+    let round = WorkCoordinationRoundInput {
+        executor_proposal_id: plan.input.executor_proposal_id.clone(),
+        reviewer_proposal_id: plan.input.reviewer_proposal_id.clone(),
+    };
+    let assignments = WorkCoordinationRoundAssignments {
+        executor_assignment_id: plan.executor_assignment_id.clone(),
+        reviewer_assignment_id: plan.reviewer_assignment_id.clone(),
+    };
+    plan.input.fix_review_rounds = vec![round.clone()];
+    plan.fix_review_assignments = vec![assignments.clone()];
+    assert!(store.register_work_plan(&plan).is_err());
+    plan.input.fix_review_rounds = vec![round; MAX_FIX_REVIEW_ROUNDS + 1];
+    plan.fix_review_assignments = vec![assignments; MAX_FIX_REVIEW_ROUNDS + 1];
+    assert!(store.register_work_plan(&plan).is_err());
+    assert!(
+        !store
+            .work_is_controlled(&plan.domain, &plan.input.work_unit_id)
+            .unwrap()
     );
 }

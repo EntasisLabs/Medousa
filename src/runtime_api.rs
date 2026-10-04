@@ -525,7 +525,7 @@ pub fn runtime_type_schemas() -> Vec<TypedActionSchema> {
             typed_action_schema::<WorkCoordinationInput>(
                 MUTATE_ID,
                 "work.coordinate",
-                "Register bounded executor then reviewer observation for a standalone finite work unit using two exact native peer proposals; each stage waits for its approved execution grant. The reviewer must opt into medousa-work-review-v1; no grants or owner-chat continuations are issued",
+                "Register bounded execute/review observation for standalone finite work using exact native proposals. Optional fix_review_rounds (at most three) run only after exact changes_requested; each stage needs its own approved grant. Reviewers opt into medousa-work-review-v1 and follow-up executors into medousa-work-fix-v1. No grants or owner-chat continuations are issued",
             ),
             typed_action_schema::<WorkGraphMutateInput>(
                 MUTATE_ID,

@@ -3747,6 +3747,13 @@
             "description": "Native admission for one internal result-analysis turn. No contact or execution tools are granted to that turn.",
             "type": "boolean"
           },
+          "provider_chain": {
+            "description": "Remaining linear stages, frozen with this provider handoff. No new grants.",
+            "items": {
+              "$ref": "#/components/schemas/WorkProviderStageInput"
+            },
+            "type": "array"
+          },
           "request_id": {
             "type": "string"
           },
@@ -9969,6 +9976,13 @@
             "minimum": 0.0,
             "type": "integer"
           },
+          "fix_review_rounds": {
+            "description": "Up to three separately approved fix/review rounds, only after exact changes_requested.",
+            "items": {
+              "$ref": "#/components/schemas/WorkCoordinationRoundInput"
+            },
+            "type": "array"
+          },
           "reviewer_proposal_id": {
             "type": "string"
           },
@@ -10000,6 +10014,22 @@
         "required": [
           "channel",
           "coordination_id"
+        ],
+        "type": "object"
+      },
+      "WorkCoordinationRoundInput": {
+        "additionalProperties": false,
+        "properties": {
+          "executor_proposal_id": {
+            "type": "string"
+          },
+          "reviewer_proposal_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "executor_proposal_id",
+          "reviewer_proposal_id"
         ],
         "type": "object"
       },
@@ -11090,6 +11120,12 @@
           "provider": {
             "$ref": "#/components/schemas/ExternalProvider"
           },
+          "remaining_stages": {
+            "items": {
+              "$ref": "#/components/schemas/WorkProviderPlannedStage"
+            },
+            "type": "array"
+          },
           "request_id": {
             "type": "string"
           },
@@ -11185,6 +11221,26 @@
           "request_id",
           "request_sequence",
           "text"
+        ],
+        "type": "object"
+      },
+      "WorkProviderPlannedStage": {
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "$ref": "#/components/schemas/WorkProviderStageInput"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/ExternalProvider"
+          },
+          "target_digest": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "input",
+          "provider",
+          "target_digest"
         ],
         "type": "object"
       },
@@ -11322,6 +11378,30 @@
         "required": [
           "channel",
           "executor_assignment_id"
+        ],
+        "type": "object"
+      },
+      "WorkProviderStageInput": {
+        "additionalProperties": false,
+        "description": "A future stage supplied with native operator admission. Work scope and deadline are inherited; the runtime freezes its destination separately.",
+        "properties": {
+          "conversation_id": {
+            "type": "string"
+          },
+          "coordinator_wake": {
+            "type": "boolean"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "request_id",
+          "text"
         ],
         "type": "object"
       },

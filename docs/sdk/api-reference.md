@@ -644,3 +644,14 @@ exact native-derived terminal reference/digest. These additive fields default to
 absent so retained ordinary/native requests keep their previous wire identities.
 See [provider chains](../engine/work-units.md#provider-to-provider-chains) for the
 eight-stage bound, deadline/scope restrictions and restart/unknown-send behavior.
+
+
+`ExternalConversationSendRequest.provider_chain` optionally supplies future linear
+stages with a provider handoff. It defaults to empty; native admission derives
+`WorkProviderDispatch.remaining_stages` with frozen destination pins. Stages
+inherit work scope/deadline and cannot mint execution or contact authority.
+`WorkCoordinationInput.fix_review_rounds` optionally supplies up to three exact
+future native proposal pairs. Every pair needs its own execution grants and the
+fix/review data contracts; no execution grant is issued by registration. Query
+results expose distinct round pins/results and the active/final result. See
+[whole plans and fix/review](../engine/work-units.md#whole-provider-plans-and-bounded-native-fixreview).

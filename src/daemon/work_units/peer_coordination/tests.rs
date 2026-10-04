@@ -240,8 +240,11 @@ impl TestPort {
             executor_proposal_id: ids[0].clone(),
             reviewer_proposal_id: ids[1].clone(),
             deadline: chrono::Utc::now() + chrono::Duration::hours(1),
+            fix_review_rounds: vec![],
         };
         let plan = WorkCoordinationPlan {
+            fix_review_assignments: vec![],
+            round_index: 0,
             scope_digest: host.peer_scope_digest(&domain, &input)?,
             domain,
             input,
@@ -416,7 +419,10 @@ impl ExternalPeerExecutionPort for TestPort {
             let result = if request.assignment_id == plan.executor_assignment_id {
                 let item = item(forge, &plan)?;
                 let repo = &item.workspace_environment().unwrap().worktree;
-                std::fs::write(repo.join("implemented.txt"), "implementation")?;
+                std::fs::write(
+                    repo.join("implemented.txt"),
+                    format!("implementation round {}", plan.round_index),
+                )?;
                 assert!(
                     std::process::Command::new("git")
                         .args(["add", "."])
@@ -542,6 +548,19 @@ impl WorkCoordinationPort for TestPort {
         dispatch_external_peer_assignment(self, self, self, &request)
             .await
             .map(|_| ())
+    }
+    async fn retain(
+        &self,
+        plan: &WorkCoordinationPlan,
+        result: WorkCoordinationResult,
+    ) -> Result<()> {
+        let plan = plan.clone();
+        self.io(move |native, _, _| {
+            native
+                .record_work_coordination_result(&plan, &result)
+                .map(|_| ())
+        })
+        .await
     }
     async fn close(
         &self,
@@ -1252,6 +1271,7 @@ async fn provider_handoff_waits_for_exact_executor_and_never_replaces_claimed_se
                     scope_digest: String::new(),
                     source_request_digest: String::new(),
                     coordinator_wake: false,
+                    remaining_stages: vec![],
                     after_provider_completion: None,
                 };
                 let admission = host.admit_provider_dispatch_with(
@@ -1462,4 +1482,269 @@ fn provider_handoff_provenance() -> RecordProvenance {
         source: RecordSource::SystemEvent,
         evidence: vec![],
     }
+}
+
+async fn fix_round_fixture(count: usize, approve_future: bool) -> (TestPort, WorkCoordinationPlan) {
+    let execution = Arc::new(ForgeExecutionService::new());
+    let exec = execution.clone();
+    execution
+        .run(ExecutionClass::StoreIo, MAX_SNAPSHOT_BYTES, move || {
+            Ok((|| -> Result<_> {
+                let (port, mut plan) = TestPort::fixture_sync_controlled(
+                    exec,
+                    true,
+                    ExternalPeerRuntime::Medousa,
+                    false,
+                )?;
+                for index in 1..=count {
+                    let mut proposals = Vec::new();
+                    let mut assignments = Vec::new();
+                    for (executor, source_id) in [
+                        (true, &plan.input.executor_proposal_id),
+                        (false, &plan.input.reviewer_proposal_id),
+                    ] {
+                        let source = port.native.proposal(&plan.input.channel, source_id)?;
+                        let mut request = source.request;
+                        let id = format!(
+                            "{}-round-{index}",
+                            if executor { "executor" } else { "reviewer" }
+                        );
+                        request.assignment_id = id.clone();
+                        request.idempotency_key = format!("command-{id}");
+                        request.execution_grant_id = format!("grant-{id}");
+                        request.execution_session.session_id =
+                            SessionId::parse(format!("ses_{id}"))?;
+                        request.instructions = format!(
+                            "Perform round {index} {}",
+                            if executor {
+                                medousa_acp_client::coordination::store::work::WORK_FIX_CONTRACT
+                            } else {
+                                WORK_REVIEW_CONTRACT
+                            }
+                        );
+                        let mut proposal = PeerAssignmentProposal {
+                            proposal_id: String::new(),
+                            request: request.clone(),
+                            expires_at: source.expires_at,
+                            continue_owner: false,
+                        };
+                        proposal.proposal_id = proposal_identity(&proposal)?;
+                        port.native.record_proposal(&proposal)?;
+                        if approve_future {
+                            port.native.decide_proposal(
+                                &plan.input.channel,
+                                &PeerProposalDecision {
+                                    proposal_id: proposal.proposal_id.clone(),
+                                    owner_principal_id: plan.domain.user_id.clone(),
+                                    approved: true,
+                                },
+                            )?;
+                            port.native
+                                .approve_assignment(&ExternalPeerAssignmentGrant {
+                                    request,
+                                    expires_at: source.expires_at,
+                                })?;
+                        }
+                        proposals.push(proposal.proposal_id);
+                        assignments.push(id);
+                    }
+                    plan.input
+                        .fix_review_rounds
+                        .push(WorkCoordinationRoundInput {
+                            executor_proposal_id: proposals[0].clone(),
+                            reviewer_proposal_id: proposals[1].clone(),
+                        });
+                    plan.fix_review_assignments
+                        .push(WorkCoordinationRoundAssignments {
+                            executor_assignment_id: assignments[0].clone(),
+                            reviewer_assignment_id: assignments[1].clone(),
+                        });
+                }
+                port.host
+                    .register_peer_plan(&port.native, &port.host.forge, &plan)?;
+                Ok((port, plan))
+            })())
+        })
+        .await
+        .unwrap()
+        .unwrap()
+}
+
+async fn changes_requested_round(port: &TestPort, plan: &WorkCoordinationPlan) {
+    port.changes_requested.store(true, Ordering::SeqCst);
+    assert!(matches!(
+        advance_work_coordination(port, plan).await.unwrap(),
+        WorkCoordinationProgress::ExecutorRunning
+    ));
+    assert!(matches!(
+        advance_work_coordination(port, plan).await.unwrap(),
+        WorkCoordinationProgress::ReviewerRunning
+    ));
+    assert!(matches!(
+        advance_work_coordination(port, plan).await.unwrap(),
+        WorkCoordinationProgress::FixReady
+    ));
+}
+
+#[tokio::test]
+async fn bounded_fix_review_restarts_with_exact_feedback_and_fresh_revision_then_stops_on_approval()
+{
+    let (port, plan) = fix_round_fixture(2, true).await;
+    let saved = plan.clone();
+    port.io(move |native, host, forge| {
+        let round = saved.round(1).unwrap();
+        let request = native
+            .proposal(&round.input.channel, &round.input.executor_proposal_id)?
+            .request;
+        assert!(
+            host.peer_stage_context(native, forge, &round, &request)
+                .is_err()
+        );
+        Ok(())
+    })
+    .await
+    .unwrap();
+    changes_requested_round(&port, &plan).await;
+    assert_eq!(port.state(&plan).await, WorkUnitState::Accepted);
+    let port = port.reopen().await;
+    let saved = plan.clone();
+    port.io(move |native, host, forge| {
+        let round = saved.round(1).unwrap();
+        let request = native
+            .proposal(&round.input.channel, &round.input.executor_proposal_id)?
+            .request;
+        let context: serde_json::Value = serde_json::from_str(
+            &host
+                .peer_stage_context(native, forge, &round, &request)?
+                .unwrap(),
+        )?;
+        assert_eq!(context["decision"]["verdict"], "changes_requested");
+        assert_eq!(context["round_index"], 1);
+        Ok(())
+    })
+    .await
+    .unwrap();
+    assert!(matches!(
+        advance_work_coordination(&port, &plan).await.unwrap(),
+        WorkCoordinationProgress::ExecutorRunning
+    ));
+    assert!(matches!(
+        advance_work_coordination(&port, &plan).await.unwrap(),
+        WorkCoordinationProgress::ReviewerRunning
+    ));
+    advance_work_coordination(&port, &plan).await.unwrap();
+    assert_eq!(port.state(&plan).await, WorkUnitState::Satisfied);
+    assert_eq!(port.starts.load(Ordering::SeqCst), 4);
+    let saved = plan.clone();
+    port.io(move |native, _, _| {
+        let root_pin = native.work_review_input(&saved)?.unwrap();
+        let next_pin = native.work_review_input(&saved.round(1).unwrap())?.unwrap();
+        assert_ne!(root_pin.head_oid, next_pin.head_oid);
+        assert_ne!(root_pin.executor_receipt_id, next_pin.executor_receipt_id);
+        assert_eq!(
+            native.work_coordination_result(&saved)?.unwrap().outcome,
+            WorkCoordinationOutcome::ChangesRequested
+        );
+        assert_eq!(
+            native
+                .work_coordination_result(&saved.round(1).unwrap())?
+                .unwrap()
+                .outcome,
+            WorkCoordinationOutcome::Approved
+        );
+        assert!(!native.work_stage_claimed(&saved.round(2).unwrap(), true)?);
+        Ok(())
+    })
+    .await
+    .unwrap();
+    advance_work_coordination(&port, &plan).await.unwrap();
+    assert_eq!(port.starts.load(Ordering::SeqCst), 4);
+}
+
+#[tokio::test]
+async fn bounded_fix_review_exhausts_without_extra_work_or_false_satisfaction() {
+    let (port, plan) = fix_round_fixture(1, true).await;
+    changes_requested_round(&port, &plan).await;
+    for _ in 0..3 {
+        advance_work_coordination(&port, &plan).await.unwrap();
+    }
+    assert_eq!(port.state(&plan).await, WorkUnitState::NeedsAttention);
+    assert_eq!(port.starts.load(Ordering::SeqCst), 4);
+    advance_work_coordination(&port, &plan).await.unwrap();
+    assert_eq!(port.starts.load(Ordering::SeqCst), 4);
+}
+
+#[tokio::test]
+async fn bounded_fix_review_waits_for_approval_and_pause_and_rejects_changed_checkout() {
+    let (port, plan) = fix_round_fixture(1, false).await;
+    changes_requested_round(&port, &plan).await;
+    assert!(matches!(
+        advance_work_coordination(&port, &plan).await.unwrap(),
+        WorkCoordinationProgress::AwaitingApproval
+    ));
+    assert_eq!(port.starts.load(Ordering::SeqCst), 2);
+    let (port, plan) = fix_round_fixture(1, true).await;
+    changes_requested_round(&port, &plan).await;
+    port.mutate(
+        &plan,
+        WorkGraphMutation::SetState {
+            work_unit_id: plan.input.work_unit_id.clone(),
+            state: WorkUnitState::Paused,
+            reason: "pause rounds".into(),
+            evidence: vec![],
+        },
+    )
+    .await;
+    assert!(advance_work_coordination(&port, &plan).await.is_err());
+    assert_eq!(port.starts.load(Ordering::SeqCst), 2);
+    port.mutate(
+        &plan,
+        WorkGraphMutation::SetState {
+            work_unit_id: plan.input.work_unit_id.clone(),
+            state: WorkUnitState::Active,
+            reason: "resume rounds".into(),
+            evidence: vec![],
+        },
+    )
+    .await;
+    let saved = plan.clone();
+    port.io(move |_, _, forge| {
+        let item = item(forge, &saved)?;
+        std::fs::write(
+            item.workspace_environment()
+                .unwrap()
+                .worktree
+                .join("unrelated.txt"),
+            "changed",
+        )?;
+        Ok(())
+    })
+    .await
+    .unwrap();
+    assert!(advance_work_coordination(&port, &plan).await.is_err());
+    assert_eq!(port.starts.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn bounded_fix_review_preserves_unknown_fix_claim_after_restart() {
+    let (port, plan) = fix_round_fixture(1, true).await;
+    changes_requested_round(&port, &plan).await;
+    port.uncertain_start.store(true, Ordering::SeqCst);
+    assert!(advance_work_coordination(&port, &plan).await.is_err());
+    assert_eq!(port.starts.load(Ordering::SeqCst), 3);
+    let port = port.reopen().await;
+    assert!(advance_work_coordination(&port, &plan).await.is_err());
+    assert_eq!(port.starts.load(Ordering::SeqCst), 3);
+}
+
+#[tokio::test]
+async fn bounded_fix_review_first_approval_skips_every_admitted_follow_up() {
+    let (port, plan) = fix_round_fixture(3, true).await;
+    for _ in 0..3 {
+        advance_work_coordination(&port, &plan).await.unwrap();
+    }
+    assert_eq!(port.state(&plan).await, WorkUnitState::Satisfied);
+    assert_eq!(port.starts.load(Ordering::SeqCst), 2);
+    advance_work_coordination(&port, &plan).await.unwrap();
+    assert_eq!(port.starts.load(Ordering::SeqCst), 2);
 }

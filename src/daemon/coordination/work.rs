@@ -12,6 +12,7 @@ pub(crate) enum WorkCoordinationProgress {
     AwaitingApproval,
     ExecutorRunning,
     ReviewerRunning,
+    FixReady,
     Closed,
 }
 
@@ -96,6 +97,11 @@ impl LocalPeerDispatcher {
         domain: UserDomainRef,
         input: WorkCoordinationInput,
     ) -> Result<WorkCoordinationPlan> {
+        if input.fix_review_rounds.len()
+            > medousa_acp_client::coordination::store::work::MAX_FIX_REVIEW_ROUNDS
+        {
+            bail!("fix/review rounds exceed the native bound");
+        }
         let owner = domain.user_id.clone();
         let snapshot = input.clone();
         let saved = self
@@ -139,12 +145,39 @@ impl LocalPeerDispatcher {
         // validation without trying to dispatch a partially registered stage.
         self.hydrate(&principal, &executor.request, false).await?;
         self.hydrate(&principal, &reviewer.request, false).await?;
+        let future_input = input.clone();
+        let future = self
+            .work_io(move |native, _, _| {
+                future_input
+                    .fix_review_rounds
+                    .iter()
+                    .map(|round| {
+                        Ok((
+                            native.proposal(&future_input.channel, &round.executor_proposal_id)?,
+                            native.proposal(&future_input.channel, &round.reviewer_proposal_id)?,
+                        ))
+                    })
+                    .collect::<Result<Vec<_>>>()
+            })
+            .await?;
+        for (executor, reviewer) in &future {
+            self.hydrate(&principal, &executor.request, false).await?;
+            self.hydrate(&principal, &reviewer.request, false).await?;
+        }
         let pinned_domain = domain.clone();
         let pinned_input = input.clone();
         let scope_digest = self
             .work_io(move |_, work, _| work.peer_scope_digest(&pinned_domain, &pinned_input))
             .await?;
         let plan = WorkCoordinationPlan {
+            round_index: 0,
+            fix_review_assignments: future
+                .into_iter()
+                .map(|(executor, reviewer)| WorkCoordinationRoundAssignments {
+                    executor_assignment_id: executor.request.assignment_id,
+                    reviewer_assignment_id: reviewer.request.assignment_id,
+                })
+                .collect(),
             scope_digest,
             domain,
             input,
@@ -178,21 +211,37 @@ impl LocalPeerDispatcher {
             let plan = native.work_plan(&query.channel, &query.coordination_id)?;
             if plan.domain != domain { bail!("work coordination belongs to another domain"); }
             work.peer_read_access(forge, &plan)?;
-            for id in [&plan.input.executor_proposal_id, &plan.input.reviewer_proposal_id] {
+            let rounds: Vec<_> = (0..=plan.input.fix_review_rounds.len()).map(|i| plan.round(i as u8).unwrap()).collect();
+            for id in rounds.iter().flat_map(|round| [&round.input.executor_proposal_id, &round.input.reviewer_proposal_id]) {
                 let request = native.proposal(&plan.input.channel, id)?.request;
                 if !crate::session_catalog::session_visible_to_profile(request.owner_session.session_id.as_str(), &domain.user_id)
                     || request.context.sources.iter().any(|source| !crate::session_catalog::session_visible_to_profile(source.selection.session.session_id.as_str(), &domain.user_id)) {
                     bail!("native work result source context is not visible to this owner");
                 }
             }
-            Ok(serde_json::json!({"plan":plan,
+            let round_results: Vec<_> = rounds.iter().map(|round| -> Result<_> {
+                Ok(serde_json::json!({"round_index":round.round_index,
+                    "executor_claimed":native.work_stage_claimed(round, true)?,
+                    "reviewer_claimed":native.work_stage_claimed(round, false)?,
+                    "review_input":native.work_review_input(round)?, "result":native.work_coordination_result(round)?}))
+            }).collect::<Result<_>>()?;
+            let mut active_round = &rounds[0];
+            for round in &rounds {
+                active_round = round;
+                if native.work_coordination_result(round)?.is_none_or(|result| {
+                    result.outcome != WorkCoordinationOutcome::ChangesRequested
+                        || usize::from(round.round_index) == plan.input.fix_review_rounds.len()
+                }) { break; }
+            }
+            let result = native.work_coordination_result(active_round)?;
+            Ok(serde_json::json!({"active_round":active_round.round_index,"rounds":round_results,"plan":plan,
                 "work": work.inspect_peer_plan(&plan)?,
                 "executor_approval": native.proposal_decision(&native.proposal(&plan.input.channel, &plan.input.executor_proposal_id)?)?,
                 "reviewer_approval": native.proposal_decision(&native.proposal(&plan.input.channel, &plan.input.reviewer_proposal_id)?)?,
                 "executor_claimed":native.work_stage_claimed(&plan, true)?,
                 "reviewer_claimed":native.work_stage_claimed(&plan, false)?,
                 "review_input":native.work_review_input(&plan)?,
-                "result":native.work_coordination_result(&plan)?,
+                "result":result,
                 "executor_binding":native.peer_if_recorded(&plan.input.channel, &plan.executor_assignment_id)?,
                 "reviewer_binding":native.peer_if_recorded(&plan.input.channel, &plan.reviewer_assignment_id)?,
                 "executor_receipt":native.receipt_if_recorded(&plan.input.channel, &plan.executor_assignment_id)?,
@@ -299,6 +348,11 @@ pub(crate) trait WorkCoordinationPort: Send + Sync {
     ) -> Result<bool>;
     async fn dispatch_stage(&self, plan: &WorkCoordinationPlan, executor: bool) -> Result<()>;
     async fn ready(&self, plan: &WorkCoordinationPlan, executor: bool) -> Result<bool>;
+    async fn retain(
+        &self,
+        plan: &WorkCoordinationPlan,
+        result: WorkCoordinationResult,
+    ) -> Result<()>;
     async fn close(
         &self,
         plan: &WorkCoordinationPlan,
@@ -385,6 +439,19 @@ impl WorkCoordinationPort for LocalPeerDispatcher {
     async fn dispatch_stage(&self, plan: &WorkCoordinationPlan, executor: bool) -> Result<()> {
         self.dispatch_work_stage(plan, executor).await
     }
+    async fn retain(
+        &self,
+        plan: &WorkCoordinationPlan,
+        result: WorkCoordinationResult,
+    ) -> Result<()> {
+        let plan = plan.clone();
+        self.work_io(move |native, _, _| {
+            native
+                .record_work_coordination_result(&plan, &result)
+                .map(|_| ())
+        })
+        .await
+    }
     async fn close(
         &self,
         plan: &WorkCoordinationPlan,
@@ -398,9 +465,30 @@ pub(crate) async fn advance_work_coordination(
     port: &dyn WorkCoordinationPort,
     plan: &WorkCoordinationPlan,
 ) -> Result<WorkCoordinationProgress> {
-    if let Some(result) = port.result(plan).await? {
-        return port.close(plan, result).await;
+    if plan.round_index != 0 {
+        bail!("recovery requires the immutable root plan");
     }
+    for index in 0..=plan.input.fix_review_rounds.len() {
+        let round = plan
+            .round(index as u8)
+            .ok_or_else(|| anyhow::anyhow!("saved fix round missing"))?;
+        if let Some(result) = port.result(&round).await? {
+            if result.outcome == WorkCoordinationOutcome::ChangesRequested
+                && index < plan.input.fix_review_rounds.len()
+            {
+                continue;
+            }
+            return port.close(&round, result).await;
+        }
+        return advance_work_round(port, &round).await;
+    }
+    bail!("bounded work rounds exhausted without retained outcome")
+}
+
+async fn advance_work_round(
+    port: &dyn WorkCoordinationPort,
+    plan: &WorkCoordinationPlan,
+) -> Result<WorkCoordinationProgress> {
     port.admit(plan).await?;
     let failure = |outcome, receipt_id| WorkCoordinationResult {
         coordination_id: plan.input.coordination_id.clone(),
@@ -450,8 +538,14 @@ pub(crate) async fn advance_work_coordination(
         port.dispatch_stage(plan, false).await?;
         return Ok(WorkCoordinationProgress::ReviewerRunning);
     };
-    port.close(plan, review_result(plan, &input, &receipt))
-        .await
+    let result = review_result(plan, &input, &receipt);
+    if result.outcome == WorkCoordinationOutcome::ChangesRequested
+        && usize::from(plan.round_index) < plan.input.fix_review_rounds.len()
+    {
+        port.retain(plan, result).await?;
+        return Ok(WorkCoordinationProgress::FixReady);
+    }
+    port.close(plan, result).await
 }
 
 #[cfg(test)]

@@ -160,7 +160,7 @@ impl WorkGraphStore {
                 for (id, record) in &snapshot.provider_dispatches {
                     let position = format!("{}${id}", entry.name);
                     if after.is_some_and(|a| position.as_str() <= a)
-                        || !snapshot.dispatch_pending(record)
+                        || !snapshot.dispatch_recoverable(record)
                     {
                         continue;
                     }

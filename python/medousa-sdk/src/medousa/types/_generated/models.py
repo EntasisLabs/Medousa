@@ -849,6 +849,16 @@ class WorkProviderReviewSource(MedousaModel):
     executor_assignment_id: str
 
 
+class WorkProviderStageInput(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    conversation_id: str
+    coordinator_wake: bool | None = None
+    request_id: str
+    text: str
+
+
 class ExternalWhatsAppPairingState(Enum):
     waiting = 'waiting'
     qr_ready = 'qr_ready'
@@ -2545,19 +2555,12 @@ class WorkContactPreference(
     root: WorkContactPreference1 | WorkContactPreference2 | WorkContactPreference3 | WorkContactPreference4
 
 
-class WorkCoordinationInput(MedousaModel):
+class WorkCoordinationRoundInput(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    channel: CoordinationChannelRef
-    coordination_id: str
-    deadline: AwareDatetime = Field(
-        ..., description='Absolute bound; at most 24 hours and no later than either approval.'
-    )
     executor_proposal_id: str
-    expected_scope_revision: int = Field(..., ge=0)
     reviewer_proposal_id: str
-    work_unit_id: str
 
 
 class WorkCoordinatorAttempt(MedousaModel):
@@ -2823,6 +2826,15 @@ class WorkProviderDispatchSource(MedousaModel):
         extra='forbid',
     )
     request: WorkProviderRequestRef
+    target_digest: str
+
+
+class WorkProviderPlannedStage(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    input: WorkProviderStageInput
+    provider: ExternalProvider
     target_digest: str
 
 
@@ -4359,14 +4371,6 @@ class Action1(Enum):
     work_coordinate = 'work.coordinate'
 
 
-class WorkParticipantMutation2(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    action: Action1
-    input: WorkCoordinationInput
-
-
 class Action2(Enum):
     peer_propose = 'peer.propose'
 
@@ -5060,6 +5064,25 @@ class TurnStreamEventV3(
     ) = Field(..., description='Chronological turn facts. Visible prose is addressed by `segment_id`, tool receipts update by `tool_run_id`, and terminal settlement never replaces the preceding timeline.', title='TurnStreamEventV3')
 
 
+class WorkCoordinationInput(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    channel: CoordinationChannelRef
+    coordination_id: str
+    deadline: AwareDatetime = Field(
+        ..., description='Absolute bound; at most 24 hours and no later than either approval.'
+    )
+    executor_proposal_id: str
+    expected_scope_revision: int = Field(..., ge=0)
+    fix_review_rounds: list[WorkCoordinationRoundInput] | None = Field(
+        None,
+        description='Up to three separately approved fix/review rounds, only after exact changes_requested.',
+    )
+    reviewer_proposal_id: str
+    work_unit_id: str
+
+
 class WorkCoordinatorWake(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -5165,6 +5188,7 @@ class WorkProviderDispatch(MedousaModel):
     input: WorkProviderRequestInput
     instructions: str
     provider: ExternalProvider
+    remaining_stages: list[WorkProviderPlannedStage] | None = None
     request_id: str
     scope_digest: str
     source_request_digest: str
@@ -5410,6 +5434,10 @@ class ExternalConversationSendRequest(MedousaModel):
     coordinator_wake: bool | None = Field(
         None,
         description='Native admission for one internal result-analysis turn. No contact or execution tools are granted to that turn.',
+    )
+    provider_chain: list[WorkProviderStageInput] | None = Field(
+        None,
+        description='Remaining linear stages, frozen with this provider handoff. No new grants.',
     )
     request_id: str
     text: str
@@ -5687,6 +5715,14 @@ class UpdateBotRequest(MedousaModel):
         None,
         description='Set or replace durable world continuity. Omission preserves the current binding for compatibility with clients predating schema v2.',
     )
+
+
+class WorkParticipantMutation2(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    action: Action1
+    input: WorkCoordinationInput
 
 
 class WorkspaceCardsResponse(MedousaModel):

@@ -755,6 +755,22 @@ fn validate_send_admission(
     input: &SendMessageRequest,
     scheduled: bool,
 ) -> Result<(), HttpError> {
+    if input.provider_chain.len() > medousa_work::MAX_PROVIDER_CHAIN_STAGES - 2
+        || (!input.provider_chain.is_empty() && input.after_provider_completion.is_none())
+        || (scheduled && !input.provider_chain.is_empty())
+        || input.provider_chain.iter().any(|stage| {
+            stage.conversation_id.trim().is_empty()
+                || stage.conversation_id.len() > 128
+                || stage.conversation_id.chars().any(char::is_control)
+                || stage.request_id.trim().is_empty()
+                || stage.request_id.len() > 128
+                || stage.request_id.chars().any(char::is_control)
+                || stage.text.trim().is_empty()
+                || stage.text.len() > 12 * 1024
+        })
+    {
+        return Err(bad_request("invalid bounded provider plan"));
+    }
     if input.coordinator_wake && input.work.is_none() {
         return Err(bad_request("coordinator wake requires exact work metadata"));
     }
@@ -807,6 +823,12 @@ async fn send_admitted(
     if let Some(source) = &input.after_provider_completion {
         lock_ids.push(source.conversation_id.clone());
     }
+    lock_ids.extend(
+        input
+            .provider_chain
+            .iter()
+            .map(|stage| stage.conversation_id.clone()),
+    );
     lock_ids.sort();
     lock_ids.dedup();
     let mut _send_guards = vec![];

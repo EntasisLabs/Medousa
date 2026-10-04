@@ -1,7 +1,7 @@
 //! One operator-admitted native or provider handoff, recovered from work custody.
 use super::*;
 use medousa_types::{
-    work_provider::{WorkProviderDispatch, WorkProviderDispatchSource},
+    work_provider::{WorkProviderDispatch, WorkProviderDispatchSource, WorkProviderPlannedStage},
     work_unit::UserDomainRef,
 };
 use sha2::{Digest, Sha256};
@@ -53,6 +53,23 @@ pub(super) async fn admit(
         }
         None
     };
+    let mut remaining_stages = Vec::new();
+    for stage in input.provider_chain {
+        let destination = state
+            .external_conversations
+            .binding(&stage.conversation_id)
+            .await
+            .filter(|record| record.owner_id == binding.owner_id)
+            .ok_or((
+                StatusCode::NOT_FOUND,
+                "planned provider conversation not found".into(),
+            ))?;
+        remaining_stages.push(WorkProviderPlannedStage {
+            provider: destination.provider,
+            target_digest: target_digest(&destination).map_err(internal)?,
+            input: stage,
+        });
+    }
     let host = crate::daemon::work_units::local_work_unit_host().ok_or((
         StatusCode::SERVICE_UNAVAILABLE,
         "work unit host unavailable".into(),
@@ -70,6 +87,7 @@ pub(super) async fn admit(
             source_request_digest: String::new(),
             coordinator_wake: input.coordinator_wake,
             after_provider_completion: after_provider_completion.clone(),
+            remaining_stages,
         },
     )
     .await
@@ -129,6 +147,12 @@ pub(crate) async fn resume(
         .await?;
         return Ok(());
     }
+    if host
+        .resume_provider_plan(domain.clone(), dispatch.clone())
+        .await?
+    {
+        return Ok(());
+    }
     if !host
         .provider_dispatch_ready(domain.clone(), dispatch.clone())
         .await?
@@ -148,6 +172,7 @@ pub(crate) async fn resume(
                 .after_provider_completion
                 .map(|source| source.request),
             coordinator_wake: dispatch.coordinator_wake,
+            provider_chain: vec![],
         },
         true,
     )

@@ -26,7 +26,8 @@ impl WorkGraphStore {
     pub fn require_provider_idle(&self, domain: &UserDomainRef, work_unit_id: &str) -> Result<()> {
         let snapshot = self.load(domain)?;
         if snapshot.provider_dispatches.values().any(|record| {
-            record.dispatch.input.work_unit_id == work_unit_id && snapshot.dispatch_pending(record)
+            record.dispatch.input.work_unit_id == work_unit_id
+                && snapshot.dispatch_recoverable(record)
         }) {
             return Err(invalid("work has saved provider handoff custody"));
         }

@@ -232,6 +232,72 @@ impl WorkUnitHost {
         Ok(())
     }
 
+    /// Transfer saved future custody to one exact successor. No network effect.
+    pub(crate) async fn resume_provider_plan(
+        &self,
+        domain: UserDomainRef,
+        dispatch: WorkProviderDispatch,
+    ) -> Result<bool> {
+        let native = crate::daemon::coordination::local_coordination_host()
+            .ok_or_else(|| anyhow::anyhow!("native coordination unavailable"))?
+            .work_registry();
+        let host = WorkUnitHost {
+            store: self.store.clone(),
+            execution: self.execution.clone(),
+            forge: self.forge.clone(),
+        };
+        self.with_store(move |_| {
+            host.resume_provider_plan_with(
+                &native,
+                &domain,
+                &dispatch,
+                crate::session_catalog::session_visible_to_profile,
+            )
+        })
+        .await
+    }
+
+    fn resume_provider_plan_with(
+        &self,
+        native: &CoordinationStore,
+        domain: &UserDomainRef,
+        dispatch: &WorkProviderDispatch,
+        visible: impl Fn(&str, &str) -> bool,
+    ) -> Result<bool> {
+        let Some(mut next) = self.store.next_provider_dispatch(domain, dispatch)? else {
+            return Ok(false);
+        };
+        let unit = self.store.work_unit(domain, &dispatch.input.work_unit_id)?;
+        let stale = dispatch.input.deadline <= chrono::Utc::now()
+            || unit.state.is_terminal()
+            || unit.scope_revision != dispatch.input.expected_scope_revision
+            || self
+                .store
+                .peer_coordination_scope_digest(domain, &unit.work_unit_id)?
+                != dispatch.scope_digest;
+        if stale {
+            self.close_provider_dispatch_with(
+                domain,
+                dispatch,
+                "provider plan expired, cancelled or rescoped",
+            )?;
+            return Ok(true);
+        }
+        if unit.state == WorkUnitState::Paused {
+            return Ok(true);
+        }
+        if self.store.provider_chain_terminal(domain, &next).is_err() {
+            self.close_provider_dispatch_with(
+                domain,
+                dispatch,
+                "provider plan predecessor failed or became stale",
+            )?;
+            return Ok(true);
+        }
+        self.admit_provider_dispatch_with(native, domain, &mut next, visible)?;
+        Ok(true)
+    }
+
     pub(crate) async fn pending_provider_dispatch(
         &self,
         domain: UserDomainRef,
@@ -447,6 +513,17 @@ mod tests {
         Arc<CoordinationStore>,
         WorkProviderDispatch,
     ) {
+        fixture_with_plan(false).await
+    }
+
+    async fn fixture_with_plan(
+        with_plan: bool,
+    ) -> (
+        Arc<tempfile::TempDir>,
+        Arc<WorkUnitHost>,
+        Arc<CoordinationStore>,
+        WorkProviderDispatch,
+    ) {
         let execution = Arc::new(ForgeExecutionService::new());
         let exec = execution.clone();
         execution
@@ -530,7 +607,20 @@ mod tests {
                             target_digest: "e".repeat(64),
                         }),
                         coordinator_wake: false,
+                        remaining_stages: vec![],
                     };
+                    if with_plan {
+                        dispatch.remaining_stages = vec![WorkProviderPlannedStage {
+                            input: WorkProviderStageInput {
+                                conversation_id: "third".into(),
+                                request_id: "third-stage".into(),
+                                text: "Assess stage two".into(),
+                                coordinator_wake: false,
+                            },
+                            provider: medousa_types::ExternalProvider::Dots,
+                            target_digest: "f".repeat(64),
+                        }];
+                    }
                     host.admit_provider_dispatch_with(
                         &native,
                         &domain(),
@@ -827,6 +917,113 @@ mod tests {
                         &ledger,
                         &domain(),
                         &saved,
+                        |_, _| false
+                    )?);
+                }
+                Ok(())
+            })
+            .await
+            .unwrap();
+        }
+    }
+    #[tokio::test]
+    async fn provider_whole_plan_materializes_one_frozen_successor_or_closes_failed_tail() {
+        for failed in [false, true] {
+            let (_temp, host, native, dispatch) = fixture_with_plan(true).await;
+            let driver = host.clone();
+            let saved = dispatch.clone();
+            host.with_store(move |_| {
+                driver.store.apply_native_command(
+                    &domain(),
+                    "terminal".into(),
+                    WorkGraphMutation::RecordProviderEvent {
+                        event: Box::new(event(
+                            ExternalEventKind::Completed,
+                            WorkProviderQualification::OutcomeOnly,
+                            1,
+                        )),
+                    },
+                    provenance(),
+                )?;
+                assert!(
+                    driver
+                        .store
+                        .next_provider_dispatch(&domain(), &saved)?
+                        .is_none()
+                );
+                Ok(())
+            })
+            .await
+            .unwrap();
+            let request = host
+                .prepare_provider_request(
+                    domain(),
+                    dispatch.conversation_id.clone(),
+                    dispatch.provider,
+                    dispatch.request_id.clone(),
+                    dispatch.input.clone(),
+                    dispatch.instructions.clone(),
+                )
+                .await
+                .unwrap();
+            host.claim_provider_request(domain(), request)
+                .await
+                .unwrap();
+            let driver = host.clone();
+            let saved = dispatch.clone();
+            let ledger = native.clone();
+            host.with_store(move |_| {
+                if failed {
+                    let mut terminal = event(
+                        ExternalEventKind::Failed,
+                        WorkProviderQualification::OutcomeOnly,
+                        1,
+                    );
+                    terminal.conversation_id = saved.conversation_id.clone();
+                    terminal.request_id = saved.request_id.clone();
+                    driver.store.apply_native_command(
+                        &domain(),
+                        "second-failed".into(),
+                        WorkGraphMutation::RecordProviderEvent {
+                            event: Box::new(terminal),
+                        },
+                        provenance(),
+                    )?;
+                }
+                assert!(
+                    driver.resume_provider_plan_with(&ledger, &domain(), &saved, |_, _| false)?
+                );
+                assert!(!driver.resume_provider_plan_with(
+                    &ledger,
+                    &domain(),
+                    &saved,
+                    |_, _| false
+                )?);
+                let next = driver
+                    .store
+                    .provider_dispatch(&domain(), "third", "third-stage")?;
+                if failed {
+                    assert!(next.is_none());
+                    assert!(
+                        driver
+                            .store
+                            .provider_dispatch(
+                                &domain(),
+                                &saved.conversation_id,
+                                &saved.request_id
+                            )?
+                            .unwrap()
+                            .closed_reason
+                            .is_some()
+                    );
+                } else {
+                    let next = next.unwrap().dispatch;
+                    assert_eq!(next.target_digest, "f".repeat(64));
+                    assert!(next.remaining_stages.is_empty());
+                    assert!(!driver.provider_dispatch_ready_with(
+                        &ledger,
+                        &domain(),
+                        &next,
                         |_, _| false
                     )?);
                 }

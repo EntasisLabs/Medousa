@@ -109,6 +109,28 @@ pub struct WorkProviderRecord {
     pub revision: u64,
 }
 
+/// A future stage supplied with native operator admission. Work scope and
+/// deadline are inherited; the runtime freezes its destination separately.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct WorkProviderStageInput {
+    pub conversation_id: String,
+    pub request_id: String,
+    pub text: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub coordinator_wake: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct WorkProviderPlannedStage {
+    pub input: WorkProviderStageInput,
+    pub provider: ExternalProvider,
+    pub target_digest: String,
+}
+
 /// One immutable, operator-admitted handoff after a native executor or exact
 /// provider predecessor completes. Recovery derives its result/revision pin.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -125,6 +147,8 @@ pub struct WorkProviderDispatch {
     pub source_request_digest: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub after_provider_completion: Option<WorkProviderDispatchSource>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub remaining_stages: Vec<WorkProviderPlannedStage>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub coordinator_wake: bool,
 }
