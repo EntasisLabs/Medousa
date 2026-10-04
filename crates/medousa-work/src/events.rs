@@ -93,6 +93,17 @@ impl Snapshot {
             {
                 WorkEventKind::WorkStateChanged
             }
+            WorkGraphMutation::AdvanceProviderStage {
+                subscription_id,
+                state: Some(_),
+                ..
+            } if self
+                .subscriptions
+                .get(subscription_id)
+                .is_some_and(|stage| stage.input.work_unit_id == input.work_unit_id) =>
+            {
+                WorkEventKind::WorkStateChanged
+            }
             WorkGraphMutation::SetScope { work_unit_id, .. }
                 if work_unit_id == &input.work_unit_id =>
             {

@@ -120,6 +120,7 @@ fn validate_model_mutation(domain: &UserDomainRef, mutation: &WorkGraphMutation)
             | WorkGraphMutation::RegisterProviderRequest { .. }
             | WorkGraphMutation::ClaimProviderRequest { .. }
             | WorkGraphMutation::RecordProviderEvent { .. }
+            | WorkGraphMutation::AdvanceProviderStage { .. }
     ) {
         bail!("native custody and provider evidence require an authenticated native adapter");
     }

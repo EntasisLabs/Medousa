@@ -607,3 +607,11 @@ execution state, observation/activity times, and bounded current/previous
 actions. Treat missing progress as unavailable. An activity failure or stale
 observation does not establish an assignment outcome or authorize a retry;
 the immutable `receipt` remains authoritative.
+
+Provider work callbacks now admit deterministic runtime stage intake for new
+request associations. `advance_provider_stage` is a native-only journal command;
+model and Work-credential mutations cannot use it. Publication commits qualified
+state, evidence and acknowledgment together. Execution completion waits for an
+admitted review; strict approval of the current native revision can satisfy work.
+See [work units](../engine/work-units.md#runtime-owned-provider-intake) for
+restart, scope, custody and silence behavior.

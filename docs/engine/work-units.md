@@ -596,8 +596,8 @@ these configurations fail closed rather than recording unknown cost as zero.
 Current native execution targets are Medousa Coder, Codex, Cursor, and Hermes on
 this workshop. Muse/Instinct/Dots/Grok Bot have authenticated work API access;
 authenticated provider callbacks can now retain exact request/result association
-and revision-bound review evidence as described below. Automatic provider stage
-orchestration, cross-workshop coordination and voice/contact routing remain separate
+and revision-bound review evidence as described below. Automatic next-stage provider
+dispatch, cross-workshop coordination and voice/contact routing remain separate
 admission paths.
 
 ## Durable work event subscriptions
@@ -626,7 +626,7 @@ returns the original receipt. `stop_subscription` stops future intake while
 retaining already pending observations. Scope changes, pause, terminal work,
 expiry and stop are explicit statuses, not permission to reopen work.
 
-These are pull-based agent/runtime inboxes, not user-managed goal screens.
+Caller-created subscriptions are pull-based agent/runtime inboxes, not user-managed goal screens.
 They do not automatically start model turns, invoke providers, refresh resource
 observations, or send contact. A consumer must retain its own admitted command
 identity before effects; an acknowledgment is observation evidence, not proof
@@ -679,26 +679,44 @@ Changed checkout revision, invalid review JSON, changed scope, inactive work and
 expired deadlines remain explicit qualifications with no approving decision.
 
 These records are attributable provider outcomes and qualified review evidence.
-They do not automatically satisfy work, reopen a terminal unit, wake a chat or
-send contact. Model mutations cannot manufacture these records or satisfy a
+For newly associated requests, the admitted runtime stage controller consumes
+callbacks and can publish verified work satisfaction as described below. It does
+not reopen terminal work, wake a model chat or send contact. Model mutations cannot manufacture these records or satisfy a
 provider-associated unit. Ordinary WhatsApp/Slack messages, reactions and transport
 acceptance remain conversation observations. Live provider transport acceptance
-and the complete external execution/review controller remain qualification gates.
+and automatic next-stage provider dispatch remain qualification gates.
 See [Provider callback protocol](external-conversations.md#correlated-work-callbacks).
 
 ### Runtime-owned provider intake
 
 New provider work associations atomically register an actor-bound runtime inbox
 before a dispatch claim can be committed. Its identity pins the owner domain,
-request, work scope generation and deadline. Recovery uses the retained journal,
+request, work scope generation and deadline. The observation inbox retains
+callbacks for one further day; execution and approval authority still end at the
+original request deadline. Recovery uses the retained journal,
 not the selected profile, open source chat or a new provider send. Authenticated
 callback publication wakes the daemon coordinator; a bounded rotating scan also
 recovers inboxes after restart. Native and provider recovery share four worker
 slots, and corrupt snapshots are retained rather than reset.
 
-The runtime can acknowledge progress as an attributable observation. Terminal
-callbacks remain pending for stage qualification; reading them or waking the
-coordinator does not imply approval, work satisfaction, a model turn or contact.
+The runtime consumes one callback at a time. Progress is an observation;
+questions and failures require attention. A bare execution completion moves work
+to waiting for review. An exact native executor source named by `review_of` pins
+the review stage; only a qualified review approval can satisfy the unit. Changes
+requested, malformed verdicts, expired results or changed checkout revisions
+require attention. Stage publication rechecks source visibility, native custody,
+current scope/resources, the deadline and a clean checkout while holding Forge
+custody through the graph transaction.
+
+The native-only `advance_provider_stage` decision commits state, attributable
+assignment evidence and the event cursor atomically. A crash retains the whole
+decision or the whole pending event. Duplicate wakes are reads after consumption.
+Only the newest claimed provider stage can change state; older and unrelated
+callbacks are acknowledged without overwriting it. Paused work retains its next
+pending event until resumed; cancelled, terminal or rescoped work is never revived.
+Runtime recovery reserves capacity for both native and provider stages. Neither
+callback intake nor transport acceptance admits another send, model turn or
+contact. A subsequent stage still requires an explicitly admitted request.
 Existing caller-created pull subscriptions retain their explicit acknowledgment
 contract. This increment registers inboxes for new provider associations; legacy
 associations keep their retained evidence and explicit pull path.

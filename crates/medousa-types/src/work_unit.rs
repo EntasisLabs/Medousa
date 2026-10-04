@@ -363,6 +363,13 @@ pub enum WorkGraphMutation {
         /// Attributable observation/decision receipt, not a provider effect.
         decision: String,
     },
+    /// Native runtime decision and inbox acknowledgment commit atomically.
+    AdvanceProviderStage {
+        subscription_id: String,
+        event_revision: u64,
+        state: Option<WorkUnitState>,
+        reason: String,
+    },
     StopSubscription {
         subscription_id: String,
     },

@@ -60,6 +60,15 @@ impl TestPort {
         approved: bool,
         runtime: ExternalPeerRuntime,
     ) -> Result<(Self, WorkCoordinationPlan)> {
+        Self::fixture_sync_controlled(execution, approved, runtime, true)
+    }
+
+    fn fixture_sync_controlled(
+        execution: Arc<ForgeExecutionService>,
+        approved: bool,
+        runtime: ExternalPeerRuntime,
+        controlled: bool,
+    ) -> Result<(Self, WorkCoordinationPlan)> {
         let temp = Arc::new(tempfile::tempdir()?);
         let root = temp.path().canonicalize()?;
         let repo = root.join("repo");
@@ -240,7 +249,9 @@ impl TestPort {
             reviewer_assignment_id: "reviewer".into(),
             forge_work_id: item.id.to_string(),
         };
-        host.register_peer_plan(&native, &forge, &plan)?;
+        if controlled {
+            host.register_peer_plan(&native, &forge, &plan)?;
+        }
         Ok((
             Self {
                 _temp: temp,
@@ -908,4 +919,286 @@ async fn provider_review_requires_exact_completed_source_visibility_and_current_
     })
     .await
     .unwrap();
+}
+
+#[tokio::test]
+async fn provider_stage_controller_recovers_exact_review_without_an_open_source_chat() {
+    use medousa_types::work_provider::*;
+    for scenario in [
+        "approved",
+        "changes",
+        "invalid",
+        "dirty",
+        "invisible",
+        "scope",
+        "paused",
+        "busy",
+    ] {
+        let execution = Arc::new(ForgeExecutionService::new());
+        let exec = execution.clone();
+        let (port, plan) = execution
+            .run(ExecutionClass::StoreIo, MAX_SNAPSHOT_BYTES, move || {
+                Ok(TestPort::fixture_sync_controlled(
+                    exec,
+                    true,
+                    ExternalPeerRuntime::Codex,
+                    false,
+                ))
+            })
+            .await
+            .unwrap()
+            .unwrap();
+        let copy = plan.clone();
+        port.io(move |native, host, forge| {
+            let request = native
+                .proposal(&copy.input.channel, &copy.input.executor_proposal_id)?
+                .request;
+            native.claim_assignment_checked(&request, || Ok(()))?;
+            let binding = ExternalPeerAssignmentBinding {
+                assignment_id: request.assignment_id.clone(),
+                owner_principal_id: request.owner_principal_id.clone(),
+                channel: request.channel.clone(),
+                target: request.target.clone(),
+                execution_session: request.execution_session.clone(),
+                agent_session_id: "native-executor".into(),
+            };
+            native.record_peer(&binding)?;
+            let receipt_id = peer_terminal_receipt_id(&binding);
+            native.observe_receipt_once(&ExternalPeerAssignmentReceipt {
+                receipt_id: receipt_id.clone(),
+                binding,
+                outcome: PeerAssignmentOutcome::Completed,
+                result: "implemented and tested".into(),
+            })?;
+            let pin = checkout(forge, &copy, receipt_id)?;
+            let request = WorkProviderRequest {
+                conversation_id: "muse".into(),
+                request_id: "review-request".into(),
+                provider: ExternalProvider::Muse,
+                input: WorkProviderRequestInput {
+                    work_unit_id: copy.input.work_unit_id.clone(),
+                    expected_scope_revision: copy.input.expected_scope_revision,
+                    deadline: copy.input.deadline,
+                    review_of: Some(WorkProviderReviewSource {
+                        channel: copy.input.channel.clone(),
+                        executor_assignment_id: copy.executor_assignment_id.clone(),
+                    }),
+                },
+                instruction_digest: "a".repeat(64),
+                scope_digest: copy.scope_digest.clone(),
+                completion_condition: "reviewed implementation".into(),
+                reviewed: Some(pin.clone()),
+            };
+            let proof = RecordProvenance {
+                actor_id: "external-agent:test".into(),
+                source: RecordSource::SystemEvent,
+                evidence: vec![],
+            };
+            host.store.apply_native_command(
+                &copy.domain,
+                "provider-request".into(),
+                WorkGraphMutation::RegisterProviderRequest {
+                    request: Box::new(request),
+                },
+                proof.clone(),
+            )?;
+            host.store.apply_native_command(
+                &copy.domain,
+                "provider-claim".into(),
+                WorkGraphMutation::ClaimProviderRequest {
+                    conversation_id: "muse".into(),
+                    request_id: "review-request".into(),
+                },
+                proof.clone(),
+            )?;
+            let decision = WorkReviewDecision {
+                reviewed: pin,
+                verdict: if scenario == "changes" {
+                    WorkReviewVerdict::ChangesRequested
+                } else {
+                    WorkReviewVerdict::Approved
+                },
+                summary: "exact native revision reviewed".into(),
+            };
+            let event = WorkProviderEvent {
+                conversation_id: "muse".into(),
+                request_id: "review-request".into(),
+                event_id: "provider:done".into(),
+                actor_id: proof.actor_id.clone(),
+                request_sequence: 1,
+                kind: ExternalEventKind::Completed,
+                text: if scenario == "invalid" {
+                    "looks fine".into()
+                } else {
+                    serde_json::to_string(&decision)?
+                },
+                created_at: chrono::Utc::now(),
+                qualification: if scenario == "invalid" {
+                    WorkProviderQualification::InvalidReview
+                } else if scenario == "changes" {
+                    WorkProviderQualification::ChangesRequested
+                } else {
+                    WorkProviderQualification::ReviewApproved
+                },
+                review_decision: (scenario != "invalid").then_some(decision),
+            };
+            host.store.apply_native_command(
+                &copy.domain,
+                "provider-result".into(),
+                WorkGraphMutation::RecordProviderEvent {
+                    event: Box::new(event),
+                },
+                proof,
+            )?;
+            if scenario == "dirty" {
+                std::fs::write(
+                    item(forge, &copy)?
+                        .workspace_environment()
+                        .unwrap()
+                        .worktree
+                        .join("changed.txt"),
+                    "changed after callback",
+                )?;
+            }
+            if scenario == "scope" || scenario == "paused" {
+                let revision = host
+                    .store
+                    .query(&copy.domain, WorkGraphQuery::default())?
+                    .revision;
+                host.store.apply(
+                    &copy.domain,
+                    WorkGraphCommand {
+                        command_id: "steering".into(),
+                        expected_revision: revision,
+                        mutation: if scenario == "scope" {
+                            WorkGraphMutation::SetScope {
+                                work_unit_id: copy.input.work_unit_id.clone(),
+                                scope: WorkScope::default(),
+                            }
+                        } else {
+                            WorkGraphMutation::SetState {
+                                work_unit_id: copy.input.work_unit_id.clone(),
+                                state: WorkUnitState::Paused,
+                                reason: "user paused work".into(),
+                                evidence: vec![],
+                            }
+                        },
+                    },
+                    RecordProvenance {
+                        actor_id: "owner".into(),
+                        source: RecordSource::UserDirect,
+                        evidence: vec![],
+                    },
+                )?;
+            }
+            Ok(())
+        })
+        .await
+        .unwrap();
+        // Reopen both native ledgers and Forge. No source-chat turn exists.
+        let port = port.reopen().await;
+        let copy = plan.clone();
+        port.io(move |native, host, forge| {
+            let inbox = host
+                .store
+                .coordinator_inboxes(&copy.domain.authority_id, 4, None)?
+                .inboxes
+                .remove(0);
+            if scenario == "busy" {
+                let _lease = forge
+                    .store()
+                    .try_lock_item(&WorkId::parse_storage(&copy.forge_work_id).unwrap())?
+                    .unwrap();
+                assert!(
+                    host.consume_provider_inbox_with(&inbox, Some(native), |_, _| true)
+                        .is_err()
+                );
+                assert_eq!(
+                    host.store
+                        .work_unit(&copy.domain, &copy.input.work_unit_id)?
+                        .state,
+                    WorkUnitState::Accepted
+                );
+                assert_eq!(
+                    host.store
+                        .coordinator_inboxes(&copy.domain.authority_id, 4, None)?
+                        .inboxes
+                        .len(),
+                    1
+                );
+            }
+            host.consume_provider_inbox_with(&inbox, Some(native), |_, _| scenario != "invisible")?;
+            if scenario == "paused" {
+                assert_eq!(
+                    host.store
+                        .work_unit(&copy.domain, &copy.input.work_unit_id)?
+                        .state,
+                    WorkUnitState::Paused
+                );
+                assert_eq!(
+                    host.store
+                        .coordinator_inboxes(&copy.domain.authority_id, 4, None)?
+                        .inboxes
+                        .len(),
+                    1
+                );
+                let revision = host
+                    .store
+                    .query(&copy.domain, WorkGraphQuery::default())?
+                    .revision;
+                host.store.apply(
+                    &copy.domain,
+                    WorkGraphCommand {
+                        command_id: "resume".into(),
+                        expected_revision: revision,
+                        mutation: WorkGraphMutation::SetState {
+                            work_unit_id: copy.input.work_unit_id.clone(),
+                            state: WorkUnitState::Active,
+                            reason: "resume".into(),
+                            evidence: vec![],
+                        },
+                    },
+                    RecordProvenance {
+                        actor_id: "owner".into(),
+                        source: RecordSource::UserDirect,
+                        evidence: vec![],
+                    },
+                )?;
+                host.consume_provider_inbox_with(&inbox, Some(native), |_, _| true)?;
+            }
+            let expected = match scenario {
+                "approved" | "paused" | "busy" => WorkUnitState::Satisfied,
+                "scope" => WorkUnitState::Accepted,
+                _ => WorkUnitState::NeedsAttention,
+            };
+            let unit = host
+                .store
+                .work_unit(&copy.domain, &copy.input.work_unit_id)?;
+            assert_eq!(unit.state, expected, "{scenario}");
+            assert_eq!(unit.contact, WorkContactPreference::Silent);
+            assert!(unit.origin.is_none());
+            assert!(
+                host.store
+                    .coordinator_inboxes(&copy.domain.authority_id, 4, None)?
+                    .inboxes
+                    .is_empty()
+            );
+            let revision = host
+                .store
+                .query(&copy.domain, WorkGraphQuery::default())?
+                .revision;
+            host.consume_provider_inbox_with(&inbox, Some(native), |_, _| true)?;
+            assert_eq!(
+                host.store
+                    .query(&copy.domain, WorkGraphQuery::default())?
+                    .revision,
+                revision
+            );
+            assert!(!native.work_is_controlled(&copy.domain, &copy.input.work_unit_id)?);
+            Ok(())
+        })
+        .await
+        .unwrap();
+        assert_eq!(port.starts.load(Ordering::SeqCst), 0);
+    }
 }

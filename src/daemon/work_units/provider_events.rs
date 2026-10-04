@@ -76,6 +76,16 @@ pub(super) fn review_revision(forge: &Forge, owner: &str, input: &WorkReviewInpu
         .store()
         .try_lock_item(&id)?
         .ok_or_else(|| anyhow::anyhow!("provider review checkout custody busy"))?;
+    review_revision_held(forge, owner, input)
+}
+
+/// Caller holds the Forge item fence through the graph transaction.
+pub(super) fn review_revision_held(
+    forge: &Forge,
+    owner: &str,
+    input: &WorkReviewInput,
+) -> Result<bool> {
+    let id = WorkId::parse_storage(&input.forge_work_id).map_err(anyhow::Error::msg)?;
     let item = forge.load(&id)?;
     if item.owner != owner {
         return Ok(false);

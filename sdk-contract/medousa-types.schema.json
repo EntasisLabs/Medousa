@@ -30796,6 +30796,46 @@
             "additionalProperties": false
           },
           {
+            "description": "Native runtime decision and inbox acknowledgment commit atomically.",
+            "type": "object",
+            "required": [
+              "event_revision",
+              "operation",
+              "reason",
+              "subscription_id"
+            ],
+            "properties": {
+              "event_revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "advance_provider_stage"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              },
+              "state": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/WorkUnitState"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "subscription_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
             "type": "object",
             "required": [
               "operation",

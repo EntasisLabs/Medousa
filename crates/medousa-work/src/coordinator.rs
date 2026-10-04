@@ -39,7 +39,9 @@ impl Snapshot {
                     WorkEventKind::ProviderFailed,
                 ],
                 after_revision: self.revision - 1,
-                expires_at: request.input.deadline,
+                // Retain late callbacks for observation; this does not extend
+                // execution or approval authority beyond the request deadline.
+                expires_at: request.input.deadline + chrono::Duration::days(1),
             },
             &RecordProvenance {
                 actor_id: COORDINATOR_ACTOR.into(),
@@ -148,5 +150,166 @@ impl WorkGraphStore {
             inboxes,
             next_cursor: None,
         })
+    }
+}
+
+impl WorkGraphStore {
+    /// Only the newest claimed stage may project state. An older terminal must
+    /// not overwrite a newer stage admitted before intake caught up.
+    pub fn provider_stage_is_current(
+        &self,
+        domain: &UserDomainRef,
+        conversation: &str,
+        request: &str,
+    ) -> Result<bool> {
+        self.load(domain)?
+            .provider_stage_is_current(conversation, request)
+    }
+}
+
+impl Snapshot {
+    fn provider_stage_is_current(&self, conversation: &str, request: &str) -> Result<bool> {
+        let record = self
+            .provider_requests
+            .values()
+            .find(|record| {
+                record.request.conversation_id == conversation
+                    && record.request.request_id == request
+            })
+            .ok_or_else(|| invalid("unknown provider stage"))?;
+        let latest =
+            self.commands
+                .values()
+                .filter_map(|command| {
+                    let WorkGraphMutation::ClaimProviderRequest {
+                        conversation_id,
+                        request_id,
+                    } = &command.command.mutation
+                    else {
+                        return None;
+                    };
+                    let stage = self.provider_requests.values().find(|stage| {
+                        stage.request.conversation_id == *conversation_id
+                            && stage.request.request_id == *request_id
+                    })?;
+                    (stage.request.input.work_unit_id == record.request.input.work_unit_id)
+                        .then_some((command.receipt.revision, conversation_id, request_id))
+                })
+                .max_by_key(|(revision, _, _)| *revision);
+        Ok(latest.is_some_and(|(_, c, r)| c == conversation && r == request))
+    }
+
+    pub(super) fn advance_provider_stage(
+        &mut self,
+        id: &str,
+        revision: u64,
+        state: Option<WorkUnitState>,
+        reason: &str,
+        provenance: &RecordProvenance,
+    ) -> Result<()> {
+        use medousa_types::{ExternalEventKind, work_provider::WorkProviderQualification};
+        if provenance.source != RecordSource::SystemEvent
+            || provenance.actor_id != COORDINATOR_ACTOR
+        {
+            return Err(invalid(
+                "provider stage decisions require native runtime custody",
+            ));
+        }
+        let subscription = self
+            .subscriptions
+            .get(id)
+            .filter(|s| s.recipient_actor_id == COORDINATOR_ACTOR)
+            .ok_or_else(|| invalid("runtime provider inbox missing"))?;
+        let pending = self.pending_events(subscription);
+        let command = pending
+            .first()
+            .filter(|c| c.receipt.revision == revision)
+            .ok_or_else(|| {
+                invalid("provider stage decision must consume the next pending event")
+            })?;
+        let WorkGraphMutation::RecordProviderEvent { event } = &command.command.mutation else {
+            return Err(invalid("provider stage has no callback"));
+        };
+        let event = event.clone();
+        let record = self
+            .provider_requests
+            .values()
+            .find(|record| {
+                record.request.conversation_id == event.conversation_id
+                    && record.request.request_id == event.request_id
+            })
+            .ok_or_else(|| invalid("provider stage request missing"))?;
+        let request = record.request.clone();
+        if let Some(state) = state {
+            if inbox_id(&event.conversation_id, &event.request_id)? != id
+                || !self.provider_stage_is_current(&event.conversation_id, &event.request_id)?
+            {
+                return Err(invalid(
+                    "superseded or unrelated provider stage cannot project work",
+                ));
+            }
+            let unit = &self.work_units[&request.input.work_unit_id];
+            if unit.kind != WorkUnitKind::Finite
+                || unit.scope_revision != request.input.expected_scope_revision
+                || !matches!(
+                    unit.state,
+                    WorkUnitState::Accepted | WorkUnitState::Active | WorkUnitState::Waiting
+                )
+                || !unit.scope.children.is_empty()
+                || !unit.scope.depends_on.is_empty()
+            {
+                return Err(invalid(
+                    "provider stage requires current standalone active work",
+                ));
+            }
+            let allowed = match state {
+                WorkUnitState::Satisfied => {
+                    event.kind == ExternalEventKind::Completed
+                        && event.qualification == WorkProviderQualification::ReviewApproved
+                        && request.input.deadline > Utc::now()
+                }
+                WorkUnitState::Waiting => {
+                    event.kind == ExternalEventKind::Completed
+                        && event.qualification == WorkProviderQualification::OutcomeOnly
+                        && request.reviewed.is_none()
+                }
+                WorkUnitState::NeedsAttention => matches!(
+                    event.kind,
+                    ExternalEventKind::Question
+                        | ExternalEventKind::Failed
+                        | ExternalEventKind::Completed
+                ),
+                _ => false,
+            };
+            if !allowed {
+                return Err(invalid(
+                    "provider evidence cannot justify this stage transition",
+                ));
+            }
+            let reference = ResourceRef {
+                authority_id: self.domain.authority_id.clone(),
+                kind: ResourceKind::Assignment,
+                id: format!(
+                    "provider-request:{}",
+                    digest(&(&request.conversation_id, &request.request_id))?
+                ),
+            };
+            self.mutate(WorkGraphMutation::RecordResource {
+                reference: reference.clone(), native_revision: Some(digest(&(&request, &event))?), resolution: ResourceResolution::Available,
+                locator: Some(serde_json::json!({"source":"provider_work_stage", "conversation_id":request.conversation_id, "request_id":request.request_id, "provider":request.provider, "event_id":event.event_id, "kind":event.kind, "qualification":event.qualification, "reviewed":request.reviewed}).to_string()),
+            }, provenance.clone())?;
+            let mut proof = provenance.clone();
+            proof.evidence = vec![reference.clone()];
+            self.mutate(
+                WorkGraphMutation::SetState {
+                    work_unit_id: request.input.work_unit_id.clone(),
+                    state,
+                    reason: reason.into(),
+                    evidence: vec![reference],
+                },
+                proof,
+            )?;
+        }
+        self.acknowledge_event(id, revision, reason, provenance)
     }
 }

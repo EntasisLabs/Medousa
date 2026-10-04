@@ -10104,6 +10104,46 @@
           },
           {
             "additionalProperties": false,
+            "description": "Native runtime decision and inbox acknowledgment commit atomically.",
+            "properties": {
+              "event_revision": {
+                "format": "uint64",
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              "operation": {
+                "enum": [
+                  "advance_provider_stage"
+                ],
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "state": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/WorkUnitState"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "subscription_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "event_revision",
+              "operation",
+              "reason",
+              "subscription_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
             "properties": {
               "operation": {
                 "enum": [

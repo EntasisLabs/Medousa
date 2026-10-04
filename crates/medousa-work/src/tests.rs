@@ -2647,3 +2647,212 @@ fn model_cannot_preempt_runtime_inbox_identity() {
         },
     );
 }
+
+fn runtime_stage(store: &WorkGraphStore, state: Option<WorkUnitState>) -> WorkGraphMutation {
+    let id = crate::coordinator::inbox_id("provider-chat", "request").unwrap();
+    let event = store
+        .events(
+            &domain("user:a"),
+            crate::COORDINATOR_ACTOR,
+            WorkEventsQuery {
+                subscription_id: id.clone(),
+                limit: Some(1),
+            },
+        )
+        .unwrap()
+        .events[0]
+        .receipt
+        .revision;
+    WorkGraphMutation::AdvanceProviderStage {
+        subscription_id: id,
+        event_revision: event,
+        state,
+        reason: "Runtime qualified the exact provider stage".into(),
+    }
+}
+
+fn runtime_provenance() -> RecordProvenance {
+    RecordProvenance {
+        actor_id: crate::COORDINATOR_ACTOR.into(),
+        ..provenance()
+    }
+}
+
+#[test]
+fn runtime_stage_state_evidence_and_acknowledgment_publish_atomically() {
+    for (point, published) in [
+        (TransactionFaultPoint::BeforeRenamePublish, false),
+        (TransactionFaultPoint::AfterRenamePublish, true),
+    ] {
+        let dir = tempdir();
+        let store = WorkGraphStore::open(dir.path()).unwrap();
+        next(&store, accept("work", WorkScope::default()));
+        next(
+            &store,
+            WorkGraphMutation::RegisterProviderRequest {
+                request: Box::new(provider_request(&store, "request")),
+            },
+        );
+        next(
+            &store,
+            WorkGraphMutation::ClaimProviderRequest {
+                conversation_id: "provider-chat".into(),
+                request_id: "request".into(),
+            },
+        );
+        next(
+            &store,
+            WorkGraphMutation::RecordProviderEvent {
+                event: Box::new(provider_event(
+                    "done",
+                    1,
+                    medousa_types::ExternalEventKind::Completed,
+                )),
+            },
+        );
+        let decision = runtime_stage(&store, Some(WorkUnitState::Waiting));
+        let faulty = WorkGraphStore::with_faults(
+            dir.path(),
+            Arc::new(FailOnce {
+                point,
+                fired: AtomicBool::new(false),
+            }),
+        )
+        .unwrap();
+        assert!(
+            faulty
+                .apply_native_command(
+                    &domain("user:a"),
+                    "stage".into(),
+                    decision.clone(),
+                    runtime_provenance()
+                )
+                .is_err()
+        );
+        let reopened = WorkGraphStore::open(dir.path()).unwrap();
+        let unit = reopened.work_unit(&domain("user:a"), "work").unwrap();
+        assert_eq!(unit.state == WorkUnitState::Waiting, published);
+        assert_eq!(unit.state_evidence.len(), usize::from(published));
+        assert_eq!(
+            reopened
+                .coordinator_inboxes(&domain("user:a").authority_id, 4, None)
+                .unwrap()
+                .inboxes
+                .is_empty(),
+            published
+        );
+        assert_eq!(
+            reopened
+                .apply_native_command(
+                    &domain("user:a"),
+                    "stage".into(),
+                    decision,
+                    runtime_provenance()
+                )
+                .unwrap()
+                .replayed,
+            published
+        );
+        assert_eq!(
+            reopened.work_unit(&domain("user:a"), "work").unwrap().state,
+            WorkUnitState::Waiting
+        );
+    }
+}
+
+#[test]
+fn runtime_stage_requires_native_custody_and_never_promotes_bare_execution_to_approval() {
+    let dir = tempdir();
+    let store = WorkGraphStore::open(dir.path()).unwrap();
+    next(&store, accept("work", WorkScope::default()));
+    next(
+        &store,
+        WorkGraphMutation::RegisterProviderRequest {
+            request: Box::new(provider_request(&store, "request")),
+        },
+    );
+    next(
+        &store,
+        WorkGraphMutation::ClaimProviderRequest {
+            conversation_id: "provider-chat".into(),
+            request_id: "request".into(),
+        },
+    );
+    next(
+        &store,
+        WorkGraphMutation::RecordProviderEvent {
+            event: Box::new(provider_event(
+                "done",
+                1,
+                medousa_types::ExternalEventKind::Completed,
+            )),
+        },
+    );
+    assert!(
+        store
+            .apply_native_command(
+                &domain("user:a"),
+                "invented-approval".into(),
+                runtime_stage(&store, Some(WorkUnitState::Satisfied)),
+                runtime_provenance()
+            )
+            .is_err()
+    );
+    let mut model = runtime_provenance();
+    model.source = RecordSource::ModelInferred;
+    assert!(
+        store
+            .apply(
+                &domain("user:a"),
+                command(
+                    "fake",
+                    4,
+                    runtime_stage(&store, Some(WorkUnitState::Waiting))
+                ),
+                model
+            )
+            .is_err()
+    );
+    let mut replacement = provider_request(&store, "newer");
+    replacement.conversation_id = "different-provider-chat".into();
+    next(
+        &store,
+        WorkGraphMutation::RegisterProviderRequest {
+            request: Box::new(replacement),
+        },
+    );
+    next(
+        &store,
+        WorkGraphMutation::ClaimProviderRequest {
+            conversation_id: "different-provider-chat".into(),
+            request_id: "newer".into(),
+        },
+    );
+    assert!(
+        !store
+            .provider_stage_is_current(&domain("user:a"), "provider-chat", "request")
+            .unwrap()
+    );
+    assert!(
+        store
+            .apply_native_command(
+                &domain("user:a"),
+                "obsolete-stage".into(),
+                runtime_stage(&store, Some(WorkUnitState::Waiting)),
+                runtime_provenance()
+            )
+            .is_err()
+    );
+    store
+        .apply_native_command(
+            &domain("user:a"),
+            "retain-obsolete".into(),
+            runtime_stage(&store, None),
+            runtime_provenance(),
+        )
+        .unwrap();
+    assert_eq!(
+        store.work_unit(&domain("user:a"), "work").unwrap().state,
+        WorkUnitState::Accepted
+    );
+}

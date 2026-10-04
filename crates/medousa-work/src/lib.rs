@@ -766,6 +766,20 @@ impl Snapshot {
             } => {
                 self.acknowledge_event(&subscription_id, event_revision, &decision, &provenance)?;
             }
+            WorkGraphMutation::AdvanceProviderStage {
+                subscription_id,
+                event_revision,
+                state,
+                reason,
+            } => {
+                self.advance_provider_stage(
+                    &subscription_id,
+                    event_revision,
+                    state,
+                    &reason,
+                    &provenance,
+                )?;
+            }
             WorkGraphMutation::StopSubscription { subscription_id } => {
                 let revision = self.revision;
                 let subscription =

@@ -393,6 +393,7 @@ async fn provider_adapter_retains_exact_results_and_never_resends_claimed_work()
     for mutation in [
         json!({"operation":"register_provider_request", "request":prepared}),
         json!({"operation":"claim_provider_request", "conversation_id":"conversation", "request_id":"request"}),
+        json!({"operation":"advance_provider_stage", "subscription_id":"runtime", "event_revision":1, "state":"satisfied", "reason":"invented"}),
     ] {
         assert_eq!(
             request(
@@ -428,6 +429,7 @@ async fn provider_adapter_retains_exact_results_and_never_resends_claimed_work()
         .await
         .unwrap()
         .unwrap();
+    let reopened = Arc::new(reopened);
     assert!(
         reopened
             .claim_provider_request(domain.clone(), prepared)
@@ -476,6 +478,35 @@ async fn provider_adapter_retains_exact_results_and_never_resends_claimed_work()
         original.events[0].qualification,
         WorkProviderQualification::OutcomeOnly
     );
+    let runtime = reopened.clone();
+    let owner = domain.clone();
+    reopened
+        .execution
+        .run(ExecutionClass::StoreIo, MAX_SNAPSHOT_BYTES, move || {
+            Ok((|| -> Result<()> {
+                let inbox = runtime
+                    .store
+                    .coordinator_inboxes(&owner.authority_id, 4, None)?
+                    .inboxes
+                    .remove(0);
+                runtime.consume_provider_inbox(&inbox)?;
+                assert_eq!(
+                    runtime.store.work_unit(&owner, "unit")?.state,
+                    WorkUnitState::Waiting
+                );
+                assert!(
+                    runtime
+                        .store
+                        .coordinator_inboxes(&owner.authority_id, 4, None)?
+                        .inboxes
+                        .is_empty()
+                );
+                Ok(())
+            })())
+        })
+        .await
+        .unwrap()
+        .unwrap();
     // Credential rotation permits exact reconciliation without replacing the original actor/time.
     reopened
         .record_provider_outcome(

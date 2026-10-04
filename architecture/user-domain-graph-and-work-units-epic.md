@@ -1066,8 +1066,8 @@ docs verification pass. Full repository CI parity remains a separate gate.
 
 | Remaining increment | Existing foundation | Evidence still needed |
 |---|---|---|
-| Automatic work intake and reactions (Phase 3) | Durable actor-bound pull subscriptions, explicit next-event acknowledgment, retained journal replay and provider event kinds | Admitted model wakes, native resource-change subscriptions, bounded/coalesced effects and retention-gap recovery beyond explicit pull intake |
-| Provider execution/review orchestration (Phases 3–4) | Scoped provider APIs, exact durable request/dispatch/result ledger, authenticated self callbacks and revision-bound qualified verdicts | Native provider stage/controller integration, work satisfaction publication, real send/receive and live provider acceptance; Muse transport remains unverified |
+| Automatic work intake and reactions (Phase 3) | Durable actor-bound pull subscriptions plus native provider inboxes, bounded callback-driven coordinator wakes, atomic stage decisions/cursors and restart recovery | Admitted model wakes, native resource-change subscriptions, broader bounded/coalesced effects, legacy inbox backfill and retention-gap recovery |
+| Provider execution/review orchestration (Phases 3–4) | Scoped provider APIs, exact durable request/dispatch/result ledger, authenticated callbacks, native stage intake and revision-bound work satisfaction publication | Automatic next-stage provider dispatch, real send/receive and live provider acceptance; Muse transport remains unverified |
 | Composite execution and bounded fix/review (Phases 2–3) | Composition/readiness contracts and budget custody ledger | Native metering/reservation/settlement integration, child/dependency scheduling, bounded revision loops and shared-execution accounting; current controller admits standalone finite work only |
 | Federated work and custody (Phase 4) | Existing portal/peer transports and scoped native execution | Authenticated cross-workshop user-domain mappings, permission-filtered graph projections, remote work correlation and fenced coordinator handoff where supported |
 | Automatic maintenance (Phase 5) | Native resource observations and explicit readiness checkpoints | Admitted note/folder/feed triggers, freshness/occurrence evidence, snapshot recovery after retention gaps, bounded coalescing and generated-update feedback fencing |
@@ -1075,13 +1075,13 @@ docs verification pass. Full repository CI parity remains a separate gate.
 | Compatibility and qualification (Phases 0–1, 7 and cross-cutting gates) | Native adapter/recovery fixtures and incremental contract/docs checks | Remaining native identity/repair coverage, overlay reconciliation, alias/deletion history, safe compaction, parallel/cross-platform and live Surreal qualification, full CI parity and end-to-end acceptance scenarios |
 
 The two pull-intake and provider-correlation increments below establish durable
-subscriptions and exact provider evidence. Next, qualify an admitted consumer and
-provider stage/controller against these contracts: retain its identity across
-restart and a closed source chat, consume one completion once, and leave an
-uncertain effect unresolved rather than relaunching it. Provider transport
-acknowledgment alone must never advance review or satisfy work. Automatic intake,
-native resource triggers, provider satisfaction publication and live acceptance
-remain separate gates, without a new goal-management UI.
+subscriptions and exact provider evidence. The runtime intake and provider stage
+publication increments qualify an admitted deterministic consumer against these
+contracts: identity survives restart and an absent source chat, a completion is
+consumed once, and uncertain sends remain unresolved. Provider transport
+acknowledgment alone never satisfies work. Next-stage dispatch, model wakes,
+native resource triggers and real-provider live acceptance remain separate gates,
+without a new goal-management UI.
 
 ### Durable work inbox increment — 2026-10-03
 
@@ -1180,3 +1180,39 @@ controller. Runtime inbox identities cannot be preempted by model subscriptions.
 This is deterministic admitted intake, not admission of a new model turn or user
 contact. Generic model wakes, native resource triggers and legacy-inbox backfill
 remain separate qualification gates.
+
+### Provider stage publication increment — 2026-10-03
+
+This supersedes the provider-result-only limitation in earlier snapshots for new
+request associations. The runtime inbox now drives a bounded native stage
+controller: progress is observed, questions/failures require attention, execution
+completion waits for review, and strict review approval of the current native
+executor receipt/clean checkout can satisfy finite work. Changes requested or
+invalid/stale review evidence never satisfy it. Stage state, attributable evidence
+and cursor advance are one synced journal transaction.
+
+Recovery remains owner/scope bound across restart and an absent source chat.
+Duplicate wakes do not create effects. A newer claimed stage fences older
+callbacks; paused work retains pending intake; rescoped/cancelled work is not
+revived. Forge custody and source visibility are rechecked at publication. Native
+and provider recovery share four worker slots with capacity reserved for both.
+No claimed send is retried, and no user contact or model turn is inferred.
+
+This closes the deterministic callback intake and qualified provider stage
+publication slices. Explicit admission is still required for the next provider
+request. Automatic next-stage dispatch/model wakes, legacy inbox backfill, native
+resource triggers, composite/metered scheduling, federation, reporter routing and
+real-provider live acceptance remain open. The broad phase exit gates above are
+not marked complete by this increment.
+
+Qualification receipts for these slices: 33 work-store tests pass, including
+publication faults on both sides of rename, reserved actor identities and newer
+stage custody. All 47 daemon work-unit tests pass with two test threads; the new
+provider fixture covers approval, changes requested, invalid review, changed
+checkout, lost source visibility, rescoping, pause/resume, busy checkout custody,
+restart and duplicate intake with real native ledgers and Forge/Git. Six provider
+conversation tests and 28 Python SDK tests pass. Generated schemas/OpenAPI match
+the native contract; frontend checking reports zero errors and warnings, and
+strict docs verification passes. An initial default-parallel work-unit run hit
+`Overloaded` in an existing vault write test; bounded-concurrency runs pass. Full
+parallel/workspace CI and live-provider acceptance remain open.

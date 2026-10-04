@@ -63,6 +63,7 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
     let mut work_cursor: Option<String> = None;
     let mut intake_cursor: Option<String> = None;
     let mut work_workers = tokio::task::JoinSet::new();
+    let mut intake_workers = tokio::task::JoinSet::new();
     loop {
         if *shutdown.borrow() {
             break;
@@ -76,6 +77,13 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
                 match finished {
                     Some(Ok(Err(error))) => tracing::warn!(%error, "work coordination retained for reconciliation"),
                     Some(Err(error)) => tracing::warn!(%error, "work coordination interrupted; native claims retained"),
+                    _ => {},
+                }
+            },
+            finished = intake_workers.join_next(), if !intake_workers.is_empty() => {
+                match finished {
+                    Some(Ok(Err(error))) => tracing::warn!(%error, "provider stage event retained for reconciliation"),
+                    Some(Err(error)) => tracing::warn!(%error, "provider intake interrupted; journal decision remains atomic"),
                     _ => {},
                 }
             },
@@ -118,7 +126,7 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
                 .state
                 .forge_execution
                 .run(ExecutionClass::StoreIo, MAX_CONTEXT_BYTES, move || {
-                    Ok(native.local_work_plans(&authority, &runtime, 4, after.as_deref()))
+                    Ok(native.local_work_plans(&authority, &runtime, 2, after.as_deref()))
                 })
                 .await;
             match page {
@@ -138,25 +146,23 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
                 }
             }
         }
-        if recover_work && work_workers.len() < 4 {
-            if let Some(work) = crate::daemon::work_units::local_work_unit_host() {
-                let after = intake_cursor.clone();
-                match work
-                    .coordinator_inboxes(after, 4 - work_workers.len())
-                    .await
-                {
-                    Ok(page) => {
-                        intake_cursor = page.next_cursor;
-                        // The scan page is bounded; native and provider workers
-                        // share the same four-slot recovery admission.
-                        for inbox in page.inboxes.into_iter().take(4 - work_workers.len()) {
-                            let host = host.clone();
-                            work_workers
-                                .spawn(async move { host.resume_provider_inbox(inbox).await });
-                        }
+        if recover_work
+            && intake_workers.is_empty()
+            && let Some(work) = crate::daemon::work_units::local_work_unit_host()
+        {
+            let after = intake_cursor.clone();
+            match work.coordinator_inboxes(after, 2).await {
+                Ok(page) => {
+                    intake_cursor = page.next_cursor;
+                    // Two slots are reserved for each recovery family, so a
+                    // backlog of native stages cannot starve provider callbacks.
+                    for inbox in page.inboxes {
+                        let host = host.clone();
+                        intake_workers
+                            .spawn(async move { host.resume_provider_inbox(inbox).await });
                     }
-                    Err(error) => tracing::warn!(%error, "work intake retained for reconciliation"),
                 }
+                Err(error) => tracing::warn!(%error, "work intake retained for reconciliation"),
             }
         }
         if workers.len() >= 4 {
@@ -256,6 +262,8 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
         }
     }
     workers.abort_all();
+    intake_workers.abort_all();
+    while intake_workers.join_next().await.is_some() {}
     work_workers.abort_all();
     while work_workers.join_next().await.is_some() {}
     while workers.join_next().await.is_some() {}
