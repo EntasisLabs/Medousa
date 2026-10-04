@@ -757,6 +757,17 @@ async fn send_admitted(
     mut input: SendMessageRequest,
     scheduled: bool,
 ) -> Result<Json<ConversationView>, HttpError> {
+    if input.coordinator_wake {
+        if input.work.is_none() {
+            return Err(bad_request("coordinator wake requires exact work metadata"));
+        }
+        if !scheduled && !principal.capabilities().contains(Capability::AdminExecute) {
+            return Err((
+                StatusCode::FORBIDDEN,
+                "coordinator model wake requires native operator admission".into(),
+            ));
+        }
+    }
     if input.request_id.trim().is_empty()
         || input.request_id.len() > 128
         || input.text.trim().is_empty()
@@ -809,6 +820,7 @@ async fn send_admitted(
                     != work_dispatch::target_digest(&binding).map_err(internal)?
                 || input.work.as_ref() != Some(&saved.dispatch.input)
                 || input.text != saved.dispatch.instructions
+                || input.coordinator_wake != saved.dispatch.coordinator_wake
                 || !host
                     .provider_dispatch_ready(domain, saved.dispatch)
                     .await
@@ -886,6 +898,11 @@ async fn send_admitted(
             )
             .await
             .map_err(internal)?;
+        if input.coordinator_wake {
+            crate::daemon::work_units::model_wake::admit(&state, domain.clone(), &request)
+                .await
+                .map_err(internal)?;
+        }
         input.text.push_str(&format!("\n\nmedousa-work-provider-v1: {}\nReport progress/completed/failed with your Work credential to Medousa's work-events endpoint, naming this exact request. Ordinary chat replies are not completion receipts.", serde_json::to_string(&request).map_err(internal)?));
         if request.reviewed.is_some() {
             input.text.push_str("\nmedousa-work-review-v1: inspect the pinned clean checkout without editing it. Completed result must be strict JSON with the exact reviewed object above, verdict approved or changes_requested, and a nonempty summary.");

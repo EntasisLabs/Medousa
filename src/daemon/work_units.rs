@@ -18,6 +18,7 @@ use crate::{
 static HOST: OnceLock<Arc<WorkUnitHost>> = OnceLock::new();
 
 mod coordinator;
+pub(crate) mod model_wake;
 mod native_content;
 mod native_graph;
 mod native_project;
@@ -124,6 +125,10 @@ fn validate_model_mutation(domain: &UserDomainRef, mutation: &WorkGraphMutation)
             | WorkGraphMutation::AdvanceProviderStage { .. }
             | WorkGraphMutation::RegisterProviderDispatch { .. }
             | WorkGraphMutation::CloseProviderDispatch { .. }
+            | WorkGraphMutation::RegisterCoordinatorWake { .. }
+            | WorkGraphMutation::ClaimCoordinatorWake { .. }
+            | WorkGraphMutation::CompleteCoordinatorWake { .. }
+            | WorkGraphMutation::BlockCoordinatorWake { .. }
     ) {
         bail!("native custody and provider evidence require an authenticated native adapter");
     }

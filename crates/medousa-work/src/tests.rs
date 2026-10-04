@@ -2647,6 +2647,7 @@ fn provider_handoff(
         instructions: "Review the completed executor's exact checkout".into(),
         target_digest: "a".repeat(64),
         source_request_digest: "b".repeat(64),
+        coordinator_wake: false,
         scope_digest: store
             .peer_coordination_scope_digest(&domain("user:a"), "work")
             .unwrap(),
@@ -3065,5 +3066,477 @@ fn runtime_stage_requires_native_custody_and_never_promotes_bare_execution_to_ap
     assert_eq!(
         store.work_unit(&domain("user:a"), "work").unwrap().state,
         WorkUnitState::Accepted
+    );
+}
+
+fn admitted_model_wake(
+    store: &WorkGraphStore,
+) -> medousa_types::work_coordinator::WorkCoordinatorWake {
+    use medousa_types::work_coordinator::WorkCoordinatorWake;
+    let request = provider_request(store, "request");
+    next(
+        store,
+        WorkGraphMutation::RegisterProviderRequest {
+            request: Box::new(request.clone()),
+        },
+    );
+    let wake = WorkCoordinatorWake {
+        conversation_id: request.conversation_id.clone(),
+        request_id: request.request_id.clone(),
+        input: request.input,
+        scope_digest: request.scope_digest,
+        session: crate::coordinator_session(&domain("user:a"), "provider-chat", "request").unwrap(),
+        provider: "test-provider".into(),
+        model: "test-model".into(),
+        response_depth_mode: "standard".into(),
+        reasoning_effort: "low".into(),
+    };
+    store
+        .apply_native_command(
+            &domain("user:a"),
+            "wake-admit".into(),
+            WorkGraphMutation::RegisterCoordinatorWake {
+                wake: Box::new(wake.clone()),
+            },
+            runtime_provenance(),
+        )
+        .unwrap();
+    wake
+}
+
+fn model_wake_claim() -> WorkGraphMutation {
+    WorkGraphMutation::ClaimCoordinatorWake {
+        conversation_id: "provider-chat".into(),
+        request_id: "request".into(),
+        attempt: medousa_types::work_coordinator::WorkCoordinatorAttempt {
+            turn_id: crate::coordinator_turn_id(&domain("user:a"), "provider-chat", "request")
+                .unwrap(),
+            event_id: "done".into(),
+            prompt_digest: "b".repeat(64),
+        },
+    }
+}
+
+fn finish_wake_provider(store: &WorkGraphStore) {
+    next(
+        store,
+        WorkGraphMutation::ClaimProviderRequest {
+            conversation_id: "provider-chat".into(),
+            request_id: "request".into(),
+        },
+    );
+    next(
+        store,
+        WorkGraphMutation::RecordProviderEvent {
+            event: Box::new(provider_event(
+                "done",
+                1,
+                medousa_types::ExternalEventKind::Completed,
+            )),
+        },
+    );
+}
+
+#[test]
+fn model_wake_requires_exact_terminal_and_native_custody() {
+    let dir = tempdir();
+    let store = WorkGraphStore::open(dir.path()).unwrap();
+    next(&store, accept("work", WorkScope::default()));
+    admitted_model_wake(&store);
+    let claim = model_wake_claim();
+    assert!(
+        store
+            .apply_native_command(
+                &domain("user:a"),
+                "premature".into(),
+                claim.clone(),
+                runtime_provenance()
+            )
+            .is_err()
+    );
+    next(
+        &store,
+        WorkGraphMutation::ClaimProviderRequest {
+            conversation_id: "provider-chat".into(),
+            request_id: "request".into(),
+        },
+    );
+    next(
+        &store,
+        WorkGraphMutation::RecordProviderEvent {
+            event: Box::new(provider_event(
+                "progress",
+                1,
+                medousa_types::ExternalEventKind::Progress,
+            )),
+        },
+    );
+    assert!(
+        store
+            .apply_native_command(
+                &domain("user:a"),
+                "progress-wake".into(),
+                claim.clone(),
+                runtime_provenance()
+            )
+            .is_err()
+    );
+    assert!(
+        store
+            .coordinator_inboxes(&domain("user:a").authority_id, 4, None)
+            .unwrap()
+            .wakes
+            .is_empty()
+    );
+    next(
+        &store,
+        WorkGraphMutation::RecordProviderEvent {
+            event: Box::new(provider_event(
+                "done",
+                2,
+                medousa_types::ExternalEventKind::Completed,
+            )),
+        },
+    );
+    let mut inferred = runtime_provenance();
+    inferred.source = RecordSource::ModelInferred;
+    assert!(
+        store
+            .apply_native_command(&domain("user:a"), "model".into(), claim.clone(), inferred)
+            .is_err()
+    );
+    assert!(
+        store
+            .apply_native_command(
+                &domain("user:a"),
+                "wrong-actor".into(),
+                claim.clone(),
+                provenance()
+            )
+            .is_err()
+    );
+    store
+        .apply_native_command(
+            &domain("user:a"),
+            "claim".into(),
+            claim.clone(),
+            runtime_provenance(),
+        )
+        .unwrap();
+    assert!(
+        store
+            .apply_native_command(
+                &domain("user:a"),
+                "second-claim".into(),
+                claim,
+                runtime_provenance()
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn model_wake_attempt_is_atomic_and_recovery_never_replaces_uncertain_custody() {
+    for (point, published) in [
+        (TransactionFaultPoint::BeforeRenamePublish, false),
+        (TransactionFaultPoint::AfterRenamePublish, true),
+    ] {
+        let dir = tempdir();
+        let store = WorkGraphStore::open(dir.path()).unwrap();
+        next(&store, accept("work", WorkScope::default()));
+        admitted_model_wake(&store);
+        finish_wake_provider(&store);
+        let faulty = WorkGraphStore::with_faults(
+            dir.path(),
+            Arc::new(FailOnce {
+                point,
+                fired: AtomicBool::new(false),
+            }),
+        )
+        .unwrap();
+        let claim = model_wake_claim();
+        assert!(
+            faulty
+                .apply_native_command(
+                    &domain("user:a"),
+                    "claim".into(),
+                    claim.clone(),
+                    runtime_provenance()
+                )
+                .is_err()
+        );
+        let reopened = WorkGraphStore::open(dir.path()).unwrap();
+        assert_eq!(
+            reopened
+                .coordinator_wake(&domain("user:a"), "provider-chat", "request")
+                .unwrap()
+                .unwrap()
+                .attempt
+                .is_some(),
+            published
+        );
+        assert_eq!(
+            reopened
+                .apply_native_command(
+                    &domain("user:a"),
+                    "claim".into(),
+                    claim.clone(),
+                    runtime_provenance()
+                )
+                .unwrap()
+                .replayed,
+            published
+        );
+        assert!(
+            reopened
+                .apply_native_command(
+                    &domain("user:a"),
+                    "replacement".into(),
+                    claim,
+                    runtime_provenance()
+                )
+                .is_err()
+        );
+        let first = reopened
+            .try_coordinator_wake_lease(&domain("user:a"), "provider-chat", "request")
+            .unwrap()
+            .unwrap();
+        assert!(
+            reopened
+                .try_coordinator_wake_lease(&domain("user:a"), "provider-chat", "request")
+                .unwrap()
+                .is_none()
+        );
+        drop(first);
+        assert!(
+            reopened
+                .try_coordinator_wake_lease(&domain("user:a"), "provider-chat", "request")
+                .unwrap()
+                .is_some()
+        );
+    }
+}
+
+#[test]
+fn model_wake_scope_state_and_ancestor_budget_are_rechecked() {
+    for scenario in ["paused", "cancelled", "scope", "budget", "parent-budget"] {
+        let dir = tempdir();
+        let store = WorkGraphStore::open(dir.path()).unwrap();
+        next(&store, accept("work", WorkScope::default()));
+        let wake = admitted_model_wake(&store);
+        finish_wake_provider(&store);
+        match scenario {
+            "paused" | "cancelled" => {
+                next(
+                    &store,
+                    WorkGraphMutation::SetState {
+                        work_unit_id: "work".into(),
+                        state: if scenario == "paused" {
+                            WorkUnitState::Paused
+                        } else {
+                            WorkUnitState::Cancelled
+                        },
+                        reason: "user changed intent".into(),
+                        evidence: vec![],
+                    },
+                );
+            }
+            "scope" => {
+                next(
+                    &store,
+                    WorkGraphMutation::SetScope {
+                        work_unit_id: "work".into(),
+                        scope: WorkScope::default(),
+                    },
+                );
+            }
+            "budget" => {
+                next(
+                    &store,
+                    WorkGraphMutation::SetBudget {
+                        work_unit_id: "work".into(),
+                        limits: limits(100, 1),
+                    },
+                );
+            }
+            "parent-budget" => {
+                next(
+                    &store,
+                    accept(
+                        "parent",
+                        WorkScope {
+                            children: vec!["work".into()],
+                            ..Default::default()
+                        },
+                    ),
+                );
+                next(
+                    &store,
+                    WorkGraphMutation::SetBudget {
+                        work_unit_id: "parent".into(),
+                        limits: limits(100, 1),
+                    },
+                );
+                assert_eq!(
+                    store
+                        .work_unit(&domain("user:a"), "work")
+                        .unwrap()
+                        .scope_revision,
+                    wake.input.expected_scope_revision
+                );
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            store
+                .require_coordinator_wake_admission(&domain("user:a"), &wake)
+                .is_err(),
+            "{scenario}"
+        );
+        assert!(
+            store
+                .apply_native_command(
+                    &domain("user:a"),
+                    "claim".into(),
+                    model_wake_claim(),
+                    runtime_provenance()
+                )
+                .is_err(),
+            "{scenario}"
+        );
+        if scenario == "paused" {
+            activate(&store, "work");
+            store
+                .apply_native_command(
+                    &domain("user:a"),
+                    "claim".into(),
+                    model_wake_claim(),
+                    runtime_provenance(),
+                )
+                .unwrap();
+        }
+    }
+}
+
+#[test]
+fn model_wake_decision_retains_silent_contact_and_does_not_qualify_work() {
+    use medousa_types::{
+        TranscriptEntryId, TranscriptEntryRef, work_coordinator::WorkCoordinatorDecision,
+    };
+    let dir = tempdir();
+    let store = WorkGraphStore::open(dir.path()).unwrap();
+    next(&store, accept("work", WorkScope::default()));
+    next(
+        &store,
+        WorkGraphMutation::SetContact {
+            work_unit_id: "work".into(),
+            contact: WorkContactPreference::Silent,
+        },
+    );
+    let wake = admitted_model_wake(&store);
+    finish_wake_provider(&store);
+    store
+        .apply_native_command(
+            &domain("user:a"),
+            "claim".into(),
+            model_wake_claim(),
+            runtime_provenance(),
+        )
+        .unwrap();
+    let mut decision = WorkCoordinatorDecision {
+        entry: TranscriptEntryRef {
+            session: wake.session.clone(),
+            entry_id: TranscriptEntryId::parse(format!("ent_{}", "c".repeat(32))).unwrap(),
+            entry_seq: 1,
+        },
+        content_digest: format!("sha256:{}", "c".repeat(64)),
+    };
+    decision.entry.session.session_id = medousa_types::SessionId::parse("ses_unrelated").unwrap();
+    assert!(
+        store
+            .apply_native_command(
+                &domain("user:a"),
+                "wrong-entry".into(),
+                WorkGraphMutation::CompleteCoordinatorWake {
+                    conversation_id: "provider-chat".into(),
+                    request_id: "request".into(),
+                    decision: decision.clone()
+                },
+                runtime_provenance()
+            )
+            .is_err()
+    );
+    decision.entry.session = wake.session;
+    store
+        .apply_native_command(
+            &domain("user:a"),
+            "decision".into(),
+            WorkGraphMutation::CompleteCoordinatorWake {
+                conversation_id: "provider-chat".into(),
+                request_id: "request".into(),
+                decision,
+            },
+            runtime_provenance(),
+        )
+        .unwrap();
+    let reopened = WorkGraphStore::open(dir.path()).unwrap();
+    let unit = reopened.work_unit(&domain("user:a"), "work").unwrap();
+    assert_eq!(unit.state, WorkUnitState::Accepted);
+    assert_eq!(unit.contact, WorkContactPreference::Silent);
+    assert!(unit.state_evidence.is_empty());
+    assert!(
+        reopened
+            .coordinator_inboxes(&domain("user:a").authority_id, 4, None)
+            .unwrap()
+            .wakes
+            .is_empty()
+    );
+}
+
+#[test]
+fn model_wake_recovery_pages_include_exact_retained_attempt_once() {
+    let dir = tempdir();
+    let store = WorkGraphStore::open(dir.path()).unwrap();
+    next(&store, accept("work", WorkScope::default()));
+    admitted_model_wake(&store);
+    finish_wake_provider(&store);
+    store
+        .apply_native_command(
+            &domain("user:a"),
+            "claim".into(),
+            model_wake_claim(),
+            runtime_provenance(),
+        )
+        .unwrap();
+    let mut cursor = None;
+    let mut wakes = 0;
+    let mut inboxes = 0;
+    for _ in 0..8 {
+        let page = store
+            .coordinator_inboxes(&domain("user:a").authority_id, 1, cursor.as_deref())
+            .unwrap();
+        assert!(page.inboxes.len() + page.dispatches.len() + page.wakes.len() <= 1);
+        inboxes += page.inboxes.len();
+        wakes += page.wakes.len();
+        if let Some((owner, wake)) = page.wakes.first() {
+            assert_eq!(owner, &domain("user:a"));
+            assert_eq!(wake.attempt.as_ref().unwrap().event_id, "done");
+        }
+        cursor = page.next_cursor;
+        if cursor.is_none() {
+            break;
+        }
+    }
+    assert_eq!((inboxes, wakes), (1, 1));
+    assert!(
+        store
+            .coordinator_inboxes(
+                &AuthorityId::parse(format!("auth_{}", "d".repeat(64))).unwrap(),
+                4,
+                None
+            )
+            .unwrap()
+            .wakes
+            .is_empty()
     );
 }

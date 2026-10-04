@@ -623,3 +623,13 @@ and native operator admission; omitted/false retains immediate-send behavior.
 `register_provider_dispatch` and `close_provider_dispatch` are native-only
 commands, unavailable to model or provider Work-credential mutations. See
 [handoff admission and recovery](../engine/work-units.md#native-executor-to-provider-reviewer-handoff).
+
+`ExternalConversationSendRequest.coordinator_wake` separately admits one internal
+result-only model turn for the exact provider work request. It requires native
+operator authority and `work` metadata, defaults to false and is retained by a
+saved handoff. `coordinator_wakes` exposes admission, attempt, decision reference
+and blocked reason. `register_coordinator_wake`, `claim_coordinator_wake`,
+`complete_coordinator_wake` and `block_coordinator_wake` are native-only commands;
+model or provider Work-credential mutations cannot manufacture them. See
+[admitted model wakes](../engine/work-units.md#admitted-coordinator-model-wakes)
+for frozen routing, restart reconciliation and the empty tool ceiling.

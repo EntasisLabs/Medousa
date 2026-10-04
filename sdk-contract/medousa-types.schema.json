@@ -13545,6 +13545,10 @@
         "description": "Native operator admission for one review send after the exact executor completes. Requires `work.review_of`; it does not launch the executor.",
         "type": "boolean"
       },
+      "coordinator_wake": {
+        "description": "Native admission for one internal result-analysis turn. No contact or execution tools are granted to that turn.",
+        "type": "boolean"
+      },
       "request_id": {
         "type": "string"
       },
@@ -30552,6 +30556,30 @@
           }
         }
       },
+      "TranscriptEntryId": {
+        "type": "string"
+      },
+      "TranscriptEntryRef": {
+        "type": "object",
+        "required": [
+          "entry_id",
+          "entry_seq",
+          "session"
+        ],
+        "properties": {
+          "entry_id": {
+            "$ref": "#/definitions/TranscriptEntryId"
+          },
+          "entry_seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 1.0
+          },
+          "session": {
+            "$ref": "#/definitions/SessionRef"
+          }
+        }
+      },
       "WorkBudgetDisposition": {
         "oneOf": [
           {
@@ -30709,6 +30737,85 @@
           },
           "work_unit_id": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkCoordinatorAttempt": {
+        "type": "object",
+        "required": [
+          "event_id",
+          "prompt_digest",
+          "turn_id"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "prompt_digest": {
+            "type": "string"
+          },
+          "turn_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkCoordinatorDecision": {
+        "type": "object",
+        "required": [
+          "content_digest",
+          "entry"
+        ],
+        "properties": {
+          "content_digest": {
+            "type": "string"
+          },
+          "entry": {
+            "$ref": "#/definitions/TranscriptEntryRef"
+          }
+        }
+      },
+      "WorkCoordinatorWake": {
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "input",
+          "model",
+          "provider",
+          "reasoning_effort",
+          "request_id",
+          "response_depth_mode",
+          "scope_digest",
+          "session"
+        ],
+        "properties": {
+          "conversation_id": {
+            "type": "string"
+          },
+          "input": {
+            "$ref": "#/definitions/WorkProviderRequestInput"
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "reasoning_effort": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "response_depth_mode": {
+            "type": "string"
+          },
+          "scope_digest": {
+            "type": "string"
+          },
+          "session": {
+            "$ref": "#/definitions/SessionRef"
           }
         },
         "additionalProperties": false
@@ -31264,6 +31371,106 @@
           {
             "type": "object",
             "required": [
+              "operation",
+              "wake"
+            ],
+            "properties": {
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "register_coordinator_wake"
+                ]
+              },
+              "wake": {
+                "$ref": "#/definitions/WorkCoordinatorWake"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "attempt",
+              "conversation_id",
+              "operation",
+              "request_id"
+            ],
+            "properties": {
+              "attempt": {
+                "$ref": "#/definitions/WorkCoordinatorAttempt"
+              },
+              "conversation_id": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "claim_coordinator_wake"
+                ]
+              },
+              "request_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "conversation_id",
+              "decision",
+              "operation",
+              "request_id"
+            ],
+            "properties": {
+              "conversation_id": {
+                "type": "string"
+              },
+              "decision": {
+                "$ref": "#/definitions/WorkCoordinatorDecision"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "complete_coordinator_wake"
+                ]
+              },
+              "request_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "conversation_id",
+              "operation",
+              "reason",
+              "request_id"
+            ],
+            "properties": {
+              "conversation_id": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "block_coordinator_wake"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              },
+              "request_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
               "conversation_id",
               "operation",
               "reason",
@@ -31350,6 +31557,9 @@
         "properties": {
           "conversation_id": {
             "type": "string"
+          },
+          "coordinator_wake": {
+            "type": "boolean"
           },
           "input": {
             "$ref": "#/definitions/WorkProviderRequestInput"
@@ -31966,7 +32176,8 @@
           "budget_reservations",
           "subscriptions",
           "provider_requests",
-          "provider_dispatches"
+          "provider_dispatches",
+          "coordinator_wakes"
         ]
       },
       "WorkGraphQuery": {

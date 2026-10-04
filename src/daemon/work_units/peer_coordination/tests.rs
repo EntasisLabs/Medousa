@@ -1250,6 +1250,7 @@ async fn provider_handoff_waits_for_exact_executor_and_never_replaces_claimed_se
                     target_digest: "a".repeat(64),
                     scope_digest: String::new(),
                     source_request_digest: String::new(),
+                    coordinator_wake: false,
                 };
                 let admission = host.admit_provider_dispatch_with(
                     native,

@@ -123,33 +123,47 @@ pub async fn spawn_turn_ticket(
         .profile_id()
         .map(str::to_string)
         .unwrap_or_else(|| state.workshop_identity_user_id());
-    let session_id_for_bot = session_id.to_string();
-    let bot_resolution = tokio::task::spawn_blocking(move || {
-        crate::bot_profiles::BotProfileStore::daemon_default()
-            .resolve_session(&principal_profile_id, &session_id_for_bot)
-    })
-    .await
-    .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
-    .map_err(|error| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("resolve Bot binding: {error}"),
+    let native_model_wake = turn_id
+        .starts_with(medousa_types::work_coordinator::WORK_COORDINATOR_TURN_PREFIX)
+        || session_id
+            .as_str()
+            .starts_with(medousa_types::work_coordinator::WORK_COORDINATOR_SESSION_PREFIX);
+    let bot_identity = if native_model_wake {
+        crate::daemon::work_units::model_wake::verify_admission(
+            &principal,
+            &turn_id,
+            &interactive_request,
         )
-    })?;
-    let bot_identity = if let Some(bot) = bot_resolution.bot.as_ref() {
-        crate::identity_manuscript::build_manuscript_context(&bot.primary_manuscript_id).map_err(
-            |error| {
-                (
-                    StatusCode::CONFLICT,
-                    format!(
-                        "Bot '{}' references an unavailable primary Specialist: {error}",
-                        bot.display_name
-                    ),
-                )
-            },
-        )?;
-        for manuscript_id in &bot.additional_manuscript_ids {
-            crate::identity_manuscript::build_manuscript_context(manuscript_id).map_err(
+        .await
+        .map_err(|error| (StatusCode::CONFLICT, error.to_string()))?;
+        None
+    } else {
+        let session_id_for_bot = session_id.to_string();
+        let bot_resolution = tokio::task::spawn_blocking(move || {
+            crate::bot_profiles::BotProfileStore::daemon_default()
+                .resolve_session(&principal_profile_id, &session_id_for_bot)
+        })
+        .await
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("resolve Bot binding: {error}"),
+            )
+        })?;
+        if let Some(bot) = bot_resolution.bot.as_ref() {
+            crate::identity_manuscript::build_manuscript_context(&bot.primary_manuscript_id)
+                .map_err(|error| {
+                    (
+                        StatusCode::CONFLICT,
+                        format!(
+                            "Bot '{}' references an unavailable primary Specialist: {error}",
+                            bot.display_name
+                        ),
+                    )
+                })?;
+            for manuscript_id in &bot.additional_manuscript_ids {
+                crate::identity_manuscript::build_manuscript_context(manuscript_id).map_err(
                 |error| {
                     (
                         StatusCode::CONFLICT,
@@ -160,11 +174,15 @@ pub async fn spawn_turn_ticket(
                     )
                 },
             )?;
-        }
-        interactive_request.manuscript_id = Some(bot.primary_manuscript_id.clone());
-        interactive_request.additional_manuscript_ids = (!bot.additional_manuscript_ids.is_empty())
-            .then(|| bot.additional_manuscript_ids.clone());
-        apply_bot_world_continuity(&mut interactive_request.surface, bot.world_binding.as_ref())
+            }
+            interactive_request.manuscript_id = Some(bot.primary_manuscript_id.clone());
+            interactive_request.additional_manuscript_ids =
+                (!bot.additional_manuscript_ids.is_empty())
+                    .then(|| bot.additional_manuscript_ids.clone());
+            apply_bot_world_continuity(
+                &mut interactive_request.surface,
+                bot.world_binding.as_ref(),
+            )
             .map_err(|error| {
                 (
                     StatusCode::CONFLICT,
@@ -174,9 +192,10 @@ pub async fn spawn_turn_ticket(
                     ),
                 )
             })?;
-        Some(crate::agent_runtime::execution_context::BotTurnIdentity::from_profile(bot))
-    } else {
-        None
+            Some(crate::agent_runtime::execution_context::BotTurnIdentity::from_profile(bot))
+        } else {
+            None
+        }
     };
     let native_coder = if turn_id.starts_with("medousa_coder_") {
         let host = crate::daemon::coordination::local_coordination_host().ok_or_else(|| {

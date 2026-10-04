@@ -171,6 +171,14 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
                             Ok(super::work::WorkCoordinationProgress::ProviderIntake)
                         });
                     }
+                    for (domain, wake) in page.wakes {
+                        let state = host.state.clone();
+                        intake_workers.spawn(async move {
+                            crate::daemon::work_units::model_wake::resume(state, domain, wake)
+                                .await?;
+                            Ok(super::work::WorkCoordinationProgress::ProviderIntake)
+                        });
+                    }
                 }
                 Err(error) => tracing::warn!(%error, "work intake retained for reconciliation"),
             }

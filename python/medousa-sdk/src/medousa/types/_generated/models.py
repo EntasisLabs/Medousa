@@ -2552,6 +2552,20 @@ class WorkCoordinationInput(MedousaModel):
     work_unit_id: str
 
 
+class WorkCoordinatorAttempt(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    event_id: str
+    prompt_digest: str
+    turn_id: str
+
+
+class WorkCoordinatorDecision(MedousaModel):
+    content_digest: str
+    entry: TranscriptEntryRef
+
+
 class WorkEventKind(Enum):
     resource_observed = 'resource_observed'
     work_state_changed = 'work_state_changed'
@@ -2720,33 +2734,79 @@ class Operation16(Enum):
 
 
 class Operation17(Enum):
-    close_provider_dispatch = 'close_provider_dispatch'
-
-
-class WorkGraphMutation18(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    conversation_id: str
-    operation: Operation17
-    reason: str
-    request_id: str
+    register_coordinator_wake = 'register_coordinator_wake'
 
 
 class Operation18(Enum):
-    claim_provider_request = 'claim_provider_request'
+    claim_coordinator_wake = 'claim_coordinator_wake'
 
 
 class WorkGraphMutation19(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
+    attempt: WorkCoordinatorAttempt
     conversation_id: str
     operation: Operation18
     request_id: str
 
 
 class Operation19(Enum):
+    complete_coordinator_wake = 'complete_coordinator_wake'
+
+
+class WorkGraphMutation20(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    conversation_id: str
+    decision: WorkCoordinatorDecision
+    operation: Operation19
+    request_id: str
+
+
+class Operation20(Enum):
+    block_coordinator_wake = 'block_coordinator_wake'
+
+
+class WorkGraphMutation21(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    conversation_id: str
+    operation: Operation20
+    reason: str
+    request_id: str
+
+
+class Operation21(Enum):
+    close_provider_dispatch = 'close_provider_dispatch'
+
+
+class WorkGraphMutation22(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    conversation_id: str
+    operation: Operation21
+    reason: str
+    request_id: str
+
+
+class Operation22(Enum):
+    claim_provider_request = 'claim_provider_request'
+
+
+class WorkGraphMutation23(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    conversation_id: str
+    operation: Operation22
+    request_id: str
+
+
+class Operation23(Enum):
     record_provider_event = 'record_provider_event'
 
 
@@ -2875,6 +2935,7 @@ class WorkGraphCollection(Enum):
     subscriptions = 'subscriptions'
     provider_requests = 'provider_requests'
     provider_dispatches = 'provider_dispatches'
+    coordinator_wakes = 'coordinator_wakes'
 
 
 class WorkGraphQuery(MedousaModel):
@@ -4974,6 +5035,21 @@ class TurnStreamEventV3(
     ) = Field(..., description='Chronological turn facts. Visible prose is addressed by `segment_id`, tool receipts update by `tool_run_id`, and terminal settlement never replaces the preceding timeline.', title='TurnStreamEventV3')
 
 
+class WorkCoordinatorWake(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    conversation_id: str
+    input: WorkProviderRequestInput
+    model: str
+    provider: str
+    reasoning_effort: str
+    request_id: str
+    response_depth_mode: str
+    scope_digest: str
+    session: SessionRef
+
+
 class WorkGraphMutation1(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -5046,11 +5122,20 @@ class WorkGraphMutation12(MedousaModel):
     work_unit_id: str
 
 
+class WorkGraphMutation18(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    operation: Operation17
+    wake: WorkCoordinatorWake
+
+
 class WorkProviderDispatch(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
     conversation_id: str
+    coordinator_wake: bool | None = None
     input: WorkProviderRequestInput
     instructions: str
     provider: ExternalProvider
@@ -5289,6 +5374,10 @@ class ExternalConversationSendRequest(MedousaModel):
     after_native_completion: bool | None = Field(
         None,
         description='Native operator admission for one review send after the exact executor completes. Requires `work.review_of`; it does not launch the executor.',
+    )
+    coordinator_wake: bool | None = Field(
+        None,
+        description='Native admission for one internal result-analysis turn. No contact or execution tools are granted to that turn.',
     )
     request_id: str
     text: str
@@ -5774,12 +5863,12 @@ class LayoutPreset(MedousaModel):
     )
 
 
-class WorkGraphMutation20(MedousaModel):
+class WorkGraphMutation24(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
     event: WorkProviderEvent
-    operation: Operation19
+    operation: Operation23
 
 
 class WorkGraphMutation(
@@ -5804,9 +5893,13 @@ class WorkGraphMutation(
         | WorkGraphMutation18
         | WorkGraphMutation19
         | WorkGraphMutation20
+        | WorkGraphMutation21
+        | WorkGraphMutation22
+        | WorkGraphMutation23
+        | WorkGraphMutation24
     ]
 ):
-    root: WorkGraphMutation1 | WorkGraphMutation2 | WorkGraphMutation3 | WorkGraphMutation4 | WorkGraphMutation5 | WorkGraphMutation6 | WorkGraphMutation7 | WorkGraphMutation8 | WorkGraphMutation9 | WorkGraphMutation10 | WorkGraphMutation11 | WorkGraphMutation12 | WorkGraphMutation13 | WorkGraphMutation14 | WorkGraphMutation15 | WorkGraphMutation16 | WorkGraphMutation17 | WorkGraphMutation18 | WorkGraphMutation19 | WorkGraphMutation20
+    root: WorkGraphMutation1 | WorkGraphMutation2 | WorkGraphMutation3 | WorkGraphMutation4 | WorkGraphMutation5 | WorkGraphMutation6 | WorkGraphMutation7 | WorkGraphMutation8 | WorkGraphMutation9 | WorkGraphMutation10 | WorkGraphMutation11 | WorkGraphMutation12 | WorkGraphMutation13 | WorkGraphMutation14 | WorkGraphMutation15 | WorkGraphMutation16 | WorkGraphMutation17 | WorkGraphMutation18 | WorkGraphMutation19 | WorkGraphMutation20 | WorkGraphMutation21 | WorkGraphMutation22 | WorkGraphMutation23 | WorkGraphMutation24
 
 
 class WorkGraphCommand(MedousaModel):

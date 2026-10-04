@@ -131,6 +131,10 @@ pub struct ExternalConversationSendRequest {
     /// completes. Requires `work.review_of`; it does not launch the executor.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub after_native_completion: bool,
+    /// Native admission for one internal result-analysis turn. No contact or
+    /// execution tools are granted to that turn.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub coordinator_wake: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -19,10 +19,13 @@ use sha2::{Digest, Sha256};
 
 mod budget;
 mod coordinator;
+mod coordinator_wakes;
 mod events;
 mod provider_dispatch;
 mod providers;
 pub use coordinator::{COORDINATOR_ACTOR, CoordinatorInbox, CoordinatorInboxPage};
+pub use coordinator_wakes::{coordinator_session, coordinator_turn_id};
+use medousa_types::work_coordinator::WorkCoordinatorWakeRecord;
 use medousa_types::work_provider::{WorkProviderDispatchRecord, WorkProviderRecord};
 pub use provider_dispatch::PROVIDER_DISPATCH_ACTOR;
 
@@ -59,6 +62,8 @@ struct Snapshot {
     provider_requests: BTreeMap<String, WorkProviderRecord>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     provider_dispatches: BTreeMap<String, WorkProviderDispatchRecord>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    coordinator_wakes: BTreeMap<String, WorkCoordinatorWakeRecord>,
     commands: BTreeMap<String, CommittedCommand>,
 }
 
@@ -176,6 +181,7 @@ impl WorkGraphStore {
                     subscriptions: BTreeMap::new(),
                     provider_requests: BTreeMap::new(),
                     provider_dispatches: BTreeMap::new(),
+                    coordinator_wakes: BTreeMap::new(),
                     commands: BTreeMap::new(),
                 });
             }
@@ -586,6 +592,16 @@ impl WorkGraphStore {
                 })
                 .map(|(id, record)| (id.clone(), WorkGraphItem::ProviderDispatch(record.clone())))
                 .collect(),
+            WorkGraphCollection::CoordinatorWakes => snapshot
+                .coordinator_wakes
+                .iter()
+                .filter(|(_, record)| {
+                    query.anchor.as_ref().is_none_or(|anchor| {
+                        anchor == &work_reference(domain, &record.wake.input.work_unit_id)
+                    })
+                })
+                .map(|(id, record)| (id.clone(), WorkGraphItem::CoordinatorWake(record.clone())))
+                .collect(),
             WorkGraphCollection::Subscriptions => snapshot
                 .subscriptions
                 .iter()
@@ -763,6 +779,33 @@ impl Snapshot {
     fn mutate(&mut self, mutation: WorkGraphMutation, provenance: RecordProvenance) -> Result<()> {
         let now = Utc::now();
         match mutation {
+            WorkGraphMutation::RegisterCoordinatorWake { wake } => {
+                self.register_coordinator_wake(*wake, &provenance)?
+            }
+            WorkGraphMutation::ClaimCoordinatorWake {
+                conversation_id,
+                request_id,
+                attempt,
+            } => {
+                self.claim_coordinator_wake(&conversation_id, &request_id, attempt, &provenance)?
+            }
+            WorkGraphMutation::CompleteCoordinatorWake {
+                conversation_id,
+                request_id,
+                decision,
+            } => self.complete_coordinator_wake(
+                &conversation_id,
+                &request_id,
+                decision,
+                &provenance,
+            )?,
+            WorkGraphMutation::BlockCoordinatorWake {
+                conversation_id,
+                request_id,
+                reason,
+            } => {
+                self.block_coordinator_wake(&conversation_id, &request_id, &reason, &provenance)?
+            }
             WorkGraphMutation::RegisterProviderDispatch { dispatch } => {
                 self.register_provider_dispatch(*dispatch, &provenance)?;
             }
@@ -1230,6 +1273,7 @@ impl Snapshot {
             self.subscriptions.len(),
             self.provider_requests.len(),
             self.provider_dispatches.len(),
+            self.coordinator_wakes.len(),
             self.commands.len(),
         ]
         .iter()
@@ -1370,6 +1414,7 @@ impl Snapshot {
         self.validate_subscriptions()?;
         self.validate_provider_records()?;
         self.validate_provider_dispatches()?;
+        self.validate_coordinator_wakes()?;
         Ok(())
     }
 }

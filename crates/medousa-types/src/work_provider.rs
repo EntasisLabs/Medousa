@@ -94,6 +94,8 @@ pub struct WorkProviderDispatch {
     pub target_digest: String,
     pub scope_digest: String,
     pub source_request_digest: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub coordinator_wake: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

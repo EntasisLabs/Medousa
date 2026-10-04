@@ -159,6 +159,15 @@ executor. Recovery derives the checkout pin only from the completed receipt.
 Omitted/false preserves immediate sending. See
 [native handoff recovery](work-units.md#native-executor-to-provider-reviewer-handoff).
 
+Set `coordinator_wake: true` to separately admit one result-only internal model
+turn for this exact work request. It requires `admin.execute`, defaults to false
+and can be combined with `after_native_completion`. The model route is frozen
+when the work request and wake are registered; a delayed handoff registers them
+when its executor completes. The resulting assessment is retained in
+`work.graph` collection `coordinator_wakes`; it does not send a chat notification,
+contact the user, qualify review or dispatch suggested work. See
+[model wake admission](work-units.md#admitted-coordinator-model-wakes).
+
 For a manual acceptance test, use a disposable finite unbudgeted work unit and a
 dedicated provider conversation with its own Work credential:
 
@@ -177,6 +186,13 @@ dedicated provider conversation with its own Work credential:
    second provider message is sent. Repeat with a paused/cancelled unit, changed
    scope, failed executor and modified checkout; these must retain or close the
    admission without approving an unrelated revision.
+5. Optionally admit a separate disposable request with `coordinator_wake: true`.
+   Report progress first: no model attempt should appear. Report its exact
+   completed/failed terminal: one stable attempt should appear and eventually
+   retain an execution-attributed decision entry. Keep the source chat closed.
+   Duplicate callbacks and daemon restart must retain the same attempt. Inspect
+   a missing/error outcome without resending or relaunching. Check that silent
+   work stays silent and the internal transcript adds no normal chat-list row.
 
 Transport acceptance and callback support must be checked for each actual
 provider; local store/Forge tests do not qualify a live Muse, Instinct, Dots or
@@ -219,6 +235,7 @@ A request retains at most 64 events and one immutable completed/failed terminal
 outcome; work-ledger capacity errors require source retention and reconciliation.
 Subscription readers receive typed provider events through `work.events` and
 acknowledge them explicitly. Transport acceptance and ordinary chat replies do
-not qualify review. This increment does not automate stage dispatch, work
-satisfaction, chat wakeups, voice delivery or provider federation, and does not
-change Muse's unverified linked-device transport status.
+not qualify review. New work associations support native stage publication,
+saved native-executor review handoffs and separately admitted internal model analysis as documented
+above. Provider-to-provider chains, reporter/voice delivery and federation remain
+separate gates. Muse's linked-device transport remains unverified.

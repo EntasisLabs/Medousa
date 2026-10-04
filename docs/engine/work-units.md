@@ -681,9 +681,11 @@ expired deadlines remain explicit qualifications with no approving decision.
 These records are attributable provider outcomes and qualified review evidence.
 For newly associated requests, the admitted runtime stage controller consumes
 callbacks and can publish verified work satisfaction as described below. It does
-not reopen terminal work, wake a model chat or send contact. Model mutations cannot manufacture these records or satisfy a
-provider-associated unit. Ordinary WhatsApp/Slack messages, reactions and transport
-acceptance remain conversation observations. Live provider transport acceptance
+not reopen terminal work or send contact. A separately admitted internal model
+wake can analyze the terminal result as described below. Model mutations cannot
+manufacture these records or satisfy a provider-associated unit. Ordinary
+WhatsApp/Slack messages, reactions and transport acceptance remain conversation
+observations. Live provider transport acceptance
 remains a qualification gate. Native executor completion can trigger one saved
 provider review handoff as described below.
 See [Provider callback protocol](external-conversations.md#correlated-work-callbacks).
@@ -753,3 +755,40 @@ and its closure reason. Provider results still require the exact authenticated
 callback protocol and revision qualification above. This increment adds native
 executor → provider reviewer dispatch; provider-to-provider chains and bounded
 fix/review loops remain separate gates.
+
+### Admitted coordinator model wakes
+
+An operator-authorized provider work send can include `coordinator_wake: true`
+to admit one internal result-analysis turn. The default is false. The option
+requires `admin.execute` and exact `work` metadata; model tools and provider Work
+credentials cannot admit a wake. It also works with `after_native_completion`,
+whose saved handoff retains the wake preference. This increment supports finite,
+standalone, unbudgeted local work; an ancestor budget also blocks admission.
+
+The native graph stores the owner domain, provider request, scope/resource digest,
+deadline, derived internal session and frozen model route. Only that request's
+authenticated completed/failed terminal can trigger analysis. Progress and ordinary
+chat replies do not. The runtime saves a stable attempt identity and prompt digest
+before admitting the canonical turn ticket. Ticket admission rechecks current work,
+resource versions, source visibility, stage custody, deadline and parent budgets.
+Paused work retains an unstarted wake; cancelled, rescoped, expired or superseded
+work cannot start one. A qualified satisfied unit may retain this read-only
+analysis without reopening work.
+
+The turn has an empty exact tool ceiling and no code, worker, channel, voice or
+manuscript authority. Its assessment and suggested next steps are reference data;
+they cannot qualify a review, launch another agent or contact the user. Internal
+transcripts stay outside normal chat listings while retaining owner-bound history.
+Contact preferences remain unchanged. Cancelling/rescoping work after ticket
+admission does not automatically cancel an already running read-only turn.
+
+Recovery reconciles the exact ticket and execution-attributed committed assistant
+entry. A completed result records its transcript reference and content digest in
+`work.graph` collection `coordinator_wakes`. Missing tickets, uncertain starts and
+missing committed output never authorize a replacement turn. Error/cancelled
+tickets retain a blocked reason for inspection. The canonical model pipeline keeps
+its own bounded retry behavior; this is one admitted turn, not a promise of one
+HTTP inference request. Further analysis needs a new explicit provider request and
+admission. This increment does not enable provider-to-provider chains, fix/review
+loops, native resource-change reactions, metered/composite scheduling or reporter
+routing.

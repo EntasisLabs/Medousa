@@ -6,6 +6,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     AuthorityId, SessionRef,
+    work_coordinator::{
+        WorkCoordinatorAttempt, WorkCoordinatorDecision, WorkCoordinatorWake,
+        WorkCoordinatorWakeRecord,
+    },
     work_provider::{
         WorkProviderDispatch, WorkProviderDispatchRecord, WorkProviderEvent, WorkProviderRecord,
         WorkProviderRequest,
@@ -450,6 +454,24 @@ pub enum WorkGraphMutation {
     RegisterProviderDispatch {
         dispatch: Box<WorkProviderDispatch>,
     },
+    RegisterCoordinatorWake {
+        wake: Box<WorkCoordinatorWake>,
+    },
+    ClaimCoordinatorWake {
+        conversation_id: String,
+        request_id: String,
+        attempt: WorkCoordinatorAttempt,
+    },
+    CompleteCoordinatorWake {
+        conversation_id: String,
+        request_id: String,
+        decision: WorkCoordinatorDecision,
+    },
+    BlockCoordinatorWake {
+        conversation_id: String,
+        request_id: String,
+        reason: String,
+    },
     CloseProviderDispatch {
         conversation_id: String,
         request_id: String,
@@ -505,6 +527,7 @@ pub enum WorkGraphCollection {
     Subscriptions,
     ProviderRequests,
     ProviderDispatches,
+    CoordinatorWakes,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -541,6 +564,7 @@ pub enum WorkGraphItem {
     Subscription(WorkEventSubscription),
     ProviderRequest(WorkProviderRecord),
     ProviderDispatch(WorkProviderDispatchRecord),
+    CoordinatorWake(WorkCoordinatorWakeRecord),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

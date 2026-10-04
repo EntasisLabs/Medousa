@@ -1066,7 +1066,7 @@ docs verification pass. Full repository CI parity remains a separate gate.
 
 | Remaining increment | Existing foundation | Evidence still needed |
 |---|---|---|
-| Automatic work intake and reactions (Phase 3) | Durable actor-bound pull subscriptions plus native provider inboxes, bounded callback-driven coordinator wakes, atomic stage decisions/cursors and restart recovery | Admitted model wakes, native resource-change subscriptions, broader bounded/coalesced effects, legacy inbox backfill and retention-gap recovery |
+| Automatic work intake and reactions (Phase 3) | Durable actor-bound pull subscriptions plus native provider inboxes, bounded callback-driven intake, separately admitted result-only model turns, atomic stage decisions/cursors and restart recovery | Native resource-change subscriptions, broader bounded/coalesced effects, legacy inbox backfill and retention-gap recovery |
 | Provider execution/review orchestration (Phases 3–4) | Scoped provider APIs, exact durable request/dispatch/result ledger, authenticated callbacks, native stage intake, revision-bound satisfaction and saved native-executor → provider-reviewer handoff recovery | Provider-to-provider chains, bounded fix/review dispatch, real send/receive and live provider acceptance; Muse transport remains unverified |
 | Composite execution and bounded fix/review (Phases 2–3) | Composition/readiness contracts and budget custody ledger | Native metering/reservation/settlement integration, child/dependency scheduling, bounded revision loops and shared-execution accounting; current controller admits standalone finite work only |
 | Federated work and custody (Phase 4) | Existing portal/peer transports and scoped native execution | Authenticated cross-workshop user-domain mappings, permission-filtered graph projections, remote work correlation and fenced coordinator handoff where supported |
@@ -1243,3 +1243,41 @@ Targeted library Clippy passes; frontend checking reports zero errors/warnings
 and strict docs verification passes. Live sends are reserved for the user's manual
 test. Provider-to-provider chains, fix/review loops and admitted coordinator model
 wakes remain separate increments; broad phase exits stay open.
+
+## Admitted coordinator model wake increment (2026-10-03)
+
+The existing provider send API can separately admit one work-owned result-analysis
+turn with `coordinator_wake`. Native admission freezes the owner, exact provider
+request, scope/resources, deadline, derived internal session and model route.
+Saved native-executor handoffs retain this option. Only an authenticated terminal
+for the admitted request can claim an attempt; progress cannot mint model work.
+The attempt is retained before canonical ticket admission, and final ticket checks
+also cover changed ancestor budgets and current stage custody.
+
+The model receives reference evidence under an empty exact tool ceiling. Its
+suggestions are retained decisions, never review qualification, execution grants
+or contact authority. Internal transcript history remains owner-bound and outside
+normal chat listings. Silence stays silence. Source chat availability is not the
+wake identity. Recovery uses the exact ticket and execution-attributed committed
+entry; an unknown attempt is reconciled without a replacement model turn.
+
+This closes the separately admitted result-only provider-terminal model-wake
+slice. Autonomous plan execution, provider-to-provider chains, bounded fix/review
+loops, native resource triggers, legacy inbox repair, composite/metered scheduling,
+federation and reporter routing remain open. Real sends and live model/provider
+acceptance are reserved for the user's manual test; full CI, live Surreal and
+cross-platform phase exits remain open.
+
+
+Qualification: 40 work-store tests, 52 daemon work-unit tests (two threads),
+13 session-catalog tests, 13 provider conversation/access tests, two interactive
+admission tests, the exact result-only registry test, 14 API contract tests and
+28 Python SDK tests pass. New coverage includes attempt publication faults on
+both sides of rename, nonblocking duplicate leases, paged restart recovery,
+terminal-only/native-only admission, pause/rescope/cancel/ancestor-budget fences,
+silent contact retention, unchanged work qualification and execution/digest-bound
+completion. Final/checkpoint/needs-input transcript states are distinguished.
+Generated contracts and frontend types are current; frontend checking reports
+zero errors and warnings. Targeted library Clippy and strict docs verification
+pass. These receipts qualify the local implementation, not a live provider or
+model round trip.

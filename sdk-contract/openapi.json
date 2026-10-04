@@ -3732,6 +3732,10 @@
             "description": "Native operator admission for one review send after the exact executor completes. Requires `work.review_of`; it does not launch the executor.",
             "type": "boolean"
           },
+          "coordinator_wake": {
+            "description": "Native admission for one internal result-analysis turn. No contact or execution tools are granted to that turn.",
+            "type": "boolean"
+          },
           "request_id": {
             "type": "string"
           },
@@ -9988,6 +9992,85 @@
         ],
         "type": "object"
       },
+      "WorkCoordinatorAttempt": {
+        "additionalProperties": false,
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "prompt_digest": {
+            "type": "string"
+          },
+          "turn_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "prompt_digest",
+          "turn_id"
+        ],
+        "type": "object"
+      },
+      "WorkCoordinatorDecision": {
+        "properties": {
+          "content_digest": {
+            "type": "string"
+          },
+          "entry": {
+            "$ref": "#/components/schemas/TranscriptEntryRef"
+          }
+        },
+        "required": [
+          "content_digest",
+          "entry"
+        ],
+        "type": "object"
+      },
+      "WorkCoordinatorWake": {
+        "additionalProperties": false,
+        "properties": {
+          "conversation_id": {
+            "type": "string"
+          },
+          "input": {
+            "$ref": "#/components/schemas/WorkProviderRequestInput"
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "reasoning_effort": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "response_depth_mode": {
+            "type": "string"
+          },
+          "scope_digest": {
+            "type": "string"
+          },
+          "session": {
+            "$ref": "#/components/schemas/SessionRef"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "input",
+          "model",
+          "provider",
+          "reasoning_effort",
+          "request_id",
+          "response_depth_mode",
+          "scope_digest",
+          "session"
+        ],
+        "type": "object"
+      },
       "WorkEventKind": {
         "description": "Selected observations, never an implicit grant to execute or contact anyone.",
         "enum": [
@@ -10029,7 +10112,8 @@
           "budget_reservations",
           "subscriptions",
           "provider_requests",
-          "provider_dispatches"
+          "provider_dispatches",
+          "coordinator_wakes"
         ],
         "type": "string"
       },
@@ -10572,6 +10656,106 @@
           {
             "additionalProperties": false,
             "properties": {
+              "operation": {
+                "enum": [
+                  "register_coordinator_wake"
+                ],
+                "type": "string"
+              },
+              "wake": {
+                "$ref": "#/components/schemas/WorkCoordinatorWake"
+              }
+            },
+            "required": [
+              "operation",
+              "wake"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attempt": {
+                "$ref": "#/components/schemas/WorkCoordinatorAttempt"
+              },
+              "conversation_id": {
+                "type": "string"
+              },
+              "operation": {
+                "enum": [
+                  "claim_coordinator_wake"
+                ],
+                "type": "string"
+              },
+              "request_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "attempt",
+              "conversation_id",
+              "operation",
+              "request_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "conversation_id": {
+                "type": "string"
+              },
+              "decision": {
+                "$ref": "#/components/schemas/WorkCoordinatorDecision"
+              },
+              "operation": {
+                "enum": [
+                  "complete_coordinator_wake"
+                ],
+                "type": "string"
+              },
+              "request_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "conversation_id",
+              "decision",
+              "operation",
+              "request_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "conversation_id": {
+                "type": "string"
+              },
+              "operation": {
+                "enum": [
+                  "block_coordinator_wake"
+                ],
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "request_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "conversation_id",
+              "operation",
+              "reason",
+              "request_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
               "conversation_id": {
                 "type": "string"
               },
@@ -10872,6 +11056,9 @@
         "properties": {
           "conversation_id": {
             "type": "string"
+          },
+          "coordinator_wake": {
+            "type": "boolean"
           },
           "input": {
             "$ref": "#/components/schemas/WorkProviderRequestInput"

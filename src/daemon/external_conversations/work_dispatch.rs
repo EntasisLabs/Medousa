@@ -43,6 +43,7 @@ pub(super) async fn admit(
             target_digest: target_digest(binding).map_err(internal)?,
             scope_digest: String::new(),
             source_request_digest: String::new(),
+            coordinator_wake: input.coordinator_wake,
         },
     )
     .await
@@ -99,6 +100,7 @@ pub(crate) async fn resume(
             text: dispatch.instructions,
             work: Some(dispatch.input),
             after_native_completion: false,
+            coordinator_wake: dispatch.coordinator_wake,
         },
         true,
     )

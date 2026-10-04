@@ -23,6 +23,10 @@ pub struct CoordinatorInboxPage {
         UserDomainRef,
         medousa_types::work_provider::WorkProviderDispatch,
     )>,
+    pub wakes: Vec<(
+        UserDomainRef,
+        medousa_types::work_coordinator::WorkCoordinatorWakeRecord,
+    )>,
     pub next_cursor: Option<String>,
 }
 
@@ -75,6 +79,7 @@ impl WorkGraphStore {
         entries.sort_by(|a, b| a.name.cmp(&b.name));
         let mut inboxes = vec![];
         let mut dispatches = vec![];
+        let mut wakes = vec![];
         let mut cursor = None;
         let mut scanned = 0;
         for entry in entries {
@@ -86,6 +91,7 @@ impl WorkGraphStore {
                 return Ok(CoordinatorInboxPage {
                     inboxes,
                     dispatches,
+                    wakes,
                     next_cursor: cursor,
                 });
             }
@@ -142,10 +148,11 @@ impl WorkGraphStore {
                         request_id: record.request.request_id.clone(),
                     });
                     cursor = Some(position);
-                    if inboxes.len() + dispatches.len() == limit {
+                    if inboxes.len() + dispatches.len() + wakes.len() == limit {
                         return Ok(CoordinatorInboxPage {
                             inboxes,
                             dispatches,
+                            wakes,
                             next_cursor: cursor,
                         });
                     }
@@ -159,10 +166,29 @@ impl WorkGraphStore {
                     }
                     dispatches.push((snapshot.domain.clone(), record.dispatch.clone()));
                     cursor = Some(position);
-                    if inboxes.len() + dispatches.len() == limit {
+                    if inboxes.len() + dispatches.len() + wakes.len() == limit {
                         return Ok(CoordinatorInboxPage {
                             inboxes,
                             dispatches,
+                            wakes,
+                            next_cursor: cursor,
+                        });
+                    }
+                }
+                for (id, record) in &snapshot.coordinator_wakes {
+                    let position = format!("{}%{id}", entry.name);
+                    if after.is_some_and(|a| position.as_str() <= a)
+                        || !snapshot.wake_pending(record)
+                    {
+                        continue;
+                    }
+                    wakes.push((snapshot.domain.clone(), record.clone()));
+                    cursor = Some(position);
+                    if inboxes.len() + dispatches.len() + wakes.len() == limit {
+                        return Ok(CoordinatorInboxPage {
+                            inboxes,
+                            dispatches,
+                            wakes,
                             next_cursor: cursor,
                         });
                     }
@@ -173,6 +199,7 @@ impl WorkGraphStore {
         Ok(CoordinatorInboxPage {
             inboxes,
             dispatches,
+            wakes,
             next_cursor: None,
         })
     }
@@ -193,7 +220,11 @@ impl WorkGraphStore {
 }
 
 impl Snapshot {
-    fn provider_stage_is_current(&self, conversation: &str, request: &str) -> Result<bool> {
+    pub(super) fn provider_stage_is_current(
+        &self,
+        conversation: &str,
+        request: &str,
+    ) -> Result<bool> {
         let record = self
             .provider_requests
             .values()
