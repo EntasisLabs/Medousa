@@ -2716,19 +2716,37 @@ class Operation15(Enum):
 
 
 class Operation16(Enum):
-    claim_provider_request = 'claim_provider_request'
+    register_provider_dispatch = 'register_provider_dispatch'
 
 
-class WorkGraphMutation17(MedousaModel):
+class Operation17(Enum):
+    close_provider_dispatch = 'close_provider_dispatch'
+
+
+class WorkGraphMutation18(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
     conversation_id: str
-    operation: Operation16
+    operation: Operation17
+    reason: str
     request_id: str
 
 
-class Operation17(Enum):
+class Operation18(Enum):
+    claim_provider_request = 'claim_provider_request'
+
+
+class WorkGraphMutation19(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    conversation_id: str
+    operation: Operation18
+    request_id: str
+
+
+class Operation19(Enum):
     record_provider_event = 'record_provider_event'
 
 
@@ -2856,6 +2874,7 @@ class WorkGraphCollection(Enum):
     budget_reservations = 'budget_reservations'
     subscriptions = 'subscriptions'
     provider_requests = 'provider_requests'
+    provider_dispatches = 'provider_dispatches'
 
 
 class WorkGraphQuery(MedousaModel):
@@ -5027,6 +5046,20 @@ class WorkGraphMutation12(MedousaModel):
     work_unit_id: str
 
 
+class WorkProviderDispatch(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    conversation_id: str
+    input: WorkProviderRequestInput
+    instructions: str
+    provider: ExternalProvider
+    request_id: str
+    scope_digest: str
+    source_request_digest: str
+    target_digest: str
+
+
 class WorkProviderRequest(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -5252,6 +5285,10 @@ class DeriveSessionResponse(MedousaModel):
 class ExternalConversationSendRequest(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
+    )
+    after_native_completion: bool | None = Field(
+        None,
+        description='Native operator admission for one review send after the exact executor completes. Requires `work.review_of`; it does not launch the executor.',
     )
     request_id: str
     text: str
@@ -5659,6 +5696,14 @@ class WorkGraphMutation16(MedousaModel):
     request: WorkProviderRequest
 
 
+class WorkGraphMutation17(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    dispatch: WorkProviderDispatch
+    operation: Operation16
+
+
 class WorkProviderEvent(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -5729,12 +5774,12 @@ class LayoutPreset(MedousaModel):
     )
 
 
-class WorkGraphMutation18(MedousaModel):
+class WorkGraphMutation20(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
     event: WorkProviderEvent
-    operation: Operation17
+    operation: Operation19
 
 
 class WorkGraphMutation(
@@ -5757,9 +5802,11 @@ class WorkGraphMutation(
         | WorkGraphMutation16
         | WorkGraphMutation17
         | WorkGraphMutation18
+        | WorkGraphMutation19
+        | WorkGraphMutation20
     ]
 ):
-    root: WorkGraphMutation1 | WorkGraphMutation2 | WorkGraphMutation3 | WorkGraphMutation4 | WorkGraphMutation5 | WorkGraphMutation6 | WorkGraphMutation7 | WorkGraphMutation8 | WorkGraphMutation9 | WorkGraphMutation10 | WorkGraphMutation11 | WorkGraphMutation12 | WorkGraphMutation13 | WorkGraphMutation14 | WorkGraphMutation15 | WorkGraphMutation16 | WorkGraphMutation17 | WorkGraphMutation18
+    root: WorkGraphMutation1 | WorkGraphMutation2 | WorkGraphMutation3 | WorkGraphMutation4 | WorkGraphMutation5 | WorkGraphMutation6 | WorkGraphMutation7 | WorkGraphMutation8 | WorkGraphMutation9 | WorkGraphMutation10 | WorkGraphMutation11 | WorkGraphMutation12 | WorkGraphMutation13 | WorkGraphMutation14 | WorkGraphMutation15 | WorkGraphMutation16 | WorkGraphMutation17 | WorkGraphMutation18 | WorkGraphMutation19 | WorkGraphMutation20
 
 
 class WorkGraphCommand(MedousaModel):

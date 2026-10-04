@@ -20,9 +20,11 @@ use sha2::{Digest, Sha256};
 mod budget;
 mod coordinator;
 mod events;
+mod provider_dispatch;
 mod providers;
 pub use coordinator::{COORDINATOR_ACTOR, CoordinatorInbox, CoordinatorInboxPage};
-use medousa_types::work_provider::WorkProviderRecord;
+use medousa_types::work_provider::{WorkProviderDispatchRecord, WorkProviderRecord};
+pub use provider_dispatch::PROVIDER_DISPATCH_ACTOR;
 
 #[cfg(test)]
 mod tests;
@@ -55,6 +57,8 @@ struct Snapshot {
     subscriptions: BTreeMap<String, WorkEventSubscription>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     provider_requests: BTreeMap<String, WorkProviderRecord>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    provider_dispatches: BTreeMap<String, WorkProviderDispatchRecord>,
     commands: BTreeMap<String, CommittedCommand>,
 }
 
@@ -171,6 +175,7 @@ impl WorkGraphStore {
                     reservations: BTreeMap::new(),
                     subscriptions: BTreeMap::new(),
                     provider_requests: BTreeMap::new(),
+                    provider_dispatches: BTreeMap::new(),
                     commands: BTreeMap::new(),
                 });
             }
@@ -571,6 +576,16 @@ impl WorkGraphStore {
                 })
                 .map(|(id, record)| (id.clone(), WorkGraphItem::ProviderRequest(record.clone())))
                 .collect(),
+            WorkGraphCollection::ProviderDispatches => snapshot
+                .provider_dispatches
+                .iter()
+                .filter(|(_, record)| {
+                    query.anchor.as_ref().is_none_or(|anchor| {
+                        anchor == &work_reference(domain, &record.dispatch.input.work_unit_id)
+                    })
+                })
+                .map(|(id, record)| (id.clone(), WorkGraphItem::ProviderDispatch(record.clone())))
+                .collect(),
             WorkGraphCollection::Subscriptions => snapshot
                 .subscriptions
                 .iter()
@@ -748,6 +763,16 @@ impl Snapshot {
     fn mutate(&mut self, mutation: WorkGraphMutation, provenance: RecordProvenance) -> Result<()> {
         let now = Utc::now();
         match mutation {
+            WorkGraphMutation::RegisterProviderDispatch { dispatch } => {
+                self.register_provider_dispatch(*dispatch, &provenance)?;
+            }
+            WorkGraphMutation::CloseProviderDispatch {
+                conversation_id,
+                request_id,
+                reason,
+            } => {
+                self.close_provider_dispatch(&conversation_id, &request_id, &reason, &provenance)?;
+            }
             WorkGraphMutation::RegisterProviderRequest { request } => {
                 self.register_provider_request(*request, &provenance)?
             }
@@ -965,10 +990,14 @@ impl Snapshot {
                 }
                 if state == WorkUnitState::Satisfied {
                     if provenance.source != RecordSource::SystemEvent
-                        && self
+                        && (self
                             .provider_requests
                             .values()
                             .any(|record| record.request.input.work_unit_id == work_unit_id)
+                            || self
+                                .provider_dispatches
+                                .values()
+                                .any(|record| record.dispatch.input.work_unit_id == work_unit_id))
                     {
                         return Err(invalid(
                             "provider work requires native outcome qualification; a model state claim cannot satisfy it",
@@ -1200,6 +1229,7 @@ impl Snapshot {
             self.reservations.len(),
             self.subscriptions.len(),
             self.provider_requests.len(),
+            self.provider_dispatches.len(),
             self.commands.len(),
         ]
         .iter()
@@ -1339,6 +1369,7 @@ impl Snapshot {
         self.validate_reservations()?;
         self.validate_subscriptions()?;
         self.validate_provider_records()?;
+        self.validate_provider_dispatches()?;
         Ok(())
     }
 }

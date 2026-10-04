@@ -79,3 +79,26 @@ pub struct WorkProviderRecord {
     pub dispatch_claimed: bool,
     pub revision: u64,
 }
+
+/// One immutable, operator-admitted provider review handoff. The runtime derives
+/// the checkout pin after the saved native executor finishes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct WorkProviderDispatch {
+    pub conversation_id: String,
+    pub request_id: String,
+    pub provider: ExternalProvider,
+    pub input: WorkProviderRequestInput,
+    pub instructions: String,
+    pub target_digest: String,
+    pub scope_digest: String,
+    pub source_request_digest: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkProviderDispatchRecord {
+    pub dispatch: WorkProviderDispatch,
+    pub closed_reason: Option<String>,
+    pub revision: u64,
+}

@@ -684,7 +684,8 @@ callbacks and can publish verified work satisfaction as described below. It does
 not reopen terminal work, wake a model chat or send contact. Model mutations cannot manufacture these records or satisfy a
 provider-associated unit. Ordinary WhatsApp/Slack messages, reactions and transport
 acceptance remain conversation observations. Live provider transport acceptance
-and automatic next-stage provider dispatch remain qualification gates.
+remains a qualification gate. Native executor completion can trigger one saved
+provider review handoff as described below.
 See [Provider callback protocol](external-conversations.md#correlated-work-callbacks).
 
 ### Runtime-owned provider intake
@@ -716,7 +717,39 @@ callbacks are acknowledged without overwriting it. Paused work retains its next
 pending event until resumed; cancelled, terminal or rescoped work is never revived.
 Runtime recovery reserves capacity for both native and provider stages. Neither
 callback intake nor transport acceptance admits another send, model turn or
-contact. A subsequent stage still requires an explicitly admitted request.
+contact. A subsequent stage requires saved native admission.
 Existing caller-created pull subscriptions retain their explicit acknowledgment
 contract. This increment registers inboxes for new provider associations; legacy
 associations keep their retained evidence and explicit pull path.
+
+### Native executor to provider reviewer handoff
+
+The conversation send API accepts `after_native_completion: true` alongside
+`work.review_of`. This option requires native operator authority (`admin.execute`)
+and an exact currently approved native executor proposal. It saves one review
+handoff instead of sending immediately; it does not approve or start the executor.
+The saved admission freezes the owner domain, work generation/resource digest,
+native request digest, destination digest, instructions and deadline. It supports
+the same standalone finite, unbudgeted local scope as direct provider requests.
+Existing native execute/review controllers cannot be replaced by this handoff.
+
+The runtime recovers that admission after restart without opening the originating
+chat. It waits for the exact executor receipt. A completed executor permits the
+runtime to derive the clean governed checkout pin and send through the existing
+provider transport. Failed or cancelled executor receipts, terminal work,
+rescoped work and expired deadlines close the handoff without sending. Paused work
+retains it. Source visibility, owner custody, destination, scope and deadline are
+rechecked before dispatch. A changed destination requires new explicit admission;
+recovery never follows a replacement conversation target.
+
+Only that handoff may claim provider dispatch for its work while pending. A
+durable claim precedes the transport effect; a claimed request is never resent,
+including when transport acceptance or its conversation mirror is uncertain.
+Failures before a claim retain the same admission for inspection and bounded
+recovery. The conversation journal can also retain an interrupted pre-send
+attempt; recovery does not overwrite that evidence to force a retry.
+`work.graph` with `collection: "provider_dispatches"` exposes the saved handoff
+and its closure reason. Provider results still require the exact authenticated
+callback protocol and revision qualification above. This increment adds native
+executor → provider reviewer dispatch; provider-to-provider chains and bounded
+fix/review loops remain separate gates.

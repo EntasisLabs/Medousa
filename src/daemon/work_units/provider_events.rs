@@ -182,6 +182,18 @@ impl WorkUnitHost {
                 bail!("provider work deadline must be within 24 hours");
             }
             let instruction_digest = format!("{:x}", Sha256::digest(text.as_bytes()));
+            if let Some(saved) = store.provider_dispatch(&domain, &conversation, &request_id)? {
+                let dispatch = &saved.dispatch;
+                if saved.closed_reason.is_some()
+                    || dispatch.input != input
+                    || dispatch.provider != provider
+                    || dispatch.instructions != text
+                    || store.peer_coordination_scope_digest(&domain, &input.work_unit_id)?
+                        != dispatch.scope_digest
+                {
+                    bail!("provider request differs from saved handoff authority");
+                }
+            }
             if let Some(existing) = store.provider_request(&domain, &conversation, &request_id)? {
                 if existing.request.input != input
                     || existing.request.provider != provider
@@ -257,11 +269,22 @@ impl WorkUnitHost {
             {
                 bail!("provider work scope or deadline changed before dispatch");
             }
-            if let Some(reviewed) = &request.reviewed
-                && !review_revision(&forge, &domain.user_id, reviewed)?
-            {
-                bail!("provider review revision changed before dispatch");
-            }
+            let _checkout = request
+                .reviewed
+                .as_ref()
+                .map(|reviewed| -> Result<_> {
+                    let id = WorkId::parse_storage(&reviewed.forge_work_id)
+                        .map_err(anyhow::Error::msg)?;
+                    let custody = forge
+                        .store()
+                        .try_lock_item(&id)?
+                        .ok_or_else(|| anyhow::anyhow!("provider review checkout custody busy"))?;
+                    if !review_revision_held(&forge, &domain.user_id, reviewed)? {
+                        bail!("provider review revision changed before dispatch");
+                    }
+                    Ok(custody)
+                })
+                .transpose()?;
             let receipt = store.apply_native_command_checked(
                 &domain,
                 identity(
@@ -277,12 +300,31 @@ impl WorkUnitHost {
                 native_provenance("adapter:provider-work".into()),
                 |_| {
                     (|| -> Result<()> {
+                        if request.input.deadline <= chrono::Utc::now() {
+                            bail!("provider dispatch deadline expired during admission");
+                        }
+                        if let Some(reviewed) = &request.reviewed
+                            && !review_revision_held(&forge, &domain.user_id, reviewed)?
+                        {
+                            bail!("provider review revision changed during admission");
+                        }
                         if let Some(native) = &native {
                             if native.work_is_controlled(&domain, &request.input.work_unit_id)? {
                                 bail!("provider work cannot replace a native controller");
                             }
                             if let Some(source) = &request.input.review_of {
-                                source_request(native, &domain, source)?;
+                                let source = source_request(native, &domain, source)?;
+                                if let Some(saved) = store.provider_dispatch(
+                                    &domain,
+                                    &request.conversation_id,
+                                    &request.request_id,
+                                )? && format!(
+                                    "{:x}",
+                                    Sha256::digest(serde_json::to_vec(&source)?)
+                                ) != saved.dispatch.source_request_digest
+                                {
+                                    bail!("saved provider handoff source changed before dispatch");
+                                }
                             }
                         } else if request.reviewed.is_some() {
                             bail!("native review source unavailable");

@@ -13541,6 +13541,10 @@
       "text"
     ],
     "properties": {
+      "after_native_completion": {
+        "description": "Native operator admission for one review send after the exact executor completes. Requires `work.review_of`; it does not launch the executor.",
+        "type": "boolean"
+      },
       "request_id": {
         "type": "string"
       },
@@ -31239,6 +31243,52 @@
             "additionalProperties": false
           },
           {
+            "type": "object",
+            "required": [
+              "dispatch",
+              "operation"
+            ],
+            "properties": {
+              "dispatch": {
+                "$ref": "#/definitions/WorkProviderDispatch"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "register_provider_dispatch"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "conversation_id",
+              "operation",
+              "reason",
+              "request_id"
+            ],
+            "properties": {
+              "conversation_id": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "close_provider_dispatch"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              },
+              "request_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
             "description": "Native-only single dispatch custody. Unknown claims never relaunch.",
             "type": "object",
             "required": [
@@ -31283,6 +31333,47 @@
             "additionalProperties": false
           }
         ]
+      },
+      "WorkProviderDispatch": {
+        "description": "One immutable, operator-admitted provider review handoff. The runtime derives the checkout pin after the saved native executor finishes.",
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "input",
+          "instructions",
+          "provider",
+          "request_id",
+          "scope_digest",
+          "source_request_digest",
+          "target_digest"
+        ],
+        "properties": {
+          "conversation_id": {
+            "type": "string"
+          },
+          "input": {
+            "$ref": "#/definitions/WorkProviderRequestInput"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/definitions/ExternalProvider"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "scope_digest": {
+            "type": "string"
+          },
+          "source_request_digest": {
+            "type": "string"
+          },
+          "target_digest": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       },
       "WorkProviderEvent": {
         "type": "object",
@@ -31874,7 +31965,8 @@
           "events",
           "budget_reservations",
           "subscriptions",
-          "provider_requests"
+          "provider_requests",
+          "provider_dispatches"
         ]
       },
       "WorkGraphQuery": {

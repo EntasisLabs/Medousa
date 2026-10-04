@@ -8,6 +8,7 @@ use medousa_store::{
     PersistenceError, PersistenceErrorKind, TransactionFaultPoint, TransactionFaults,
 };
 use medousa_types::{AuthorityId, work_unit::*};
+use sha2::Digest;
 
 fn tempdir() -> tempfile::TempDir {
     tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap()
@@ -2620,6 +2621,216 @@ fn runtime_intake_registers_before_dispatch_and_recovers_without_a_source_chat()
             .state,
         WorkUnitState::Accepted
     );
+}
+
+fn provider_handoff(
+    store: &WorkGraphStore,
+    id: &str,
+) -> medousa_types::work_provider::WorkProviderDispatch {
+    use medousa_types::{coordination::CoordinationChannelRef, work_provider::*};
+    WorkProviderDispatch {
+        conversation_id: "provider-chat".into(),
+        request_id: id.into(),
+        provider: medousa_types::ExternalProvider::Muse,
+        input: WorkProviderRequestInput {
+            work_unit_id: "work".into(),
+            expected_scope_revision: 1,
+            deadline: chrono::Utc::now() + chrono::Duration::hours(1),
+            review_of: Some(WorkProviderReviewSource {
+                channel: CoordinationChannelRef {
+                    authority_id: domain("user:a").authority_id,
+                    channel_id: "native".into(),
+                },
+                executor_assignment_id: "executor".into(),
+            }),
+        },
+        instructions: "Review the completed executor's exact checkout".into(),
+        target_digest: "a".repeat(64),
+        source_request_digest: "b".repeat(64),
+        scope_digest: store
+            .peer_coordination_scope_digest(&domain("user:a"), "work")
+            .unwrap(),
+    }
+}
+
+fn handoff_provenance() -> RecordProvenance {
+    RecordProvenance {
+        actor_id: crate::PROVIDER_DISPATCH_ACTOR.into(),
+        source: RecordSource::SystemEvent,
+        evidence: vec![],
+    }
+}
+
+#[test]
+fn saved_provider_handoff_survives_restart_and_fences_competing_dispatch() {
+    let dir = tempdir();
+    let store = WorkGraphStore::open(dir.path()).unwrap();
+    next(&store, accept("work", WorkScope::default()));
+    let dispatch = provider_handoff(&store, "review");
+    store
+        .apply_native_command(
+            &domain("user:a"),
+            "admit-handoff".into(),
+            WorkGraphMutation::RegisterProviderDispatch {
+                dispatch: Box::new(dispatch.clone()),
+            },
+            handoff_provenance(),
+        )
+        .unwrap();
+    let reopened = WorkGraphStore::open(dir.path()).unwrap();
+    assert_eq!(
+        reopened
+            .provider_dispatch(&domain("user:a"), "provider-chat", "review")
+            .unwrap()
+            .unwrap()
+            .dispatch,
+        dispatch
+    );
+    assert!(
+        reopened
+            .require_provider_idle(&domain("user:a"), "work")
+            .is_err()
+    );
+    let page = reopened
+        .coordinator_inboxes(&domain("user:a").authority_id, 1, None)
+        .unwrap();
+    assert_eq!(page.dispatches.len(), 1);
+    assert_eq!(page.dispatches[0].0, domain("user:a"));
+    assert!(
+        reopened
+            .coordinator_inboxes(
+                &domain("user:a").authority_id,
+                1,
+                page.next_cursor.as_deref()
+            )
+            .unwrap()
+            .dispatches
+            .is_empty()
+    );
+    assert!(
+        reopened
+            .coordinator_inboxes(&domain("other").authority_id, 1, None)
+            .unwrap()
+            .dispatches
+            .iter()
+            .all(|(owner, _)| owner != &domain("other"))
+    );
+    let mut competing = provider_request(&reopened, "other");
+    competing.instruction_digest = format!(
+        "{:x}",
+        sha2::Sha256::digest(dispatch.instructions.as_bytes())
+    );
+    next(
+        &reopened,
+        WorkGraphMutation::RegisterProviderRequest {
+            request: Box::new(competing),
+        },
+    );
+    reject(
+        &reopened,
+        WorkGraphMutation::ClaimProviderRequest {
+            conversation_id: "provider-chat".into(),
+            request_id: "other".into(),
+        },
+    );
+    reopened
+        .apply_native_command(
+            &domain("user:a"),
+            "close-handoff".into(),
+            WorkGraphMutation::CloseProviderDispatch {
+                conversation_id: "provider-chat".into(),
+                request_id: "review".into(),
+                reason: "executor failed".into(),
+            },
+            handoff_provenance(),
+        )
+        .unwrap();
+    assert!(
+        reopened
+            .coordinator_inboxes(&domain("user:a").authority_id, 1, None)
+            .unwrap()
+            .dispatches
+            .is_empty()
+    );
+    assert!(
+        reopened
+            .require_provider_idle(&domain("user:a"), "work")
+            .is_ok()
+    );
+}
+
+#[test]
+fn provider_handoff_admission_is_atomic_and_model_intent_cannot_authorize_it() {
+    for (point, published) in [
+        (TransactionFaultPoint::BeforeRenamePublish, false),
+        (TransactionFaultPoint::AfterRenamePublish, true),
+    ] {
+        let dir = tempdir();
+        let store = WorkGraphStore::open(dir.path()).unwrap();
+        next(&store, accept("work", WorkScope::default()));
+        let dispatch = provider_handoff(&store, "review");
+        let mut model = provenance();
+        model.source = RecordSource::ModelInferred;
+        assert!(
+            store
+                .apply_native_command(
+                    &domain("user:a"),
+                    "spoof".into(),
+                    WorkGraphMutation::RegisterProviderDispatch {
+                        dispatch: Box::new(dispatch.clone())
+                    },
+                    model
+                )
+                .is_err()
+        );
+        let fault = Arc::new(FailOnce {
+            point,
+            fired: AtomicBool::new(false),
+        });
+        let failing = WorkGraphStore::with_faults(dir.path(), fault).unwrap();
+        assert!(
+            failing
+                .apply_native_command(
+                    &domain("user:a"),
+                    "admit-handoff".into(),
+                    WorkGraphMutation::RegisterProviderDispatch {
+                        dispatch: Box::new(dispatch.clone())
+                    },
+                    handoff_provenance()
+                )
+                .is_err()
+        );
+        let reopened = WorkGraphStore::open(dir.path()).unwrap();
+        assert_eq!(
+            reopened
+                .provider_dispatch(&domain("user:a"), "provider-chat", "review")
+                .unwrap()
+                .is_some(),
+            published
+        );
+        let replay = reopened
+            .apply_native_command(
+                &domain("user:a"),
+                "admit-handoff".into(),
+                WorkGraphMutation::RegisterProviderDispatch {
+                    dispatch: Box::new(dispatch),
+                },
+                handoff_provenance(),
+            )
+            .unwrap();
+        assert_eq!(replay.replayed, published);
+        assert_eq!(
+            reopened
+                .query(
+                    &domain("user:a"),
+                    query(WorkGraphCollection::ProviderDispatches)
+                )
+                .unwrap()
+                .items
+                .len(),
+            1
+        );
+    }
 }
 
 #[test]

@@ -151,6 +151,37 @@ uncertain requests without resending; even an uncertain claim publication cannot
 authorize a replacement send. The [work contract](work-units.md#correlated-provider-work-and-review-evidence)
 describes scope, custody and review restrictions.
 
+Set `after_native_completion: true` in that same body to admit one review handoff
+before its native executor has finished. This option requires `admin.execute`
+and a currently approved exact executor proposal. It saves the destination,
+instructions and work/source digests; it does not send immediately or launch the
+executor. Recovery derives the checkout pin only from the completed receipt.
+Omitted/false preserves immediate sending. See
+[native handoff recovery](work-units.md#native-executor-to-provider-reviewer-handoff).
+
+For a manual acceptance test, use a disposable finite unbudgeted work unit and a
+dedicated provider conversation with its own Work credential:
+
+1. Approve a native executor proposal, then submit the review send body above
+   with `after_native_completion: true` and a future deadline. Inspect
+   `work.graph` collection `provider_dispatches`; there should be one saved
+   handoff and no provider message yet.
+2. Finish the exact executor with a clean committed governed checkout. Close
+   its source chat tab or restart the daemon. Recovery should issue one review
+   message containing the runtime-derived pin. `provider_requests` should show
+   `dispatch_claimed: true` before any outcome is accepted.
+3. Have the provider report a strict review decision through `/work-events`.
+   Check its qualification and the unit's published state. Resubmit the identical
+   callback; its actor/time and work decision must remain unchanged.
+4. Restart after dispatch or simulate a lost transport response. Check that no
+   second provider message is sent. Repeat with a paused/cancelled unit, changed
+   scope, failed executor and modified checkout; these must retain or close the
+   admission without approving an unrelated revision.
+
+Transport acceptance and callback support must be checked for each actual
+provider; local store/Forge tests do not qualify a live Muse, Instinct, Dots or
+Grok Bot connection.
+
 Muse, Instinct, Dots and Grok Bot report with their own current Work token:
 
 ```text

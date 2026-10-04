@@ -615,3 +615,11 @@ state, evidence and acknowledgment together. Execution completion waits for an
 admitted review; strict approval of the current native revision can satisfy work.
 See [work units](../engine/work-units.md#runtime-owned-provider-intake) for
 restart, scope, custody and silence behavior.
+
+`ExternalConversationSendRequest.after_native_completion` saves one native
+executor → provider reviewer send when set to `true`. It requires `work.review_of`
+and native operator admission; omitted/false retains immediate-send behavior.
+`provider_dispatches` is the bounded work graph collection for saved handoffs.
+`register_provider_dispatch` and `close_provider_dispatch` are native-only
+commands, unavailable to model or provider Work-credential mutations. See
+[handoff admission and recovery](../engine/work-units.md#native-executor-to-provider-reviewer-handoff).

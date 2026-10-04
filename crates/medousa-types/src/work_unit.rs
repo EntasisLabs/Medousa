@@ -6,7 +6,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     AuthorityId, SessionRef,
-    work_provider::{WorkProviderEvent, WorkProviderRecord, WorkProviderRequest},
+    work_provider::{
+        WorkProviderDispatch, WorkProviderDispatchRecord, WorkProviderEvent, WorkProviderRecord,
+        WorkProviderRequest,
+    },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -444,6 +447,14 @@ pub enum WorkGraphMutation {
     RegisterProviderRequest {
         request: Box<WorkProviderRequest>,
     },
+    RegisterProviderDispatch {
+        dispatch: Box<WorkProviderDispatch>,
+    },
+    CloseProviderDispatch {
+        conversation_id: String,
+        request_id: String,
+        reason: String,
+    },
     /// Native-only single dispatch custody. Unknown claims never relaunch.
     ClaimProviderRequest {
         conversation_id: String,
@@ -493,6 +504,7 @@ pub enum WorkGraphCollection {
     BudgetReservations,
     Subscriptions,
     ProviderRequests,
+    ProviderDispatches,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -528,6 +540,7 @@ pub enum WorkGraphItem {
     BudgetReservation(WorkBudgetReservation),
     Subscription(WorkEventSubscription),
     ProviderRequest(WorkProviderRecord),
+    ProviderDispatch(WorkProviderDispatchRecord),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -3728,6 +3728,10 @@
       "ExternalConversationSendRequest": {
         "additionalProperties": false,
         "properties": {
+          "after_native_completion": {
+            "description": "Native operator admission for one review send after the exact executor completes. Requires `work.review_of`; it does not launch the executor.",
+            "type": "boolean"
+          },
           "request_id": {
             "type": "string"
           },
@@ -10024,7 +10028,8 @@
           "events",
           "budget_reservations",
           "subscriptions",
-          "provider_requests"
+          "provider_requests",
+          "provider_dispatches"
         ],
         "type": "string"
       },
@@ -10547,6 +10552,52 @@
           },
           {
             "additionalProperties": false,
+            "properties": {
+              "dispatch": {
+                "$ref": "#/components/schemas/WorkProviderDispatch"
+              },
+              "operation": {
+                "enum": [
+                  "register_provider_dispatch"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "dispatch",
+              "operation"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "conversation_id": {
+                "type": "string"
+              },
+              "operation": {
+                "enum": [
+                  "close_provider_dispatch"
+                ],
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "request_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "conversation_id",
+              "operation",
+              "reason",
+              "request_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
             "description": "Native-only single dispatch custody. Unknown claims never relaunch.",
             "properties": {
               "conversation_id": {
@@ -10813,6 +10864,47 @@
           "result"
         ],
         "title": "WorkParticipantResponse",
+        "type": "object"
+      },
+      "WorkProviderDispatch": {
+        "additionalProperties": false,
+        "description": "One immutable, operator-admitted provider review handoff. The runtime derives the checkout pin after the saved native executor finishes.",
+        "properties": {
+          "conversation_id": {
+            "type": "string"
+          },
+          "input": {
+            "$ref": "#/components/schemas/WorkProviderRequestInput"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/ExternalProvider"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "scope_digest": {
+            "type": "string"
+          },
+          "source_request_digest": {
+            "type": "string"
+          },
+          "target_digest": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "input",
+          "instructions",
+          "provider",
+          "request_id",
+          "scope_digest",
+          "source_request_digest",
+          "target_digest"
+        ],
         "type": "object"
       },
       "WorkProviderEvent": {

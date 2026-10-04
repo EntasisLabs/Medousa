@@ -24,7 +24,13 @@ impl WorkGraphStore {
     }
 
     pub fn require_provider_idle(&self, domain: &UserDomainRef, work_unit_id: &str) -> Result<()> {
-        if self.load(domain)?.provider_requests.values().any(|record| {
+        let snapshot = self.load(domain)?;
+        if snapshot.provider_dispatches.values().any(|record| {
+            record.dispatch.input.work_unit_id == work_unit_id && snapshot.dispatch_pending(record)
+        }) {
+            return Err(invalid("work has saved provider handoff custody"));
+        }
+        if snapshot.provider_requests.values().any(|record| {
             record.request.input.work_unit_id == work_unit_id
                 && record.dispatch_claimed
                 && !record.events.iter().any(|event| {
@@ -351,6 +357,7 @@ impl Snapshot {
     }
 
     fn validate_provider_dispatch(&self, request: &WorkProviderRequest) -> Result<()> {
+        self.validate_dispatch_claim(request)?;
         let unit = &self.work_units[&request.input.work_unit_id];
         if self.provider_requests.values().any(|record| {
             record.request.input.work_unit_id == unit.work_unit_id

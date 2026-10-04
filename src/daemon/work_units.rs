@@ -24,6 +24,7 @@ mod native_project;
 mod native_vault;
 pub mod participant;
 mod peer_coordination;
+mod provider_dispatch;
 mod provider_events;
 pub use native_content::WorkContentResolveInput;
 pub use native_project::WorkProjectResolveInput;
@@ -121,6 +122,8 @@ fn validate_model_mutation(domain: &UserDomainRef, mutation: &WorkGraphMutation)
             | WorkGraphMutation::ClaimProviderRequest { .. }
             | WorkGraphMutation::RecordProviderEvent { .. }
             | WorkGraphMutation::AdvanceProviderStage { .. }
+            | WorkGraphMutation::RegisterProviderDispatch { .. }
+            | WorkGraphMutation::CloseProviderDispatch { .. }
     ) {
         bail!("native custody and provider evidence require an authenticated native adapter");
     }

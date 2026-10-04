@@ -1202,3 +1202,260 @@ async fn provider_stage_controller_recovers_exact_review_without_an_open_source_
         assert_eq!(port.starts.load(Ordering::SeqCst), 0);
     }
 }
+
+#[tokio::test]
+async fn provider_handoff_waits_for_exact_executor_and_never_replaces_claimed_send() {
+    use medousa_types::work_provider::*;
+    for scenario in [
+        "completed",
+        "failed",
+        "paused",
+        "cancelled",
+        "scope",
+        "invisible",
+        "unapproved",
+        "controlled",
+    ] {
+        let execution = Arc::new(ForgeExecutionService::new());
+        let exec = execution.clone();
+        let (port, plan) = execution
+            .run(ExecutionClass::StoreIo, MAX_SNAPSHOT_BYTES, move || {
+                Ok(TestPort::fixture_sync_controlled(
+                    exec,
+                    scenario != "unapproved",
+                    ExternalPeerRuntime::Codex,
+                    scenario == "controlled",
+                ))
+            })
+            .await
+            .unwrap()
+            .unwrap();
+        let copy = plan.clone();
+        let dispatch = port
+            .io(move |native, host, _| {
+                let mut dispatch = WorkProviderDispatch {
+                    conversation_id: "provider-chat".into(),
+                    request_id: "review-after-executor".into(),
+                    provider: ExternalProvider::Muse,
+                    input: WorkProviderRequestInput {
+                        work_unit_id: copy.input.work_unit_id.clone(),
+                        expected_scope_revision: copy.input.expected_scope_revision,
+                        deadline: copy.input.deadline,
+                        review_of: Some(WorkProviderReviewSource {
+                            channel: copy.input.channel.clone(),
+                            executor_assignment_id: copy.executor_assignment_id.clone(),
+                        }),
+                    },
+                    instructions: "Review the exact completed native executor revision".into(),
+                    target_digest: "a".repeat(64),
+                    scope_digest: String::new(),
+                    source_request_digest: String::new(),
+                };
+                let admission = host.admit_provider_dispatch_with(
+                    native,
+                    &copy.domain,
+                    &mut dispatch,
+                    |_, _| true,
+                );
+                if matches!(scenario, "unapproved" | "controlled") {
+                    assert!(admission.is_err());
+                    assert!(
+                        host.store
+                            .provider_dispatch(
+                                &copy.domain,
+                                &dispatch.conversation_id,
+                                &dispatch.request_id
+                            )?
+                            .is_none()
+                    );
+                    return Ok(None);
+                }
+                admission?;
+                assert!(!host.provider_dispatch_ready_with(
+                    native,
+                    &copy.domain,
+                    &dispatch,
+                    |_, _| true
+                )?);
+                assert!(
+                    host.store
+                        .require_provider_idle(&copy.domain, &copy.input.work_unit_id)
+                        .is_err()
+                );
+                let request = native
+                    .proposal(&copy.input.channel, &copy.input.executor_proposal_id)?
+                    .request;
+                native.claim_assignment_checked(&request, || Ok(()))?;
+                let binding = ExternalPeerAssignmentBinding {
+                    assignment_id: request.assignment_id.clone(),
+                    owner_principal_id: request.owner_principal_id.clone(),
+                    channel: request.channel.clone(),
+                    target: request.target.clone(),
+                    execution_session: request.execution_session.clone(),
+                    agent_session_id: "native-executor".into(),
+                };
+                native.record_peer(&binding)?;
+                native.observe_receipt_once(&ExternalPeerAssignmentReceipt {
+                    receipt_id: peer_terminal_receipt_id(&binding),
+                    binding,
+                    outcome: if scenario == "failed" {
+                        PeerAssignmentOutcome::Failed
+                    } else {
+                        PeerAssignmentOutcome::Completed
+                    },
+                    result: "native terminal".into(),
+                })?;
+                if matches!(scenario, "paused" | "cancelled") {
+                    host.store.apply_native_command(
+                        &copy.domain,
+                        "state-change".into(),
+                        WorkGraphMutation::SetState {
+                            work_unit_id: copy.input.work_unit_id.clone(),
+                            state: if scenario == "paused" {
+                                WorkUnitState::Paused
+                            } else {
+                                WorkUnitState::Cancelled
+                            },
+                            reason: "user changed state".into(),
+                            evidence: vec![],
+                        },
+                        provider_handoff_provenance(),
+                    )?;
+                } else if scenario == "scope" {
+                    host.store.apply_native_command(
+                        &copy.domain,
+                        "scope-change".into(),
+                        WorkGraphMutation::SetScope {
+                            work_unit_id: copy.input.work_unit_id.clone(),
+                            scope: WorkScope::default(),
+                        },
+                        provider_handoff_provenance(),
+                    )?;
+                }
+                Ok(Some(dispatch))
+            })
+            .await
+            .unwrap();
+        let Some(dispatch) = dispatch else {
+            continue;
+        };
+        let port = port.reopen().await;
+        let copy = plan.clone();
+        let temp = port._temp.clone();
+        port.io(move |native, host, forge| {
+            let ready =
+                host.provider_dispatch_ready_with(native, &copy.domain, &dispatch, |_, _| {
+                    scenario != "invisible"
+                });
+            if scenario == "invisible" {
+                assert!(ready.is_err());
+                return Ok(());
+            }
+            assert_eq!(ready?, scenario == "completed");
+            if scenario == "paused" {
+                assert!(
+                    host.store
+                        .provider_dispatch(
+                            &copy.domain,
+                            &dispatch.conversation_id,
+                            &dispatch.request_id
+                        )?
+                        .unwrap()
+                        .closed_reason
+                        .is_none()
+                );
+            } else if scenario != "completed" {
+                assert!(
+                    host.store
+                        .provider_dispatch(
+                            &copy.domain,
+                            &dispatch.conversation_id,
+                            &dispatch.request_id
+                        )?
+                        .unwrap()
+                        .closed_reason
+                        .is_some()
+                );
+            } else {
+                // Real Forge/Git derives the pin only after the saved executor
+                // receipt; its durable claim owns the send across restart.
+                let receipt = native.receipt(&copy.input.channel, &copy.executor_assignment_id)?;
+                let pin = checkout(forge, &copy, receipt.receipt_id)?;
+                let request = WorkProviderRequest {
+                    conversation_id: dispatch.conversation_id.clone(),
+                    request_id: dispatch.request_id.clone(),
+                    provider: dispatch.provider,
+                    input: dispatch.input.clone(),
+                    instruction_digest: format!(
+                        "{:x}",
+                        sha2::Sha256::digest(dispatch.instructions.as_bytes())
+                    ),
+                    scope_digest: dispatch.scope_digest.clone(),
+                    completion_condition: host
+                        .store
+                        .work_unit(&copy.domain, &copy.input.work_unit_id)?
+                        .completion_condition,
+                    reviewed: Some(pin),
+                };
+                host.store.apply_native_command(
+                    &copy.domain,
+                    "prepare-review".into(),
+                    WorkGraphMutation::RegisterProviderRequest {
+                        request: Box::new(request),
+                    },
+                    provider_handoff_provenance(),
+                )?;
+                host.store.apply_native_command(
+                    &copy.domain,
+                    "claim-review".into(),
+                    WorkGraphMutation::ClaimProviderRequest {
+                        conversation_id: dispatch.conversation_id.clone(),
+                        request_id: dispatch.request_id.clone(),
+                    },
+                    provider_handoff_provenance(),
+                )?;
+                assert!(!host.provider_dispatch_ready_with(
+                    native,
+                    &copy.domain,
+                    &dispatch,
+                    |_, _| true
+                )?);
+                let reopened = WorkGraphStore::open(&temp.path().canonicalize()?.join("graph"))?;
+                assert!(
+                    reopened
+                        .provider_request(
+                            &copy.domain,
+                            &dispatch.conversation_id,
+                            &dispatch.request_id
+                        )?
+                        .unwrap()
+                        .dispatch_claimed
+                );
+                assert!(
+                    reopened
+                        .coordinator_inboxes(&copy.domain.authority_id, 2, None)?
+                        .dispatches
+                        .is_empty()
+                );
+            }
+            assert!(
+                host.store
+                    .work_unit(&copy.domain, &copy.input.work_unit_id)?
+                    .origin
+                    .is_none()
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
+        assert_eq!(port.starts.load(Ordering::SeqCst), 0);
+    }
+}
+
+fn provider_handoff_provenance() -> RecordProvenance {
+    RecordProvenance {
+        actor_id: "adapter:provider-work".into(),
+        source: RecordSource::SystemEvent,
+        evidence: vec![],
+    }
+}

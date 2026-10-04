@@ -2,6 +2,7 @@
 //! and agent outcomes are separate events; no ACP process is created here.
 
 pub mod access;
+pub(crate) mod work_dispatch;
 
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
@@ -744,7 +745,17 @@ pub async fn send(
     State(state): State<AppState>,
     Extension(principal): Extension<RequestPrincipal>,
     Path(id): Path<String>,
-    Json(mut input): Json<SendMessageRequest>,
+    Json(input): Json<SendMessageRequest>,
+) -> Result<Json<ConversationView>, HttpError> {
+    send_admitted(state, principal, id, input, false).await
+}
+
+async fn send_admitted(
+    state: AppState,
+    principal: RequestPrincipal,
+    id: String,
+    mut input: SendMessageRequest,
+    scheduled: bool,
 ) -> Result<Json<ConversationView>, HttpError> {
     if input.request_id.trim().is_empty()
         || input.request_id.len() > 128
@@ -761,6 +772,65 @@ pub async fn send(
         .await
         .filter(|record| record.owner_id == owner(&principal, &state))
         .ok_or((StatusCode::NOT_FOUND, "conversation not found".into()))?;
+    if input.after_native_completion {
+        if scheduled || !principal.capabilities().contains(Capability::AdminExecute) {
+            return Err((
+                StatusCode::FORBIDDEN,
+                "scheduled provider handoff requires native operator admission".into(),
+            ));
+        }
+        return work_dispatch::admit(&state, &binding, input).await;
+    }
+    if let Some(host) = crate::daemon::work_units::local_work_unit_host() {
+        let domain = provider_work_domain(&binding.owner_id)?;
+        if let Some(saved) = host
+            .pending_provider_dispatch(domain.clone(), id.clone(), input.request_id.clone())
+            .await
+            .map_err(internal)?
+        {
+            if scheduled
+                && saved.dispatch.target_digest
+                    != work_dispatch::target_digest(&binding).map_err(internal)?
+            {
+                host.close_provider_dispatch(
+                    domain,
+                    saved.dispatch,
+                    "provider handoff destination changed before dispatch".into(),
+                )
+                .await
+                .map_err(internal)?;
+                return Err((
+                    StatusCode::CONFLICT,
+                    "saved provider handoff destination changed".into(),
+                ));
+            }
+            if !scheduled
+                || saved.dispatch.target_digest
+                    != work_dispatch::target_digest(&binding).map_err(internal)?
+                || input.work.as_ref() != Some(&saved.dispatch.input)
+                || input.text != saved.dispatch.instructions
+                || !host
+                    .provider_dispatch_ready(domain, saved.dispatch)
+                    .await
+                    .map_err(internal)?
+            {
+                return Err((
+                    StatusCode::CONFLICT,
+                    "provider handoff is not admitted for this send; inspect saved dispatch".into(),
+                ));
+            }
+        } else if scheduled {
+            return Err((
+                StatusCode::CONFLICT,
+                "saved provider handoff admission missing".into(),
+            ));
+        }
+    } else if scheduled {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "work unit host unavailable".into(),
+        ));
+    }
     if binding.events.iter().any(|event| {
         event.request_id.as_deref() == Some(&input.request_id)
             && event.kind == EventKind::UserMessage

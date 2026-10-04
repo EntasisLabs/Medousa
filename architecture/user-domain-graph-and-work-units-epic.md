@@ -1067,7 +1067,7 @@ docs verification pass. Full repository CI parity remains a separate gate.
 | Remaining increment | Existing foundation | Evidence still needed |
 |---|---|---|
 | Automatic work intake and reactions (Phase 3) | Durable actor-bound pull subscriptions plus native provider inboxes, bounded callback-driven coordinator wakes, atomic stage decisions/cursors and restart recovery | Admitted model wakes, native resource-change subscriptions, broader bounded/coalesced effects, legacy inbox backfill and retention-gap recovery |
-| Provider execution/review orchestration (Phases 3–4) | Scoped provider APIs, exact durable request/dispatch/result ledger, authenticated callbacks, native stage intake and revision-bound work satisfaction publication | Automatic next-stage provider dispatch, real send/receive and live provider acceptance; Muse transport remains unverified |
+| Provider execution/review orchestration (Phases 3–4) | Scoped provider APIs, exact durable request/dispatch/result ledger, authenticated callbacks, native stage intake, revision-bound satisfaction and saved native-executor → provider-reviewer handoff recovery | Provider-to-provider chains, bounded fix/review dispatch, real send/receive and live provider acceptance; Muse transport remains unverified |
 | Composite execution and bounded fix/review (Phases 2–3) | Composition/readiness contracts and budget custody ledger | Native metering/reservation/settlement integration, child/dependency scheduling, bounded revision loops and shared-execution accounting; current controller admits standalone finite work only |
 | Federated work and custody (Phase 4) | Existing portal/peer transports and scoped native execution | Authenticated cross-workshop user-domain mappings, permission-filtered graph projections, remote work correlation and fenced coordinator handoff where supported |
 | Automatic maintenance (Phase 5) | Native resource observations and explicit readiness checkpoints | Admitted note/folder/feed triggers, freshness/occurrence evidence, snapshot recovery after retention gaps, bounded coalescing and generated-update feedback fencing |
@@ -1216,3 +1216,30 @@ the native contract; frontend checking reports zero errors and warnings, and
 strict docs verification passes. An initial default-parallel work-unit run hit
 `Overloaded` in an existing vault write test; bounded-concurrency runs pass. Full
 parallel/workspace CI and live-provider acceptance remain open.
+
+## Native executor to provider reviewer handoff increment (2026-10-03)
+
+One operator-admitted review send can now wait for an exact approved native
+executor assignment. The existing conversation send API's additive
+`after_native_completion` option saves work-owned authority before any provider
+effect. It freezes the owner, scope/resources, source request, destination,
+instructions and deadline; the host's bounded rotating recovery derives the
+clean checkout review pin after completed native custody. This does not launch
+the executor, replace a native two-stage controller, reopen a source chat or
+create a user-managed orchestration surface.
+
+Pending handoffs fence competing provider/native controller registration. Pause
+retains the admission; failed executor custody, terminal/rescoped work and expiry
+close it. Existing provider dispatch claims remain authoritative after restart;
+an uncertain delivery is never resent. Provider review callbacks use the same
+strict current-revision qualification and atomic stage publication as direct sends.
+The work graph exposes bounded saved admissions and closure reasons.
+
+Qualification: 35 graph-store tests and 48 daemon work-unit tests pass (daemon
+suite with two threads), including atomic handoff publication before/after rename,
+restart, exact source completion, failed executor, pause/cancel, scope/context
+revocation, unapproved source, competing controller and claimed-send recovery.
+Targeted library Clippy passes; frontend checking reports zero errors/warnings
+and strict docs verification passes. Live sends are reserved for the user's manual
+test. Provider-to-provider chains, fix/review loops and admitted coordinator model
+wakes remain separate increments; broad phase exits stay open.

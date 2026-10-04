@@ -127,6 +127,10 @@ pub struct ExternalConversationSendRequest {
     /// Optional exact work association; ordinary messages retain their behavior.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work: Option<crate::work_provider::WorkProviderRequestInput>,
+    /// Native operator admission for one review send after the exact executor
+    /// completes. Requires `work.review_of`; it does not launch the executor.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub after_native_completion: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
