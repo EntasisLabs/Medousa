@@ -1,4 +1,4 @@
-# Coordination proposal approval (native preview)
+# Agent handoffs and coordination
 
 Logical coordination channels are not Telegram/Slack delivery channels. Proposal
 snapshots retain authority-qualified channel/session references, exact context
@@ -8,7 +8,8 @@ ranges and digests, a governed Forge work item, and independent peer custody.
 
 The portable host exposes read-only `cognition_active_work_discover` in ordinary
 conversation modes. Assistant additionally exposes local
-`cognition_peer_discover` / `cognition_peer_propose` and the location-neutral
+`cognition_peer_discover`, `cognition_peer_handoff`, `cognition_peer_review`,
+`cognition_peer_propose`, and the portable remote
 `cognition_peer_delegate`. All require an admitted owner turn and use its
 authenticated principal/session. Active-work discovery lists each reachable
 workshop's non-terminal Forge projects and joins visible ACP sessions by exact
@@ -82,6 +83,63 @@ the worker's native execution state.
 An interrupted projection with a terminal observation but no committed terminal
 marker reports `unknown` until native snapshot replay reconciles it. A corrupt
 or conflicting terminal marker fails closed.
+
+## Sender-owned local handoffs
+
+On a full workshop daemon, `cognition_peer_handoff` delegates work already
+covered by the current authenticated human request. Its input contains
+`request_key`, `forge_work_id`, `instructions`, `after_entry_seq`,
+`through_entry_seq`, optional `runtime`, optional `admission` (`delegate` by
+default, or `propose`), and optional `handoff` policy. Discover the owned project
+and committed context first. Omitted runtime uses saved coding preferences.
+The source chat does not need a project binding.
+
+The sender chooses four independent aspects of the handoff:
+
+- `responsibility`: `retain` (default) or `transfer`. Transfer occurs only after
+  native worker admission, not when a proposal, claim, or custody binding exists.
+- `completion`: `sender_review` (default) or `worker_result`. A completed worker
+  result cannot waive a saved sender review requirement.
+- `wake_on_accepted` and `wake_on_terminal`: both default to `true`.
+- `contact`: the existing work contact preference, default `return_to_origin`.
+  `silent` keeps coordination callbacks in a hidden internal session. Alternate
+  participant/channel routes are retained for a separate contact adapter;
+  these callbacks do not send messages or start voice calls on those routes.
+
+Direct admission requires operator execution capability and a committed user
+entry attributed to this exact human turn in the selected context. The host
+captures the sender session, Bot, source entry/digest, immutable assignment and
+24-hour expiry, then compiles the exact native grant. Worker, provider and
+continuation turns cannot mint direct admission by supplying model-written
+approval or authority fields. `admission: "propose"` stores the same sender
+policy but waits for the existing native approval/start flow. The legacy
+`cognition_peer_propose` and portable remote `cognition_peer_delegate` contracts
+remain available; legacy proposals are not silently upgraded into handoffs.
+
+Acceptance and verified terminal receipts are durable native events. The runtime
+serializes callbacks with other callbacks targeting the sender session and
+waits while an interactive turn is active. If completion overtakes acceptance,
+the terminal callback supersedes the stale starting message. Callback admission
+rechecks grants, owner/source visibility, pinned context and originating Bot.
+It allows at most two tool rounds for discovery, preparing a proposal and
+recording sender review, without another launch. Started attempts reconcile
+against their exact canonical ticket/transcript after restart; uncertain turns
+are never launched again. Rejected admissions have a bounded retry budget.
+
+A handoff requiring review remains `awaiting_sender_review` until the originating
+sender calls `cognition_peer_review` with the exact `channel`, `assignment_id`,
+`receipt_id`, `verdict` (`accept` or `changes_requested`) and bounded `reason`.
+The executor and other chats cannot supply the sender's verdict. Exact semantic
+retries retain the first review's turn attribution; conflicting verdicts fail.
+Neither completion nor handoff acceptance marks an encompassing work unit or
+project satisfied. Work-scoped execute/review controllers retain their existing
+revision checks and stage admission.
+
+Proposal inbox records expose optional compact `handoff` summaries with saved
+policy, responsible session, state and sender review beside the existing native
+binding/receipt, without duplicating instructions and result payloads. This is
+backend metadata for the compact delegation UI; this slice does not change
+cards. `owner.events` reports callback consumption or an explicit blocker.
 
 ## Conversational peer proposals
 

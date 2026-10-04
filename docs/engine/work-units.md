@@ -37,6 +37,44 @@ and refreshes authoritative references for exact user-vault notes and folders.
 notes/folders in a pinned governed overlay. `work.resolve_content` observes exact
 artifact payloads, environment components, and retained feed streams.
 
+## Undertaking creation from an admitted turn
+
+`cognition_runtime_mutate` action `work.create_project` creates and provisions
+an owned Forge undertaking in an existing Git repository on the current
+workshop. Use it only for user-authorized new work. The owner comes from frozen
+turn admission; the caller cannot provide an owner, destination runtime, chat
+binding, or execution grant. Content mutation and workspace write capabilities
+are required.
+
+```json
+{"action":"work.create_project","request_key":"penjamin-scaffold-1","title":"Penjamin","brief":"Scaffold the application","repo_path":"/work/penjamin","base_ref":"main","workspace_mode":"isolated"}
+```
+
+The omitted `base_ref` uses the workshop’s suggested or current branch; omitted
+`workspace_mode` defaults to `isolated`. Use `attached_checkout` only when the
+user selects work in the current checkout.
+The repository may contain only `git init`; creation adds an empty initial
+commit on the current unborn branch, preserving files and the real index. It
+does not manufacture a missing branch in an established repository. The shared
+Forge creation path is also used by Home’s project creation flow.
+
+The response includes `forge_work_id` and native `project` and `forge_work`
+resource observations and their native `tracks` relationship in the admitted
+user’s graph. It does not create a
+synthetic execution receipt, change the source chat’s binding or mode, or start
+an agent. Use the returned work ID with `cognition_peer_handoff` for delegation
+covered by the current human request, or `peer_propose` for recommendations
+needing approval. See [sender-owned local handoffs](coordination.md#sender-owned-local-handoffs).
+
+Keep `request_key` unchanged for exact retries, including uncertain transport
+outcomes. A durable owner-scoped identity prevents duplicate undertakings after
+a restart or concurrent retry. Reusing the key with different creation
+parameters or for a closed undertaking fails. If graph publication is
+interrupted after Forge creation, an exact retry refreshes its native resource
+observations rather than creating another undertaking. This action creates an
+existing repository-backed project; cloning or creating a new folder is not
+part of this contract.
+
 ## Native vault resolution
 
 `work.resolve` is a mutation: it writes identity metadata and the admitted owner's

@@ -59,7 +59,7 @@ fn owner_claim_action(claim: OwnerIntakeClaim) -> OwnerClaimAction {
 }
 
 impl LocalPeerDispatcher {
-    async fn stored<T: Send + 'static>(
+    pub(super) async fn stored<T: Send + 'static>(
         &self,
         work: impl FnOnce(&CoordinationStore) -> Result<T> + Send + 'static,
     ) -> Result<T> {
@@ -244,12 +244,49 @@ impl LocalPeerDispatcher {
                 store.receipt(&saved_channel, &assignment_id)
             })
             .await?;
+        let event_receipt = receipt.clone();
+        let handoff = self
+            .stored(move |store| {
+                store.handoff(
+                    &event_receipt.binding.channel,
+                    &event_receipt.binding.assignment_id,
+                )
+            })
+            .await?;
+        if handoff.is_some() {
+            let saved = receipt.clone();
+            let event = self
+                .stored(move |store| store.peer_owner_event_for_receipt(&saved))
+                .await?;
+            return self.resume_handoff_event(event).await;
+        }
         let saved = receipt.clone();
         if self
             .stored(move |store| store.retain_work_terminal_for_controller(&saved))
             .await?
         {
             return Ok(OwnerIntakeResult::WorkScoped);
+        }
+        let saved = receipt.clone();
+        let intentionally_silent = self
+            .stored(move |store| {
+                Ok(store
+                    .proposal_for_assignment(&saved.binding.channel, &saved.binding.assignment_id)?
+                    .is_some_and(|p| !p.continue_owner))
+            })
+            .await?;
+        if intentionally_silent {
+            let saved = receipt.clone();
+            let event = self
+                .stored(move |store| store.peer_owner_event_for_receipt(&saved))
+                .await?;
+            return self
+                .block_owner_event(
+                    &event,
+                    "legacy proposal did not request owner continuation",
+                    false,
+                )
+                .await;
         }
         let saved = receipt.clone();
         let request = self

@@ -9,13 +9,31 @@ use medousa_types::{
 pub use medousa_types::work_participant::PeerProposalIntent;
 
 fn identity(owner: &str, session: &SessionRef, key: &str) -> String {
+    intent_identity(owner, session, key, false)
+}
+
+fn intent_identity(owner: &str, session: &SessionRef, key: &str, handoff: bool) -> String {
     let mut digest = Sha256::new();
-    digest.update(b"medousa/conversational-peer/v1\0");
+    digest.update(if handoff {
+        b"medousa/sender-handoff/v1\0".as_slice()
+    } else {
+        b"medousa/conversational-peer/v1\0".as_slice()
+    });
     digest.update(serde_json::to_vec(&(owner, session, key)).expect("identity tuple"));
     format!("{:x}", digest.finalize())
 }
 
 impl LocalPeerDispatcher {
+    pub(crate) async fn create_undertaking_for_owner(
+        &self,
+        owner: String,
+        input: crate::daemon::work_units::WorkProjectCreateInput,
+    ) -> Result<medousa_forge::model::WorkItem> {
+        crate::daemon::forge_api::create_owned_undertaking(&self.state, owner, input)
+            .await
+            .map_err(anyhow::Error::msg)
+    }
+
     pub async fn execution_target_inventory(
         &self,
     ) -> crate::workshop_contract::ExecutionTargetInventory {
@@ -149,7 +167,8 @@ impl LocalPeerDispatcher {
                 let decision = store.proposal_decision(&proposal)?;
                     let binding = store.peer_if_recorded(&proposal.request.channel, &proposal.request.assignment_id)?;
                 let status = proposal_status(decision.as_ref().map(|decision| decision.approved), binding.is_some(), proposal.expires_at <= Utc::now());
-                Ok(serde_json::json!({"status": status, "proposal": proposal, "decision": decision, "binding": binding, "started": binding.is_some()}))
+                let handoff = store.handoff_view(&proposal.request.channel, &proposal.request.assignment_id)?;
+                Ok(serde_json::json!({"status": status, "proposal": proposal, "decision": decision, "binding": binding, "started": binding.is_some(), "handoff": handoff}))
             })())
         }).await?
     }
@@ -196,6 +215,24 @@ impl LocalPeerDispatcher {
         principal: &RequestPrincipal,
         session_id: SessionId,
         intent: PeerProposalIntent,
+    ) -> Result<PeerAssignmentProposal> {
+        self.compile_proposal_for_turn(
+            principal,
+            session_id,
+            intent,
+            chrono::Duration::hours(1),
+            false,
+        )
+        .await
+    }
+
+    pub(super) async fn compile_proposal_for_turn(
+        &self,
+        principal: &RequestPrincipal,
+        session_id: SessionId,
+        intent: PeerProposalIntent,
+        ttl: chrono::Duration,
+        handoff: bool,
     ) -> Result<PeerAssignmentProposal> {
         let owner = actor(principal)?;
         if intent.request_key.trim().is_empty()
@@ -246,7 +283,8 @@ impl LocalPeerDispatcher {
             authority_id: authority.clone(),
             channel_id: format!("peer_chat_{}", identity(&owner, &session, "channel")),
         };
-        let id = identity(&owner, &session, &intent.request_key);
+        // New sender contracts cannot reinterpret legacy proposal/grant identities.
+        let id = intent_identity(&owner, &session, &intent.request_key, handoff);
         let assignment_id = format!("peer_assignment_{id}");
         let store = self.store.clone();
         let channel_copy = channel.clone();
@@ -412,7 +450,7 @@ impl LocalPeerDispatcher {
         self.propose_assignment(
             principal,
             request,
-            created_at + chrono::Duration::hours(1),
+            created_at + ttl,
             intent.continue_owner,
             projected_source_session_ids,
         )
@@ -531,6 +569,10 @@ mod tests {
             authority_id: AuthorityId::parse(format!("auth_{}", "a".repeat(64))).unwrap(),
             session_id: SessionId::parse("ses_owner").unwrap(),
         };
+        assert_ne!(
+            identity("owner", &session, "key"),
+            intent_identity("owner", &session, "key", true)
+        );
         assert_eq!(
             identity("owner", &session, "key"),
             identity("owner", &session, "key")

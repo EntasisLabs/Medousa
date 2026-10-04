@@ -16,12 +16,24 @@ Assistant ownership queries and signed paired-workshop completion retrieval:
 query requires the exact saved proposal association and signed mesh envelopes;
 an ordinary bearer-only SDK request does not supply that authority.
 
+Full-daemon assistant handoffs expose typed sender responsibility, completion,
+callback and contact policy. Direct admission is tied to the current human
+request; proposal admission remains available. Inbox records carry optional
+`PeerHandoffSummary` metadata, and sender review requires the exact terminal receipt.
+See [Sender-owned handoffs](../engine/coordination.md#sender-owned-local-handoffs).
+
 Project Markdown images use `forge.items.by_work_id.source.get` with query
 `path=<project-relative-image>&image=true`. The JSON response is
 `{path,mime,bytes_base64}` instead of the text source response. PNG, JPEG, GIF,
 WebP, SVG, and AVIF reads are capped at 2 MiB and remain scoped to the governed
 workshop working copy, including symlink and `.git` restrictions. Omitting
 `image` preserves the existing source response. See [Forge routes](../engine/forge.md).
+
+Admitted assistant turns can use `work.create_project` to create an owned
+undertaking in an existing workshop Git repository, including one with no
+commits. Creation returns native graph references and a Forge work ID without
+binding the assistant chat or launching an executor. See
+[Undertaking creation](../engine/work-units.md#undertaking-creation-from-an-admitted-turn).
 
 Work-scoped native execute/review uses runtime actions `work.coordinate` and
 `work.coordination`. Provider participants access owner-domain work through

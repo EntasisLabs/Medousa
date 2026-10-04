@@ -413,32 +413,143 @@ impl Forge {
         workspace_mode: WorkspaceMode,
         actor: &ActorRef,
     ) -> Result<WorkItem> {
-        let repo_path = repo_path.as_ref();
-        let base_ref = base_ref.into();
-        if !self.git.is_repo(repo_path) {
-            return Err(ForgeError::Git(format!(
-                "{} is not inside a git repository",
-                repo_path.display()
-            )));
+        self.register_project_inner(
+            title.into(),
+            brief.into(),
+            repo_path.as_ref(),
+            base_ref.into(),
+            owner.into(),
+            policy,
+            workspace_mode,
+            actor,
+            None,
+            false,
+        )
+    }
+
+    /// Explicit project creation shares retry identity across UI and model entry points.
+    #[allow(clippy::too_many_arguments)]
+    pub fn register_project_with_request_key(
+        &self,
+        title: String,
+        brief: String,
+        repo_path: &Path,
+        base_ref: String,
+        owner: String,
+        policy: WorkPolicy,
+        workspace_mode: WorkspaceMode,
+        actor: &ActorRef,
+        request_key: Option<&str>,
+    ) -> Result<WorkItem> {
+        self.register_project_inner(
+            title,
+            brief,
+            repo_path,
+            base_ref,
+            owner,
+            policy,
+            workspace_mode,
+            actor,
+            request_key,
+            true,
+        )
+    }
+
+    fn project_creation_id(owner: &str, key: &str) -> Result<WorkId> {
+        if key.is_empty()
+            || key != key.trim()
+            || key.len() > 256
+            || key.chars().any(char::is_control)
+        {
+            return Err(ForgeError::Store("request_key must be nonempty, trimmed, and at most 256 bytes without control characters".into()));
         }
-        let base_oid = self.git.resolve_base_oid(repo_path, &base_ref)?;
+        let fingerprint = serde_json::to_vec(&("medousa-project-request-v1", owner, key))?;
+        Ok(WorkId::from(format!(
+            "work-{}",
+            &Digest::sha256_hex(&fingerprint).as_str()[..32]
+        )))
+    }
+
+    /// An omitted starting branch remains pinned to the original creation on retry.
+    pub fn project_creation_base_ref(&self, owner: &str, key: &str) -> Result<Option<String>> {
+        let id = Self::project_creation_id(owner, key)?;
+        if !self.store.item_exists(&id) {
+            return Ok(None);
+        }
+        let item = self.load(&id)?;
+        if item.owner != owner {
+            return Err(ForgeError::Conflict("creation owner mismatch".into()));
+        }
+        let WorkTarget::Git(target) = item.target;
+        Ok(Some(target.base_ref))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn register_project_inner(
+        &self,
+        title: String,
+        brief: String,
+        repo_path: &Path,
+        base_ref: String,
+        owner: String,
+        policy: WorkPolicy,
+        workspace_mode: WorkspaceMode,
+        actor: &ActorRef,
+        request_key: Option<&str>,
+        bootstrap: bool,
+    ) -> Result<WorkItem> {
+        let canonical = self.git.worktree_root(repo_path)?.canonicalize()?;
+        let repo_path = canonical.as_path();
+        let _repo_lock = self.store.lock_repo(&self.repo_lock_key(repo_path)?)?;
+        let work_id = request_key
+            .map(|key| Self::project_creation_id(&owner, key))
+            .transpose()?
+            .unwrap_or_default();
+        let _item_lock = self.store.lock_item(&work_id)?;
+        if self.store.cached_last_seq(&work_id)? > 0 {
+            let existing = self.load(&work_id)?;
+            let WorkTarget::Git(target) = &existing.target;
+            if existing.owner != owner
+                || existing.title != title
+                || existing.brief != brief
+                || target.repo_path != repo_path
+                || target.base_ref != base_ref
+                || existing.workspace_mode != workspace_mode
+                || serde_json::to_value(&existing.policy)? != serde_json::to_value(&policy)?
+            {
+                return Err(ForgeError::Conflict(
+                    "request_key was already used for different project parameters".into(),
+                ));
+            }
+            if existing.state.is_terminal() {
+                return Err(ForgeError::Conflict(
+                    "request_key belongs to a closed project; use a new key for new work".into(),
+                ));
+            }
+            return Ok(existing);
+        }
+        let base_oid = if bootstrap {
+            self.git.bootstrap_empty_repository(repo_path, &base_ref)?
+        } else {
+            self.git.resolve_base_oid(repo_path, &base_ref)?
+        };
         let mut item = WorkItem::new(
             title,
             brief,
             WorkTarget::Git(GitWorkTarget {
-                repo_path: repo_path.to_path_buf(),
+                repo_path: canonical.clone(),
                 base_ref,
                 base_oid,
             }),
             owner,
         );
+        item.id = work_id;
         item.workspace_mode = workspace_mode;
         item.policy = policy;
         let taken = self.slugs.taken_slugs()?;
         item.slug = crate::slug::allocate_unique_slug(&item.slug, taken.iter().map(String::as_str));
         let operation_id = OperationId::new();
         self.slugs.reserve(&item.slug, operation_id.as_str())?;
-        let _item_lock = self.store.lock_item(&item.id)?;
         let (event, _receipt) = match self.commit_event_receipt(
             &item.id,
             actor,
@@ -701,6 +812,20 @@ impl Forge {
     /// Provision the governed environment (one per environment generation).
     /// Draft → Provisioning → Ready.
     pub fn provision(&self, work_id: &WorkId, actor: &ActorRef) -> Result<WorkItem> {
+        self.provision_registered_project(work_id, actor, false)
+    }
+
+    /// Creation retries may observe the environment already prepared by another caller.
+    pub fn provision_project(&self, work_id: &WorkId, actor: &ActorRef) -> Result<WorkItem> {
+        self.provision_registered_project(work_id, actor, true)
+    }
+
+    fn provision_registered_project(
+        &self,
+        work_id: &WorkId,
+        actor: &ActorRef,
+        retry: bool,
+    ) -> Result<WorkItem> {
         // Unlocked read to discover the repo; locks are then taken in
         // repo → item order and the item is re-read authoritatively.
         let probe = self.load(work_id)?;
@@ -710,6 +835,12 @@ impl Forge {
             .lock_repo(&self.repo_lock_key(&target.repo_path)?)?;
         let _item_lock = self.store.lock_item(work_id)?;
         let mut item = self.load(work_id)?;
+        if retry
+            && item.workspace_environment().is_some()
+            && matches!(item.state, WorkState::Ready | WorkState::Executing)
+        {
+            return Ok(item);
+        }
         expect_state(&item, WorkState::Draft, "provision")?;
 
         let operation_id = OperationId::new();
@@ -5380,3 +5511,7 @@ mod tests {
         let _ = Digest::sha256_hex(b"unused-import-guard");
     }
 }
+
+#[cfg(test)]
+#[path = "project_creation_tests.rs"]
+mod project_creation_tests;

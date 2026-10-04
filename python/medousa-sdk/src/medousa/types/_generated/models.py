@@ -1273,17 +1273,115 @@ class McpGatewayServerRuntime(MedousaModel):
     toolCount: int = Field(..., ge=0)
 
 
+class HandoffCompletion(Enum):
+    sender_review = 'sender_review'
+    worker_result = 'worker_result'
+
+
+class HandoffResponsibility(Enum):
+    retain = 'retain'
+    transfer = 'transfer'
+
+
+class PeerHandoffAdmission(Enum):
+    delegate = 'delegate'
+    propose = 'propose'
+
+
+class ResourceKind(Enum):
+    project = 'project'
+    forge_work = 'forge_work'
+    vault_note = 'vault_note'
+    vault_folder = 'vault_folder'
+    artifact = 'artifact'
+    component = 'component'
+    feed = 'feed'
+    session = 'session'
+    assignment = 'assignment'
+    job = 'job'
+    work_unit = 'work_unit'
+    bot = 'bot'
+    external_agent = 'external_agent'
+
+
+class ResourceRef(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    authority_id: AuthorityId
+    id: str = Field(
+        ...,
+        description='Native stable identity or a registry identity issued by an adapter. A path, display title, or content hash alone is not an identity.',
+    )
+    kind: ResourceKind
+
+
+class Kind3(Enum):
+    silent = 'silent'
+
+
+class WorkContactPreference1(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    kind: Kind3
+
+
+class Kind4(Enum):
+    return_to_origin = 'return_to_origin'
+
+
+class WorkContactPreference2(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    kind: Kind4
+
+
+class Kind5(Enum):
+    participant = 'participant'
+
+
+class WorkContactPreference3(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    kind: Kind5
+    participant: ResourceRef
+
+
+class Kind6(Enum):
+    channel = 'channel'
+
+
+class WorkContactPreference4(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    channel: ResourceRef
+    kind: Kind6
+
+
+class WorkContactPreference(
+    RootModel[
+        WorkContactPreference1
+        | WorkContactPreference2
+        | WorkContactPreference3
+        | WorkContactPreference4
+    ]
+):
+    root: WorkContactPreference1 | WorkContactPreference2 | WorkContactPreference3 | WorkContactPreference4
+
+
+class PeerHandoffVerdict(Enum):
+    accept = 'accept'
+    changes_requested = 'changes_requested'
+
+
 class ExternalPeerTarget(MedousaModel):
     authority_id: AuthorityId
     execution_runtime_id: str
     runtime: ExternalPeerRuntime
-
-
-class PeerActivityStatus(Enum):
-    running = 'running'
-    succeeded = 'succeeded'
-    failed = 'failed'
-    blocked = 'blocked'
 
 
 class PeerAssignmentOutcome(Enum):
@@ -1291,6 +1389,40 @@ class PeerAssignmentOutcome(Enum):
     failed = 'failed'
     cancelled = 'cancelled'
     interrupted = 'interrupted'
+
+
+class PeerHandoffReview(MedousaModel):
+    reason: str
+    receipt_id: str
+    sender_session: SessionRef
+    turn_id: str
+    verdict: PeerHandoffVerdict
+
+
+class PeerHandoffState(Enum):
+    awaiting_acceptance = 'awaiting_acceptance'
+    working = 'working'
+    awaiting_sender_review = 'awaiting_sender_review'
+    accepted = 'accepted'
+    changes_requested = 'changes_requested'
+    failed = 'failed'
+
+
+class TranscriptEntryId(RootModel[str]):
+    root: str = Field(..., title='TranscriptEntryId')
+
+
+class TranscriptEntryRef(MedousaModel):
+    entry_id: TranscriptEntryId
+    entry_seq: int = Field(..., ge=1)
+    session: SessionRef
+
+
+class PeerActivityStatus(Enum):
+    running = 'running'
+    succeeded = 'succeeded'
+    failed = 'failed'
+    blocked = 'blocked'
 
 
 class PeerExecutionState(Enum):
@@ -1414,46 +1546,46 @@ class TurnArtifactRef(MedousaModel):
     role: str
 
 
-class Kind3(Enum):
+class Kind7(Enum):
     model_receipt = 'model_receipt'
 
 
 class TurnPart1(MedousaModel):
-    kind: Kind3
+    kind: Kind7
     model: str
     provider: str
 
 
-class Kind4(Enum):
+class Kind8(Enum):
     text = 'text'
 
 
 class TurnPart2(MedousaModel):
-    kind: Kind4
+    kind: Kind8
     markdown: str
     model_round: int | None = Field(None, ge=0)
     segment_id: str | None = None
 
 
-class Kind5(Enum):
+class Kind9(Enum):
     progress = 'progress'
 
 
 class TurnPart3(MedousaModel):
-    kind: Kind5
+    kind: Kind9
     markdown: str
 
 
-class Kind6(Enum):
+class Kind10(Enum):
     reasoning = 'reasoning'
 
 
 class TurnPart4(MedousaModel):
-    kind: Kind6
+    kind: Kind10
     markdown: str
 
 
-class Kind7(Enum):
+class Kind11(Enum):
     tool_run = 'tool_run'
 
 
@@ -1462,7 +1594,7 @@ class TurnPart5(MedousaModel):
     finished_at: AwareDatetime | None = None
     input_params: list[ToolInputParam] | None = None
     input_summary: str
-    kind: Kind7
+    kind: Kind11
     output_summary: str | None = None
     run_id: str
     started_at: AwareDatetime
@@ -1471,43 +1603,43 @@ class TurnPart5(MedousaModel):
     tool_round: int | None = Field(None, ge=0)
 
 
-class Kind8(Enum):
+class Kind12(Enum):
     handoff = 'handoff'
 
 
 class TurnPart6(MedousaModel):
     handoff_kind: str
-    kind: Kind8
+    kind: Kind12
     text: str
     work_id: str | None = None
 
 
-class Kind9(Enum):
+class Kind13(Enum):
     user_media = 'user_media'
 
 
 class TurnPart7(MedousaModel):
     byte_size: int | None = Field(None, ge=0)
-    kind: Kind9
+    kind: Kind13
     label: str | None = None
     media_id: str
     mime: str
 
 
-class Kind10(Enum):
+class Kind14(Enum):
     user_drawing = 'user_drawing'
 
 
 class TurnPart8(MedousaModel):
     byte_size: int | None = Field(None, ge=0)
-    kind: Kind10
+    kind: Kind14
     label: str | None = None
     media_id: str
     mime: str
     preview_media_id: str
 
 
-class Kind11(Enum):
+class Kind15(Enum):
     generated_media = 'generated_media'
 
 
@@ -1515,7 +1647,7 @@ class TurnPart9(MedousaModel):
     byte_size: int | None = Field(None, ge=0)
     generation_id: str
     height_px: int | None = Field(None, ge=0)
-    kind: Kind11
+    kind: Kind15
     label: str
     media_id: str
     mime: str
@@ -1525,11 +1657,11 @@ class TurnPart9(MedousaModel):
     width_px: int | None = Field(None, ge=0)
 
 
-class Kind12(Enum):
+class Kind16(Enum):
     host_context = 'host_context'
 
 
-class Kind13(Enum):
+class Kind17(Enum):
     attachment_ref = 'attachment_ref'
 
 
@@ -1537,18 +1669,18 @@ class TurnPart11(MedousaModel):
     artifact_id: str
     byte_size: int | None = Field(None, ge=0)
     height_px: int | None = Field(None, ge=0)
-    kind: Kind13
+    kind: Kind17
     label: str
     mime: str
     presentation: str | None = None
 
 
-class Kind14(Enum):
+class Kind18(Enum):
     unknown = 'unknown'
 
 
 class TurnPart12(MedousaModel):
-    kind: Kind14
+    kind: Kind18
 
 
 class TurnSliceSummary(MedousaModel):
@@ -1600,16 +1732,6 @@ class SessionHistorySummary(MedousaModel):
     session_id: str
     turns: int = Field(..., ge=0)
     verification_runs: int = Field(..., ge=0)
-
-
-class TranscriptEntryId(RootModel[str]):
-    root: str = Field(..., title='TranscriptEntryId')
-
-
-class TranscriptEntryRef(MedousaModel):
-    entry_id: TranscriptEntryId
-    entry_seq: int = Field(..., ge=1)
-    session: SessionRef
 
 
 class SessionTranscriptSearchHit(MedousaModel):
@@ -2431,34 +2553,6 @@ class PeerProposalIntent(MedousaModel):
     )
 
 
-class ResourceKind(Enum):
-    project = 'project'
-    forge_work = 'forge_work'
-    vault_note = 'vault_note'
-    vault_folder = 'vault_folder'
-    artifact = 'artifact'
-    component = 'component'
-    feed = 'feed'
-    session = 'session'
-    assignment = 'assignment'
-    job = 'job'
-    work_unit = 'work_unit'
-    bot = 'bot'
-    external_agent = 'external_agent'
-
-
-class ResourceRef(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    authority_id: AuthorityId
-    id: str = Field(
-        ...,
-        description='Native stable identity or a registry identity issued by an adapter. A path, display title, or content hash alone is not an identity.',
-    )
-    kind: ResourceKind
-
-
 class ResourceRelationshipKind(Enum):
     supports = 'supports'
     informs = 'informs'
@@ -2496,63 +2590,6 @@ class WorkBudgetLimits(MedousaModel):
         ..., description='Absolute deadline survives process and conversation restarts.'
     )
     execution_count: int = Field(..., ge=0)
-
-
-class Kind15(Enum):
-    silent = 'silent'
-
-
-class WorkContactPreference1(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    kind: Kind15
-
-
-class Kind16(Enum):
-    return_to_origin = 'return_to_origin'
-
-
-class WorkContactPreference2(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    kind: Kind16
-
-
-class Kind17(Enum):
-    participant = 'participant'
-
-
-class WorkContactPreference3(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    kind: Kind17
-    participant: ResourceRef
-
-
-class Kind18(Enum):
-    channel = 'channel'
-
-
-class WorkContactPreference4(MedousaModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    channel: ResourceRef
-    kind: Kind18
-
-
-class WorkContactPreference(
-    RootModel[
-        WorkContactPreference1
-        | WorkContactPreference2
-        | WorkContactPreference3
-        | WorkContactPreference4
-    ]
-):
-    root: WorkContactPreference1 | WorkContactPreference2 | WorkContactPreference3 | WorkContactPreference4
 
 
 class WorkCoordinationRoundInput(MedousaModel):
@@ -3970,6 +4007,17 @@ class PatchIntegrationConnectionRequest(MedousaModel):
     label: str | None = None
 
 
+class PeerHandoffReviewInput(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    assignment_id: str
+    channel: CoordinationChannelRef
+    reason: str
+    receipt_id: str
+    verdict: PeerHandoffVerdict
+
+
 class PeerProposalActionRequest(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -4802,6 +4850,19 @@ class LocalDeviceTelemetrySnapshot(MedousaModel):
     utilizationPercent: float | None = None
 
 
+class PeerHandoffPolicy(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    completion: HandoffCompletion | None = 'sender_review'
+    contact: WorkContactPreference | None = Field(
+        {'kind': 'return_to_origin'}, validate_default=True
+    )
+    responsibility: HandoffResponsibility | None = 'retain'
+    wake_on_accepted: bool | None = True
+    wake_on_terminal: bool | None = True
+
+
 class ExternalPeerAssignmentBinding(MedousaModel):
     agent_session_id: str
     assignment_id: str
@@ -4841,6 +4902,19 @@ class ExternalPeerAssignmentRequest(MedousaModel):
     target: ExternalPeerTarget
 
 
+class PeerHandoffRecord(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    admission: PeerHandoffAdmission
+    expires_at: AwareDatetime
+    policy: PeerHandoffPolicy
+    request: ExternalPeerAssignmentRequest
+    sender_bot_id: BotId | None = None
+    source: TranscriptEntryRef
+    source_digest: str
+
+
 class PeerAssignmentProgress(MedousaModel):
     current_activity: str | None = None
     last_activity: str | None = None
@@ -4857,11 +4931,20 @@ class PeerAssignmentProposal(MedousaModel):
     request: ExternalPeerAssignmentRequest
 
 
+class PeerHandoffSummary(MedousaModel):
+    admission: PeerHandoffAdmission
+    policy: PeerHandoffPolicy
+    responsible_session: SessionRef
+    review: PeerHandoffReview | None = None
+    state: PeerHandoffState
+
+
 class PeerProposalReviewRecord(MedousaModel):
     binding: ExternalPeerAssignmentBinding | None = Field(
         None, description='Recorded custody remains visible until its terminal receipt arrives.'
     )
     decision: PeerProposalDecision | None = None
+    handoff: PeerHandoffSummary | None = None
     progress: PeerAssignmentProgress | None = None
     proposal: PeerAssignmentProposal
     receipt: ExternalPeerAssignmentReceipt | None = Field(
@@ -4889,7 +4972,7 @@ class RuntimeConfigCommandSpec(
 
 class TurnPart10(MedousaModel):
     context: HostTurnContext
-    kind: Kind12
+    kind: Kind16
 
 
 class TurnPart(
@@ -5640,6 +5723,32 @@ class InteractiveTurnStreamEvent(MedousaModel):
     work_id: str | None = Field(
         None, description='Turn worker handoff — workspace card id (`work-…`).'
     )
+
+
+class PeerHandoffIntent(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    admission: PeerHandoffAdmission | None = 'delegate'
+    after_entry_seq: int = Field(..., ge=0)
+    forge_work_id: str
+    handoff: PeerHandoffPolicy | None = Field(
+        {'completion': 'sender_review', 'contact': {'kind': 'return_to_origin'}, 'responsibility': 'retain', 'wake_on_accepted': True, 'wake_on_terminal': True},
+        validate_default=True,
+    )
+    instructions: str
+    request_key: str
+    runtime: ExternalPeerRuntime | None = None
+    through_entry_seq: int = Field(..., ge=0)
+
+
+class PeerHandoffView(MedousaModel):
+    binding: ExternalPeerAssignmentBinding | None = None
+    handoff: PeerHandoffRecord
+    receipt: ExternalPeerAssignmentReceipt | None = None
+    responsible_session: SessionRef
+    review: PeerHandoffReview | None = None
+    state: PeerHandoffState
 
 
 class PeerProposalActionResponse(MedousaModel):

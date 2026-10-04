@@ -258,6 +258,9 @@ async fn run_host(host: Arc<LocalPeerDispatcher>, mut shutdown: watch::Receiver<
                         host.resume_owner_intake(&principal, event.channel.clone(), assignment_id)
                             .await
                     }
+                    medousa_types::coordination::OwnerEventPayload::AssignmentAccepted { .. } => {
+                        host.resume_handoff_event(event.clone()).await
+                    }
                     medousa_types::coordination::OwnerEventPayload::Approval { .. } => {
                         host.block_owner_event(
                             &event,

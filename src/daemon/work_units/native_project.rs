@@ -18,6 +18,29 @@ mod identity;
 #[cfg(test)]
 mod tests;
 
+fn project_workspace_schema(_: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    crate::schema_api::string_enum_schema(&["isolated", "attached_checkout"])
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WorkProjectCreateInput {
+    /// Stable identity for exact retries. A different request must use a new key.
+    pub request_key: String,
+    pub title: String,
+    /// Outcome authorized by the user; creation does not launch an executor.
+    pub brief: String,
+    /// Existing Git repository on this workshop's disk, including git-init-only repositories.
+    pub repo_path: String,
+    /// Optional selected revision; omission uses the native suggested/current branch.
+    #[serde(default)]
+    pub base_ref: Option<String>,
+    /// Use isolated unless the user explicitly selects the current checkout.
+    #[serde(default)]
+    #[schemars(schema_with = "project_workspace_schema")]
+    pub workspace_mode: medousa_forge::model::WorkspaceMode,
+}
+
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct WorkProjectResolveInput {
@@ -299,7 +322,93 @@ fn resolve_overlay(
     observation["file_effects_replayed"] = false.into();
     Ok(observation)
 }
+fn publish_creation(
+    store: &WorkGraphStore,
+    domain: &UserDomainRef,
+    forge: &Forge,
+    item: WorkItem,
+) -> Result<serde_json::Value> {
+    let project = resolve(
+        store,
+        domain,
+        forge,
+        WorkProjectResolveInput {
+            work_id: item.id.to_string(),
+            target: ProjectResolveTarget::Project {},
+        },
+    )?;
+    let work = resolve(
+        store,
+        domain,
+        forge,
+        WorkProjectResolveInput {
+            work_id: item.id.to_string(),
+            target: ProjectResolveTarget::ForgeWork {},
+        },
+    )?;
+    let relationship = native_graph::link_created_project(
+        store,
+        domain,
+        serde_json::from_value(work["resource"]["reference"].clone())?,
+        serde_json::from_value(project["resource"]["reference"].clone())?,
+    )?;
+    bounded_response(serde_json::json!({
+        "forge_work_id": item.id, "title": item.title, "state": item.state,
+        "workspace_mode": item.workspace_mode, "target": item.target,
+        "project": project, "forge_work": work, "relationship": relationship,
+        "executor_started": false, "session_binding_changed": false,
+        "next": "Use forge_work_id with peer_propose; the user must approve and start the coder separately."
+    }))
+}
+
 impl WorkUnitHost {
+    pub async fn create_project(
+        &self,
+        turn: &TurnExecutionContext,
+        input: WorkProjectCreateInput,
+    ) -> Result<serde_json::Value> {
+        let domain = admitted_domain(turn, true)?;
+        if !turn
+            .principal()
+            .capabilities()
+            .contains(Capability::WorkspaceWrite)
+        {
+            bail!("undertaking creation requires workspace write authority");
+        }
+        if input.title.trim().is_empty()
+            || input.title.len() > 512
+            || input.brief.trim().is_empty()
+            || input.brief.len() > 64 * 1024
+            || input.repo_path.trim().is_empty()
+            || !PathBuf::from(&input.repo_path).is_absolute()
+            || input.base_ref.as_ref().is_some_and(|reference| {
+                reference.trim().is_empty()
+                    || reference != reference.trim()
+                    || reference.starts_with('-')
+                    || reference.chars().any(char::is_control)
+            })
+        {
+            bail!(
+                "creation requires a title, brief, absolute workshop repository path, and valid base ref"
+            );
+        }
+        let host = crate::daemon::coordination::local_coordination_host().ok_or_else(|| {
+            anyhow::anyhow!("undertaking creation is unavailable on this workshop")
+        })?;
+        let item = host
+            .create_undertaking_for_owner(domain.user_id.clone(), input)
+            .await?;
+        // The native graph authors both resource identities. Retries also repair an
+        // interrupted publication after Forge creation, without creating another item.
+        let store = self.store.clone();
+        let forge = self.forge.clone();
+        self.execution
+            .run(ExecutionClass::Observation, 8 * 1024 * 1024, move || {
+                Ok(publish_creation(&store, &domain, &forge, item))
+            })
+            .await?
+    }
+
     pub async fn resolve_project(
         &self,
         turn: &TurnExecutionContext,

@@ -4419,6 +4419,20 @@
         ],
         "type": "string"
       },
+      "HandoffCompletion": {
+        "enum": [
+          "sender_review",
+          "worker_result"
+        ],
+        "type": "string"
+      },
+      "HandoffResponsibility": {
+        "enum": [
+          "retain",
+          "transfer"
+        ],
+        "type": "string"
+      },
       "HardwareProbe": {
         "properties": {
           "availableRamMb": {
@@ -6045,6 +6059,132 @@
         ],
         "type": "string"
       },
+      "PeerHandoffAdmission": {
+        "enum": [
+          "delegate",
+          "propose"
+        ],
+        "type": "string"
+      },
+      "PeerHandoffPolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "completion": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HandoffCompletion"
+              }
+            ],
+            "default": "sender_review"
+          },
+          "contact": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkContactPreference"
+              }
+            ],
+            "default": {
+              "kind": "return_to_origin"
+            }
+          },
+          "responsibility": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HandoffResponsibility"
+              }
+            ],
+            "default": "retain"
+          },
+          "wake_on_accepted": {
+            "default": true,
+            "type": "boolean"
+          },
+          "wake_on_terminal": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "PeerHandoffReview": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "receipt_id": {
+            "type": "string"
+          },
+          "sender_session": {
+            "$ref": "#/components/schemas/SessionRef"
+          },
+          "turn_id": {
+            "type": "string"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/PeerHandoffVerdict"
+          }
+        },
+        "required": [
+          "reason",
+          "receipt_id",
+          "sender_session",
+          "turn_id",
+          "verdict"
+        ],
+        "type": "object"
+      },
+      "PeerHandoffState": {
+        "enum": [
+          "awaiting_acceptance",
+          "working",
+          "awaiting_sender_review",
+          "accepted",
+          "changes_requested",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "PeerHandoffSummary": {
+        "description": "Inbox metadata beside its existing proposal, binding and receipt; no duplicated payloads.",
+        "properties": {
+          "admission": {
+            "$ref": "#/components/schemas/PeerHandoffAdmission"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/PeerHandoffPolicy"
+          },
+          "responsible_session": {
+            "$ref": "#/components/schemas/SessionRef"
+          },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PeerHandoffReview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/PeerHandoffState"
+          }
+        },
+        "required": [
+          "admission",
+          "policy",
+          "responsible_session",
+          "state"
+        ],
+        "type": "object"
+      },
+      "PeerHandoffVerdict": {
+        "enum": [
+          "accept",
+          "changes_requested"
+        ],
+        "type": "string"
+      },
       "PeerProposalActionRequest": {
         "additionalProperties": false,
         "description": "Decisions take no mutable assignment fields or caller-supplied owner id.",
@@ -6205,6 +6345,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/PeerProposalDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "handoff": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PeerHandoffSummary"
               },
               {
                 "type": "null"

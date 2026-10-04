@@ -56,6 +56,16 @@ it** sends the current message through a restricted setup phase: it can list,
 bind, or create a project, but receives no repository mutation or command
 authority until the following bound turn.
 
+You can also ask an assistant such as Taco to create an undertaking in an
+existing Git folder and prepare a coder assignment. The assistant creates the
+project on the connected workshop and retains its own chat and mode. When your
+request already asks for the coder to do the work, the assistant can delegate
+it directly on that workshop. Recommendations needing another decision still
+return an approval card. By default the sender keeps responsibility, receives
+acceptance and completion updates, and reviews the result. Creating a project
+alone does not launch a coder. The folder can contain only `git init`
+or have existing uncommitted files; Medousa preserves those files and the index.
+
 Cursor and Codex start only after the conversation has a project. Medousa
 resolves that durable binding on the workshop daemon and launches the external
 agent inside the project's governed workspace. Switching projects stops the
@@ -533,10 +543,11 @@ See `apps/medousa-home/src/lib/forge.ts` and daemon routes:
   source/Git events (Code reconciles every open buffer from this stream)
 - `GET /v1/world/bindings/{work_id}` for World status
 
-Repository inspection distinguishes a branch name from a usable commit. Empty
-repositories must receive an initial commit before Code can create its isolated
-working copy; if a saved starting branch was renamed or deleted, choose an
-existing branch and retry.
+Repository inspection distinguishes a branch name from a usable commit. A folder initialized with `git init` can start a project immediately. Medousa
+creates an empty initial commit on its current branch without adding a README,
+staging files, or changing existing staged content. Both isolated copies and
+current-checkout projects support this setup. If a saved starting branch in an
+existing repository was renamed or deleted, choose an existing branch and retry.
 
 ## Review and ship from chat
 

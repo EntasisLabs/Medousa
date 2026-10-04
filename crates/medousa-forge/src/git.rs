@@ -517,6 +517,67 @@ impl GitEngine {
         })
     }
 
+    /// Bootstrap only the current unborn branch with an empty initial commit.
+    /// Never stage files, consume the user's index, or replace a concurrent commit.
+    pub fn bootstrap_empty_repository(&self, cwd: &Path, base_ref: &str) -> Result<GitOid> {
+        if self.has_commits(cwd)? {
+            return self.resolve_base_oid(cwd, base_ref);
+        }
+        let branch = self.current_branch(cwd)?.ok_or_else(|| {
+            ForgeError::Git("an empty repository requires a checked-out local branch".into())
+        })?;
+        if base_ref != branch && base_ref != "HEAD" {
+            return Err(ForgeError::BaseRefMissing {
+                repo_path: cwd.to_path_buf(),
+                reference: base_ref.to_string(),
+            });
+        }
+        self.run(cwd, &["check-ref-format", "--branch", &branch])?;
+        let temporary_index = cwd
+            .join(self.run(cwd, &["rev-parse", "--git-dir"])?.trim())
+            .join(format!(
+                "medousa-bootstrap-{}-{}.index",
+                std::process::id(),
+                PORTABLE_BUNDLE_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            ));
+        let tree = (|| {
+            self.run_with_index(cwd, &temporary_index, &["read-tree", "--empty"])?;
+            self.run_with_index(cwd, &temporary_index, &["write-tree"])
+        })();
+        let _ = clear_temporary_index(&temporary_index);
+        let tree = tree?;
+        let mut command = self.command();
+        command
+            .args([
+                "commit-tree",
+                tree.trim(),
+                "-m",
+                "Initialize repository for Medousa",
+            ])
+            .current_dir(cwd)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GIT_AUTHOR_NAME", FORGE_COMMITTER_NAME)
+            .env("GIT_AUTHOR_EMAIL", FORGE_COMMITTER_EMAIL)
+            .env("GIT_COMMITTER_NAME", FORGE_COMMITTER_NAME)
+            .env("GIT_COMMITTER_EMAIL", FORGE_COMMITTER_EMAIL);
+        let (stdout, stderr, truncated, status) =
+            run_command_bounded(command, MAX_CAPTURE_BYTES)
+                .map_err(|error| ForgeError::Git(error.to_string()))?;
+        if truncated || !status.success() {
+            return Err(ForgeError::Git(format!(
+                "initial commit failed: {}",
+                String::from_utf8_lossy(&stderr)
+            )));
+        }
+        let oid = GitOid::new(String::from_utf8_lossy(&stdout).trim());
+        let reference = format!("refs/heads/{branch}");
+        let missing = "0".repeat(oid.as_str().len());
+        self.run(cwd, &["update-ref", &reference, oid.as_str(), &missing])?;
+        Ok(oid)
+    }
+
     pub fn head_oid(&self, cwd: &Path) -> Result<GitOid> {
         self.resolve_oid(cwd, "HEAD")
     }
@@ -1278,7 +1339,14 @@ impl GitEngine {
         } else {
             cwd.join(index_path)
         };
-        std::fs::copy(index_path, temporary_index)?;
+        match std::fs::copy(index_path, temporary_index) {
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                // Git init and an empty bootstrap commit need not create a real index.
+                self.run_with_index(cwd, temporary_index, &["read-tree", "--empty"])?;
+            }
+            Err(error) => return Err(error.into()),
+        }
 
         let result = self
             .run_with_index(cwd, temporary_index, &["write-tree"])

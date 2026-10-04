@@ -787,4 +787,64 @@ async fn host_admits_project_observation_and_rejects_read_only_or_foreign_owners
     )
     .unwrap();
     assert!(host.resolve_project(&read_only, input()).await.is_err());
+    assert!(
+        host.create_project(
+            &read_only,
+            WorkProjectCreateInput {
+                request_key: "denied".into(),
+                title: "No".into(),
+                brief: "Do not create".into(),
+                repo_path: "/tmp/unused".into(),
+                base_ref: Some("main".into()),
+                workspace_mode: WorkspaceMode::Isolated,
+            }
+        )
+        .await
+        .is_err()
+    );
+}
+
+#[test]
+fn newly_created_undertaking_has_native_graph_identity_without_rebinding_or_launching() {
+    let fx = fixture();
+    let item = register(&fx, &fx.repo, "creation", true);
+    let response = publish_creation(&fx.graph, &fx.domain, &fx.forge, item.clone()).unwrap();
+    assert_eq!(response["forge_work_id"], item.id.as_str());
+    assert_eq!(response["executor_started"], false);
+    assert_eq!(response["session_binding_changed"], false);
+    assert_eq!(response["relationship"]["kind"], "tracks");
+    assert_eq!(
+        response["relationship"]["to"],
+        response["project"]["resource"]["reference"]
+    );
+    assert_eq!(
+        response["project"]["resource"]["reference"]["kind"],
+        "project"
+    );
+    assert_eq!(
+        response["forge_work"]["resource"]["reference"]["kind"],
+        "forge_work"
+    );
+    let revision = fx
+        .graph
+        .query(&fx.domain, WorkGraphQuery::default())
+        .unwrap()
+        .revision;
+    let replay = publish_creation(&fx.graph, &fx.domain, &fx.forge, item.clone()).unwrap();
+    assert_eq!(
+        replay["project"]["resource"]["reference"],
+        response["project"]["resource"]["reference"]
+    );
+    assert_eq!(
+        fx.graph
+            .query(&fx.domain, WorkGraphQuery::default())
+            .unwrap()
+            .revision,
+        revision
+    );
+    let foreign = UserDomainRef {
+        user_id: "other".into(),
+        ..fx.domain.clone()
+    };
+    assert!(publish_creation(&fx.graph, &foreign, &fx.forge, item).is_err());
 }

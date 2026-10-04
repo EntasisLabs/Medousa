@@ -17,6 +17,9 @@ OUT = ROOT / "apps" / "medousa-home" / "src" / "lib" / "types" / "generated" / "
 # Nested $ref targets (MediaRef, ContextUsageReport, …) are resolved automatically.
 EXPORTED_TYPES = [
     "CodingRuntimePreferences",
+    "PeerHandoffIntent",
+    "PeerHandoffReviewInput",
+    "PeerHandoffView",
     "WorkParticipantQuery",
     "WorkParticipantMutation",
     "WorkParticipantResponse",

@@ -31,6 +31,8 @@ pub(crate) use host::wake_work_coordinator;
 pub(crate) mod native_coder;
 pub(crate) mod work;
 pub use conversational::PeerProposalIntent;
+mod handoff;
+mod handoff_wake;
 pub mod http;
 mod owner_intake;
 mod progress;
@@ -493,10 +495,12 @@ impl ExternalPeerExecutionPort for LocalPeerCall<'_> {
     ) -> Result<ExternalPeerAssignmentBinding> {
         let prompt = self.host.hydrate(&self.principal, request, true).await?;
         if request.target.runtime == ExternalPeerRuntime::Medousa {
-            return self
+            let binding = self
                 .host
                 .assign_native_coder(&self.principal, request, prompt)
-                .await;
+                .await?;
+            self.host.accept_handoff(&binding).await?;
+            return Ok(binding);
         }
         if let Some(agent_session_id) = request.existing_agent_session_id.as_deref() {
             super::agents::require_adoptable_agent_session(
@@ -535,6 +539,7 @@ impl ExternalPeerExecutionPort for LocalPeerCall<'_> {
                 .await?;
                 return Err(error);
             }
+            self.host.accept_handoff(&binding).await?;
             return Ok(binding);
         }
         if !self.discover().await?.iter().any(|candidate| {
@@ -592,6 +597,7 @@ impl ExternalPeerExecutionPort for LocalPeerCall<'_> {
             )
             .await
             .map_err(|(_, message)| anyhow::anyhow!(message))?;
+            self.host.accept_handoff(&binding).await?;
             Ok::<_, anyhow::Error>(())
         }
         .await;

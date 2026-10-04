@@ -348,7 +348,12 @@ Home normally calls `repositories/inspect` before `items/start`. Inspection is
 read-only and returns the canonical worktree root, display name, current and
 suggested base branch, `has_commits`, dirty-file count, and remotes. An unborn
 repository returns `has_commits: false` and `suggested_base_ref: null`; clients
-must ask the user to create an initial commit before starting governed work.
+can start the project using the current unborn branch. Explicit project creation
+through `items/start` creates an empty initial commit without changing files or
+staging the user’s index. Low-level `items` registration remains read-only with
+respect to the repository and still requires a commit. `items/start` accepts an
+optional `request_key`; exact retries return the same undertaking, including
+after a restart, while changed parameters or a closed undertaking reject reuse.
 If a previously selected base ref disappears, registration/provisioning returns
 `409 base_ref_missing` instead of silently selecting another branch. New work
 can select an existing branch; a previously saved draft must be recreated

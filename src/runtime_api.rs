@@ -19,7 +19,7 @@ use crate::daemon::coordination::assignments::{
 #[cfg(feature = "full-daemon")]
 use crate::daemon::work_units::{
     WorkContentResolveInput, WorkGraphMutateInput, WorkNativeReconcileInput,
-    WorkNativeResolveInput, WorkProjectResolveInput, WorkUnitGetQuery,
+    WorkNativeResolveInput, WorkProjectCreateInput, WorkProjectResolveInput, WorkUnitGetQuery,
 };
 use crate::events::TuiEvent;
 use crate::public_api::{COGNITION_RUNTIME_MUTATE, COGNITION_RUNTIME_QUERY};
@@ -125,6 +125,9 @@ pub enum RuntimeMutateAction {
     #[cfg(feature = "full-daemon")]
     #[serde(rename = "work.reconcile")]
     WorkReconcile(WorkNativeReconcileInput),
+    #[cfg(feature = "full-daemon")]
+    #[serde(rename = "work.create_project")]
+    WorkCreateProject(WorkProjectCreateInput),
     #[cfg(feature = "full-daemon")]
     #[serde(rename = "work.resolve_project")]
     WorkResolveProject(WorkProjectResolveInput),
@@ -417,6 +420,7 @@ impl JsonSchema for RuntimeMutateAction {
             "work.record",
             "work.resolve",
             "work.reconcile",
+            "work.create_project",
             "work.resolve_project",
             "work.resolve_content",
             "work.coordinate",
@@ -537,6 +541,11 @@ pub fn runtime_type_schemas() -> Vec<TypedActionSchema> {
                 "work.resolve",
                 "Resolve an exact user-vault note, folder, or stable reference on an explicit vault root; records bounded native metadata without reading note bodies into the response",
             ),
+            typed_action_schema::<WorkProjectCreateInput>(
+                MUTATE_ID,
+                "work.create_project",
+                "Create an owned Forge undertaking from an existing workshop Git repository only when the user authorizes new work. Empty repositories receive an empty initial commit without staging user files. Reuse request_key for exact retries. Returns native project/work graph references and forge_work_id for peer_handoff or peer_propose. Does not change chat mode or binding, launch a coder, or grant execution authority",
+            ),
             typed_action_schema::<WorkProjectResolveInput>(
                 MUTATE_ID,
                 "work.resolve_project",
@@ -626,7 +635,7 @@ impl CognitionRuntimeQueryTool {
 
 #[medousa_tool(id = MUTATE_ID)]
 impl CognitionRuntimeMutateTool {
-    /// Mutate durable runtime work. work.coordinate registers a bounded native executor/reviewer handoff without issuing grants. work.record saves session-independent intent; work.resolve refreshes exact native vault metadata; work.reconcile repairs vault identity metadata; work.resolve_project observes owned Forge projects, work, and pinned overlays; work.resolve_content observes artifacts, components, and feeds without executing work. job.enqueue and workflow.run execute through their native admission. Fetch fields with cognition_schema types=[...].
+    /// Mutate durable runtime work. work.create_project creates a user-authorized undertaking on this workshop and returns forge_work_id for peer_handoff or peer_propose without changing this chat or launching a coder. work.coordinate registers a bounded native executor/reviewer handoff without issuing grants. work.record saves session-independent intent; work.resolve refreshes exact native vault metadata; work.reconcile repairs vault identity metadata; work.resolve_project observes owned Forge projects, work, and pinned overlays; work.resolve_content observes artifacts, components, and feeds without executing work. job.enqueue and workflow.run execute through their native admission. Fetch fields with cognition_schema types=[...].
     async fn invoke_typed(
         &self,
         action: RuntimeMutateAction,
@@ -750,6 +759,13 @@ async fn dispatch_mutate(
         RuntimeMutateAction::WorkReconcile(params) => {
             let (host, turn) = admitted_work_access()?;
             host.reconcile_native(&turn, params)
+                .await
+                .map_err(runtime_error)
+        }
+        #[cfg(feature = "full-daemon")]
+        RuntimeMutateAction::WorkCreateProject(params) => {
+            let (host, turn) = admitted_work_access()?;
+            host.create_project(&turn, params)
                 .await
                 .map_err(runtime_error)
         }
@@ -1174,6 +1190,40 @@ mod tests {
         let mut spoofed_command = repair;
         spoofed_command["command"]["owner_id"] = json!("other");
         assert!(serde_json::from_value::<RuntimeMutateAction>(spoofed_command).is_err());
+        let creation = json!({"action":"work.create_project", "request_key":"penjamin",
+            "title":"Penjamin", "brief":"Scaffold the app", "repo_path":"/tmp/penjamin",
+            "base_ref":"main", "workspace_mode":"attached_checkout"});
+        assert!(matches!(
+            serde_json::from_value::<RuntimeMutateAction>(creation.clone()).unwrap(),
+            RuntimeMutateAction::WorkCreateProject(_)
+        ));
+        let inferred: RuntimeMutateAction = serde_json::from_value(json!({
+            "action":"work.create_project", "request_key":"infer", "title":"App",
+            "brief":"Scaffold", "repo_path":"/tmp/app"
+        }))
+        .unwrap();
+        match inferred {
+            RuntimeMutateAction::WorkCreateProject(input) => {
+                assert!(input.base_ref.is_none());
+                assert_eq!(
+                    input.workspace_mode,
+                    medousa_forge::model::WorkspaceMode::Isolated
+                );
+            }
+            _ => panic!("wrong action"),
+        }
+        for field in [
+            "owner_id",
+            "profile_id",
+            "session_id",
+            "execution_runtime_id",
+            "approve",
+            "launch",
+        ] {
+            let mut spoofed = creation.clone();
+            spoofed[field] = json!("spoofed");
+            assert!(serde_json::from_value::<RuntimeMutateAction>(spoofed).is_err());
+        }
         let project = json!({"action":"work.resolve_project","work_id":"work-test","target":{"kind":"project"}});
         assert!(matches!(
             serde_json::from_value::<RuntimeMutateAction>(project.clone()).unwrap(),
@@ -1216,6 +1266,7 @@ mod tests {
             "work.record",
             "work.resolve",
             "work.reconcile",
+            "work.create_project",
             "work.resolve_project",
             "work.resolve_content",
             "work.coordinate",
@@ -1333,6 +1384,7 @@ mod tests {
             "work.record",
             "work.resolve",
             "work.reconcile",
+            "work.create_project",
             "work.resolve_project",
             "work.resolve_content",
             "work.coordinate",

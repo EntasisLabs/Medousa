@@ -28,6 +28,7 @@ pub const AUTO_TITLE_MAX_CHARS: usize = 48;
 
 fn is_internal_work_session(session_id: &str) -> bool {
     session_id.starts_with(medousa_types::work_coordinator::WORK_COORDINATOR_SESSION_PREFIX)
+        || session_id.starts_with("ses_handoff_")
 }
 
 const SESSION_CATALOG_TABLE: &str = "session_catalog";

@@ -5,13 +5,18 @@ import PeerProposalBar from "./PeerProposalBar.svelte";
 import type { PeerProposalReviewRecord } from "$lib/types/generated/daemon_api";
 
 const api = vi.hoisted(() => ({ list: vi.fn(), act: vi.fn() }));
-const workshopState = vi.hoisted(() => ({ activeWorkshopId: "local", activeLabel: "Mac mini", switching: false, workshops: [] as { kind: string; pairing?: { workshopDeviceId: string } }[] }));
+const navigation = vi.hoisted(() => ({ openChat: vi.fn(() => 'tab'), openProject: vi.fn() }));
+const workshopState = vi.hoisted(() => ({ activeWorkshopId: "local", activeLabel: "Mac mini", switching: false, workshops: [] as { id?: string; label?: string; kind: string; pairing?: { workshopDeviceId: string } }[] }));
 vi.mock("$lib/daemon/coordination", () => ({
   listPeerProposals: api.list, actOnPeerProposal: api.act,
   proposalExecutionTransport: (kind: string, runtime: string) => kind === "portal" ? runtime : null,
 }));
-vi.mock("$lib/stores/connection.svelte", () => ({ connection: { online: true, health: { active_profile_id: "owner", runtime: { advertised_capabilities: ["coordination.operator_proposals.v1"] } } } }));
+vi.mock("$lib/stores/connection.svelte", () => ({ connection: { online: true, health: { active_profile_id: "owner", runtime: { authority_id: `auth_${"a".repeat(64)}`, advertised_capabilities: ["coordination.operator_proposals.v1"] } } } }));
 vi.mock("$lib/stores/workshops.svelte", () => ({ workshops: workshopState }));
+vi.mock("$lib/stores/chat.svelte", () => ({ chat: { sessions: [{ session_id: "ses_owner", display_name: "Taco" }] } }));
+vi.mock("$lib/stores/undertakings.svelte", () => ({ undertakings: { active: null, items: [] } }));
+vi.mock("$lib/stores/shellTabs.svelte", () => ({ shellTabs: { openChat: navigation.openChat } }));
+vi.mock("$lib/stores/lmeWorkspace.svelte", () => ({ lmeWorkspace: { openCodeWorkspace: navigation.openProject } }));
 vi.mock("$lib/platform", () => ({ isTauri: () => true }));
 vi.mock("$lib/remotePeerCompletionSync", () => ({ requestRemotePeerCompletionSync: vi.fn() }));
 
@@ -54,7 +59,7 @@ describe("assignment card lifecycle", () => {
     const work = record("proposal-one");
     api.list.mockResolvedValueOnce({ proposals: [work], next_cursor: null });
     await render();
-    expect(document.body.textContent).toContain("Agent is working");
+    expect(document.body.textContent).toContain("Agent working");
     expect(document.body.textContent).toContain("Run verification");
     api.list.mockResolvedValue({ proposals: [], next_cursor: null, tracked_proposal: { ...work, receipt: { outcome: "completed", result: "Verified result" } } });
     await vi.advanceTimersByTimeAsync(15_000); await settle();
@@ -99,5 +104,82 @@ describe("assignment card lifecycle", () => {
     resolve({ proposals: [record("old-session")], next_cursor: null }); await settle();
     expect(document.body.textContent).toContain("Assignment new-session");
     expect(document.body.textContent).not.toContain("Assignment old-session");
+  });
+});
+
+describe("delegation context line", () => {
+  it("opens the execution chat rather than the provider agent id, only after a user click", async () => {
+    api.list.mockResolvedValue({ proposals: [record('native')] });
+    await render();
+    expect(navigation.openChat).not.toHaveBeenCalled();
+    [...document.querySelectorAll('button')].find(button => button.textContent?.includes('Open chat'))!.click();
+    await settle();
+    expect(navigation.openChat).toHaveBeenCalledWith('ses_executor_native', { title: 'Medousa Coder', activate: true });
+    expect(api.act).not.toHaveBeenCalled();
+  });
+
+  it("offers the execution workshop instead of opening remote ids on the active daemon", async () => {
+    workshopState.workshops = [{ id: 'remote-workshop', label: 'Studio', kind: 'portal', pairing: { workshopDeviceId: 'remote' } }];
+    const remote = record('remote-native', 'remote');
+    remote.proposal.request.target.authority_id = 'remote-authority';
+    api.list.mockImplementation(async (_session, runtime) => ({ proposals: runtime === 'remote' ? [remote] : [] }));
+    await render();
+    const labels = [...document.querySelectorAll('button')].map(button => button.textContent);
+    expect(labels.some(label => label?.includes('Open Studio'))).toBe(true);
+    expect(labels.some(label => label?.includes('Open project') || label?.includes('Open chat'))).toBe(false);
+    expect(navigation.openChat).not.toHaveBeenCalled();
+    expect(navigation.openProject).not.toHaveBeenCalled();
+  });
+
+  it("keeps assignment details collapsed and preserves expansion through progress updates", async () => {
+    const work = record("compact-work");
+    work.proposal.request.instructions = 'Scaffold Penjamin\nLong assignment details stay behind the disclosure.';
+    api.list.mockResolvedValue({ proposals: [work] });
+    await render();
+    const details = document.querySelector('details.agent-work-line')! as HTMLDetailsElement;
+    const summary = details.querySelector('summary')!;
+    expect(details.open).toBe(false);
+    expect(summary.textContent).toContain('Scaffold Penjamin');
+    expect(summary.textContent).not.toContain('Long assignment');
+    expect(summary.textContent).not.toContain('Run verification');
+    details.open = true;
+    api.list.mockResolvedValue({ proposals: [], tracked_proposal: { ...work, progress: { ...work.progress, current_activity: 'Build application' } } });
+    await vi.advanceTimersByTimeAsync(15_000); await settle();
+    expect(document.querySelector('details.agent-work-line')).toBe(details);
+    expect(details.open).toBe(true);
+    expect(document.body.textContent).toContain('Build application');
+    expect(api.act).not.toHaveBeenCalled();
+  });
+
+  it("keeps a completed worker awaiting sender review until the sender accepts", async () => {
+    const work = record('review-work');
+    work.receipt = { ...work.receipt, outcome: 'completed', result: 'Worker finished' } as NonNullable<typeof work.receipt>;
+    work.handoff = { admission: 'delegate', policy: { completion: 'sender_review', responsibility: 'retain' }, responsible_session: work.proposal.request.owner_session, state: 'awaiting_sender_review' };
+    api.list.mockResolvedValue({ proposals: [work] });
+    await render();
+    expect(document.querySelector('details.agent-work-line > summary')?.textContent).toContain('Awaiting sender review');
+    expect(document.body.textContent).toContain('Taco');
+    expect(document.body.textContent).toContain('Review pending');
+    expect(document.body.textContent).not.toContain('Result accepted');
+    expect([...document.querySelectorAll('button')].some(button => button.textContent?.includes('Approve'))).toBe(false);
+    api.list.mockResolvedValue({ proposals: [], tracked_proposal: { ...work, handoff: { ...work.handoff, state: 'accepted', review: { verdict: 'accept', reason: 'Checks and scope verified', receipt_id: 'receipt', sender_session: work.proposal.request.owner_session, turn_id: 'review-turn' } } } });
+    await vi.advanceTimersByTimeAsync(15_000); await settle();
+    expect(document.querySelector('details.agent-work-line > summary')?.textContent).toContain('Result accepted');
+    expect(api.act).not.toHaveBeenCalled();
+  });
+
+  it("shows approval actions for proposals while a direct handoff waits for admission without another approval", async () => {
+    const proposal = record('suggested-work');
+    proposal.binding = null;
+    proposal.progress = null;
+    api.list.mockResolvedValue({ proposals: [proposal] });
+    await render();
+    expect([...document.querySelectorAll('button')].some(button => button.textContent === 'Approve & start')).toBe(true);
+    const direct = { ...proposal, handoff: { admission: 'delegate' as const, policy: {}, responsible_session: proposal.proposal.request.owner_session, state: 'awaiting_acceptance' as const } };
+    api.list.mockResolvedValue({ proposals: [], tracked_proposal: direct });
+    await vi.advanceTimersByTimeAsync(15_000); await settle();
+    expect(document.querySelector('details.agent-work-line > summary')?.textContent).toContain('Waiting for agent');
+    expect([...document.querySelectorAll('button')].some(button => button.textContent?.includes('Approve'))).toBe(false);
+    expect(api.act).not.toHaveBeenCalled();
   });
 });

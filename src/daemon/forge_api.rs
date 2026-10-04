@@ -913,6 +913,8 @@ struct RegisterRequest {
     policy: Option<WorkPolicy>,
     #[serde(default)]
     workspace_mode: WorkspaceMode,
+    #[serde(default)]
+    request_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1201,7 +1203,7 @@ fn inspect_repository_path_from_items(
         .to_string();
     let existing_projects = existing_projects_for_repository(items, &path);
     let state_explanation = if !has_commits {
-        "This repository has no commits yet. Create an initial commit before starting a Medousa project.".into()
+        "This repository is ready to start. Medousa will create an empty initial commit without staging your files.".into()
     } else if changed_files > 0 {
         format!(
             "{changed_files} uncommitted {} already exist in the repository. Medousa starts from the committed revision, so those outside changes stay separate.",
@@ -1694,8 +1696,8 @@ async fn start_item(
 ) -> ApiResult<Json<ItemProjection>> {
     admit_forge(
         &state,
-        medousa_forge::execution::ExecutionClass::StoreIo,
-        64 * 1024,
+        medousa_forge::execution::ExecutionClass::LocalMutation,
+        256 * 1024,
         {
             let state = state.clone();
             move || {
@@ -1704,6 +1706,68 @@ async fn start_item(
         },
     )
     .await
+}
+
+pub(crate) async fn create_owned_undertaking(
+    state: &AppState,
+    owner: String,
+    input: crate::daemon::work_units::WorkProjectCreateInput,
+) -> Result<WorkItem, String> {
+    let mut context = WorkerCodeProjectSetupContext::from_app_state(state);
+    context.owner_id = owner;
+    state
+        .forge_execution
+        .run(
+            medousa_forge::execution::ExecutionClass::LocalMutation,
+            256 * 1024,
+            move || {
+                Ok((|| -> ApiResult<WorkItem> {
+                    let repo_path = PathBuf::from(input.repo_path);
+                    let base_ref = match input.base_ref {
+                        Some(reference) => reference,
+                        None => match context
+                            .forge
+                            .project_creation_base_ref(&context.owner_id, &input.request_key)
+                            .map_err(map_err)?
+                        {
+                            Some(reference) => reference,
+                            None => context
+                                .forge
+                                .git()
+                                .suggested_base_ref(&repo_path)
+                                .map_err(map_err)?
+                                .or(context
+                                    .forge
+                                    .git()
+                                    .current_branch(&repo_path)
+                                    .map_err(map_err)?)
+                                .ok_or_else(|| {
+                                    request_error(
+                                        StatusCode::BAD_REQUEST,
+                                        "repository has no usable starting branch",
+                                    )
+                                })?,
+                        },
+                    };
+                    start_item_from_setup_context(
+                        &context,
+                        RegisterRequest {
+                            title: input.title,
+                            brief: input.brief,
+                            repo_path,
+                            base_ref,
+                            workspace_mode: input.workspace_mode,
+                            owner: None,
+                            policy: None,
+                            request_key: Some(input.request_key),
+                        },
+                    )
+                })())
+            },
+        )
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|(_, Json(error))| error.error)
 }
 
 fn start_item_from_request(state: &AppState, body: RegisterRequest) -> ApiResult<WorkItem> {
@@ -1720,7 +1784,7 @@ fn start_item_from_setup_context(
     let owner = body.owner.unwrap_or_else(|| context.owner_id.clone());
     let registered = context
         .forge
-        .register_with_policy_and_workspace_mode(
+        .register_project_with_request_key(
             body.title,
             body.brief,
             &body.repo_path,
@@ -1729,39 +1793,50 @@ fn start_item_from_setup_context(
             body.policy.unwrap_or_default(),
             body.workspace_mode,
             &actor,
+            body.request_key.as_deref(),
         )
         .map_err(map_err)?;
-    if let Err(error) = touch_repository(&repository_path, None) {
-        match context.forge.discard(&registered.id, &actor) {
-            Ok(discarded) => {
-                publish_item_to_events(&context.forge_events, &discarded, "start_failed_released")
-            }
-            Err(discard_error) => tracing::warn!(
-                work_id = %registered.id,
-                error = %discard_error,
-                "failed to release project after repository touch failure"
-            ),
-        }
-        return Err(error);
+    if registered.workspace_environment().is_some() {
+        return Ok(registered);
     }
-    publish_item_to_events(&context.forge_events, &registered, "registered");
-    let item = match context.forge.provision(&registered.id, &actor) {
-        Ok(item) => item,
-        Err(err) => {
-            // `start` is one user action even though Forge records registration
-            // and provisioning separately. If setup fails, release that failed
-            // item so retries do not accumulate unusable projects in Home.
+    if let Err(error) = touch_repository(&repository_path, None) {
+        if body.request_key.is_none() {
             match context.forge.discard(&registered.id, &actor) {
                 Ok(discarded) => publish_item_to_events(
                     &context.forge_events,
                     &discarded,
                     "start_failed_released",
                 ),
-                Err(discard_err) => tracing::warn!(
+                Err(discard_error) => tracing::warn!(
                     work_id = %registered.id,
-                    error = %discard_err,
-                    "failed to release project after setup failure"
+                    error = %discard_error,
+                    "failed to release project after repository touch failure"
                 ),
+            }
+        }
+        return Err(error);
+    }
+    publish_item_to_events(&context.forge_events, &registered, "registered");
+    let item = match context.forge.provision_project(&registered.id, &actor) {
+        Ok(item) => item,
+        Err(err) => {
+            // `start` is one user action even though Forge records registration
+            // and provisioning separately. Legacy requests release a failed
+            // item. Keyed requests retain their exact durable outcome so an
+            // uncertain retry cannot silently create a second undertaking.
+            if body.request_key.is_none() {
+                match context.forge.discard(&registered.id, &actor) {
+                    Ok(discarded) => publish_item_to_events(
+                        &context.forge_events,
+                        &discarded,
+                        "start_failed_released",
+                    ),
+                    Err(discard_err) => tracing::warn!(
+                        work_id = %registered.id,
+                        error = %discard_err,
+                        "failed to release project after setup failure"
+                    ),
+                }
             }
             return Err(map_err(err));
         }
@@ -2309,6 +2384,7 @@ fn create_code_project_with_context(
             owner: None,
             policy: None,
             workspace_mode: WorkspaceMode::Isolated,
+            request_key: None,
         },
     ) {
         Ok(item) => item,

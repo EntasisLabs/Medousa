@@ -1,10 +1,37 @@
 # Reviewing delegated work
 
-On a supported workshop, ask Medousa to have Codex, Cursor, or Hermes work on
-the project bound to this chat. Medousa can discover local agent availability
-and prepare a delegation proposal. In Assistant mode on mobile, it can also
+On a supported workshop, ask Medousa to have Medousa Coder, Codex, Cursor, or
+Hermes work on a project. Medousa can discover local agent availability and
+delegate work that your request already authorizes, or suggest a proposal when
+another decision is needed. In Assistant mode on mobile, it can also
 prepare that proposal on an authorized paired workshop selected from active-work
-discovery. Cloud adapters and autonomous chains are not yet connected.
+discovery.
+
+## Tracking work in chat
+
+Delegated work appears as a compact context line above the composer. Open it to
+see the worker, workshop, sender responsibility, and review status. The full
+assignment, agent result, and shared context each stay behind a disclosure.
+Peer and workshop background workers use the same compact treatment inside the
+conversation, with their transcript and tool activity available on expansion.
+
+Local sender-controlled handoffs can start directly when your request authorizes
+the work. Only proposals needing your decision show **Approve & start** (or
+**Approve & adopt**). By default the sender retains responsibility, receives
+acceptance and completion updates, and reviews the returned result. A finished
+worker stays **Awaiting sender review** until the sender records its decision;
+**Result accepted** means that review was accepted. If the sender chose worker
+completion without review, the line says **Work completed** instead.
+
+Ownership transfer, review, sender wakeups, and user follow-up are separate
+choices captured by the sender. Inspect them under **Shared context and scope**.
+Choosing no user follow-up does not suppress the sender's requested callbacks.
+An unavailable workshop leaves the last observed work visible. Refresh errors
+and delayed progress do not turn a working assignment into a failed one.
+
+On the execution workshop, the expanded line offers **Open project**, and native
+Medousa Coder assignments offer **Open chat**. For another connected workshop,
+open that workshop first; session and project ids remain scoped to its daemon.
 
 ## Background Medousa workers
 
@@ -51,7 +78,7 @@ immutable provenance, not a separate model-authored transcript. Discovery
 suggests the most recent 32 entries; one proposal can share at most 256 entries.
 Review that selection before starting.
 
-On a supported workshop, a proposal appears above the composer. Review the
+On a supported workshop, a proposal appears above the composer. Expand it to review the
 agent, instructions, channel, governed work item, execution workshop, exact
 shared conversation ranges, expiry, and owner-continuation choice.
 

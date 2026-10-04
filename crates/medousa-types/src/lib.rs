@@ -41,6 +41,7 @@ pub mod turn_stream;
 pub mod turn_ticket;
 pub mod work_coordination;
 pub mod work_coordinator;
+pub mod work_handoff;
 pub mod work_participant;
 pub mod work_provider;
 pub mod work_unit;

@@ -240,12 +240,14 @@ pub fn host_tool_domain_catalog() -> &'static [ToolDomainCatalogEntry] {
             #[cfg(feature = "full-daemon")]
             ToolDomainCatalogEntry {
                 domain: "peers",
-                summary: "Inspect active work, rank Assistant placement candidates, discover local Medousa Coder/Codex/Cursor/Hermes and saved coding preferences, and propose owned project work independently of the chat binding for human approval; never grants or launches work",
+                summary: "Discover local coders, delegate user-requested work through native admission, propose recommendations, and review exact handoff results",
                 tools: &[
                     "cognition_active_work_discover",
                     "cognition_assistant_placement",
                     "cognition_peer_discover",
                     "cognition_peer_propose",
+                    "cognition_peer_handoff",
+                    "cognition_peer_review",
                 ],
             },
             ToolDomainCatalogEntry {

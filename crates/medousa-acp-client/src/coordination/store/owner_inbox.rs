@@ -183,6 +183,25 @@ impl CoordinationStore {
                 continue;
             }
             let view = match (|| -> Result<OwnerEventView> {
+                if let Some(ack) = self.owner_event_ack(&event)? {
+                    return Ok(OwnerEventView {
+                        event,
+                        status: OwnerEventStatus::Consumed,
+                        latest_attempt: Some(ack.intake.clone()),
+                        acknowledgment: Some(ack),
+                        blocked: None,
+                    });
+                }
+                let legacy_receipt = match legacy_receipt {
+                    Some(r)
+                        if self
+                            .handoff(&r.binding.channel, &r.binding.assignment_id)?
+                            .is_none() =>
+                    {
+                        Some(r)
+                    }
+                    _ => None,
+                };
                 if let Some(receipt) = legacy_receipt {
                     if self.receipt(&receipt.binding.channel, &receipt.binding.assignment_id)?
                         != receipt
@@ -472,7 +491,7 @@ impl CoordinationStore {
         self.owner_event_blocked(&event)
     }
 
-    fn owner_event_ack(
+    pub(super) fn owner_event_ack(
         &self,
         event: &OwnerEvent,
     ) -> Result<Option<OwnerEventIntakeAcknowledgment>> {
@@ -483,8 +502,26 @@ impl CoordinationStore {
             Err(error) => return Err(error.into()),
         }
         let ack: OwnerEventIntakeAcknowledgment = self.read(&path)?;
+        let handoff_id = match &event.payload {
+            OwnerEventPayload::AssignmentAccepted { binding } => {
+                Some(binding.assignment_id.as_str())
+            }
+            OwnerEventPayload::AssignmentTerminal { assignment_id, .. } => {
+                Some(assignment_id.as_str())
+            }
+            _ => None,
+        };
+        let decision_session = match handoff_id {
+            Some(id) => self
+                .handoff(&event.channel, id)?
+                .as_ref()
+                .map(CoordinationStore::handoff_wake_session)
+                .transpose()?,
+            None => None,
+        }
+        .unwrap_or_else(|| event.owner_session.clone());
         if ack.intake.event != *event
-            || ack.decision.session != event.owner_session
+            || ack.decision.session != decision_session
             || ack.decision.entry_seq == 0
             || ack.decision_digest.trim().is_empty()
         {
@@ -512,7 +549,7 @@ impl CoordinationStore {
         }
     }
 
-    fn validate_event_attempt(&self, intake: &OwnerEventIntakeAttempt) -> Result<()> {
+    pub(super) fn validate_event_attempt(&self, intake: &OwnerEventIntakeAttempt) -> Result<()> {
         let key = format!("{}:{}", intake.event.event_id, intake.attempt);
         let existing: OwnerEventIntakeAttempt = self.read(&object_path(
             &intake.event.channel,
@@ -539,6 +576,14 @@ fn validate_event_shape(event: &OwnerEvent) -> Result<()> {
         bail!("invalid owner event identity");
     }
     let references_match = match (&event.source, &event.payload) {
+        (
+            OwnerEventSource::Assignment { assignment_id },
+            OwnerEventPayload::AssignmentAccepted { binding },
+        ) => {
+            assignment_id == &binding.assignment_id
+                && event.channel == binding.channel
+                && event.owner_principal_id == binding.owner_principal_id
+        }
         (
             OwnerEventSource::ExternalPeer { receipt_id },
             OwnerEventPayload::AssignmentTerminal {

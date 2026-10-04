@@ -1,270 +1,55 @@
 <script lang="ts">
-  /** A first-class peer handoff card anchored inside the parent conversation. */
-  import {
-    Bot,
-    Check,
-    ChevronRight,
-    LoaderCircle,
-    MessageSquareText,
-    Square,
-  } from "@lucide/svelte";
+  /** Peer and workshop workers share the delegation context-line treatment. */
+  import { ArrowUpRight, Bot, Square } from "@lucide/svelte";
+  import AgentWorkContextLine from "./AgentWorkContextLine.svelte";
   import ToolRunChips from "$lib/components/chat/ToolRunChips.svelte";
   import { executionTargets } from "$lib/stores/executionTargets.svelte";
   import type { SubagentRow } from "$lib/utils/subagentRows";
 
-  interface Props {
+  let { row, onOpen, onStop, compact = false }: {
     row: SubagentRow;
     onOpen: () => void;
     onStop?: () => void;
     compact?: boolean;
-  }
-
-  let { row, onOpen, onStop, compact = false }: Props = $props();
+  } = $props();
 
   const badge = $derived(row.disposition === "bound" ? "Workshop agent" : "Peer agent");
-  const executionTargetLabel = $derived(
-    executionTargets.runtimeLabel(row.executionRuntimeId),
-  );
-  const thoughtLabel = $derived(
-    row.thinkingSeconds != null && row.thinkingSeconds >= 1
-      ? `Thought for ${Math.round(row.thinkingSeconds)}s`
-      : row.streaming
-        ? "Thinking now"
-        : null,
-  );
-  const statusLabel = $derived(row.streaming ? "Working" : row.statusLine || "Complete");
+  const executionTargetLabel = $derived(executionTargets.runtimeLabel(row.executionRuntimeId));
+  const thoughtLabel = $derived(row.thinkingSeconds != null && row.thinkingSeconds >= 1
+    ? `Thought for ${Math.round(row.thinkingSeconds)}s` : row.streaming ? "Thinking now" : null);
+  const statusLabel = $derived(row.streaming ? "Agent working" : row.statusLine || "Complete");
 </script>
 
-<article
-  class="peer-card {row.streaming ? 'peer-card-live' : 'peer-card-done'} {compact ? 'peer-card-compact' : ''}"
->
-  <header class="peer-card-header">
-    <span class="peer-card-avatar" aria-hidden="true">
-      <Bot size={15} strokeWidth={1.9} />
-    </span>
-
-    <div class="min-w-0 flex-1">
-      <div class="flex min-w-0 items-center gap-2">
-        <span class="peer-card-kind">{badge}</span>
-        <span class="peer-card-status" class:peer-card-status-live={row.streaming}>
-          {#if row.streaming}
-            <LoaderCircle class="h-2.5 w-2.5 animate-spin" strokeWidth={2.2} />
-          {:else}
-            <Check class="h-2.5 w-2.5" strokeWidth={2.4} />
-          {/if}
-          {statusLabel}
-        </span>
-      </div>
-      <p class="peer-card-title">{row.title}</p>
+<article class="peer-context" class:compact>
+  <AgentWorkContextLine title={row.title} status={statusLabel}>
+    <div class="peer-info">
+      <Bot size={16} aria-hidden="true" />
+      <div><p>{badge}</p><small>{[executionTargetLabel, row.model].filter(Boolean).join(' · ')}</small></div>
+      <button type="button" onclick={onOpen}>View transcript <ArrowUpRight size={13} aria-hidden="true" /></button>
     </div>
-
-    {#if row.streaming && onStop}
-      <button
-        type="button"
-        class="peer-card-stop"
-        title="Stop peer"
-        aria-label="Stop peer"
-        onclick={() => onStop?.()}
-      >
-        <Square size={11} strokeWidth={2} />
-      </button>
-    {/if}
-  </header>
-
-  {#if executionTargetLabel || row.model}
-    <p class="peer-card-meta">
-      {#if executionTargetLabel}
-        <span title={row.executionRuntimeId ?? undefined}>{executionTargetLabel}</span>
+    {#if row.streaming && row.statusLine}<p class="peer-activity">{row.statusLine}</p>{/if}
+    {#if row.toolRuns.length > 0}<ToolRunChips runs={row.toolRuns} compact inspectorCollapsed />{/if}
+    <div class="peer-footer">
+      {#if thoughtLabel}<span>{thoughtLabel}</span>{/if}
+      {#if row.streaming && onStop}
+        <button type="button" onclick={() => onStop?.()}><Square size={11} aria-hidden="true" /> Stop agent</button>
       {/if}
-      {#if executionTargetLabel && row.model}<span aria-hidden="true">·</span>{/if}
-      {#if row.model}<span>{row.model}</span>{/if}
-    </p>
-  {/if}
-
-  {#if row.toolRuns.length > 0}
-    <div class="peer-card-tools">
-      <ToolRunChips runs={row.toolRuns} compact inspectorCollapsed />
     </div>
-  {/if}
-
-  <footer class="peer-card-footer">
-    <span class="peer-card-duration">
-      {thoughtLabel ?? (row.toolRuns.length > 0 ? `${row.toolRuns.length} tool run${row.toolRuns.length === 1 ? "" : "s"}` : "No tool activity")}
-    </span>
-    <button type="button" class="peer-card-open" onclick={onOpen}>
-      <MessageSquareText size={13} strokeWidth={2} aria-hidden="true" />
-      View transcript
-      <ChevronRight size={12} strokeWidth={2.2} aria-hidden="true" />
-    </button>
-  </footer>
+  </AgentWorkContextLine>
 </article>
 
 <style>
-  .peer-card {
-    position: relative;
-    margin-block: 0.75rem;
-    overflow: hidden;
-    border: 1px solid color-mix(in srgb, rgb(var(--color-primary-400)) 22%, transparent);
-    border-radius: 0.9rem;
-    padding: 0.8rem 0.85rem 0.7rem;
-    background:
-      linear-gradient(135deg, color-mix(in srgb, rgb(var(--color-primary-500)) 9%, transparent), transparent 58%),
-      color-mix(in srgb, rgb(var(--color-surface-900)) 72%, transparent);
-    box-shadow: inset 0 1px 0 color-mix(in srgb, white 4%, transparent);
-  }
-
-  .peer-card-live {
-    border-color: color-mix(in srgb, rgb(var(--color-primary-400)) 38%, transparent);
-    box-shadow:
-      inset 0 1px 0 color-mix(in srgb, white 5%, transparent),
-      0 10px 30px color-mix(in srgb, rgb(var(--color-surface-950)) 20%, transparent);
-  }
-
-  .peer-card-header {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.65rem;
-  }
-
-  .peer-card-avatar {
-    display: inline-flex;
-    width: 1.85rem;
-    height: 1.85rem;
-    flex-shrink: 0;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid color-mix(in srgb, rgb(var(--color-primary-400)) 24%, transparent);
-    border-radius: 0.55rem;
-    background: color-mix(in srgb, rgb(var(--color-primary-500)) 12%, transparent);
-    color: rgb(var(--color-primary-300));
-  }
-
-  .peer-card-kind {
-    overflow: hidden;
-    color: rgb(var(--color-surface-300));
-    font-size: 0.68rem;
-    font-weight: 650;
-    letter-spacing: 0.01em;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .peer-card-status {
-    display: inline-flex;
-    max-width: 10rem;
-    align-items: center;
-    gap: 0.2rem;
-    overflow: hidden;
-    border-radius: 999px;
-    padding: 0.12rem 0.4rem;
-    background: color-mix(in srgb, rgb(var(--color-success-500)) 11%, transparent);
-    color: color-mix(in srgb, rgb(var(--color-success-300)) 82%, white);
-    font-size: 0.59rem;
-    font-weight: 650;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .peer-card-status-live {
-    background: color-mix(in srgb, rgb(var(--color-primary-500)) 14%, transparent);
-    color: rgb(var(--color-primary-300));
-  }
-
-  .peer-card-title {
-    display: -webkit-box;
-    margin: 0.22rem 0 0;
-    overflow: hidden;
-    color: rgb(var(--color-surface-100));
-    font-size: 0.78rem;
-    font-weight: 560;
-    line-height: 1.38;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-  }
-
-  .peer-card-stop {
-    display: inline-flex;
-    width: 1.65rem;
-    height: 1.65rem;
-    flex-shrink: 0;
-    align-items: center;
-    justify-content: center;
-    border: 0;
-    border-radius: 999px;
-    background: transparent;
-    color: rgb(var(--color-surface-500));
-    cursor: pointer;
-  }
-
-  .peer-card-stop:hover {
-    background: color-mix(in srgb, rgb(var(--color-error-500)) 12%, transparent);
-    color: rgb(var(--color-error-300));
-  }
-
-  .peer-card-meta {
-    display: flex;
-    gap: 0.35rem;
-    margin: 0.45rem 0 0 2.5rem;
-    color: rgb(var(--color-surface-500));
-    font-size: 0.62rem;
-  }
-
-  .peer-card-tools {
-    margin-top: 0.65rem;
-  }
-
-  .peer-card-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    margin-top: 0.65rem;
-    padding-top: 0.55rem;
-    border-top: 1px solid color-mix(in srgb, rgb(var(--color-surface-500)) 12%, transparent);
-  }
-
-  .peer-card-duration {
-    min-width: 0;
-    overflow: hidden;
-    color: rgb(var(--color-surface-500));
-    font-size: 0.62rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .peer-card-open {
-    display: inline-flex;
-    flex-shrink: 0;
-    align-items: center;
-    gap: 0.32rem;
-    border: 0;
-    border-radius: 0.45rem;
-    padding: 0.32rem 0.45rem;
-    background: color-mix(in srgb, rgb(var(--color-primary-500)) 11%, transparent);
-    color: rgb(var(--color-primary-300));
-    font-size: 0.66rem;
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  .peer-card-open:hover {
-    background: color-mix(in srgb, rgb(var(--color-primary-500)) 18%, transparent);
-    color: rgb(var(--color-primary-200));
-  }
-
-  .peer-card-compact {
-    margin-block: 0.5rem;
-    padding: 0.65rem 0.7rem 0.6rem;
-  }
-
-  @media (max-width: 520px) {
-    .peer-card {
-      border-radius: 0.8rem;
-    }
-
-    .peer-card-meta {
-      margin-left: 0;
-    }
-  }
+  .peer-context { min-width: 0; margin-block: 12px; }
+  .peer-context.compact { margin-block: 8px; }
+  .peer-info { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .peer-info > :global(svg) { color: rgb(var(--theme-text-tertiary)); flex-shrink: 0; }
+  .peer-info div { min-width: 0; flex: 1; }
+  .peer-info p { font-size: 13px; color: rgb(var(--theme-text-primary)); }
+  .peer-info small { font-size: 12px; color: rgb(var(--theme-text-secondary)); overflow-wrap: anywhere; }
+  button { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: rgb(var(--theme-text-secondary)); padding: 5px 0; font-size: 12px; }
+  button:hover { color: rgb(var(--theme-text-primary)); }
+  .peer-activity { margin-block: 10px; color: rgb(var(--theme-text-secondary)); font-size: 13px; overflow-wrap: anywhere; }
+  .peer-footer { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; margin-top: 8px; color: rgb(var(--theme-text-tertiary)); font-size: 12px; }
+  @media (max-width: 480px) { .peer-info { flex-wrap: wrap; } .peer-info div { flex-basis: calc(100% - 26px); } .peer-info button { margin-left: 26px; } }
+  @media (pointer: coarse) { button { min-height: 44px; } }
 </style>

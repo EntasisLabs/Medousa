@@ -8,13 +8,161 @@ export interface CodingRuntimePreferences {
   preferred: ExternalPeerRuntime;
 }
 
-export type SessionId = string;
+export type PeerHandoffAdmission = "delegate" | "propose";
+
+export type HandoffCompletion = "sender_review" | "worker_result";
+
+export type HandoffResponsibility = "retain" | "transfer";
 
 export type AuthorityId = string;
+
+export type ResourceKind = "project" | "forge_work" | "vault_note" | "vault_folder" | "artifact" | "component" | "feed" | "session" | "assignment" | "job" | "work_unit" | "bot" | "external_agent";
+
+export interface ResourceRef {
+  authority_id: AuthorityId;
+  id: string;
+  kind: ResourceKind;
+}
+
+export type WorkContactPreference = { kind: "silent" } | { kind: "return_to_origin" } | { kind: "participant"; participant: ResourceRef } | { channel: ResourceRef; kind: "channel" };
+
+export interface PeerHandoffPolicy {
+  completion?: HandoffCompletion;
+  contact?: WorkContactPreference;
+  responsibility?: HandoffResponsibility;
+  wake_on_accepted?: boolean;
+  wake_on_terminal?: boolean;
+}
+
+export interface PeerHandoffIntent {
+  admission?: PeerHandoffAdmission;
+  after_entry_seq: number;
+  forge_work_id: string;
+  handoff?: PeerHandoffPolicy;
+  instructions: string;
+  request_key: string;
+  runtime?: ExternalPeerRuntime | null;
+  through_entry_seq: number;
+}
 
 export interface CoordinationChannelRef {
   authority_id: AuthorityId;
   channel_id: string;
+}
+
+export type PeerHandoffVerdict = "accept" | "changes_requested";
+
+export interface PeerHandoffReviewInput {
+  assignment_id: string;
+  channel: CoordinationChannelRef;
+  reason: string;
+  receipt_id: string;
+  verdict: PeerHandoffVerdict;
+}
+
+export interface ExternalPeerTarget {
+  authority_id: AuthorityId;
+  execution_runtime_id: string;
+  runtime: ExternalPeerRuntime;
+}
+
+export type SessionId = string;
+
+export interface SessionRef {
+  authority_id: AuthorityId;
+  session_id: SessionId;
+}
+
+export interface ExternalPeerAssignmentBinding {
+  agent_session_id: string;
+  assignment_id: string;
+  channel: CoordinationChannelRef;
+  execution_session: SessionRef;
+  owner_principal_id: string;
+  target: ExternalPeerTarget;
+}
+
+export type PeerAssignmentOutcome = "completed" | "failed" | "cancelled" | "interrupted";
+
+export interface ExternalPeerAssignmentReceipt {
+  binding: ExternalPeerAssignmentBinding;
+  outcome: PeerAssignmentOutcome;
+  receipt_id: string;
+  result: string;
+}
+
+export type BotId = string;
+
+export type ContextManifestId = string;
+
+export interface ConversationRangeSelection {
+  after_entry_seq?: number | null;
+  session: SessionRef;
+  through_entry_seq: number;
+}
+
+export interface ResolvedConversationRange {
+  selection: ConversationRangeSelection;
+  selection_digest: string;
+}
+
+export interface ContextManifest {
+  created_at: string;
+  created_by: string;
+  manifest_id: ContextManifestId;
+  sources: ResolvedConversationRange[];
+}
+
+export interface ExternalPeerAssignmentRequest {
+  assignment_id: string;
+  channel: CoordinationChannelRef;
+  context: ContextManifest;
+  execution_grant_id: string;
+  execution_session: SessionRef;
+  existing_agent_session_id?: string | null;
+  forge_work_id: string;
+  idempotency_key: string;
+  instructions: string;
+  owner_principal_id: string;
+  owner_session: SessionRef;
+  target: ExternalPeerTarget;
+}
+
+export type TranscriptEntryId = string;
+
+export interface TranscriptEntryRef {
+  entry_id: TranscriptEntryId;
+  entry_seq: number;
+  session: SessionRef;
+}
+
+export interface PeerHandoffRecord {
+  admission: PeerHandoffAdmission;
+  expires_at: string;
+  policy: PeerHandoffPolicy;
+  request: ExternalPeerAssignmentRequest;
+  sender_bot_id?: BotId | null;
+  source: TranscriptEntryRef;
+  source_digest: string;
+}
+
+export interface PeerHandoffReview {
+  reason: string;
+  receipt_id: string;
+  sender_session: SessionRef;
+  turn_id: string;
+  verdict: PeerHandoffVerdict;
+}
+
+export type PeerHandoffState = "awaiting_acceptance" | "working" | "awaiting_sender_review" | "accepted" | "changes_requested" | "failed";
+
+export interface PeerHandoffView {
+  binding?: ExternalPeerAssignmentBinding | null;
+  handoff: PeerHandoffRecord;
+  receipt?: ExternalPeerAssignmentReceipt | null;
+  responsible_session: SessionRef;
+  review?: PeerHandoffReview | null;
+  state: PeerHandoffState;
 }
 
 export interface WorkCoordinationQuery {
@@ -28,14 +176,6 @@ export interface WorkEventsQuery {
 }
 
 export type RelationshipDirection = "both" | "incoming" | "outgoing";
-
-export type ResourceKind = "project" | "forge_work" | "vault_note" | "vault_folder" | "artifact" | "component" | "feed" | "session" | "assignment" | "job" | "work_unit" | "bot" | "external_agent";
-
-export interface ResourceRef {
-  authority_id: AuthorityId;
-  id: string;
-  kind: ResourceKind;
-}
 
 export type WorkGraphCollection = "resources" | "relationships" | "work_units" | "events" | "budget_reservations" | "subscriptions" | "provider_requests" | "provider_dispatches" | "coordinator_wakes";
 
@@ -80,11 +220,6 @@ export type ResourceRelationshipKind = "supports" | "informs" | "produces" | "tr
 
 export type ResourceResolution = "unresolved" | "available" | "unavailable" | "tombstoned";
 
-export interface SessionRef {
-  authority_id: AuthorityId;
-  session_id: SessionId;
-}
-
 export type WorkBudgetDisposition = "completed" | "not_started";
 
 export interface WorkBudgetLimits {
@@ -94,20 +229,10 @@ export interface WorkBudgetLimits {
   execution_count: number;
 }
 
-export type WorkContactPreference = { kind: "silent" } | { kind: "return_to_origin" } | { kind: "participant"; participant: ResourceRef } | { channel: ResourceRef; kind: "channel" };
-
 export interface WorkCoordinatorAttempt {
   event_id: string;
   prompt_digest: string;
   turn_id: string;
-}
-
-export type TranscriptEntryId = string;
-
-export interface TranscriptEntryRef {
-  entry_id: TranscriptEntryId;
-  entry_seq: number;
-  session: SessionRef;
 }
 
 export interface WorkCoordinatorDecision {
@@ -377,30 +502,6 @@ export interface DeleteExternalConversationResponse {
   deleted: boolean;
 }
 
-export interface ExternalPeerTarget {
-  authority_id: AuthorityId;
-  execution_runtime_id: string;
-  runtime: ExternalPeerRuntime;
-}
-
-export interface ExternalPeerAssignmentBinding {
-  agent_session_id: string;
-  assignment_id: string;
-  channel: CoordinationChannelRef;
-  execution_session: SessionRef;
-  owner_principal_id: string;
-  target: ExternalPeerTarget;
-}
-
-export type PeerAssignmentOutcome = "completed" | "failed" | "cancelled" | "interrupted";
-
-export interface ExternalPeerAssignmentReceipt {
-  binding: ExternalPeerAssignmentBinding;
-  outcome: PeerAssignmentOutcome;
-  receipt_id: string;
-  result: string;
-}
-
 export type PeerActivityStatus = "running" | "succeeded" | "failed" | "blocked";
 
 export type PeerExecutionState = "accepted" | "running" | "blocked" | "awaiting_receipt" | "unobserved";
@@ -414,46 +515,19 @@ export interface PeerAssignmentProgress {
   state: PeerExecutionState;
 }
 
-export type ContextManifestId = string;
-
-export interface ConversationRangeSelection {
-  after_entry_seq?: number | null;
-  session: SessionRef;
-  through_entry_seq: number;
-}
-
-export interface ResolvedConversationRange {
-  selection: ConversationRangeSelection;
-  selection_digest: string;
-}
-
-export interface ContextManifest {
-  created_at: string;
-  created_by: string;
-  manifest_id: ContextManifestId;
-  sources: ResolvedConversationRange[];
-}
-
-export interface ExternalPeerAssignmentRequest {
-  assignment_id: string;
-  channel: CoordinationChannelRef;
-  context: ContextManifest;
-  execution_grant_id: string;
-  execution_session: SessionRef;
-  existing_agent_session_id?: string | null;
-  forge_work_id: string;
-  idempotency_key: string;
-  instructions: string;
-  owner_principal_id: string;
-  owner_session: SessionRef;
-  target: ExternalPeerTarget;
-}
-
 export interface PeerAssignmentProposal {
   continue_owner: boolean;
   expires_at: string;
   proposal_id: string;
   request: ExternalPeerAssignmentRequest;
+}
+
+export interface PeerHandoffSummary {
+  admission: PeerHandoffAdmission;
+  policy: PeerHandoffPolicy;
+  responsible_session: SessionRef;
+  review?: PeerHandoffReview | null;
+  state: PeerHandoffState;
 }
 
 export interface PeerProposalDecision {
@@ -465,6 +539,7 @@ export interface PeerProposalDecision {
 export interface PeerProposalReviewRecord {
   binding?: ExternalPeerAssignmentBinding | null;
   decision?: PeerProposalDecision | null;
+  handoff?: PeerHandoffSummary | null;
   progress?: PeerAssignmentProgress | null;
   proposal: PeerAssignmentProposal;
   receipt?: ExternalPeerAssignmentReceipt | null;
@@ -1018,8 +1093,6 @@ export interface DeletePromptStashResponse {
   deleted: boolean;
   stash_id: PromptStashId;
 }
-
-export type BotId = string;
 
 export type BotSessionKind = "primary" | "secondary";
 

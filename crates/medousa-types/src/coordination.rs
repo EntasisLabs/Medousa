@@ -335,6 +335,9 @@ pub enum OwnerEventSource {
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum OwnerEventPayload {
+    AssignmentAccepted {
+        binding: Box<ExternalPeerAssignmentBinding>,
+    },
     AssignmentTerminal {
         assignment_id: String,
         receipt: Box<ExternalPeerAssignmentReceipt>,
@@ -499,6 +502,8 @@ pub struct PeerAssignmentProgress {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct PeerProposalReviewRecord {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handoff: Option<crate::work_handoff::PeerHandoffSummary>,
     pub proposal: PeerAssignmentProposal,
     pub decision: Option<PeerProposalDecision>,
     /// Recorded custody remains visible until its terminal receipt arrives.

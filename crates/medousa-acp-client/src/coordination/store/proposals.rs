@@ -76,6 +76,10 @@ impl CoordinationStore {
                 let receipt =
                     self.receipt_if_recorded(&index.channel, &proposal.request.assignment_id)?;
                 return Ok(Some(PeerProposalReviewRecord {
+                    handoff: self.handoff_summary(
+                        &proposal.request.channel,
+                        &proposal.request.assignment_id,
+                    )?,
                     proposal,
                     decision,
                     binding,
@@ -235,6 +239,10 @@ impl CoordinationStore {
             page.insert(
                 proposal.proposal_id.clone(),
                 PeerProposalReviewRecord {
+                    handoff: self.handoff_summary(
+                        &proposal.request.channel,
+                        &proposal.request.assignment_id,
+                    )?,
                     proposal,
                     decision,
                     binding,
@@ -301,6 +309,10 @@ impl CoordinationStore {
             page.insert(
                 proposal.proposal_id.clone(),
                 PeerProposalReviewRecord {
+                    handoff: self.handoff_summary(
+                        &proposal.request.channel,
+                        &proposal.request.assignment_id,
+                    )?,
                     proposal,
                     decision,
                     binding,

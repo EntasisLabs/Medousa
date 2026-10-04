@@ -43,6 +43,22 @@ fn main() {
         "WorkParticipantResponse"
     );
 
+    export_type!(
+        schemas,
+        medousa_types::work_handoff::PeerHandoffIntent,
+        "PeerHandoffIntent"
+    );
+    export_type!(
+        schemas,
+        medousa_types::work_handoff::PeerHandoffReviewInput,
+        "PeerHandoffReviewInput"
+    );
+    export_type!(
+        schemas,
+        medousa_types::work_handoff::PeerHandoffView,
+        "PeerHandoffView"
+    );
+
     // Health & jobs
     export_type!(schemas, DaemonRuntimeDescriptor, "DaemonRuntimeDescriptor");
     export_type!(schemas, HealthResponse, "HealthResponse");

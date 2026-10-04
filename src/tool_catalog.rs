@@ -182,6 +182,10 @@ fn add_effects_and_capabilities(index: &mut ToolPlacementIndex) {
         ToolId::new("cognition_peer_propose"),
         ToolEffect::Coordinate,
     );
+    #[cfg(feature = "full-daemon")]
+    for name in ["cognition_peer_handoff", "cognition_peer_review"] {
+        index.set_effect(ToolId::new(name), ToolEffect::Coordinate);
+    }
     index.set_effect(
         ToolId::new("cognition_peer_delegate"),
         ToolEffect::Coordinate,

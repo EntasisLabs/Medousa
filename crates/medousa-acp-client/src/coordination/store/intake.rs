@@ -69,6 +69,13 @@ impl CoordinationStore {
         bail!("peer owner event was not found for this channel")
     }
 
+    pub fn peer_owner_event_for_receipt(
+        &self,
+        receipt: &ExternalPeerAssignmentReceipt,
+    ) -> Result<OwnerEvent> {
+        self.peer_owner_event(receipt)
+    }
+
     pub(crate) fn peer_owner_event(
         &self,
         receipt: &ExternalPeerAssignmentReceipt,
@@ -138,7 +145,9 @@ impl CoordinationStore {
                     return Ok(None);
                 }
                 let event = self.peer_owner_event(&receipt)?;
-                if self.owner_event_blocked(&event)?.is_some() {
+                if self.owner_event_blocked(&event)?.is_some()
+                    || self.owner_event_ack(&event)?.is_some()
+                {
                     return Ok(None);
                 }
                 Ok(Some(event))
@@ -403,7 +412,7 @@ impl CoordinationStore {
         self.try_owner_session_intake_lease(&event.owner_session, &event.owner_principal_id)
     }
 
-    fn try_owner_session_intake_lease(
+    pub(super) fn try_owner_session_intake_lease(
         &self,
         session: &medousa_types::SessionRef,
         owner: &str,

@@ -1429,12 +1429,12 @@ mod tests {
     fn combined_declared_inventory_matches_optional_pairing_composition() {
         let without_pairing = build_declared_route_inventory(false);
         let with_pairing = build_declared_route_inventory(true);
-        assert_eq!(without_pairing.entries().len(), 465);
-        assert_eq!(with_pairing.entries().len(), 484);
+        assert_eq!(without_pairing.entries().len(), 466);
+        assert_eq!(with_pairing.entries().len(), 485);
 
         let json = with_pairing.to_pretty_json().expect("serialize inventory");
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
-        assert_eq!(rows.len(), 484);
+        assert_eq!(rows.len(), 485);
         assert_eq!(rows[0]["path"], "/health");
         for method in ["POST", "DELETE"] {
             assert!(rows.iter().any(|row| {

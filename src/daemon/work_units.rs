@@ -28,7 +28,7 @@ mod peer_coordination;
 mod provider_dispatch;
 mod provider_events;
 pub use native_content::WorkContentResolveInput;
-pub use native_project::WorkProjectResolveInput;
+pub use native_project::{WorkProjectCreateInput, WorkProjectResolveInput};
 pub use native_vault::{WorkNativeReconcileInput, WorkNativeResolveInput};
 
 pub struct WorkUnitHost {

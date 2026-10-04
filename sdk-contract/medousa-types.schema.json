@@ -19103,6 +19103,927 @@
       }
     }
   },
+  "PeerHandoffIntent": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "PeerHandoffIntent",
+    "description": "Model supplies intent. The native host captures source identity and issues scoped authority.",
+    "type": "object",
+    "required": [
+      "after_entry_seq",
+      "forge_work_id",
+      "instructions",
+      "request_key",
+      "through_entry_seq"
+    ],
+    "properties": {
+      "admission": {
+        "default": "delegate",
+        "allOf": [
+          {
+            "$ref": "#/definitions/PeerHandoffAdmission"
+          }
+        ]
+      },
+      "after_entry_seq": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      },
+      "forge_work_id": {
+        "type": "string"
+      },
+      "handoff": {
+        "default": {
+          "completion": "sender_review",
+          "contact": {
+            "kind": "return_to_origin"
+          },
+          "responsibility": "retain",
+          "wake_on_accepted": true,
+          "wake_on_terminal": true
+        },
+        "allOf": [
+          {
+            "$ref": "#/definitions/PeerHandoffPolicy"
+          }
+        ]
+      },
+      "instructions": {
+        "type": "string"
+      },
+      "request_key": {
+        "type": "string"
+      },
+      "runtime": {
+        "default": null,
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ExternalPeerRuntime"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "through_entry_seq": {
+        "type": "integer",
+        "format": "uint64",
+        "minimum": 0.0
+      }
+    },
+    "additionalProperties": false,
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "ExternalPeerRuntime": {
+        "type": "string",
+        "enum": [
+          "medousa",
+          "codex",
+          "cursor",
+          "hermes"
+        ]
+      },
+      "HandoffCompletion": {
+        "type": "string",
+        "enum": [
+          "sender_review",
+          "worker_result"
+        ]
+      },
+      "HandoffResponsibility": {
+        "type": "string",
+        "enum": [
+          "retain",
+          "transfer"
+        ]
+      },
+      "PeerHandoffAdmission": {
+        "type": "string",
+        "enum": [
+          "delegate",
+          "propose"
+        ]
+      },
+      "PeerHandoffPolicy": {
+        "type": "object",
+        "properties": {
+          "completion": {
+            "default": "sender_review",
+            "allOf": [
+              {
+                "$ref": "#/definitions/HandoffCompletion"
+              }
+            ]
+          },
+          "contact": {
+            "default": {
+              "kind": "return_to_origin"
+            },
+            "allOf": [
+              {
+                "$ref": "#/definitions/WorkContactPreference"
+              }
+            ]
+          },
+          "responsibility": {
+            "default": "retain",
+            "allOf": [
+              {
+                "$ref": "#/definitions/HandoffResponsibility"
+              }
+            ]
+          },
+          "wake_on_accepted": {
+            "default": true,
+            "type": "boolean"
+          },
+          "wake_on_terminal": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResourceKind": {
+        "type": "string",
+        "enum": [
+          "project",
+          "forge_work",
+          "vault_note",
+          "vault_folder",
+          "artifact",
+          "component",
+          "feed",
+          "session",
+          "assignment",
+          "job",
+          "work_unit",
+          "bot",
+          "external_agent"
+        ]
+      },
+      "ResourceRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "id",
+          "kind"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "id": {
+            "description": "Native stable identity or a registry identity issued by an adapter. A path, display title, or content hash alone is not an identity.",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/definitions/ResourceKind"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkContactPreference": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "silent"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "return_to_origin"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "participant"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "participant"
+                ]
+              },
+              "participant": {
+                "$ref": "#/definitions/ResourceRef"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "channel",
+              "kind"
+            ],
+            "properties": {
+              "channel": {
+                "$ref": "#/definitions/ResourceRef"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "channel"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    }
+  },
+  "PeerHandoffReviewInput": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "PeerHandoffReviewInput",
+    "type": "object",
+    "required": [
+      "assignment_id",
+      "channel",
+      "reason",
+      "receipt_id",
+      "verdict"
+    ],
+    "properties": {
+      "assignment_id": {
+        "type": "string"
+      },
+      "channel": {
+        "$ref": "#/definitions/CoordinationChannelRef"
+      },
+      "reason": {
+        "type": "string"
+      },
+      "receipt_id": {
+        "type": "string"
+      },
+      "verdict": {
+        "$ref": "#/definitions/PeerHandoffVerdict"
+      }
+    },
+    "additionalProperties": false,
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "CoordinationChannelRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "channel_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "channel_id": {
+            "type": "string"
+          }
+        }
+      },
+      "PeerHandoffVerdict": {
+        "type": "string",
+        "enum": [
+          "accept",
+          "changes_requested"
+        ]
+      }
+    }
+  },
+  "PeerHandoffView": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "PeerHandoffView",
+    "type": "object",
+    "required": [
+      "handoff",
+      "responsible_session",
+      "state"
+    ],
+    "properties": {
+      "binding": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ExternalPeerAssignmentBinding"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "handoff": {
+        "$ref": "#/definitions/PeerHandoffRecord"
+      },
+      "receipt": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ExternalPeerAssignmentReceipt"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "responsible_session": {
+        "$ref": "#/definitions/SessionRef"
+      },
+      "review": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/PeerHandoffReview"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "state": {
+        "$ref": "#/definitions/PeerHandoffState"
+      }
+    },
+    "definitions": {
+      "AuthorityId": {
+        "type": "string"
+      },
+      "BotId": {
+        "description": "Stable daemon-issued identity for one durable Bot profile.",
+        "type": "string"
+      },
+      "ContextManifest": {
+        "type": "object",
+        "required": [
+          "created_at",
+          "created_by",
+          "manifest_id",
+          "sources"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "manifest_id": {
+            "$ref": "#/definitions/ContextManifestId"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ResolvedConversationRange"
+            }
+          }
+        }
+      },
+      "ContextManifestId": {
+        "type": "string"
+      },
+      "ConversationRangeSelection": {
+        "description": "One committed contiguous range selected from a session. The lower bound is exclusive and the upper bound is inclusive; omitting `after_entry_seq` selects from the beginning of the session.",
+        "type": "object",
+        "required": [
+          "session",
+          "through_entry_seq"
+        ],
+        "properties": {
+          "after_entry_seq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "through_entry_seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 1.0
+          }
+        }
+      },
+      "CoordinationChannelRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "channel_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "channel_id": {
+            "type": "string"
+          }
+        }
+      },
+      "ExternalPeerAssignmentBinding": {
+        "description": "Stable correlation returned by an admitted external execution.",
+        "type": "object",
+        "required": [
+          "agent_session_id",
+          "assignment_id",
+          "channel",
+          "execution_session",
+          "owner_principal_id",
+          "target"
+        ],
+        "properties": {
+          "agent_session_id": {
+            "type": "string"
+          },
+          "assignment_id": {
+            "type": "string"
+          },
+          "channel": {
+            "$ref": "#/definitions/CoordinationChannelRef"
+          },
+          "execution_session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "owner_principal_id": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/definitions/ExternalPeerTarget"
+          }
+        }
+      },
+      "ExternalPeerAssignmentReceipt": {
+        "description": "Receipt identity is used for owner-inbox deduplication, not text matching.",
+        "type": "object",
+        "required": [
+          "binding",
+          "outcome",
+          "receipt_id",
+          "result"
+        ],
+        "properties": {
+          "binding": {
+            "$ref": "#/definitions/ExternalPeerAssignmentBinding"
+          },
+          "outcome": {
+            "$ref": "#/definitions/PeerAssignmentOutcome"
+          },
+          "receipt_id": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          }
+        }
+      },
+      "ExternalPeerAssignmentRequest": {
+        "description": "Caller intent only. Grant checks occur outside the model before dispatch.",
+        "type": "object",
+        "required": [
+          "assignment_id",
+          "channel",
+          "context",
+          "execution_grant_id",
+          "execution_session",
+          "forge_work_id",
+          "idempotency_key",
+          "instructions",
+          "owner_principal_id",
+          "owner_session",
+          "target"
+        ],
+        "properties": {
+          "assignment_id": {
+            "type": "string"
+          },
+          "channel": {
+            "$ref": "#/definitions/CoordinationChannelRef"
+          },
+          "context": {
+            "$ref": "#/definitions/ContextManifest"
+          },
+          "execution_grant_id": {
+            "type": "string"
+          },
+          "execution_session": {
+            "description": "Separate executor session: never reuse the owner's interactive session.",
+            "allOf": [
+              {
+                "$ref": "#/definitions/SessionRef"
+              }
+            ]
+          },
+          "existing_agent_session_id": {
+            "description": "Exact live ACP custody to adopt instead of creating a new provider session. Absence means this assignment creates new work.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "forge_work_id": {
+            "description": "Initial local bridge is restricted to a governed Forge work item.",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "owner_principal_id": {
+            "type": "string"
+          },
+          "owner_session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "target": {
+            "$ref": "#/definitions/ExternalPeerTarget"
+          }
+        }
+      },
+      "ExternalPeerRuntime": {
+        "type": "string",
+        "enum": [
+          "medousa",
+          "codex",
+          "cursor",
+          "hermes"
+        ]
+      },
+      "ExternalPeerTarget": {
+        "description": "An exact adapter on an exact execution workshop, not a model preference.",
+        "type": "object",
+        "required": [
+          "authority_id",
+          "execution_runtime_id",
+          "runtime"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "execution_runtime_id": {
+            "type": "string"
+          },
+          "runtime": {
+            "$ref": "#/definitions/ExternalPeerRuntime"
+          }
+        }
+      },
+      "HandoffCompletion": {
+        "type": "string",
+        "enum": [
+          "sender_review",
+          "worker_result"
+        ]
+      },
+      "HandoffResponsibility": {
+        "type": "string",
+        "enum": [
+          "retain",
+          "transfer"
+        ]
+      },
+      "PeerAssignmentOutcome": {
+        "type": "string",
+        "enum": [
+          "completed",
+          "failed",
+          "cancelled",
+          "interrupted"
+        ]
+      },
+      "PeerHandoffAdmission": {
+        "type": "string",
+        "enum": [
+          "delegate",
+          "propose"
+        ]
+      },
+      "PeerHandoffPolicy": {
+        "type": "object",
+        "properties": {
+          "completion": {
+            "default": "sender_review",
+            "allOf": [
+              {
+                "$ref": "#/definitions/HandoffCompletion"
+              }
+            ]
+          },
+          "contact": {
+            "default": {
+              "kind": "return_to_origin"
+            },
+            "allOf": [
+              {
+                "$ref": "#/definitions/WorkContactPreference"
+              }
+            ]
+          },
+          "responsibility": {
+            "default": "retain",
+            "allOf": [
+              {
+                "$ref": "#/definitions/HandoffResponsibility"
+              }
+            ]
+          },
+          "wake_on_accepted": {
+            "default": true,
+            "type": "boolean"
+          },
+          "wake_on_terminal": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PeerHandoffRecord": {
+        "type": "object",
+        "required": [
+          "admission",
+          "expires_at",
+          "policy",
+          "request",
+          "source",
+          "source_digest"
+        ],
+        "properties": {
+          "admission": {
+            "$ref": "#/definitions/PeerHandoffAdmission"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "policy": {
+            "$ref": "#/definitions/PeerHandoffPolicy"
+          },
+          "request": {
+            "$ref": "#/definitions/ExternalPeerAssignmentRequest"
+          },
+          "sender_bot_id": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/BotId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "$ref": "#/definitions/TranscriptEntryRef"
+          },
+          "source_digest": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PeerHandoffReview": {
+        "type": "object",
+        "required": [
+          "reason",
+          "receipt_id",
+          "sender_session",
+          "turn_id",
+          "verdict"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "receipt_id": {
+            "type": "string"
+          },
+          "sender_session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "turn_id": {
+            "type": "string"
+          },
+          "verdict": {
+            "$ref": "#/definitions/PeerHandoffVerdict"
+          }
+        }
+      },
+      "PeerHandoffState": {
+        "type": "string",
+        "enum": [
+          "awaiting_acceptance",
+          "working",
+          "awaiting_sender_review",
+          "accepted",
+          "changes_requested",
+          "failed"
+        ]
+      },
+      "PeerHandoffVerdict": {
+        "type": "string",
+        "enum": [
+          "accept",
+          "changes_requested"
+        ]
+      },
+      "ResolvedConversationRange": {
+        "type": "object",
+        "required": [
+          "selection",
+          "selection_digest"
+        ],
+        "properties": {
+          "selection": {
+            "$ref": "#/definitions/ConversationRangeSelection"
+          },
+          "selection_digest": {
+            "type": "string"
+          }
+        }
+      },
+      "ResourceKind": {
+        "type": "string",
+        "enum": [
+          "project",
+          "forge_work",
+          "vault_note",
+          "vault_folder",
+          "artifact",
+          "component",
+          "feed",
+          "session",
+          "assignment",
+          "job",
+          "work_unit",
+          "bot",
+          "external_agent"
+        ]
+      },
+      "ResourceRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "id",
+          "kind"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "id": {
+            "description": "Native stable identity or a registry identity issued by an adapter. A path, display title, or content hash alone is not an identity.",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/definitions/ResourceKind"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SessionId": {
+        "description": "Canonical chat session identifier. Construction never normalizes input.",
+        "type": "string"
+      },
+      "SessionRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "session_id"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "session_id": {
+            "$ref": "#/definitions/SessionId"
+          }
+        }
+      },
+      "TranscriptEntryId": {
+        "type": "string"
+      },
+      "TranscriptEntryRef": {
+        "type": "object",
+        "required": [
+          "entry_id",
+          "entry_seq",
+          "session"
+        ],
+        "properties": {
+          "entry_id": {
+            "$ref": "#/definitions/TranscriptEntryId"
+          },
+          "entry_seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 1.0
+          },
+          "session": {
+            "$ref": "#/definitions/SessionRef"
+          }
+        }
+      },
+      "WorkContactPreference": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "silent"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "return_to_origin"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "participant"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "participant"
+                ]
+              },
+              "participant": {
+                "$ref": "#/definitions/ResourceRef"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "channel",
+              "kind"
+            ],
+            "properties": {
+              "channel": {
+                "$ref": "#/definitions/ResourceRef"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "channel"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    }
+  },
   "PeerProposalActionRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "PeerProposalActionRequest",
@@ -19490,6 +20411,20 @@
           }
         }
       },
+      "HandoffCompletion": {
+        "type": "string",
+        "enum": [
+          "sender_review",
+          "worker_result"
+        ]
+      },
+      "HandoffResponsibility": {
+        "type": "string",
+        "enum": [
+          "retain",
+          "transfer"
+        ]
+      },
       "PeerActivityStatus": {
         "type": "string",
         "enum": [
@@ -19589,6 +20524,132 @@
           "unobserved"
         ]
       },
+      "PeerHandoffAdmission": {
+        "type": "string",
+        "enum": [
+          "delegate",
+          "propose"
+        ]
+      },
+      "PeerHandoffPolicy": {
+        "type": "object",
+        "properties": {
+          "completion": {
+            "default": "sender_review",
+            "allOf": [
+              {
+                "$ref": "#/definitions/HandoffCompletion"
+              }
+            ]
+          },
+          "contact": {
+            "default": {
+              "kind": "return_to_origin"
+            },
+            "allOf": [
+              {
+                "$ref": "#/definitions/WorkContactPreference"
+              }
+            ]
+          },
+          "responsibility": {
+            "default": "retain",
+            "allOf": [
+              {
+                "$ref": "#/definitions/HandoffResponsibility"
+              }
+            ]
+          },
+          "wake_on_accepted": {
+            "default": true,
+            "type": "boolean"
+          },
+          "wake_on_terminal": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PeerHandoffReview": {
+        "type": "object",
+        "required": [
+          "reason",
+          "receipt_id",
+          "sender_session",
+          "turn_id",
+          "verdict"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "receipt_id": {
+            "type": "string"
+          },
+          "sender_session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "turn_id": {
+            "type": "string"
+          },
+          "verdict": {
+            "$ref": "#/definitions/PeerHandoffVerdict"
+          }
+        }
+      },
+      "PeerHandoffState": {
+        "type": "string",
+        "enum": [
+          "awaiting_acceptance",
+          "working",
+          "awaiting_sender_review",
+          "accepted",
+          "changes_requested",
+          "failed"
+        ]
+      },
+      "PeerHandoffSummary": {
+        "description": "Inbox metadata beside its existing proposal, binding and receipt; no duplicated payloads.",
+        "type": "object",
+        "required": [
+          "admission",
+          "policy",
+          "responsible_session",
+          "state"
+        ],
+        "properties": {
+          "admission": {
+            "$ref": "#/definitions/PeerHandoffAdmission"
+          },
+          "policy": {
+            "$ref": "#/definitions/PeerHandoffPolicy"
+          },
+          "responsible_session": {
+            "$ref": "#/definitions/SessionRef"
+          },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/PeerHandoffReview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "$ref": "#/definitions/PeerHandoffState"
+          }
+        }
+      },
+      "PeerHandoffVerdict": {
+        "type": "string",
+        "enum": [
+          "accept",
+          "changes_requested"
+        ]
+      },
       "PeerProposalDecision": {
         "type": "object",
         "required": [
@@ -19629,6 +20690,16 @@
             "anyOf": [
               {
                 "$ref": "#/definitions/PeerProposalDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "handoff": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/PeerHandoffSummary"
               },
               {
                 "type": "null"
@@ -19676,6 +20747,45 @@
           }
         }
       },
+      "ResourceKind": {
+        "type": "string",
+        "enum": [
+          "project",
+          "forge_work",
+          "vault_note",
+          "vault_folder",
+          "artifact",
+          "component",
+          "feed",
+          "session",
+          "assignment",
+          "job",
+          "work_unit",
+          "bot",
+          "external_agent"
+        ]
+      },
+      "ResourceRef": {
+        "type": "object",
+        "required": [
+          "authority_id",
+          "id",
+          "kind"
+        ],
+        "properties": {
+          "authority_id": {
+            "$ref": "#/definitions/AuthorityId"
+          },
+          "id": {
+            "description": "Native stable identity or a registry identity issued by an adapter. A path, display title, or content hash alone is not an identity.",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/definitions/ResourceKind"
+          }
+        },
+        "additionalProperties": false
+      },
       "SessionId": {
         "description": "Canonical chat session identifier. Construction never normalizes input.",
         "type": "string"
@@ -19694,6 +20804,78 @@
             "$ref": "#/definitions/SessionId"
           }
         }
+      },
+      "WorkContactPreference": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "silent"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "return_to_origin"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "participant"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "participant"
+                ]
+              },
+              "participant": {
+                "$ref": "#/definitions/ResourceRef"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "channel",
+              "kind"
+            ],
+            "properties": {
+              "channel": {
+                "$ref": "#/definitions/ResourceRef"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "channel"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
       }
     }
   },
