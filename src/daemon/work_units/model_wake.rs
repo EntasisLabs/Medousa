@@ -806,6 +806,7 @@ mod tests {
                     scope_digest: wake.scope_digest.clone(),
                     completion_condition: "Native approval required".into(),
                     reviewed: None,
+                    predecessor: None,
                 }),
             },
         );

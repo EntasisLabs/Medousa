@@ -3732,6 +3732,17 @@
             "description": "Native operator admission for one review send after the exact executor completes. Requires `work.review_of`; it does not launch the executor.",
             "type": "boolean"
           },
+          "after_provider_completion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkProviderRequestRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Native operator admission for one send after this exact provider request completes. Requires work metadata; mutually exclusive with the native trigger."
+          },
           "coordinator_wake": {
             "description": "Native admission for one internal result-analysis turn. No contact or execution tools are granted to that turn.",
             "type": "boolean"
@@ -11052,8 +11063,18 @@
       },
       "WorkProviderDispatch": {
         "additionalProperties": false,
-        "description": "One immutable, operator-admitted provider review handoff. The runtime derives the checkout pin after the saved native executor finishes.",
+        "description": "One immutable, operator-admitted handoff after a native executor or exact provider predecessor completes. Recovery derives its result/revision pin.",
         "properties": {
+          "after_provider_completion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkProviderDispatchSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "conversation_id": {
             "type": "string"
           },
@@ -11090,6 +11111,22 @@
           "request_id",
           "scope_digest",
           "source_request_digest",
+          "target_digest"
+        ],
+        "type": "object"
+      },
+      "WorkProviderDispatchSource": {
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/WorkProviderRequestRef"
+          },
+          "target_digest": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request",
           "target_digest"
         ],
         "type": "object"
@@ -11179,6 +11216,16 @@
           "instruction_digest": {
             "type": "string"
           },
+          "predecessor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkProviderTerminalRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "provider": {
             "$ref": "#/components/schemas/ExternalProvider"
           },
@@ -11245,6 +11292,23 @@
         ],
         "type": "object"
       },
+      "WorkProviderRequestRef": {
+        "additionalProperties": false,
+        "description": "Exact request identity within the admitted owner's local user domain.",
+        "properties": {
+          "conversation_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "request_id"
+        ],
+        "type": "object"
+      },
       "WorkProviderReviewSource": {
         "additionalProperties": false,
         "properties": {
@@ -11258,6 +11322,27 @@
         "required": [
           "channel",
           "executor_assignment_id"
+        ],
+        "type": "object"
+      },
+      "WorkProviderTerminalRef": {
+        "additionalProperties": false,
+        "description": "Native-derived pin of the immutable predecessor terminal, never a caller verdict.",
+        "properties": {
+          "event_digest": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "request": {
+            "$ref": "#/components/schemas/WorkProviderRequestRef"
+          }
+        },
+        "required": [
+          "event_digest",
+          "event_id",
+          "request"
         ],
         "type": "object"
       },

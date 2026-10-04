@@ -135,7 +135,18 @@ export interface WorkCoordinatorWake {
 
 export type ExternalProvider = "muse" | "grok_bot" | "instinct" | "dots";
 
+export interface WorkProviderRequestRef {
+  conversation_id: string;
+  request_id: string;
+}
+
+export interface WorkProviderDispatchSource {
+  request: WorkProviderRequestRef;
+  target_digest: string;
+}
+
 export interface WorkProviderDispatch {
+  after_provider_completion?: WorkProviderDispatchSource | null;
   conversation_id: string;
   coordinator_wake?: boolean;
   input: WorkProviderRequestInput;
@@ -183,11 +194,18 @@ export interface WorkProviderEvent {
   text: string;
 }
 
+export interface WorkProviderTerminalRef {
+  event_digest: string;
+  event_id: string;
+  request: WorkProviderRequestRef;
+}
+
 export interface WorkProviderRequest {
   completion_condition: string;
   conversation_id: string;
   input: WorkProviderRequestInput;
   instruction_digest: string;
+  predecessor?: WorkProviderTerminalRef | null;
   provider: ExternalProvider;
   request_id: string;
   reviewed?: WorkReviewInput | null;
@@ -309,6 +327,7 @@ export interface ExternalConversationListResponse {
 
 export interface ExternalConversationSendRequest {
   after_native_completion?: boolean;
+  after_provider_completion?: WorkProviderRequestRef | null;
   coordinator_wake?: boolean;
   request_id: string;
   text: string;

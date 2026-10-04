@@ -753,8 +753,8 @@ attempt; recovery does not overwrite that evidence to force a retry.
 `work.graph` with `collection: "provider_dispatches"` exposes the saved handoff
 and its closure reason. Provider results still require the exact authenticated
 callback protocol and revision qualification above. This increment adds native
-executor → provider reviewer dispatch; provider-to-provider chains and bounded
-fix/review loops remain separate gates.
+executor → provider reviewer dispatch. Bounded provider-to-provider chains use the
+separate contract below; bounded fix/review loops remain a separate gate.
 
 ### Admitted coordinator model wakes
 
@@ -789,6 +789,48 @@ missing committed output never authorize a replacement turn. Error/cancelled
 tickets retain a blocked reason for inspection. The canonical model pipeline keeps
 its own bounded retry behavior; this is one admitted turn, not a promise of one
 HTTP inference request. Further analysis needs a new explicit provider request and
-admission. This increment does not enable provider-to-provider chains, fix/review
-loops, native resource-change reactions, metered/composite scheduling or reporter
-routing.
+admission. Provider-to-provider chains require the separate admission below.
+Fix/review loops, native resource-change reactions, metered/composite scheduling
+and reporter routing remain separate gates.
+
+### Provider to provider chains
+
+A native operator can save the next provider stage through the existing
+conversation send API with `after_provider_completion: { conversation_id,
+request_id }`. Submit it to the next provider's conversation with exact `work`
+metadata. The source must already have a durable dispatch claim in the same local
+owner domain, work unit and scope. The runtime freezes both bot destinations,
+the predecessor request digest, instructions, scope/resources and deadline. The
+next stage's deadline must not exceed its predecessor's future deadline.
+`after_native_completion` and this trigger are mutually exclusive.
+
+This is a linear chain with at most eight stages, including its first request.
+Only one pending successor owns custody for a unit. Save a successor while its
+predecessor is running; once the successor has its own request/dispatch claim,
+it can become the source of another admitted stage. Branches, source recycling,
+cross-owner/workshop references and automatic target selection are not admitted.
+The same finite, standalone, unbudgeted scope applies, including ancestor budgets.
+
+Recovery waits through progress and ordinary messages. An authenticated completed
+`outcome_only` terminal derives an immutable predecessor event ID/digest on the
+next request. Failed, expired, superseded or invalid/stale predecessor evidence
+closes the handoff. Cancellation, rescope and changed resource versions close it;
+pause retains an unstarted handoff. Source/destination removal or replacement
+closes it rather than following another bot. Native controllers cannot replace
+pending provider custody. A claim transaction rechecks the exact predecessor
+terminal before any network effect, and unknown/claimed delivery is never resent.
+
+The outgoing request includes a bounded `medousa-work-provider-source-v1` reference
+object with the original actor/time, qualification and result excerpt. The digest
+pins the full retained terminal, even when `text_truncated` is true. The wire JSON
+is capped at 8 KiB and fits within the existing 16 KiB message limit. Result text is
+reference data and grants no approval, execution or contact authority.
+
+These stages assess provider outcomes. They do not accept `work.review_of` or
+chain from a native revision-review request; that approval path remains the
+separate exact native-executor review contract. An assessment callback remains
+outcome evidence and leaves work waiting for native completion/review evidence.
+This avoids treating a provider's prose verdict as a clean-checkout approval.
+The final stage may separately opt into `coordinator_wake`; contact preferences
+and normal chat listings retain their existing behavior. Bounded fix/review loops,
+branch scheduling and provider-hosted revision custody remain separate gates.

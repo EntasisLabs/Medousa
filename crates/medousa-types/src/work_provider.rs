@@ -16,6 +16,33 @@ pub struct WorkProviderReviewSource {
     pub executor_assignment_id: String,
 }
 
+/// Exact request identity within the admitted owner's local user domain.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct WorkProviderRequestRef {
+    pub conversation_id: String,
+    pub request_id: String,
+}
+
+/// Native-derived pin of the immutable predecessor terminal, never a caller verdict.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct WorkProviderTerminalRef {
+    pub request: WorkProviderRequestRef,
+    pub event_id: String,
+    pub event_digest: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct WorkProviderDispatchSource {
+    pub request: WorkProviderRequestRef,
+    pub target_digest: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -40,6 +67,8 @@ pub struct WorkProviderRequest {
     pub scope_digest: String,
     pub completion_condition: String,
     pub reviewed: Option<WorkReviewInput>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub predecessor: Option<WorkProviderTerminalRef>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -80,8 +109,8 @@ pub struct WorkProviderRecord {
     pub revision: u64,
 }
 
-/// One immutable, operator-admitted provider review handoff. The runtime derives
-/// the checkout pin after the saved native executor finishes.
+/// One immutable, operator-admitted handoff after a native executor or exact
+/// provider predecessor completes. Recovery derives its result/revision pin.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -94,6 +123,8 @@ pub struct WorkProviderDispatch {
     pub target_digest: String,
     pub scope_digest: String,
     pub source_request_digest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after_provider_completion: Option<WorkProviderDispatchSource>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub coordinator_wake: bool,
 }

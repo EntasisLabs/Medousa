@@ -1067,7 +1067,7 @@ docs verification pass. Full repository CI parity remains a separate gate.
 | Remaining increment | Existing foundation | Evidence still needed |
 |---|---|---|
 | Automatic work intake and reactions (Phase 3) | Durable actor-bound pull subscriptions plus native provider inboxes, bounded callback-driven intake, separately admitted result-only model turns, atomic stage decisions/cursors and restart recovery | Native resource-change subscriptions, broader bounded/coalesced effects, legacy inbox backfill and retention-gap recovery |
-| Provider execution/review orchestration (Phases 3–4) | Scoped provider APIs, exact durable request/dispatch/result ledger, authenticated callbacks, native stage intake, revision-bound satisfaction and saved native-executor → provider-reviewer handoff recovery | Provider-to-provider chains, bounded fix/review dispatch, real send/receive and live provider acceptance; Muse transport remains unverified |
+| Provider execution/review orchestration (Phases 3–4) | Scoped provider APIs, exact durable request/dispatch/result ledger, authenticated callbacks, native stage intake, revision-bound satisfaction and saved native-executor → provider-reviewer plus bounded linear provider-chain recovery | Bounded fix/review dispatch, branch/composite scheduling, provider-hosted revision custody, real send/receive and live provider acceptance; Muse transport remains unverified |
 | Composite execution and bounded fix/review (Phases 2–3) | Composition/readiness contracts and budget custody ledger | Native metering/reservation/settlement integration, child/dependency scheduling, bounded revision loops and shared-execution accounting; current controller admits standalone finite work only |
 | Federated work and custody (Phase 4) | Existing portal/peer transports and scoped native execution | Authenticated cross-workshop user-domain mappings, permission-filtered graph projections, remote work correlation and fenced coordinator handoff where supported |
 | Automatic maintenance (Phase 5) | Native resource observations and explicit readiness checkpoints | Admitted note/folder/feed triggers, freshness/occurrence evidence, snapshot recovery after retention gaps, bounded coalescing and generated-update feedback fencing |
@@ -1281,3 +1281,38 @@ Generated contracts and frontend types are current; frontend checking reports
 zero errors and warnings. Targeted library Clippy and strict docs verification
 pass. These receipts qualify the local implementation, not a live provider or
 model round trip.
+
+
+## Bounded provider-to-provider chain increment (2026-10-03)
+
+The existing send API can save a next provider stage behind an exact already
+claimed predecessor. Native admission pins both conversations' destinations,
+the owner/work/scope, predecessor request digest, instructions and deadline.
+Progress never triggers dispatch. Completed outcome evidence derives an immutable
+terminal pin and bounded attributable reference context. Stage claims recheck that
+pin atomically before the shared transport path; unknown claims never resend.
+
+Chains are linear, at most eight stages, and admit one pending successor per unit.
+Each successor is admitted while its predecessor is dispatched, and can in turn
+become a source once claimed. Native revision review and provider-hosted outcome
+assessment remain separate authority paths; provider prose cannot qualify a clean
+checkout or satisfy work. Source/destination custody shares ordered conversation
+locks through dispatch, including removal/credential rotation. Pause, cancellation,
+rescope, stale/failed results, scope-resource changes, deadlines and budgets retain
+or close the admission without an unrelated send. Source chats remain unnecessary.
+
+This closes the bounded local linear provider-chain foundation. Fix/review loops,
+whole-plan/branch scheduling, composite/metered execution, provider-hosted revision
+custody, federation, reporter routing and broader repair/retention remain open.
+Real sends remain reserved for the user's manual acceptance test; live provider,
+Surreal, cross-platform and full-workspace CI phase exits remain open.
+
+Qualification: 44 work-store tests, 55 daemon work-unit tests (two threads),
+14 provider conversation/access tests, 14 API contract tests and 28 Python SDK
+tests pass. New coverage includes exact terminal pinning, eight-stage limits,
+competing successors, restart recovery, atomic publication faults, source failures,
+pause/cancel/rescope/resource/budget fences, bounded Unicode/escaped result context
+and native-only admission. Generated contracts are current; frontend checking
+reports zero errors and warnings. Targeted library Clippy and strict docs
+verification pass. Transport claims are exercised locally; actual provider sends
+and callback round trips remain manual qualification.

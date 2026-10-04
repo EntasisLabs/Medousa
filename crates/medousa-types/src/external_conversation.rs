@@ -131,6 +131,10 @@ pub struct ExternalConversationSendRequest {
     /// completes. Requires `work.review_of`; it does not launch the executor.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub after_native_completion: bool,
+    /// Native operator admission for one send after this exact provider request
+    /// completes. Requires work metadata; mutually exclusive with the native trigger.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after_provider_completion: Option<crate::work_provider::WorkProviderRequestRef>,
     /// Native admission for one internal result-analysis turn. No contact or
     /// execution tools are granted to that turn.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]

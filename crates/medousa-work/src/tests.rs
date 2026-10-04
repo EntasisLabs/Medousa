@@ -185,6 +185,7 @@ fn provider_request(
             .unwrap(),
         completion_condition: unit.completion_condition,
         reviewed: None,
+        predecessor: None,
     }
 }
 
@@ -2648,6 +2649,7 @@ fn provider_handoff(
         target_digest: "a".repeat(64),
         source_request_digest: "b".repeat(64),
         coordinator_wake: false,
+        after_provider_completion: None,
         scope_digest: store
             .peer_coordination_scope_digest(&domain("user:a"), "work")
             .unwrap(),
@@ -3538,5 +3540,527 @@ fn model_wake_recovery_pages_include_exact_retained_attempt_once() {
             .unwrap()
             .wakes
             .is_empty()
+    );
+}
+
+fn provider_chain_dispatch(
+    store: &WorkGraphStore,
+    source: &medousa_types::work_provider::WorkProviderRequest,
+    id: &str,
+) -> medousa_types::work_provider::WorkProviderDispatch {
+    use medousa_types::work_provider::*;
+    WorkProviderDispatch {
+        conversation_id: format!("conversation-{id}"),
+        request_id: id.into(),
+        provider: medousa_types::ExternalProvider::Instinct,
+        input: source.input.clone(),
+        instructions: "Assess the exact predecessor result".into(),
+        target_digest: "a".repeat(64),
+        scope_digest: store
+            .peer_coordination_scope_digest(&domain("user:a"), "work")
+            .unwrap(),
+        source_request_digest: format!(
+            "{:x}",
+            sha2::Sha256::digest(serde_json::to_vec(source).unwrap())
+        ),
+        after_provider_completion: Some(WorkProviderDispatchSource {
+            request: WorkProviderRequestRef {
+                conversation_id: source.conversation_id.clone(),
+                request_id: source.request_id.clone(),
+            },
+            target_digest: "b".repeat(64),
+        }),
+        coordinator_wake: false,
+    }
+}
+
+fn admit_chain(
+    store: &WorkGraphStore,
+    dispatch: &medousa_types::work_provider::WorkProviderDispatch,
+) -> WorkGraphReceipt {
+    store
+        .apply_native_command(
+            &domain("user:a"),
+            format!("chain-admit:{}", dispatch.request_id),
+            WorkGraphMutation::RegisterProviderDispatch {
+                dispatch: Box::new(dispatch.clone()),
+            },
+            handoff_provenance(),
+        )
+        .unwrap()
+}
+
+fn chain_successor(
+    store: &WorkGraphStore,
+    dispatch: &medousa_types::work_provider::WorkProviderDispatch,
+) -> medousa_types::work_provider::WorkProviderRequest {
+    medousa_types::work_provider::WorkProviderRequest {
+        conversation_id: dispatch.conversation_id.clone(),
+        request_id: dispatch.request_id.clone(),
+        provider: dispatch.provider,
+        input: dispatch.input.clone(),
+        instruction_digest: format!(
+            "{:x}",
+            sha2::Sha256::digest(dispatch.instructions.as_bytes())
+        ),
+        scope_digest: dispatch.scope_digest.clone(),
+        completion_condition: store
+            .work_unit(&domain("user:a"), "work")
+            .unwrap()
+            .completion_condition,
+        reviewed: None,
+        predecessor: store
+            .provider_chain_terminal(&domain("user:a"), dispatch)
+            .unwrap(),
+    }
+}
+
+fn chain_root(store: &WorkGraphStore) -> medousa_types::work_provider::WorkProviderRequest {
+    next(store, accept("work", WorkScope::default()));
+    let request = provider_request(store, "request");
+    next(
+        store,
+        WorkGraphMutation::RegisterProviderRequest {
+            request: Box::new(request.clone()),
+        },
+    );
+    next(
+        store,
+        WorkGraphMutation::ClaimProviderRequest {
+            conversation_id: request.conversation_id.clone(),
+            request_id: request.request_id.clone(),
+        },
+    );
+    request
+}
+
+#[test]
+fn provider_chain_admits_pending_source_then_pins_terminal_and_claims_once_after_restart() {
+    let dir = tempdir();
+    let store = WorkGraphStore::open(dir.path()).unwrap();
+    let root = chain_root(&store);
+    let dispatch = provider_chain_dispatch(&store, &root, "second");
+    admit_chain(&store, &dispatch);
+    assert!(
+        store
+            .provider_chain_terminal(&domain("user:a"), &dispatch)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        store
+            .require_provider_idle(&domain("user:a"), "work")
+            .is_err()
+    );
+    next(
+        &store,
+        WorkGraphMutation::RecordProviderEvent {
+            event: Box::new(provider_event(
+                "progress",
+                1,
+                medousa_types::ExternalEventKind::Progress,
+            )),
+        },
+    );
+    assert!(
+        store
+            .provider_chain_terminal(&domain("user:a"), &dispatch)
+            .unwrap()
+            .is_none()
+    );
+    next(
+        &store,
+        WorkGraphMutation::RecordProviderEvent {
+            event: Box::new(provider_event(
+                "done",
+                2,
+                medousa_types::ExternalEventKind::Completed,
+            )),
+        },
+    );
+    let reopened = WorkGraphStore::open(dir.path()).unwrap();
+    let successor = chain_successor(&reopened, &dispatch);
+    let pin = successor.predecessor.as_ref().unwrap();
+    assert_eq!(pin.event_id, "done");
+    assert_eq!(
+        reopened
+            .provider_terminal_event(&domain("user:a"), pin)
+            .unwrap()
+            .text,
+        "Exact result"
+    );
+    let mut wrong_pin = pin.clone();
+    wrong_pin.event_digest = "c".repeat(64);
+    assert!(
+        reopened
+            .provider_terminal_event(&domain("user:a"), &wrong_pin)
+            .is_err()
+    );
+    let mut missing = successor.clone();
+    missing.predecessor = None;
+    next(
+        &reopened,
+        WorkGraphMutation::RegisterProviderRequest {
+            request: Box::new(missing),
+        },
+    );
+    reject(
+        &reopened,
+        WorkGraphMutation::ClaimProviderRequest {
+            conversation_id: successor.conversation_id.clone(),
+            request_id: successor.request_id.clone(),
+        },
+    );
+    // The failed preparation retains its original request identity. A fresh
+    // fixture proves normal exact preparation/claim without rewriting evidence.
+    let fresh = tempdir();
+    let exact = WorkGraphStore::open(fresh.path()).unwrap();
+    let root = chain_root(&exact);
+    let dispatch = provider_chain_dispatch(&exact, &root, "second");
+    admit_chain(&exact, &dispatch);
+    next(
+        &exact,
+        WorkGraphMutation::RecordProviderEvent {
+            event: Box::new(provider_event(
+                "done",
+                1,
+                medousa_types::ExternalEventKind::Completed,
+            )),
+        },
+    );
+    let successor = chain_successor(&exact, &dispatch);
+    next(
+        &exact,
+        WorkGraphMutation::RegisterProviderRequest {
+            request: Box::new(successor.clone()),
+        },
+    );
+    let claim = WorkGraphMutation::ClaimProviderRequest {
+        conversation_id: successor.conversation_id.clone(),
+        request_id: successor.request_id.clone(),
+    };
+    exact
+        .apply_native_command(
+            &domain("user:a"),
+            "second-send".into(),
+            claim.clone(),
+            provenance(),
+        )
+        .unwrap();
+    let exact = WorkGraphStore::open(fresh.path()).unwrap();
+    assert!(
+        exact
+            .apply_native_command(
+                &domain("user:a"),
+                "second-send".into(),
+                claim.clone(),
+                provenance()
+            )
+            .unwrap()
+            .replayed
+    );
+    assert!(
+        exact
+            .apply_native_command(
+                &domain("user:a"),
+                "replacement-send".into(),
+                claim,
+                provenance()
+            )
+            .is_err()
+    );
+    assert!(
+        exact
+            .coordinator_inboxes(&domain("user:a").authority_id, 4, None)
+            .unwrap()
+            .dispatches
+            .is_empty()
+    );
+    assert!(
+        exact
+            .provider_chain_terminal(&domain("user:a"), &dispatch)
+            .is_err()
+    );
+}
+
+#[test]
+fn provider_chain_rejects_other_work_owner_stale_scope_extended_deadline_and_non_native_admission()
+{
+    let dir = tempdir();
+    let store = WorkGraphStore::open(dir.path()).unwrap();
+    let root = chain_root(&store);
+    let dispatch = provider_chain_dispatch(&store, &root, "second");
+    for scenario in [
+        "deadline",
+        "source",
+        "self",
+        "digest",
+        "work",
+        "native-review",
+        "actor",
+        "model",
+    ] {
+        let mut changed = dispatch.clone();
+        let mut proof = handoff_provenance();
+        match scenario {
+            "deadline" => changed.input.deadline += chrono::Duration::seconds(1),
+            "source" => {
+                changed
+                    .after_provider_completion
+                    .as_mut()
+                    .unwrap()
+                    .request
+                    .conversation_id = "unrelated".into()
+            }
+            "self" => {
+                changed.conversation_id = root.conversation_id.clone();
+                changed.request_id = root.request_id.clone();
+            }
+            "digest" => changed.source_request_digest = "c".repeat(64),
+            "work" => {
+                next(&store, accept("other", WorkScope::default()));
+                changed.input.work_unit_id = "other".into();
+            }
+            "native-review" => {
+                changed.input.review_of = provider_handoff(&store, "native").input.review_of
+            }
+            "actor" => proof.actor_id = "external-agent:test".into(),
+            "model" => proof.source = RecordSource::ModelInferred,
+            _ => unreachable!(),
+        }
+        assert!(
+            store
+                .apply_native_command(
+                    &domain("user:a"),
+                    format!("reject-{scenario}"),
+                    WorkGraphMutation::RegisterProviderDispatch {
+                        dispatch: Box::new(changed)
+                    },
+                    proof
+                )
+                .is_err(),
+            "{scenario}"
+        );
+    }
+    assert!(
+        store
+            .apply_native_command(
+                &domain("user:b"),
+                "foreign".into(),
+                WorkGraphMutation::RegisterProviderDispatch {
+                    dispatch: Box::new(dispatch.clone())
+                },
+                handoff_provenance()
+            )
+            .is_err()
+    );
+    admit_chain(&store, &dispatch);
+    assert!(
+        store
+            .apply_native_command(
+                &domain("user:a"),
+                "competing".into(),
+                WorkGraphMutation::RegisterProviderDispatch {
+                    dispatch: Box::new(provider_chain_dispatch(&store, &root, "third"))
+                },
+                handoff_provenance()
+            )
+            .is_err()
+    );
+    next(
+        &store,
+        WorkGraphMutation::RecordProviderEvent {
+            event: Box::new(provider_event(
+                "failed",
+                1,
+                medousa_types::ExternalEventKind::Failed,
+            )),
+        },
+    );
+    assert!(
+        store
+            .provider_chain_terminal(&domain("user:a"), &dispatch)
+            .is_err()
+    );
+}
+
+#[test]
+fn provider_chain_admission_and_dispatch_custody_publish_atomically() {
+    for point in [
+        TransactionFaultPoint::BeforeRenamePublish,
+        TransactionFaultPoint::AfterRenamePublish,
+    ] {
+        let dir = tempdir();
+        let store = WorkGraphStore::open(dir.path()).unwrap();
+        let root = chain_root(&store);
+        let dispatch = provider_chain_dispatch(&store, &root, "second");
+        let faulty = WorkGraphStore::with_faults(
+            dir.path(),
+            Arc::new(FailOnce {
+                point,
+                fired: AtomicBool::new(false),
+            }),
+        )
+        .unwrap();
+        let command = WorkGraphMutation::RegisterProviderDispatch {
+            dispatch: Box::new(dispatch.clone()),
+        };
+        assert!(
+            faulty
+                .apply_native_command(
+                    &domain("user:a"),
+                    "admit".into(),
+                    command.clone(),
+                    handoff_provenance()
+                )
+                .is_err()
+        );
+        let reopened = WorkGraphStore::open(dir.path()).unwrap();
+        assert_eq!(
+            reopened
+                .apply_native_command(
+                    &domain("user:a"),
+                    "admit".into(),
+                    command,
+                    handoff_provenance()
+                )
+                .unwrap()
+                .replayed,
+            point == TransactionFaultPoint::AfterRenamePublish
+        );
+        next(
+            &reopened,
+            WorkGraphMutation::RecordProviderEvent {
+                event: Box::new(provider_event(
+                    "done",
+                    1,
+                    medousa_types::ExternalEventKind::Completed,
+                )),
+            },
+        );
+        let successor = chain_successor(&reopened, &dispatch);
+        next(
+            &reopened,
+            WorkGraphMutation::RegisterProviderRequest {
+                request: Box::new(successor.clone()),
+            },
+        );
+        let faulty = WorkGraphStore::with_faults(
+            dir.path(),
+            Arc::new(FailOnce {
+                point,
+                fired: AtomicBool::new(false),
+            }),
+        )
+        .unwrap();
+        let claim = WorkGraphMutation::ClaimProviderRequest {
+            conversation_id: successor.conversation_id.clone(),
+            request_id: successor.request_id.clone(),
+        };
+        assert!(
+            faulty
+                .apply_native_command(
+                    &domain("user:a"),
+                    "send".into(),
+                    claim.clone(),
+                    provenance()
+                )
+                .is_err()
+        );
+        let reopened = WorkGraphStore::open(dir.path()).unwrap();
+        let published = point == TransactionFaultPoint::AfterRenamePublish;
+        assert_eq!(
+            reopened
+                .provider_request(
+                    &domain("user:a"),
+                    &successor.conversation_id,
+                    &successor.request_id
+                )
+                .unwrap()
+                .unwrap()
+                .dispatch_claimed,
+            published
+        );
+        assert_eq!(
+            reopened
+                .apply_native_command(&domain("user:a"), "send".into(), claim, provenance())
+                .unwrap()
+                .replayed,
+            published
+        );
+    }
+}
+
+#[test]
+fn provider_chain_has_eight_stages_and_cannot_branch_or_recycle_a_consumed_source() {
+    let dir = tempdir();
+    let store = WorkGraphStore::open(dir.path()).unwrap();
+    let mut source = chain_root(&store);
+    for stage in 2..=crate::MAX_PROVIDER_CHAIN_STAGES {
+        let dispatch = provider_chain_dispatch(&store, &source, &format!("stage-{stage}"));
+        admit_chain(&store, &dispatch);
+        let mut event = provider_event(
+            &format!("done-{stage}"),
+            1,
+            medousa_types::ExternalEventKind::Completed,
+        );
+        event.conversation_id = source.conversation_id.clone();
+        event.request_id = source.request_id.clone();
+        next(
+            &store,
+            WorkGraphMutation::RecordProviderEvent {
+                event: Box::new(event),
+            },
+        );
+        let successor = chain_successor(&store, &dispatch);
+        next(
+            &store,
+            WorkGraphMutation::RegisterProviderRequest {
+                request: Box::new(successor.clone()),
+            },
+        );
+        next(
+            &store,
+            WorkGraphMutation::ClaimProviderRequest {
+                conversation_id: successor.conversation_id.clone(),
+                request_id: successor.request_id.clone(),
+            },
+        );
+        source = successor;
+    }
+    let ninth = provider_chain_dispatch(&store, &source, "ninth");
+    assert!(
+        store
+            .apply_native_command(
+                &domain("user:a"),
+                "too-many".into(),
+                WorkGraphMutation::RegisterProviderDispatch {
+                    dispatch: Box::new(ninth)
+                },
+                handoff_provenance()
+            )
+            .is_err()
+    );
+    let original = store
+        .provider_request(&domain("user:a"), "provider-chat", "request")
+        .unwrap()
+        .unwrap()
+        .request;
+    let recycled = provider_chain_dispatch(&store, &original, "recycled");
+    assert!(
+        store
+            .apply_native_command(
+                &domain("user:a"),
+                "recycled".into(),
+                WorkGraphMutation::RegisterProviderDispatch {
+                    dispatch: Box::new(recycled)
+                },
+                handoff_provenance()
+            )
+            .is_err()
+    );
+    assert_eq!(
+        store.work_unit(&domain("user:a"), "work").unwrap().state,
+        WorkUnitState::Accepted
     );
 }

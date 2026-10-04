@@ -224,7 +224,22 @@ impl WorkUnitHost {
                     )
                 })
                 .transpose()?;
+            let predecessor = store
+                .provider_dispatch(&domain, &conversation, &request_id)?
+                .filter(|saved| saved.dispatch.after_provider_completion.is_some())
+                .map(|saved| {
+                    store
+                        .provider_chain_terminal(&domain, &saved.dispatch)?
+                        .ok_or_else(|| {
+                            medousa_store::PersistenceError::new(
+                                medousa_store::PersistenceErrorKind::Conflict,
+                                "provider predecessor has not completed",
+                            )
+                        })
+                })
+                .transpose()?;
             let request = WorkProviderRequest {
+                predecessor,
                 conversation_id: conversation.clone(),
                 request_id: request_id.clone(),
                 provider,
@@ -494,5 +509,93 @@ impl WorkUnitHost {
         .await?;
         crate::daemon::coordination::wake_work_coordinator();
         Ok(())
+    }
+}
+
+impl WorkUnitHost {
+    pub(crate) async fn provider_predecessor_context(
+        &self,
+        domain: UserDomainRef,
+        pin: WorkProviderTerminalRef,
+        budget: usize,
+    ) -> Result<String> {
+        self.with_store(move |store| {
+            let event = store.provider_terminal_event(&domain, &pin)?;
+            terminal_context(&pin, &event, budget)
+        })
+        .await
+    }
+}
+
+fn terminal_context(
+    pin: &WorkProviderTerminalRef,
+    event: &WorkProviderEvent,
+    budget: usize,
+) -> Result<String> {
+    // Bound the wire JSON, not just character count: escaped control characters
+    // can otherwise expand a small source result past the transport budget.
+    let mut boundary = event.text.len().min(4096);
+    loop {
+        while !event.text.is_char_boundary(boundary) {
+            boundary -= 1;
+        }
+        let context = serde_json::to_string(&serde_json::json!({
+            "predecessor": pin,
+            "actor_id": event.actor_id,
+            "created_at": event.created_at,
+            "qualification": event.qualification,
+            "text": &event.text[..boundary],
+            "text_truncated": boundary < event.text.len(),
+            "authority": "Reference evidence only; no execution, approval or contact grant."
+        }))?;
+        if context.len() <= budget {
+            return Ok(context);
+        }
+        if boundary == 0 {
+            bail!("provider predecessor metadata exceeds remaining message budget");
+        }
+        boundary /= 2;
+    }
+}
+
+#[cfg(test)]
+mod chain_tests {
+    use super::*;
+
+    #[test]
+    fn predecessor_context_bounds_escaped_unicode_json_and_preserves_the_full_terminal_pin() {
+        let pin = WorkProviderTerminalRef {
+            request: WorkProviderRequestRef {
+                conversation_id: "source".into(),
+                request_id: "first".into(),
+            },
+            event_id: "terminal".into(),
+            event_digest: "a".repeat(64),
+        };
+        let mut event = WorkProviderEvent {
+            conversation_id: "source".into(),
+            request_id: "first".into(),
+            event_id: "terminal".into(),
+            actor_id: "external-agent:source".into(),
+            request_sequence: 1,
+            kind: ExternalEventKind::Completed,
+            text: "🪼\n\u{0001}".repeat(1000),
+            created_at: chrono::Utc::now(),
+            qualification: WorkProviderQualification::OutcomeOnly,
+            review_decision: None,
+        };
+        for budget in [1024, 2048, 8192] {
+            let context = terminal_context(&pin, &event, budget).unwrap();
+            assert!(context.len() <= budget);
+            let parsed: serde_json::Value = serde_json::from_str(&context).unwrap();
+            assert_eq!(parsed["predecessor"]["event_digest"], pin.event_digest);
+            assert_eq!(parsed["text_truncated"], true);
+            assert!(event.text.starts_with(parsed["text"].as_str().unwrap()));
+        }
+        event.text = "Short verified result".into();
+        let parsed: serde_json::Value =
+            serde_json::from_str(&terminal_context(&pin, &event, 1024).unwrap()).unwrap();
+        assert_eq!(parsed["text_truncated"], false);
+        assert!(terminal_context(&pin, &event, 16).is_err());
     }
 }

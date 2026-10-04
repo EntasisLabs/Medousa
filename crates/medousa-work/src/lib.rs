@@ -21,12 +21,14 @@ mod budget;
 mod coordinator;
 mod coordinator_wakes;
 mod events;
+mod provider_chains;
 mod provider_dispatch;
 mod providers;
 pub use coordinator::{COORDINATOR_ACTOR, CoordinatorInbox, CoordinatorInboxPage};
 pub use coordinator_wakes::{coordinator_session, coordinator_turn_id};
 use medousa_types::work_coordinator::WorkCoordinatorWakeRecord;
 use medousa_types::work_provider::{WorkProviderDispatchRecord, WorkProviderRecord};
+pub use provider_chains::MAX_PROVIDER_CHAIN_STAGES;
 pub use provider_dispatch::PROVIDER_DISPATCH_ACTOR;
 
 #[cfg(test)]

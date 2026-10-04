@@ -110,6 +110,60 @@ impl WorkUnitHost {
         if native.work_is_controlled(domain, &dispatch.input.work_unit_id)? {
             bail!("provider handoff cannot replace a native execute/review controller");
         }
+        dispatch.scope_digest = self
+            .store
+            .peer_coordination_scope_digest(domain, &dispatch.input.work_unit_id)?;
+        if let Some(source) = &dispatch.after_provider_completion {
+            let request = self
+                .store
+                .provider_request(
+                    domain,
+                    &source.request.conversation_id,
+                    &source.request.request_id,
+                )?
+                .ok_or_else(|| {
+                    anyhow::anyhow!("provider predecessor is not in this owner domain")
+                })?;
+            dispatch.source_request_digest = digest(&request.request)?;
+            self.store.apply_native_command_checked(
+                domain,
+                format!(
+                    "provider-handoff:{}",
+                    digest(&(&dispatch.conversation_id, &dispatch.request_id))?
+                ),
+                WorkGraphMutation::RegisterProviderDispatch {
+                    dispatch: Box::new(dispatch.clone()),
+                },
+                provenance(),
+                |_| {
+                    (|| -> Result<()> {
+                        self.store.admit_peer_coordination(
+                            domain,
+                            &dispatch.input.work_unit_id,
+                            dispatch.input.expected_scope_revision,
+                        )?;
+                        if self
+                            .store
+                            .peer_coordination_scope_digest(domain, &dispatch.input.work_unit_id)?
+                            != dispatch.scope_digest
+                            || native.work_is_controlled(domain, &dispatch.input.work_unit_id)?
+                        {
+                            bail!(
+                                "provider chain scope or native custody changed during admission"
+                            );
+                        }
+                        Ok(())
+                    })()
+                    .map_err(|error| {
+                        medousa_store::PersistenceError::new(
+                            medousa_store::PersistenceErrorKind::Conflict,
+                            error.to_string(),
+                        )
+                    })
+                },
+            )?;
+            return Ok(());
+        }
         let source = dispatch
             .input
             .review_of
@@ -262,6 +316,39 @@ impl WorkUnitHost {
             self.close_provider_dispatch_with(domain, dispatch, reason)?;
             return Ok(false);
         }
+        if unit.state == WorkUnitState::Paused {
+            return Ok(false);
+        }
+        if dispatch.after_provider_completion.is_some() {
+            let terminal = match self.store.provider_chain_terminal(domain, dispatch) {
+                Ok(terminal) => terminal,
+                Err(error) => {
+                    self.close_provider_dispatch_with(
+                        domain,
+                        dispatch,
+                        &format!("provider predecessor is not admitted: {error}"),
+                    )?;
+                    return Ok(false);
+                }
+            };
+            if terminal.is_none()
+                || !matches!(
+                    unit.state,
+                    WorkUnitState::Accepted | WorkUnitState::Active | WorkUnitState::Waiting
+                )
+            {
+                return Ok(false);
+            }
+            self.store.admit_peer_coordination(
+                domain,
+                &unit.work_unit_id,
+                dispatch.input.expected_scope_revision,
+            )?;
+            if native.work_is_controlled(domain, &unit.work_unit_id)? {
+                bail!("provider chain cannot replace native controller custody");
+            }
+            return Ok(true);
+        }
         if !matches!(
             unit.state,
             WorkUnitState::Accepted | WorkUnitState::Active | WorkUnitState::Waiting
@@ -322,5 +409,431 @@ impl WorkUnitHost {
             provenance(),
         )?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use medousa_types::{AuthorityId, ExternalEventKind};
+
+    fn domain() -> UserDomainRef {
+        UserDomainRef {
+            authority_id: AuthorityId::parse(format!("auth_{}", "b".repeat(64))).unwrap(),
+            user_id: "owner".into(),
+        }
+    }
+    fn event(
+        kind: ExternalEventKind,
+        qualification: WorkProviderQualification,
+        sequence: u64,
+    ) -> WorkProviderEvent {
+        WorkProviderEvent {
+            conversation_id: "upstream".into(),
+            request_id: "first".into(),
+            event_id: format!("event-{sequence}"),
+            actor_id: PROVIDER_DISPATCH_ACTOR.into(),
+            request_sequence: sequence,
+            kind,
+            text: "Immutable predecessor result".into(),
+            created_at: chrono::Utc::now(),
+            qualification,
+            review_decision: None,
+        }
+    }
+    async fn fixture() -> (
+        Arc<tempfile::TempDir>,
+        Arc<WorkUnitHost>,
+        Arc<CoordinationStore>,
+        WorkProviderDispatch,
+    ) {
+        let execution = Arc::new(ForgeExecutionService::new());
+        let exec = execution.clone();
+        execution
+            .run(ExecutionClass::StoreIo, MAX_SNAPSHOT_BYTES, move || {
+                Ok((|| -> Result<_> {
+                    let temp =
+                        Arc::new(tempfile::tempdir_in(std::env::temp_dir().canonicalize()?)?);
+                    let root = temp.path().canonicalize()?;
+                    let host = Arc::new(WorkUnitHost {
+                        store: Arc::new(WorkGraphStore::open(&root.join("graph"))?),
+                        execution: exec,
+                        forge: Arc::new(medousa_forge::forge::Forge::open(root.join("forge"))?),
+                    });
+                    let native = Arc::new(CoordinationStore::open(&root.join("native"))?);
+                    host.store.apply_native_command(
+                        &domain(),
+                        "work".into(),
+                        WorkGraphMutation::AcceptWork {
+                            work_unit_id: "unit".into(),
+                            intent: "Execute and assess the result".into(),
+                            kind: WorkUnitKind::Finite,
+                            scope: WorkScope::default(),
+                            completion_condition: "Native completion evidence is required".into(),
+                            contact: WorkContactPreference::Silent,
+                            origin: None,
+                            budget: None,
+                        },
+                        provenance(),
+                    )?;
+                    let input = WorkProviderRequestInput {
+                        work_unit_id: "unit".into(),
+                        expected_scope_revision: 1,
+                        deadline: chrono::Utc::now() + chrono::Duration::hours(1),
+                        review_of: None,
+                    };
+                    let request = WorkProviderRequest {
+                        conversation_id: "upstream".into(),
+                        request_id: "first".into(),
+                        provider: medousa_types::ExternalProvider::GrokBot,
+                        input: input.clone(),
+                        instruction_digest: "c".repeat(64),
+                        scope_digest: host
+                            .store
+                            .peer_coordination_scope_digest(&domain(), "unit")?,
+                        completion_condition: "Native completion evidence is required".into(),
+                        reviewed: None,
+                        predecessor: None,
+                    };
+                    host.store.apply_native_command(
+                        &domain(),
+                        "request".into(),
+                        WorkGraphMutation::RegisterProviderRequest {
+                            request: Box::new(request),
+                        },
+                        provenance(),
+                    )?;
+                    host.store.apply_native_command(
+                        &domain(),
+                        "send".into(),
+                        WorkGraphMutation::ClaimProviderRequest {
+                            conversation_id: "upstream".into(),
+                            request_id: "first".into(),
+                        },
+                        provenance(),
+                    )?;
+                    let mut dispatch = WorkProviderDispatch {
+                        conversation_id: "downstream".into(),
+                        request_id: "second".into(),
+                        provider: medousa_types::ExternalProvider::Muse,
+                        input,
+                        instructions:
+                            "Assess the predecessor outcome; do not claim native approval".into(),
+                        target_digest: "d".repeat(64),
+                        scope_digest: String::new(),
+                        source_request_digest: String::new(),
+                        after_provider_completion: Some(WorkProviderDispatchSource {
+                            request: WorkProviderRequestRef {
+                                conversation_id: "upstream".into(),
+                                request_id: "first".into(),
+                            },
+                            target_digest: "e".repeat(64),
+                        }),
+                        coordinator_wake: false,
+                    };
+                    host.admit_provider_dispatch_with(
+                        &native,
+                        &domain(),
+                        &mut dispatch,
+                        |_, _| false,
+                    )?;
+                    Ok((temp, host, native, dispatch))
+                })())
+            })
+            .await
+            .unwrap()
+            .unwrap()
+    }
+
+    fn inbox(
+        host: &WorkUnitHost,
+        conversation: &str,
+        request: &str,
+    ) -> Result<medousa_work::CoordinatorInbox> {
+        host.store
+            .coordinator_inboxes(&domain().authority_id, 4, None)?
+            .inboxes
+            .into_iter()
+            .find(|inbox| inbox.conversation_id == conversation && inbox.request_id == request)
+            .ok_or_else(|| anyhow::anyhow!("exact runtime inbox missing"))
+    }
+
+    #[tokio::test]
+    async fn provider_chain_driver_waits_reopens_and_sends_one_correlated_stage_without_a_chat() {
+        let (temp, host, native, dispatch) = fixture().await;
+        assert!(
+            host.prepare_provider_request(
+                domain(),
+                dispatch.conversation_id.clone(),
+                dispatch.provider,
+                dispatch.request_id.clone(),
+                dispatch.input.clone(),
+                dispatch.instructions.clone()
+            )
+            .await
+            .is_err()
+        );
+        let saved = dispatch.clone();
+        let ledger = native.clone();
+        let driver = host.clone();
+        host.with_store(move |_| {
+            assert!(
+                !driver.provider_dispatch_ready_with(&ledger, &domain(), &saved, |_, _| false)?
+            );
+            driver.store.apply_native_command(
+                &domain(),
+                "progress".into(),
+                WorkGraphMutation::RecordProviderEvent {
+                    event: Box::new(event(
+                        ExternalEventKind::Progress,
+                        WorkProviderQualification::OutcomeOnly,
+                        1,
+                    )),
+                },
+                provenance(),
+            )?;
+            assert!(
+                !driver.provider_dispatch_ready_with(&ledger, &domain(), &saved, |_, _| false)?
+            );
+            driver.store.apply_native_command(
+                &domain(),
+                "terminal".into(),
+                WorkGraphMutation::RecordProviderEvent {
+                    event: Box::new(event(
+                        ExternalEventKind::Completed,
+                        WorkProviderQualification::OutcomeOnly,
+                        2,
+                    )),
+                },
+                provenance(),
+            )?;
+            driver.consume_provider_inbox_with(
+                &inbox(&driver, "upstream", "first")?,
+                Some(&ledger),
+                |_, _| false,
+            )?;
+            driver.consume_provider_inbox_with(
+                &inbox(&driver, "upstream", "first")?,
+                Some(&ledger),
+                |_, _| false,
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        let root = temp.path().to_path_buf();
+        let driver = host.clone();
+        let saved = dispatch.clone();
+        let ledger = native.clone();
+        let reopened = host
+            .with_store(move |_| {
+                let reopened = Arc::new(WorkUnitHost {
+                    store: Arc::new(WorkGraphStore::open(&root.join("graph"))?),
+                    execution: driver.execution.clone(),
+                    forge: driver.forge.clone(),
+                });
+                assert!(reopened.provider_dispatch_ready_with(
+                    &ledger,
+                    &domain(),
+                    &saved,
+                    |_, _| false
+                )?);
+                Ok(reopened)
+            })
+            .await
+            .unwrap();
+        let request = reopened
+            .prepare_provider_request(
+                domain(),
+                dispatch.conversation_id.clone(),
+                dispatch.provider,
+                dispatch.request_id.clone(),
+                dispatch.input.clone(),
+                dispatch.instructions.clone(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(request.predecessor.as_ref().unwrap().event_id, "event-2");
+        let context = reopened
+            .provider_predecessor_context(domain(), request.predecessor.clone().unwrap(), 2048)
+            .await
+            .unwrap();
+        assert!(context.contains("Immutable predecessor result"));
+        // Only after the real durable claim would the shared transport run.
+        reopened
+            .claim_provider_request(domain(), request.clone())
+            .await
+            .unwrap();
+        assert!(
+            reopened
+                .claim_provider_request(domain(), request.clone())
+                .await
+                .is_err()
+        );
+        let driver = reopened.clone();
+        let saved = dispatch.clone();
+        let ledger = native.clone();
+        reopened
+            .with_store(move |_| {
+                assert!(!driver.provider_dispatch_ready_with(
+                    &ledger,
+                    &domain(),
+                    &saved,
+                    |_, _| false
+                )?);
+                let mut terminal = event(
+                    ExternalEventKind::Completed,
+                    WorkProviderQualification::OutcomeOnly,
+                    1,
+                );
+                terminal.conversation_id = saved.conversation_id.clone();
+                terminal.request_id = saved.request_id.clone();
+                terminal.event_id = "second-result".into();
+                driver.store.apply_native_command(
+                    &domain(),
+                    "second-result".into(),
+                    WorkGraphMutation::RecordProviderEvent {
+                        event: Box::new(terminal),
+                    },
+                    provenance(),
+                )?;
+                driver.consume_provider_inbox_with(
+                    &inbox(&driver, &saved.conversation_id, &saved.request_id)?,
+                    Some(&ledger),
+                    |_, _| false,
+                )?;
+                let unit = driver.store.work_unit(&domain(), "unit")?;
+                assert_eq!(unit.state, WorkUnitState::Waiting);
+                assert_eq!(unit.contact, WorkContactPreference::Silent);
+                assert!(unit.origin.is_none());
+                assert!(unit.conversations.is_empty());
+                Ok(())
+            })
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn provider_chain_driver_fences_failed_paused_cancelled_rescoped_and_stale_results() {
+        for scenario in [
+            "failed",
+            "paused",
+            "cancelled",
+            "scope",
+            "inactive",
+            "budget",
+        ] {
+            let (_temp, host, native, dispatch) = fixture().await;
+            let driver = host.clone();
+            let saved = dispatch.clone();
+            let ledger = native.clone();
+            host.with_store(move |_| {
+                driver.store.apply_native_command(
+                    &domain(),
+                    "terminal".into(),
+                    WorkGraphMutation::RecordProviderEvent {
+                        event: Box::new(event(
+                            if scenario == "failed" {
+                                ExternalEventKind::Failed
+                            } else {
+                                ExternalEventKind::Completed
+                            },
+                            if scenario == "inactive" {
+                                WorkProviderQualification::InactiveWork
+                            } else {
+                                WorkProviderQualification::OutcomeOnly
+                            },
+                            1,
+                        )),
+                    },
+                    provenance(),
+                )?;
+                if matches!(scenario, "paused" | "cancelled" | "failed") {
+                    driver.store.apply_native_command(
+                        &domain(),
+                        "state".into(),
+                        WorkGraphMutation::SetState {
+                            work_unit_id: "unit".into(),
+                            state: match scenario {
+                                "paused" => WorkUnitState::Paused,
+                                "cancelled" => WorkUnitState::Cancelled,
+                                _ => WorkUnitState::NeedsAttention,
+                            },
+                            reason: "changed state".into(),
+                            evidence: vec![],
+                        },
+                        provenance(),
+                    )?;
+                } else if scenario == "scope" {
+                    driver.store.apply_native_command(
+                        &domain(),
+                        "scope".into(),
+                        WorkGraphMutation::SetScope {
+                            work_unit_id: "unit".into(),
+                            scope: WorkScope::default(),
+                        },
+                        provenance(),
+                    )?;
+                } else if scenario == "budget" {
+                    driver.store.apply_native_command(
+                        &domain(),
+                        "budget".into(),
+                        WorkGraphMutation::SetBudget {
+                            work_unit_id: "unit".into(),
+                            limits: WorkBudgetLimits {
+                                cost_microusd: 100,
+                                execution_count: 2,
+                                concurrent_executions: 1,
+                                deadline: saved.input.deadline,
+                            },
+                        },
+                        provenance(),
+                    )?;
+                }
+                let result =
+                    driver.provider_dispatch_ready_with(&ledger, &domain(), &saved, |_, _| false);
+                if scenario == "budget" {
+                    assert!(result.is_err());
+                } else {
+                    assert!(!result?);
+                }
+                let retained = driver
+                    .store
+                    .provider_dispatch(&domain(), "downstream", "second")?
+                    .unwrap();
+                assert_eq!(
+                    retained.closed_reason.is_some(),
+                    !matches!(scenario, "paused" | "budget")
+                );
+                assert!(
+                    driver
+                        .store
+                        .provider_request(&domain(), "downstream", "second")?
+                        .is_none()
+                );
+                if scenario == "paused" {
+                    driver.store.apply_native_command(
+                        &domain(),
+                        "resume".into(),
+                        WorkGraphMutation::SetState {
+                            work_unit_id: "unit".into(),
+                            state: WorkUnitState::Active,
+                            reason: "resume".into(),
+                            evidence: vec![],
+                        },
+                        provenance(),
+                    )?;
+                    assert!(driver.provider_dispatch_ready_with(
+                        &ledger,
+                        &domain(),
+                        &saved,
+                        |_, _| false
+                    )?);
+                }
+                Ok(())
+            })
+            .await
+            .unwrap();
+        }
     }
 }

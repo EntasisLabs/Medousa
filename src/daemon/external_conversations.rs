@@ -750,23 +750,13 @@ pub async fn send(
     send_admitted(state, principal, id, input, false).await
 }
 
-async fn send_admitted(
-    state: AppState,
-    principal: RequestPrincipal,
-    id: String,
-    mut input: SendMessageRequest,
+fn validate_send_admission(
+    principal: &RequestPrincipal,
+    input: &SendMessageRequest,
     scheduled: bool,
-) -> Result<Json<ConversationView>, HttpError> {
-    if input.coordinator_wake {
-        if input.work.is_none() {
-            return Err(bad_request("coordinator wake requires exact work metadata"));
-        }
-        if !scheduled && !principal.capabilities().contains(Capability::AdminExecute) {
-            return Err((
-                StatusCode::FORBIDDEN,
-                "coordinator model wake requires native operator admission".into(),
-            ));
-        }
+) -> Result<(), HttpError> {
+    if input.coordinator_wake && input.work.is_none() {
+        return Err(bad_request("coordinator wake requires exact work metadata"));
     }
     if input.request_id.trim().is_empty()
         || input.request_id.len() > 128
@@ -776,20 +766,60 @@ async fn send_admitted(
     {
         return Err(bad_request("invalid request ID or message"));
     }
-    let _send_guard = state.external_conversations.send_lock(&id).await;
+    if let Some(source) = &input.after_provider_completion
+        && [&source.conversation_id, &source.request_id]
+            .iter()
+            .any(|id| id.trim().is_empty() || id.len() > 128 || id.chars().any(char::is_control))
+    {
+        return Err(bad_request("invalid provider predecessor identity"));
+    }
+    if input.after_native_completion && input.after_provider_completion.is_some() {
+        return Err(bad_request(
+            "native and provider completion triggers are mutually exclusive",
+        ));
+    }
+    if (input.after_native_completion && scheduled)
+        || (!scheduled
+            && (input.after_native_completion
+                || input.after_provider_completion.is_some()
+                || input.coordinator_wake)
+            && !principal.capabilities().contains(Capability::AdminExecute))
+    {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "scheduled handoff or model wake requires native operator admission".into(),
+        ));
+    }
+    Ok(())
+}
+
+async fn send_admitted(
+    state: AppState,
+    principal: RequestPrincipal,
+    id: String,
+    mut input: SendMessageRequest,
+    scheduled: bool,
+) -> Result<Json<ConversationView>, HttpError> {
+    validate_send_admission(&principal, &input, scheduled)?;
+    // Hold both immutable conversation identities in a fixed order through
+    // dispatch admission. Removal/rotation cannot race the predecessor check.
+    let mut lock_ids = vec![id.clone()];
+    if let Some(source) = &input.after_provider_completion {
+        lock_ids.push(source.conversation_id.clone());
+    }
+    lock_ids.sort();
+    lock_ids.dedup();
+    let mut _send_guards = vec![];
+    for key in lock_ids {
+        _send_guards.push(state.external_conversations.send_lock(&key).await);
+    }
     let binding = state
         .external_conversations
         .binding(&id)
         .await
         .filter(|record| record.owner_id == owner(&principal, &state))
         .ok_or((StatusCode::NOT_FOUND, "conversation not found".into()))?;
-    if input.after_native_completion {
-        if scheduled || !principal.capabilities().contains(Capability::AdminExecute) {
-            return Err((
-                StatusCode::FORBIDDEN,
-                "scheduled provider handoff requires native operator admission".into(),
-            ));
-        }
+    if input.after_native_completion || (input.after_provider_completion.is_some() && !scheduled) {
         return work_dispatch::admit(&state, &binding, input).await;
     }
     if let Some(host) = crate::daemon::work_units::local_work_unit_host() {
@@ -800,13 +830,14 @@ async fn send_admitted(
             .map_err(internal)?
         {
             if scheduled
-                && saved.dispatch.target_digest
+                && (saved.dispatch.target_digest
                     != work_dispatch::target_digest(&binding).map_err(internal)?
+                    || !work_dispatch::source_matches(&state, &saved.dispatch).await)
             {
                 host.close_provider_dispatch(
                     domain,
                     saved.dispatch,
-                    "provider handoff destination changed before dispatch".into(),
+                    "provider handoff source or destination changed before dispatch".into(),
                 )
                 .await
                 .map_err(internal)?;
@@ -821,6 +852,12 @@ async fn send_admitted(
                 || input.work.as_ref() != Some(&saved.dispatch.input)
                 || input.text != saved.dispatch.instructions
                 || input.coordinator_wake != saved.dispatch.coordinator_wake
+                || input.after_provider_completion.as_ref()
+                    != saved
+                        .dispatch
+                        .after_provider_completion
+                        .as_ref()
+                        .map(|source| &source.request)
                 || !host
                     .provider_dispatch_ready(domain, saved.dispatch)
                     .await
@@ -906,6 +943,18 @@ async fn send_admitted(
         input.text.push_str(&format!("\n\nmedousa-work-provider-v1: {}\nReport progress/completed/failed with your Work credential to Medousa's work-events endpoint, naming this exact request. Ordinary chat replies are not completion receipts.", serde_json::to_string(&request).map_err(internal)?));
         if request.reviewed.is_some() {
             input.text.push_str("\nmedousa-work-review-v1: inspect the pinned clean checkout without editing it. Completed result must be strict JSON with the exact reviewed object above, verdict approved or changes_requested, and a nonempty summary.");
+        }
+        if let Some(pin) = &request.predecessor {
+            let budget = (16usize * 1024)
+                .saturating_sub(input.text.len() + 64)
+                .min(8192);
+            let context = host
+                .provider_predecessor_context(domain.clone(), pin.clone(), budget)
+                .await
+                .map_err(internal)?;
+            input
+                .text
+                .push_str(&format!("\n\nmedousa-work-provider-source-v1: {context}"));
         }
         if input.text.len() > 16 * 1024 {
             return Err(bad_request(
@@ -1585,6 +1634,45 @@ pub fn surface() -> DeclaredRouter<AppState> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn provider_chain_intent_cannot_mint_operator_authority_from_work_or_worker_credentials() {
+        let mut input: SendMessageRequest = serde_json::from_value(serde_json::json!({
+            "request_id": "next", "text": "Analyze the predecessor",
+            "after_provider_completion": {"conversation_id":"source", "request_id":"first"},
+            "work": {"work_unit_id":"unit", "expected_scope_revision":1, "deadline":chrono::Utc::now()+chrono::Duration::hours(1)}
+        })).unwrap();
+        let external = RequestPrincipal::external_agent(
+            Arc::from("work-token"),
+            "owner".into(),
+            true,
+            crate::request_principal::TransportClass::Loopback,
+        );
+        for principal in [
+            external,
+            RequestPrincipal::worker("owner"),
+            RequestPrincipal::continuation("owner"),
+        ] {
+            assert_eq!(
+                validate_send_admission(&principal, &input, false)
+                    .unwrap_err()
+                    .0,
+                StatusCode::FORBIDDEN
+            );
+        }
+        let operator = RequestPrincipal::local_app(
+            Arc::from("local-app"),
+            crate::request_principal::TransportClass::Loopback,
+        );
+        validate_send_admission(&operator, &input, false).unwrap();
+        input.after_native_completion = true;
+        assert_eq!(
+            validate_send_admission(&operator, &input, false)
+                .unwrap_err()
+                .0,
+            StatusCode::BAD_REQUEST
+        );
+    }
 
     #[tokio::test]
     async fn journal_replays_and_deduplicates() {

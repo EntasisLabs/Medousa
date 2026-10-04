@@ -633,3 +633,14 @@ and blocked reason. `register_coordinator_wake`, `claim_coordinator_wake`,
 model or provider Work-credential mutations cannot manufacture them. See
 [admitted model wakes](../engine/work-units.md#admitted-coordinator-model-wakes)
 for frozen routing, restart reconciliation and the empty tool ceiling.
+
+`ExternalConversationSendRequest.after_provider_completion` optionally names a
+`WorkProviderRequestRef` for one saved provider successor. Omission preserves the
+ordinary send path. It requires native operator admission and ordinary exact
+`work` metadata, and cannot be combined with the native completion trigger or
+revision-review source. `WorkProviderDispatch.after_provider_completion` stores
+the derived source destination pin; `WorkProviderRequest.predecessor` stores the
+exact native-derived terminal reference/digest. These additive fields default to
+absent so retained ordinary/native requests keep their previous wire identities.
+See [provider chains](../engine/work-units.md#provider-to-provider-chains) for the
+eight-stage bound, deadline/scope restrictions and restart/unknown-send behavior.

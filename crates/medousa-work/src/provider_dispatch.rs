@@ -1,4 +1,4 @@
-//! Saved authority for one native-executor → provider-review handoff.
+//! Saved authority for one native or provider predecessor handoff.
 use super::*;
 use medousa_types::work_provider::*;
 
@@ -56,15 +56,19 @@ impl Snapshot {
         {
             return Err(invalid("invalid provider dispatch scope generation"));
         }
-        let source = dispatch.input.review_of.as_ref().ok_or_else(|| {
-            invalid("scheduled provider dispatch requires a native executor source")
-        })?;
-        identifier(&source.executor_assignment_id)?;
-        identifier(&source.channel.channel_id)?;
-        if source.channel.authority_id != self.domain.authority_id {
-            return Err(invalid(
-                "provider dispatch source belongs to another authority",
-            ));
+        if dispatch.after_provider_completion.is_some() {
+            self.chain_source(dispatch)?;
+        } else {
+            let source = dispatch.input.review_of.as_ref().ok_or_else(|| {
+                invalid("scheduled provider dispatch requires an exact executor source")
+            })?;
+            identifier(&source.executor_assignment_id)?;
+            identifier(&source.channel.channel_id)?;
+            if source.channel.authority_id != self.domain.authority_id {
+                return Err(invalid(
+                    "provider dispatch source belongs to another authority",
+                ));
+            }
         }
         Ok(())
     }
@@ -101,6 +105,13 @@ impl Snapshot {
         }) || self.provider_requests.values().any(|record| {
             record.request.input.work_unit_id == unit.work_unit_id
                 && record.dispatch_claimed
+                && !dispatch
+                    .after_provider_completion
+                    .as_ref()
+                    .is_some_and(|source| {
+                        source.request.conversation_id == record.request.conversation_id
+                            && source.request.request_id == record.request.request_id
+                    })
                 && !record.events.iter().any(|event| {
                     matches!(
                         event.kind,
@@ -112,6 +123,16 @@ impl Snapshot {
             return Err(invalid(
                 "work already has pending provider dispatch custody",
             ));
+        }
+        if let Some(source) = &dispatch.after_provider_completion {
+            if !self.provider_stage_is_current(
+                &source.request.conversation_id,
+                &source.request.request_id,
+            )? {
+                return Err(invalid("provider chain predecessor is not current"));
+            }
+            // Pending is allowed; failed/stale completed evidence is not.
+            self.provider_chain_terminal(&dispatch)?;
         }
         let key = dispatch_key(&dispatch.conversation_id, &dispatch.request_id)?;
         if self.provider_dispatches.contains_key(&key)
@@ -178,6 +199,27 @@ impl Snapshot {
                     "provider request cannot replace saved dispatch authority",
                 ));
             }
+            let expected = if dispatch.after_provider_completion.is_some() {
+                Some(
+                    self.provider_chain_terminal(dispatch)?
+                        .ok_or_else(|| invalid("provider chain predecessor has not completed"))?,
+                )
+            } else {
+                None
+            };
+            if request.predecessor != expected {
+                return Err(invalid("provider successor lacks its exact terminal pin"));
+            }
+        }
+        if request.predecessor.is_some()
+            && !self.provider_dispatches.values().any(|record| {
+                record.dispatch.conversation_id == request.conversation_id
+                    && record.dispatch.request_id == request.request_id
+                    && record.dispatch.after_provider_completion.is_some()
+                    && record.closed_reason.is_none()
+            })
+        {
+            return Err(invalid("provider chain has no native dispatch admission"));
         }
         if let Some(record) = self.provider_dispatches.get(&dispatch_key(
             &request.conversation_id,

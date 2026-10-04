@@ -168,6 +168,14 @@ when its executor completes. The resulting assessment is retained in
 contact the user, qualify review or dispatch suggested work. See
 [model wake admission](work-units.md#admitted-coordinator-model-wakes).
 
+Set `after_provider_completion` to an exact `{ conversation_id, request_id }`
+source to save a provider → provider handoff instead. The source must already be
+dispatched for the same local owner/work scope, and the next deadline must fit
+inside its deadline. This option requires `admin.execute`; use it with ordinary
+provider `work` metadata, without `work.review_of` or `after_native_completion`.
+It can also retain `coordinator_wake: true`. See
+[bounded provider chains](work-units.md#provider-to-provider-chains).
+
 For a manual acceptance test, use a disposable finite unbudgeted work unit and a
 dedicated provider conversation with its own Work credential:
 
@@ -193,6 +201,35 @@ dedicated provider conversation with its own Work credential:
    Duplicate callbacks and daemon restart must retain the same attempt. Inspect
    a missing/error outcome without resending or relaunching. Check that silent
    work stays silent and the internal transcript adds no normal chat-list row.
+
+For a provider-chain manual test, start one ordinary work request in provider A's
+conversation. While it is running, send the following body to provider B's
+`/messages` endpoint, substituting the first request's future RFC3339 deadline:
+
+```json
+{
+  "request_id": "assessment-stage",
+  "text": "Assess the exact predecessor result and report remaining evidence.",
+  "after_provider_completion": {
+    "conversation_id": "provider-a-conversation",
+    "request_id": "execution-stage"
+  },
+  "work": {
+    "work_unit_id": "test-unit",
+    "expected_scope_revision": 7,
+    "deadline": "<first request's future RFC3339 deadline>"
+  }
+}
+```
+
+Inspect `provider_dispatches`: B should have one saved handoff and no message yet.
+A progress callback must not send B's stage. A completed callback should cause one
+B send with a runtime-derived `predecessor` pin and bounded source context. Restart
+or duplicate A's callback: B must keep the same claimed request without another
+send. B reports with its own Work credential and exact request ID. Its assessment
+remains outcome evidence, leaving work waiting for native approval. Repeat with
+failed/stale A results, pause/cancel/rescope and removed source/destination
+conversations; those should retain or close custody without replacement sends.
 
 Transport acceptance and callback support must be checked for each actual
 provider; local store/Forge tests do not qualify a live Muse, Instinct, Dots or
@@ -237,5 +274,6 @@ Subscription readers receive typed provider events through `work.events` and
 acknowledge them explicitly. Transport acceptance and ordinary chat replies do
 not qualify review. New work associations support native stage publication,
 saved native-executor review handoffs and separately admitted internal model analysis as documented
-above. Provider-to-provider chains, reporter/voice delivery and federation remain
-separate gates. Muse's linked-device transport remains unverified.
+above. Bounded linear provider chains also use saved admission and exact terminal
+pins. Fix/review loops, reporter/voice delivery and federation remain separate
+gates. Muse's linked-device transport remains unverified.

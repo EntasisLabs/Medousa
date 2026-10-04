@@ -1,6 +1,9 @@
-//! One operator-admitted review send, recovered from work-owned custody.
+//! One operator-admitted native or provider handoff, recovered from work custody.
 use super::*;
-use medousa_types::{work_provider::WorkProviderDispatch, work_unit::UserDomainRef};
+use medousa_types::{
+    work_provider::{WorkProviderDispatch, WorkProviderDispatchSource},
+    work_unit::UserDomainRef,
+};
 use sha2::{Digest, Sha256};
 
 pub(super) fn target_digest(binding: &ConversationRecord) -> anyhow::Result<String> {
@@ -24,10 +27,32 @@ pub(super) async fn admit(
 ) -> Result<Json<ConversationView>, HttpError> {
     let work = input
         .work
-        .ok_or_else(|| bad_request("scheduled review requires work.review_of"))?;
-    if work.review_of.is_none() {
-        return Err(bad_request("scheduled review requires work.review_of"));
-    }
+        .ok_or_else(|| bad_request("scheduled handoff requires work metadata"))?;
+    let after_provider_completion = if let Some(source) = input.after_provider_completion {
+        if work.review_of.is_some() {
+            return Err(bad_request(
+                "provider chains use outcome evidence; native revision review is a separate admission",
+            ));
+        }
+        let upstream = state
+            .external_conversations
+            .binding(&source.conversation_id)
+            .await
+            .filter(|record| record.owner_id == binding.owner_id)
+            .ok_or((
+                StatusCode::NOT_FOUND,
+                "provider predecessor conversation not found".into(),
+            ))?;
+        Some(WorkProviderDispatchSource {
+            request: source,
+            target_digest: target_digest(&upstream).map_err(internal)?,
+        })
+    } else {
+        if work.review_of.is_none() {
+            return Err(bad_request("scheduled review requires work.review_of"));
+        }
+        None
+    };
     let host = crate::daemon::work_units::local_work_unit_host().ok_or((
         StatusCode::SERVICE_UNAVAILABLE,
         "work unit host unavailable".into(),
@@ -44,6 +69,7 @@ pub(super) async fn admit(
             scope_digest: String::new(),
             source_request_digest: String::new(),
             coordinator_wake: input.coordinator_wake,
+            after_provider_completion: after_provider_completion.clone(),
         },
     )
     .await
@@ -55,12 +81,29 @@ pub(super) async fn admit(
             format!("scheduled:{}", input.request_id),
             Some(input.request_id),
             EventKind::TransportPending,
-            "Review handoff admitted; waiting for the exact native executor completion".into(),
+            if after_provider_completion.is_some() {
+                "Provider handoff admitted; waiting for the exact predecessor completion".into()
+            } else {
+                "Review handoff admitted; waiting for the exact native executor completion".into()
+            },
         )
         .await
         .map_err(internal)?
         .ok_or((StatusCode::NOT_FOUND, "conversation not found".into()))?;
     Ok(Json(view))
+}
+
+pub(super) async fn source_matches(state: &AppState, dispatch: &WorkProviderDispatch) -> bool {
+    let Some(source) = &dispatch.after_provider_completion else {
+        return true;
+    };
+    state
+        .external_conversations
+        .binding(&source.request.conversation_id)
+        .await
+        .is_some_and(|binding| {
+            target_digest(&binding).ok().as_deref() == Some(source.target_digest.as_str())
+        })
 }
 
 pub(crate) async fn resume(
@@ -76,11 +119,12 @@ pub(crate) async fn resume(
         .await;
     if destination.as_ref().is_none_or(|binding| {
         target_digest(binding).ok().as_deref() != Some(dispatch.target_digest.as_str())
-    }) {
+    }) || !source_matches(&state, &dispatch).await
+    {
         host.close_provider_dispatch(
             domain,
             dispatch,
-            "provider handoff destination changed or was removed".into(),
+            "provider handoff source or destination changed or was removed".into(),
         )
         .await?;
         return Ok(());
@@ -100,6 +144,9 @@ pub(crate) async fn resume(
             text: dispatch.instructions,
             work: Some(dispatch.input),
             after_native_completion: false,
+            after_provider_completion: dispatch
+                .after_provider_completion
+                .map(|source| source.request),
             coordinator_wake: dispatch.coordinator_wake,
         },
         true,

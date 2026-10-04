@@ -988,6 +988,7 @@ async fn provider_stage_controller_recovers_exact_review_without_an_open_source_
                 scope_digest: copy.scope_digest.clone(),
                 completion_condition: "reviewed implementation".into(),
                 reviewed: Some(pin.clone()),
+                predecessor: None,
             };
             let proof = RecordProvenance {
                 actor_id: "external-agent:test".into(),
@@ -1251,6 +1252,7 @@ async fn provider_handoff_waits_for_exact_executor_and_never_replaces_claimed_se
                     scope_digest: String::new(),
                     source_request_digest: String::new(),
                     coordinator_wake: false,
+                    after_provider_completion: None,
                 };
                 let admission = host.admit_provider_dispatch_with(
                     native,
@@ -1397,6 +1399,7 @@ async fn provider_handoff_waits_for_exact_executor_and_never_replaces_claimed_se
                         .work_unit(&copy.domain, &copy.input.work_unit_id)?
                         .completion_condition,
                     reviewed: Some(pin),
+                    predecessor: None,
                 };
                 host.store.apply_native_command(
                     &copy.domain,

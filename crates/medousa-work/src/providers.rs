@@ -275,6 +275,7 @@ impl Snapshot {
         {
             return Err(invalid("invalid provider scope revision"));
         }
+        self.validate_predecessor(request)?;
         match (&request.input.review_of, &request.reviewed) {
             (None, None) => {}
             (Some(source), Some(input))

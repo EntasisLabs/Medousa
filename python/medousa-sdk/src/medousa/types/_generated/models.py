@@ -833,6 +833,14 @@ class CoordinationChannelRef(MedousaModel):
     channel_id: str
 
 
+class WorkProviderRequestRef(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    conversation_id: str
+    request_id: str
+
+
 class WorkProviderReviewSource(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -2810,6 +2818,14 @@ class Operation23(Enum):
     record_provider_event = 'record_provider_event'
 
 
+class WorkProviderDispatchSource(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    request: WorkProviderRequestRef
+    target_digest: str
+
+
 class WorkProviderQualification(Enum):
     outcome_only = 'outcome_only'
     review_approved = 'review_approved'
@@ -2819,6 +2835,15 @@ class WorkProviderQualification(Enum):
     scope_changed = 'scope_changed'
     inactive_work = 'inactive_work'
     expired = 'expired'
+
+
+class WorkProviderTerminalRef(MedousaModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    event_digest: str
+    event_id: str
+    request: WorkProviderRequestRef
 
 
 class WorkReadinessRequirement(MedousaModel):
@@ -5134,6 +5159,7 @@ class WorkProviderDispatch(MedousaModel):
     model_config = ConfigDict(
         extra='forbid',
     )
+    after_provider_completion: WorkProviderDispatchSource | None = None
     conversation_id: str
     coordinator_wake: bool | None = None
     input: WorkProviderRequestInput
@@ -5153,6 +5179,7 @@ class WorkProviderRequest(MedousaModel):
     conversation_id: str
     input: WorkProviderRequestInput
     instruction_digest: str
+    predecessor: WorkProviderTerminalRef | None = None
     provider: ExternalProvider
     request_id: str
     reviewed: WorkReviewInput | None = None
@@ -5374,6 +5401,11 @@ class ExternalConversationSendRequest(MedousaModel):
     after_native_completion: bool | None = Field(
         None,
         description='Native operator admission for one review send after the exact executor completes. Requires `work.review_of`; it does not launch the executor.',
+    )
+    after_provider_completion: (
+        WorkProviderRequestRef | None
+    ) = (
+        Field(None, description='Native operator admission for one send after this exact provider request completes. Requires work metadata; mutually exclusive with the native trigger.')
     )
     coordinator_wake: bool | None = Field(
         None,

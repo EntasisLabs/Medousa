@@ -13545,6 +13545,17 @@
         "description": "Native operator admission for one review send after the exact executor completes. Requires `work.review_of`; it does not launch the executor.",
         "type": "boolean"
       },
+      "after_provider_completion": {
+        "description": "Native operator admission for one send after this exact provider request completes. Requires work metadata; mutually exclusive with the native trigger.",
+        "anyOf": [
+          {
+            "$ref": "#/definitions/WorkProviderRequestRef"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "coordinator_wake": {
         "description": "Native admission for one internal result-analysis turn. No contact or execution tools are granted to that turn.",
         "type": "boolean"
@@ -13617,6 +13628,23 @@
             ]
           },
           "work_unit_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkProviderRequestRef": {
+        "description": "Exact request identity within the admitted owner's local user domain.",
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "request_id"
+        ],
+        "properties": {
+          "conversation_id": {
+            "type": "string"
+          },
+          "request_id": {
             "type": "string"
           }
         },
@@ -31542,7 +31570,7 @@
         ]
       },
       "WorkProviderDispatch": {
-        "description": "One immutable, operator-admitted provider review handoff. The runtime derives the checkout pin after the saved native executor finishes.",
+        "description": "One immutable, operator-admitted handoff after a native executor or exact provider predecessor completes. Recovery derives its result/revision pin.",
         "type": "object",
         "required": [
           "conversation_id",
@@ -31555,6 +31583,16 @@
           "target_digest"
         ],
         "properties": {
+          "after_provider_completion": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorkProviderDispatchSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "conversation_id": {
             "type": "string"
           },
@@ -31578,6 +31616,22 @@
           },
           "source_request_digest": {
             "type": "string"
+          },
+          "target_digest": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkProviderDispatchSource": {
+        "type": "object",
+        "required": [
+          "request",
+          "target_digest"
+        ],
+        "properties": {
+          "request": {
+            "$ref": "#/definitions/WorkProviderRequestRef"
           },
           "target_digest": {
             "type": "string"
@@ -31679,6 +31733,16 @@
           "instruction_digest": {
             "type": "string"
           },
+          "predecessor": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WorkProviderTerminalRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "provider": {
             "$ref": "#/definitions/ExternalProvider"
           },
@@ -31736,6 +31800,23 @@
         },
         "additionalProperties": false
       },
+      "WorkProviderRequestRef": {
+        "description": "Exact request identity within the admitted owner's local user domain.",
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "request_id"
+        ],
+        "properties": {
+          "conversation_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "WorkProviderReviewSource": {
         "type": "object",
         "required": [
@@ -31748,6 +31829,27 @@
           },
           "executor_assignment_id": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkProviderTerminalRef": {
+        "description": "Native-derived pin of the immutable predecessor terminal, never a caller verdict.",
+        "type": "object",
+        "required": [
+          "event_digest",
+          "event_id",
+          "request"
+        ],
+        "properties": {
+          "event_digest": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "request": {
+            "$ref": "#/definitions/WorkProviderRequestRef"
           }
         },
         "additionalProperties": false
