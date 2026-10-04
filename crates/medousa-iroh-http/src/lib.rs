@@ -85,6 +85,7 @@ async fn endpoint_for_relays(relays: &[RelayUrl]) -> Result<Endpoint> {
     let mut guard = client_slot().lock().await;
     if let Some(cached) = guard.as_ref()
         && cached.key == key
+        && !cached.endpoint.is_closed()
     {
         return Ok(cached.endpoint.clone());
     }
@@ -97,6 +98,19 @@ async fn endpoint_for_relays(relays: &[RelayUrl]) -> Result<Endpoint> {
         endpoint: endpoint.clone(),
     });
     Ok(endpoint)
+}
+
+/// Re-probe sockets/relays after a foreground resume or network handoff without
+/// closing streams or replacing the client's identity underneath other requests.
+pub async fn notify_network_change() {
+    let endpoint = client_slot()
+        .lock()
+        .await
+        .as_ref()
+        .map(|cached| cached.endpoint.clone());
+    if let Some(endpoint) = endpoint {
+        endpoint.network_change().await;
+    }
 }
 
 async fn bind_client(relays: &[RelayUrl]) -> Result<Endpoint> {
@@ -148,22 +162,27 @@ fn normalize_relay_host(relay_url: &RelayUrl) -> Result<RelayUrl> {
 /// `Endpoint::online` waits until a relay socket is up, and if that watcher
 /// drops it parks forever. A browser relay that closes (`ERR_CONNECTION_CLOSED`)
 /// would leave the portal join on "Joining…" with no error.
+#[cfg(target_arch = "wasm32")]
 async fn wait_for_relay(endpoint: &Endpoint) -> Result<()> {
     let online = endpoint.online();
+    n0_future::time::timeout(std::time::Duration::from_secs(8), online)
+        .await
+        .map_err(|_| anyhow::anyhow!("timed out waiting for an iroh relay"))?;
+    Ok(())
+}
+
+async fn connect_workshop(
+    endpoint: &Endpoint,
+    addr: EndpointAddr,
+) -> Result<iroh::endpoint::Connection> {
+    let dial = endpoint.connect(addr, ALPN);
     #[cfg(target_arch = "wasm32")]
-    {
-        n0_future::time::timeout(std::time::Duration::from_secs(8), online)
-            .await
-            .map_err(|_| anyhow::anyhow!("Iroh relay connection closed"))?;
-        return Ok(());
-    }
+    let result = n0_future::time::timeout(std::time::Duration::from_secs(12), dial).await;
     #[cfg(not(target_arch = "wasm32"))]
-    {
-        tokio::time::timeout(std::time::Duration::from_secs(8), online)
-            .await
-            .map_err(|_| anyhow::anyhow!("Iroh relay connection closed"))?;
-        Ok(())
-    }
+    let result = tokio::time::timeout(std::time::Duration::from_secs(12), dial).await;
+    result
+        .map_err(|_| anyhow::anyhow!("timed out connecting to workshop over iroh"))?
+        .context("connect to workshop over iroh")
 }
 
 pub async fn iroh_http_request(
@@ -179,19 +198,18 @@ pub async fn iroh_http_request(
         bail!("invitation does not contain a browser relay");
     }
     let endpoint = endpoint_for_relays(&relays).await?;
-    wait_for_relay(&endpoint).await?;
-
-    let dial = endpoint.connect(addr, ALPN);
     #[cfg(target_arch = "wasm32")]
-    let conn = n0_future::time::timeout(std::time::Duration::from_secs(12), dial)
-        .await
-        .map_err(|_| anyhow::anyhow!("Iroh relay connection closed"))?
-        .context("connect to workshop over iroh")?;
-    #[cfg(not(target_arch = "wasm32"))]
-    let conn = tokio::time::timeout(std::time::Duration::from_secs(12), dial)
-        .await
-        .map_err(|_| anyhow::anyhow!("Iroh relay connection closed"))?
-        .context("connect to workshop over iroh")?;
+    wait_for_relay(&endpoint).await?;
+    // Native iroh can dial directly while its relay is recovering. Waiting for
+    // `online()` first incorrectly makes a working direct path depend on a relay.
+    // Retry only the handshake: no HTTP bytes have been sent at this point.
+    let conn = match connect_workshop(&endpoint, addr.clone()).await {
+        Ok(conn) => conn,
+        Err(_) => {
+            endpoint.network_change().await;
+            connect_workshop(&endpoint, addr).await?
+        }
+    };
     let (mut send, mut recv) = conn.open_bi().await.context("open bi stream")?;
 
     let normalized = normalize_path(path);
@@ -299,6 +317,34 @@ pub async fn iroh_http_get_text(ticket: &str, path: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn native_handshake_connects_without_an_online_relay() {
+        let server = Endpoint::builder(presets::Minimal)
+            .clear_ip_transports()
+            .bind_addr("127.0.0.1:0")
+            .unwrap()
+            .alpns(vec![ALPN.to_vec()])
+            .bind()
+            .await
+            .unwrap();
+        let client = Endpoint::builder(presets::Minimal)
+            .clear_ip_transports()
+            .bind_addr("127.0.0.1:0")
+            .unwrap()
+            .bind()
+            .await
+            .unwrap();
+        let addr = EndpointAddr::new(server.id()).with_ip_addr(server.bound_sockets()[0]);
+        let (connected, accepted) = tokio::join!(connect_workshop(&client, addr), async {
+            server.accept().await.unwrap().await.unwrap()
+        },);
+        let conn = connected.unwrap();
+        assert_eq!(conn.remote_id(), server.id());
+        assert_eq!(accepted.remote_id(), client.id());
+        client.close().await;
+        server.close().await;
+    }
 
     #[test]
     fn strips_terminal_dot_from_relay_hosts_for_the_browser() {

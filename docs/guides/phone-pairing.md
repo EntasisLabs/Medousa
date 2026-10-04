@@ -40,6 +40,11 @@ short-lived sessions in its secret store and renews them by proving possession
 of the device key created during pairing. Closing the app, changing networks,
 or letting a session expire does not require another QR scan.
 
+When a launch or foreground health check cannot reach the workshop, Medousa
+retries automatically while the app is visible. It rechecks the network route
+and resumes the selected conversation and streams when the workshop returns.
+You can also choose **Retry connection** on the offline screen.
+
 If a paired connection becomes stale, open the workshop menu and choose
 **Refresh connection**, or use **Refresh** on the active workshop in
 **Settings → Connection**. Medousa checks the route and saved credentials,

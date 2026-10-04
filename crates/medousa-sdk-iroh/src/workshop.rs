@@ -141,10 +141,9 @@ impl WorkshopTransport {
                     .iroh
                     .as_ref()
                     .ok_or_else(|| SdkError::Transport("iroh hook missing".to_string()))?;
-                let bytes = hook
-                    .request_json(method, path, &header_refs, payload.as_deref())
-                    .await?;
-                parse_iroh_json_bytes(&bytes)
+                hook.request_json(method, path, &header_refs, payload.as_deref())
+                    .await
+                    .and_then(|bytes| parse_iroh_json_bytes(&bytes))
             }
         };
 
@@ -164,6 +163,18 @@ impl WorkshopTransport {
                     .request_json(method, path, &header_refs, payload.as_deref())
                     .await?;
                 parse_iroh_json_bytes(&bytes)
+            }
+            Err(err) if route == WorkshopRoute::Iroh && is_connect_error(&err.to_string()) => {
+                // A failed relay must not pin healthy LAN traffic to Iroh for
+                // the remainder of its TTL. Only reads may cross transports
+                // after a potentially transmitted request.
+                invalidate_route_cache();
+                if method == "GET" && self.pick_workshop_route().await == WorkshopRoute::Lan {
+                    return self
+                        .lan_request_json(method, path, payload.as_deref())
+                        .await;
+                }
+                Err(err)
             }
             Err(err) => Err(err),
         }
@@ -442,6 +453,121 @@ fn stream_route_path(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{parse_iroh_json_bytes, stream_route_path};
+
+    struct UnavailableIroh(std::sync::atomic::AtomicUsize);
+
+    impl crate::IrohHttpHook for UnavailableIroh {
+        fn request_json<'a>(
+            &'a self,
+            _method: &'a str,
+            _path: &'a str,
+            _headers: &'a [(&'a str, &'a str)],
+            _body: Option<&'a [u8]>,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = Result<Vec<u8>, medousa_sdk::SdkError>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Box::pin(async {
+                Err(medousa_sdk::SdkError::Http(
+                    "connect to workshop over iroh: timed out".into(),
+                ))
+            })
+        }
+
+        #[cfg(feature = "sse")]
+        fn stream_sse(
+            &self,
+            _path: String,
+            _headers: &[(&str, &str)],
+        ) -> std::pin::Pin<
+            Box<
+                dyn futures_util::Stream<Item = Result<bytes::Bytes, medousa_sdk::SdkError>> + Send,
+            >,
+        > {
+            Box::pin(futures_util::stream::empty())
+        }
+    }
+
+    #[tokio::test]
+    async fn stale_iroh_route_recovers_reads_over_lan_without_replaying_mutations() {
+        use std::io::{Read, Write};
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let mut requests = Vec::new();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while requests.len() < 4 && std::time::Instant::now() < deadline {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                    continue;
+                };
+                stream
+                    .set_read_timeout(Some(std::time::Duration::from_secs(1)))
+                    .unwrap();
+                let mut request = [0u8; 4096];
+                let read = stream.read(&mut request).unwrap();
+                requests.push(
+                    String::from_utf8_lossy(&request[..read])
+                        .lines()
+                        .next()
+                        .unwrap()
+                        .to_string(),
+                );
+                stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{\"ok\":true}").unwrap();
+            }
+            requests
+        });
+        let hook = Arc::new(UnavailableIroh(AtomicUsize::new(0)));
+        let transport =
+            super::WorkshopTransport::new(super::WorkshopTransportConfig::from_workshop_parts(
+                base.clone(),
+                None,
+                Some("test-ticket".into()),
+            ))
+            .with_iroh_hook(hook.clone());
+        crate::route::write_cache(&base, crate::WorkshopRoute::Iroh);
+        assert_eq!(
+            transport
+                .request_json("GET", "/history", None)
+                .await
+                .unwrap()["ok"],
+            true
+        );
+        crate::route::write_cache(&base, crate::WorkshopRoute::Iroh);
+        assert!(
+            transport
+                .request_json("POST", "/mutate", None)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            transport
+                .request_json("GET", "/history", None)
+                .await
+                .unwrap()["ok"],
+            true
+        );
+        assert_eq!(hook.0.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            server.join().unwrap(),
+            [
+                "GET /health HTTP/1.1",
+                "GET /history HTTP/1.1",
+                "GET /health HTTP/1.1",
+                "GET /history HTTP/1.1"
+            ]
+        );
+        crate::invalidate_route_cache();
+    }
 
     #[test]
     fn parse_iroh_json_bytes_treats_whitespace_as_null() {

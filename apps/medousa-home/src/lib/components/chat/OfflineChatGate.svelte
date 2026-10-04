@@ -14,6 +14,7 @@
   } from "$lib/utils/engineDiagnosticsApi";
   import { restartEngine, startEngine, waitForEngine } from "$lib/utils/providersApi";
   import { reconnectWorkshop } from "$lib/workshopConnection";
+  import { workshops } from "$lib/stores/workshops.svelte";
 
   interface Props {
     mobile?: boolean;
@@ -93,7 +94,9 @@
   const body = $derived(
     diagnosis?.message ??
       (isTauriMobilePlatform()
-        ? "This phone can't reach Medousa on your computer yet. Check the address in Connection settings — same Wi‑Fi for the first pairing, then it should stay linked."
+        ? workshops.activeWorkshop?.kind === "portal"
+          ? "Medousa is trying to reconnect to your workshop. Your pairing is saved. Check that the workshop is running and both devices have a connection."
+          : "Medousa is trying to reconnect to your local workshop. Try again in a moment."
         : isTauri()
           ? "Medousa needs to be running on this computer before you can chat."
           : "Browser preview — run the Medousa app on your computer to chat."),
@@ -148,6 +151,16 @@
       <p class="text-xs text-content-tertiary" role="status">{actionMessage}</p>
     {/if}
     <div class="flex flex-col gap-2 pt-2 sm:flex-row sm:justify-center">
+      {#if isTauriMobilePlatform()}
+        <button
+          type="button"
+          class="btn variant-filled-primary min-h-11"
+          disabled={connection.recovering || workshops.refreshing || workshops.switching}
+          onclick={() => void workshops.refreshConnection()}
+        >
+          {connection.recovering || workshops.refreshing ? "Reconnecting…" : "Retry connection"}
+        </button>
+      {/if}
       {#if showDesktopRecover}
         <button
           type="button"

@@ -37,7 +37,7 @@ fn read_cache(lan_base: &str) -> Option<WorkshopRoute> {
     }
 }
 
-fn write_cache(lan_base: &str, route: WorkshopRoute) {
+pub(crate) fn write_cache(lan_base: &str, route: WorkshopRoute) {
     let ttl = match route {
         WorkshopRoute::Lan => LAN_TTL,
         WorkshopRoute::Iroh => IROH_TTL,
