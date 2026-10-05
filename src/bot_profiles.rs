@@ -694,7 +694,7 @@ fn normalize_external_agent(executor: &mut Option<ExternalAgentExecutor>) -> Res
         if values.len() > 64 {
             return Err(format!("{field} exceeds 64 entries"));
         }
-        let mut normalized = Vec::with_capacity(values.len());
+        let mut normalized = Vec::with_capacity(64);
         for value in std::mem::take(values) {
             let value = normalize_opaque(value, 160, field)?;
             if !value.bytes().all(|byte| {
@@ -757,7 +757,7 @@ fn normalize_manuscripts(primary: &mut String, additional: &mut Vec<String>) -> 
             "additional_manuscript_ids exceeds {MAX_ADDITIONAL_MANUSCRIPTS} entries"
         ));
     }
-    let mut normalized = Vec::with_capacity(additional.len());
+    let mut normalized = Vec::with_capacity(MAX_ADDITIONAL_MANUSCRIPTS);
     for value in std::mem::take(additional) {
         let value = normalize_required(value, MAX_MANUSCRIPT_ID_CHARS, "manuscript_id")?;
         if value == *primary {

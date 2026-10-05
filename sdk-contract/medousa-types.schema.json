@@ -20175,7 +20175,7 @@
         }
       },
       "tracked_proposal": {
-        "description": "Keeps the selected, owner-scoped assignment visible after it leaves the pending inbox. It does not consume a pagination slot.",
+        "description": "Keeps the selected, owner-scoped assignment visible independently of the history page and cursor. It does not consume a pagination slot.",
         "anyOf": [
           {
             "$ref": "#/definitions/PeerProposalReviewRecord"
@@ -20676,7 +20676,7 @@
         ],
         "properties": {
           "binding": {
-            "description": "Recorded custody remains visible until its terminal receipt arrives.",
+            "description": "Durable custody remains visible with its terminal receipt in chat history.",
             "anyOf": [
               {
                 "$ref": "#/definitions/ExternalPeerAssignmentBinding"
@@ -20720,7 +20720,7 @@
             "$ref": "#/definitions/PeerAssignmentProposal"
           },
           "receipt": {
-            "description": "Present for source-session projections so a remote owner can observe the immutable terminal even though execution belongs to another workshop.",
+            "description": "Immutable terminal result retained in local and source-session history.",
             "anyOf": [
               {
                 "$ref": "#/definitions/ExternalPeerAssignmentReceipt"

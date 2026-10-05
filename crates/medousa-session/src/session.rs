@@ -119,8 +119,20 @@ impl Session {
         cols: u16,
         rows: u16,
     ) -> anyhow::Result<Arc<Self>> {
-        std::fs::create_dir_all(&cwd)?;
-        let cwd = cwd.canonicalize().unwrap_or(cwd);
+        // The directory must already exist. Creating it here would let a
+        // caller-supplied cwd materialize arbitrary filesystem locations.
+        let cwd = cwd.canonicalize().map_err(|error| {
+            anyhow::anyhow!(
+                "session cwd must be an existing directory ({}): {error}",
+                cwd.display()
+            )
+        })?;
+        if !cwd.is_dir() {
+            anyhow::bail!(
+                "session cwd must be an existing directory ({})",
+                cwd.display()
+            );
+        }
         let size = normalized_pty_size(cols, rows);
 
         let pty_system = native_pty_system();
@@ -323,7 +335,7 @@ impl SessionManager {
         cols: u16,
         rows: u16,
     ) -> anyhow::Result<Arc<Session>> {
-        let cwd = cwd.unwrap_or_else(|| self.default_workspace.clone());
+        let cwd = self.session_cwd(cwd)?;
         let id = SessionId::new();
         let session = Session::spawn_with_size(id.clone(), cwd, root_kind, work_id, cols, rows)?;
         self.sessions.write().await.insert(id, Arc::clone(&session));
@@ -339,7 +351,7 @@ impl SessionManager {
         cols: u16,
         rows: u16,
     ) -> anyhow::Result<Arc<Session>> {
-        let cwd = cwd.unwrap_or_else(|| self.default_workspace.clone());
+        let cwd = self.session_cwd(cwd)?;
         let id = SessionId::new();
         let session = Session::spawn_command_with_size(
             id.clone(),
@@ -352,6 +364,16 @@ impl SessionManager {
         )?;
         self.sessions.write().await.insert(id, Arc::clone(&session));
         Ok(session)
+    }
+
+    fn session_cwd(&self, cwd: Option<PathBuf>) -> anyhow::Result<PathBuf> {
+        match cwd {
+            Some(cwd) => Ok(cwd),
+            None => {
+                std::fs::create_dir_all(&self.default_workspace)?;
+                Ok(self.default_workspace.clone())
+            }
+        }
     }
 
     pub async fn get(&self, id: &SessionId) -> Option<Arc<Session>> {

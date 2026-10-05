@@ -142,17 +142,72 @@ impl ExternalConversationStore {
     }
 
     async fn persist(&self, next: &Document) -> anyhow::Result<()> {
-        let parent = self
+        let name = self
+            .path
+            .file_name()
+            .ok_or_else(|| {
+                anyhow::anyhow!("external conversation store path is missing a file name")
+            })?
+            .to_os_string();
+        let requested_parent = self
             .path
             .parent()
-            .ok_or_else(|| anyhow::anyhow!("missing store parent"))?;
-        tokio::fs::create_dir_all(parent).await?;
+            .ok_or_else(|| anyhow::anyhow!("external conversation store path is missing a parent"))?
+            .to_path_buf();
+        let mut missing = Vec::new();
+        let mut cursor = requested_parent.clone();
+        let ancestor = loop {
+            match tokio::fs::canonicalize(&cursor).await {
+                Ok(canon) => break canon,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    let component = cursor.file_name().ok_or_else(|| {
+                        anyhow::anyhow!("external conversation store path has no parent")
+                    })?;
+                    missing.push(component.to_os_string());
+                    cursor = cursor
+                        .parent()
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("external conversation store path has no parent")
+                        })?
+                        .to_path_buf();
+                }
+                Err(error) => return Err(error.into()),
+            }
+        };
+        missing.reverse();
+        let mut parent = ancestor.clone();
+        for component in missing {
+            let component = component.to_string_lossy();
+            if component.is_empty()
+                || component == "."
+                || component == ".."
+                || component.contains('/')
+                || component.contains('\\')
+            {
+                anyhow::bail!("external conversation store path contains an invalid component");
+            }
+            parent.push(component.as_ref());
+            if !parent.starts_with(&ancestor) {
+                anyhow::bail!("external conversation store path escapes its directory");
+            }
+        }
+        if !parent.starts_with(&ancestor) {
+            anyhow::bail!("external conversation store path escapes its directory");
+        }
+        tokio::fs::create_dir_all(&parent).await?;
+        let path = parent.join(&name);
+        if !path.starts_with(&parent) {
+            anyhow::bail!("external conversation store path escapes its directory");
+        }
         let temporary = parent.join(format!(
             ".external-conversations-{}.tmp",
             uuid::Uuid::new_v4()
         ));
+        if !temporary.starts_with(&parent) {
+            anyhow::bail!("external conversation store temp file escapes its directory");
+        }
         tokio::fs::write(&temporary, serde_json::to_vec(next)?).await?;
-        if let Err(error) = tokio::fs::rename(&temporary, &self.path).await {
+        if let Err(error) = tokio::fs::rename(&temporary, &path).await {
             let _ = tokio::fs::remove_file(&temporary).await;
             return Err(error.into());
         }

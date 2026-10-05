@@ -1633,7 +1633,7 @@ mod tests {
             crate::interactive_turn_runtime::content_delta_stream_event("turn-1", "hello").unwrap();
         match stream_event_to_turn_event(&wire) {
             TurnEvent::ContentDelta { delta } => assert_eq!(delta, "hello"),
-            other => panic!("unexpected {other:?}"),
+            _ => panic!("unexpected event variant"),
         }
     }
 
@@ -1697,7 +1697,7 @@ mod tests {
                 assert_eq!(max_tool_rounds, 5);
                 assert_eq!(requested_rounds, 3);
             }
-            other => panic!("unexpected {other:?}"),
+            _ => panic!("unexpected event variant"),
         }
     }
 
@@ -1734,7 +1734,7 @@ mod tests {
                 assert_eq!(replayed.artifact_id, artifact.artifact_id);
                 assert_eq!(replayed.height_px, artifact.height_px);
             }
-            other => panic!("unexpected {other:?}"),
+            _ => panic!("unexpected event variant"),
         }
         let legacy = sequenced_to_stream_event(&sequenced);
         assert_eq!(legacy.event_type, "artifact_presented");
@@ -1768,7 +1768,7 @@ mod tests {
             TurnStreamEventV2::WorkerAck { ack_kind, .. } => {
                 assert!(matches!(ack_kind, WorkerAckKind::Workshop));
             }
-            other => panic!("unexpected {other:?}"),
+            _ => panic!("unexpected event variant"),
         }
         assert_eq!(
             sequenced_to_stream_event(&sequenced).event_type,

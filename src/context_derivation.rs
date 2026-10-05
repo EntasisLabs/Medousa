@@ -242,7 +242,7 @@ pub async fn derive_session(
         });
     }
 
-    let mut resolved_ranges = Vec::with_capacity(request.sources.len());
+    let mut resolved_ranges = Vec::with_capacity(MAX_DERIVATION_SOURCES);
     let mut selected_entries = Vec::new();
     let mut selected_ids = HashSet::new();
     for selection in &request.sources {

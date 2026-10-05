@@ -86,6 +86,15 @@
       "oldNew": "937->946 default; 1012->1021 iroh; duplicate-version counts unchanged",
       "evidence": "cargo tree -p medousa compared at 720ba839 (0.11.0 ceiling) and 19938039; CI run 36429400161",
       "revisit": "2026-11-01"
+    },
+    {
+      "date": "2026-10-05",
+      "workload": "P09 medousa-default, medousa-iroh-transport, and adapter-workspace for 0.11.0 companions",
+      "owner": "work-units / slack intake / clippy",
+      "reason": "medousa-work joins the default and iroh daemon closures as the durable unit-of-work crate and adds one unique pair (its other dependencies were already present). The Slack adapter stores its intake inbox beside the daemon data dir via dirs 6, which pulls dirs-sys and option-ext into the adapter closure only. async-trait 0.1.92 drops the bare must_use that Rust 1.99 clippy rejects as double_must_use; that release depends on syn 3, one new pair in each measured closure. Duplicate-version name counts are unchanged because syn was already duplicated.",
+      "oldNew": "946->948 default; 1021->1023 iroh; 251->255 adapter; duplicate-version counts unchanged",
+      "evidence": "cargo tree -e normal compared with main 46fae42d; async-trait 0.1.92 release notes (dtolnay/async-trait#303)",
+      "revisit": "2026-11-01"
     }
   ],
   "profiles": {
@@ -94,7 +103,7 @@
       "package": "medousa",
       "features": [],
       "forbidAdapterFrameworks": true,
-      "uniqueNameVersionPairs": 946,
+      "uniqueNameVersionPairs": 948,
       "duplicateVersionNames": 92
     },
     "medousa-iroh-transport": {
@@ -104,7 +113,7 @@
         "iroh-transport"
       ],
       "forbidAdapterFrameworks": true,
-      "uniqueNameVersionPairs": 1021,
+      "uniqueNameVersionPairs": 1023,
       "duplicateVersionNames": 99
     },
     "medousa-runtime-portable": {
@@ -123,7 +132,7 @@
         "medousa-slack"
       ],
       "forbidAdapterFrameworks": false,
-      "uniqueNameVersionPairs": 251,
+      "uniqueNameVersionPairs": 255,
       "duplicateVersionNames": 20
     },
     "medousa-home-tauri": {

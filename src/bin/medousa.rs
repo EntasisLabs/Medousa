@@ -1354,7 +1354,11 @@ fn run_doctor(args: &[String]) -> Result<()> {
             "computer_driver=ready binary={} platform={} session={}",
             computer_driver.binary.as_deref().unwrap_or("(unknown)"),
             preflight.platform,
-            preflight.session_id,
+            if preflight.session_id.is_empty() {
+                "missing"
+            } else {
+                "present"
+            },
         );
         for permission in &preflight.permissions {
             println!(
@@ -1455,7 +1459,7 @@ fn run_doctor(args: &[String]) -> Result<()> {
         if product_config.slack.allowed_user_ids.is_empty() {
             "(all users)".to_string()
         } else {
-            product_config.slack.allowed_user_ids.join(",")
+            format!("{} configured", product_config.slack.allowed_user_ids.len())
         }
     );
     println!(
@@ -1464,7 +1468,10 @@ fn run_doctor(args: &[String]) -> Result<()> {
         if product_config.whatsapp.allowed_user_ids.is_empty() {
             "(all users)".to_string()
         } else {
-            product_config.whatsapp.allowed_user_ids.join(",")
+            format!(
+                "{} configured",
+                product_config.whatsapp.allowed_user_ids.len()
+            )
         }
     );
     let whatsapp_session_db = product_config
@@ -1902,10 +1909,7 @@ fn run_identity_profiles(args: &[String]) -> Result<()> {
                 .context("list profiles")?;
             let payload: medousa::daemon_api::ListUserProfilesResponse =
                 response.json().context("decode profiles list")?;
-            println!(
-                "active_profile_id={} resolved_user_id={}",
-                payload.active_profile_id, payload.resolved_user_id
-            );
+            println!("active_profile_id={}", payload.active_profile_id);
             for profile in payload.profiles {
                 let marker = if profile.profile_id == payload.active_profile_id {
                     "*"
@@ -1944,8 +1948,8 @@ fn run_identity_profiles(args: &[String]) -> Result<()> {
             let payload: medousa::daemon_api::CreateUserProfileResponse =
                 response.json().context("decode create profile")?;
             println!(
-                "created profile {} ({}) resolved_user_id={}",
-                payload.profile.display_name, payload.profile.profile_id, payload.resolved_user_id
+                "created profile {} ({})",
+                payload.profile.display_name, payload.profile.profile_id
             );
         }
         "use" => {
@@ -1970,10 +1974,7 @@ fn run_identity_profiles(args: &[String]) -> Result<()> {
                 .context("set active profile")?;
             let payload: medousa::daemon_api::SetActiveUserProfileResponse =
                 response.json().context("decode set active profile")?;
-            println!(
-                "active_profile_id={} resolved_user_id={}",
-                payload.active_profile_id, payload.resolved_user_id
-            );
+            println!("active_profile_id={}", payload.active_profile_id);
         }
         "export" => {
             let profile_id = args

@@ -4941,15 +4941,15 @@ class PeerHandoffSummary(MedousaModel):
 
 class PeerProposalReviewRecord(MedousaModel):
     binding: ExternalPeerAssignmentBinding | None = Field(
-        None, description='Recorded custody remains visible until its terminal receipt arrives.'
+        None,
+        description='Durable custody remains visible with its terminal receipt in chat history.',
     )
     decision: PeerProposalDecision | None = None
     handoff: PeerHandoffSummary | None = None
     progress: PeerAssignmentProgress | None = None
     proposal: PeerAssignmentProposal
     receipt: ExternalPeerAssignmentReceipt | None = Field(
-        None,
-        description='Present for source-session projections so a remote owner can observe the immutable terminal even though execution belongs to another workshop.',
+        None, description='Immutable terminal result retained in local and source-session history.'
     )
 
 
@@ -5761,7 +5761,7 @@ class PeerProposalInboxResponse(MedousaModel):
     proposals: list[PeerProposalReviewRecord]
     tracked_proposal: PeerProposalReviewRecord | None = Field(
         None,
-        description='Keeps the selected, owner-scoped assignment visible after it leaves the pending inbox. It does not consume a pagination slot.',
+        description='Keeps the selected, owner-scoped assignment visible independently of the history page and cursor. It does not consume a pagination slot.',
     )
 
 

@@ -1242,8 +1242,8 @@ pub async fn maybe_resume_agent_turn_from_child_job(state: &AppState, child_job_
     );
 
     eprintln!(
-        "turn continuation resume child_job_id={child_job_id} turn_correlation_id={} session_id={}",
-        record.turn_correlation_id, record.session_id
+        "turn continuation resume child_job_id={child_job_id} turn_correlation_id={}",
+        record.turn_correlation_id
     );
 
     if let Err(error) = spawn_continuation_agent_turn(state, &record, resume_prompt).await {

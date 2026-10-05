@@ -99,7 +99,11 @@ pub fn inject_display_name_into_payload(payload_ref: &str, display_name: Option<
 pub fn notify_on_delivery_from_payload(payload_ref: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(payload_ref)
         .ok()
-        .and_then(|payload| payload.get("notify_on_delivery").and_then(serde_json::Value::as_bool))
+        .and_then(|payload| {
+            payload
+                .get("notify_on_delivery")
+                .and_then(serde_json::Value::as_bool)
+        })
         .unwrap_or(true)
 }
 
@@ -307,7 +311,7 @@ pub async fn list_recurring_runs(
     });
     jobs.truncate(limit);
 
-    let mut runs = Vec::with_capacity(jobs.len());
+    let mut runs = Vec::with_capacity(100);
     for job in jobs {
         let attempts = runtime.list_job_attempts(&job.id).await.unwrap_or_default();
         let latest = attempts.last();

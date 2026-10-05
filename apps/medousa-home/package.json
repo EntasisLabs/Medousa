@@ -1,7 +1,7 @@
 {
   "name": "medousa-home",
   "version": "0.11.0",
-  "description": "Medousa \u2014 Life Manageable",
+  "description": "Medousa — Life Manageable",
   "type": "module",
   "scripts": {
     "dev": "vite dev",
@@ -101,7 +101,7 @@
     "d3-scale": "^4.0.2",
     "d3-shape": "^3.2.0",
     "docx": "^9.7.1",
-    "dompurify": "^3.4.13",
+    "dompurify": "^3.4.16",
     "highlight.js": "^11.11.1",
     "html2pdf.js": "^0.14.0",
     "hyperformula": "^3.3.0",

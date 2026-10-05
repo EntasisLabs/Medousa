@@ -103,6 +103,11 @@
     "watch": "tsc -p tsconfig.json --watch",
     "package": "npm run build && vsce package"
   },
+  "overrides": {
+    "fast-uri": "^3.1.7",
+    "js-yaml": "^4.3.2",
+    "undici": "^7.29.1"
+  },
   "devDependencies": {
     "@medousa/client": "file:../../packages/medousa-client",
     "@medousa/liquid-markdown": "file:../../packages/medousa-liquid-markdown",

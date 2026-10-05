@@ -7,32 +7,21 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-10-05
+
 ### Added
 
+- **Shared undertakings** — agents can join one unit of work, hand context
+  across providers, and keep sender-owned delegation, acceptance, and completion
+  in the conversation. See [undertakings](docs/guides/undertakings.md).
+- **Companions** — named bots stay attached to a runtime, with mascot art and a
+  primary conversation that is distinct from turn modes.
+- **Workshop SSH targets** — saved hosts, pinned keys, explicit agent grants,
+  and durable command receipts. See [SSH targets](docs/guides/ssh-targets.md).
 - **Locus memory reflex** — `cognition_memory_query action=memory.reflex` and
   `workflow.stasis.memory.reflex` turn a stimulus into a dispatch, ignore, or
   escalate envelope. When System 1 is Laya, that same `/v1/systemone` layer runs
   the forward pass. The reflex does not read or write the store.
-
-### Changed
-
-- **Stasis 0.13.0** — the runtime pin moves from 0.12.0, with `locus-sdk` 0.5.0.
-  `locus-core-rs` stays 0.5.1.
-
-### Fixed
-
-- **CI** — clippy on reaction delivery, the Home laya pid write, the generated
-  API contract, and the Python SDK models match the reaction types again. The
-  cascade-layer check gets enough time to compile Tailwind on CI.
-- **Dependencies** — workspace `h2` 0.4 is 0.4.19, the patched line for the
-  empty-DATA-frame advisory. The remaining `h2` 0.3.27 copy stays behind
-  grapheme's `websearch` / reqwest 0.11 stack. Home updates Tiptap past the
-  prototype and markdown advisories, and Vitest to 4.1.11 for the mocker
-  path-traversal advisory. `npm audit` in Home is clean.
-
-## [0.11.0] — 2026-09-14
-
-### Added
 
 - **Expressive chat media** — draw in the composer with pressure brushes,
   selection, and zoom; generate images through a daemon-owned OpenAI Image API
@@ -70,6 +59,11 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   that packaged payload.
 - Settings Vision vs Image generation roles are explicit; ChatGPT account routing
   remains available on mobile model pickers.
+- **Stasis 0.13.0** — the runtime pin moves from 0.12.0, with `locus-sdk` 0.5.0.
+  `locus-core-rs` stays 0.5.1.
+- Identity profile commands print the active profile id and display name. They
+  no longer echo the resolved user id. Slack and WhatsApp allow-list status
+  reports how many users are configured.
 
 ### Fixed
 
@@ -83,6 +77,21 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   WebViews; headless Linux secrets fall back safely.
 - Local MCP policy auth provisions cleanly and restarts the gateway without
   dropping the workshop session.
+- **CI** — clippy on reaction delivery, the Home laya pid write, the generated
+  API contract, and the Python SDK models match the reaction types again. The
+  cascade-layer check gets enough time to compile Tailwind on CI. `async-trait`
+  0.1.92 removes the bare `must_use` that Rust 1.99 reports as
+  `clippy::double_must_use`.
+- **Dependencies** — workspace `h2` 0.4 is 0.4.19, the patched line for the
+  empty-DATA-frame advisory. The remaining `h2` 0.3.27 copy stays behind
+  grapheme's `websearch` / reqwest 0.11 stack. Home updates Tiptap past the
+  prototype and markdown advisories, Vitest to 4.1.11 for the mocker
+  path-traversal advisory, and DOMPurify to 3.4.16. The VS Code integration
+  pins `undici`, `fast-uri`, and `js-yaml` to their patched releases. Tailwind 3
+  still pulls a dev-only `braces` / `micromatch` / `chokidar` advisory chain;
+  that watcher is not in the packaged client. Embedded `mistralrs` 0.8.1 still
+  carries the local-engine media-fetch advisories; the OpenAI-compatible router
+  stays bound to loopback.
 
 ## [0.10.0] — 2026-08-31
 

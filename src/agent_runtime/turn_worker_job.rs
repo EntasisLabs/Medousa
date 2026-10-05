@@ -118,7 +118,10 @@ pub async fn reconcile_durable_turn_workers(
             .as_ref()
             .is_some_and(|spec| spec.external_agent.is_some())
         {
-            if matches!(record.status, TurnWorkStatus::Pending | TurnWorkStatus::Running) {
+            if matches!(
+                record.status,
+                TurnWorkStatus::Pending | TurnWorkStatus::Running
+            ) {
                 let _ = store.try_update(&record.work_id, |current| {
                     current.status = TurnWorkStatus::Failed;
                     current.error = Some(
@@ -284,8 +287,8 @@ impl JobHandler for TurnWorkerJobHandler {
         }
 
         eprintln!(
-            "medousa turn_worker job_id={} work_id={} session_id={}",
-            job.id, payload.work_id, record.session_id
+            "medousa turn_worker job_id={} work_id={}",
+            job.id, payload.work_id
         );
 
         run_worker_turn(
@@ -495,8 +498,8 @@ impl crate::agent_runtime::stream_sink::AgentStreamSink for DurableWorkerStreamS
     async fn agent_error(&self, _turn_id: u64, message: String) {
         self.flush_live_text();
         eprintln!(
-            "turn_worker durable sink error session_id={}: {message}",
-            self.session_id
+            "turn_worker durable sink error work_id={}: {message}",
+            self.work_id
         );
     }
 
